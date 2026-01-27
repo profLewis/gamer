@@ -823,9 +823,8 @@ def show_game_menu(directions_available: List[str], can_collect: bool) -> str:
 def _game_menu_interactive(options: List[str], actions: List[str],
                            directions_available: List[str], auto_action: str = 'search') -> str:
     """
-    Interactive game menu with direct arrow key movement and timeout support.
-
-    Scrollback-friendly: prints menu once, shows selection on a status line.
+    Interactive game menu with arrow key navigation.
+    Standard interface: arrows navigate, Enter selects, hjkl for movement.
     """
     from .utils.display import _getch, _hide_cursor, _show_cursor, Colors
 
@@ -835,45 +834,56 @@ def _game_menu_interactive(options: List[str], actions: List[str],
     num_options = len(options)
     timeout = _config.get('timeout', 0)
     start_time = time.time()
-    warned = False
 
     def get_remaining():
         if timeout <= 0:
             return None
         return max(0, timeout - (time.time() - start_time))
 
-    # Print menu once (scrollback-friendly)
-    print(f"\n{Colors.SUBTITLE}What do you do?{Colors.RESET}")
-    print(f"{Colors.MUTED}  Arrows=menu  hjkl=WSEN  /=search  r=rest  t=talk  ESC=system{Colors.RESET}")
-    print()
+    def draw_menu(status_msg: str = ""):
+        """Draw the complete menu with current selection highlighted."""
+        # Move cursor up to redraw menu in place (if not first draw)
+        # Title line + hint line + blank + options + blank = num_options + 4 lines
+        lines_to_clear = num_options + 4
 
-    # Print numbered options
-    for i, option in enumerate(options):
-        marker = ">" if i == 0 else " "
-        print(f"  {marker} {i+1}. {option}")
-    print()
+        # Clear previous menu
+        for _ in range(lines_to_clear):
+            print('\x1b[A\x1b[2K', end='')  # Move up and clear line
 
-    # Show current selection on a single status line (can be updated)
-    def show_status(msg: str = ""):
-        # Use carriage return to update status line in place
-        status = f"  Selected: {options[selected]}"
-        if msg:
-            status += f"  {Colors.WARNING}{msg}{Colors.RESET}"
-        # Clear line and print status
-        print(f"\r\x1b[K{Colors.INFO}{status}{Colors.RESET}", end='', flush=True)
+        # Draw menu
+        print(f"{Colors.SUBTITLE}What do you do?{Colors.RESET}")
+        print(f"{Colors.MUTED}  ↑↓=navigate  Enter=select  hjkl=move WSEN  ESC=system{Colors.RESET}")
+        if status_msg:
+            print(f"{Colors.WARNING}  {status_msg}{Colors.RESET}")
+        else:
+            print()
 
-    def select_and_return(action: str) -> str:
-        """Highlight the action in menu and return it."""
+        for i, option in enumerate(options):
+            if i == selected:
+                # Highlighted selection
+                print(f"  {Colors.TITLE}> {i+1}. {option}{Colors.RESET}")
+            else:
+                print(f"    {i+1}. {option}")
+        print()
+
+    def select_action(action: str) -> str:
+        """Select an action and briefly highlight it."""
         nonlocal selected
         if action in actions:
             selected = actions.index(action)
-            show_status("-> " + action)
-            import time
-            time.sleep(0.15)  # Brief flash to show selection
-        print()
+            draw_menu(f"-> {action}")
+            time.sleep(0.1)
         return action
 
-    show_status()
+    # Initial draw - print blank lines first so draw_menu can clear them
+    print()  # Title
+    print()  # Hint
+    print()  # Blank/status
+    for _ in options:
+        print()  # Options
+    print()  # Trailing blank
+
+    draw_menu()
     _hide_cursor()
 
     try:
@@ -882,103 +892,98 @@ def _game_menu_interactive(options: List[str], actions: List[str],
             remaining = get_remaining()
             if remaining is not None:
                 if remaining <= 0:
-                    print(f"\n\n{Colors.WARNING}⏰ Time's up! The DM moves you {auto_action}...{Colors.RESET}")
+                    print(f"{Colors.WARNING}⏰ Time's up! The DM moves you {auto_action}...{Colors.RESET}")
                     return auto_action
                 elif remaining <= 30:
-                    show_status(f"[{int(remaining)}s]")
+                    draw_menu(f"[{int(remaining)}s remaining]")
 
             # Wait for input with short timeout for responsiveness
             ch = _getch(timeout=1.0)
             if ch is None:
                 continue  # Check timeout again
 
-            # Arrow keys: MENU NAVIGATION ONLY
+            # Arrow keys: MENU NAVIGATION
             if ch == '\x1b[A':  # Up arrow = menu up
                 selected = (selected - 1) % num_options
-                show_status()
+                draw_menu()
             elif ch == '\x1b[B':  # Down arrow = menu down
                 selected = (selected + 1) % num_options
-                show_status()
+                draw_menu()
             elif ch == '\x1b[D':  # Left arrow = back/system menu
-                print()
-                return 'system'
-            elif ch == '\x1b[C':  # Right arrow = select (same as Enter)
-                print()
+                return select_action('system')
+            elif ch == '\x1b[C':  # Right arrow = select current
                 return actions[selected]
 
             # hjkl: MOVEMENT (h=West, j=South, k=North, l=East)
             elif ch == 'h' or ch == 'H':  # h = West
                 if 'west' in directions_available:
-                    return select_and_return('west')
+                    return select_action('west')
                 else:
-                    show_status("(no exit west)")
+                    draw_menu("(no exit west)")
             elif ch == 'j' or ch == 'J':  # j = South
                 if 'south' in directions_available:
-                    return select_and_return('south')
+                    return select_action('south')
                 else:
-                    show_status("(no exit south)")
+                    draw_menu("(no exit south)")
             elif ch == 'k' or ch == 'K':  # k = North
                 if 'north' in directions_available:
-                    return select_and_return('north')
+                    return select_action('north')
                 else:
-                    show_status("(no exit north)")
+                    draw_menu("(no exit north)")
             elif ch == 'l' or ch == 'L':  # l = East
                 if 'east' in directions_available:
-                    return select_and_return('east')
+                    return select_action('east')
                 else:
-                    show_status("(no exit east)")
+                    draw_menu("(no exit east)")
 
             # ESC or Tab = System menu (up level)
             elif ch == '\x1b' or ch == '\t':
-                print()
-                return 'system'
+                return select_action('system')
 
             # Enter/Space to select current option
             elif ch == '\r' or ch == '\n' or ch == ' ':
-                print()
                 return actions[selected]
 
-            # Number keys for direct menu selection (highlight before executing)
+            # Number keys for direct menu selection
             elif ch.isdigit():
                 num = int(ch)
                 if 1 <= num <= num_options:
-                    return select_and_return(actions[num - 1])
+                    return select_action(actions[num - 1])
 
-            # Shortcut keys for menu items (highlight before executing)
+            # Shortcut keys for menu items
             elif ch == '/':  # Search
-                return select_and_return('search')
+                return select_action('search')
             elif ch == 'r' or ch == 'R':  # Rest
-                return select_and_return('rest')
+                return select_action('rest')
             elif ch == 'p' or ch == 'P':  # Party status
-                return select_and_return('status')
+                return select_action('status')
             elif ch == 'm' or ch == 'M':  # Map
-                return select_and_return('map')
+                return select_action('map')
             elif ch == 'c' or ch == 'C':  # Collect
                 if 'collect' in actions:
-                    return select_and_return('collect')
+                    return select_action('collect')
             elif ch == 't' or ch == 'T':  # Talk to DM
-                return select_and_return('talk')
+                return select_action('talk')
             elif ch == 'o' or ch == 'O':  # Options/System menu
-                return select_and_return('system')
+                return select_action('system')
             elif ch == 'q' or ch == 'Q':  # Quit to system
-                return select_and_return('system')
+                return select_action('system')
 
-            # WASD as alternative movement (highlight before executing)
+            # WASD as alternative movement
             elif ch == 'w' or ch == 'W':
                 if 'north' in directions_available:
-                    return select_and_return('north')
+                    return select_action('north')
             elif ch == 's' or ch == 'S':
                 if 'south' in directions_available:
-                    return select_and_return('south')
+                    return select_action('south')
             elif ch == 'a' or ch == 'A':
                 if 'west' in directions_available:
-                    return select_and_return('west')
+                    return select_action('west')
             elif ch == 'd' or ch == 'D':
                 if 'east' in directions_available:
-                    return select_and_return('east')
+                    return select_action('east')
 
     except (EOFError, KeyboardInterrupt):
-        print()
         return 'system'
     finally:
         _show_cursor()
