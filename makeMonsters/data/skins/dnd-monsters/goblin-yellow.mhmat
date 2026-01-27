@@ -1,0 +1,8 @@
+# MakeHuman Material - Goblin Yellow Skin
+name goblin-yellow
+ambientColor 0.15 0.12 0.05
+diffuseColor 0.6 0.5 0.2
+specularColor 0.2 0.18 0.1
+shininess 0.15
+opacity 1.0
+shader shaders/glsl/litsphere
