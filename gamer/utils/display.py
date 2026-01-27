@@ -8,64 +8,48 @@ from typing import List, Dict, Any, Optional, Tuple
 # ANSI escape codes for terminal colors
 # These work on macOS, Linux, and modern Windows terminals
 
+# Terminal theme: Black background, green text (classic terminal look)
+_BG = '\033[40m'      # Black background
+_FG = '\033[32m'      # Green foreground
+_BRIGHT = '\033[92m'  # Bright green
+_BOLD = '\033[1m'
+_DIM = '\033[2m'
+_RESET_ALL = '\033[0m'
+
+
 class Colors:
-    """Color constants for display - clean terminal theme."""
-    # Reset
-    RESET = '\033[0m'
-    RESET_ALL = '\033[0m'
+    """Color constants - black background with green text theme."""
+    # Everything resets back to green on black, not default terminal colors
+    RESET = f'{_BG}{_FG}'
+    RESET_ALL = f'{_BG}{_FG}'
 
-    # Text styles
-    BOLD = '\033[1m'
-    DIM = '\033[2m'
+    # Text styles (all green-based)
+    BOLD = f'{_BG}{_BRIGHT}{_BOLD}'
+    DIM = f'{_BG}{_FG}{_DIM}'
 
-    # Standard colors
-    BLACK = '\033[30m'
-    RED = '\033[31m'
-    GREEN = '\033[32m'
-    YELLOW = '\033[33m'
-    BLUE = '\033[34m'
-    MAGENTA = '\033[35m'
-    CYAN = '\033[36m'
-    WHITE = '\033[37m'
+    # Semantic colors - mostly green with minimal accents
+    TITLE = f'{_BG}{_BRIGHT}{_BOLD}'    # Bright green bold
+    SUBTITLE = f'{_BG}{_FG}'             # Normal green
+    SUCCESS = f'{_BG}{_BRIGHT}'          # Bright green
+    DANGER = f'{_BG}\033[91m'            # Red (for enemies/damage only)
+    WARNING = f'{_BG}\033[93m'           # Yellow (sparingly)
+    INFO = f'{_BG}{_FG}'                 # Green
+    MUTED = f'{_BG}{_FG}{_DIM}'          # Dim green
 
-    # Bright colors
-    BRIGHT_BLACK = '\033[90m'   # Gray
-    BRIGHT_RED = '\033[91m'
-    BRIGHT_GREEN = '\033[92m'
-    BRIGHT_YELLOW = '\033[93m'
-    BRIGHT_BLUE = '\033[94m'
-    BRIGHT_MAGENTA = '\033[95m'
-    BRIGHT_CYAN = '\033[96m'
-    BRIGHT_WHITE = '\033[97m'
+    # Character colors - keep it green
+    PLAYER = f'{_BG}{_BRIGHT}{_BOLD}'    # Bright green bold
+    ENEMY = f'{_BG}\033[91m'             # Red
+    NPC = f'{_BG}{_BRIGHT}'              # Bright green
 
-    # Background
-    BG_BLACK = '\033[40m'
-    BG_GREEN = '\033[42m'
-
-    # Semantic colors for the game
-    TITLE = '\033[92m\033[1m'       # Bright green + bold
-    SUBTITLE = '\033[32m'           # Green
-    SUCCESS = '\033[92m'            # Bright green
-    DANGER = '\033[91m'             # Bright red
-    WARNING = '\033[93m'            # Bright yellow
-    INFO = '\033[32m'               # Green
-    MUTED = '\033[90m'              # Gray
-
-    # Character colors
-    PLAYER = '\033[92m\033[1m'      # Bright green + bold
-    ENEMY = '\033[91m\033[1m'       # Bright red + bold
-    NPC = '\033[96m'                # Bright cyan
-
-    # Combat colors
-    DAMAGE = '\033[91m'             # Bright red
-    HEALING = '\033[92m'            # Bright green
-    MAGIC = '\033[95m'              # Bright magenta
+    # Combat - green with red for damage
+    DAMAGE = f'{_BG}\033[91m'            # Red
+    HEALING = f'{_BG}{_BRIGHT}'          # Bright green
+    MAGIC = f'{_BG}{_BRIGHT}'            # Bright green
 
 
 def set_terminal_theme(clear: bool = True):
     """Set terminal to black background with green text."""
-    # Set black background and green foreground
-    print('\033[40m\033[32m', end='', flush=True)
+    print(f'{_BG}{_FG}', end='', flush=True)
 
     if clear:
         clear_screen(preserve_scrollback=True)
@@ -73,7 +57,7 @@ def set_terminal_theme(clear: bool = True):
 
 def reset_terminal():
     """Reset terminal to default colors."""
-    print('\033[0m', end='', flush=True)
+    print(_RESET_ALL, end='', flush=True)
 
 
 # -----------------------------------------------------------------------------
