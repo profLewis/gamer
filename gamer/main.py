@@ -844,7 +844,7 @@ def _game_menu_interactive(options: List[str], actions: List[str],
 
     # Print menu once (scrollback-friendly)
     print(f"\n{Colors.SUBTITLE}What do you do?{Colors.RESET}")
-    print(f"{Colors.MUTED}  Arrows=move  jk=menu  /=search  r=rest  t=talk  ESC=system{Colors.RESET}")
+    print(f"{Colors.MUTED}  Arrows=menu  hjkl=WSEN  /=search  r=rest  t=talk  ESC=system{Colors.RESET}")
     print()
 
     # Print numbered options
@@ -892,45 +892,41 @@ def _game_menu_interactive(options: List[str], actions: List[str],
             if ch is None:
                 continue  # Check timeout again
 
-            # Arrow keys: DIRECT movement (N/S/E/W)
-            if ch == '\x1b[A':  # Up arrow = North
-                if 'north' in directions_available:
-                    print()  # New line before returning
-                    return 'north'
-                else:
-                    show_status("(no exit north)")
-            elif ch == '\x1b[B':  # Down arrow = South
-                if 'south' in directions_available:
-                    print()
-                    return 'south'
-                else:
-                    show_status("(no exit south)")
-            elif ch == '\x1b[D':  # Left arrow = West
-                if 'west' in directions_available:
-                    print()
-                    return 'west'
-                else:
-                    show_status("(no exit west)")
-            elif ch == '\x1b[C':  # Right arrow = East
-                if 'east' in directions_available:
-                    print()
-                    return 'east'
-                else:
-                    show_status("(no exit east)")
-
-            # hjkl: Menu navigation (vim-style)
-            elif ch == 'k' or ch == 'K':  # k = menu up
+            # Arrow keys: MENU NAVIGATION ONLY
+            if ch == '\x1b[A':  # Up arrow = menu up
                 selected = (selected - 1) % num_options
                 show_status()
-            elif ch == 'j' or ch == 'J':  # j = menu down
+            elif ch == '\x1b[B':  # Down arrow = menu down
                 selected = (selected + 1) % num_options
                 show_status()
-            elif ch == 'h' or ch == 'H':  # h = back (same as ESC)
+            elif ch == '\x1b[D':  # Left arrow = back/system menu
                 print()
                 return 'system'
-            elif ch == 'l' or ch == 'L':  # l = select (same as Enter)
+            elif ch == '\x1b[C':  # Right arrow = select (same as Enter)
                 print()
                 return actions[selected]
+
+            # hjkl: MOVEMENT (h=West, j=South, k=North, l=East)
+            elif ch == 'h' or ch == 'H':  # h = West
+                if 'west' in directions_available:
+                    return select_and_return('west')
+                else:
+                    show_status("(no exit west)")
+            elif ch == 'j' or ch == 'J':  # j = South
+                if 'south' in directions_available:
+                    return select_and_return('south')
+                else:
+                    show_status("(no exit south)")
+            elif ch == 'k' or ch == 'K':  # k = North
+                if 'north' in directions_available:
+                    return select_and_return('north')
+                else:
+                    show_status("(no exit north)")
+            elif ch == 'l' or ch == 'L':  # l = East
+                if 'east' in directions_available:
+                    return select_and_return('east')
+                else:
+                    show_status("(no exit east)")
 
             # ESC or Tab = System menu (up level)
             elif ch == '\x1b' or ch == '\t':
