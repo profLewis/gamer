@@ -206,9 +206,10 @@ def handle_main_menu(engine: GameEngine) -> None:
 
         print_subtitle("Saved Games")
         session_names = [f"{s['name']} (Last played: {s['last_played'][:10]})" for s in sessions]
-        session_names.append("Cancel")
 
-        load_choice = get_menu_choice(session_names, "Select a save to load:")
+        load_choice = get_menu_choice(session_names, "Select a save to load:", allow_back=True)
+        if load_choice == 0:  # Back
+            return
         if load_choice <= len(sessions):
             session = load_session(sessions[load_choice - 1]['name'])
             if session:
@@ -242,9 +243,11 @@ def handle_multiplayer_menu(engine: GameEngine) -> None:
         "Join Game (Shared File)",
         "Join Game (Network Socket)",
         "List Available Games",
-        "Back to Main Menu"
     ]
-    choice = get_menu_choice(options, "Multiplayer Options")
+    choice = get_menu_choice(options, "Multiplayer Options", allow_back=True)
+
+    if choice == 0:  # Back
+        return
 
     player_name = get_input("Enter your player name: ", default="Player")
 
@@ -907,11 +910,12 @@ def show_system_menu() -> str:
         "💾 Save Game",
         "⏸  Pause Game",
         "🚪 Quit to Menu",
-        "↩  Back to Game",
     ]
-    actions = ['scoreboard', 'save', 'pause', 'quit', 'back']
+    actions = ['scoreboard', 'save', 'pause', 'quit']
 
-    choice = get_menu_choice(options, "System Menu")
+    choice = get_menu_choice(options, "System Menu", allow_back=True)
+    if choice == 0:
+        return 'back'
     return actions[choice - 1]
 
 
@@ -1001,8 +1005,11 @@ def handle_exploration(engine: GameEngine) -> None:
     elif action == 'rest':
         rest_type = get_menu_choice(
             ["Short Rest (1 hour)", "Long Rest (8 hours)"],
-            "Choose rest type:"
+            "Choose rest type:",
+            allow_back=True
         )
+        if rest_type == 0:  # Back
+            return
         result = engine.rest(is_long_rest=(rest_type == 2))
         print(result)
 

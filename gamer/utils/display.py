@@ -398,10 +398,12 @@ def print_menu(options: List[str], title: str = "Choose an option:",
     print()
 
 
-def _print_interactive_menu(options: List[str], title: str, selected: int) -> None:
+def _print_interactive_menu(options: List[str], title: str, selected: int,
+                            allow_back: bool = False) -> None:
     """Print menu with visual selection indicator."""
     print(f"\n{Colors.SUBTITLE}{title}{Colors.RESET}")
-    print(f"{Colors.MUTED}  (Use arrows/hjkl to navigate, Enter to select){Colors.RESET}")
+    back_hint = ", ←/b=back" if allow_back else ""
+    print(f"{Colors.MUTED}  (↑↓/jk: navigate, Enter: select{back_hint}){Colors.RESET}")
     print()
     for i, option in enumerate(options, 1):
         if i == selected:
@@ -409,11 +411,13 @@ def _print_interactive_menu(options: List[str], title: str, selected: int) -> No
             print(f"  {Colors.TITLE}> {i}. {option} <{Colors.RESET}")
         else:
             print(f"    {Colors.MUTED}{i}.{Colors.RESET} {option}")
+    if allow_back:
+        print(f"    {Colors.MUTED}0.{Colors.RESET} ← Back")
     print()
 
 
 def _redraw_interactive_menu(options: List[str], title: str, selected: int,
-                              total_lines: int) -> None:
+                              total_lines: int, allow_back: bool = False) -> None:
     """Redraw the menu in place by moving cursor up and reprinting."""
     # Move cursor up to the start of the menu
     _move_cursor_up(total_lines)
@@ -422,7 +426,8 @@ def _redraw_interactive_menu(options: List[str], title: str, selected: int,
     _clear_line()
     print(f"{Colors.SUBTITLE}{title}{Colors.RESET}")
     _clear_line()
-    print(f"{Colors.MUTED}  (Use arrows/hjkl to navigate, Enter to select){Colors.RESET}")
+    back_hint = ", ←/b=back" if allow_back else ""
+    print(f"{Colors.MUTED}  (↑↓/jk: navigate, Enter: select{back_hint}){Colors.RESET}")
     _clear_line()
     print()
 
@@ -432,6 +437,10 @@ def _redraw_interactive_menu(options: List[str], title: str, selected: int,
             print(f"  {Colors.TITLE}> {i}. {option} <{Colors.RESET}")
         else:
             print(f"    {Colors.MUTED}{i}.{Colors.RESET} {option}")
+
+    if allow_back:
+        _clear_line()
+        print(f"    {Colors.MUTED}0.{Colors.RESET} ← Back")
 
     _clear_line()
     print()
@@ -466,7 +475,7 @@ def get_input(prompt: str = "> ", timeout: Optional[float] = None,
 
 def get_menu_choice(options: List[str], title: str = "Choose an option:",
                     default: Optional[int] = None, allow_default: bool = True,
-                    timeout: Optional[float] = None) -> int:
+                    timeout: Optional[float] = None, allow_back: bool = False) -> int:
     """
     Display menu and get valid choice.
 
@@ -475,6 +484,7 @@ def get_menu_choice(options: List[str], title: str = "Choose an option:",
     - hjkl vim-style keys (j=down, k=up)
     - Number keys for direct selection
     - Enter to confirm selection
+    - Left arrow / Backspace / 'b' for back (when allow_back=True)
 
     Args:
         options: List of menu options
@@ -482,9 +492,10 @@ def get_menu_choice(options: List[str], title: str = "Choose an option:",
         default: Default option (1-indexed). If set, pressing Enter selects it.
         allow_default: Whether to allow pressing Enter for default (global config)
         timeout: Optional timeout in seconds for input
+        allow_back: Whether to allow going back (returns 0 if back is pressed)
 
     Returns:
-        Selected option (1-indexed)
+        Selected option (1-indexed), or 0 if back was pressed
     """
     # Import config (may not be available during import)
     try:
@@ -503,21 +514,22 @@ def get_menu_choice(options: List[str], title: str = "Choose an option:",
     interactive = use_arrow_keys and _is_tty() and timeout is None
 
     if interactive:
-        return _get_menu_choice_interactive(options, title, default or 1)
+        return _get_menu_choice_interactive(options, title, default or 1, allow_back)
     else:
-        return _get_menu_choice_fallback(options, title, default, use_defaults, timeout)
+        return _get_menu_choice_fallback(options, title, default, use_defaults, timeout, allow_back)
 
 
-def _get_menu_choice_interactive(options: List[str], title: str, default: int) -> int:
+def _get_menu_choice_interactive(options: List[str], title: str, default: int,
+                                  allow_back: bool = False) -> int:
     """Interactive menu selection with arrow keys and hjkl."""
     selected = default
     num_options = len(options)
 
-    # Calculate total lines for redrawing (title + hint + blank + options + blank)
-    total_lines = 3 + num_options + 1
+    # Calculate total lines for redrawing (title + hint + blank + options + back? + blank)
+    total_lines = 3 + num_options + (1 if allow_back else 0) + 1
 
     # Initial draw
-    _print_interactive_menu(options, title, selected)
+    _print_interactive_menu(options, title, selected, allow_back)
     _hide_cursor()
 
     try:
@@ -528,42 +540,55 @@ def _get_menu_choice_interactive(options: List[str], title: str, default: int) -
                 # Arrow keys
                 if ch == '\x1b[A' or ch == 'k':  # Up arrow or k
                     selected = selected - 1 if selected > 1 else num_options
-                    _redraw_interactive_menu(options, title, selected, total_lines)
+                    _redraw_interactive_menu(options, title, selected, total_lines, allow_back)
 
                 elif ch == '\x1b[B' or ch == 'j':  # Down arrow or j
                     selected = selected + 1 if selected < num_options else 1
-                    _redraw_interactive_menu(options, title, selected, total_lines)
+                    _redraw_interactive_menu(options, title, selected, total_lines, allow_back)
 
                 elif ch == '\x1b[C' or ch == 'l':  # Right arrow or l - same as Enter
                     return selected
 
-                elif ch == '\x1b[D' or ch == 'h':  # Left arrow or h - go to first
-                    selected = 1
-                    _redraw_interactive_menu(options, title, selected, total_lines)
+                elif ch == '\x1b[D' or ch == 'h':  # Left arrow or h - back if allowed
+                    if allow_back:
+                        return 0  # Back
+                    else:
+                        selected = 1
+                        _redraw_interactive_menu(options, title, selected, total_lines, allow_back)
 
                 elif ch == '\r' or ch == '\n' or ch == ' ':  # Enter or Space
                     return selected
 
-                elif ch == 'q' or ch == '\x1b':  # q or ESC - select default/first
+                elif ch == '\x1b' or ch == 'q':  # ESC or q - back if allowed, else default
+                    if allow_back:
+                        return 0
                     return default
+
+                elif ch == '\x7f' or ch == 'b':  # Backspace or 'b' - back if allowed
+                    if allow_back:
+                        return 0
 
                 elif ch == 'g':  # g - go to first (vim style)
                     selected = 1
-                    _redraw_interactive_menu(options, title, selected, total_lines)
+                    _redraw_interactive_menu(options, title, selected, total_lines, allow_back)
 
                 elif ch == 'G':  # G - go to last (vim style)
                     selected = num_options
-                    _redraw_interactive_menu(options, title, selected, total_lines)
+                    _redraw_interactive_menu(options, title, selected, total_lines, allow_back)
 
                 elif ch.isdigit():  # Number key
                     num = int(ch)
                     if 1 <= num <= num_options:
                         return num
-                    elif num == 0 and num_options >= 10:
-                        # Allow 0 for option 10
-                        return 10
+                    elif num == 0:
+                        if allow_back:
+                            return 0  # 0 = back
+                        elif num_options >= 10:
+                            return 10
 
             except (EOFError, KeyboardInterrupt):
+                if allow_back:
+                    return 0
                 return default
 
     finally:
@@ -571,9 +596,13 @@ def _get_menu_choice_interactive(options: List[str], title: str, default: int) -
 
 
 def _get_menu_choice_fallback(options: List[str], title: str, default: Optional[int],
-                               use_defaults: bool, timeout: Optional[float]) -> int:
+                               use_defaults: bool, timeout: Optional[float],
+                               allow_back: bool = False) -> int:
     """Fallback menu selection for non-TTY or when interactive is disabled."""
     print_menu(options, title, default if use_defaults else None)
+    if allow_back:
+        print(f"    {Colors.MUTED}0.{Colors.RESET} ← Back")
+        print()
 
     prompt = "Enter choice"
     if default and use_defaults:
@@ -596,9 +625,13 @@ def _get_menu_choice_fallback(options: List[str], title: str, default: Optional[
                     continue
 
             choice = int(user_input)
+            if choice == 0 and allow_back:
+                return 0  # Back
             if 1 <= choice <= len(options):
                 return choice
-            print(f"{Colors.WARNING}Please enter a number between 1 and {len(options)}{Colors.RESET}")
+            max_val = len(options)
+            min_val = 0 if allow_back else 1
+            print(f"{Colors.WARNING}Please enter a number between {min_val} and {max_val}{Colors.RESET}")
         except ValueError:
             print(f"{Colors.WARNING}Please enter a valid number{Colors.RESET}")
 
