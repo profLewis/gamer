@@ -862,6 +862,17 @@ def _game_menu_interactive(options: List[str], actions: List[str],
         # Clear line and print status
         print(f"\r\x1b[K{Colors.INFO}{status}{Colors.RESET}", end='', flush=True)
 
+    def select_and_return(action: str) -> str:
+        """Highlight the action in menu and return it."""
+        nonlocal selected
+        if action in actions:
+            selected = actions.index(action)
+            show_status("-> " + action)
+            import time
+            time.sleep(0.15)  # Brief flash to show selection
+        print()
+        return action
+
     show_status()
     _hide_cursor()
 
@@ -931,57 +942,44 @@ def _game_menu_interactive(options: List[str], actions: List[str],
                 print()
                 return actions[selected]
 
-            # Number keys for direct menu selection
+            # Number keys for direct menu selection (highlight before executing)
             elif ch.isdigit():
                 num = int(ch)
                 if 1 <= num <= num_options:
-                    print()
-                    return actions[num - 1]
+                    return select_and_return(actions[num - 1])
 
-            # Shortcut keys for menu items
+            # Shortcut keys for menu items (highlight before executing)
             elif ch == '/':  # Search
-                print()
-                return 'search'
+                return select_and_return('search')
             elif ch == 'r' or ch == 'R':  # Rest
-                print()
-                return 'rest'
+                return select_and_return('rest')
             elif ch == 'p' or ch == 'P':  # Party status
-                print()
-                return 'status'
+                return select_and_return('status')
             elif ch == 'm' or ch == 'M':  # Map
-                print()
-                return 'map'
+                return select_and_return('map')
             elif ch == 'c' or ch == 'C':  # Collect
                 if 'collect' in actions:
-                    print()
-                    return 'collect'
+                    return select_and_return('collect')
             elif ch == 't' or ch == 'T':  # Talk to DM
-                print()
-                return 'talk'
+                return select_and_return('talk')
             elif ch == 'o' or ch == 'O':  # Options/System menu
-                print()
-                return 'system'
+                return select_and_return('system')
             elif ch == 'q' or ch == 'Q':  # Quit to system
-                print()
-                return 'system'
+                return select_and_return('system')
 
-            # WASD as alternative movement
+            # WASD as alternative movement (highlight before executing)
             elif ch == 'w' or ch == 'W':
                 if 'north' in directions_available:
-                    print()
-                    return 'north'
+                    return select_and_return('north')
             elif ch == 's' or ch == 'S':
                 if 'south' in directions_available:
-                    print()
-                    return 'south'
+                    return select_and_return('south')
             elif ch == 'a' or ch == 'A':
                 if 'west' in directions_available:
-                    print()
-                    return 'west'
+                    return select_and_return('west')
             elif ch == 'd' or ch == 'D':
                 if 'east' in directions_available:
-                    print()
-                    return 'east'
+                    return select_and_return('east')
 
     except (EOFError, KeyboardInterrupt):
         print()

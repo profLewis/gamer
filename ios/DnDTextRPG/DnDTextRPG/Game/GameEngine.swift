@@ -871,4 +871,15 @@ class GameEngine: ObservableObject {
         clearTerminal()
         showMainMenu()
     }
+
+    func quitApp() {
+        print("Thanks for playing!", color: .brightGreen)
+        print("")
+        print("Goodbye, adventurer...", color: .dimGreen)
+
+        // Exit the app after a brief delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            exit(0)
+        }
+    }
 }
