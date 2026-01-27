@@ -5,78 +5,75 @@ import os
 import shutil
 from typing import List, Dict, Any, Optional, Tuple
 
-# ANSI escape codes for terminal control
-ANSI_BLACK_BG = '\033[40m'      # Black background
-ANSI_GREEN_FG = '\033[32m'      # Green text
-ANSI_BRIGHT_GREEN = '\033[92m'  # Bright green
-ANSI_RESET = '\033[0m'          # Reset all
-ANSI_CLEAR = '\033[2J\033[H'    # Clear screen
-ANSI_BOLD = '\033[1m'           # Bold
+# ANSI escape codes for terminal colors
+# These work on macOS, Linux, and modern Windows terminals
 
-# Try to import colorama for cross-platform colored output
-try:
-    from colorama import Fore, Back, Style, init
-    init(autoreset=False)  # We'll manage reset ourselves for the theme
-    HAS_COLOR = True
-except ImportError:
-    HAS_COLOR = False
-    # Create dummy color constants
-    class DummyColor:
-        def __getattr__(self, name):
-            return ''
-    Fore = DummyColor()
-    Back = DummyColor()
-    Style = DummyColor()
+class Colors:
+    """Color constants for display - clean terminal theme."""
+    # Reset
+    RESET = '\033[0m'
+    RESET_ALL = '\033[0m'
+
+    # Text styles
+    BOLD = '\033[1m'
+    DIM = '\033[2m'
+
+    # Standard colors
+    BLACK = '\033[30m'
+    RED = '\033[31m'
+    GREEN = '\033[32m'
+    YELLOW = '\033[33m'
+    BLUE = '\033[34m'
+    MAGENTA = '\033[35m'
+    CYAN = '\033[36m'
+    WHITE = '\033[37m'
+
+    # Bright colors
+    BRIGHT_BLACK = '\033[90m'   # Gray
+    BRIGHT_RED = '\033[91m'
+    BRIGHT_GREEN = '\033[92m'
+    BRIGHT_YELLOW = '\033[93m'
+    BRIGHT_BLUE = '\033[94m'
+    BRIGHT_MAGENTA = '\033[95m'
+    BRIGHT_CYAN = '\033[96m'
+    BRIGHT_WHITE = '\033[97m'
+
+    # Background
+    BG_BLACK = '\033[40m'
+    BG_GREEN = '\033[42m'
+
+    # Semantic colors for the game
+    TITLE = '\033[92m\033[1m'       # Bright green + bold
+    SUBTITLE = '\033[32m'           # Green
+    SUCCESS = '\033[92m'            # Bright green
+    DANGER = '\033[91m'             # Bright red
+    WARNING = '\033[93m'            # Bright yellow
+    INFO = '\033[32m'               # Green
+    MUTED = '\033[90m'              # Gray
+
+    # Character colors
+    PLAYER = '\033[92m\033[1m'      # Bright green + bold
+    ENEMY = '\033[91m\033[1m'       # Bright red + bold
+    NPC = '\033[96m'                # Bright cyan
+
+    # Combat colors
+    DAMAGE = '\033[91m'             # Bright red
+    HEALING = '\033[92m'            # Bright green
+    MAGIC = '\033[95m'              # Bright magenta
 
 
 def set_terminal_theme(clear: bool = True):
     """Set terminal to black background with green text."""
-    if sys.platform == 'win32':
-        # Windows: use colorama or ANSI codes
-        if HAS_COLOR:
-            print(Back.BLACK + Fore.GREEN, end='')
-        else:
-            print(ANSI_BLACK_BG + ANSI_GREEN_FG, end='')
-    else:
-        # Unix-like: use ANSI escape codes
-        print(ANSI_BLACK_BG + ANSI_GREEN_FG, end='')
+    # Set black background and green foreground
+    print('\033[40m\033[32m', end='', flush=True)
 
-    # Optionally clear screen with new colors (preserve scrollback)
     if clear:
         clear_screen(preserve_scrollback=True)
 
 
 def reset_terminal():
     """Reset terminal to default colors."""
-    print(ANSI_RESET, end='')
-    if HAS_COLOR:
-        print(Style.RESET_ALL, end='')
-
-
-# Color shortcuts - Green theme on black background
-class Colors:
-    """Color constants for display - Matrix/retro terminal style."""
-    # Use bright green as primary, with accents
-    TITLE = ANSI_BRIGHT_GREEN + ANSI_BOLD if not HAS_COLOR else Fore.LIGHTGREEN_EX + Style.BRIGHT
-    SUBTITLE = ANSI_GREEN_FG if not HAS_COLOR else Fore.GREEN
-    SUCCESS = ANSI_BRIGHT_GREEN if not HAS_COLOR else Fore.LIGHTGREEN_EX
-    DANGER = '\033[91m' if not HAS_COLOR else Fore.LIGHTRED_EX  # Bright red for danger
-    WARNING = '\033[93m' if not HAS_COLOR else Fore.LIGHTYELLOW_EX  # Yellow for warnings
-    INFO = ANSI_GREEN_FG if not HAS_COLOR else Fore.GREEN
-    MUTED = '\033[90m' if not HAS_COLOR else Fore.LIGHTBLACK_EX  # Dim gray
-    RESET = ANSI_GREEN_FG if not HAS_COLOR else Fore.GREEN  # Reset to green, not white
-    BOLD = ANSI_BOLD if not HAS_COLOR else Style.BRIGHT
-    RESET_ALL = ANSI_RESET if not HAS_COLOR else Style.RESET_ALL
-
-    # Character-specific
-    PLAYER = ANSI_BRIGHT_GREEN if not HAS_COLOR else Fore.LIGHTGREEN_EX + Style.BRIGHT
-    ENEMY = '\033[91m' if not HAS_COLOR else Fore.LIGHTRED_EX + Style.BRIGHT
-    NPC = '\033[96m' if not HAS_COLOR else Fore.LIGHTCYAN_EX
-
-    # Damage types
-    DAMAGE = '\033[91m' if not HAS_COLOR else Fore.LIGHTRED_EX
-    HEALING = ANSI_BRIGHT_GREEN if not HAS_COLOR else Fore.LIGHTGREEN_EX
-    MAGIC = '\033[95m' if not HAS_COLOR else Fore.LIGHTMAGENTA_EX
+    print('\033[0m', end='', flush=True)
 
 
 # -----------------------------------------------------------------------------
