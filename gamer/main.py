@@ -105,6 +105,12 @@ Examples:
         action='store_true',
         help='Disable automatic saving'
     )
+    parser.add_argument(
+        '--ai',
+        choices=['local', 'anthropic', 'openai'],
+        default='local',
+        help='AI backend for DM narration (default: local). Set ANTHROPIC_API_KEY or OPENAI_API_KEY env var.'
+    )
 
     return parser.parse_args()
 
@@ -122,6 +128,11 @@ def main():
     _config['show_splash'] = not args.no_splash and not args.quick
     _config['timeout'] = 0 if args.no_timeout else args.timeout
     _config['auto_save'] = not args.no_autosave
+    _config['ai_backend'] = args.ai
+
+    # Initialize AI DM
+    from .game.ai_dm import get_ai_dm
+    ai_dm = get_ai_dm(_config['ai_backend'])
 
     # Configure session manager
     if _config['timeout'] > 0:
@@ -779,6 +790,10 @@ def show_game_menu(directions_available: List[str], can_collect: bool) -> str:
         options.append("💰 Collect Treasure")
         actions.append('collect')
 
+    # Talk to DM (free text input)
+    options.append("💬 Talk to DM")
+    actions.append('talk')
+
     # System menu access
     options.append("⚙  System Menu")
     actions.append('system')
@@ -807,8 +822,13 @@ def show_game_menu(directions_available: List[str], can_collect: bool) -> str:
 
 def _game_menu_interactive(options: List[str], actions: List[str],
                            directions_available: List[str], auto_action: str = 'search') -> str:
-    """Interactive game menu with direct arrow key movement and timeout support."""
+    """
+    Interactive game menu with direct arrow key movement and timeout support.
+
+    Scrollback-friendly: prints menu once, shows selection on a status line.
+    """
     from .utils.display import _getch, _hide_cursor, _show_cursor, Colors
+
     import time
 
     selected = 0
@@ -822,26 +842,27 @@ def _game_menu_interactive(options: List[str], actions: List[str],
             return None
         return max(0, timeout - (time.time() - start_time))
 
-    def draw_menu(warning_msg=None):
-        print(f"\n{Colors.SUBTITLE}What do you do?{Colors.RESET}")
-        hint = "  (↑↓/jk: menu, WASD/hl: move, ←/→/o: system, Enter: select)"
-        if timeout > 0:
-            remaining = get_remaining()
-            if remaining is not None and remaining < 30:
-                hint += f" [{int(remaining)}s]"
-        print(f"{Colors.MUTED}{hint}{Colors.RESET}")
-        if warning_msg:
-            print(f"{Colors.WARNING}{warning_msg}{Colors.RESET}")
-        print()
-        for i, option in enumerate(options):
-            if i == selected:
-                print(f"  {Colors.TITLE}> {option} <{Colors.RESET}")
-            else:
-                print(f"    {Colors.MUTED}{option}{Colors.RESET}")
-        print()
+    # Print menu once (scrollback-friendly)
+    print(f"\n{Colors.SUBTITLE}What do you do?{Colors.RESET}")
+    print(f"{Colors.MUTED}  Arrows=move  jk=menu  /=search  r=rest  t=talk  ESC=system{Colors.RESET}")
+    print()
 
-    # Initial draw
-    draw_menu()
+    # Print numbered options
+    for i, option in enumerate(options):
+        marker = ">" if i == 0 else " "
+        print(f"  {marker} {i+1}. {option}")
+    print()
+
+    # Show current selection on a single status line (can be updated)
+    def show_status(msg: str = ""):
+        # Use carriage return to update status line in place
+        status = f"  Selected: {options[selected]}"
+        if msg:
+            status += f"  {Colors.WARNING}{msg}{Colors.RESET}"
+        # Clear line and print status
+        print(f"\r\x1b[K{Colors.INFO}{status}{Colors.RESET}", end='', flush=True)
+
+    show_status()
     _hide_cursor()
 
     try:
@@ -850,109 +871,120 @@ def _game_menu_interactive(options: List[str], actions: List[str],
             remaining = get_remaining()
             if remaining is not None:
                 if remaining <= 0:
-                    print(f"\n{Colors.WARNING}⏰ Time's up! The DM moves you {auto_action}...{Colors.RESET}")
+                    print(f"\n\n{Colors.WARNING}⏰ Time's up! The DM moves you {auto_action}...{Colors.RESET}")
                     return auto_action
-                elif remaining <= 30 and not warned:
-                    warned = True
-                    # Redraw with warning
-                    lines_to_clear = num_options + 4
-                    print(f'\x1b[{lines_to_clear}A', end='')
-                    for _ in range(lines_to_clear):
-                        print('\x1b[2K')
-                    print(f'\x1b[{lines_to_clear}A', end='')
-                    draw_menu(f"⏰ {int(remaining)} seconds until DM takes over...")
+                elif remaining <= 30:
+                    show_status(f"[{int(remaining)}s]")
 
             # Wait for input with short timeout for responsiveness
             ch = _getch(timeout=1.0)
             if ch is None:
                 continue  # Check timeout again
 
-            # Arrow keys: navigate menu
-            if ch == '\x1b[A':  # Up arrow - menu up
-                selected = (selected - 1) % num_options
-
-            elif ch == '\x1b[B':  # Down arrow - menu down
-                selected = (selected + 1) % num_options
-
-            elif ch == '\x1b[D':  # Left arrow - back/previous menu
-                return 'system'  # Go to system menu as "back"
-
-            elif ch == '\x1b[C' or ch == 'o' or ch == 'O':  # Right arrow or 'o' - system menu
-                return 'system'
-
-            # WASD for movement
-            elif ch == 'w' or ch == 'W':
+            # Arrow keys: DIRECT movement (N/S/E/W)
+            if ch == '\x1b[A':  # Up arrow = North
                 if 'north' in directions_available:
+                    print()  # New line before returning
                     return 'north'
-            elif ch == 's' or ch == 'S':
+                else:
+                    show_status("(no exit north)")
+            elif ch == '\x1b[B':  # Down arrow = South
                 if 'south' in directions_available:
+                    print()
                     return 'south'
-            elif ch == 'a' or ch == 'A':
+                else:
+                    show_status("(no exit south)")
+            elif ch == '\x1b[D':  # Left arrow = West
                 if 'west' in directions_available:
+                    print()
                     return 'west'
-            elif ch == 'd' or ch == 'D':
+                else:
+                    show_status("(no exit west)")
+            elif ch == '\x1b[C':  # Right arrow = East
                 if 'east' in directions_available:
+                    print()
                     return 'east'
+                else:
+                    show_status("(no exit east)")
 
-            # Vim-style: j/k for menu, h/l for movement
-            elif ch == 'k':  # k = menu up
+            # hjkl: Menu navigation (vim-style)
+            elif ch == 'k' or ch == 'K':  # k = menu up
                 selected = (selected - 1) % num_options
-            elif ch == 'j':  # j = menu down
+                show_status()
+            elif ch == 'j' or ch == 'J':  # j = menu down
                 selected = (selected + 1) % num_options
-            elif ch == 'h':  # h = west (movement)
-                if 'west' in directions_available:
-                    return 'west'
-            elif ch == 'l':  # l = east (movement)
-                if 'east' in directions_available:
-                    return 'east'
+                show_status()
+            elif ch == 'h' or ch == 'H':  # h = back (same as ESC)
+                print()
+                return 'system'
+            elif ch == 'l' or ch == 'L':  # l = select (same as Enter)
+                print()
+                return actions[selected]
 
-            # Direct key shortcuts for movement
-            elif ch == 'n' or ch == 'N':
-                if 'north' in directions_available:
-                    return 'north'
-            elif ch == 'e' or ch == 'E':
-                if 'east' in directions_available:
-                    return 'east'
+            # ESC or Tab = System menu (up level)
+            elif ch == '\x1b' or ch == '\t':
+                print()
+                return 'system'
 
             # Enter/Space to select current option
             elif ch == '\r' or ch == '\n' or ch == ' ':
+                print()
                 return actions[selected]
 
-            # Tab or Escape for system menu
-            elif ch == '\t' or ch == '\x1b':
-                return 'system'
-
-            # Number keys
+            # Number keys for direct menu selection
             elif ch.isdigit():
                 num = int(ch)
                 if 1 <= num <= num_options:
+                    print()
                     return actions[num - 1]
 
-            # Quick action keys
+            # Shortcut keys for menu items
             elif ch == '/':  # Search
+                print()
                 return 'search'
             elif ch == 'r' or ch == 'R':  # Rest
+                print()
                 return 'rest'
-            elif ch == 'i' or ch == 'I':  # Inventory/Status
+            elif ch == 'p' or ch == 'P':  # Party status
+                print()
                 return 'status'
             elif ch == 'm' or ch == 'M':  # Map
+                print()
                 return 'map'
             elif ch == 'c' or ch == 'C':  # Collect
                 if 'collect' in actions:
+                    print()
                     return 'collect'
-            elif ch == 'q' or ch == 'Q':  # Quick quit to system
+            elif ch == 't' or ch == 'T':  # Talk to DM
+                print()
+                return 'talk'
+            elif ch == 'o' or ch == 'O':  # Options/System menu
+                print()
+                return 'system'
+            elif ch == 'q' or ch == 'Q':  # Quit to system
+                print()
                 return 'system'
 
-            # Redraw menu
-            # Move cursor up and redraw
-            lines_to_clear = num_options + 4
-            print(f'\x1b[{lines_to_clear}A', end='')
-            for _ in range(lines_to_clear):
-                print('\x1b[2K')  # Clear line
-            print(f'\x1b[{lines_to_clear}A', end='')
-            draw_menu()
+            # WASD as alternative movement
+            elif ch == 'w' or ch == 'W':
+                if 'north' in directions_available:
+                    print()
+                    return 'north'
+            elif ch == 's' or ch == 'S':
+                if 'south' in directions_available:
+                    print()
+                    return 'south'
+            elif ch == 'a' or ch == 'A':
+                if 'west' in directions_available:
+                    print()
+                    return 'west'
+            elif ch == 'd' or ch == 'D':
+                if 'east' in directions_available:
+                    print()
+                    return 'east'
 
     except (EOFError, KeyboardInterrupt):
+        print()
         return 'system'
     finally:
         _show_cursor()
@@ -1049,7 +1081,29 @@ def handle_exploration(engine: GameEngine) -> None:
                 'west': Direction.WEST,
             }
             result = engine.explore(direction_map[action])
+
+            # Use AI DM for enhanced room narration
+            from .game.ai_dm import get_ai_dm
+            ai_dm = get_ai_dm()
+            if engine.dm.dungeon and engine.dm.dungeon.current_room:
+                room = engine.dm.dungeon.current_room
+                ai_dm.update_context(
+                    dungeon_name=engine.dm.dungeon.name,
+                    current_room=room.name,
+                    room_description=room.description,
+                    party_members=[c.name for c in engine.party],
+                )
+                # Get AI-enhanced description
+                narration = ai_dm.describe_room(
+                    room.name,
+                    room.room_type.value if hasattr(room.room_type, 'value') else str(room.room_type),
+                    list(room.features) if hasattr(room, 'features') else []
+                )
+                print(f"\n{Colors.INFO}{narration}{Colors.RESET}")
+                ai_dm.add_event(f"Entered {room.name}")
+
             print(result)
+            _session.scoreboard.record_room_explored()
         else:
             print(f"{Colors.WARNING}You can't go that way.{Colors.RESET}")
 
@@ -1090,10 +1144,53 @@ def handle_exploration(engine: GameEngine) -> None:
         else:
             print(f"{Colors.WARNING}Nothing to collect here.{Colors.RESET}")
 
+    elif action == 'talk':
+        # Free text input to AI DM
+        handle_talk_to_dm(engine)
+
     elif action == 'system':
         # Open system menu
         system_action = show_system_menu()
         handle_system_action(engine, system_action)
+
+
+def handle_talk_to_dm(engine: GameEngine) -> None:
+    """Handle free text input to the AI DM."""
+    from .game.ai_dm import get_ai_dm
+
+    ai_dm = get_ai_dm()
+
+    # Update AI DM context with current game state
+    if engine.dm.dungeon:
+        room = engine.dm.dungeon.current_room
+        ai_dm.update_context(
+            dungeon_name=engine.dm.dungeon.name,
+            current_room=room.name if room else "",
+            room_description=room.description if room else "",
+            party_members=[c.name for c in engine.party],
+            party_status=_session.scoreboard.display_party_status(),
+            combat_active=(engine.state == GameState.IN_COMBAT),
+        )
+
+    print(f"\n{Colors.SUBTITLE}Talk to the DM{Colors.RESET}")
+    print(f"{Colors.MUTED}(Type your message, or press Enter to go back){Colors.RESET}")
+    print()
+
+    player_input = get_input("You say: ", default="")
+    if not player_input.strip():
+        return
+
+    # Get response from AI DM
+    response = ai_dm.respond_to_player(player_input)
+
+    # Display DM response with styling
+    print(f"\n{Colors.INFO}DM:{Colors.RESET} {response}")
+    print()
+
+    # Log the interaction
+    ai_dm.add_event(f"Player said: {player_input[:50]}...")
+
+    get_input("Press Enter to continue...", default="")
 
 
 def handle_pause(engine: GameEngine) -> None:
@@ -1140,6 +1237,21 @@ def handle_combat(engine: GameEngine) -> None:
     # Display ASCII combat scene
     enemies = [c for c in combat.combatants if not c.is_player and c.is_conscious]
     print(render_combat_scene(engine.party, enemies))
+
+    # Use AI DM for combat narration (only on first turn)
+    if combat.current_round == 1 and combat.current_turn_index == 0:
+        from .game.ai_dm import get_ai_dm
+        ai_dm = get_ai_dm()
+        enemy_names = [e.name for e in enemies]
+        if enemy_names:
+            ai_dm.update_context(
+                combat_active=True,
+                enemies=enemy_names,
+                party_members=[c.name for c in engine.party],
+            )
+            combat_intro = ai_dm.describe_combat_start(enemy_names)
+            print(f"\n{Colors.DANGER}{combat_intro}{Colors.RESET}\n")
+            ai_dm.add_event(f"Combat started with {', '.join(enemy_names)}")
 
     # Display combat status
     print(combat.display_status())

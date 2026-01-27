@@ -162,7 +162,7 @@ class GameEngine: ObservableObject {
             case 2: self?.print("No saved games found.", color: .yellow)
                     self?.showMainMenu()
             case 3: self?.showHowToPlay()
-            case 4: self?.print("Thanks for playing!", color: .brightGreen)
+            case 4: self?.quitApp()
             default: self?.showMainMenu()
             }
         }

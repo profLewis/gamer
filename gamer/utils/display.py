@@ -2,7 +2,8 @@
 
 import sys
 import os
-from typing import List, Dict, Any, Optional
+import shutil
+from typing import List, Dict, Any, Optional, Tuple
 
 # ANSI escape codes for terminal control
 ANSI_BLACK_BG = '\033[40m'      # Black background
@@ -28,7 +29,7 @@ except ImportError:
     Style = DummyColor()
 
 
-def set_terminal_theme():
+def set_terminal_theme(clear: bool = True):
     """Set terminal to black background with green text."""
     if sys.platform == 'win32':
         # Windows: use colorama or ANSI codes
@@ -40,8 +41,9 @@ def set_terminal_theme():
         # Unix-like: use ANSI escape codes
         print(ANSI_BLACK_BG + ANSI_GREEN_FG, end='')
 
-    # Clear screen with new colors
-    clear_screen()
+    # Optionally clear screen with new colors (preserve scrollback)
+    if clear:
+        clear_screen(preserve_scrollback=True)
 
 
 def reset_terminal():
@@ -75,6 +77,67 @@ class Colors:
     DAMAGE = '\033[91m' if not HAS_COLOR else Fore.LIGHTRED_EX
     HEALING = ANSI_BRIGHT_GREEN if not HAS_COLOR else Fore.LIGHTGREEN_EX
     MAGIC = '\033[95m' if not HAS_COLOR else Fore.LIGHTMAGENTA_EX
+
+
+# -----------------------------------------------------------------------------
+# Terminal Size and Paging
+# -----------------------------------------------------------------------------
+
+def get_terminal_size() -> Tuple[int, int]:
+    """Get terminal size (columns, rows). Returns (80, 24) as fallback."""
+    try:
+        size = shutil.get_terminal_size((80, 24))
+        return (size.columns, size.lines)
+    except Exception:
+        return (80, 24)
+
+
+def paged_print(text: str, page_size: int = 0) -> None:
+    """
+    Print text with paging support for long content.
+
+    Args:
+        text: Text to print (can be multiline)
+        page_size: Lines per page. If 0, auto-detect from terminal.
+    """
+    lines = text.split('\n')
+
+    if page_size <= 0:
+        _, term_height = get_terminal_size()
+        page_size = term_height - 3  # Leave room for prompt
+
+    if len(lines) <= page_size:
+        # Short enough, just print
+        print(text)
+        return
+
+    # Page through content
+    i = 0
+    while i < len(lines):
+        # Print a page
+        page_end = min(i + page_size, len(lines))
+        for line in lines[i:page_end]:
+            print(line)
+
+        i = page_end
+
+        if i < len(lines):
+            # More content - show prompt
+            remaining = len(lines) - i
+            try:
+                prompt = f"{Colors.MUTED}-- More ({remaining} lines) [Enter=continue, q=quit] --{Colors.RESET}"
+                response = input(prompt).strip().lower()
+                if response == 'q':
+                    break
+            except (EOFError, KeyboardInterrupt):
+                break
+
+
+def fits_in_terminal(text: str, margin: int = 5) -> bool:
+    """Check if text fits in current terminal without scrolling."""
+    _, term_height = get_terminal_size()
+    lines = text.count('\n') + 1
+    return lines <= (term_height - margin)
 
 
 # D&D Splash Screen ASCII Art
@@ -197,7 +260,8 @@ SPLASH_SIMPLE = r'''
 
 def show_splash_screen(style: str = "dragon") -> None:
     """Display the D&D splash screen."""
-    clear_screen()
+    # Use scrollback-preserving clear
+    clear_screen(preserve_scrollback=True)
 
     if style == "dragon":
         splash = SPLASH_DRAGON
@@ -205,6 +269,14 @@ def show_splash_screen(style: str = "dragon") -> None:
         splash = SPLASH_SIMPLE
     else:
         splash = SPLASH_SCREEN
+
+    # Check if splash fits in terminal
+    _, term_height = get_terminal_size()
+    splash_lines = splash.count('\n')
+
+    # Use simple splash if terminal is too small
+    if splash_lines > term_height - 2 and style != "simple":
+        splash = SPLASH_SIMPLE
 
     # Format with colors
     formatted = splash.format(
@@ -680,9 +752,21 @@ def print_healing(amount: int) -> str:
     return f"{Colors.HEALING}{amount} HP healed{Colors.RESET}"
 
 
-def clear_screen() -> None:
-    """Clear the terminal screen."""
-    print('\033[2J\033[H', end='')
+def clear_screen(preserve_scrollback: bool = False) -> None:
+    """
+    Clear the terminal screen.
+
+    Args:
+        preserve_scrollback: If True, scroll content up instead of erasing.
+                            This preserves ability to scroll back.
+    """
+    if preserve_scrollback:
+        # Scroll the screen content up by printing newlines
+        _, term_height = get_terminal_size()
+        print('\n' * term_height, end='')
+    else:
+        # Full clear (destroys scrollback)
+        print('\033[2J\033[H', end='')
 
 
 def print_dm(text: str) -> None:
