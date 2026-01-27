@@ -136,7 +136,8 @@ struct MenuButtonsView: View {
     let onSelect: (Int) -> Void
 
     let terminalGreen = Color(red: 0.0, green: 0.9, blue: 0.3)
-    let terminalDarkGreen = Color(red: 0.0, green: 0.5, blue: 0.15)
+    let terminalDarkGreen = Color(red: 0.0, green: 0.4, blue: 0.15)
+    let highlightGreen = Color(red: 0.0, green: 0.6, blue: 0.2)
 
     var body: some View {
         LazyVGrid(columns: gridColumns, spacing: 8) {
@@ -147,19 +148,14 @@ struct MenuButtonsView: View {
                     HStack {
                         Text("\(index + 1).")
                             .font(.system(.caption, design: .monospaced))
-                            .foregroundColor(terminalGreen.opacity(0.7))
+                            .foregroundColor(option.isDefault ? terminalGreen : terminalGreen.opacity(0.6))
 
                         Text(option.text)
                             .font(.system(.body, design: .monospaced))
+                            .fontWeight(option.isDefault ? .semibold : .regular)
                             .foregroundColor(terminalGreen)
                             .lineLimit(2)
                             .minimumScaleFactor(0.7)
-
-                        if option.isDefault {
-                            Text("[default]")
-                                .font(.system(.caption2, design: .monospaced))
-                                .foregroundColor(terminalGreen.opacity(0.5))
-                        }
 
                         Spacer()
                     }
@@ -167,10 +163,10 @@ struct MenuButtonsView: View {
                     .padding(.vertical, 10)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
-                            .stroke(terminalGreen.opacity(0.5), lineWidth: 1)
+                            .stroke(option.isDefault ? terminalGreen : terminalGreen.opacity(0.4), lineWidth: option.isDefault ? 2 : 1)
                             .background(
                                 RoundedRectangle(cornerRadius: 6)
-                                    .fill(terminalDarkGreen.opacity(0.2))
+                                    .fill(option.isDefault ? highlightGreen.opacity(0.3) : terminalDarkGreen.opacity(0.15))
                             )
                     )
                 }
