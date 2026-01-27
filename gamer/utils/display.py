@@ -432,15 +432,27 @@ def _getch(timeout: Optional[float] = None) -> Optional[str]:
         # Handle escape sequences (arrow keys)
         if ch == '\x1b':  # ESC
             # Check if more characters are available (arrow key sequence)
-            ready, _, _ = select.select([sys.stdin], [], [], 0.1)
+            # Use longer timeout to ensure we catch the full sequence
+            ready, _, _ = select.select([sys.stdin], [], [], 0.05)
             if ready:
                 ch2 = sys.stdin.read(1)
                 if ch2 == '[':
-                    ch3 = sys.stdin.read(1)
-                    # Arrow keys: A=up, B=down, C=right, D=left
-                    return f'\x1b[{ch3}'
+                    # Read the arrow key code
+                    ready2, _, _ = select.select([sys.stdin], [], [], 0.05)
+                    if ready2:
+                        ch3 = sys.stdin.read(1)
+                        # Arrow keys: A=up, B=down, C=right, D=left
+                        return f'\x1b[{ch3}'
+                    return '\x1b['  # Incomplete sequence
+                elif ch2 == 'O':
+                    # Alternative arrow key format (some terminals)
+                    ready2, _, _ = select.select([sys.stdin], [], [], 0.05)
+                    if ready2:
+                        ch3 = sys.stdin.read(1)
+                        return f'\x1bO{ch3}'
+                    return '\x1bO'
                 return ch + ch2
-            return ch  # Just ESC key
+            return ch  # Just ESC key (no following chars)
         return ch
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
