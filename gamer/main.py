@@ -1244,7 +1244,7 @@ def handle_combat(engine: GameEngine) -> None:
     combat = engine.current_combat
 
     # Display ASCII combat scene
-    enemies = [c for c in combat.combatants if not c.is_player and c.is_conscious]
+    enemies = [c for c in combat.combatants.values() if not c.is_player and c.is_conscious]
     print(render_combat_scene(engine.party, enemies))
 
     # Use AI DM for combat narration (only on first turn)
