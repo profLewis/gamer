@@ -178,6 +178,88 @@ MONSTER_ART: Dict[str, List[str]] = {
         "  █  █  ",
         "  ▀  ▀  ",
     ],
+    "wolf": [
+        "   ╱▔╲   ",
+        "  ╱ᴗᴗ ╲  ",
+        " ▕▔▔▔▔▔▏ ",
+        "▕▔▔▔▔▔▔▔▏",
+        " ▏▓▓▓▓▓▕ ",
+        " ╱╱  ╲╲  ",
+        "╱╱    ╲╲ ",
+    ],
+    "spider": [
+        " ╲  ▄▄  ╱ ",
+        "  ╲████╱  ",
+        "╲╲ ⊙⊙ ╱╱ ",
+        " ──██── ",
+        "╱╱ ██ ╲╲ ",
+        "  ╱  ╲  ",
+        " ╱    ╲ ",
+    ],
+    "zombie": [
+        "  ▄▄▄▄  ",
+        " █X  X█ ",
+        " █ ── █ ",
+        "  █▄▄█  ",
+        "  ░██░  ",
+        " ░████░ ",
+        "  █  █  ",
+        "  ╨  ╨  ",
+    ],
+    "dragon": [
+        "       ╱╲       ",
+        "      ╱  ╲╱╲    ",
+        "     ╱ ⊙  ⊙╲   ",
+        "    ╱  ╲▄▄╱  ╲  ",
+        "   ▕▔▔▔▔▔▔▔▔▔▏ ",
+        "  ╱▏█████████▕╲ ",
+        " ╱ ▏█████████▕ ╲",
+        "╱╱ ╱╱╲█████╱╲╲ ╲╲",
+        "    ╱╱     ╲╲   ",
+    ],
+    "troll": [
+        " ▄▄███▄▄ ",
+        "██ᴗ   ᴗ██",
+        "██ ╲▽╱ ██",
+        " ▀█▀▀▀█▀ ",
+        "  █████  ",
+        " ███████ ",
+        " ███████ ",
+        " ██   ██ ",
+    ],
+    "rat": [
+        "  ╱╲╱╲  ",
+        " ╱•  •╲ ",
+        " ╲ ▿▿ ╱ ",
+        "  ╲▂▂╱~ ",
+        "  ▕▓▓▏  ",
+        "  ╱╱╲╲  ",
+    ],
+    "slime": [
+        "  ▄▄▄▄▄  ",
+        " ▕░░░░░▏ ",
+        " ▕░•░•░▏ ",
+        " ▕░░░░░▏ ",
+        "  ▀▀▀▀▀  ",
+    ],
+    "ghost": [
+        "  ╭───╮  ",
+        " ╱ ◉ ◉ ╲ ",
+        " │  ○  │ ",
+        " │░░░░░│ ",
+        " ╰╮╱╲╱╭╯ ",
+        "  ╰╯ ╰╯  ",
+    ],
+    "minotaur": [
+        "╲▄     ▄╱",
+        " █▄▄▄▄▄█ ",
+        " █ᴗ   ᴗ█ ",
+        " █╲▽ ▽╱█ ",
+        "  ▀███▀  ",
+        "  █████  ",
+        " ███████ ",
+        "  █   █  ",
+    ],
 }
 
 # Map symbols for different room types
@@ -330,6 +412,124 @@ def render_party(characters: list) -> str:
         combined_lines.append("  ".join(line_parts))
 
     return "\n".join(combined_lines)
+
+
+def render_monster(monster_type: str, name: str = "", hp: int = 0, max_hp: int = 0) -> str:
+    """Render a monster as ASCII art."""
+    # Get art for monster type
+    type_key = monster_type.lower()
+    # Try exact match, then partial match
+    art = None
+    if type_key in MONSTER_ART:
+        art = MONSTER_ART[type_key]
+    else:
+        # Try partial match
+        for key in MONSTER_ART:
+            if key in type_key or type_key in key:
+                art = MONSTER_ART[key]
+                break
+    if not art:
+        art = MONSTER_ART["default"]
+
+    # Build display
+    art_width = max(len(line) for line in art)
+    box_width = max(art_width + 4, len(name) + 4, 16)
+
+    lines = []
+    lines.append("┌" + "─" * box_width + "┐")
+    lines.append("│" + f" {name[:box_width-2]:^{box_width-2}} " + "│")
+    lines.append("├" + "─" * box_width + "┤")
+
+    for art_line in art:
+        padded = f"{art_line:^{box_width}}"
+        lines.append("│" + padded + "│")
+
+    if max_hp > 0:
+        hp_pct = hp / max_hp
+        bar_width = min(box_width - 4, 12)
+        filled = int(hp_pct * bar_width)
+        bar = "█" * filled + "░" * (bar_width - filled)
+        lines.append("├" + "─" * box_width + "┤")
+        lines.append("│" + f" {bar:^{box_width-2}} " + "│")
+        lines.append("│" + f" {hp:3d}/{max_hp:3d} HP ".center(box_width) + "│")
+
+    lines.append("└" + "─" * box_width + "┘")
+
+    return "\n".join(lines)
+
+
+def render_encounter(monsters: list) -> str:
+    """Render multiple monsters for a combat encounter."""
+    if not monsters:
+        return ""
+
+    # Render each monster
+    rendered = []
+    for monster in monsters[:4]:  # Max 4 monsters displayed
+        monster_render = render_monster(
+            monster.monster_type if hasattr(monster, 'monster_type') else monster.name,
+            monster.name,
+            monster.hp if hasattr(monster, 'hp') else monster.current_hp,
+            monster.max_hp
+        )
+        rendered.append(monster_render.split("\n"))
+
+    if not rendered:
+        return ""
+
+    # Combine side by side
+    max_lines = max(len(r) for r in rendered)
+
+    # Pad shorter renders
+    for r in rendered:
+        width = len(r[0]) if r else 0
+        while len(r) < max_lines:
+            r.append(" " * width)
+
+    # Combine
+    combined_lines = []
+    for i in range(max_lines):
+        line_parts = [r[i] if i < len(r) else "" for r in rendered]
+        combined_lines.append("  ".join(line_parts))
+
+    return "\n".join(combined_lines)
+
+
+def render_combat_scene(party: list, monsters: list) -> str:
+    """Render a full combat scene with party vs monsters."""
+    lines = []
+
+    # Title
+    lines.append("=" * 60)
+    lines.append("⚔️  COMBAT  ⚔️".center(60))
+    lines.append("=" * 60)
+    lines.append("")
+
+    # Monsters at top
+    if monsters:
+        lines.append("  ENEMIES:".ljust(60))
+        lines.append("")
+        monster_art = render_encounter(monsters)
+        lines.append(monster_art)
+        lines.append("")
+
+    # Divider
+    lines.append("─" * 60)
+    lines.append("         VS         ".center(60))
+    lines.append("─" * 60)
+    lines.append("")
+
+    # Party at bottom
+    if party:
+        lines.append("  YOUR PARTY:".ljust(60))
+        lines.append("")
+        party_art = render_party(party)
+        lines.append(party_art)
+
+    lines.append("")
+    lines.append("=" * 60)
+
+    return "\n".join(lines)
 
 
 def render_dungeon_map(dungeon, radius: int = 3, use_unicode: bool = True) -> str:

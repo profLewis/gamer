@@ -332,29 +332,43 @@ def format_modifier(mod: int) -> str:
 # Keyboard Input Handling (for arrow keys and hjkl navigation)
 # -----------------------------------------------------------------------------
 
-def _getch() -> str:
+def _getch(timeout: Optional[float] = None) -> Optional[str]:
     """
     Read a single character from stdin without waiting for Enter.
     Works on Unix/macOS. Returns the character or escape sequence.
+
+    Args:
+        timeout: Optional timeout in seconds. Returns None if timeout occurs.
     """
     import termios
     import tty
+    import select
 
     fd = sys.stdin.fileno()
     old_settings = termios.tcgetattr(fd)
     try:
         tty.setraw(fd)
+
+        # Use select to wait with timeout
+        if timeout is not None:
+            ready, _, _ = select.select([sys.stdin], [], [], timeout)
+            if not ready:
+                return None  # Timeout
+
         ch = sys.stdin.read(1)
 
         # Handle escape sequences (arrow keys)
         if ch == '\x1b':  # ESC
-            # Read additional characters for arrow keys
-            ch2 = sys.stdin.read(1)
-            if ch2 == '[':
-                ch3 = sys.stdin.read(1)
-                # Arrow keys: A=up, B=down, C=right, D=left
-                return f'\x1b[{ch3}'
-            return ch + ch2
+            # Check if more characters are available (arrow key sequence)
+            ready, _, _ = select.select([sys.stdin], [], [], 0.1)
+            if ready:
+                ch2 = sys.stdin.read(1)
+                if ch2 == '[':
+                    ch3 = sys.stdin.read(1)
+                    # Arrow keys: A=up, B=down, C=right, D=left
+                    return f'\x1b[{ch3}'
+                return ch + ch2
+            return ch  # Just ESC key
         return ch
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)

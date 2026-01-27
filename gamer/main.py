@@ -24,7 +24,8 @@ from .utils.display import (
 )
 from .utils.dice import roll_ability_scores, standard_array
 from .utils.ascii_art import (
-    render_character, render_party, render_dungeon_map, render_combat_scene
+    render_character, render_party, render_dungeon_map, render_combat_scene,
+    render_monster, render_encounter
 )
 from .game.multiplayer import (
     SharedFileMultiplayer, SocketMultiplayer, get_local_ip, PlayerRole
@@ -747,6 +748,7 @@ def show_game_menu(directions_available: List[str], can_collect: bool) -> str:
     Returns the action to take.
     """
     from .utils.display import _getch, _is_tty, _hide_cursor, _show_cursor
+    import random
 
     # Build game menu options
     options = []
@@ -780,26 +782,56 @@ def show_game_menu(directions_available: List[str], can_collect: bool) -> str:
     options.append("⚙  System Menu")
     actions.append('system')
 
+    # Determine auto-action for timeout
+    if directions_available:
+        auto_action = random.choice(directions_available)
+    else:
+        auto_action = 'search'
+
     # Check if we can use interactive mode
     if _is_tty():
-        return _game_menu_interactive(options, actions, directions_available)
+        return _game_menu_interactive(options, actions, directions_available, auto_action)
     else:
-        # Fallback to regular menu
-        choice = get_menu_choice(options, "What do you do?")
+        # Fallback to regular menu with timeout
+        timeout = _config.get('timeout', 0)
+        if timeout > 0:
+            choice = get_menu_choice(options, "What do you do?", timeout=float(timeout))
+            if choice == 0:  # Timeout
+                print(f"\n{Colors.WARNING}⏰ Time's up! Moving {auto_action}...{Colors.RESET}")
+                return auto_action
+        else:
+            choice = get_menu_choice(options, "What do you do?")
         return actions[choice - 1]
 
 
 def _game_menu_interactive(options: List[str], actions: List[str],
-                           directions_available: List[str]) -> str:
-    """Interactive game menu with direct arrow key movement."""
+                           directions_available: List[str], auto_action: str = 'search') -> str:
+    """Interactive game menu with direct arrow key movement and timeout support."""
     from .utils.display import _getch, _hide_cursor, _show_cursor, Colors
+    import time
 
     selected = 0
     num_options = len(options)
+    timeout = _config.get('timeout', 0)
+    start_time = time.time()
+    warned = False
 
-    def draw_menu():
+    def get_remaining():
+        if timeout <= 0:
+            return None
+        return max(0, timeout - (time.time() - start_time))
+
+    def draw_menu(warning_msg=None):
         print(f"\n{Colors.SUBTITLE}What do you do?{Colors.RESET}")
-        print(f"{Colors.MUTED}  (Arrows/WASD/hjkl: move, Enter: select, Tab: system menu){Colors.RESET}\n")
+        hint = "  (Arrows/WASD/hjkl: move, Enter: select, Tab: system menu)"
+        if timeout > 0:
+            remaining = get_remaining()
+            if remaining is not None and remaining < 30:
+                hint += f" [{int(remaining)}s]"
+        print(f"{Colors.MUTED}{hint}{Colors.RESET}")
+        if warning_msg:
+            print(f"{Colors.WARNING}{warning_msg}{Colors.RESET}")
+        print()
         for i, option in enumerate(options):
             if i == selected:
                 print(f"  {Colors.TITLE}> {option} <{Colors.RESET}")
@@ -813,7 +845,26 @@ def _game_menu_interactive(options: List[str], actions: List[str],
 
     try:
         while True:
-            ch = _getch()
+            # Check timeout
+            remaining = get_remaining()
+            if remaining is not None:
+                if remaining <= 0:
+                    print(f"\n{Colors.WARNING}⏰ Time's up! The DM moves you {auto_action}...{Colors.RESET}")
+                    return auto_action
+                elif remaining <= 30 and not warned:
+                    warned = True
+                    # Redraw with warning
+                    lines_to_clear = num_options + 4
+                    print(f'\x1b[{lines_to_clear}A', end='')
+                    for _ in range(lines_to_clear):
+                        print('\x1b[2K')
+                    print(f'\x1b[{lines_to_clear}A', end='')
+                    draw_menu(f"⏰ {int(remaining)} seconds until DM takes over...")
+
+            # Wait for input with short timeout for responsiveness
+            ch = _getch(timeout=1.0)
+            if ch is None:
+                continue  # Check timeout again
 
             # Direct movement with arrow keys (when not on a menu item)
             if ch == '\x1b[A' or ch == 'w' or ch == 'W':  # Up arrow or W
