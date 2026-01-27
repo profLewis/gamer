@@ -415,13 +415,16 @@ def _getch(timeout: Optional[float] = None) -> Optional[str]:
     import termios
     import tty
     import select
+    import fcntl
 
     fd = sys.stdin.fileno()
     old_settings = termios.tcgetattr(fd)
+    old_flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+
     try:
         tty.setraw(fd)
 
-        # Use select to wait with timeout
+        # Use select to wait with timeout for first character
         if timeout is not None:
             ready, _, _ = select.select([sys.stdin], [], [], timeout)
             if not ready:
@@ -431,28 +434,32 @@ def _getch(timeout: Optional[float] = None) -> Optional[str]:
 
         # Handle escape sequences (arrow keys)
         if ch == '\x1b':  # ESC
-            # Check if more characters are available (arrow key sequence)
-            # Use longer timeout to ensure we catch the full sequence
-            ready, _, _ = select.select([sys.stdin], [], [], 0.05)
-            if ready:
+            # Set non-blocking mode to read rest of sequence
+            fcntl.fcntl(fd, fcntl.F_SETFL, old_flags | os.O_NONBLOCK)
+
+            try:
+                # Try to read next character
                 ch2 = sys.stdin.read(1)
                 if ch2 == '[':
-                    # Read the arrow key code
-                    ready2, _, _ = select.select([sys.stdin], [], [], 0.05)
-                    if ready2:
-                        ch3 = sys.stdin.read(1)
-                        # Arrow keys: A=up, B=down, C=right, D=left
-                        return f'\x1b[{ch3}'
-                    return '\x1b['  # Incomplete sequence
+                    # CSI sequence (most common for arrow keys)
+                    ch3 = sys.stdin.read(1)
+                    # Arrow keys: A=up, B=down, C=right, D=left
+                    return f'\x1b[{ch3}'
                 elif ch2 == 'O':
-                    # Alternative arrow key format (some terminals)
-                    ready2, _, _ = select.select([sys.stdin], [], [], 0.05)
-                    if ready2:
-                        ch3 = sys.stdin.read(1)
-                        return f'\x1bO{ch3}'
-                    return '\x1bO'
-                return ch + ch2
-            return ch  # Just ESC key (no following chars)
+                    # SS3 sequence (alternative arrow key format)
+                    ch3 = sys.stdin.read(1)
+                    return f'\x1bO{ch3}'
+                elif ch2:
+                    return ch + ch2
+                else:
+                    return ch  # Just ESC
+            except (IOError, TypeError):
+                # No more characters available - just ESC
+                return ch
+            finally:
+                # Restore blocking mode
+                fcntl.fcntl(fd, fcntl.F_SETFL, old_flags)
+
         return ch
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
