@@ -13,38 +13,36 @@ _BG = '\033[40m'      # Black background
 _FG = '\033[32m'      # Green foreground
 _BRIGHT = '\033[92m'  # Bright green
 _BOLD = '\033[1m'
-_DIM = '\033[2m'
 _RESET_ALL = '\033[0m'
 
 
 class Colors:
     """Color constants - black background with green text theme."""
     # Everything resets back to green on black, not default terminal colors
-    RESET = f'{_BG}{_FG}'
-    RESET_ALL = f'{_BG}{_FG}'
+    RESET = f'{_RESET_ALL}{_BG}{_FG}'
+    RESET_ALL = f'{_RESET_ALL}{_BG}{_FG}'
 
     # Text styles (all green-based)
-    BOLD = f'{_BG}{_BRIGHT}{_BOLD}'
-    DIM = f'{_BG}{_FG}{_DIM}'
+    BOLD = f'{_RESET_ALL}{_BG}{_BRIGHT}{_BOLD}'
 
     # Semantic colors - mostly green with minimal accents
-    TITLE = f'{_BG}{_BRIGHT}{_BOLD}'    # Bright green bold
-    SUBTITLE = f'{_BG}{_FG}'             # Normal green
-    SUCCESS = f'{_BG}{_BRIGHT}'          # Bright green
-    DANGER = f'{_BG}\033[91m'            # Red (for enemies/damage only)
-    WARNING = f'{_BG}\033[93m'           # Yellow (sparingly)
-    INFO = f'{_BG}{_FG}'                 # Green
-    MUTED = f'{_BG}{_FG}{_DIM}'          # Dim green
+    TITLE = f'{_RESET_ALL}{_BG}{_BRIGHT}{_BOLD}'    # Bright green bold
+    SUBTITLE = f'{_RESET_ALL}{_BG}{_FG}'             # Normal green
+    SUCCESS = f'{_RESET_ALL}{_BG}{_BRIGHT}'          # Bright green
+    DANGER = f'{_RESET_ALL}{_BG}\033[91m'            # Red (for enemies/damage only)
+    WARNING = f'{_RESET_ALL}{_BG}\033[93m'           # Yellow (sparingly)
+    INFO = f'{_RESET_ALL}{_BG}{_FG}'                 # Green
+    MUTED = f'{_RESET_ALL}{_BG}\033[90m'             # Dark gray (not dim mode)
 
     # Character colors - keep it green
-    PLAYER = f'{_BG}{_BRIGHT}{_BOLD}'    # Bright green bold
-    ENEMY = f'{_BG}\033[91m'             # Red
-    NPC = f'{_BG}{_BRIGHT}'              # Bright green
+    PLAYER = f'{_RESET_ALL}{_BG}{_BRIGHT}{_BOLD}'    # Bright green bold
+    ENEMY = f'{_RESET_ALL}{_BG}\033[91m'             # Red
+    NPC = f'{_RESET_ALL}{_BG}{_BRIGHT}'              # Bright green
 
     # Combat - green with red for damage
-    DAMAGE = f'{_BG}\033[91m'            # Red
-    HEALING = f'{_BG}{_BRIGHT}'          # Bright green
-    MAGIC = f'{_BG}{_BRIGHT}'            # Bright green
+    DAMAGE = f'{_RESET_ALL}{_BG}\033[91m'            # Red
+    HEALING = f'{_RESET_ALL}{_BG}{_BRIGHT}'          # Bright green
+    MAGIC = f'{_RESET_ALL}{_BG}{_BRIGHT}'            # Bright green
 
 
 def set_terminal_theme(clear: bool = True):
@@ -175,13 +173,16 @@ class StatusPanel:
         border_row = self._main_area_height + 1
         print(f'\033[{border_row};1H', end='')
 
-        # Draw border
+        # Draw border with explicit colors (no dim mode)
         border = '─' * cols
-        print(f'{Colors.MUTED}{border}{Colors.RESET}', end='')
+        print(f'\033[40m\033[32m{border}', end='')
 
-        # Clear panel area
+        # Clear panel area with proper background
         for i in range(self.PANEL_HEIGHT):
-            print(f'\033[{border_row + 1 + i};1H\033[2K', end='')
+            print(f'\033[{border_row + 1 + i};1H\033[40m\033[2K', end='')
+
+        # Reset to normal green on black
+        print('\033[40m\033[32m', end='')
 
         # Restore cursor position
         print('\033[u', end='', flush=True)
@@ -206,13 +207,15 @@ class StatusPanel:
         # Move to panel area (below border)
         panel_start = self._main_area_height + 2
 
-        # Clear and redraw panel content
+        # Clear and redraw panel content with explicit colors
         for i, msg in enumerate(self.messages[-self.PANEL_HEIGHT:]):
             row = panel_start + i
-            print(f'\033[{row};1H\033[2K', end='')  # Move and clear line
+            # Move, set black bg, clear line
+            print(f'\033[{row};1H\033[40m\033[2K', end='')
             # Truncate if too long
             display_msg = msg[:cols-2] if len(msg) > cols-2 else msg
-            print(f'{Colors.INFO}{display_msg}{Colors.RESET}', end='')
+            # Print in bright green on black (no dim)
+            print(f'\033[40m\033[92m{display_msg}', end='')
 
         # Restore cursor position
         print('\033[u', end='', flush=True)
