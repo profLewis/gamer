@@ -111,6 +111,12 @@ class Scoreboard:
             started_at=self._session_start.isoformat()
         )
 
+    def end_session(self) -> None:
+        """End the current session."""
+        if self.session_stats:
+            self.session_stats.ended_at = datetime.now().isoformat()
+        self._session_start = None
+
     def add_character(self, name: str, char_class: str, level: int,
                       current_hp: int, max_hp: int) -> None:
         """Add a character to tracking."""
@@ -449,6 +455,11 @@ class SessionManager:
         """Resume the game."""
         self.paused = False
         self.scoreboard.record_activity()
+
+    def end_session(self) -> None:
+        """End the current session."""
+        self.scoreboard.end_session()
+        self.paused = False
 
     def get_pause_menu_choice(self) -> str:
         """Get choice from pause menu."""

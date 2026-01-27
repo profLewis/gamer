@@ -45,6 +45,7 @@ _config = {
     'show_splash': True,    # Show splash screen
     'timeout': 120,         # Seconds before DM takes over (0 to disable)
     'auto_save': True,      # Auto-save periodically
+    'ai_backend': 'local',  # AI DM backend: 'local', 'anthropic', 'openai'
 }
 
 
@@ -823,7 +824,7 @@ def _game_menu_interactive(options: List[str], actions: List[str],
 
     def draw_menu(warning_msg=None):
         print(f"\n{Colors.SUBTITLE}What do you do?{Colors.RESET}")
-        hint = "  (Arrows/WASD/hjkl: move, Enter: select, Tab: system menu)"
+        hint = "  (↑↓/jk: menu, WASD/hl: move, ←/→/o: system, Enter: select)"
         if timeout > 0:
             remaining = get_remaining()
             if remaining is not None and remaining < 30:
@@ -866,43 +867,46 @@ def _game_menu_interactive(options: List[str], actions: List[str],
             if ch is None:
                 continue  # Check timeout again
 
-            # Direct movement with arrow keys (when not on a menu item)
-            if ch == '\x1b[A' or ch == 'w' or ch == 'W':  # Up arrow or W
-                if 'north' in directions_available:
-                    return 'north'
-                # Otherwise just navigate menu
+            # Arrow keys: navigate menu
+            if ch == '\x1b[A':  # Up arrow - menu up
                 selected = (selected - 1) % num_options
 
-            elif ch == '\x1b[B' or ch == 's':  # Down arrow or S (lowercase only for menu)
-                if ch == 's' and 'south' in directions_available:
-                    return 'south'
+            elif ch == '\x1b[B':  # Down arrow - menu down
                 selected = (selected + 1) % num_options
 
-            elif ch == 'S':  # Uppercase S always means south
+            elif ch == '\x1b[D':  # Left arrow - back/previous menu
+                return 'system'  # Go to system menu as "back"
+
+            elif ch == '\x1b[C' or ch == 'o' or ch == 'O':  # Right arrow or 'o' - system menu
+                return 'system'
+
+            # WASD for movement
+            elif ch == 'w' or ch == 'W':
+                if 'north' in directions_available:
+                    return 'north'
+            elif ch == 's' or ch == 'S':
                 if 'south' in directions_available:
                     return 'south'
-
-            elif ch == '\x1b[D' or ch == 'a' or ch == 'A':  # Left arrow or A
+            elif ch == 'a' or ch == 'A':
                 if 'west' in directions_available:
                     return 'west'
-
-            elif ch == '\x1b[C' or ch == 'd' or ch == 'D':  # Right arrow or D
+            elif ch == 'd' or ch == 'D':
                 if 'east' in directions_available:
                     return 'east'
 
-            # Vim-style navigation (hjkl for menu, not movement)
+            # Vim-style: j/k for menu, h/l for movement
             elif ch == 'k':  # k = menu up
                 selected = (selected - 1) % num_options
             elif ch == 'j':  # j = menu down
                 selected = (selected + 1) % num_options
-            elif ch == 'h':  # h = west
+            elif ch == 'h':  # h = west (movement)
                 if 'west' in directions_available:
                     return 'west'
-            elif ch == 'l':  # l = east
+            elif ch == 'l':  # l = east (movement)
                 if 'east' in directions_available:
                     return 'east'
 
-            # Direct key shortcuts
+            # Direct key shortcuts for movement
             elif ch == 'n' or ch == 'N':
                 if 'north' in directions_available:
                     return 'north'
