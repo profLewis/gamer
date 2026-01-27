@@ -20,7 +20,8 @@ from .world.dungeon import Direction
 from .utils.display import (
     print_title, print_subtitle, print_menu, get_input, get_menu_choice,
     confirm, print_separator, Colors, clear_screen,
-    set_terminal_theme, reset_terminal, show_splash_screen
+    set_terminal_theme, reset_terminal, show_splash_screen,
+    setup_status_panel, status_message, teardown_status_panel
 )
 from .utils.dice import roll_ability_scores, standard_array
 from .utils.ascii_art import (
@@ -192,6 +193,8 @@ def main():
                     break
 
     finally:
+        # Cleanup status panel
+        teardown_status_panel()
         # Reset terminal colors on exit
         if _config['use_theme']:
             reset_terminal()
@@ -1037,10 +1040,15 @@ def handle_exploration(engine: GameEngine) -> None:
     """Handle exploration mode with two-level menu system."""
     global _session
 
+    # Set up status panel on first call
+    if not hasattr(handle_exploration, '_panel_setup'):
+        setup_status_panel()
+        handle_exploration._panel_setup = True
+
     # Check for auto-save
     if _config['auto_save'] and _session.should_auto_save():
         if engine.save_game():
-            print(f"{Colors.MUTED}[Auto-saved]{Colors.RESET}")
+            status_message("[Auto-saved]")
             _session.mark_saved()
 
     print_separator()
@@ -1103,17 +1111,17 @@ def handle_exploration(engine: GameEngine) -> None:
                     room.room_type.value if hasattr(room.room_type, 'value') else str(room.room_type),
                     features
                 )
-                print(f"\n{Colors.INFO}{narration}{Colors.RESET}")
+                status_message(narration)
                 ai_dm.add_event(f"Entered {room.name}")
 
-            print(result)
+            status_message(result)
             _session.scoreboard.record_room_explored()
         else:
-            print(f"{Colors.WARNING}You can't go that way.{Colors.RESET}")
+            status_message("You can't go that way.")
 
     elif action == 'search':
         result = engine.search_room()
-        print(result)
+        status_message(result)
 
     elif action == 'rest':
         rest_type = get_menu_choice(
@@ -1124,7 +1132,7 @@ def handle_exploration(engine: GameEngine) -> None:
         if rest_type == 0:  # Back
             return
         result = engine.rest(is_long_rest=(rest_type == 2))
-        print(result)
+        status_message(result)
 
     elif action == 'status':
         # Show ASCII art party view
@@ -1144,9 +1152,9 @@ def handle_exploration(engine: GameEngine) -> None:
     elif action == 'collect':
         if 'collect' in available_actions:
             result = engine.collect_treasure()
-            print(result)
+            status_message(result)
         else:
-            print(f"{Colors.WARNING}Nothing to collect here.{Colors.RESET}")
+            status_message("Nothing to collect here.")
 
     elif action == 'talk':
         # Free text input to AI DM
@@ -1187,14 +1195,11 @@ def handle_talk_to_dm(engine: GameEngine) -> None:
     # Get response from AI DM
     response = ai_dm.respond_to_player(player_input)
 
-    # Display DM response with styling
-    print(f"\n{Colors.INFO}DM:{Colors.RESET} {response}")
-    print()
+    # Display DM response in status panel
+    status_message(f"DM: {response}")
 
     # Log the interaction
     ai_dm.add_event(f"Player said: {player_input[:50]}...")
-
-    get_input("Press Enter to continue...", default="")
 
 
 def handle_pause(engine: GameEngine) -> None:

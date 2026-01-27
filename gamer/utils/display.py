@@ -121,6 +121,160 @@ def fits_in_terminal(text: str, margin: int = 5) -> bool:
     return lines <= (term_height - margin)
 
 
+# -----------------------------------------------------------------------------
+# Status Panel - Fixed panel at bottom of screen for messages
+# -----------------------------------------------------------------------------
+
+class StatusPanel:
+    """
+    Manages a fixed status panel at the bottom of the terminal.
+
+    The screen is split into:
+    - Main area (top): scrollable game content
+    - Status panel (bottom): fixed area for messages/status
+    """
+
+    PANEL_HEIGHT = 4  # Number of lines for status panel
+
+    def __init__(self):
+        self.enabled = False
+        self.messages: List[str] = []
+        self._main_area_height = 0
+
+    def setup(self) -> None:
+        """Set up the split screen with status panel at bottom."""
+        cols, rows = get_terminal_size()
+        self._main_area_height = rows - self.PANEL_HEIGHT - 1
+
+        # Clear screen
+        print('\033[2J', end='')
+
+        # Set scrolling region to top portion (leave bottom for panel)
+        # ESC[top;bottom r - set scroll region
+        print(f'\033[1;{self._main_area_height}r', end='')
+
+        # Move cursor to top
+        print('\033[H', end='')
+
+        # Draw the panel border
+        self._draw_panel_border()
+
+        # Move cursor back to main area
+        print(f'\033[1;1H', end='', flush=True)
+
+        self.enabled = True
+
+    def _draw_panel_border(self) -> None:
+        """Draw the border line above the status panel."""
+        cols, rows = get_terminal_size()
+
+        # Save cursor position
+        print('\033[s', end='')
+
+        # Move to panel border line
+        border_row = self._main_area_height + 1
+        print(f'\033[{border_row};1H', end='')
+
+        # Draw border
+        border = '─' * cols
+        print(f'{Colors.MUTED}{border}{Colors.RESET}', end='')
+
+        # Clear panel area
+        for i in range(self.PANEL_HEIGHT):
+            print(f'\033[{border_row + 1 + i};1H\033[2K', end='')
+
+        # Restore cursor position
+        print('\033[u', end='', flush=True)
+
+    def show_message(self, text: str) -> None:
+        """Display a message in the status panel."""
+        if not self.enabled:
+            print(text)
+            return
+
+        cols, rows = get_terminal_size()
+
+        # Add to message history
+        self.messages.append(text)
+        # Keep only last few messages
+        if len(self.messages) > self.PANEL_HEIGHT:
+            self.messages = self.messages[-self.PANEL_HEIGHT:]
+
+        # Save cursor position
+        print('\033[s', end='')
+
+        # Move to panel area (below border)
+        panel_start = self._main_area_height + 2
+
+        # Clear and redraw panel content
+        for i, msg in enumerate(self.messages[-self.PANEL_HEIGHT:]):
+            row = panel_start + i
+            print(f'\033[{row};1H\033[2K', end='')  # Move and clear line
+            # Truncate if too long
+            display_msg = msg[:cols-2] if len(msg) > cols-2 else msg
+            print(f'{Colors.INFO}{display_msg}{Colors.RESET}', end='')
+
+        # Restore cursor position
+        print('\033[u', end='', flush=True)
+
+    def clear(self) -> None:
+        """Clear the status panel."""
+        if not self.enabled:
+            return
+
+        self.messages = []
+        cols, rows = get_terminal_size()
+
+        # Save cursor
+        print('\033[s', end='')
+
+        # Clear panel lines
+        panel_start = self._main_area_height + 2
+        for i in range(self.PANEL_HEIGHT):
+            print(f'\033[{panel_start + i};1H\033[2K', end='')
+
+        # Restore cursor
+        print('\033[u', end='', flush=True)
+
+    def teardown(self) -> None:
+        """Reset terminal to normal scrolling."""
+        if not self.enabled:
+            return
+
+        # Reset scroll region to full screen
+        print('\033[r', end='')
+
+        # Move to bottom
+        _, rows = get_terminal_size()
+        print(f'\033[{rows};1H', end='', flush=True)
+
+        self.enabled = False
+
+
+# Global status panel instance
+_status_panel = StatusPanel()
+
+
+def setup_status_panel() -> None:
+    """Set up the status panel at bottom of screen."""
+    _status_panel.setup()
+
+
+def status_message(text: str) -> None:
+    """Show a message in the status panel."""
+    _status_panel.show_message(text)
+
+
+def clear_status_panel() -> None:
+    """Clear the status panel."""
+    _status_panel.clear()
+
+
+def teardown_status_panel() -> None:
+    """Remove the status panel and restore normal terminal."""
+    _status_panel.teardown()
+
+
 # D&D Splash Screen ASCII Art
 SPLASH_SCREEN = r'''
 {title}
