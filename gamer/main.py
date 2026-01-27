@@ -1092,10 +1092,15 @@ def handle_exploration(engine: GameEngine) -> None:
                     party_members=[c.name for c in engine.party],
                 )
                 # Get AI-enhanced description
+                # Convert features to strings (they may be enum objects)
+                features = []
+                if hasattr(room, 'features'):
+                    for f in room.features:
+                        features.append(f.value if hasattr(f, 'value') else str(f))
                 narration = ai_dm.describe_room(
                     room.name,
                     room.room_type.value if hasattr(room.room_type, 'value') else str(room.room_type),
-                    list(room.features) if hasattr(room, 'features') else []
+                    features
                 )
                 print(f"\n{Colors.INFO}{narration}{Colors.RESET}")
                 ai_dm.add_event(f"Entered {room.name}")
