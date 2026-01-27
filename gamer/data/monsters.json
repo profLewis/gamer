@@ -1,0 +1,198 @@
+{
+  "monsters": [
+    {
+      "name": "Kobold",
+      "size": "Small",
+      "type": "humanoid",
+      "alignment": "lawful evil",
+      "ac": 12,
+      "hp": 5,
+      "speed": 30,
+      "cr": 0.125,
+      "xp": 25,
+      "abilities": {"str": 7, "dex": 15, "con": 9, "int": 8, "wis": 7, "cha": 8},
+      "senses": {"darkvision": 60},
+      "languages": ["Common", "Draconic"],
+      "traits": ["Sunlight Sensitivity", "Pack Tactics"],
+      "actions": [
+        {"name": "Dagger", "attack_bonus": 4, "damage": "1d4+2", "damage_type": "piercing"}
+      ]
+    },
+    {
+      "name": "Goblin",
+      "size": "Small",
+      "type": "humanoid",
+      "alignment": "neutral evil",
+      "ac": 15,
+      "hp": 7,
+      "speed": 30,
+      "cr": 0.25,
+      "xp": 50,
+      "abilities": {"str": 8, "dex": 14, "con": 10, "int": 10, "wis": 8, "cha": 8},
+      "skills": {"stealth": 6},
+      "senses": {"darkvision": 60},
+      "languages": ["Common", "Goblin"],
+      "traits": ["Nimble Escape"],
+      "actions": [
+        {"name": "Scimitar", "attack_bonus": 4, "damage": "1d6+2", "damage_type": "slashing"},
+        {"name": "Shortbow", "attack_bonus": 4, "damage": "1d6+2", "damage_type": "piercing", "range": 80}
+      ]
+    },
+    {
+      "name": "Skeleton",
+      "size": "Medium",
+      "type": "undead",
+      "alignment": "lawful evil",
+      "ac": 13,
+      "hp": 13,
+      "speed": 30,
+      "cr": 0.25,
+      "xp": 50,
+      "abilities": {"str": 10, "dex": 14, "con": 15, "int": 6, "wis": 8, "cha": 5},
+      "damage_immunities": ["poison"],
+      "condition_immunities": ["exhaustion", "poisoned"],
+      "senses": {"darkvision": 60},
+      "actions": [
+        {"name": "Shortsword", "attack_bonus": 4, "damage": "1d6+2", "damage_type": "piercing"},
+        {"name": "Shortbow", "attack_bonus": 4, "damage": "1d6+2", "damage_type": "piercing", "range": 80}
+      ]
+    },
+    {
+      "name": "Zombie",
+      "size": "Medium",
+      "type": "undead",
+      "alignment": "neutral evil",
+      "ac": 8,
+      "hp": 22,
+      "speed": 20,
+      "cr": 0.25,
+      "xp": 50,
+      "abilities": {"str": 13, "dex": 6, "con": 16, "int": 3, "wis": 6, "cha": 5},
+      "saving_throws": ["wis"],
+      "damage_immunities": ["poison"],
+      "condition_immunities": ["poisoned"],
+      "senses": {"darkvision": 60},
+      "traits": ["Undead Fortitude"],
+      "actions": [
+        {"name": "Slam", "attack_bonus": 3, "damage": "1d6+1", "damage_type": "bludgeoning"}
+      ]
+    },
+    {
+      "name": "Orc",
+      "size": "Medium",
+      "type": "humanoid",
+      "alignment": "chaotic evil",
+      "ac": 13,
+      "hp": 15,
+      "speed": 30,
+      "cr": 0.5,
+      "xp": 100,
+      "abilities": {"str": 16, "dex": 12, "con": 16, "int": 7, "wis": 11, "cha": 10},
+      "skills": {"intimidation": 2},
+      "senses": {"darkvision": 60},
+      "languages": ["Common", "Orc"],
+      "traits": ["Aggressive"],
+      "actions": [
+        {"name": "Greataxe", "attack_bonus": 5, "damage": "1d12+3", "damage_type": "slashing"},
+        {"name": "Javelin", "attack_bonus": 5, "damage": "1d6+3", "damage_type": "piercing", "range": 30}
+      ]
+    },
+    {
+      "name": "Bugbear",
+      "size": "Medium",
+      "type": "humanoid",
+      "alignment": "chaotic evil",
+      "ac": 16,
+      "hp": 27,
+      "speed": 30,
+      "cr": 1,
+      "xp": 200,
+      "abilities": {"str": 15, "dex": 14, "con": 13, "int": 8, "wis": 11, "cha": 9},
+      "skills": {"stealth": 6, "survival": 2},
+      "senses": {"darkvision": 60},
+      "languages": ["Common", "Goblin"],
+      "traits": ["Brute", "Surprise Attack"],
+      "actions": [
+        {"name": "Morningstar", "attack_bonus": 4, "damage": "2d8+2", "damage_type": "piercing"},
+        {"name": "Javelin", "attack_bonus": 4, "damage": "2d6+2", "damage_type": "piercing", "range": 30}
+      ]
+    },
+    {
+      "name": "Ghoul",
+      "size": "Medium",
+      "type": "undead",
+      "alignment": "chaotic evil",
+      "ac": 12,
+      "hp": 22,
+      "speed": 30,
+      "cr": 1,
+      "xp": 200,
+      "abilities": {"str": 13, "dex": 15, "con": 10, "int": 7, "wis": 10, "cha": 6},
+      "damage_immunities": ["poison"],
+      "condition_immunities": ["charmed", "exhaustion", "poisoned"],
+      "senses": {"darkvision": 60},
+      "languages": ["Common"],
+      "actions": [
+        {"name": "Bite", "attack_bonus": 2, "damage": "2d6+2", "damage_type": "piercing"},
+        {"name": "Claws", "attack_bonus": 4, "damage": "2d4+2", "damage_type": "slashing"}
+      ]
+    },
+    {
+      "name": "Ogre",
+      "size": "Large",
+      "type": "giant",
+      "alignment": "chaotic evil",
+      "ac": 11,
+      "hp": 59,
+      "speed": 40,
+      "cr": 2,
+      "xp": 450,
+      "abilities": {"str": 19, "dex": 8, "con": 16, "int": 5, "wis": 7, "cha": 7},
+      "senses": {"darkvision": 60},
+      "languages": ["Common", "Giant"],
+      "actions": [
+        {"name": "Greatclub", "attack_bonus": 6, "damage": "2d8+4", "damage_type": "bludgeoning"},
+        {"name": "Javelin", "attack_bonus": 6, "damage": "2d6+4", "damage_type": "piercing", "range": 30}
+      ]
+    },
+    {
+      "name": "Owlbear",
+      "size": "Large",
+      "type": "monstrosity",
+      "alignment": "unaligned",
+      "ac": 13,
+      "hp": 59,
+      "speed": 40,
+      "cr": 3,
+      "xp": 700,
+      "abilities": {"str": 20, "dex": 12, "con": 17, "int": 3, "wis": 12, "cha": 7},
+      "skills": {"perception": 3},
+      "senses": {"darkvision": 60},
+      "traits": ["Keen Sight and Smell"],
+      "actions": [
+        {"name": "Beak", "attack_bonus": 7, "damage": "1d10+5", "damage_type": "piercing"},
+        {"name": "Claws", "attack_bonus": 7, "damage": "2d8+5", "damage_type": "slashing"}
+      ]
+    },
+    {
+      "name": "Minotaur",
+      "size": "Large",
+      "type": "monstrosity",
+      "alignment": "chaotic evil",
+      "ac": 14,
+      "hp": 76,
+      "speed": 40,
+      "cr": 3,
+      "xp": 700,
+      "abilities": {"str": 18, "dex": 11, "con": 16, "int": 6, "wis": 16, "cha": 9},
+      "skills": {"perception": 7},
+      "senses": {"darkvision": 60},
+      "languages": ["Abyssal"],
+      "traits": ["Charge", "Labyrinthine Recall", "Reckless"],
+      "actions": [
+        {"name": "Greataxe", "attack_bonus": 6, "damage": "2d12+4", "damage_type": "slashing"},
+        {"name": "Gore", "attack_bonus": 6, "damage": "2d8+4", "damage_type": "piercing"}
+      ]
+    }
+  ]
+}

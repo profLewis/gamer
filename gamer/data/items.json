@@ -1,0 +1,55 @@
+{
+  "weapons": [
+    {"name": "Club", "damage": "1d4", "damage_type": "bludgeoning", "properties": ["light"], "weight": 2, "value": 0.1},
+    {"name": "Dagger", "damage": "1d4", "damage_type": "piercing", "properties": ["finesse", "light", "thrown"], "range": 20, "weight": 1, "value": 2},
+    {"name": "Greatclub", "damage": "1d8", "damage_type": "bludgeoning", "properties": ["two-handed"], "weight": 10, "value": 0.2},
+    {"name": "Handaxe", "damage": "1d6", "damage_type": "slashing", "properties": ["light", "thrown"], "range": 20, "weight": 2, "value": 5},
+    {"name": "Javelin", "damage": "1d6", "damage_type": "piercing", "properties": ["thrown"], "range": 30, "weight": 2, "value": 0.5},
+    {"name": "Mace", "damage": "1d6", "damage_type": "bludgeoning", "properties": [], "weight": 4, "value": 5},
+    {"name": "Quarterstaff", "damage": "1d6", "damage_type": "bludgeoning", "properties": ["versatile"], "versatile_damage": "1d8", "weight": 4, "value": 0.2},
+    {"name": "Spear", "damage": "1d6", "damage_type": "piercing", "properties": ["thrown", "versatile"], "range": 20, "versatile_damage": "1d8", "weight": 3, "value": 1},
+    {"name": "Light Crossbow", "damage": "1d8", "damage_type": "piercing", "properties": ["ammunition", "loading", "two-handed"], "range": 80, "weight": 5, "value": 25},
+    {"name": "Shortbow", "damage": "1d6", "damage_type": "piercing", "properties": ["ammunition", "two-handed"], "range": 80, "weight": 2, "value": 25},
+    {"name": "Battleaxe", "damage": "1d8", "damage_type": "slashing", "properties": ["versatile"], "versatile_damage": "1d10", "weight": 4, "value": 10},
+    {"name": "Greataxe", "damage": "1d12", "damage_type": "slashing", "properties": ["heavy", "two-handed"], "weight": 7, "value": 30},
+    {"name": "Greatsword", "damage": "2d6", "damage_type": "slashing", "properties": ["heavy", "two-handed"], "weight": 6, "value": 50},
+    {"name": "Longsword", "damage": "1d8", "damage_type": "slashing", "properties": ["versatile"], "versatile_damage": "1d10", "weight": 3, "value": 15},
+    {"name": "Rapier", "damage": "1d8", "damage_type": "piercing", "properties": ["finesse"], "weight": 2, "value": 25},
+    {"name": "Scimitar", "damage": "1d6", "damage_type": "slashing", "properties": ["finesse", "light"], "weight": 3, "value": 25},
+    {"name": "Shortsword", "damage": "1d6", "damage_type": "piercing", "properties": ["finesse", "light"], "weight": 2, "value": 10},
+    {"name": "Warhammer", "damage": "1d8", "damage_type": "bludgeoning", "properties": ["versatile"], "versatile_damage": "1d10", "weight": 2, "value": 15},
+    {"name": "Longbow", "damage": "1d8", "damage_type": "piercing", "properties": ["ammunition", "heavy", "two-handed"], "range": 150, "weight": 2, "value": 50}
+  ],
+  "armor": [
+    {"name": "Padded", "ac": 11, "dex_bonus": true, "stealth_disadvantage": true, "type": "light", "weight": 8, "value": 5},
+    {"name": "Leather", "ac": 11, "dex_bonus": true, "type": "light", "weight": 10, "value": 10},
+    {"name": "Studded Leather", "ac": 12, "dex_bonus": true, "type": "light", "weight": 13, "value": 45},
+    {"name": "Hide", "ac": 12, "dex_bonus": true, "max_dex": 2, "type": "medium", "weight": 12, "value": 10},
+    {"name": "Chain Shirt", "ac": 13, "dex_bonus": true, "max_dex": 2, "type": "medium", "weight": 20, "value": 50},
+    {"name": "Scale Mail", "ac": 14, "dex_bonus": true, "max_dex": 2, "stealth_disadvantage": true, "type": "medium", "weight": 45, "value": 50},
+    {"name": "Breastplate", "ac": 14, "dex_bonus": true, "max_dex": 2, "type": "medium", "weight": 20, "value": 400},
+    {"name": "Half Plate", "ac": 15, "dex_bonus": true, "max_dex": 2, "stealth_disadvantage": true, "type": "medium", "weight": 40, "value": 750},
+    {"name": "Ring Mail", "ac": 14, "dex_bonus": false, "stealth_disadvantage": true, "type": "heavy", "weight": 40, "value": 30},
+    {"name": "Chain Mail", "ac": 16, "dex_bonus": false, "str_requirement": 13, "stealth_disadvantage": true, "type": "heavy", "weight": 55, "value": 75},
+    {"name": "Splint", "ac": 17, "dex_bonus": false, "str_requirement": 15, "stealth_disadvantage": true, "type": "heavy", "weight": 60, "value": 200},
+    {"name": "Plate", "ac": 18, "dex_bonus": false, "str_requirement": 15, "stealth_disadvantage": true, "type": "heavy", "weight": 65, "value": 1500},
+    {"name": "Shield", "ac": 2, "type": "shield", "weight": 6, "value": 10}
+  ],
+  "items": [
+    {"name": "Torch", "description": "Provides bright light in 20-foot radius for 1 hour.", "weight": 1, "value": 0.01},
+    {"name": "Rope (50 feet)", "description": "Hemp rope, 50 feet.", "weight": 10, "value": 1},
+    {"name": "Rations (1 day)", "description": "Dried food for one day.", "weight": 2, "value": 0.5, "consumable": true},
+    {"name": "Waterskin", "description": "Holds 4 pints of liquid.", "weight": 5, "value": 0.2},
+    {"name": "Backpack", "description": "Can hold 1 cubic foot or 30 pounds of gear.", "weight": 5, "value": 2},
+    {"name": "Bedroll", "description": "A sleeping roll for camping.", "weight": 7, "value": 1},
+    {"name": "Tinderbox", "description": "Flint, fire steel, and tinder for starting fires.", "weight": 1, "value": 0.5},
+    {"name": "Thieves' Tools", "description": "A set of lockpicks and tools for disabling traps.", "weight": 1, "value": 25},
+    {"name": "Holy Symbol", "description": "A symbol of a deity.", "weight": 1, "value": 5},
+    {"name": "Component Pouch", "description": "A pouch for spell components.", "weight": 2, "value": 25}
+  ],
+  "potions": [
+    {"name": "Potion of Healing", "description": "Regain 2d4+2 hit points.", "healing": "2d4+2", "rarity": "Common", "value": 50},
+    {"name": "Potion of Greater Healing", "description": "Regain 4d4+4 hit points.", "healing": "4d4+4", "rarity": "Uncommon", "value": 150},
+    {"name": "Antitoxin", "description": "Advantage on saves vs. poison for 1 hour.", "effect": "poison_resistance", "value": 50}
+  ]
+}

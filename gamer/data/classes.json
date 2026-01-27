@@ -1,0 +1,138 @@
+{
+  "classes": [
+    {
+      "name": "Fighter",
+      "hit_die": 10,
+      "primary_ability": "STR",
+      "saving_throw_proficiencies": ["STR", "CON"],
+      "armor_proficiencies": ["light", "medium", "heavy", "shields"],
+      "weapon_proficiencies": ["simple", "martial"],
+      "skill_choices": ["acrobatics", "animal_handling", "athletics", "history", "insight", "intimidation", "perception", "survival"],
+      "num_skill_choices": 2,
+      "features": [
+        {"name": "Fighting Style", "level": 1},
+        {"name": "Second Wind", "level": 1},
+        {"name": "Action Surge", "level": 2},
+        {"name": "Martial Archetype", "level": 3},
+        {"name": "Ability Score Improvement", "level": 4},
+        {"name": "Extra Attack", "level": 5}
+      ]
+    },
+    {
+      "name": "Wizard",
+      "hit_die": 6,
+      "primary_ability": "INT",
+      "saving_throw_proficiencies": ["INT", "WIS"],
+      "armor_proficiencies": [],
+      "weapon_proficiencies": ["dagger", "dart", "sling", "quarterstaff", "light_crossbow"],
+      "skill_choices": ["arcana", "history", "insight", "investigation", "medicine", "religion"],
+      "num_skill_choices": 2,
+      "spellcasting_ability": "INT",
+      "spell_slots": {
+        "1": {"cantrips": 3, "1st": 2},
+        "2": {"cantrips": 3, "1st": 3},
+        "3": {"cantrips": 3, "1st": 4, "2nd": 2},
+        "4": {"cantrips": 4, "1st": 4, "2nd": 3},
+        "5": {"cantrips": 4, "1st": 4, "2nd": 3, "3rd": 2}
+      },
+      "features": [
+        {"name": "Spellcasting", "level": 1},
+        {"name": "Arcane Recovery", "level": 1},
+        {"name": "Arcane Tradition", "level": 2},
+        {"name": "Ability Score Improvement", "level": 4}
+      ]
+    },
+    {
+      "name": "Rogue",
+      "hit_die": 8,
+      "primary_ability": "DEX",
+      "saving_throw_proficiencies": ["DEX", "INT"],
+      "armor_proficiencies": ["light"],
+      "weapon_proficiencies": ["simple", "hand_crossbow", "longsword", "rapier", "shortsword"],
+      "tool_proficiencies": ["thieves_tools"],
+      "skill_choices": ["acrobatics", "athletics", "deception", "insight", "intimidation", "investigation", "perception", "performance", "persuasion", "sleight_of_hand", "stealth"],
+      "num_skill_choices": 4,
+      "features": [
+        {"name": "Expertise", "level": 1},
+        {"name": "Sneak Attack", "level": 1},
+        {"name": "Thieves' Cant", "level": 1},
+        {"name": "Cunning Action", "level": 2},
+        {"name": "Roguish Archetype", "level": 3},
+        {"name": "Ability Score Improvement", "level": 4},
+        {"name": "Uncanny Dodge", "level": 5}
+      ]
+    },
+    {
+      "name": "Cleric",
+      "hit_die": 8,
+      "primary_ability": "WIS",
+      "saving_throw_proficiencies": ["WIS", "CHA"],
+      "armor_proficiencies": ["light", "medium", "shields"],
+      "weapon_proficiencies": ["simple"],
+      "skill_choices": ["history", "insight", "medicine", "persuasion", "religion"],
+      "num_skill_choices": 2,
+      "spellcasting_ability": "WIS",
+      "spell_slots": {
+        "1": {"cantrips": 3, "1st": 2},
+        "2": {"cantrips": 3, "1st": 3},
+        "3": {"cantrips": 3, "1st": 4, "2nd": 2},
+        "4": {"cantrips": 4, "1st": 4, "2nd": 3},
+        "5": {"cantrips": 4, "1st": 4, "2nd": 3, "3rd": 2}
+      },
+      "features": [
+        {"name": "Spellcasting", "level": 1},
+        {"name": "Divine Domain", "level": 1},
+        {"name": "Channel Divinity", "level": 2},
+        {"name": "Ability Score Improvement", "level": 4},
+        {"name": "Destroy Undead", "level": 5}
+      ]
+    },
+    {
+      "name": "Ranger",
+      "hit_die": 10,
+      "primary_ability": "DEX",
+      "saving_throw_proficiencies": ["STR", "DEX"],
+      "armor_proficiencies": ["light", "medium", "shields"],
+      "weapon_proficiencies": ["simple", "martial"],
+      "skill_choices": ["animal_handling", "athletics", "insight", "investigation", "nature", "perception", "stealth", "survival"],
+      "num_skill_choices": 3,
+      "spellcasting_ability": "WIS",
+      "spell_slots": {
+        "2": {"1st": 2},
+        "3": {"1st": 3},
+        "4": {"1st": 3},
+        "5": {"1st": 4, "2nd": 2}
+      },
+      "features": [
+        {"name": "Favored Enemy", "level": 1},
+        {"name": "Natural Explorer", "level": 1},
+        {"name": "Fighting Style", "level": 2},
+        {"name": "Spellcasting", "level": 2},
+        {"name": "Ranger Archetype", "level": 3},
+        {"name": "Primeval Awareness", "level": 3},
+        {"name": "Ability Score Improvement", "level": 4},
+        {"name": "Extra Attack", "level": 5}
+      ]
+    },
+    {
+      "name": "Barbarian",
+      "hit_die": 12,
+      "primary_ability": "STR",
+      "saving_throw_proficiencies": ["STR", "CON"],
+      "armor_proficiencies": ["light", "medium", "shields"],
+      "weapon_proficiencies": ["simple", "martial"],
+      "skill_choices": ["animal_handling", "athletics", "intimidation", "nature", "perception", "survival"],
+      "num_skill_choices": 2,
+      "features": [
+        {"name": "Rage", "level": 1},
+        {"name": "Unarmored Defense", "level": 1},
+        {"name": "Reckless Attack", "level": 2},
+        {"name": "Danger Sense", "level": 2},
+        {"name": "Primal Path", "level": 3},
+        {"name": "Ability Score Improvement", "level": 4},
+        {"name": "Extra Attack", "level": 5},
+        {"name": "Fast Movement", "level": 5}
+      ]
+    }
+  ]
+}

@@ -1,8 +1,0 @@
-# MakeHuman Material - Tiefling Red Skin
-name tiefling-red
-ambientColor 0.15 0.05 0.05
-diffuseColor 0.6 0.15 0.12
-specularColor 0.3 0.2 0.2
-shininess 0.25
-opacity 1.0
-shader shaders/glsl/litsphere

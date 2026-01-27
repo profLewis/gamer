@@ -1,8 +1,0 @@
-# MakeHuman Material - Lizardfolk Green Scales
-name lizardfolk-green
-ambientColor 0.05 0.1 0.05
-diffuseColor 0.2 0.4 0.15
-specularColor 0.3 0.35 0.25
-shininess 0.35
-opacity 1.0
-shader shaders/glsl/litsphere

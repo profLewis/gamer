@@ -1,0 +1,130 @@
+{
+  "races": [
+    {
+      "name": "Human",
+      "size": "Medium",
+      "speed": 30,
+      "ability_bonuses": {
+        "str": 1, "dex": 1, "con": 1, "int": 1, "wis": 1, "cha": 1
+      },
+      "traits": ["Versatile"],
+      "languages": ["Common", "Choice"]
+    },
+    {
+      "name": "Elf",
+      "subrace": "High",
+      "size": "Medium",
+      "speed": 30,
+      "ability_bonuses": {"dex": 2, "int": 1},
+      "darkvision": 60,
+      "traits": ["Fey Ancestry", "Trance", "Keen Senses", "Cantrip"],
+      "languages": ["Common", "Elvish", "Choice"],
+      "skill_proficiencies": ["perception"],
+      "weapon_proficiencies": ["longsword", "shortsword", "shortbow", "longbow"]
+    },
+    {
+      "name": "Elf",
+      "subrace": "Wood",
+      "size": "Medium",
+      "speed": 35,
+      "ability_bonuses": {"dex": 2, "wis": 1},
+      "darkvision": 60,
+      "traits": ["Fey Ancestry", "Trance", "Keen Senses", "Fleet of Foot", "Mask of the Wild"],
+      "languages": ["Common", "Elvish"],
+      "skill_proficiencies": ["perception"],
+      "weapon_proficiencies": ["longsword", "shortsword", "shortbow", "longbow"]
+    },
+    {
+      "name": "Dwarf",
+      "subrace": "Hill",
+      "size": "Medium",
+      "speed": 25,
+      "ability_bonuses": {"con": 2, "wis": 1},
+      "darkvision": 60,
+      "traits": ["Dwarven Resilience", "Stonecunning", "Dwarven Toughness"],
+      "languages": ["Common", "Dwarvish"],
+      "weapon_proficiencies": ["battleaxe", "handaxe", "light_hammer", "warhammer"],
+      "damage_resistances": ["poison"]
+    },
+    {
+      "name": "Dwarf",
+      "subrace": "Mountain",
+      "size": "Medium",
+      "speed": 25,
+      "ability_bonuses": {"con": 2, "str": 2},
+      "darkvision": 60,
+      "traits": ["Dwarven Resilience", "Stonecunning", "Dwarven Armor Training"],
+      "languages": ["Common", "Dwarvish"],
+      "weapon_proficiencies": ["battleaxe", "handaxe", "light_hammer", "warhammer"],
+      "armor_proficiencies": ["light", "medium"],
+      "damage_resistances": ["poison"]
+    },
+    {
+      "name": "Halfling",
+      "subrace": "Lightfoot",
+      "size": "Small",
+      "speed": 25,
+      "ability_bonuses": {"dex": 2, "cha": 1},
+      "traits": ["Lucky", "Brave", "Halfling Nimbleness", "Naturally Stealthy"],
+      "languages": ["Common", "Halfling"]
+    },
+    {
+      "name": "Halfling",
+      "subrace": "Stout",
+      "size": "Small",
+      "speed": 25,
+      "ability_bonuses": {"dex": 2, "con": 1},
+      "traits": ["Lucky", "Brave", "Halfling Nimbleness", "Stout Resilience"],
+      "languages": ["Common", "Halfling"],
+      "damage_resistances": ["poison"]
+    },
+    {
+      "name": "Half-Elf",
+      "size": "Medium",
+      "speed": 30,
+      "ability_bonuses": {"cha": 2},
+      "darkvision": 60,
+      "traits": ["Fey Ancestry", "Skill Versatility", "Ability Score Increase"],
+      "languages": ["Common", "Elvish", "Choice"]
+    },
+    {
+      "name": "Half-Orc",
+      "size": "Medium",
+      "speed": 30,
+      "ability_bonuses": {"str": 2, "con": 1},
+      "darkvision": 60,
+      "traits": ["Menacing", "Relentless Endurance", "Savage Attacks"],
+      "languages": ["Common", "Orc"],
+      "skill_proficiencies": ["intimidation"]
+    },
+    {
+      "name": "Gnome",
+      "subrace": "Rock",
+      "size": "Small",
+      "speed": 25,
+      "ability_bonuses": {"int": 2, "con": 1},
+      "darkvision": 60,
+      "traits": ["Gnome Cunning", "Artificer's Lore", "Tinker"],
+      "languages": ["Common", "Gnomish"]
+    },
+    {
+      "name": "Tiefling",
+      "size": "Medium",
+      "speed": 30,
+      "ability_bonuses": {"cha": 2, "int": 1},
+      "darkvision": 60,
+      "traits": ["Hellish Resistance", "Infernal Legacy"],
+      "languages": ["Common", "Infernal"],
+      "damage_resistances": ["fire"],
+      "cantrips": ["thaumaturgy"]
+    },
+    {
+      "name": "Dragonborn",
+      "size": "Medium",
+      "speed": 30,
+      "ability_bonuses": {"str": 2, "cha": 1},
+      "traits": ["Draconic Ancestry", "Breath Weapon", "Damage Resistance"],
+      "languages": ["Common", "Draconic"]
+    }
+  ]
+}
