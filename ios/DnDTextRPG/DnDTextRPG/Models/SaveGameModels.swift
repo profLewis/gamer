@@ -21,6 +21,10 @@ struct SaveGame: Codable, Identifiable {
     let party: [Character]
     let dungeon: Dungeon
     let gameState: GameState
+
+    // Time & history
+    let gameTimeMinutes: Int
+    let adventureLog: [String]
 }
 
 // MARK: - Save Game Manager

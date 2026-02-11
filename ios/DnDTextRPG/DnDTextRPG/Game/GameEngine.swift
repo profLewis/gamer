@@ -23,6 +23,10 @@ class GameEngine: ObservableObject {
     @Published var dungeon: Dungeon?
     @Published var currentCombat: Combat?
 
+    // Time & history
+    @Published var gameTimeMinutes: Int = 360  // Start at Day 1, 6:00 AM
+    @Published var adventureLog: [String] = []
+
     // Character creation state
     private var creatingCharacterIndex: Int = 0
     private var totalCharacters: Int = 1
@@ -43,6 +47,26 @@ class GameEngine: ObservableObject {
     // MARK: - Initialization
 
     init() {}
+
+    // MARK: - Game Time & Adventure Log
+
+    func formattedGameTime() -> String {
+        let day = gameTimeMinutes / 1440 + 1
+        let hourOfDay = (gameTimeMinutes % 1440) / 60
+        let minute = gameTimeMinutes % 60
+        let period = hourOfDay >= 12 ? "PM" : "AM"
+        let hour12 = hourOfDay == 0 ? 12 : (hourOfDay > 12 ? hourOfDay - 12 : hourOfDay)
+        return "Day \(day), \(hour12):\(String(format: "%02d", minute)) \(period)"
+    }
+
+    private func advanceTime(_ minutes: Int) {
+        gameTimeMinutes += minutes
+    }
+
+    private func logEvent(_ message: String) {
+        let timestamp = formattedGameTime()
+        adventureLog.append("[\(timestamp)] \(message)")
+    }
 
     // MARK: - Terminal Output
 
@@ -508,6 +532,9 @@ class GameEngine: ObservableObject {
     private func enterDungeon() {
         clearTerminal()
         gameState = .exploring
+        gameTimeMinutes = 360  // 6:00 AM
+        adventureLog = []
+        logEvent("Entered \(dungeon?.name ?? "the dungeon")")
         showExplorationView()
     }
 
@@ -543,6 +570,7 @@ class GameEngine: ObservableObject {
         print("")
 
         // Party status bar
+        print(formattedGameTime(), color: .dimGreen)
         let partyStr = party.map { "\($0.name) \($0.currentHP)/\($0.maxHP)HP" }.joined(separator: "  ")
         print(partyStr, color: .cyan)
         print("")
@@ -595,7 +623,12 @@ class GameEngine: ObservableObject {
         guard let dungeon = dungeon else { return }
 
         let result = dungeon.move(direction: direction)
-        if !result.success {
+        if result.success {
+            advanceTime(10)
+            if let room = dungeon.currentRoom {
+                logEvent("Moved \(direction.rawValue) to \(room.name)")
+            }
+        } else {
             print(result.message, color: .yellow)
         }
         showExplorationView()
@@ -613,6 +646,8 @@ class GameEngine: ObservableObject {
         print("You search the room carefully...", color: .cyan)
         print("")
 
+        advanceTime(15)
+
         let roll = Dice.d20()
         let bestPerception = party.map { $0.skillModifier(for: .perception) }.max() ?? 0
         let total = roll + bestPerception
@@ -623,11 +658,14 @@ class GameEngine: ObservableObject {
                 let gold = Dice.rollSum(2, d: 6) * 5
                 print("Hidden stash: \(gold) gold pieces!")
                 party.first?.gold += gold
+                logEvent("Found \(gold) gold in a hidden stash")
             } else {
                 print("A secret alcove, but it's empty.")
+                logEvent("Searched room — found an empty alcove")
             }
         } else {
             print("You don't find anything of interest.")
+            logEvent("Searched room — found nothing")
         }
 
         waitForContinue()
@@ -655,15 +693,18 @@ class GameEngine: ObservableObject {
         print("")
 
         var totalGold = 0
+        var itemNames: [String] = []
         for item in room.treasure {
             print("  \(item.name)")
             if item.type == .gold {
                 totalGold += item.value
             }
+            itemNames.append(item.name)
         }
 
         party.first?.gold += totalGold
         room.treasure.removeAll()
+        logEvent("Collected treasure: \(itemNames.joined(separator: ", "))")
 
         waitForContinue()
         inputHandler = { [weak self] _ in
@@ -684,6 +725,13 @@ class GameEngine: ObservableObject {
         print("")
         printTitle("Party Status")
 
+        // Game time
+        print("  Time: \(formattedGameTime())", color: .cyan)
+        let roomsVisited = dungeon?.rooms.values.filter { $0.visited }.count ?? 0
+        let totalRooms = dungeon?.rooms.count ?? 0
+        print("  Explored: \(roomsVisited)/\(totalRooms) rooms", color: .cyan)
+        print("")
+
         for char in party {
             // HP bar
             let hpFraction = Double(char.currentHP) / Double(char.maxHP)
@@ -698,9 +746,41 @@ class GameEngine: ObservableObject {
             print("")
         }
 
+        showMenu(["Adventure Log", "< Back"])
+        menuHandler = { [weak self] choice in
+            if choice == 1 {
+                self?.showAdventureLog()
+            } else {
+                self?.showExplorationView()
+            }
+        }
+    }
+
+    func showAdventureLog() {
+        clearTerminal()
+        printTitle("Adventure Log")
+        print("  Time: \(formattedGameTime())", color: .cyan)
+        print("")
+
+        if adventureLog.isEmpty {
+            print("  No events recorded yet.", color: .dimGreen)
+        } else {
+            // Show most recent events first, limit to last 30
+            let recentLog = adventureLog.suffix(30)
+            for entry in recentLog {
+                print("  \(entry)", color: .dimGreen)
+            }
+            if adventureLog.count > 30 {
+                print("")
+                print("  (\(adventureLog.count - 30) earlier entries omitted)", color: .dimGreen)
+            }
+        }
+
+        print("")
+
         showMenu(["< Back"])
         menuHandler = { [weak self] _ in
-            self?.showExplorationView()
+            self?.showPartyStatus()
         }
     }
 
@@ -735,18 +815,24 @@ class GameEngine: ObservableObject {
 
             SoundManager.shared.playHeal()
             if choice == 1 {
+                self.advanceTime(60)
                 self.print("Your party takes a short rest...", color: .cyan)
+                var healed: [String] = []
                 for char in self.party {
                     let healAmount = Dice.rollSum(1, d: char.characterClass.hitDie)
                     char.heal(healAmount)
                     self.print("\(char.name) recovers \(healAmount) HP")
+                    healed.append("\(char.name) +\(healAmount)HP")
                 }
+                self.logEvent("Short rest — \(healed.joined(separator: ", "))")
             } else {
+                self.advanceTime(480)
                 self.print("Your party takes a long rest...", color: .cyan)
                 for char in self.party {
                     char.heal(char.maxHP)
                     self.print("\(char.name) fully recovers!")
                 }
+                self.logEvent("Long rest — party fully recovered")
             }
 
             self.waitForContinue()
@@ -762,6 +848,9 @@ class GameEngine: ObservableObject {
         gameState = .combat
         currentCombat = Combat(party: party, encounter: encounter)
         SoundManager.shared.playBattleStart()
+
+        let monsterNames = encounter.monsters.map { $0.name }.joined(separator: ", ")
+        logEvent("Battle! Encountered \(monsterNames)")
 
         clearTerminal()
         printLines(asciiSwords, color: .red)
@@ -902,12 +991,16 @@ class GameEngine: ObservableObject {
     func handleCombatVictory() {
         guard let combat = currentCombat else { return }
         SoundManager.shared.playVictory()
+        advanceTime(30)
 
         clearTerminal()
         printTitle("VICTORY!")
 
         let xp = combat.encounter.totalXP
         let xpEach = xp / party.count
+
+        let defeated = combat.encounter.monsters.map { $0.name }.joined(separator: ", ")
+        logEvent("Victory! Defeated \(defeated) (+\(xp) XP)")
 
         print("All enemies defeated!", color: .brightGreen)
         print("")
@@ -940,6 +1033,7 @@ class GameEngine: ObservableObject {
         SoundManager.shared.playDefeat()
         clearTerminal()
         gameState = .gameOver
+        logEvent("The party has fallen...")
 
         printLines(asciiSkull, color: .red)
         print("")
@@ -958,6 +1052,7 @@ class GameEngine: ObservableObject {
         SoundManager.shared.playVictory()
         clearTerminal()
         gameState = .victory
+        logEvent("DUNGEON CONQUERED! \(dungeon?.name ?? "The dungeon") has been cleared!")
 
         printLines(asciiTrophy, color: .yellow)
         print("")
@@ -1028,6 +1123,8 @@ class GameEngine: ObservableObject {
             slotName = saveName.trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
+        logEvent("Game saved: \(slotName)")
+
         let saveGame = SaveGame(
             id: UUID(),
             savedAt: Date(),
@@ -1037,7 +1134,9 @@ class GameEngine: ObservableObject {
             dungeonLevel: dungeon.level,
             party: party,
             dungeon: dungeon,
-            gameState: .exploring
+            gameState: .exploring,
+            gameTimeMinutes: gameTimeMinutes,
+            adventureLog: adventureLog
         )
 
         do {
@@ -1096,9 +1195,14 @@ class GameEngine: ObservableObject {
 
         for (index, save) in saves.enumerated() {
             let dateStr = dateFormatter.string(from: save.savedAt)
+            let day = save.gameTimeMinutes / 1440 + 1
+            let hourOfDay = (save.gameTimeMinutes % 1440) / 60
+            let period = hourOfDay >= 12 ? "PM" : "AM"
+            let hour12 = hourOfDay == 0 ? 12 : (hourOfDay > 12 ? hourOfDay - 12 : hourOfDay)
             print("\(index + 1). \(save.slotName)", color: .brightGreen)
             print("   \(save.partyDescription)", color: .dimGreen)
-            print("   \(save.dungeonName) (Level \(save.dungeonLevel)) - \(dateStr)", color: .dimGreen)
+            print("   \(save.dungeonName) (Level \(save.dungeonLevel)) - Day \(day), \(hour12) \(period)", color: .dimGreen)
+            print("   Saved: \(dateStr)", color: .dimGreen)
             print("")
         }
 
@@ -1213,7 +1317,9 @@ class GameEngine: ObservableObject {
                 dungeonLevel: save.dungeonLevel,
                 party: save.party,
                 dungeon: save.dungeon,
-                gameState: save.gameState
+                gameState: save.gameState,
+                gameTimeMinutes: save.gameTimeMinutes,
+                adventureLog: save.adventureLog
             )
 
             SaveGameManager.shared.delete(id: save.id)
@@ -1262,11 +1368,15 @@ class GameEngine: ObservableObject {
         dungeon = save.dungeon
         currentCombat = nil
         gameState = .exploring
+        gameTimeMinutes = save.gameTimeMinutes
+        adventureLog = save.adventureLog
+        logEvent("Game loaded: \(save.slotName)")
 
         clearTerminal()
         print("Game loaded!", color: .brightGreen, bold: true)
         print("")
         print("Welcome back to \(save.dungeonName).", color: .cyan)
+        print("Time: \(formattedGameTime())", color: .dimGreen)
         print("")
 
         waitForContinue()
@@ -1279,6 +1389,8 @@ class GameEngine: ObservableObject {
         party = []
         dungeon = nil
         currentCombat = nil
+        gameTimeMinutes = 360
+        adventureLog = []
         clearTerminal()
         showMainMenu()
     }
