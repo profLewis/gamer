@@ -341,6 +341,27 @@ class Dungeon: ObservableObject, Codable {
         }
     }
 
+    /// Regenerate encounters for all uncleared rooms (keeps map layout intact)
+    func rerollEncounters() {
+        for room in rooms.values {
+            guard !room.cleared else { continue }
+            guard room.roomType != .entrance && room.roomType != .shrine else { continue }
+
+            if room.roomType == .boss {
+                room.encounter = Encounter.generateBoss(level: level)
+            } else if room.roomType != .empty && Bool.random() {
+                room.encounter = Encounter.generate(level: level, difficulty: .medium)
+            } else {
+                room.encounter = nil
+            }
+
+            // Also regenerate treasure for treasure rooms
+            if room.roomType == .treasure && room.treasure.isEmpty {
+                room.treasure = TreasureItem.generateTreasure(level: level)
+            }
+        }
+    }
+
     func move(direction: Direction) -> (success: Bool, message: String) {
         guard let current = currentRoom else {
             return (false, "Error: No current room")

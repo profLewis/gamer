@@ -52,6 +52,27 @@ class GameEngine: ObservableObject {
 
     init() {}
 
+    // MARK: - Name Validation
+
+    private let blockedWords: Set<String> = [
+        "fuck", "shit", "ass", "damn", "bitch", "bastard", "dick", "cock",
+        "pussy", "cunt", "nigger", "nigga", "faggot", "retard", "slut",
+        "whore", "piss", "bollocks", "wanker", "twat"
+    ]
+
+    private func isNameAppropriate(_ name: String) -> Bool {
+        let lower = name.lowercased()
+        let words = lower.components(separatedBy: .alphanumerics.inverted)
+        for word in words {
+            if blockedWords.contains(word) { return false }
+        }
+        // Also check if any blocked word appears as a substring
+        for blocked in blockedWords {
+            if lower.contains(blocked) { return false }
+        }
+        return true
+    }
+
     // MARK: - Game Time & Adventure Log
 
     func formattedGameTime() -> String {
@@ -182,12 +203,9 @@ class GameEngine: ObservableObject {
 
         printTitle("D&D 5e Text Adventure")
         print("A text-based role-playing game", color: .dimGreen)
-        print("Version 1.0.0", color: .dimGreen)
-        print("")
-        print("A Timbaloo app for you to enjoy", color: .cyan)
         print("")
 
-        showMenu(["New Game", "Load Game", "Hall of Fame", "How to Play", "Quit"])
+        showMenu(["New Game", "Load Game", "Hall of Fame", "How to Play", "Settings", "Quit"])
 
         menuHandler = { [weak self] choice in
             switch choice {
@@ -195,7 +213,8 @@ class GameEngine: ObservableObject {
             case 2: self?.showLoadGameMenu(returnTo: .mainMenu)
             case 3: self?.showHallOfFame()
             case 4: self?.showHowToPlay()
-            case 5: self?.quitApp()
+            case 5: self?.showSettings()
+            case 6: self?.quitApp()
             default: self?.showMainMenu()
             }
         }
@@ -242,6 +261,73 @@ class GameEngine: ObservableObject {
         }
     }
 
+    // MARK: - Settings
+
+    func showSettings() {
+        clearTerminal()
+        printTitle("Settings")
+
+        let hasKey = DMEngine.shared.isConfigured
+        print("AI DUNGEON MASTER:", color: .cyan, bold: true)
+        if hasKey {
+            print("  API Key: configured", color: .brightGreen)
+            print("  The DM is ready! Use 'Ask the DM' while exploring.", color: .dimGreen)
+        } else {
+            print("  API Key: not set", color: .yellow)
+            print("  Set an Anthropic API key to enable the AI Dungeon Master.", color: .dimGreen)
+            print("  Get a key at console.anthropic.com", color: .dimGreen)
+        }
+        print("")
+
+        var options = ["Set API Key"]
+        if hasKey {
+            options.append("Clear API Key")
+        }
+        options.append("< Back")
+
+        showMenu(options)
+
+        menuHandler = { [weak self] choice in
+            if choice == 1 {
+                self?.promptAPIKey()
+            } else if hasKey && choice == 2 {
+                DMEngine.shared.apiKey = nil
+                self?.print("")
+                self?.print("API key cleared.", color: .yellow)
+                self?.print("")
+                self?.waitForContinue()
+                self?.inputHandler = { [weak self] _ in
+                    self?.showSettings()
+                }
+            } else {
+                self?.clearTerminal()
+                self?.showMainMenu()
+            }
+        }
+    }
+
+    private func promptAPIKey() {
+        print("")
+        promptText("Paste your Anthropic API key:")
+
+        inputHandler = { [weak self] key in
+            let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                self?.showSettings()
+                return
+            }
+            DMEngine.shared.apiKey = trimmed
+            self?.print("")
+            self?.print("API key saved!", color: .brightGreen)
+            self?.print("The AI Dungeon Master is now available while exploring.", color: .cyan)
+            self?.print("")
+            self?.waitForContinue()
+            self?.inputHandler = { [weak self] _ in
+                self?.showSettings()
+            }
+        }
+    }
+
     // MARK: - Hall of Fame
 
     func showHallOfFame() {
@@ -269,21 +355,16 @@ class GameEngine: ObservableObject {
             let dateFormatter = DateFormatter()
             dateFormatter.dateStyle = .medium
 
-            for (index, entry) in entries.prefix(10).enumerated() {
+            for (index, entry) in entries.enumerated() {
                 let outcome = entry.outcome == .victory ? "VICTORY" : "DEFEAT"
                 let outcomeColor: TerminalColor = entry.outcome == .victory ? .yellow : .red
 
-                print("\(index + 1). \(entry.dungeonName) (Lv.\(entry.dungeonLevel)) — \(outcome)", color: outcomeColor)
+                print("\(index + 1). \(entry.dungeonName) (Lv.\(entry.dungeonLevel)) — \(outcome)  [\(entry.score) pts]", color: outcomeColor)
                 print("   \(entry.partyDescription)", color: .dimGreen)
 
                 let day = entry.gameTimeMinutes / 1440 + 1
                 print("   Gold: \(entry.goldCollected)  Slain: \(entry.monstersSlain)  Rooms: \(entry.roomsExplored)/\(entry.totalRooms)  Day \(day)", color: .dimGreen)
                 print("   \(dateFormatter.string(from: entry.date))", color: .dimGreen)
-                print("")
-            }
-
-            if entries.count > 10 {
-                print("  (\(entries.count - 10) more entries...)", color: .dimGreen)
                 print("")
             }
         }
@@ -345,13 +426,21 @@ class GameEngine: ObservableObject {
         promptText("Enter character name (or 'back'):")
 
         inputHandler = { [weak self] name in
+            guard let self = self else { return }
             if name.lowercased() == "back" {
-                self?.clearTerminal()
-                self?.startNewGame()
+                self.clearTerminal()
+                self.startNewGame()
                 return
             }
-            self?.tempCharacterName = name.isEmpty ? "Adventurer" : name
-            self?.chooseRace()
+            let cleanName = name.isEmpty ? "Adventurer" : name
+            if !self.isNameAppropriate(cleanName) {
+                self.print("That name is not befitting of an adventurer. Try again.", color: .yellow)
+                self.print("")
+                self.startCharacterCreation()
+                return
+            }
+            self.tempCharacterName = cleanName
+            self.chooseRace()
         }
     }
 
@@ -587,9 +676,16 @@ class GameEngine: ObservableObject {
         promptText("Name your dungeon (or press Enter for default):")
 
         inputHandler = { [weak self] name in
+            guard let self = self else { return }
             let dungeonName = name.isEmpty ? "The Dark Depths" : name
-            self?.tempDungeonName = dungeonName
-            self?.selectDifficulty(dungeonName: dungeonName)
+            if !self.isNameAppropriate(dungeonName) {
+                self.print("The DM frowns. Choose a more suitable name for your dungeon.", color: .yellow)
+                self.print("")
+                self.startAdventure()
+                return
+            }
+            self.tempDungeonName = dungeonName
+            self.selectDifficulty(dungeonName: dungeonName)
         }
     }
 
@@ -615,6 +711,7 @@ class GameEngine: ObservableObject {
         gameState = .exploring
         gameTimeMinutes = 360  // 6:00 AM
         adventureLog = []
+        DMEngine.shared.clearHistory()
         logEvent("Entered \(dungeon?.name ?? "the dungeon")")
         SoundManager.shared.startMusic(.exploration)
         showExplorationView()
@@ -688,6 +785,11 @@ class GameEngine: ObservableObject {
 
         options.append("Rest")
         actions.append { [weak self] in self?.rest() }
+
+        if DMEngine.shared.isConfigured {
+            options.append("Ask the DM")
+            actions.append { [weak self] in self?.askTheDM() }
+        }
 
         options.append("Save Game")
         actions.append { [weak self] in self?.showSaveMenu() }
@@ -815,6 +917,8 @@ class GameEngine: ObservableObject {
         print("")
 
         for char in party {
+            printLines(char.characterClass.asciiArt, color: .cyan)
+
             // HP bar
             let hpFraction = Double(char.currentHP) / Double(char.maxHP)
             let barLen = 20
@@ -926,6 +1030,201 @@ class GameEngine: ObservableObject {
         }
     }
 
+    // MARK: - AI Dungeon Master
+
+    func askTheDM() {
+        clearTerminal()
+
+        // Show map at top
+        if let dungeon = dungeon {
+            printLines(dungeon.getMapDisplay(), color: .dimGreen)
+            print("")
+        }
+
+        print("The DM awaits your question...", color: .cyan, bold: true)
+        print("(Type your question or action, or 'back' to return)", color: .dimGreen)
+        print("")
+
+        promptText(">")
+
+        inputHandler = { [weak self] input in
+            guard let self = self else { return }
+
+            if input.lowercased() == "back" || input.isEmpty {
+                self.showExplorationView()
+                return
+            }
+
+            self.print("")
+            self.print("The DM considers...", color: .dimGreen)
+
+            let context = self.buildDMContext()
+
+            DMEngine.shared.ask(input, context: context) { [weak self] response in
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    self.print("")
+                    self.print("DM:", color: .yellow, bold: true)
+
+                    // Word wrap the response into lines
+                    let words = response.split(separator: " ")
+                    var line = ""
+                    for word in words {
+                        if line.count + word.count + 1 > 60 {
+                            self.print("  \(line)", color: .yellow)
+                            line = String(word)
+                        } else {
+                            line += (line.isEmpty ? "" : " ") + word
+                        }
+                    }
+                    if !line.isEmpty {
+                        self.print("  \(line)", color: .yellow)
+                    }
+
+                    self.print("")
+                    self.logEvent("Asked DM: \(input)")
+
+                    // Let them ask again or go back
+                    self.showMenu(["Ask Again", "< Back"])
+                    self.menuHandler = { [weak self] choice in
+                        if choice == 1 {
+                            self?.askTheDM()
+                        } else {
+                            self?.showExplorationView()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func buildDMContext() -> DMContext {
+        let room = dungeon?.currentRoom
+        let exitList = room?.exits.keys.map { $0.rawValue }.joined(separator: ", ") ?? "None"
+        let partyStatus = party.map {
+            "\($0.name) (\($0.race.rawValue) \($0.characterClass.rawValue)) HP:\($0.currentHP)/\($0.maxHP) Gold:\($0.gold)"
+        }.joined(separator: "\n")
+
+        return DMContext(
+            roomName: room?.name ?? "Unknown",
+            roomType: room?.roomType.rawValue ?? "Unknown",
+            roomDescription: room?.roomType.description ?? "",
+            exits: exitList,
+            isCleared: room?.cleared ?? false,
+            partyStatus: partyStatus,
+            gameTime: formattedGameTime()
+        )
+    }
+
+    // MARK: - Combat Display
+
+    private func diceArt(_ value: Int) -> [String] {
+        let valStr = String(value)
+        let pad: String
+        if valStr.count == 1 {
+            pad = " \(valStr) "
+        } else if valStr.count == 2 {
+            pad = " \(valStr)"
+        } else {
+            pad = valStr
+        }
+        return [
+            "      ┌─────┐",
+            "      │ \(pad) │",
+            "      └─────┘",
+        ]
+    }
+
+    func displayAttackReport(_ report: AttackReport, completion: @escaping () -> Void) {
+        let attackColor: TerminalColor = report.isPlayerAttack ? .brightGreen : .red
+
+        print("\(report.attackerName) attacks \(report.targetName)!", color: attackColor, bold: true)
+        print("")
+        print("  To Hit: d20 + \(report.attackModifier)", color: .cyan)
+        print("  (\(report.modifierBreakdown))", color: .dimGreen)
+        print("  Target AC: \(report.targetAC)", color: .dimGreen)
+        print("")
+
+        // Phase 2: Dice roll (after delay)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self = self else { return }
+
+            self.printLines(self.diceArt(report.d20Roll), color: .yellow)
+            let sign = report.attackModifier >= 0 ? "+" : ""
+            self.print("  d20 -> [\(report.d20Roll)] \(sign)\(report.attackModifier) = \(report.totalAttack) vs AC \(report.targetAC)", color: .cyan)
+            self.print("")
+
+            if report.isCritical {
+                SoundManager.shared.playCrit()
+                self.printLines(self.asciiCriticalHit, color: report.isPlayerAttack ? .yellow : .red)
+                self.print("")
+                self.print("  NATURAL 20 -- CRITICAL HIT!", color: .yellow, bold: true)
+            } else if report.isCriticalMiss {
+                SoundManager.shared.playMiss()
+                self.printLines(self.asciiMiss, color: .dimGreen)
+                self.print("")
+                self.print("  Natural 1 -- Critical Miss!", color: .red)
+            } else if report.hits {
+                if report.isPlayerAttack {
+                    SoundManager.shared.playHit()
+                    self.printLines(self.asciiHit(attacker: report.attackerName, target: report.targetName), color: .brightGreen)
+                } else {
+                    SoundManager.shared.playMonsterAttack()
+                    self.printLines(self.asciiMonsterAttack, color: .red)
+                }
+                self.print("")
+                self.print("  HIT!", color: .brightGreen, bold: true)
+            } else {
+                SoundManager.shared.playMiss()
+                self.printLines(self.asciiMiss, color: .dimGreen)
+                self.print("")
+                self.print("  Miss.", color: .dimGreen)
+            }
+            self.print("")
+
+            // Phase 3: Damage (if hit)
+            if report.hits, let rolls = report.damageRolls, let totalDmg = report.totalDamage {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    guard let self = self else { return }
+
+                    let diceStr = report.damageDice ?? "?"
+                    let modVal = report.damageModifier ?? 0
+                    let modSign = modVal >= 0 ? "+" : ""
+
+                    if report.isCritical {
+                        self.print("  Damage: \(diceStr) \(modSign)\(modVal) (critical!)", color: .cyan)
+                    } else {
+                        self.print("  Damage: \(diceStr) \(modSign)\(modVal)", color: .cyan)
+                    }
+
+                    let diceTotal = rolls.reduce(0, +)
+                    self.printLines(self.diceArt(diceTotal), color: .red)
+
+                    let rollStr = rolls.count == 1
+                        ? "[\(rolls[0])]"
+                        : rolls.map { "[\($0)]" }.joined(separator: "+")
+                    self.print("  \(rollStr) \(modSign)\(modVal) = \(totalDmg) damage!", color: report.isPlayerAttack ? .brightGreen : .red)
+                    self.print("")
+
+                    if report.targetDefeated {
+                        self.print("  \(report.targetName) is defeated!", color: .yellow, bold: true)
+                    } else if report.targetUnconscious {
+                        self.print("  \(report.targetName) falls unconscious!", color: .red, bold: true)
+                    } else {
+                        self.print("  \(report.targetName): \(report.targetCurrentHP)/\(report.targetMaxHP) HP", color: .dimGreen)
+                    }
+                    self.print("")
+
+                    self.waitForContinue()
+                    self.inputHandler = { _ in completion() }
+                }
+            } else {
+                self.waitForContinue()
+                self.inputHandler = { _ in completion() }
+            }
+        }
+    }
+
     // MARK: - Combat
 
     func startCombat(encounter: Encounter) {
@@ -943,9 +1242,10 @@ class GameEngine: ObservableObject {
         printTitle("COMBAT!")
 
         for monster in encounter.monsters {
-            print("\(monster.name) appears!", color: .red)
+            printLines(monster.type.asciiArt, color: .red)
+            print("\(monster.name) appears! — \(monster.type.description)", color: .red)
+            print("")
         }
-        print("")
         print("Rolling initiative...")
         print("")
 
@@ -986,28 +1286,16 @@ class GameEngine: ObservableObject {
         if current.isPlayer {
             showPlayerCombatMenu(characterId: current.id)
         } else {
-            let result = combat.runMonsterTurn()
-
-            // Show monster attack ASCII art and sound
-            if result.contains("CRITICAL") {
-                SoundManager.shared.playCrit()
-                printLines(asciiCriticalHit, color: .red)
-            } else if result.contains("deals") {
-                SoundManager.shared.playMonsterAttack()
-                printLines(asciiMonsterAttack, color: .red)
+            if let report = combat.runMonsterTurn() {
+                displayAttackReport(report) { [weak self] in
+                    guard let self = self else { return }
+                    combat.checkCombatEnd()
+                    combat.nextTurn()
+                    self.runCombatTurn()
+                }
             } else {
-                SoundManager.shared.playMiss()
-                printLines(asciiMiss, color: .dimGreen)
-            }
-            print("")
-            print(result)
-
-            combat.checkCombatEnd()
-            combat.nextTurn()
-
-            waitForContinue()
-            inputHandler = { [weak self] _ in
-                self?.runCombatTurn()
+                combat.nextTurn()
+                runCombatTurn()
             }
         }
     }
@@ -1034,26 +1322,18 @@ class GameEngine: ObservableObject {
 
             if choice <= aliveMonsters.count {
                 let targetId = aliveMonsters[choice - 1].id
-                let targetName = aliveMonsters[choice - 1].name
-                let result = combat.playerAttack(characterId: characterId, targetId: targetId)
+                if let report = combat.playerAttack(characterId: characterId, targetId: targetId) {
+                    self.clearTerminal()
+                    self.printLines(combat.displayStatus())
+                    self.print("")
 
-                self.clearTerminal()
-                self.printLines(combat.displayStatus())
-                self.print("")
-
-                // Show attack ASCII art and sound based on result
-                if result.contains("CRITICAL") {
-                    SoundManager.shared.playCrit()
-                    self.printLines(self.asciiCriticalHit, color: .yellow)
-                } else if result.contains("deals") {
-                    SoundManager.shared.playHit()
-                    self.printLines(self.asciiHit(attacker: character.name, target: targetName), color: .brightGreen)
-                } else {
-                    SoundManager.shared.playMiss()
-                    self.printLines(self.asciiMiss, color: .dimGreen)
+                    self.displayAttackReport(report) { [weak self] in
+                        guard let self = self else { return }
+                        combat.checkCombatEnd()
+                        combat.nextTurn()
+                        self.runCombatTurn()
+                    }
                 }
-                self.print("")
-                self.print(result)
             } else {
                 self.clearTerminal()
                 self.printLines(combat.displayStatus())
@@ -1061,14 +1341,14 @@ class GameEngine: ObservableObject {
                 self.printLines(self.asciiDodge, color: .cyan)
                 self.print("")
                 self.print("\(character.name) takes a defensive stance.")
-            }
 
-            combat.checkCombatEnd()
-            combat.nextTurn()
+                combat.checkCombatEnd()
+                combat.nextTurn()
 
-            self.waitForContinue()
-            self.inputHandler = { [weak self] _ in
-                self?.runCombatTurn()
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.runCombatTurn()
+                }
             }
         }
     }
@@ -1245,10 +1525,22 @@ class GameEngine: ObservableObject {
             return
         }
 
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .short
+        let defaultName = "\(party.first?.name ?? "Unknown") - \(dateFormatter.string(from: Date()))"
+        print("Default: \(defaultName)", color: .dimGreen)
         promptText("Enter a name for this save (or press Enter for default):")
 
         inputHandler = { [weak self] name in
-            self?.performSave(saveName: name)
+            guard let self = self else { return }
+            if !name.isEmpty && !self.isNameAppropriate(name) {
+                self.print("That save name is not appropriate. Try again.", color: .yellow)
+                self.print("")
+                self.showSaveMenu()
+                return
+            }
+            self.performSave(saveName: name)
         }
     }
 
@@ -1521,6 +1813,10 @@ class GameEngine: ObservableObject {
         adventureLog = save.adventureLog
         monstersSlain = save.monstersSlain
         combatsWon = save.combatsWon
+
+        // Reroll encounters so monsters are different each load
+        dungeon?.rerollEncounters()
+
         logEvent("Game loaded: \(save.slotName)")
         SoundManager.shared.startMusic(.exploration)
 

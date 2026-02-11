@@ -113,6 +113,106 @@ enum MonsterType: String, CaseIterable, Codable {
         }
     }
 
+    var asciiArt: [String] {
+        switch self {
+        case .goblin:
+            return [
+                "    /\\",
+                "   (oo)",
+                "  _/||\\_",
+                " / /||  \\",
+                "   /  \\",
+            ]
+        case .skeleton:
+            return [
+                "    .-..",
+                "   (o o)",
+                "   | O |",
+                "   /| |\\",
+                "   d| |b",
+            ]
+        case .zombie:
+            return [
+                "   _____",
+                "  /x   x\\",
+                "  | ~~~ |",
+                "  /|   |\\",
+                "   |___|",
+            ]
+        case .wolf:
+            return [
+                "   /\\_/\\",
+                "  ( o.o )",
+                "   > ^ <",
+                "  /|   |\\",
+                "  _/   \\_",
+            ]
+        case .orc:
+            return [
+                "   ___",
+                "  /o_o\\",
+                "  \\VVV/",
+                "  /| |\\",
+                "  d| |b",
+            ]
+        case .hobgoblin:
+            return [
+                "  [===]",
+                "  |o_o|",
+                "  /|#|\\",
+                " /=| |=\\",
+                "   d b",
+            ]
+        case .giantSpider:
+            return [
+                " \\ |o o| /",
+                "  \\(   )/",
+                "  /(   )\\",
+                " / |___| \\",
+            ]
+        case .gnoll:
+            return [
+                "    /V\\",
+                "   (o o)",
+                "  --|~|--",
+                "   /| |\\",
+                "   d| |b",
+            ]
+        case .bugbear:
+            return [
+                "   (\\=/)",
+                "   (o.o)",
+                "  //| |\\\\",
+                " // | | \\\\",
+                "    d b",
+            ]
+        case .ogre:
+            return [
+                "   .-\"\"-.",
+                "  / O  O \\",
+                "  |  __  |",
+                "  /|/  \\|\\",
+                " / |    | \\",
+            ]
+        case .owlbear:
+            return [
+                "   /\\'v'/\\",
+                "  ( o   o )",
+                "  /|  ^  |\\",
+                " / | /|\\ | \\",
+                "   |/   \\|",
+            ]
+        case .troll:
+            return [
+                "     /|",
+                "   (x x)",
+                "   /| |\\",
+                "  / | | \\",
+                " /  | |  \\",
+            ]
+        }
+    }
+
     static func forLevel(_ level: Int) -> [MonsterType] {
         switch level {
         case 1:
@@ -250,6 +350,38 @@ struct Encounter: Codable {
     }
 }
 
+// MARK: - Attack Report
+
+struct AttackReport {
+    let attackerName: String
+    let targetName: String
+    let isPlayerAttack: Bool
+
+    // Attack roll
+    let d20Roll: Int
+    let attackModifier: Int
+    let modifierBreakdown: String
+    let totalAttack: Int
+    let targetAC: Int
+
+    // Result
+    let hits: Bool
+    let isCritical: Bool
+    let isCriticalMiss: Bool
+
+    // Damage (nil if miss)
+    let damageDice: String?
+    let damageRolls: [Int]?
+    let damageModifier: Int?
+    let totalDamage: Int?
+
+    // Aftermath
+    let targetDefeated: Bool
+    let targetUnconscious: Bool
+    let targetCurrentHP: Int
+    let targetMaxHP: Int
+}
+
 // MARK: - Combat State
 
 enum CombatState {
@@ -340,88 +472,153 @@ class Combat: ObservableObject {
         }
     }
 
-    func playerAttack(characterId: UUID, targetId: UUID) -> String {
+    func playerAttack(characterId: UUID, targetId: UUID) -> AttackReport? {
         guard let character = party.first(where: { $0.id == characterId }),
               let monsterIndex = encounter.monsters.firstIndex(where: { $0.id == targetId }) else {
-            return "Invalid attack target."
+            return nil
         }
 
         var monster = encounter.monsters[monsterIndex]
-        let attackMod = character.abilityScores.modifier(for: .strength) + character.proficiencyBonus
+        let strMod = character.abilityScores.modifier(for: .strength)
+        let profBonus = character.proficiencyBonus
+        let attackMod = strMod + profBonus
         let attack = Dice.attackRoll(modifier: attackMod, targetAC: monster.armorClass)
 
-        var result = "\(character.name) attacks \(monster.name)!\n"
-        result += attack.description
+        let breakdown = "STR \(strMod >= 0 ? "+" : "")\(strMod), Prof +\(profBonus)"
+
+        var damageDice: String? = nil
+        var damageRolls: [Int]? = nil
+        var damageModifier: Int? = nil
+        var totalDamage: Int? = nil
+        var targetDefeated = false
 
         if attack.hits {
-            let damageMod = character.abilityScores.modifier(for: .strength)
-            let damageRoll = attack.isCritical
+            let damageMod = strMod
+            damageDice = attack.isCritical ? "2d8" : "1d8"
+            damageModifier = damageMod
+
+            let roll = attack.isCritical
                 ? Dice.rollCriticalDamage("1d8+\(damageMod)")
                 : Dice.rollDamage("1d8+\(damageMod)")
 
-            let damage = max(1, damageRoll.total)
+            let damage = max(1, roll.total)
+            totalDamage = damage
+            damageRolls = roll.rolls
+
             monster.takeDamage(damage)
             encounter.monsters[monsterIndex] = monster
-
-            result += "\n\(character.name) deals \(damage) damage!"
-
-            if !monster.isAlive {
-                result += "\n\(monster.name) is defeated!"
-            }
+            targetDefeated = !monster.isAlive
         }
 
-        combatLog.append(result)
-        return result
+        let report = AttackReport(
+            attackerName: character.name,
+            targetName: monster.name,
+            isPlayerAttack: true,
+            d20Roll: attack.roll,
+            attackModifier: attackMod,
+            modifierBreakdown: breakdown,
+            totalAttack: attack.total,
+            targetAC: monster.armorClass,
+            hits: attack.hits,
+            isCritical: attack.isCritical,
+            isCriticalMiss: attack.isCriticalMiss,
+            damageDice: damageDice,
+            damageRolls: damageRolls,
+            damageModifier: damageModifier,
+            totalDamage: totalDamage,
+            targetDefeated: targetDefeated,
+            targetUnconscious: false,
+            targetCurrentHP: monster.currentHP,
+            targetMaxHP: monster.maxHP
+        )
+
+        combatLog.append("\(character.name) attacks \(monster.name)")
+        return report
     }
 
-    func monsterAttack(monsterId: UUID, targetId: UUID) -> String {
+    func monsterAttack(monsterId: UUID, targetId: UUID) -> AttackReport? {
         guard let monster = encounter.monsters.first(where: { $0.id == monsterId }),
               let character = party.first(where: { $0.id == targetId }) else {
-            return "Invalid attack."
+            return nil
         }
 
         let attack = Dice.attackRoll(modifier: monster.attackBonus, targetAC: character.armorClass)
+        let breakdown = "Attack +\(monster.attackBonus)"
 
-        var result = "\(monster.name) attacks \(character.name)!\n"
-        result += attack.description
+        var damageDice: String? = nil
+        var damageRolls: [Int]? = nil
+        var damageModifier: Int? = nil
+        var totalDamage: Int? = nil
+        var targetUnconscious = false
 
         if attack.hits {
-            let damageRoll = attack.isCritical
+            // Parse monster damage notation to extract dice and modifier
+            let notation = monster.damage.lowercased().replacingOccurrences(of: " ", with: "")
+            var dMod = 0
+            var diceOnly = notation
+            if let plusIdx = notation.firstIndex(of: "+") {
+                dMod = Int(String(notation[notation.index(after: plusIdx)...])) ?? 0
+                diceOnly = String(notation[..<plusIdx])
+            }
+
+            damageDice = attack.isCritical ? diceOnly.replacingOccurrences(of: "1d", with: "2d").replacingOccurrences(of: "2d", with: "4d") : diceOnly
+            damageModifier = dMod
+
+            let roll = attack.isCritical
                 ? Dice.rollCriticalDamage(monster.damage)
                 : Dice.rollDamage(monster.damage)
 
-            let damage = max(1, damageRoll.total)
+            let damage = max(1, roll.total)
+            totalDamage = damage
+            damageRolls = roll.rolls
+
             character.takeDamage(damage)
-
-            result += "\n\(monster.name) deals \(damage) damage!"
-
-            if !character.isConscious {
-                result += "\n\(character.name) falls unconscious!"
-            }
+            targetUnconscious = !character.isConscious
         }
 
-        combatLog.append(result)
-        return result
+        let report = AttackReport(
+            attackerName: monster.name,
+            targetName: character.name,
+            isPlayerAttack: false,
+            d20Roll: attack.roll,
+            attackModifier: monster.attackBonus,
+            modifierBreakdown: breakdown,
+            totalAttack: attack.total,
+            targetAC: character.armorClass,
+            hits: attack.hits,
+            isCritical: attack.isCritical,
+            isCriticalMiss: attack.isCriticalMiss,
+            damageDice: damageDice,
+            damageRolls: damageRolls,
+            damageModifier: damageModifier,
+            totalDamage: totalDamage,
+            targetDefeated: false,
+            targetUnconscious: targetUnconscious,
+            targetCurrentHP: character.currentHP,
+            targetMaxHP: character.maxHP
+        )
+
+        combatLog.append("\(monster.name) attacks \(character.name)")
+        return report
     }
 
-    func runMonsterTurn() -> String {
+    func runMonsterTurn() -> AttackReport? {
         guard let current = currentCombatant, !current.isPlayer else {
-            return "Not a monster's turn."
+            return nil
         }
 
-        guard let monster = encounter.monsters.first(where: { $0.id == current.id && $0.isAlive }) else {
-            nextTurn()
-            return "\(current.name) is dead."
+        guard encounter.monsters.first(where: { $0.id == current.id && $0.isAlive }) != nil else {
+            return nil  // Monster dead, caller handles nextTurn
         }
 
         // Find a target (random conscious party member)
         let targets = party.filter { $0.isConscious }
         guard let target = targets.randomElement() else {
             state = .defeat
-            return "All party members are down!"
+            return nil
         }
 
-        return monsterAttack(monsterId: monster.id, targetId: target.id)
+        return monsterAttack(monsterId: current.id, targetId: target.id)
     }
 
     func displayStatus() -> [String] {

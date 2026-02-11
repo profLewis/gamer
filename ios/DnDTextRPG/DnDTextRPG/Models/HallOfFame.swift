@@ -28,6 +28,14 @@ struct HallOfFameEntry: Codable, Identifiable {
     let roomsExplored: Int
     let totalRooms: Int
     let gameTimeMinutes: Int
+
+    /// Composite score: victory bonus + gold + kills + exploration + difficulty
+    var score: Int {
+        let victoryBonus = outcome == .victory ? 500 : 0
+        let difficultyMultiplier = dungeonLevel
+        let explorationBonus = totalRooms > 0 ? (roomsExplored * 100 / totalRooms) : 0
+        return (victoryBonus + goldCollected + monstersSlain * 20 + combatsWon * 50 + explorationBonus) * difficultyMultiplier
+    }
 }
 
 // MARK: - Hall of Fame Manager
@@ -57,7 +65,7 @@ class HallOfFameManager {
                 guard let data = try? Data(contentsOf: url) else { return nil }
                 return try? decoder.decode(HallOfFameEntry.self, from: data)
             }
-            .sorted { $0.date > $1.date }
+            .sorted { $0.score > $1.score }
     }
 
     func addEntry(_ entry: HallOfFameEntry) {
@@ -69,6 +77,21 @@ class HallOfFameManager {
         let fileName = "\(entry.id.uuidString).json"
         let fileURL = hallDirectory.appendingPathComponent(fileName)
         try? data.write(to: fileURL)
+
+        // Enforce top 10 limit — delete lowest-scoring entries
+        trimToTop10()
+    }
+
+    private func trimToTop10() {
+        let entries = listEntries()
+        guard entries.count > 10 else { return }
+
+        let toDelete = entries.suffix(from: 10)
+        for entry in toDelete {
+            let fileName = "\(entry.id.uuidString).json"
+            let fileURL = hallDirectory.appendingPathComponent(fileName)
+            try? FileManager.default.removeItem(at: fileURL)
+        }
     }
 
     // MARK: - Stats

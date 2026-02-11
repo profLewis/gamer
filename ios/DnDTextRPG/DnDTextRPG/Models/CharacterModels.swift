@@ -248,6 +248,55 @@ enum CharacterClass: String, CaseIterable, Codable {
     var startingHP: Int {
         return hitDie
     }
+
+    var asciiArt: [String] {
+        switch self {
+        case .fighter:
+            return [
+                "  o  ",
+                " /|\\=+>",
+                " / \\",
+                "[===]",
+            ]
+        case .wizard:
+            return [
+                " /\\",
+                " /~~\\",
+                "  o",
+                " /|\\*",
+                " / \\",
+            ]
+        case .rogue:
+            return [
+                "  o",
+                " /|\\",
+                " /|  >>",
+                " / \\",
+            ]
+        case .cleric:
+            return [
+                "  +",
+                "  o",
+                " /|\\",
+                " [+]",
+                " / \\",
+            ]
+        case .ranger:
+            return [
+                "  o",
+                " /|\\",
+                " )| \\>",
+                " / \\",
+            ]
+        case .barbarian:
+            return [
+                "  o",
+                " /|\\",
+                "=||=",
+                " /  \\",
+            ]
+        }
+    }
 }
 
 // MARK: - Skills

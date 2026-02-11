@@ -88,6 +88,18 @@ struct SplashView: View {
                     .foregroundColor(terminalGreen.opacity(0.7))
                     .opacity(animationPhase >= 3 ? 1 : 0)
 
+                // Branding
+                VStack(spacing: 4) {
+                    Text("A Timbaloo app for you to enjoy")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(terminalGreen.opacity(0.5))
+
+                    Text("Version 1.0.0 — 2026")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(terminalGreen.opacity(0.4))
+                }
+                .opacity(animationPhase >= 3 ? 1 : 0)
+
                 // Tap to continue
                 Text("[ Tap to Begin ]")
                     .font(.system(size: 14, design: .monospaced))
