@@ -182,6 +182,9 @@ class GameEngine: ObservableObject {
 
         printTitle("D&D 5e Text Adventure")
         print("A text-based role-playing game", color: .dimGreen)
+        print("Version 1.0.0", color: .dimGreen)
+        print("")
+        print("A Timbaloo app for you to enjoy", color: .cyan)
         print("")
 
         showMenu(["New Game", "Load Game", "Hall of Fame", "How to Play", "Quit"])

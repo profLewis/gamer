@@ -447,53 +447,100 @@ class SoundManager {
     }
 
     // MARK: - Combat Music — "Blades of Fury"
-    // E minor, fast driving bass ostinato + heroic melody, epic battle feel
+    // E minor, 8-bar epic battle theme with A/B sections
 
     private func combatMelody() -> [MusicStep] {
         let m = { (f: Double) -> (Double, Float, Waveform) in (f, 0.10, .square) }
         let b = { (f: Double) -> (Double, Float, Waveform) in (f, 0.07, .square) }
-        let h = { (f: Double) -> (Double, Float, Waveform) in (f, 0.05, .triangle) }  // harmony
-        let p = { (f: Double) -> (Double, Float, Waveform) in (f, 0.03, .noise) }     // percussion hit
+        let h = { (f: Double) -> (Double, Float, Waveform) in (f, 0.05, .triangle) }
+        let p = { (f: Double) -> (Double, Float, Waveform) in (f, 0.03, .noise) }
+        // Louder melody for climax
+        let M = { (f: Double) -> (Double, Float, Waveform) in (f, 0.13, .square) }
+        let H = { (f: Double) -> (Double, Float, Waveform) in (f, 0.07, .triangle) }
+
+        let t: Double = 0.13  // base tempo
 
         return [
-            // Bar 1 — bass ostinato + melody entry
-            step(0.14, drone: b(82.4), extra: p(100)),                   // E2 + hit
-            step(0.14, drone: b(82.4), melody: m(330)),                  // E2 + E4
-            step(0.14, drone: b(82.4)),                                   // E2
-            step(0.14, drone: b(82.4), melody: m(392)),                  // E2 + G4
-            step(0.14, drone: b(98.0), extra: p(100)),                   // G2 + hit
-            step(0.14, drone: b(82.4), melody: m(440)),                  // E2 + A4
-            step(0.14, drone: b(82.4)),                                   // E2
-            step(0.14, drone: b(82.4), melody: m(494), extra: h(392)),  // E2 + B4 + G4
+            // === SECTION A: Aggressive approach ===
 
-            // Bar 2 — rising heroic phrase
-            step(0.14, drone: b(73.4), extra: p(100)),                   // D2 + hit
-            step(0.14, drone: b(73.4), melody: m(494)),                  // D2 + B4
-            step(0.14, drone: b(73.4), melody: m(523)),                  // D2 + C5
-            step(0.14, drone: b(73.4), melody: m(587), extra: h(440)), // D2 + D5 + A4
-            step(0.14, drone: b(82.4), extra: p(100)),                   // E2 + hit
-            step(0.14, drone: b(82.4), melody: m(659), extra: h(494)), // E2 + E5 + B4
-            step(0.28, drone: b(82.4), melody: m(587)),                  // E2 + D5 (held)
+            // Bar 1 — pounding E minor bass + melody enters
+            step(t, drone: b(82.4), extra: p(80)),                      // E2 + kick
+            step(t, drone: b(82.4), melody: m(330)),                    // E2 + E4
+            step(t, drone: b(82.4), extra: p(200)),                     // E2 + snare
+            step(t, drone: b(82.4), melody: m(392)),                    // E2 + G4
+            step(t, drone: b(82.4), extra: p(80)),                      // E2 + kick
+            step(t, drone: b(82.4), melody: m(440), extra: h(330)),    // E2 + A4 + E4
+            step(t, drone: b(82.4), extra: p(200)),                     // E2 + snare
+            step(t, drone: b(82.4), melody: m(494)),                    // E2 + B4
 
-            // Bar 3 — driving middle section
-            step(0.14, drone: b(98.0), extra: p(100)),                   // G2 + hit
-            step(0.14, drone: b(98.0), melody: m(494), extra: h(392)), // G2 + B4 + G4
-            step(0.14, drone: b(98.0)),                                   // G2
-            step(0.14, drone: b(98.0), melody: m(440)),                  // G2 + A4
-            step(0.14, drone: b(110), extra: p(100)),                    // A2 + hit
-            step(0.14, drone: b(110), melody: m(494)),                   // A2 + B4
-            step(0.14, drone: b(123.5)),                                  // B2
-            step(0.14, drone: b(123.5), melody: m(587), extra: h(494)),// B2 + D5 + B4
+            // Bar 2 — rising phrase over shifting bass
+            step(t, drone: b(73.4), extra: p(80)),                      // D2 + kick
+            step(t, drone: b(73.4), melody: m(494)),                    // D2 + B4
+            step(t, drone: b(73.4), melody: m(523), extra: p(200)),    // D2 + C5 + snare
+            step(t, drone: b(73.4), melody: m(587)),                    // D2 + D5
+            step(t, drone: b(82.4), melody: m(659), extra: p(80)),     // E2 + E5 + kick
+            step(t, drone: b(82.4), melody: m(587), extra: h(440)),    // E2 + D5 + A4
+            step(t * 2, drone: b(82.4), melody: m(494), extra: p(200)), // E2 + B4 held
 
-            // Bar 4 — dramatic climax + resolve
-            step(0.14, drone: b(82.4), extra: p(100)),                   // E2 + hit
-            step(0.14, drone: b(82.4), melody: m(659), extra: h(494)), // E2 + E5 + B4
-            step(0.14, drone: b(82.4), melody: m(587)),                  // E2 + D5
-            step(0.14, drone: b(82.4), melody: m(523), extra: h(392)), // E2 + C5 + G4
-            step(0.14, drone: b(73.4), extra: p(100)),                   // D2 + hit
-            step(0.14, drone: b(73.4), melody: m(494)),                  // D2 + B4
-            step(0.14, drone: b(73.4), melody: m(440), extra: h(330)), // D2 + A4 + E4
-            step(0.21, drone: b(82.4), melody: m(330), extra: h(247)), // E2 + E4 + B3
+            // Bar 3 — dark G minor descent
+            step(t, drone: b(98.0), extra: p(80)),                      // G2 + kick
+            step(t, drone: b(98.0), melody: m(587), extra: h(494)),    // G2 + D5 + B4
+            step(t, drone: b(98.0), extra: p(200)),                     // G2 + snare
+            step(t, drone: b(98.0), melody: m(523)),                    // G2 + C5
+            step(t, drone: b(110), melody: m(494), extra: p(80)),      // A2 + B4 + kick
+            step(t, drone: b(110), melody: m(440), extra: h(330)),     // A2 + A4 + E4
+            step(t, drone: b(110), extra: p(200)),                      // A2 + snare
+            step(t, drone: b(110), melody: m(392)),                     // A2 + G4
+
+            // Bar 4 — tension + resolve to E
+            step(t, drone: b(123.5), melody: m(494), extra: p(80)),    // B2 + B4 + kick
+            step(t, drone: b(123.5), melody: m(440)),                   // B2 + A4
+            step(t, drone: b(123.5), melody: m(392), extra: p(200)),   // B2 + G4 + snare
+            step(t, drone: b(123.5), melody: m(330), extra: h(247)),   // B2 + E4 + B3
+            step(t * 2, drone: b(82.4), melody: m(330), extra: p(80)), // E2 + E4 resolve
+            rest(t),
+            step(t, extra: p(200)),                                      // snare fill
+
+            // === SECTION B: Epic heroic theme ===
+
+            // Bar 5 — triumphant melody, power chords
+            step(t, drone: b(82.4), melody: M(659), extra: p(80)),     // E2 + E5 + kick
+            step(t, drone: b(82.4), melody: M(659), extra: H(494)),   // E2 + E5 + B4
+            step(t, drone: b(82.4), extra: p(200)),                     // E2 + snare
+            step(t, drone: b(82.4), melody: M(587), extra: H(440)),   // E2 + D5 + A4
+            step(t, drone: b(73.4), melody: M(587), extra: p(80)),     // D2 + D5 + kick
+            step(t, drone: b(73.4), melody: M(523), extra: H(392)),   // D2 + C5 + G4
+            step(t, drone: b(73.4), extra: p(200)),                     // D2 + snare
+            step(t, drone: b(73.4), melody: M(494), extra: H(392)),   // D2 + B4 + G4
+
+            // Bar 6 — ascending war cry
+            step(t, drone: b(65.4), melody: M(523), extra: p(80)),     // C2 + C5 + kick
+            step(t, drone: b(65.4), melody: M(587)),                    // C2 + D5
+            step(t, drone: b(65.4), melody: M(659), extra: p(200)),    // C2 + E5 + snare
+            step(t, drone: b(65.4), melody: M(784), extra: H(587)),   // C2 + G5 + D5
+            step(t, drone: b(73.4), extra: p(80)),                      // D2 + kick
+            step(t, drone: b(73.4), melody: M(784), extra: H(659)),   // D2 + G5 + E5
+            step(t * 2, drone: b(82.4), melody: M(659), extra: p(200)), // E2 + E5 held
+
+            // Bar 7 — frantic call and response
+            step(t, drone: b(82.4), melody: m(330), extra: p(80)),     // E2 + E4
+            step(t, drone: b(82.4), melody: m(494)),                    // E2 + B4
+            step(t, drone: b(82.4), melody: m(659), extra: p(200)),    // E2 + E5
+            step(t, drone: b(82.4)),                                     // E2 rest
+            step(t, drone: b(98.0), melody: m(392), extra: p(80)),     // G2 + G4
+            step(t, drone: b(98.0), melody: m(587)),                    // G2 + D5
+            step(t, drone: b(98.0), melody: m(784), extra: p(200)),    // G2 + G5
+            step(t, drone: b(98.0)),                                     // G2 rest
+
+            // Bar 8 — final climax + turnaround
+            step(t, drone: b(110), melody: M(659), extra: p(80)),      // A2 + E5 + kick
+            step(t, drone: b(110), melody: M(587), extra: H(440)),    // A2 + D5 + A4
+            step(t, drone: b(123.5), melody: M(587), extra: p(200)),   // B2 + D5 + snare
+            step(t, drone: b(123.5), melody: M(494), extra: H(392)),  // B2 + B4 + G4
+            step(t, drone: b(82.4), melody: M(440), extra: p(80)),     // E2 + A4 + kick
+            step(t, drone: b(82.4), melody: M(392), extra: H(247)),   // E2 + G4 + B3
+            step(t, drone: b(82.4), melody: M(330), extra: p(200)),    // E2 + E4 + snare
+            step(t, drone: b(82.4), extra: p(80)),                      // E2 + kick (turnaround)
         ]
     }
 }
