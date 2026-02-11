@@ -34,6 +34,7 @@ class GameEngine: ObservableObject {
     private var assignedScores: [Ability: Int] = [:]
     private var remainingAbilities: [Ability] = []
     private var selectedSkills: [Skill] = []
+    private var tempDungeonName: String = ""
 
     // Input handling
     private var inputHandler: ((String) -> Void)?
@@ -151,8 +152,6 @@ class GameEngine: ObservableObject {
         printTitle("D&D 5e Text Adventure")
         print("A text-based role-playing game", color: .dimGreen)
         print("")
-        print("Press Enter to use default options", color: .gray)
-        print("")
 
         showMenu(["New Game", "Load Game", "How to Play", "Quit"])
 
@@ -175,20 +174,31 @@ class GameEngine: ObservableObject {
         print("Welcome to D&D 5e Text Adventure!", color: .brightGreen)
         print("")
         print("CONTROLS:", color: .cyan, bold: true)
-        print("• Tap menu options to select")
-        print("• Type text when prompted")
-        print("• Tap 'Continue' to advance")
+        print("  Tap menu options to select")
+        print("  Type text when prompted")
+        print("  Tap 'Continue' to advance")
+        print("  Use '< Back' to return to previous menu")
         print("")
         print("GAMEPLAY:", color: .cyan, bold: true)
-        print("• Create a party of adventurers")
-        print("• Explore procedurally generated dungeons")
-        print("• Fight monsters in turn-based combat")
-        print("• Collect treasure and gain experience")
+        print("  Create a party of adventurers")
+        print("  Explore procedurally generated dungeons")
+        print("  Fight monsters in turn-based combat")
+        print("  Collect treasure and gain experience")
         print("")
         print("COMBAT:", color: .cyan, bold: true)
-        print("• Initiative determines turn order")
-        print("• Roll d20 + modifiers vs AC to hit")
-        print("• Defeat all enemies to win!")
+        print("  Initiative determines turn order")
+        print("  Roll d20 + modifiers vs AC to hit")
+        print("  Defeat all enemies to win!")
+        print("")
+        print("LICENSE:", color: .cyan, bold: true)
+        print("  Game mechanics from the D&D 5e SRD")
+        print("  under the Open Gaming License (OGL) v1.0a")
+        print("  by Wizards of the Coast LLC.")
+        print("")
+        print("ABOUT:", color: .cyan, bold: true)
+        print("  Created by Prof. Lewis")
+        print("  Assisted by Claude (Anthropic)")
+        print("  github.com/profLewis/gamer")
         print("")
 
         waitForContinue()
@@ -206,9 +216,14 @@ class GameEngine: ObservableObject {
         print("How many adventurers in your party? (1-4)")
         print("")
 
-        showMenu(["1 Character (Solo)", "2 Characters", "3 Characters", "4 Characters (Full Party)"])
+        showMenu(["1 Character (Solo)", "2 Characters", "3 Characters", "4 Characters (Full Party)", "< Back"])
 
         menuHandler = { [weak self] choice in
+            if choice == 5 {
+                self?.clearTerminal()
+                self?.showMainMenu()
+                return
+            }
             self?.totalCharacters = choice
             self?.creatingCharacterIndex = 0
             self?.party = []
@@ -223,9 +238,14 @@ class GameEngine: ObservableObject {
         gameState = .characterCreation
 
         printSubtitle("Character \(creatingCharacterIndex + 1) of \(totalCharacters)")
-        promptText("Enter character name:")
+        promptText("Enter character name (or 'back'):")
 
         inputHandler = { [weak self] name in
+            if name.lowercased() == "back" {
+                self?.clearTerminal()
+                self?.startNewGame()
+                return
+            }
             self?.tempCharacterName = name.isEmpty ? "Adventurer" : name
             self?.chooseRace()
         }
@@ -236,11 +256,16 @@ class GameEngine: ObservableObject {
         printSubtitle("Choose Race for \(tempCharacterName)")
 
         let races = Race.allCases
-        let raceNames = races.map { "\($0.rawValue)" }
+        var raceNames = races.map { "\($0.rawValue)" }
+        raceNames.append("< Back")
 
         showMenu(raceNames)
 
         menuHandler = { [weak self] choice in
+            if choice == raceNames.count {
+                self?.startCharacterCreation()
+                return
+            }
             self?.tempRace = races[choice - 1]
             self?.chooseClass()
         }
@@ -251,11 +276,16 @@ class GameEngine: ObservableObject {
         printSubtitle("Choose Class for \(tempCharacterName)")
 
         let classes = CharacterClass.allCases
-        let classNames = classes.map { "\($0.rawValue) (d\($0.hitDie) HP)" }
+        var classNames = classes.map { "\($0.rawValue) (d\($0.hitDie) HP)" }
+        classNames.append("< Back")
 
         showMenu(classNames)
 
         menuHandler = { [weak self] choice in
+            if choice == classNames.count {
+                self?.chooseRace()
+                return
+            }
             self?.tempClass = classes[choice - 1]
             self?.chooseAbilityMethod()
         }
@@ -268,9 +298,13 @@ class GameEngine: ObservableObject {
         print("Choose how to generate ability scores:")
         print("")
 
-        showMenu(["Standard Array [15,14,13,12,10,8]", "Roll 4d6 drop lowest"])
+        showMenu(["Standard Array [15,14,13,12,10,8]", "Roll 4d6 drop lowest", "< Back"])
 
         menuHandler = { [weak self] choice in
+            if choice == 3 {
+                self?.chooseClass()
+                return
+            }
             if choice == 1 {
                 self?.tempScores = AbilityScores.standardArray
             } else {
@@ -306,15 +340,20 @@ class GameEngine: ObservableObject {
         print("Assign score to which ability?")
         print("")
 
-        let abilityNames = remainingAbilities.map { ability -> String in
+        var abilityNames = remainingAbilities.map { ability -> String in
             let isPrimary = ability == tempClass?.primaryAbility
             return isPrimary ? "\(ability.rawValue) (Recommended)" : ability.rawValue
         }
+        abilityNames.append("< Back (restart scores)")
 
         showMenu(abilityNames)
 
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
+            if choice == abilityNames.count {
+                self.chooseAbilityMethod()
+                return
+            }
             let ability = self.remainingAbilities[choice - 1]
             self.selectScoreForAbility(ability)
         }
@@ -324,11 +363,17 @@ class GameEngine: ObservableObject {
         print("")
         print("Choose score for \(ability.rawValue):")
 
-        let scoreOptions = remainingScores.map { String($0) }
+        var scoreOptions = remainingScores.map { String($0) }
+        scoreOptions.append("< Back")
+
         showMenu(scoreOptions)
 
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
+            if choice == scoreOptions.count {
+                self.assignNextScore()
+                return
+            }
             let score = self.remainingScores[choice - 1]
             self.assignedScores[ability] = score
             self.remainingScores.remove(at: choice - 1)
@@ -360,13 +405,18 @@ class GameEngine: ObservableObject {
         }
 
         let unselected = available.filter { !selectedSkills.contains($0) }
-        let skillNames = unselected.map { $0.rawValue }
+        var skillNames = unselected.map { $0.rawValue }
+        skillNames.append("< Back (restart skills)")
 
         print("Skill \(selectedSkills.count + 1):")
         showMenu(skillNames)
 
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
+            if choice == skillNames.count {
+                self.chooseSkills()
+                return
+            }
             let skill = unselected[choice - 1]
             self.selectedSkills.append(skill)
             self.selectNextSkill(from: available, remaining: remaining - 1)
@@ -434,6 +484,7 @@ class GameEngine: ObservableObject {
 
         inputHandler = { [weak self] name in
             let dungeonName = name.isEmpty ? "The Dark Depths" : name
+            self?.tempDungeonName = dungeonName
             self?.selectDifficulty(dungeonName: dungeonName)
         }
     }
@@ -442,41 +493,64 @@ class GameEngine: ObservableObject {
         print("")
         print("Choose difficulty:")
 
-        showMenu(["Easy (Level 1)", "Medium (Level 2)", "Hard (Level 3)"])
+        showMenu(["Easy (Level 1)", "Medium (Level 2)", "Hard (Level 3)", "< Back"])
 
         menuHandler = { [weak self] choice in
-            self?.dungeon = Dungeon(name: dungeonName, level: choice)
-            self?.clearTerminal()
-            self?.print("Entering \(dungeonName)...", color: .brightGreen, bold: true)
-            self?.print("")
-
-            if let room = self?.dungeon?.currentRoom {
-                self?.print(room.describe())
+            if choice == 4 {
+                self?.clearTerminal()
+                self?.startAdventure()
+                return
             }
-
-            self?.gameState = .exploring
-            self?.showExplorationMenu()
+            self?.dungeon = Dungeon(name: dungeonName, level: choice)
+            self?.enterDungeon()
         }
+    }
+
+    private func enterDungeon() {
+        clearTerminal()
+        gameState = .exploring
+        showExplorationView()
     }
 
     // MARK: - Exploration
 
-    func showExplorationMenu() {
-        guard let room = dungeon?.currentRoom else { return }
+    /// Redraws the full exploration screen: map + room description + party + menu
+    func showExplorationView() {
+        guard let dungeon = dungeon, let room = dungeon.currentRoom else { return }
+
+        clearTerminal()
+
+        // Always show the map at the top
+        let mapLines = dungeon.getMapDisplay()
+        printLines(mapLines, color: .dimGreen)
+        print("")
+
+        // Room description
+        print(room.name, color: .brightGreen, bold: true)
+        print(room.roomType.description)
+
+        if !room.cleared && room.encounter != nil {
+            print("You sense danger here...", color: .red)
+        }
+        if !room.treasure.isEmpty && room.cleared {
+            print("You see treasure on the ground.", color: .yellow)
+        }
+
+        let exitList = room.exits.keys.map { $0.rawValue }.joined(separator: ", ")
+        if !exitList.isEmpty {
+            print("Exits: \(exitList)", color: .dimGreen)
+        }
 
         print("")
 
-        // Show party status
-        print("PARTY:", color: .cyan)
-        for char in party {
-            let hp = "\(char.currentHP)/\(char.maxHP)"
-            print("  \(char.name): \(hp) HP")
-        }
+        // Party status bar
+        let partyStr = party.map { "\($0.name) \($0.currentHP)/\($0.maxHP)HP" }.joined(separator: "  ")
+        print(partyStr, color: .cyan)
         print("")
 
         // Check for encounter
         if !room.cleared, let encounter = room.encounter {
-            print("⚔️ Enemies ahead!", color: .red, bold: true)
+            print("Enemies ahead!", color: .red, bold: true)
             startCombat(encounter: encounter)
             return
         }
@@ -500,9 +574,6 @@ class GameEngine: ObservableObject {
             actions.append { [weak self] in self?.collectTreasure() }
         }
 
-        options.append("View Map")
-        actions.append { [weak self] in self?.showMap() }
-
         options.append("Party Status")
         actions.append { [weak self] in self?.showPartyStatus() }
 
@@ -511,7 +582,7 @@ class GameEngine: ObservableObject {
 
         showMenu(options)
 
-        menuHandler = { [weak self] choice in
+        menuHandler = { choice in
             if choice > 0 && choice <= actions.count {
                 actions[choice - 1]()
             }
@@ -522,19 +593,22 @@ class GameEngine: ObservableObject {
         guard let dungeon = dungeon else { return }
 
         let result = dungeon.move(direction: direction)
-        clearTerminal()
-        print(result.message)
-
-        if result.success {
-            showExplorationMenu()
-        } else {
-            showExplorationMenu()
+        if !result.success {
+            print(result.message, color: .yellow)
         }
+        showExplorationView()
     }
 
     func searchRoom() {
         clearTerminal()
-        print("You search the room carefully...")
+
+        // Show map at top
+        if let dungeon = dungeon {
+            printLines(dungeon.getMapDisplay(), color: .dimGreen)
+            print("")
+        }
+
+        print("You search the room carefully...", color: .cyan)
         print("")
 
         let roll = Dice.d20()
@@ -556,28 +630,31 @@ class GameEngine: ObservableObject {
 
         waitForContinue()
         inputHandler = { [weak self] _ in
-            self?.clearTerminal()
-            if let room = self?.dungeon?.currentRoom {
-                self?.print(room.describe())
-            }
-            self?.showExplorationMenu()
+            self?.showExplorationView()
         }
     }
 
     func collectTreasure() {
         guard let room = dungeon?.currentRoom, !room.treasure.isEmpty else {
             print("No treasure to collect.")
-            showExplorationMenu()
+            showExplorationView()
             return
         }
 
         clearTerminal()
+
+        // Show map at top
+        if let dungeon = dungeon {
+            printLines(dungeon.getMapDisplay(), color: .dimGreen)
+            print("")
+        }
+
         print("Collected treasure:", color: .brightGreen, bold: true)
         print("")
 
         var totalGold = 0
         for item in room.treasure {
-            print("  • \(item.name)")
+            print("  \(item.name)")
             if item.type == .gold {
                 totalGold += item.value
             }
@@ -588,32 +665,19 @@ class GameEngine: ObservableObject {
 
         waitForContinue()
         inputHandler = { [weak self] _ in
-            self?.clearTerminal()
-            if let room = self?.dungeon?.currentRoom {
-                self?.print(room.describe())
-            }
-            self?.showExplorationMenu()
-        }
-    }
-
-    func showMap() {
-        clearTerminal()
-        if let map = dungeon?.getMapDisplay() {
-            print(map)
-        }
-
-        waitForContinue()
-        inputHandler = { [weak self] _ in
-            self?.clearTerminal()
-            if let room = self?.dungeon?.currentRoom {
-                self?.print(room.describe())
-            }
-            self?.showExplorationMenu()
+            self?.showExplorationView()
         }
     }
 
     func showPartyStatus() {
         clearTerminal()
+
+        // Show map at top
+        if let dungeon = dungeon {
+            printLines(dungeon.getMapDisplay(), color: .dimGreen)
+            print("")
+        }
+
         printTitle("Party Status")
 
         for char in party {
@@ -621,38 +685,50 @@ class GameEngine: ObservableObject {
             print("")
         }
 
-        waitForContinue()
-        inputHandler = { [weak self] _ in
-            self?.clearTerminal()
-            if let room = self?.dungeon?.currentRoom {
-                self?.print(room.describe())
-            }
-            self?.showExplorationMenu()
+        showMenu(["< Back"])
+        menuHandler = { [weak self] _ in
+            self?.showExplorationView()
         }
     }
 
     func rest() {
         clearTerminal()
+
+        // Show map at top
+        if let dungeon = dungeon {
+            printLines(dungeon.getMapDisplay(), color: .dimGreen)
+            print("")
+        }
+
         print("Choose rest type:")
 
-        showMenu(["Short Rest (Recover some HP)", "Long Rest (Full Recovery)"])
+        showMenu(["Short Rest (Recover some HP)", "Long Rest (Full Recovery)", "< Back"])
 
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
 
+            if choice == 3 {
+                self.showExplorationView()
+                return
+            }
+
             self.clearTerminal()
 
+            // Show map at top
+            if let dungeon = self.dungeon {
+                self.printLines(dungeon.getMapDisplay(), color: .dimGreen)
+                self.print("")
+            }
+
             if choice == 1 {
-                // Short rest
-                self.print("Your party takes a short rest...")
+                self.print("Your party takes a short rest...", color: .cyan)
                 for char in self.party {
                     let healAmount = Dice.rollSum(1, d: char.characterClass.hitDie)
                     char.heal(healAmount)
                     self.print("\(char.name) recovers \(healAmount) HP")
                 }
             } else {
-                // Long rest
-                self.print("Your party takes a long rest...")
+                self.print("Your party takes a long rest...", color: .cyan)
                 for char in self.party {
                     char.heal(char.maxHP)
                     self.print("\(char.name) fully recovers!")
@@ -661,11 +737,7 @@ class GameEngine: ObservableObject {
 
             self.waitForContinue()
             self.inputHandler = { [weak self] _ in
-                self?.clearTerminal()
-                if let room = self?.dungeon?.currentRoom {
-                    self?.print(room.describe())
-                }
-                self?.showExplorationMenu()
+                self?.showExplorationView()
             }
         }
     }
@@ -721,10 +793,8 @@ class GameEngine: ObservableObject {
         print("")
 
         if current.isPlayer {
-            // Player turn
             showPlayerCombatMenu(characterId: current.id)
         } else {
-            // Monster turn
             print("\(current.name)'s turn...", color: .red)
             print("")
 
@@ -813,11 +883,7 @@ class GameEngine: ObservableObject {
 
         waitForContinue()
         inputHandler = { [weak self] _ in
-            self?.clearTerminal()
-            if let room = self?.dungeon?.currentRoom {
-                self?.print(room.describe())
-            }
-            self?.showExplorationMenu()
+            self?.showExplorationView()
         }
     }
 
@@ -873,13 +939,16 @@ class GameEngine: ObservableObject {
     }
 
     func quitApp() {
+        clearTerminal()
         print("Thanks for playing!", color: .brightGreen)
         print("")
         print("Goodbye, adventurer...", color: .dimGreen)
+        print("")
 
-        // Exit the app after a brief delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            exit(0)
+        waitForContinue()
+        inputHandler = { [weak self] _ in
+            self?.clearTerminal()
+            self?.showMainMenu()
         }
     }
 }

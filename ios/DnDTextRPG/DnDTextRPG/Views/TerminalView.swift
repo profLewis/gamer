@@ -10,7 +10,6 @@ import SwiftUI
 struct TerminalView: View {
     @EnvironmentObject var gameEngine: GameEngine
     @State private var inputText: String = ""
-    @State private var showingKeyboard = false
     @FocusState private var isInputFocused: Bool
 
     // Terminal colors
@@ -64,8 +63,10 @@ struct TerminalView: View {
                             .font(.system(.body, design: .monospaced))
                             .foregroundColor(terminalGreen)
                             .textFieldStyle(PlainTextFieldStyle())
-                            .autocapitalization(.none)
-                            .disableAutocorrection(true)
+                            #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            #endif
                             .focused($isInputFocused)
                             .onSubmit {
                                 submitInput()
@@ -170,7 +171,7 @@ struct MenuButtonsView: View {
                             )
                     )
                 }
-                .buttonStyle(PlainButtonStyle())
+                .buttonStyle(.plain)
             }
         }
     }

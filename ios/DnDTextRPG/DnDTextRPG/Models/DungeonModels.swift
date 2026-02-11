@@ -297,42 +297,81 @@ class Dungeon: ObservableObject {
         return (true, "You move \(direction.rawValue).\n\n\(nextRoom.describe())")
     }
 
-    func getMapDisplay() -> String {
+    func getMapDisplay() -> [String] {
         let visitedRooms = rooms.values.filter { $0.visited }
-        guard !visitedRooms.isEmpty else { return "No map available." }
+        guard !visitedRooms.isEmpty else { return ["No map available."] }
 
         let minX = visitedRooms.map { $0.x }.min()!
         let maxX = visitedRooms.map { $0.x }.max()!
         let minY = visitedRooms.map { $0.y }.min()!
         let maxY = visitedRooms.map { $0.y }.max()!
 
+        // Build a grid with rooms and corridors between them
+        // Each room cell is 5 chars wide, corridor rows are 1 char tall
         var lines: [String] = []
-        lines.append("╔═══════════════════════════╗")
-        lines.append("║       DUNGEON MAP         ║")
-        lines.append("╠═══════════════════════════╣")
+
+        let mapWidth = (maxX - minX + 1) * 6 + 3
+        let border = String(repeating: "═", count: max(mapWidth, 20))
+        lines.append("╔\(border)╗")
+        lines.append("║ DUNGEON MAP".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "║")
+        lines.append("╠\(border)╣")
 
         for y in minY...maxY {
-            var row = "║ "
+            // Room row
+            var roomRow = "║ "
+            // Vertical corridor row (below this room row)
+            var corridorRow = "║ "
+
             for x in minX...maxX {
                 if let room = visitedRooms.first(where: { $0.x == x && $0.y == y }) {
                     if room.id == currentRoomId {
-                        row += "[@]"
+                        roomRow += "[@]"
+                    } else if room.cleared {
+                        roomRow += "[\(room.roomType.symbol)]"
+                    } else if room.encounter != nil {
+                        roomRow += "[!]"
                     } else {
-                        row += "[\(room.roomType.symbol)]"
+                        roomRow += "[\(room.roomType.symbol)]"
+                    }
+
+                    // East corridor
+                    if room.exits[.east] != nil {
+                        roomRow += "──"
+                    } else {
+                        roomRow += "  "
+                    }
+
+                    // South corridor
+                    if room.exits[.south] != nil {
+                        corridorRow += " |   "
+                    } else {
+                        corridorRow += "     "
                     }
                 } else {
-                    row += "   "
+                    roomRow += "     "
+                    corridorRow += "     "
+
+                    // Extra space for east corridor slot
+                    roomRow += " "
+                    corridorRow += " "
                 }
             }
-            row = row.padding(toLength: 28, withPad: " ", startingAt: 0) + "║"
-            lines.append(row)
+
+            roomRow = roomRow.padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "║"
+            lines.append(roomRow)
+
+            // Only add corridor row if not the last row
+            if y < maxY {
+                corridorRow = corridorRow.padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "║"
+                lines.append(corridorRow)
+            }
         }
 
-        lines.append("╠═══════════════════════════╣")
-        lines.append("║ @ = You  E = Entry  B = Boss")
-        lines.append("╚═══════════════════════════╝")
+        lines.append("╠\(border)╣")
+        lines.append("║ @ You  E Entry  B Boss  ! Enemy".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "║")
+        lines.append("╚\(border)╝")
 
-        return lines.joined(separator: "\n")
+        return lines
     }
 }
 

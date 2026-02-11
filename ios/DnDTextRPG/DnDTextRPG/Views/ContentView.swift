@@ -28,7 +28,9 @@ struct ContentView: View {
             }
         }
         .background(terminalBackground)
+        #if os(iOS)
         .statusBar(hidden: true)
+        #endif
     }
 
     private func dismissSplash() {
