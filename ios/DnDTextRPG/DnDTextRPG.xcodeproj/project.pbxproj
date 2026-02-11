@@ -18,6 +18,7 @@
 		009 /* Dice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 109 /* Dice.swift */; };
 		010 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 110 /* Assets.xcassets */; };
 		011 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 111 /* PrivacyInfo.xcprivacy */; };
+		012 /* SaveGameModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 112 /* SaveGameModels.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,6 +34,7 @@
 		109 /* Dice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Dice.swift; sourceTree = "<group>"; };
 		110 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		111 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		112 /* SaveGameModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaveGameModels.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -92,6 +94,7 @@
 				105 /* CharacterModels.swift */,
 				106 /* DungeonModels.swift */,
 				107 /* CombatModels.swift */,
+				112 /* SaveGameModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -191,6 +194,7 @@
 				007 /* CombatModels.swift in Sources */,
 				008 /* GameEngine.swift in Sources */,
 				009 /* Dice.swift in Sources */,
+				012 /* SaveGameModels.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -364,7 +368,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "D&D RPG";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.adventure-games";
-				INFOPLIST_KEY_NSUserTrackingUsageDescription = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

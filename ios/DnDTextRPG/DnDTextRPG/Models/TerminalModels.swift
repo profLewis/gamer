@@ -74,7 +74,7 @@ struct MenuOption: Identifiable {
 
 // MARK: - Game State
 
-enum GameState {
+enum GameState: String, Codable {
     case mainMenu
     case partySetup
     case characterCreation

@@ -9,7 +9,7 @@ import Foundation
 
 // MARK: - Direction
 
-enum Direction: String, CaseIterable {
+enum Direction: String, CaseIterable, Codable {
     case north = "North"
     case south = "South"
     case east = "East"
@@ -36,7 +36,7 @@ enum Direction: String, CaseIterable {
 
 // MARK: - Room Types
 
-enum RoomType: String, CaseIterable {
+enum RoomType: String, CaseIterable, Codable {
     case entrance = "Entrance"
     case corridor = "Corridor"
     case chamber = "Chamber"
@@ -95,7 +95,7 @@ enum RoomType: String, CaseIterable {
 
 // MARK: - Room
 
-class Room: Identifiable, ObservableObject {
+class Room: Identifiable, ObservableObject, Codable {
     let id: Int
     let x: Int
     let y: Int
@@ -108,6 +108,11 @@ class Room: Identifiable, ObservableObject {
     @Published var treasure: [TreasureItem]
     @Published var isLocked: [Direction: Bool]
     @Published var searchedFor: Set<String>  // Things already searched for
+
+    enum CodingKeys: String, CodingKey {
+        case id, x, y, roomType, name, exits, visited, cleared
+        case encounter, treasure, isLocked, searchedFor
+    }
 
     init(id: Int, x: Int, y: Int, type: RoomType) {
         self.id = id
@@ -122,6 +127,38 @@ class Room: Identifiable, ObservableObject {
         self.treasure = []
         self.isLocked = [:]
         self.searchedFor = []
+    }
+
+    required init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Int.self, forKey: .id)
+        x = try container.decode(Int.self, forKey: .x)
+        y = try container.decode(Int.self, forKey: .y)
+        roomType = try container.decode(RoomType.self, forKey: .roomType)
+        name = try container.decode(String.self, forKey: .name)
+        exits = try container.decode([Direction: Int].self, forKey: .exits)
+        visited = try container.decode(Bool.self, forKey: .visited)
+        cleared = try container.decode(Bool.self, forKey: .cleared)
+        encounter = try container.decodeIfPresent(Encounter.self, forKey: .encounter)
+        treasure = try container.decode([TreasureItem].self, forKey: .treasure)
+        isLocked = try container.decode([Direction: Bool].self, forKey: .isLocked)
+        searchedFor = try container.decode(Set<String>.self, forKey: .searchedFor)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(x, forKey: .x)
+        try container.encode(y, forKey: .y)
+        try container.encode(roomType, forKey: .roomType)
+        try container.encode(name, forKey: .name)
+        try container.encode(exits, forKey: .exits)
+        try container.encode(visited, forKey: .visited)
+        try container.encode(cleared, forKey: .cleared)
+        try container.encodeIfPresent(encounter, forKey: .encounter)
+        try container.encode(treasure, forKey: .treasure)
+        try container.encode(isLocked, forKey: .isLocked)
+        try container.encode(searchedFor, forKey: .searchedFor)
     }
 
     static func generateName(for type: RoomType) -> String {
@@ -176,7 +213,7 @@ class Room: Identifiable, ObservableObject {
 
 // MARK: - Dungeon
 
-class Dungeon: ObservableObject {
+class Dungeon: ObservableObject, Codable {
     let name: String
     let level: Int
     @Published var rooms: [Int: Room]
@@ -186,6 +223,10 @@ class Dungeon: ObservableObject {
         rooms[currentRoomId]
     }
 
+    enum CodingKeys: String, CodingKey {
+        case name, level, rooms, currentRoomId
+    }
+
     init(name: String, level: Int) {
         self.name = name
         self.level = level
@@ -193,6 +234,28 @@ class Dungeon: ObservableObject {
         self.currentRoomId = 0
 
         generateDungeon()
+    }
+
+    required init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        level = try container.decode(Int.self, forKey: .level)
+        let roomsArray = try container.decode([Room].self, forKey: .rooms)
+        var roomsDict: [Int: Room] = [:]
+        for room in roomsArray {
+            roomsDict[room.id] = room
+        }
+        rooms = roomsDict
+        currentRoomId = try container.decode(Int.self, forKey: .currentRoomId)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encode(level, forKey: .level)
+        let roomsArray = Array(rooms.values).sorted { $0.id < $1.id }
+        try container.encode(roomsArray, forKey: .rooms)
+        try container.encode(currentRoomId, forKey: .currentRoomId)
     }
 
     private func generateDungeon() {
@@ -377,12 +440,12 @@ class Dungeon: ObservableObject {
 
 // MARK: - Treasure
 
-struct TreasureItem {
+struct TreasureItem: Codable {
     let name: String
     let value: Int  // Gold value
     let type: TreasureType
 
-    enum TreasureType {
+    enum TreasureType: String, Codable {
         case gold
         case gem
         case item

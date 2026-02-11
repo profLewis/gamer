@@ -9,8 +9,8 @@ import Foundation
 
 // MARK: - Monster
 
-struct Monster: Identifiable {
-    let id = UUID()
+struct Monster: Identifiable, Codable {
+    let id: UUID
     let name: String
     let type: MonsterType
     var currentHP: Int
@@ -30,6 +30,7 @@ struct Monster: Identifiable {
     static func create(_ type: MonsterType) -> Monster {
         let stats = type.stats
         return Monster(
+            id: UUID(),
             name: type.rawValue,
             type: type,
             currentHP: stats.hp,
@@ -43,7 +44,7 @@ struct Monster: Identifiable {
     }
 }
 
-enum MonsterType: String, CaseIterable {
+enum MonsterType: String, CaseIterable, Codable {
     case goblin = "Goblin"
     case skeleton = "Skeleton"
     case zombie = "Zombie"
@@ -139,7 +140,7 @@ enum MonsterType: String, CaseIterable {
 
 // MARK: - Encounter
 
-enum EncounterDifficulty: String {
+enum EncounterDifficulty: String, Codable {
     case easy = "Easy"
     case medium = "Medium"
     case hard = "Hard"
@@ -155,7 +156,7 @@ enum EncounterDifficulty: String {
     }
 }
 
-struct Encounter {
+struct Encounter: Codable {
     var monsters: [Monster]
     let difficulty: EncounterDifficulty
 
@@ -209,6 +210,7 @@ struct Encounter {
 
         // Buff the boss
         boss = Monster(
+            id: UUID(),
             name: "The " + boss.name,
             type: boss.type,
             currentHP: boss.maxHP * 2,

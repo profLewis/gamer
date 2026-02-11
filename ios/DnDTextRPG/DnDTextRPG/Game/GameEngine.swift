@@ -158,8 +158,7 @@ class GameEngine: ObservableObject {
         menuHandler = { [weak self] choice in
             switch choice {
             case 1: self?.startNewGame()
-            case 2: self?.print("No saved games found.", color: .yellow)
-                    self?.showMainMenu()
+            case 2: self?.showLoadGameMenu(returnTo: .mainMenu)
             case 3: self?.showHowToPlay()
             case 4: self?.quitApp()
             default: self?.showMainMenu()
@@ -580,6 +579,9 @@ class GameEngine: ObservableObject {
         options.append("Rest")
         actions.append { [weak self] in self?.rest() }
 
+        options.append("Save Game")
+        actions.append { [weak self] in self?.showSaveMenu() }
+
         showMenu(options)
 
         menuHandler = { choice in
@@ -749,6 +751,8 @@ class GameEngine: ObservableObject {
         currentCombat = Combat(party: party, encounter: encounter)
 
         clearTerminal()
+        printLines(asciiSwords, color: .red)
+        print("")
         printTitle("COMBAT!")
 
         for monster in encounter.monsters {
@@ -891,6 +895,8 @@ class GameEngine: ObservableObject {
         clearTerminal()
         gameState = .gameOver
 
+        printLines(asciiSkull, color: .red)
+        print("")
         printTitle("DEFEAT")
         print("Your party has fallen...", color: .red)
         print("")
@@ -906,6 +912,8 @@ class GameEngine: ObservableObject {
         clearTerminal()
         gameState = .victory
 
+        printLines(asciiTrophy, color: .yellow)
+        print("")
         printTitle("DUNGEON CONQUERED!")
         print("You have defeated the dungeon boss!", color: .brightGreen, bold: true)
         print("")
@@ -930,6 +938,162 @@ class GameEngine: ObservableObject {
         }
     }
 
+    // MARK: - Save / Load
+
+    private enum LoadGameOrigin {
+        case mainMenu
+        case exploration
+    }
+
+    func showSaveMenu() {
+        clearTerminal()
+
+        printLines(asciiScroll, color: .cyan)
+        print("")
+        printTitle("Save Game")
+
+        guard let _ = dungeon else {
+            print("Error: No dungeon to save.", color: .red)
+            showExplorationView()
+            return
+        }
+
+        promptText("Enter a name for this save (or press Enter for default):")
+
+        inputHandler = { [weak self] name in
+            self?.performSave(saveName: name)
+        }
+    }
+
+    private func performSave(saveName: String) {
+        guard let dungeon = dungeon else { return }
+
+        let partyDesc = party.map { "\($0.name) (\($0.characterClass.rawValue))" }.joined(separator: ", ")
+
+        let slotName: String
+        if saveName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateStyle = .medium
+            dateFormatter.timeStyle = .short
+            let timestamp = dateFormatter.string(from: Date())
+            slotName = "\(party.first?.name ?? "Unknown") - \(timestamp)"
+        } else {
+            slotName = saveName.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        let saveGame = SaveGame(
+            id: UUID(),
+            savedAt: Date(),
+            slotName: slotName,
+            partyDescription: partyDesc,
+            dungeonName: dungeon.name,
+            dungeonLevel: dungeon.level,
+            party: party,
+            dungeon: dungeon,
+            gameState: .exploring
+        )
+
+        do {
+            try SaveGameManager.shared.save(saveGame)
+            print("")
+            print("Game saved!", color: .brightGreen, bold: true)
+            print("")
+            print("  \(slotName)", color: .cyan)
+            print("  \(partyDesc)", color: .dimGreen)
+            print("  \(dungeon.name) (Level \(dungeon.level))", color: .dimGreen)
+        } catch {
+            print("Failed to save: \(error.localizedDescription)", color: .red)
+        }
+
+        print("")
+
+        showMenu(["Continue Playing", "Load Another Game", "Exit to Main Menu"])
+
+        menuHandler = { [weak self] choice in
+            switch choice {
+            case 1: self?.showExplorationView()
+            case 2: self?.showLoadGameMenu(returnTo: .exploration)
+            case 3: self?.resetGame()
+            default: self?.showExplorationView()
+            }
+        }
+    }
+
+    private func showLoadGameMenu(returnTo origin: LoadGameOrigin) {
+        clearTerminal()
+        printTitle("Load Game")
+
+        let saves = SaveGameManager.shared.listSaves()
+
+        if saves.isEmpty {
+            print("No saved games found.", color: .yellow)
+            print("")
+
+            showMenu(["< Back"])
+            menuHandler = { [weak self] _ in
+                switch origin {
+                case .mainMenu:
+                    self?.clearTerminal()
+                    self?.showMainMenu()
+                case .exploration:
+                    self?.showExplorationView()
+                }
+            }
+            return
+        }
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .short
+
+        for (index, save) in saves.enumerated() {
+            let dateStr = dateFormatter.string(from: save.savedAt)
+            print("\(index + 1). \(save.slotName)", color: .brightGreen)
+            print("   \(save.partyDescription)", color: .dimGreen)
+            print("   \(save.dungeonName) (Level \(save.dungeonLevel)) - \(dateStr)", color: .dimGreen)
+            print("")
+        }
+
+        var options = saves.map { $0.slotName }
+        options.append("< Back")
+
+        showMenu(options)
+
+        menuHandler = { [weak self] choice in
+            if choice == options.count {
+                switch origin {
+                case .mainMenu:
+                    self?.clearTerminal()
+                    self?.showMainMenu()
+                case .exploration:
+                    self?.showExplorationView()
+                }
+                return
+            }
+
+            let selectedSave = saves[choice - 1]
+            self?.loadGame(selectedSave)
+        }
+    }
+
+    private func loadGame(_ save: SaveGame) {
+        party = save.party
+        dungeon = save.dungeon
+        currentCombat = nil
+        gameState = .exploring
+
+        clearTerminal()
+        print("Game loaded!", color: .brightGreen, bold: true)
+        print("")
+        print("Welcome back to \(save.dungeonName).", color: .cyan)
+        print("")
+
+        waitForContinue()
+        inputHandler = { [weak self] _ in
+            self?.showExplorationView()
+        }
+    }
+
     func resetGame() {
         party = []
         dungeon = nil
@@ -940,6 +1104,8 @@ class GameEngine: ObservableObject {
 
     func quitApp() {
         clearTerminal()
+        printLines(asciiFarewell, color: .dimGreen)
+        print("")
         print("Thanks for playing!", color: .brightGreen)
         print("")
         print("Goodbye, adventurer...", color: .dimGreen)
@@ -950,5 +1116,73 @@ class GameEngine: ObservableObject {
             self?.clearTerminal()
             self?.showMainMenu()
         }
+    }
+
+    // MARK: - ASCII Art
+
+    private var asciiSwords: [String] {
+        [
+            "     />",
+            "    //>",
+            "   ///>",
+            "  ////>  BATTLE!",
+            " /////>",
+            "  \\\\\\\\>",
+            "   \\\\\\>",
+            "    \\\\>",
+            "     \\>",
+        ]
+    }
+
+    private var asciiSkull: [String] {
+        [
+            "      ___________",
+            "     /           \\",
+            "    |  X       X  |",
+            "    |      ^      |",
+            "    |    \\___/    |",
+            "     \\___________/",
+            "       ||| |||",
+        ]
+    }
+
+    private var asciiTrophy: [String] {
+        [
+            "       ___________",
+            "      '._==_==_=_.'",
+            "      .-\\:      /-.",
+            "     | (|:.     |) |",
+            "      '-|:.     |-'",
+            "        \\::.    /",
+            "         '::. .'",
+            "           ) (",
+            "         _.' '._",
+            "        '-------'",
+        ]
+    }
+
+    private var asciiScroll: [String] {
+        [
+            "  ____________________",
+            " /                    \\",
+            "|   +-+-+-+-+-+-+-+    |",
+            "|   |S|A|V|E|D|!|     |",
+            "|   +-+-+-+-+-+-+-+    |",
+            " \\____________________/",
+        ]
+    }
+
+    private var asciiFarewell: [String] {
+        [
+            "  .     .       .  .   . .   .   . .    +  .",
+            "    .     .  :     .    .. :. .___---------_.",
+            "         .  .   .    .  :.:. _\".^ .^ ^.  '.. \\",
+            "      .  :       .  .  .:../:            . .=;.",
+            "    .   . :: +.  .  :  | ..    .;/        .-\"",
+            "     .  :    .     . . . ..    /   .   .    .",
+            "            .   . .. .   .. :/    .:        .",
+            "      +   .   .  .  . :  .:../       .  +  .",
+            "         .          .  . ..:./ .          .",
+        ]
     }
 }
