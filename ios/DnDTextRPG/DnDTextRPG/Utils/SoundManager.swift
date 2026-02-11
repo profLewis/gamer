@@ -69,6 +69,10 @@ class SoundManager {
                 sample = volume * Float(sin(2.0 * .pi * frequency * t))
             case .noise:
                 sample = volume * Float.random(in: -1...1) * 0.5
+            case .triangle:
+                let phase = t * frequency
+                let p = phase - floor(phase)
+                sample = volume * Float(p < 0.5 ? (4.0 * p - 1.0) : (3.0 - 4.0 * p))
             }
 
             // Apply fade-out envelope to avoid clicks
@@ -92,6 +96,7 @@ class SoundManager {
         case square
         case sine
         case noise
+        case triangle
     }
 
     // MARK: - Playback
@@ -224,6 +229,67 @@ class SoundManager {
         ])
     }
 
+    // MARK: - Multi-Voice Buffer Generation
+
+    /// A single step in the music: multiple voices sounding simultaneously
+    private struct MusicStep {
+        let voices: [(frequency: Double, volume: Float, waveform: Waveform)]
+        let duration: Double
+    }
+
+    private func generateMixedBuffer(_ step: MusicStep) -> AVAudioPCMBuffer? {
+        let frameCount = AVAudioFrameCount(sampleRate * step.duration)
+        guard frameCount > 0 else { return nil }
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else { return nil }
+        buffer.frameLength = frameCount
+
+        guard let data = buffer.floatChannelData?[0] else { return nil }
+
+        // Zero the buffer
+        for i in 0..<Int(frameCount) { data[i] = 0 }
+
+        // Mix each voice in
+        for voice in step.voices {
+            if voice.frequency == 0 { continue }
+            for i in 0..<Int(frameCount) {
+                let t = Double(i) / sampleRate
+                let sample: Float
+                switch voice.waveform {
+                case .square:
+                    let phase = t * voice.frequency
+                    sample = (phase - floor(phase)) < 0.5 ? voice.volume : -voice.volume
+                case .sine:
+                    sample = voice.volume * Float(sin(2.0 * .pi * voice.frequency * t))
+                case .noise:
+                    sample = voice.volume * Float.random(in: -1...1) * 0.5
+                case .triangle:
+                    let phase = t * voice.frequency
+                    let p = phase - floor(phase)
+                    sample = voice.volume * Float(p < 0.5 ? (4.0 * p - 1.0) : (3.0 - 4.0 * p))
+                }
+                data[i] += sample
+            }
+        }
+
+        // Apply envelope
+        let fadeFrames = min(Int(sampleRate * 0.015), Int(frameCount) / 4)
+        for i in 0..<Int(frameCount) {
+            let env: Float
+            if i < fadeFrames {
+                env = Float(i) / Float(fadeFrames)
+            } else if i > Int(frameCount) - fadeFrames {
+                env = Float(Int(frameCount) - i) / Float(fadeFrames)
+            } else {
+                env = 1.0
+            }
+            // Soft clip to avoid distortion from mixed voices
+            let s = data[i] * env
+            data[i] = s / (1.0 + abs(s) * 0.3)
+        }
+
+        return buffer
+    }
+
     // MARK: - Background Music
 
     func startMusic(_ type: MusicType) {
@@ -242,27 +308,16 @@ class SoundManager {
             guard let self = self else { return }
 
             while self.musicPlaying {
-                let melody = self.melodyFor(type)
-                for note in melody {
+                let steps = self.melodyFor(type)
+                for step in steps {
                     guard self.musicPlaying else { break }
 
-                    if note.frequency == 0 {
-                        // Rest note
-                        Thread.sleep(forTimeInterval: note.duration)
-                        continue
-                    }
-
-                    if let buffer = self.generateTone(
-                        frequency: note.frequency,
-                        duration: note.duration,
-                        volume: note.volume,
-                        waveform: note.waveform
-                    ) {
+                    if let buffer = self.generateMixedBuffer(step) {
                         self.musicNode.scheduleBuffer(buffer, completionHandler: nil)
                         if !self.musicNode.isPlaying {
                             self.musicNode.play()
                         }
-                        Thread.sleep(forTimeInterval: note.duration)
+                        Thread.sleep(forTimeInterval: step.duration)
                     }
                 }
             }
@@ -275,7 +330,7 @@ class SoundManager {
         musicNode.stop()
     }
 
-    private func melodyFor(_ type: MusicType) -> [(frequency: Double, duration: Double, volume: Float, waveform: Waveform)] {
+    private func melodyFor(_ type: MusicType) -> [MusicStep] {
         switch type {
         case .menu:
             return menuMelody()
@@ -286,111 +341,159 @@ class SoundManager {
         }
     }
 
-    /// Menu — slow, mysterious arpeggios in A minor
-    private func menuMelody() -> [(frequency: Double, duration: Double, volume: Float, waveform: Waveform)] {
-        let v: Float = 0.12
+    // Helper to create a step with drone + melody
+    private func step(_ dur: Double, drone: (Double, Float, Waveform)? = nil, melody: (Double, Float, Waveform)? = nil, extra: (Double, Float, Waveform)? = nil) -> MusicStep {
+        var voices: [(frequency: Double, volume: Float, waveform: Waveform)] = []
+        if let d = drone { voices.append(d) }
+        if let m = melody { voices.append(m) }
+        if let e = extra { voices.append(e) }
+        return MusicStep(voices: voices, duration: dur)
+    }
+
+    // Shorthand for a rest
+    private func rest(_ dur: Double) -> MusicStep {
+        MusicStep(voices: [], duration: dur)
+    }
+
+    // MARK: - Menu Music — "The Dungeon Awaits"
+    // Dark Phrygian mode (E F G A B C D), low drone, haunting medieval melody
+
+    private func menuMelody() -> [MusicStep] {
+        let drone: (Double, Float, Waveform) = (82.4, 0.07, .triangle)   // E2 drone
+        let drone2: (Double, Float, Waveform) = (123.5, 0.05, .sine)     // B2 fifth
+        let m = { (f: Double) -> (Double, Float, Waveform) in (f, 0.10, .sine) }
+        let h = { (f: Double) -> (Double, Float, Waveform) in (f, 0.06, .triangle) }  // harmony
+
         return [
-            // A minor arpeggio up
-            (220, 0.5, v, .sine),     // A3
-            (262, 0.5, v, .sine),     // C4
-            (330, 0.5, v, .sine),     // E4
-            (440, 0.7, v, .sine),     // A4
-            (0, 0.3, 0, .sine),       // rest
-            // Descend
-            (392, 0.5, v, .sine),     // G4
-            (330, 0.5, v, .sine),     // E4
-            (294, 0.5, v, .sine),     // D4
-            (262, 0.7, v, .sine),     // C4
-            (0, 0.3, 0, .sine),       // rest
-            // Second phrase — F major
-            (175, 0.5, v, .sine),     // F3
-            (220, 0.5, v, .sine),     // A3
-            (262, 0.5, v, .sine),     // C4
-            (349, 0.7, v, .sine),     // F4
-            (0, 0.3, 0, .sine),       // rest
-            // Resolve to Am
-            (330, 0.5, v, .sine),     // E4
-            (294, 0.4, v, .sine),     // D4
-            (262, 0.4, v, .sine),     // C4
-            (220, 0.9, v, .sine),     // A3
-            (0, 0.6, 0, .sine),       // rest
+            // Phrase 1 — rising from darkness (E Phrygian)
+            step(0.7, drone: drone, melody: m(330), extra: drone2),     // E4
+            step(0.5, drone: drone, melody: m(349), extra: drone2),     // F4 (Phrygian b2)
+            step(0.7, drone: drone, melody: m(392), extra: drone2),     // G4
+            step(1.0, drone: drone, melody: m(440), extra: drone2),     // A4
+            rest(0.3),
+            // Phrase 2 — descend with tension
+            step(0.5, drone: drone, melody: m(392), extra: h(330)),     // G4 + E4
+            step(0.5, drone: drone, melody: m(349), extra: h(294)),     // F4 + D4
+            step(0.7, drone: drone, melody: m(330)),                     // E4
+            step(0.9, drone: drone, melody: m(294), extra: drone2),     // D4
+            rest(0.4),
+            // Phrase 3 — ominous low phrase
+            step(0.6, drone: drone, melody: m(262), extra: h(196)),     // C4 + G3
+            step(0.6, drone: drone, melody: m(247), extra: h(165)),     // B3 + E3
+            step(0.8, drone: drone, melody: m(220)),                     // A3
+            step(1.2, drone: drone, melody: m(165), extra: drone2),     // E3 (octave down)
+            rest(0.5),
+            // Phrase 4 — ghostly high echo
+            step(0.5, drone: drone, melody: m(659), extra: drone2),     // E5
+            step(0.4, drone: drone, melody: m(698)),                     // F5
+            step(0.5, drone: drone, melody: m(659), extra: h(494)),     // E5 + B4
+            step(1.0, drone: drone, melody: m(523), extra: h(392)),     // C5 + G4
+            step(1.5, drone: drone, melody: m(330), extra: drone2),     // E4 resolve
+            rest(0.8),
         ]
     }
 
-    /// Exploration — adventurous melody in D minor, medium tempo
-    private func explorationMelody() -> [(frequency: Double, duration: Double, volume: Float, waveform: Waveform)] {
-        let v: Float = 0.10
-        let sq: Float = 0.06
+    // MARK: - Exploration Music — "Into the Depths"
+    // D Dorian mode, creeping tension, sparse notes over shifting drone
+
+    private func explorationMelody() -> [MusicStep] {
+        let d1: (Double, Float, Waveform) = (73.4, 0.06, .triangle)    // D2 low drone
+        let d2: (Double, Float, Waveform) = (110, 0.04, .sine)         // A2 fifth
+        let m = { (f: Double) -> (Double, Float, Waveform) in (f, 0.09, .triangle) }
+        let g = { (f: Double) -> (Double, Float, Waveform) in (f, 0.05, .sine) }  // ghost note
+
+        // Bass shifts for different sections
+        let bF: (Double, Float, Waveform) = (87.3, 0.06, .triangle)    // F2
+        let bC: (Double, Float, Waveform) = (65.4, 0.06, .triangle)    // C2
+        let bA: (Double, Float, Waveform) = (55.0, 0.06, .triangle)    // A1
+
         return [
-            // Phrase 1 — walking bass + melody
-            (147, 0.3, sq, .square),  // D3 bass
-            (294, 0.3, v, .sine),     // D4
-            (349, 0.3, v, .sine),     // F4
-            (392, 0.3, v, .sine),     // G4
-            (440, 0.5, v, .sine),     // A4
-            (0, 0.2, 0, .sine),
-            (392, 0.3, v, .sine),     // G4
-            (349, 0.4, v, .sine),     // F4
-            (0, 0.2, 0, .sine),
-            // Phrase 2
-            (175, 0.3, sq, .square),  // F3 bass
-            (349, 0.3, v, .sine),     // F4
-            (392, 0.3, v, .sine),     // G4
-            (440, 0.3, v, .sine),     // A4
-            (523, 0.5, v, .sine),     // C5
-            (0, 0.2, 0, .sine),
-            (440, 0.3, v, .sine),     // A4
-            (392, 0.4, v, .sine),     // G4
-            (0, 0.2, 0, .sine),
-            // Phrase 3 — descend
-            (165, 0.3, sq, .square),  // E3 bass
-            (523, 0.3, v, .sine),     // C5
-            (440, 0.3, v, .sine),     // A4
-            (392, 0.3, v, .sine),     // G4
-            (349, 0.5, v, .sine),     // F4
-            (0, 0.2, 0, .sine),
-            (330, 0.3, v, .sine),     // E4
-            (294, 0.6, v, .sine),     // D4
-            (0, 0.4, 0, .sine),
+            // Phrase 1 — cautious steps (D Dorian)
+            step(0.45, drone: d1, melody: m(294)),                       // D4
+            step(0.35, drone: d1),                                        // drone only — silence
+            step(0.45, drone: d1, melody: m(330), extra: d2),           // E4
+            step(0.45, drone: d1, melody: m(349)),                       // F4
+            step(0.6, drone: d1, melody: m(440), extra: d2),            // A4
+            rest(0.3),
+            step(0.45, drone: d1, melody: m(392), extra: g(294)),       // G4 + D4 ghost
+            step(0.7, drone: d1, melody: m(349)),                        // F4
+            rest(0.4),
+
+            // Phrase 2 — deeper, bass shifts to F
+            step(0.45, drone: bF, melody: m(349)),                       // F4
+            step(0.35, drone: bF),                                        // drone only
+            step(0.45, drone: bF, melody: m(392), extra: g(262)),       // G4 + C4
+            step(0.55, drone: bF, melody: m(440)),                       // A4
+            step(0.7, drone: bF, melody: m(523), extra: g(349)),        // C5 + F4
+            rest(0.25),
+            step(0.5, drone: bF, melody: m(440)),                        // A4
+            step(0.6, drone: bF, melody: m(349)),                        // F4
+            rest(0.35),
+
+            // Phrase 3 — tension builds (bass to C)
+            step(0.4, drone: bC, melody: m(330)),                        // E4
+            step(0.4, drone: bC, melody: m(294), extra: g(196)),        // D4 + G3
+            step(0.5, drone: bC, melody: m(262)),                        // C4
+            step(0.8, drone: bC, melody: m(247), extra: g(165)),        // B3 + E3 (tritone)
+            rest(0.3),
+
+            // Phrase 4 — resolve back (bass to A, then D)
+            step(0.5, drone: bA, melody: m(262), extra: g(220)),        // C4 + A3
+            step(0.5, drone: bA, melody: m(294)),                        // D4
+            step(0.7, drone: d1, melody: m(349), extra: d2),            // F4
+            step(0.9, drone: d1, melody: m(294), extra: g(220)),        // D4 + A3
+            rest(0.6),
         ]
     }
 
-    /// Combat — fast, intense driving rhythm in E minor
-    private func combatMelody() -> [(frequency: Double, duration: Double, volume: Float, waveform: Waveform)] {
-        let v: Float = 0.10
-        let b: Float = 0.08
+    // MARK: - Combat Music — "Blades of Fury"
+    // E minor, fast driving bass ostinato + heroic melody, epic battle feel
+
+    private func combatMelody() -> [MusicStep] {
+        let m = { (f: Double) -> (Double, Float, Waveform) in (f, 0.10, .square) }
+        let b = { (f: Double) -> (Double, Float, Waveform) in (f, 0.07, .square) }
+        let h = { (f: Double) -> (Double, Float, Waveform) in (f, 0.05, .triangle) }  // harmony
+        let p = { (f: Double) -> (Double, Float, Waveform) in (f, 0.03, .noise) }     // percussion hit
+
         return [
-            // Driving bass rhythm
-            (165, 0.15, b, .square),  // E3
-            (165, 0.15, b, .square),  // E3
-            (196, 0.15, b, .square),  // G3
-            (165, 0.15, b, .square),  // E3
-            // Melody stab
-            (330, 0.2, v, .square),   // E4
-            (392, 0.2, v, .square),   // G4
-            (440, 0.15, v, .square),  // A4
-            (392, 0.15, v, .square),  // G4
-            // Bass
-            (147, 0.15, b, .square),  // D3
-            (147, 0.15, b, .square),  // D3
-            (165, 0.15, b, .square),  // E3
-            (147, 0.15, b, .square),  // D3
-            // Melody
-            (294, 0.2, v, .square),   // D4
-            (330, 0.2, v, .square),   // E4
-            (392, 0.15, v, .square),  // G4
-            (330, 0.15, v, .square),  // E4
-            // Intense ascending
-            (196, 0.15, b, .square),  // G3
-            (196, 0.15, b, .square),  // G3
-            (220, 0.15, b, .square),  // A3
-            (247, 0.15, b, .square),  // B3
-            // Top phrase
-            (494, 0.2, v, .square),   // B4
-            (440, 0.2, v, .square),   // A4
-            (392, 0.2, v, .square),   // G4
-            (330, 0.3, v, .square),   // E4
-            (0, 0.1, 0, .sine),
+            // Bar 1 — bass ostinato + melody entry
+            step(0.14, drone: b(82.4), extra: p(100)),                   // E2 + hit
+            step(0.14, drone: b(82.4), melody: m(330)),                  // E2 + E4
+            step(0.14, drone: b(82.4)),                                   // E2
+            step(0.14, drone: b(82.4), melody: m(392)),                  // E2 + G4
+            step(0.14, drone: b(98.0), extra: p(100)),                   // G2 + hit
+            step(0.14, drone: b(82.4), melody: m(440)),                  // E2 + A4
+            step(0.14, drone: b(82.4)),                                   // E2
+            step(0.14, drone: b(82.4), melody: m(494), extra: h(392)),  // E2 + B4 + G4
+
+            // Bar 2 — rising heroic phrase
+            step(0.14, drone: b(73.4), extra: p(100)),                   // D2 + hit
+            step(0.14, drone: b(73.4), melody: m(494)),                  // D2 + B4
+            step(0.14, drone: b(73.4), melody: m(523)),                  // D2 + C5
+            step(0.14, drone: b(73.4), melody: m(587), extra: h(440)), // D2 + D5 + A4
+            step(0.14, drone: b(82.4), extra: p(100)),                   // E2 + hit
+            step(0.14, drone: b(82.4), melody: m(659), extra: h(494)), // E2 + E5 + B4
+            step(0.28, drone: b(82.4), melody: m(587)),                  // E2 + D5 (held)
+
+            // Bar 3 — driving middle section
+            step(0.14, drone: b(98.0), extra: p(100)),                   // G2 + hit
+            step(0.14, drone: b(98.0), melody: m(494), extra: h(392)), // G2 + B4 + G4
+            step(0.14, drone: b(98.0)),                                   // G2
+            step(0.14, drone: b(98.0), melody: m(440)),                  // G2 + A4
+            step(0.14, drone: b(110), extra: p(100)),                    // A2 + hit
+            step(0.14, drone: b(110), melody: m(494)),                   // A2 + B4
+            step(0.14, drone: b(123.5)),                                  // B2
+            step(0.14, drone: b(123.5), melody: m(587), extra: h(494)),// B2 + D5 + B4
+
+            // Bar 4 — dramatic climax + resolve
+            step(0.14, drone: b(82.4), extra: p(100)),                   // E2 + hit
+            step(0.14, drone: b(82.4), melody: m(659), extra: h(494)), // E2 + E5 + B4
+            step(0.14, drone: b(82.4), melody: m(587)),                  // E2 + D5
+            step(0.14, drone: b(82.4), melody: m(523), extra: h(392)), // E2 + C5 + G4
+            step(0.14, drone: b(73.4), extra: p(100)),                   // D2 + hit
+            step(0.14, drone: b(73.4), melody: m(494)),                  // D2 + B4
+            step(0.14, drone: b(73.4), melody: m(440), extra: h(330)), // D2 + A4 + E4
+            step(0.21, drone: b(82.4), melody: m(330), extra: h(247)), // E2 + E4 + B3
         ]
     }
 }
