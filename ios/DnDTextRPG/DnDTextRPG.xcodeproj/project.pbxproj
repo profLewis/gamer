@@ -19,6 +19,7 @@
 		010 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 110 /* Assets.xcassets */; };
 		011 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 111 /* PrivacyInfo.xcprivacy */; };
 		012 /* SaveGameModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 112 /* SaveGameModels.swift */; };
+		013 /* SoundManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 113 /* SoundManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -35,6 +36,7 @@
 		110 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		111 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		112 /* SaveGameModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaveGameModels.swift; sourceTree = "<group>"; };
+		113 /* SoundManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -111,6 +113,7 @@
 			isa = PBXGroup;
 			children = (
 				109 /* Dice.swift */,
+				113 /* SoundManager.swift */,
 			);
 			path = Utils;
 			sourceTree = "<group>";
@@ -195,6 +198,7 @@
 				008 /* GameEngine.swift in Sources */,
 				009 /* Dice.swift in Sources */,
 				012 /* SaveGameModels.swift in Sources */,
+				013 /* SoundManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

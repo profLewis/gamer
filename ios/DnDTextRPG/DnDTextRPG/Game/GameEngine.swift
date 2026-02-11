@@ -733,6 +733,7 @@ class GameEngine: ObservableObject {
                 self.print("")
             }
 
+            SoundManager.shared.playHeal()
             if choice == 1 {
                 self.print("Your party takes a short rest...", color: .cyan)
                 for char in self.party {
@@ -760,6 +761,7 @@ class GameEngine: ObservableObject {
     func startCombat(encounter: Encounter) {
         gameState = .combat
         currentCombat = Combat(party: party, encounter: encounter)
+        SoundManager.shared.playBattleStart()
 
         clearTerminal()
         printLines(asciiSwords, color: .red)
@@ -812,12 +814,15 @@ class GameEngine: ObservableObject {
         } else {
             let result = combat.runMonsterTurn()
 
-            // Show monster attack ASCII art
+            // Show monster attack ASCII art and sound
             if result.contains("CRITICAL") {
+                SoundManager.shared.playCrit()
                 printLines(asciiCriticalHit, color: .red)
             } else if result.contains("deals") {
+                SoundManager.shared.playMonsterAttack()
                 printLines(asciiMonsterAttack, color: .red)
             } else {
+                SoundManager.shared.playMiss()
                 printLines(asciiMiss, color: .dimGreen)
             }
             print("")
@@ -862,12 +867,15 @@ class GameEngine: ObservableObject {
                 self.printLines(combat.displayStatus())
                 self.print("")
 
-                // Show attack ASCII art based on result
+                // Show attack ASCII art and sound based on result
                 if result.contains("CRITICAL") {
+                    SoundManager.shared.playCrit()
                     self.printLines(self.asciiCriticalHit, color: .yellow)
                 } else if result.contains("deals") {
+                    SoundManager.shared.playHit()
                     self.printLines(self.asciiHit(attacker: character.name, target: targetName), color: .brightGreen)
                 } else {
+                    SoundManager.shared.playMiss()
                     self.printLines(self.asciiMiss, color: .dimGreen)
                 }
                 self.print("")
@@ -893,6 +901,7 @@ class GameEngine: ObservableObject {
 
     func handleCombatVictory() {
         guard let combat = currentCombat else { return }
+        SoundManager.shared.playVictory()
 
         clearTerminal()
         printTitle("VICTORY!")
@@ -928,6 +937,7 @@ class GameEngine: ObservableObject {
     }
 
     func handleCombatDefeat() {
+        SoundManager.shared.playDefeat()
         clearTerminal()
         gameState = .gameOver
 
@@ -945,6 +955,7 @@ class GameEngine: ObservableObject {
     }
 
     func handleGameVictory() {
+        SoundManager.shared.playVictory()
         clearTerminal()
         gameState = .victory
 
@@ -1031,6 +1042,7 @@ class GameEngine: ObservableObject {
 
         do {
             try SaveGameManager.shared.save(saveGame)
+            SoundManager.shared.playSave()
             print("")
             print("Game saved!", color: .brightGreen, bold: true)
             print("")
