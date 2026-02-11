@@ -680,10 +680,21 @@ class GameEngine: ObservableObject {
             print("")
         }
 
+        printLines(asciiParty, color: .cyan)
+        print("")
         printTitle("Party Status")
 
         for char in party {
+            // HP bar
+            let hpFraction = Double(char.currentHP) / Double(char.maxHP)
+            let barLen = 20
+            let filled = Int(hpFraction * Double(barLen))
+            let hpBar = String(repeating: "█", count: filled) + String(repeating: "░", count: barLen - filled)
+            let hpColor: TerminalColor = hpFraction > 0.5 ? .brightGreen : (hpFraction > 0.25 ? .yellow : .red)
+
             printLines(char.displaySheet())
+            print("  HP [\(hpBar)] \(char.currentHP)/\(char.maxHP)", color: hpColor)
+            print("  Gold: \(char.gold)  XP: \(char.experiencePoints)", color: .yellow)
             print("")
         }
 
@@ -799,10 +810,17 @@ class GameEngine: ObservableObject {
         if current.isPlayer {
             showPlayerCombatMenu(characterId: current.id)
         } else {
-            print("\(current.name)'s turn...", color: .red)
-            print("")
-
             let result = combat.runMonsterTurn()
+
+            // Show monster attack ASCII art
+            if result.contains("CRITICAL") {
+                printLines(asciiCriticalHit, color: .red)
+            } else if result.contains("deals") {
+                printLines(asciiMonsterAttack, color: .red)
+            } else {
+                printLines(asciiMiss, color: .dimGreen)
+            }
+            print("")
             print(result)
 
             combat.checkCombatEnd()
@@ -837,10 +855,28 @@ class GameEngine: ObservableObject {
 
             if choice <= aliveMonsters.count {
                 let targetId = aliveMonsters[choice - 1].id
+                let targetName = aliveMonsters[choice - 1].name
                 let result = combat.playerAttack(characterId: characterId, targetId: targetId)
+
+                self.clearTerminal()
+                self.printLines(combat.displayStatus())
+                self.print("")
+
+                // Show attack ASCII art based on result
+                if result.contains("CRITICAL") {
+                    self.printLines(self.asciiCriticalHit, color: .yellow)
+                } else if result.contains("deals") {
+                    self.printLines(self.asciiHit(attacker: character.name, target: targetName), color: .brightGreen)
+                } else {
+                    self.printLines(self.asciiMiss, color: .dimGreen)
+                }
                 self.print("")
                 self.print(result)
             } else {
+                self.clearTerminal()
+                self.printLines(combat.displayStatus())
+                self.print("")
+                self.printLines(self.asciiDodge, color: .cyan)
                 self.print("")
                 self.print("\(character.name) takes a defensive stance.")
             }
@@ -1055,6 +1091,7 @@ class GameEngine: ObservableObject {
         }
 
         var options = saves.map { $0.slotName }
+        options.append("Manage Saves")
         options.append("< Back")
 
         showMenu(options)
@@ -1071,8 +1108,140 @@ class GameEngine: ObservableObject {
                 return
             }
 
+            if choice == options.count - 1 {
+                self?.showManageSavesMenu(returnTo: origin)
+                return
+            }
+
             let selectedSave = saves[choice - 1]
             self?.loadGame(selectedSave)
+        }
+    }
+
+    private func showManageSavesMenu(returnTo origin: LoadGameOrigin) {
+        clearTerminal()
+        printTitle("Manage Saves")
+
+        let saves = SaveGameManager.shared.listSaves()
+
+        if saves.isEmpty {
+            print("No saved games.", color: .yellow)
+            print("")
+            showMenu(["< Back"])
+            menuHandler = { [weak self] _ in
+                self?.showLoadGameMenu(returnTo: origin)
+            }
+            return
+        }
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .short
+
+        for (index, save) in saves.enumerated() {
+            let dateStr = dateFormatter.string(from: save.savedAt)
+            print("\(index + 1). \(save.slotName)", color: .brightGreen)
+            print("   \(save.partyDescription)", color: .dimGreen)
+            print("   \(dateStr)", color: .dimGreen)
+            print("")
+        }
+
+        var options = saves.map { $0.slotName }
+        options.append("< Back")
+
+        print("Select a save to manage:", color: .cyan)
+        showMenu(options)
+
+        menuHandler = { [weak self] choice in
+            if choice == options.count {
+                self?.showLoadGameMenu(returnTo: origin)
+                return
+            }
+            let selectedSave = saves[choice - 1]
+            self?.showSaveActions(save: selectedSave, returnTo: origin)
+        }
+    }
+
+    private func showSaveActions(save: SaveGame, returnTo origin: LoadGameOrigin) {
+        clearTerminal()
+        printSubtitle(save.slotName)
+        print("  \(save.partyDescription)", color: .dimGreen)
+        print("  \(save.dungeonName) (Level \(save.dungeonLevel))", color: .dimGreen)
+        print("")
+
+        showMenu(["Rename", "Delete", "< Back"])
+
+        menuHandler = { [weak self] choice in
+            switch choice {
+            case 1: self?.renameSave(save: save, returnTo: origin)
+            case 2: self?.confirmDeleteSave(save: save, returnTo: origin)
+            default: self?.showManageSavesMenu(returnTo: origin)
+            }
+        }
+    }
+
+    private func renameSave(save: SaveGame, returnTo origin: LoadGameOrigin) {
+        print("")
+        promptText("Enter new name for this save:")
+
+        inputHandler = { [weak self] newName in
+            let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                self?.print("Name cannot be empty.", color: .yellow)
+                self?.showSaveActions(save: save, returnTo: origin)
+                return
+            }
+
+            let renamed = SaveGame(
+                id: save.id,
+                savedAt: save.savedAt,
+                slotName: trimmed,
+                partyDescription: save.partyDescription,
+                dungeonName: save.dungeonName,
+                dungeonLevel: save.dungeonLevel,
+                party: save.party,
+                dungeon: save.dungeon,
+                gameState: save.gameState
+            )
+
+            SaveGameManager.shared.delete(id: save.id)
+            do {
+                try SaveGameManager.shared.save(renamed)
+                self?.print("")
+                self?.print("Renamed to '\(trimmed)'", color: .brightGreen)
+            } catch {
+                self?.print("Error saving: \(error.localizedDescription)", color: .red)
+            }
+
+            self?.print("")
+            self?.waitForContinue()
+            self?.inputHandler = { [weak self] _ in
+                self?.showManageSavesMenu(returnTo: origin)
+            }
+        }
+    }
+
+    private func confirmDeleteSave(save: SaveGame, returnTo origin: LoadGameOrigin) {
+        print("")
+        print("Delete '\(save.slotName)'?", color: .red, bold: true)
+        print("This cannot be undone.", color: .yellow)
+        print("")
+
+        showMenu(["Yes, Delete", "No, Keep It"])
+
+        menuHandler = { [weak self] choice in
+            if choice == 1 {
+                SaveGameManager.shared.delete(id: save.id)
+                self?.print("")
+                self?.print("Save deleted.", color: .red)
+                self?.print("")
+                self?.waitForContinue()
+                self?.inputHandler = { [weak self] _ in
+                    self?.showManageSavesMenu(returnTo: origin)
+                }
+            } else {
+                self?.showSaveActions(save: save, returnTo: origin)
+            }
         }
     }
 
@@ -1112,9 +1281,11 @@ class GameEngine: ObservableObject {
         print("")
 
         waitForContinue()
-        inputHandler = { [weak self] _ in
-            self?.clearTerminal()
-            self?.showMainMenu()
+        inputHandler = { _ in
+            // Suspend the app (go to home screen)
+            DispatchQueue.main.async {
+                UIApplication.shared.perform(#selector(NSXPCConnection.suspend))
+            }
         }
     }
 
@@ -1183,6 +1354,68 @@ class GameEngine: ObservableObject {
             "            .   . .. .   .. :/    .:        .",
             "      +   .   .  .  . :  .:../       .  +  .",
             "         .          .  . ..:./ .          .",
+        ]
+    }
+
+    private func asciiHit(attacker: String, target: String) -> [String] {
+        [
+            "   \\  |  /",
+            "    \\ | /",
+            " ----*----  HIT!",
+            "    / | \\",
+            "   /  |  \\",
+        ]
+    }
+
+    private var asciiCriticalHit: [String] {
+        [
+            "  \\\\  ||  //",
+            "   \\\\ || //",
+            "    \\\\||//",
+            " ===*CRITICAL*===",
+            "    //||\\\\",
+            "   // || \\\\",
+            "  //  ||  \\\\",
+        ]
+    }
+
+    private var asciiMiss: [String] {
+        [
+            "       ~",
+            "     ~   ~",
+            "       ~     MISS!",
+            "     ~   ~",
+            "       ~",
+        ]
+    }
+
+    private var asciiDodge: [String] {
+        [
+            "    .^.",
+            "   / | \\",
+            "  /  |  \\  DODGE!",
+            " /   |   \\",
+            " ----+----",
+        ]
+    }
+
+    private var asciiMonsterAttack: [String] {
+        [
+            "      /\\  /\\",
+            "     /  \\/  \\",
+            "    / SLASH! \\",
+            "    \\        /",
+            "     \\  /\\  /",
+            "      \\/  \\/",
+        ]
+    }
+
+    private var asciiParty: [String] {
+        [
+            "  o   o   o   o",
+            " /|\\ /|\\ /|\\ /|\\",
+            " / \\ / \\ / \\ / \\",
+            " [=] [~] [+] [*]",
         ]
     }
 }
