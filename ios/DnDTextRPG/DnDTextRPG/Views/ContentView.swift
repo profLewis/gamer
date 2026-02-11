@@ -94,7 +94,7 @@ struct SplashView: View {
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundColor(terminalGreen.opacity(0.5))
 
-                    Text("Version 1.0.0 — 2026")
+                    Text("Version 1.1.0 — 2026")
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(terminalGreen.opacity(0.4))
                 }
