@@ -27,6 +27,10 @@ class GameEngine: ObservableObject {
     @Published var gameTimeMinutes: Int = 360  // Start at Day 1, 6:00 AM
     @Published var adventureLog: [String] = []
 
+    // Run stats
+    private var monstersSlain: Int = 0
+    private var combatsWon: Int = 0
+
     // Character creation state
     private var creatingCharacterIndex: Int = 0
     private var totalCharacters: Int = 1
@@ -164,6 +168,8 @@ class GameEngine: ObservableObject {
     // MARK: - Game Start
 
     func startGame() {
+        GameCenterManager.shared.authenticatePlayer()
+        HallOfFameManager.shared.seedIfEmpty()
         clearTerminal()
         showMainMenu()
     }
@@ -178,14 +184,15 @@ class GameEngine: ObservableObject {
         print("A text-based role-playing game", color: .dimGreen)
         print("")
 
-        showMenu(["New Game", "Load Game", "How to Play", "Quit"])
+        showMenu(["New Game", "Load Game", "Hall of Fame", "How to Play", "Quit"])
 
         menuHandler = { [weak self] choice in
             switch choice {
             case 1: self?.startNewGame()
             case 2: self?.showLoadGameMenu(returnTo: .mainMenu)
-            case 3: self?.showHowToPlay()
-            case 4: self?.quitApp()
+            case 3: self?.showHallOfFame()
+            case 4: self?.showHowToPlay()
+            case 5: self?.quitApp()
             default: self?.showMainMenu()
             }
         }
@@ -229,6 +236,76 @@ class GameEngine: ObservableObject {
         inputHandler = { [weak self] _ in
             self?.clearTerminal()
             self?.showMainMenu()
+        }
+    }
+
+    // MARK: - Hall of Fame
+
+    func showHallOfFame() {
+        clearTerminal()
+
+        printLines(asciiTrophy, color: .yellow)
+        print("")
+        printTitle("Hall of Fame")
+
+        let entries = HallOfFameManager.shared.listEntries()
+        let manager = HallOfFameManager.shared
+
+        // Summary stats
+        print("  Victories: \(manager.totalVictories())  Defeats: \(manager.totalDefeats())  Total Runs: \(manager.totalRuns())", color: .cyan)
+        if manager.bestGold() > 0 {
+            print("  Best Gold: \(manager.bestGold())  Most Slain: \(manager.mostSlain())", color: .cyan)
+        }
+        print("")
+
+        if entries.isEmpty {
+            print("  No adventures recorded yet.", color: .dimGreen)
+            print("  Complete a dungeon to earn your place!", color: .dimGreen)
+            print("")
+        } else {
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateStyle = .medium
+
+            for (index, entry) in entries.prefix(10).enumerated() {
+                let outcome = entry.outcome == .victory ? "VICTORY" : "DEFEAT"
+                let outcomeColor: TerminalColor = entry.outcome == .victory ? .yellow : .red
+
+                print("\(index + 1). \(entry.dungeonName) (Lv.\(entry.dungeonLevel)) — \(outcome)", color: outcomeColor)
+                print("   \(entry.partyDescription)", color: .dimGreen)
+
+                let day = entry.gameTimeMinutes / 1440 + 1
+                print("   Gold: \(entry.goldCollected)  Slain: \(entry.monstersSlain)  Rooms: \(entry.roomsExplored)/\(entry.totalRooms)  Day \(day)", color: .dimGreen)
+                print("   \(dateFormatter.string(from: entry.date))", color: .dimGreen)
+                print("")
+            }
+
+            if entries.count > 10 {
+                print("  (\(entries.count - 10) more entries...)", color: .dimGreen)
+                print("")
+            }
+        }
+
+        var options = ["< Back"]
+        if GameCenterManager.shared.isAuthenticated {
+            options.insert("Game Center Leaderboards", at: 0)
+            options.insert("Game Center Achievements", at: 1)
+        }
+
+        showMenu(options)
+
+        menuHandler = { [weak self] choice in
+            if GameCenterManager.shared.isAuthenticated {
+                switch choice {
+                case 1: GameCenterManager.shared.showLeaderboard()
+                case 2: GameCenterManager.shared.showAchievements()
+                default:
+                    self?.clearTerminal()
+                    self?.showMainMenu()
+                }
+            } else {
+                self?.clearTerminal()
+                self?.showMainMenu()
+            }
         }
     }
 
@@ -815,6 +892,7 @@ class GameEngine: ObservableObject {
                 self.print("")
             }
 
+            SoundManager.shared.stopMusic()
             SoundManager.shared.playHeal()
             if choice == 1 {
                 self.advanceTime(60)
@@ -839,6 +917,7 @@ class GameEngine: ObservableObject {
 
             self.waitForContinue()
             self.inputHandler = { [weak self] _ in
+                SoundManager.shared.startMusic(.exploration)
                 self?.showExplorationView()
             }
         }
@@ -996,6 +1075,10 @@ class GameEngine: ObservableObject {
         SoundManager.shared.playVictory()
         advanceTime(30)
 
+        // Track stats
+        monstersSlain += combat.encounter.monsters.count
+        combatsWon += 1
+
         clearTerminal()
         printTitle("VICTORY!")
 
@@ -1040,6 +1123,9 @@ class GameEngine: ObservableObject {
         gameState = .gameOver
         logEvent("The party has fallen...")
 
+        // Record in Hall of Fame
+        recordHallOfFame(outcome: .defeat)
+
         printLines(asciiSkull, color: .red)
         print("")
         printTitle("DEFEAT")
@@ -1060,6 +1146,9 @@ class GameEngine: ObservableObject {
         gameState = .victory
         logEvent("DUNGEON CONQUERED! \(dungeon?.name ?? "The dungeon") has been cleared!")
 
+        // Record in Hall of Fame + Game Center
+        recordHallOfFame(outcome: .victory)
+
         printLines(asciiTrophy, color: .yellow)
         print("")
         printTitle("DUNGEON CONQUERED!")
@@ -1077,13 +1166,60 @@ class GameEngine: ObservableObject {
 
         print("Final Stats:", color: .cyan)
         print("  Gold collected: \(totalGold)")
+        print("  Monsters slain: \(monstersSlain)")
+        print("  Combats won: \(combatsWon)")
         print("  Experience gained: \(totalXP)")
+        print("")
+        print("Recorded in the Hall of Fame!", color: .yellow)
         print("")
 
         waitForContinue()
         inputHandler = { [weak self] _ in
             self?.resetGame()
         }
+    }
+
+    private func recordHallOfFame(outcome: RunOutcome) {
+        var totalGold = 0
+        for char in party { totalGold += char.gold }
+
+        let roomsExplored = dungeon?.rooms.values.filter { $0.visited }.count ?? 0
+        let totalRooms = dungeon?.rooms.count ?? 0
+
+        let entry = HallOfFameEntry(
+            id: UUID(),
+            date: Date(),
+            partyNames: party.map { $0.name },
+            partyDescription: party.map { "\($0.name) (\($0.characterClass.rawValue))" }.joined(separator: ", "),
+            dungeonName: dungeon?.name ?? "Unknown",
+            dungeonLevel: dungeon?.level ?? 1,
+            outcome: outcome,
+            goldCollected: totalGold,
+            monstersSlain: monstersSlain,
+            combatsWon: combatsWon,
+            roomsExplored: roomsExplored,
+            totalRooms: totalRooms,
+            gameTimeMinutes: gameTimeMinutes
+        )
+
+        HallOfFameManager.shared.addEntry(entry)
+
+        // Game Center submissions
+        let gc = GameCenterManager.shared
+        gc.submitScore(totalGold, leaderboardID: GameCenterManager.leaderboardGold)
+        gc.submitScore(monstersSlain, leaderboardID: GameCenterManager.leaderboardSlain)
+
+        let totalVictories = HallOfFameManager.shared.totalVictories()
+        gc.submitScore(totalVictories, leaderboardID: GameCenterManager.leaderboardVictories)
+
+        // Check achievements
+        gc.checkAchievements(
+            combatsWon: combatsWon,
+            monstersSlain: monstersSlain,
+            goldCollected: totalGold,
+            dungeonLevel: dungeon?.level ?? 1,
+            isVictory: outcome == .victory
+        )
     }
 
     // MARK: - Save / Load
@@ -1142,7 +1278,9 @@ class GameEngine: ObservableObject {
             dungeon: dungeon,
             gameState: .exploring,
             gameTimeMinutes: gameTimeMinutes,
-            adventureLog: adventureLog
+            adventureLog: adventureLog,
+            monstersSlain: monstersSlain,
+            combatsWon: combatsWon
         )
 
         do {
@@ -1325,7 +1463,9 @@ class GameEngine: ObservableObject {
                 dungeon: save.dungeon,
                 gameState: save.gameState,
                 gameTimeMinutes: save.gameTimeMinutes,
-                adventureLog: save.adventureLog
+                adventureLog: save.adventureLog,
+                monstersSlain: save.monstersSlain,
+                combatsWon: save.combatsWon
             )
 
             SaveGameManager.shared.delete(id: save.id)
@@ -1376,6 +1516,8 @@ class GameEngine: ObservableObject {
         gameState = .exploring
         gameTimeMinutes = save.gameTimeMinutes
         adventureLog = save.adventureLog
+        monstersSlain = save.monstersSlain
+        combatsWon = save.combatsWon
         logEvent("Game loaded: \(save.slotName)")
         SoundManager.shared.startMusic(.exploration)
 
@@ -1398,6 +1540,8 @@ class GameEngine: ObservableObject {
         currentCombat = nil
         gameTimeMinutes = 360
         adventureLog = []
+        monstersSlain = 0
+        combatsWon = 0
         clearTerminal()
         showMainMenu()
     }
@@ -1543,11 +1687,13 @@ class GameEngine: ObservableObject {
     }
 
     private var asciiParty: [String] {
-        [
-            "  o   o   o   o",
-            " /|\\ /|\\ /|\\ /|\\",
-            " / \\ / \\ / \\ / \\",
-            " [=] [~] [+] [*]",
-        ]
+        let icons = ["[=]", "[~]", "[+]", "[*]"]
+        let count = min(party.count, 4)
+        if count == 0 { return [] }
+        let heads = (0..<count).map { _ in " o " }.joined(separator: " ")
+        let bodies = (0..<count).map { _ in "/|\\" }.joined(separator: " ")
+        let legs = (0..<count).map { _ in "/ \\" }.joined(separator: " ")
+        let items = (0..<count).map { icons[$0 % icons.count] }.joined(separator: " ")
+        return [" " + heads, " " + bodies, " " + legs, " " + items]
     }
 }

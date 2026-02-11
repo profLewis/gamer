@@ -20,6 +20,8 @@
 		011 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 111 /* PrivacyInfo.xcprivacy */; };
 		012 /* SaveGameModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 112 /* SaveGameModels.swift */; };
 		013 /* SoundManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 113 /* SoundManager.swift */; };
+		014 /* HallOfFame.swift in Sources */ = {isa = PBXBuildFile; fileRef = 114 /* HallOfFame.swift */; };
+		015 /* GameCenterManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 115 /* GameCenterManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -37,6 +39,8 @@
 		111 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		112 /* SaveGameModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaveGameModels.swift; sourceTree = "<group>"; };
 		113 /* SoundManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundManager.swift; sourceTree = "<group>"; };
+		114 /* HallOfFame.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HallOfFame.swift; sourceTree = "<group>"; };
+		115 /* GameCenterManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameCenterManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -97,6 +101,7 @@
 				106 /* DungeonModels.swift */,
 				107 /* CombatModels.swift */,
 				112 /* SaveGameModels.swift */,
+				114 /* HallOfFame.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -114,6 +119,7 @@
 			children = (
 				109 /* Dice.swift */,
 				113 /* SoundManager.swift */,
+				115 /* GameCenterManager.swift */,
 			);
 			path = Utils;
 			sourceTree = "<group>";
@@ -199,6 +205,8 @@
 				009 /* Dice.swift in Sources */,
 				012 /* SaveGameModels.swift in Sources */,
 				013 /* SoundManager.swift in Sources */,
+				014 /* HallOfFame.swift in Sources */,
+				015 /* GameCenterManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
