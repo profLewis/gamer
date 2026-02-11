@@ -12,13 +12,30 @@ class SoundManager {
 
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
+    private let musicNode = AVAudioPlayerNode()
     private let sampleRate: Double = 44100
     private let format: AVAudioFormat
+
+    // Music state
+    private var musicPlaying = false
+    private var currentMusic: MusicType?
+    private var musicQueue: DispatchQueue = DispatchQueue(label: "com.dnd.music", qos: .background)
+
+    enum MusicType {
+        case menu
+        case exploration
+        case combat
+    }
 
     private init() {
         format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
         engine.attach(playerNode)
+        engine.attach(musicNode)
         engine.connect(playerNode, to: engine.mainMixerNode, format: format)
+        engine.connect(musicNode, to: engine.mainMixerNode, format: format)
+
+        // Music is quieter than SFX
+        musicNode.volume = 0.4
 
         do {
             #if os(iOS)
@@ -205,5 +222,175 @@ class SoundManager {
             (850, 0.03, 0.15, .noise),
             (750, 0.05, 0.2, .square),
         ])
+    }
+
+    // MARK: - Background Music
+
+    func startMusic(_ type: MusicType) {
+        if currentMusic == type && musicPlaying { return }
+        stopMusic()
+
+        if !engine.isRunning {
+            try? engine.start()
+        }
+        guard engine.isRunning else { return }
+
+        currentMusic = type
+        musicPlaying = true
+
+        musicQueue.async { [weak self] in
+            guard let self = self else { return }
+
+            while self.musicPlaying {
+                let melody = self.melodyFor(type)
+                for note in melody {
+                    guard self.musicPlaying else { break }
+
+                    if note.frequency == 0 {
+                        // Rest note
+                        Thread.sleep(forTimeInterval: note.duration)
+                        continue
+                    }
+
+                    if let buffer = self.generateTone(
+                        frequency: note.frequency,
+                        duration: note.duration,
+                        volume: note.volume,
+                        waveform: note.waveform
+                    ) {
+                        self.musicNode.scheduleBuffer(buffer, completionHandler: nil)
+                        if !self.musicNode.isPlaying {
+                            self.musicNode.play()
+                        }
+                        Thread.sleep(forTimeInterval: note.duration)
+                    }
+                }
+            }
+        }
+    }
+
+    func stopMusic() {
+        musicPlaying = false
+        currentMusic = nil
+        musicNode.stop()
+    }
+
+    private func melodyFor(_ type: MusicType) -> [(frequency: Double, duration: Double, volume: Float, waveform: Waveform)] {
+        switch type {
+        case .menu:
+            return menuMelody()
+        case .exploration:
+            return explorationMelody()
+        case .combat:
+            return combatMelody()
+        }
+    }
+
+    /// Menu — slow, mysterious arpeggios in A minor
+    private func menuMelody() -> [(frequency: Double, duration: Double, volume: Float, waveform: Waveform)] {
+        let v: Float = 0.12
+        return [
+            // A minor arpeggio up
+            (220, 0.5, v, .sine),     // A3
+            (262, 0.5, v, .sine),     // C4
+            (330, 0.5, v, .sine),     // E4
+            (440, 0.7, v, .sine),     // A4
+            (0, 0.3, 0, .sine),       // rest
+            // Descend
+            (392, 0.5, v, .sine),     // G4
+            (330, 0.5, v, .sine),     // E4
+            (294, 0.5, v, .sine),     // D4
+            (262, 0.7, v, .sine),     // C4
+            (0, 0.3, 0, .sine),       // rest
+            // Second phrase — F major
+            (175, 0.5, v, .sine),     // F3
+            (220, 0.5, v, .sine),     // A3
+            (262, 0.5, v, .sine),     // C4
+            (349, 0.7, v, .sine),     // F4
+            (0, 0.3, 0, .sine),       // rest
+            // Resolve to Am
+            (330, 0.5, v, .sine),     // E4
+            (294, 0.4, v, .sine),     // D4
+            (262, 0.4, v, .sine),     // C4
+            (220, 0.9, v, .sine),     // A3
+            (0, 0.6, 0, .sine),       // rest
+        ]
+    }
+
+    /// Exploration — adventurous melody in D minor, medium tempo
+    private func explorationMelody() -> [(frequency: Double, duration: Double, volume: Float, waveform: Waveform)] {
+        let v: Float = 0.10
+        let sq: Float = 0.06
+        return [
+            // Phrase 1 — walking bass + melody
+            (147, 0.3, sq, .square),  // D3 bass
+            (294, 0.3, v, .sine),     // D4
+            (349, 0.3, v, .sine),     // F4
+            (392, 0.3, v, .sine),     // G4
+            (440, 0.5, v, .sine),     // A4
+            (0, 0.2, 0, .sine),
+            (392, 0.3, v, .sine),     // G4
+            (349, 0.4, v, .sine),     // F4
+            (0, 0.2, 0, .sine),
+            // Phrase 2
+            (175, 0.3, sq, .square),  // F3 bass
+            (349, 0.3, v, .sine),     // F4
+            (392, 0.3, v, .sine),     // G4
+            (440, 0.3, v, .sine),     // A4
+            (523, 0.5, v, .sine),     // C5
+            (0, 0.2, 0, .sine),
+            (440, 0.3, v, .sine),     // A4
+            (392, 0.4, v, .sine),     // G4
+            (0, 0.2, 0, .sine),
+            // Phrase 3 — descend
+            (165, 0.3, sq, .square),  // E3 bass
+            (523, 0.3, v, .sine),     // C5
+            (440, 0.3, v, .sine),     // A4
+            (392, 0.3, v, .sine),     // G4
+            (349, 0.5, v, .sine),     // F4
+            (0, 0.2, 0, .sine),
+            (330, 0.3, v, .sine),     // E4
+            (294, 0.6, v, .sine),     // D4
+            (0, 0.4, 0, .sine),
+        ]
+    }
+
+    /// Combat — fast, intense driving rhythm in E minor
+    private func combatMelody() -> [(frequency: Double, duration: Double, volume: Float, waveform: Waveform)] {
+        let v: Float = 0.10
+        let b: Float = 0.08
+        return [
+            // Driving bass rhythm
+            (165, 0.15, b, .square),  // E3
+            (165, 0.15, b, .square),  // E3
+            (196, 0.15, b, .square),  // G3
+            (165, 0.15, b, .square),  // E3
+            // Melody stab
+            (330, 0.2, v, .square),   // E4
+            (392, 0.2, v, .square),   // G4
+            (440, 0.15, v, .square),  // A4
+            (392, 0.15, v, .square),  // G4
+            // Bass
+            (147, 0.15, b, .square),  // D3
+            (147, 0.15, b, .square),  // D3
+            (165, 0.15, b, .square),  // E3
+            (147, 0.15, b, .square),  // D3
+            // Melody
+            (294, 0.2, v, .square),   // D4
+            (330, 0.2, v, .square),   // E4
+            (392, 0.15, v, .square),  // G4
+            (330, 0.15, v, .square),  // E4
+            // Intense ascending
+            (196, 0.15, b, .square),  // G3
+            (196, 0.15, b, .square),  // G3
+            (220, 0.15, b, .square),  // A3
+            (247, 0.15, b, .square),  // B3
+            // Top phrase
+            (494, 0.2, v, .square),   // B4
+            (440, 0.2, v, .square),   // A4
+            (392, 0.2, v, .square),   // G4
+            (330, 0.3, v, .square),   // E4
+            (0, 0.1, 0, .sine),
+        ]
     }
 }

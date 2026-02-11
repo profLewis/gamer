@@ -172,6 +172,7 @@ class GameEngine: ObservableObject {
 
     func showMainMenu() {
         gameState = .mainMenu
+        SoundManager.shared.startMusic(.menu)
 
         printTitle("D&D 5e Text Adventure")
         print("A text-based role-playing game", color: .dimGreen)
@@ -535,6 +536,7 @@ class GameEngine: ObservableObject {
         gameTimeMinutes = 360  // 6:00 AM
         adventureLog = []
         logEvent("Entered \(dungeon?.name ?? "the dungeon")")
+        SoundManager.shared.startMusic(.exploration)
         showExplorationView()
     }
 
@@ -847,6 +849,7 @@ class GameEngine: ObservableObject {
     func startCombat(encounter: Encounter) {
         gameState = .combat
         currentCombat = Combat(party: party, encounter: encounter)
+        SoundManager.shared.startMusic(.combat)
         SoundManager.shared.playBattleStart()
 
         let monsterNames = encounter.monsters.map { $0.name }.joined(separator: ", ")
@@ -1022,6 +1025,7 @@ class GameEngine: ObservableObject {
 
         currentCombat = nil
         gameState = .exploring
+        SoundManager.shared.startMusic(.exploration)
 
         waitForContinue()
         inputHandler = { [weak self] _ in
@@ -1030,6 +1034,7 @@ class GameEngine: ObservableObject {
     }
 
     func handleCombatDefeat() {
+        SoundManager.shared.stopMusic()
         SoundManager.shared.playDefeat()
         clearTerminal()
         gameState = .gameOver
@@ -1049,6 +1054,7 @@ class GameEngine: ObservableObject {
     }
 
     func handleGameVictory() {
+        SoundManager.shared.stopMusic()
         SoundManager.shared.playVictory()
         clearTerminal()
         gameState = .victory
@@ -1371,6 +1377,7 @@ class GameEngine: ObservableObject {
         gameTimeMinutes = save.gameTimeMinutes
         adventureLog = save.adventureLog
         logEvent("Game loaded: \(save.slotName)")
+        SoundManager.shared.startMusic(.exploration)
 
         clearTerminal()
         print("Game loaded!", color: .brightGreen, bold: true)
@@ -1396,6 +1403,7 @@ class GameEngine: ObservableObject {
     }
 
     func quitApp() {
+        SoundManager.shared.stopMusic()
         clearTerminal()
         printLines(asciiFarewell, color: .dimGreen)
         print("")
