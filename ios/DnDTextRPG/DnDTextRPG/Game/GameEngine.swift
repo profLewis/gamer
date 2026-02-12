@@ -51,6 +51,9 @@ class GameEngine: ObservableObject {
     // Shop
     private lazy var shopEngine = ShopEngine(game: self)
 
+    // Autosave
+    private var roomsSinceLastSave: Int = 0
+
     // MARK: - Initialization
 
     init() {}
@@ -264,6 +267,76 @@ class GameEngine: ObservableObject {
         }
     }
 
+    // MARK: - Autosave
+
+    enum AutosaveInterval: Int, CaseIterable {
+        case off = 0
+        case everyRoom = 1
+        case every3Rooms = 3
+        case every5Rooms = 5
+
+        var displayName: String {
+            switch self {
+            case .off: return "Off"
+            case .everyRoom: return "Every Room"
+            case .every3Rooms: return "Every 3 Rooms"
+            case .every5Rooms: return "Every 5 Rooms"
+            }
+        }
+    }
+
+    var autosaveInterval: AutosaveInterval {
+        get {
+            let raw = UserDefaults.standard.integer(forKey: "autosave_interval")
+            return AutosaveInterval(rawValue: raw) ?? .off
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: "autosave_interval")
+        }
+    }
+
+    private func autosaveIfNeeded() {
+        let interval = autosaveInterval
+        guard interval != .off, dungeon != nil else { return }
+
+        roomsSinceLastSave += 1
+        if roomsSinceLastSave >= interval.rawValue {
+            roomsSinceLastSave = 0
+            performAutosave()
+        }
+    }
+
+    private func performAutosave() {
+        guard let dungeon = dungeon else { return }
+
+        let partyDesc = party.map { "\($0.name) (\($0.characterClass.rawValue))" }.joined(separator: ", ")
+        let slotName = "Autosave — \(dungeon.name)"
+
+        let saveGame = SaveGame(
+            id: UUID(),
+            savedAt: Date(),
+            slotName: slotName,
+            partyDescription: partyDesc,
+            dungeonName: dungeon.name,
+            dungeonLevel: dungeon.level,
+            party: party,
+            dungeon: dungeon,
+            gameState: .exploring,
+            gameTimeMinutes: gameTimeMinutes,
+            adventureLog: adventureLog,
+            monstersSlain: monstersSlain,
+            combatsWon: combatsWon
+        )
+
+        // Delete previous autosave to avoid clutter
+        let existing = SaveGameManager.shared.listSaves()
+        for save in existing where save.slotName.hasPrefix("Autosave") {
+            SaveGameManager.shared.delete(id: save.id)
+        }
+
+        try? SaveGameManager.shared.save(saveGame)
+    }
+
     // MARK: - Settings
 
     func showSettings() {
@@ -287,7 +360,12 @@ class GameEngine: ObservableObject {
         print("  Current: \(currentLevel.displayName) — \(currentLevel.description)", color: .dimGreen)
         print("")
 
-        var options = ["Set API Key", "DM Ad-lib Level"]
+        let currentAutosave = autosaveInterval
+        print("AUTOSAVE:", color: .cyan, bold: true)
+        print("  Current: \(currentAutosave.displayName)", color: .dimGreen)
+        print("")
+
+        var options = ["Set API Key", "DM Ad-lib Level", "Autosave"]
         if hasKey {
             options.append("Clear API Key")
         }
@@ -300,7 +378,9 @@ class GameEngine: ObservableObject {
                 self?.promptAPIKey()
             } else if choice == 2 {
                 self?.showAdLibLevelMenu()
-            } else if hasKey && choice == 3 {
+            } else if choice == 3 {
+                self?.showAutosaveMenu()
+            } else if hasKey && choice == 4 {
                 DMEngine.shared.apiKey = nil
                 self?.print("")
                 self?.print("API key cleared.", color: .yellow)
@@ -335,6 +415,40 @@ class GameEngine: ObservableObject {
                 DMEngine.shared.adLibLevel = DMAdLibLevel(rawValue: choice - 1) ?? .flavorOnly
                 self?.print("")
                 self?.print("DM Ad-lib level set to: \(DMEngine.shared.adLibLevel.displayName)", color: .brightGreen)
+                self?.print("")
+                self?.waitForContinue()
+                self?.inputHandler = { [weak self] _ in
+                    self?.showSettings()
+                }
+            } else {
+                self?.showSettings()
+            }
+        }
+    }
+
+    func showAutosaveMenu() {
+        clearTerminal()
+        printTitle("Autosave")
+        print("  Automatically saves your game as you explore.", color: .dimGreen)
+        print("  Replaces the previous autosave each time.", color: .dimGreen)
+        print("")
+
+        let current = autosaveInterval
+        for interval in AutosaveInterval.allCases {
+            let marker = interval == current ? " <--" : ""
+            print("  \(interval.displayName)\(marker)", color: interval == current ? .brightGreen : .green)
+        }
+        print("")
+
+        let options = AutosaveInterval.allCases.map { $0.displayName } + ["< Back"]
+        showMenu(options)
+
+        menuHandler = { [weak self] choice in
+            if choice <= AutosaveInterval.allCases.count {
+                let selected = AutosaveInterval.allCases[choice - 1]
+                self?.autosaveInterval = selected
+                self?.print("")
+                self?.print("Autosave set to: \(selected.displayName)", color: .brightGreen)
                 self?.print("")
                 self?.waitForContinue()
                 self?.inputHandler = { [weak self] _ in
@@ -458,11 +572,23 @@ class GameEngine: ObservableObject {
 
     // MARK: - Character Creation
 
+    private let suggestedNames = [
+        "Will the Wise", "Eleven", "Zoomer", "Sundar the Bold",
+        "Eddie Munson", "Lady Applejack", "Steve", "Nancy",
+        "Hopper", "Robin", "Jonathan", "Murray", "Joyce", "Nog"
+    ]
+
     func startCharacterCreation() {
         clearTerminal()
         gameState = .characterCreation
 
         printSubtitle("Character \(creatingCharacterIndex + 1) of \(totalCharacters)")
+
+        // Show a few random Stranger Things character name suggestions
+        let suggestions = suggestedNames.shuffled().prefix(4).joined(separator: ", ")
+        print("  Suggestions: \(suggestions)", color: .dimGreen)
+        print("")
+
         promptText("Enter character name (or 'back'):")
 
         inputHandler = { [weak self] name in
@@ -830,6 +956,7 @@ class GameEngine: ObservableObject {
         gameState = .exploring
         gameTimeMinutes = 360  // 6:00 AM
         adventureLog = []
+        roomsSinceLastSave = 0
         DMEngine.shared.clearHistory()
         logEvent("Entered \(dungeon?.name ?? "the dungeon")")
         SoundManager.shared.startMusic(.exploration)
@@ -939,6 +1066,7 @@ class GameEngine: ObservableObject {
             if let room = dungeon.currentRoom {
                 logEvent("Moved \(direction.rawValue) to \(room.name)")
             }
+            autosaveIfNeeded()
         } else {
             print(result.message, color: .yellow)
         }

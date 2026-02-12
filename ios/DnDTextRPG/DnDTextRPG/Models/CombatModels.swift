@@ -57,6 +57,9 @@ enum MonsterType: String, CaseIterable, Codable {
     case owlbear = "Owlbear"
     case giantSpider = "Giant Spider"
     case wolf = "Wolf"
+    case demogorgon = "Demogorgon"
+    case mindFlayer = "Mind Flayer"
+    case vecna = "Vecna"
 
     struct Stats {
         let hp: Int
@@ -93,6 +96,12 @@ enum MonsterType: String, CaseIterable, Codable {
             return Stats(hp: 59, ac: 13, attackBonus: 7, damage: "2d8+5", cr: 3, xp: 700)
         case .troll:
             return Stats(hp: 84, ac: 15, attackBonus: 7, damage: "2d6+4", cr: 5, xp: 1800)
+        case .demogorgon:
+            return Stats(hp: 68, ac: 14, attackBonus: 7, damage: "2d8+4", cr: 4, xp: 1100)
+        case .mindFlayer:
+            return Stats(hp: 71, ac: 15, attackBonus: 7, damage: "2d10+3", cr: 7, xp: 2900)
+        case .vecna:
+            return Stats(hp: 120, ac: 18, attackBonus: 9, damage: "3d8+5", cr: 10, xp: 5900)
         }
     }
 
@@ -110,6 +119,9 @@ enum MonsterType: String, CaseIterable, Codable {
         case .ogre: return "A towering brute of immense strength."
         case .owlbear: return "A fearsome hybrid of owl and bear."
         case .troll: return "A lanky giant with regenerating flesh."
+        case .demogorgon: return "A terrifying creature from the Upside Down with a gaping flower-like maw."
+        case .mindFlayer: return "An aberration with tentacles protruding from its face, wielding psionic power."
+        case .vecna: return "The Undying King, a lich of immense power reaching between worlds."
         }
     }
 
@@ -210,6 +222,30 @@ enum MonsterType: String, CaseIterable, Codable {
                 "  / | | \\",
                 " /  | |  \\",
             ]
+        case .demogorgon:
+            return [
+                "   \\|/|\\|/",
+                "    \\|||/",
+                "   (     )",
+                "   /|   |\\",
+                "  / |   | \\",
+            ]
+        case .mindFlayer:
+            return [
+                "    .-\"\"\"-.  ",
+                "   ( o   o )",
+                "    \\|||||/",
+                "   /||   ||\\",
+                "    /|   |\\",
+            ]
+        case .vecna:
+            return [
+                "   .--VVV--.",
+                "  / (X) (o) \\",
+                "  | /===\\ |",
+                "  /| /#\\ |\\",
+                " / |/   \\| \\",
+            ]
         }
     }
 
@@ -222,9 +258,11 @@ enum MonsterType: String, CaseIterable, Codable {
         case 3:
             return [.orc, .hobgoblin, .bugbear, .giantSpider, .gnoll]
         case 4:
-            return [.bugbear, .giantSpider, .ogre]
+            return [.bugbear, .giantSpider, .ogre, .demogorgon]
+        case 5:
+            return [.ogre, .owlbear, .troll, .demogorgon, .mindFlayer]
         default:
-            return [.ogre, .owlbear, .troll]
+            return [.troll, .demogorgon, .mindFlayer]
         }
     }
 
@@ -233,7 +271,9 @@ enum MonsterType: String, CaseIterable, Codable {
         case 1: return .bugbear
         case 2: return .ogre
         case 3: return .owlbear
-        default: return .troll
+        case 4: return .demogorgon
+        case 5: return .mindFlayer
+        default: return .vecna
         }
     }
 }
