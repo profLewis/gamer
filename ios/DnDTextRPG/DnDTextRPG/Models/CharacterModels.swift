@@ -358,10 +358,17 @@ class Character: ObservableObject, Identifiable, Codable {
     @Published var deathSaveSuccesses: Int
     @Published var deathSaveFailures: Int
 
+    // Inventory & equipment
+    @Published var inventory: [Item]
+    @Published var equippedWeapon: Item?
+    @Published var equippedArmor: Item?
+    @Published var equippedShield: Item?
+
     enum CodingKeys: String, CodingKey {
         case id, name, race, characterClass, level, abilityScores
         case currentHP, maxHP, tempHP, skillProficiencies, experiencePoints, gold
         case isConscious, deathSaveSuccesses, deathSaveFailures
+        case inventory, equippedWeapon, equippedArmor, equippedShield
     }
 
     init(name: String, race: Race, characterClass: CharacterClass, abilityScores: AbilityScores) {
@@ -378,6 +385,10 @@ class Character: ObservableObject, Identifiable, Codable {
         self.deathSaveSuccesses = 0
         self.deathSaveFailures = 0
         self.tempHP = 0
+        self.inventory = []
+        self.equippedWeapon = nil
+        self.equippedArmor = nil
+        self.equippedShield = nil
 
         // Calculate starting HP
         let conMod = abilityScores.modifier(for: .constitution)
@@ -403,6 +414,10 @@ class Character: ObservableObject, Identifiable, Codable {
         isConscious = try container.decode(Bool.self, forKey: .isConscious)
         deathSaveSuccesses = try container.decode(Int.self, forKey: .deathSaveSuccesses)
         deathSaveFailures = try container.decode(Int.self, forKey: .deathSaveFailures)
+        inventory = (try? container.decode([Item].self, forKey: .inventory)) ?? []
+        equippedWeapon = try? container.decodeIfPresent(Item.self, forKey: .equippedWeapon)
+        equippedArmor = try? container.decodeIfPresent(Item.self, forKey: .equippedArmor)
+        equippedShield = try? container.decodeIfPresent(Item.self, forKey: .equippedShield)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -422,6 +437,10 @@ class Character: ObservableObject, Identifiable, Codable {
         try container.encode(isConscious, forKey: .isConscious)
         try container.encode(deathSaveSuccesses, forKey: .deathSaveSuccesses)
         try container.encode(deathSaveFailures, forKey: .deathSaveFailures)
+        try container.encode(inventory, forKey: .inventory)
+        try container.encodeIfPresent(equippedWeapon, forKey: .equippedWeapon)
+        try container.encodeIfPresent(equippedArmor, forKey: .equippedArmor)
+        try container.encodeIfPresent(equippedShield, forKey: .equippedShield)
     }
 
     var proficiencyBonus: Int {
@@ -429,8 +448,29 @@ class Character: ObservableObject, Identifiable, Codable {
     }
 
     var armorClass: Int {
-        // Base AC (unarmored) = 10 + DEX modifier
-        return 10 + abilityScores.modifier(for: .dexterity)
+        var ac: Int
+        let dexMod = abilityScores.modifier(for: .dexterity)
+
+        if let armor = equippedArmor, let stats = armor.armorStats {
+            if let maxDex = stats.maxDexBonus {
+                ac = stats.baseAC + min(dexMod, maxDex)
+            } else {
+                ac = stats.baseAC + dexMod
+            }
+        } else {
+            // Unarmored — barbarian gets CON bonus
+            if characterClass == .barbarian {
+                ac = 10 + dexMod + abilityScores.modifier(for: .constitution)
+            } else {
+                ac = 10 + dexMod
+            }
+        }
+
+        // Shield bonus
+        if let shield = equippedShield, let stats = shield.armorStats, stats.isShield {
+            ac += stats.baseAC
+        }
+        return ac
     }
 
     var initiative: Int {
@@ -475,6 +515,88 @@ class Character: ObservableObject, Identifiable, Codable {
         }
     }
 
+    // MARK: - Carry Capacity
+
+    var carryCapacity: Double {
+        Double(abilityScores.strength) * 15.0
+    }
+
+    var currentWeight: Double {
+        var total = inventory.reduce(0.0) { $0 + $1.weight }
+        if let w = equippedWeapon { total += w.weight }
+        if let a = equippedArmor { total += a.weight }
+        if let s = equippedShield { total += s.weight }
+        return total
+    }
+
+    var isEncumbered: Bool {
+        currentWeight > carryCapacity
+    }
+
+    func canCarry(_ item: Item) -> Bool {
+        currentWeight + item.weight <= carryCapacity
+    }
+
+    // MARK: - Inventory Management
+
+    @discardableResult
+    func addItem(_ item: Item) -> Bool {
+        guard canCarry(item) else { return false }
+        inventory.append(item)
+        return true
+    }
+
+    func removeItem(_ item: Item) {
+        if let index = inventory.firstIndex(where: { $0.id == item.id }) {
+            inventory.remove(at: index)
+        }
+    }
+
+    func equipWeapon(_ item: Item) {
+        if let current = equippedWeapon {
+            inventory.append(current)
+        }
+        removeItem(item)
+        equippedWeapon = item
+    }
+
+    func equipArmor(_ item: Item) {
+        if let current = equippedArmor {
+            inventory.append(current)
+        }
+        removeItem(item)
+        equippedArmor = item
+    }
+
+    func equipShield(_ item: Item) {
+        if let current = equippedShield {
+            inventory.append(current)
+        }
+        removeItem(item)
+        equippedShield = item
+    }
+
+    func unequipWeapon() {
+        if let weapon = equippedWeapon {
+            inventory.append(weapon)
+            equippedWeapon = nil
+        }
+    }
+
+    func unequipArmor() {
+        if let armor = equippedArmor {
+            inventory.append(armor)
+            equippedArmor = nil
+        }
+    }
+
+    func unequipShield() {
+        if let shield = equippedShield {
+            inventory.append(shield)
+            equippedShield = nil
+        }
+    }
+
     func displaySheet() -> [String] {
         var lines: [String] = []
 
@@ -483,6 +605,13 @@ class Character: ObservableObject, Identifiable, Codable {
         lines.append("║ Level \(level) \(race.rawValue) \(characterClass.rawValue)".padding(toLength: 39, withPad: " ", startingAt: 0) + "║")
         lines.append("╠══════════════════════════════════════╣")
         lines.append("║ HP: \(currentHP)/\(maxHP)".padding(toLength: 20, withPad: " ", startingAt: 0) + "AC: \(armorClass)".padding(toLength: 18, withPad: " ", startingAt: 0) + "║")
+        lines.append("║ Gold: \(gold)".padding(toLength: 20, withPad: " ", startingAt: 0) + "Wt: \(String(format: "%.0f", currentWeight))/\(String(format: "%.0f", carryCapacity))lb".padding(toLength: 18, withPad: " ", startingAt: 0) + "║")
+        if let weapon = equippedWeapon {
+            lines.append("║ Wpn: \(weapon.name)".padding(toLength: 39, withPad: " ", startingAt: 0) + "║")
+        }
+        if let armor = equippedArmor {
+            lines.append("║ Arm: \(armor.name)".padding(toLength: 39, withPad: " ", startingAt: 0) + "║")
+        }
         lines.append("╠══════════════════════════════════════╣")
         lines.append("║ STR: \(abilityScores.strength) (\(formatMod(abilityScores.modifier(for: .strength))))  INT: \(abilityScores.intelligence) (\(formatMod(abilityScores.modifier(for: .intelligence))))".padding(toLength: 39, withPad: " ", startingAt: 0) + "║")
         lines.append("║ DEX: \(abilityScores.dexterity) (\(formatMod(abilityScores.modifier(for: .dexterity))))  WIS: \(abilityScores.wisdom) (\(formatMod(abilityScores.modifier(for: .wisdom))))".padding(toLength: 39, withPad: " ", startingAt: 0) + "║")

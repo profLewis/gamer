@@ -45,8 +45,11 @@ class GameEngine: ObservableObject {
     private var tempDungeonName: String = ""
 
     // Input handling
-    private var inputHandler: ((String) -> Void)?
-    private var menuHandler: ((Int) -> Void)?
+    var inputHandler: ((String) -> Void)?
+    var menuHandler: ((Int) -> Void)?
+
+    // Shop
+    private lazy var shopEngine = ShopEngine(game: self)
 
     // MARK: - Initialization
 
@@ -279,7 +282,12 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        var options = ["Set API Key"]
+        let currentLevel = DMEngine.shared.adLibLevel
+        print("DM AD-LIB LEVEL:", color: .cyan, bold: true)
+        print("  Current: \(currentLevel.displayName) — \(currentLevel.description)", color: .dimGreen)
+        print("")
+
+        var options = ["Set API Key", "DM Ad-lib Level"]
         if hasKey {
             options.append("Clear API Key")
         }
@@ -290,7 +298,9 @@ class GameEngine: ObservableObject {
         menuHandler = { [weak self] choice in
             if choice == 1 {
                 self?.promptAPIKey()
-            } else if hasKey && choice == 2 {
+            } else if choice == 2 {
+                self?.showAdLibLevelMenu()
+            } else if hasKey && choice == 3 {
                 DMEngine.shared.apiKey = nil
                 self?.print("")
                 self?.print("API key cleared.", color: .yellow)
@@ -302,6 +312,36 @@ class GameEngine: ObservableObject {
             } else {
                 self?.clearTerminal()
                 self?.showMainMenu()
+            }
+        }
+    }
+
+    func showAdLibLevelMenu() {
+        clearTerminal()
+        printTitle("DM Ad-lib Level")
+
+        for level in DMAdLibLevel.allCases {
+            let marker = level == DMEngine.shared.adLibLevel ? " <--" : ""
+            print("  \(level.rawValue): \(level.displayName)\(marker)", color: level == DMEngine.shared.adLibLevel ? .brightGreen : .green)
+            print("     \(level.description)", color: .dimGreen)
+            print("")
+        }
+
+        let options = DMAdLibLevel.allCases.map { $0.displayName } + ["< Back"]
+        showMenu(options)
+
+        menuHandler = { [weak self] choice in
+            if choice <= DMAdLibLevel.allCases.count {
+                DMEngine.shared.adLibLevel = DMAdLibLevel(rawValue: choice - 1) ?? .flavorOnly
+                self?.print("")
+                self?.print("DM Ad-lib level set to: \(DMEngine.shared.adLibLevel.displayName)", color: .brightGreen)
+                self?.print("")
+                self?.waitForContinue()
+                self?.inputHandler = { [weak self] _ in
+                    self?.showSettings()
+                }
+            } else {
+                self?.showSettings()
             }
         }
     }
@@ -646,6 +686,9 @@ class GameEngine: ObservableObject {
             character.skillProficiencies.insert(skill)
         }
 
+        // Starting gold
+        character.gold = Dice.rollSum(4, d: 4) * 10
+
         party.append(character)
 
         clearTerminal()
@@ -656,14 +699,90 @@ class GameEngine: ObservableObject {
         waitForContinue()
 
         inputHandler = { [weak self] _ in
-            guard let self = self else { return }
-            self.creatingCharacterIndex += 1
+            self?.chooseStartingEquipment(for: character)
+        }
+    }
 
-            if self.creatingCharacterIndex < self.totalCharacters {
-                self.startCharacterCreation()
-            } else {
-                self.startAdventure()
+    func chooseStartingEquipment(for character: Character) {
+        clearTerminal()
+        printSubtitle("Starting Equipment for \(character.name)")
+
+        let equipOptions = ItemCatalog.startingEquipmentOptions(for: character.characterClass)
+
+        print("Choose your starting equipment:", color: .cyan)
+        print("  Carry capacity: \(String(format: "%.0f", character.carryCapacity)) lb", color: .dimGreen)
+        print("")
+
+        for (i, (name, items)) in equipOptions.enumerated() {
+            print("  Option \(i + 1): \(name)", color: .brightGreen)
+            for item in items {
+                print("    - \(item.name) (\(String(format: "%.1f", item.weight))lb)", color: .dimGreen)
             }
+            print("")
+        }
+
+        var menuOptions: [String] = []
+        for (name, items) in equipOptions {
+            let totalWeight = items.reduce(0.0) { $0 + $1.weight }
+            menuOptions.append("\(name) (\(String(format: "%.0f", totalWeight)) lb)")
+        }
+
+        showMenu(menuOptions)
+
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice > 0 && choice <= equipOptions.count else { return }
+
+            let (_, items) = equipOptions[choice - 1]
+
+            for item in items {
+                _ = character.addItem(item)
+            }
+
+            // Auto-equip best weapon and armor
+            self.autoEquip(character)
+
+            self.clearTerminal()
+            self.print("Equipment loaded!", color: .brightGreen, bold: true)
+            self.print("")
+            self.printLines(character.displaySheet())
+            self.print("")
+
+            if let w = character.equippedWeapon {
+                self.print("  Equipped weapon: \(w.name)", color: .cyan)
+            }
+            if let a = character.equippedArmor {
+                self.print("  Equipped armor: \(a.name)", color: .cyan)
+            }
+            if let s = character.equippedShield {
+                self.print("  Equipped shield: \(s.name)", color: .cyan)
+            }
+            self.print("")
+
+            self.waitForContinue()
+            self.inputHandler = { [weak self] _ in
+                guard let self = self else { return }
+                self.creatingCharacterIndex += 1
+                if self.creatingCharacterIndex < self.totalCharacters {
+                    self.startCharacterCreation()
+                } else {
+                    self.startAdventure()
+                }
+            }
+        }
+    }
+
+    private func autoEquip(_ character: Character) {
+        if let weapon = character.inventory.first(where: { $0.type == .weapon }) {
+            character.equipWeapon(weapon)
+        }
+        if let armor = character.inventory
+            .filter({ $0.type == .armor })
+            .sorted(by: { ($0.armorStats?.baseAC ?? 0) > ($1.armorStats?.baseAC ?? 0) })
+            .first {
+            character.equipArmor(armor)
+        }
+        if let shield = character.inventory.first(where: { $0.type == .shield }) {
+            character.equipShield(shield)
         }
     }
 
@@ -783,10 +902,18 @@ class GameEngine: ObservableObject {
         options.append("Party Status")
         actions.append { [weak self] in self?.showPartyStatus() }
 
+        options.append("Inventory")
+        actions.append { [weak self] in self?.showInventory() }
+
+        if (room.roomType == .armory || room.roomType == .shrine) && (room.cleared || room.encounter == nil) {
+            options.append("Visit Merchant")
+            actions.append { [weak self] in self?.visitShop() }
+        }
+
         options.append("Rest")
         actions.append { [weak self] in self?.rest() }
 
-        if DMEngine.shared.isConfigured {
+        if DMEngine.shared.isConfigured && DMEngine.shared.adLibLevel != .off {
             options.append("Ask the DM")
             actions.append { [weak self] in self?.askTheDM() }
         }
@@ -878,20 +1005,254 @@ class GameEngine: ObservableObject {
 
         var totalGold = 0
         var itemNames: [String] = []
-        for item in room.treasure {
-            print("  \(item.name)")
-            if item.type == .gold {
-                totalGold += item.value
+        for treasureItem in room.treasure {
+            if treasureItem.type == .potion {
+                let potion = ItemCatalog.healingPotion()
+                if let char = party.first, char.canCarry(potion) {
+                    _ = char.addItem(potion)
+                    print("  \(treasureItem.name) — added to bag!", color: .brightGreen)
+                } else {
+                    totalGold += treasureItem.value
+                    print("  \(treasureItem.name) — too heavy, sold for \(treasureItem.value)gp")
+                }
+            } else {
+                totalGold += treasureItem.value
+                print("  \(treasureItem.name) — \(treasureItem.value)gp")
             }
-            itemNames.append(item.name)
+            itemNames.append(treasureItem.name)
         }
 
-        party.first?.gold += totalGold
+        if totalGold > 0 {
+            party.first?.gold += totalGold
+            print("")
+            print("  Total gold: +\(totalGold)", color: .yellow)
+        }
         room.treasure.removeAll()
         logEvent("Collected treasure: \(itemNames.joined(separator: ", "))")
 
         waitForContinue()
         inputHandler = { [weak self] _ in
+            self?.showExplorationView()
+        }
+    }
+
+    // MARK: - Inventory
+
+    func showInventory() {
+        guard let character = party.first else { return }
+
+        clearTerminal()
+
+        if let dungeon = dungeon {
+            printLines(dungeon.getMapDisplay(), color: .dimGreen)
+            print("")
+        }
+
+        printTitle("Inventory — \(character.name)")
+
+        print("  Carry Weight: \(String(format: "%.0f", character.currentWeight)) / \(String(format: "%.0f", character.carryCapacity)) lb", color: character.isEncumbered ? .red : .cyan)
+        print("  Gold: \(character.gold)", color: .yellow)
+        print("")
+
+        print("  EQUIPPED:", color: .cyan, bold: true)
+        print("    Weapon: \(character.equippedWeapon?.name ?? "(none)")", color: .brightGreen)
+        print("    Armor:  \(character.equippedArmor?.name ?? "(none)")", color: .brightGreen)
+        print("    Shield: \(character.equippedShield?.name ?? "(none)")", color: .brightGreen)
+        print("")
+
+        print("  BAG:", color: .cyan, bold: true)
+        if character.inventory.isEmpty {
+            print("    (empty)", color: .dimGreen)
+        } else {
+            for item in character.inventory {
+                let tag: String
+                switch item.type {
+                case .weapon: tag = "[W]"
+                case .armor: tag = "[A]"
+                case .shield: tag = "[S]"
+                case .potion: tag = "[P]"
+                case .scroll: tag = "[?]"
+                case .gem: tag = "[$]"
+                case .misc: tag = "[.]"
+                }
+                print("    \(tag) \(item.name) — \(String(format: "%.1f", item.weight))lb, \(item.value)gp", color: .green)
+            }
+        }
+        print("")
+
+        var options: [String] = []
+        var actions: [() -> Void] = []
+
+        let equipableWeapons = character.inventory.filter { $0.type == .weapon }
+        let equipableArmor = character.inventory.filter { $0.type == .armor }
+        let equipableShields = character.inventory.filter { $0.type == .shield }
+        let usablePotions = character.inventory.filter { $0.type == .potion }
+
+        if !equipableWeapons.isEmpty {
+            options.append("Equip Weapon")
+            actions.append { [weak self] in self?.showEquipMenu(character: character, type: .weapon, label: "Weapon") }
+        }
+        if !equipableArmor.isEmpty {
+            options.append("Equip Armor")
+            actions.append { [weak self] in self?.showEquipMenu(character: character, type: .armor, label: "Armor") }
+        }
+        if !equipableShields.isEmpty {
+            options.append("Equip Shield")
+            actions.append { [weak self] in self?.showEquipMenu(character: character, type: .shield, label: "Shield") }
+        }
+        if !usablePotions.isEmpty {
+            options.append("Use Potion")
+            actions.append { [weak self] in self?.showUsePotionMenu(character: character) }
+        }
+        if character.equippedWeapon != nil {
+            options.append("Unequip Weapon")
+            actions.append { [weak self] in
+                character.unequipWeapon()
+                self?.showInventory()
+            }
+        }
+        if character.equippedArmor != nil {
+            options.append("Unequip Armor")
+            actions.append { [weak self] in
+                character.unequipArmor()
+                self?.showInventory()
+            }
+        }
+        if !character.inventory.isEmpty {
+            options.append("Drop Item")
+            actions.append { [weak self] in self?.showDropItemMenu(character: character) }
+        }
+
+        options.append("< Back")
+        actions.append { [weak self] in self?.showExplorationView() }
+
+        showMenu(options)
+        menuHandler = { choice in
+            if choice > 0 && choice <= actions.count {
+                actions[choice - 1]()
+            }
+        }
+    }
+
+    private func showEquipMenu(character: Character, type: ItemType, label: String) {
+        let items = character.inventory.filter { $0.type == type }
+
+        clearTerminal()
+        printSubtitle("Equip \(label)")
+
+        var options: [String] = []
+        for item in items {
+            var desc = "\(item.name)"
+            if let ws = item.weaponStats {
+                desc += " (\(ws.damage) \(ws.damageType))"
+            }
+            if let as_ = item.armorStats {
+                desc += " (AC \(as_.baseAC))"
+            }
+            options.append(desc)
+        }
+        options.append("< Back")
+
+        showMenu(options)
+
+        menuHandler = { [weak self] choice in
+            if choice == options.count {
+                self?.showInventory()
+                return
+            }
+            guard choice > 0 && choice <= items.count else { return }
+            let item = items[choice - 1]
+
+            switch type {
+            case .weapon: character.equipWeapon(item)
+            case .armor: character.equipArmor(item)
+            case .shield: character.equipShield(item)
+            default: break
+            }
+            self?.showInventory()
+        }
+    }
+
+    private func showUsePotionMenu(character: Character) {
+        let potions = character.inventory.filter { $0.type == .potion }
+
+        clearTerminal()
+        printSubtitle("Use Potion")
+        print("  \(character.name) HP: \(character.currentHP)/\(character.maxHP)", color: .cyan)
+        print("")
+
+        var options: [String] = []
+        for potion in potions {
+            options.append("\(potion.name) — \(potion.potionStats?.effect ?? "")")
+        }
+        options.append("< Back")
+
+        showMenu(options)
+
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == options.count {
+                self.showInventory()
+                return
+            }
+            guard choice > 0 && choice <= potions.count else { return }
+            let potion = potions[choice - 1]
+
+            // Parse heal amount and apply
+            if let healStr = potion.potionStats?.healAmount {
+                character.removeItem(potion)
+                let roll = Dice.rollDamage(healStr)
+                let amount = max(1, roll.total)
+                character.heal(amount)
+
+                self.print("")
+                self.print("  \(character.name) drinks \(potion.name)!", color: .brightGreen)
+                self.print("  Restored \(amount) HP! (\(character.currentHP)/\(character.maxHP))", color: .brightGreen)
+            }
+
+            self.waitForContinue()
+            self.inputHandler = { [weak self] _ in
+                self?.showInventory()
+            }
+        }
+    }
+
+    private func showDropItemMenu(character: Character) {
+        clearTerminal()
+        printSubtitle("Drop Item")
+
+        var options: [String] = []
+        for item in character.inventory {
+            options.append("\(item.name) (\(String(format: "%.1f", item.weight))lb)")
+        }
+        options.append("< Back")
+
+        showMenu(options)
+
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == options.count {
+                self.showInventory()
+                return
+            }
+            guard choice > 0 && choice <= character.inventory.count else { return }
+            let item = character.inventory[choice - 1]
+            character.removeItem(item)
+            self.print("")
+            self.print("  Dropped \(item.name).", color: .yellow)
+            self.waitForContinue()
+            self.inputHandler = { [weak self] _ in
+                self?.showInventory()
+            }
+        }
+    }
+
+    // MARK: - Shop
+
+    func visitShop() {
+        guard let character = party.first, let dungeon = dungeon else { return }
+
+        shopEngine.openShop(character: character, dungeonLevel: dungeon.level) { [weak self] in
             self?.showExplorationView()
         }
     }
@@ -1063,11 +1424,16 @@ class GameEngine: ObservableObject {
             DMEngine.shared.ask(input, context: context) { [weak self] response in
                 DispatchQueue.main.async {
                     guard let self = self else { return }
+
+                    // Parse commands at level 3
+                    let result = DMEngine.parseCommands(from: response)
+                    let displayText = DMEngine.shared.adLibLevel == .full ? result.cleanText : response
+
                     self.print("")
                     self.print("DM:", color: .yellow, bold: true)
 
                     // Word wrap the response into lines
-                    let words = response.split(separator: " ")
+                    let words = displayText.split(separator: " ")
                     var line = ""
                     for word in words {
                         if line.count + word.count + 1 > 60 {
@@ -1079,6 +1445,29 @@ class GameEngine: ObservableObject {
                     }
                     if !line.isEmpty {
                         self.print("  \(line)", color: .yellow)
+                    }
+
+                    // Apply DM commands at level 3
+                    if DMEngine.shared.adLibLevel == .full {
+                        if result.bonusGold > 0 {
+                            self.party.first?.gold += result.bonusGold
+                            self.print("")
+                            self.print("  [The DM grants \(result.bonusGold) gold!]", color: .yellow, bold: true)
+                        }
+                        if result.healAmount > 0 {
+                            for char in self.party {
+                                char.heal(result.healAmount)
+                            }
+                            self.print("  [The DM heals the party for \(result.healAmount) HP!]", color: .brightGreen, bold: true)
+                        }
+                        for itemName in result.grantedItems {
+                            if let item = self.resolveItemByName(itemName) {
+                                if let char = self.party.first, char.canCarry(item) {
+                                    _ = char.addItem(item)
+                                    self.print("  [Received: \(item.name)!]", color: .brightGreen, bold: true)
+                                }
+                            }
+                        }
                     }
 
                     self.print("")
@@ -1105,6 +1494,13 @@ class GameEngine: ObservableObject {
             "\($0.name) (\($0.race.rawValue) \($0.characterClass.rawValue)) HP:\($0.currentHP)/\($0.maxHP) Gold:\($0.gold)"
         }.joined(separator: "\n")
 
+        let inventorySummary = party.map { char -> String in
+            var items = char.inventory.map { $0.name }
+            if let w = char.equippedWeapon { items.insert("Equipped: \(w.name)", at: 0) }
+            if let a = char.equippedArmor { items.insert("Wearing: \(a.name)", at: 0) }
+            return "\(char.name): \(items.isEmpty ? "(empty)" : items.joined(separator: ", "))"
+        }.joined(separator: "\n")
+
         return DMContext(
             roomName: room?.name ?? "Unknown",
             roomType: room?.roomType.rawValue ?? "Unknown",
@@ -1112,8 +1508,22 @@ class GameEngine: ObservableObject {
             exits: exitList,
             isCleared: room?.cleared ?? false,
             partyStatus: partyStatus,
-            gameTime: formattedGameTime()
+            gameTime: formattedGameTime(),
+            inventorySummary: inventorySummary,
+            adLibLevel: DMEngine.shared.adLibLevel
         )
+    }
+
+    private func resolveItemByName(_ name: String) -> Item? {
+        let lower = name.lowercased()
+        if lower.contains("greater") && lower.contains("healing") { return ItemCatalog.greaterHealingPotion() }
+        if lower.contains("healing") || lower.contains("potion") { return ItemCatalog.healingPotion() }
+        if lower.contains("dagger") { return ItemCatalog.dagger() }
+        if lower.contains("torch") { return ItemCatalog.torch() }
+        if lower.contains("rope") { return ItemCatalog.rope() }
+        if lower.contains("shortsword") { return ItemCatalog.shortsword() }
+        if lower.contains("longsword") { return ItemCatalog.longsword() }
+        return nil
     }
 
     // MARK: - Combat Display

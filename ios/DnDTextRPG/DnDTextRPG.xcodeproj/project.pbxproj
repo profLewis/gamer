@@ -23,6 +23,8 @@
 		014 /* HallOfFame.swift in Sources */ = {isa = PBXBuildFile; fileRef = 114 /* HallOfFame.swift */; };
 		015 /* GameCenterManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 115 /* GameCenterManager.swift */; };
 		016 /* DMEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 116 /* DMEngine.swift */; };
+		017 /* ItemModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 117 /* ItemModels.swift */; };
+		018 /* ShopEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 118 /* ShopEngine.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -43,6 +45,9 @@
 		114 /* HallOfFame.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HallOfFame.swift; sourceTree = "<group>"; };
 		115 /* GameCenterManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameCenterManager.swift; sourceTree = "<group>"; };
 		116 /* DMEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMEngine.swift; sourceTree = "<group>"; };
+		117 /* ItemModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemModels.swift; sourceTree = "<group>"; };
+		118 /* ShopEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShopEngine.swift; sourceTree = "<group>"; };
+		D18E1F342F3DF78F0076A164 /* DnDTextRPG.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DnDTextRPG.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -67,6 +72,7 @@
 		301 /* DnDTextRPG */ = {
 			isa = PBXGroup;
 			children = (
+				D18E1F342F3DF78F0076A164 /* DnDTextRPG.entitlements */,
 				101 /* DnDTextRPGApp.swift */,
 				303 /* Views */,
 				304 /* Models */,
@@ -104,6 +110,7 @@
 				107 /* CombatModels.swift */,
 				112 /* SaveGameModels.swift */,
 				114 /* HallOfFame.swift */,
+				117 /* ItemModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -112,6 +119,7 @@
 			isa = PBXGroup;
 			children = (
 				108 /* GameEngine.swift */,
+				118 /* ShopEngine.swift */,
 			);
 			path = Game;
 			sourceTree = "<group>";
@@ -211,6 +219,8 @@
 				014 /* HallOfFame.swift in Sources */,
 				015 /* GameCenterManager.swift in Sources */,
 				016 /* DMEngine.swift in Sources */,
+				017 /* ItemModels.swift in Sources */,
+				018 /* ShopEngine.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -345,6 +355,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = DnDTextRPG/DnDTextRPG.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_ASSET_PATHS = "";
@@ -377,6 +388,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = DnDTextRPG/DnDTextRPG.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_ASSET_PATHS = "";

@@ -480,11 +480,25 @@ class Combat: ObservableObject {
 
         var monster = encounter.monsters[monsterIndex]
         let strMod = character.abilityScores.modifier(for: .strength)
+        let dexMod = character.abilityScores.modifier(for: .dexterity)
         let profBonus = character.proficiencyBonus
-        let attackMod = strMod + profBonus
+
+        // Determine attack ability based on weapon
+        let weaponStats = character.equippedWeapon?.weaponStats
+        let attackAbilityMod: Int
+        if weaponStats?.isFinesse == true {
+            attackAbilityMod = max(strMod, dexMod)
+        } else if weaponStats?.isRanged == true {
+            attackAbilityMod = dexMod
+        } else {
+            attackAbilityMod = strMod
+        }
+
+        let attackMod = attackAbilityMod + profBonus
         let attack = Dice.attackRoll(modifier: attackMod, targetAC: monster.armorClass)
 
-        let breakdown = "STR \(strMod >= 0 ? "+" : "")\(strMod), Prof +\(profBonus)"
+        let abilityLabel = (weaponStats?.isRanged == true) ? "DEX" : (weaponStats?.isFinesse == true && dexMod > strMod) ? "DEX" : "STR"
+        let breakdown = "\(abilityLabel) \(attackAbilityMod >= 0 ? "+" : "")\(attackAbilityMod), Prof +\(profBonus)"
 
         var damageDice: String? = nil
         var damageRolls: [Int]? = nil
@@ -493,13 +507,14 @@ class Combat: ObservableObject {
         var targetDefeated = false
 
         if attack.hits {
-            let damageMod = strMod
-            damageDice = attack.isCritical ? "2d8" : "1d8"
+            let damageMod = attackAbilityMod
+            let baseDice = weaponStats?.damage ?? "1d4"  // Unarmed fallback
+            damageDice = baseDice
             damageModifier = damageMod
 
             let roll = attack.isCritical
-                ? Dice.rollCriticalDamage("1d8+\(damageMod)")
-                : Dice.rollDamage("1d8+\(damageMod)")
+                ? Dice.rollCriticalDamage("\(baseDice)+\(damageMod)")
+                : Dice.rollDamage("\(baseDice)+\(damageMod)")
 
             let damage = max(1, roll.total)
             totalDamage = damage
