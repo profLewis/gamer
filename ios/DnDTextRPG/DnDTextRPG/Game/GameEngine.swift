@@ -189,6 +189,19 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Show both a text input prompt and menu buttons simultaneously
+    func promptTextWithMenu(_ prompt: String, options: [String]) {
+        print(prompt, color: .green)
+        DispatchQueue.main.async {
+            self.directionExits = [:]
+            self.currentMenuOptions = options.enumerated().map { index, text in
+                MenuOption(text, isDefault: index == 0)
+            }
+            self.awaitingTextInput = true
+            self.awaitingContinue = false
+        }
+    }
+
     func waitForContinue() {
         DispatchQueue.main.async {
             self.directionExits = [:]
@@ -1886,8 +1899,7 @@ class GameEngine: ObservableObject {
 
                     // Text prompt for follow-up, with Back button
                     self.print("(Type another question, or tap Back)", color: .dimGreen)
-                    self.promptText(">")
-                    self.showMenu(["< Back"])
+                    self.promptTextWithMenu(">", options: ["< Back"])
 
                     self.inputHandler = { [weak self] followUp in
                         guard let self = self else { return }
@@ -1931,8 +1943,7 @@ class GameEngine: ObservableObject {
                                 self.print("")
                                 self.logEvent("Asked DM: \(followUp)")
                                 self.print("(Type another question, or tap Back)", color: .dimGreen)
-                                self.promptText(">")
-                                self.showMenu(["< Back"])
+                                self.promptTextWithMenu(">", options: ["< Back"])
                                 self.menuHandler = { [weak self] _ in
                                     self?.showExplorationView()
                                 }
@@ -1958,7 +1969,11 @@ class GameEngine: ObservableObject {
         print("(e.g. throw oil from my pack, look for an exit...)", color: .dimGreen)
         print("")
 
-        promptText(">")
+        promptTextWithMenu(">", options: ["< Back"])
+
+        menuHandler = { [weak self] _ in
+            self?.showPlayerCombatMenu(characterId: characterId)
+        }
 
         inputHandler = { [weak self] input in
             guard let self = self else { return }
@@ -1997,11 +2012,6 @@ class GameEngine: ObservableObject {
                     }
                 }
             }
-        }
-
-        showMenu(["< Back"])
-        menuHandler = { [weak self] _ in
-            self?.showPlayerCombatMenu(characterId: characterId)
         }
     }
 
