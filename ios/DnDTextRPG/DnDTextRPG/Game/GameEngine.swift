@@ -113,10 +113,19 @@ class GameEngine: ObservableObject {
         }
     }
 
-    func printLines(_ lines: [String], color: TerminalColor = .green) {
+    func printLines(_ lines: [String], color: TerminalColor = .green, size: CGFloat = 14) {
         for line in lines {
-            print(line, color: color)
+            print(line, color: color, size: size)
         }
+    }
+
+    /// Font size for the map — larger on iPad
+    var mapFontSize: CGFloat {
+        #if os(iOS)
+        return UIDevice.current.userInterfaceIdiom == .pad ? 20 : 14
+        #else
+        return 14
+        #endif
     }
 
     func printTitle(_ text: String) {
@@ -1232,7 +1241,7 @@ class GameEngine: ObservableObject {
 
         // Always show the map at the top
         let mapLines = dungeon.getMapDisplay()
-        printLines(mapLines, color: .dimGreen)
+        printLines(mapLines, color: .dimGreen, size: mapFontSize)
         print("")
 
         // Room description
@@ -1340,7 +1349,7 @@ class GameEngine: ObservableObject {
 
         // Show map at top
         if let dungeon = dungeon {
-            printLines(dungeon.getMapDisplay(), color: .dimGreen)
+            printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
             print("")
         }
 
@@ -1386,7 +1395,7 @@ class GameEngine: ObservableObject {
 
         // Show map at top
         if let dungeon = dungeon {
-            printLines(dungeon.getMapDisplay(), color: .dimGreen)
+            printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
             print("")
         }
 
@@ -1434,7 +1443,7 @@ class GameEngine: ObservableObject {
         clearTerminal()
 
         if let dungeon = dungeon {
-            printLines(dungeon.getMapDisplay(), color: .dimGreen)
+            printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
             print("")
         }
 
@@ -1652,7 +1661,7 @@ class GameEngine: ObservableObject {
 
         // Show map at top
         if let dungeon = dungeon {
-            printLines(dungeon.getMapDisplay(), color: .dimGreen)
+            printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
             print("")
         }
 
@@ -1726,7 +1735,7 @@ class GameEngine: ObservableObject {
 
         // Show map at top
         if let dungeon = dungeon {
-            printLines(dungeon.getMapDisplay(), color: .dimGreen)
+            printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
             print("")
         }
 
@@ -1746,7 +1755,7 @@ class GameEngine: ObservableObject {
 
             // Show map at top
             if let dungeon = self.dungeon {
-                self.printLines(dungeon.getMapDisplay(), color: .dimGreen)
+                self.printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
                 self.print("")
             }
 
@@ -1805,7 +1814,7 @@ class GameEngine: ObservableObject {
 
         // Show map at top
         if let dungeon = dungeon {
-            printLines(dungeon.getMapDisplay(), color: .dimGreen)
+            printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
             print("")
         }
 
