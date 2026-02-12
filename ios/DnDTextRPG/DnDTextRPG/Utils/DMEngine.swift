@@ -2,10 +2,50 @@
 //  DMEngine.swift
 //  DnDTextRPG
 //
-//  AI-powered Dungeon Master using Claude API
+//  AI-powered Dungeon Master — supports multiple AI providers
 //
 
 import Foundation
+
+// MARK: - AI Provider
+
+enum AIProvider: Int, CaseIterable {
+    case anthropic = 0
+    case openAI = 1
+    case google = 2
+
+    var displayName: String {
+        switch self {
+        case .anthropic: return "Anthropic (Claude)"
+        case .openAI: return "OpenAI (GPT)"
+        case .google: return "Google (Gemini)"
+        }
+    }
+
+    var keyPlaceholder: String {
+        switch self {
+        case .anthropic: return "sk-ant-..."
+        case .openAI: return "sk-..."
+        case .google: return "AIza..."
+        }
+    }
+
+    var keyURL: String {
+        switch self {
+        case .anthropic: return "console.anthropic.com"
+        case .openAI: return "platform.openai.com/api-keys"
+        case .google: return "aistudio.google.com/apikey"
+        }
+    }
+
+    var userDefaultsKey: String {
+        switch self {
+        case .anthropic: return "anthropic_api_key"
+        case .openAI: return "openai_api_key"
+        case .google: return "google_api_key"
+        }
+    }
+}
 
 // MARK: - DM Ad-lib Level
 
@@ -50,11 +90,31 @@ class DMEngine {
     private var conversationHistory: [(role: String, content: String)] = []
     private let maxHistory = 8  // Keep last 8 messages (4 exchanges)
 
-    // MARK: - API Key
+    // MARK: - Provider
+
+    var provider: AIProvider {
+        get {
+            let raw = UserDefaults.standard.integer(forKey: "ai_provider")
+            return AIProvider(rawValue: raw) ?? .anthropic
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: "ai_provider")
+        }
+    }
+
+    // MARK: - API Key (per-provider)
 
     var apiKey: String? {
-        get { UserDefaults.standard.string(forKey: "anthropic_api_key") }
-        set { UserDefaults.standard.set(newValue, forKey: "anthropic_api_key") }
+        get { UserDefaults.standard.string(forKey: provider.userDefaultsKey) }
+        set { UserDefaults.standard.set(newValue, forKey: provider.userDefaultsKey) }
+    }
+
+    func apiKey(for provider: AIProvider) -> String? {
+        UserDefaults.standard.string(forKey: provider.userDefaultsKey)
+    }
+
+    func setApiKey(_ key: String?, for provider: AIProvider) {
+        UserDefaults.standard.set(key, forKey: provider.userDefaultsKey)
     }
 
     var isConfigured: Bool {
@@ -82,7 +142,7 @@ class DMEngine {
 
     func ask(_ userMessage: String, context: DMContext, completion: @escaping (String) -> Void) {
         guard let key = apiKey, !key.isEmpty else {
-            completion("The DM is unavailable. Set your Anthropic API key in the main menu settings.")
+            completion("The DM is unavailable. Set your \(provider.displayName) API key in Settings.")
             return
         }
 
@@ -95,7 +155,7 @@ class DMEngine {
             conversationHistory = Array(conversationHistory.suffix(maxHistory))
         }
 
-        callClaudeAPI(apiKey: key, system: systemPrompt, messages: conversationHistory) { [weak self] response in
+        callAI(provider: provider, apiKey: key, system: systemPrompt, messages: conversationHistory) { [weak self] response in
             if let response = response {
                 self?.conversationHistory.append((role: "assistant", content: response))
                 completion(response)
@@ -232,9 +292,24 @@ class DMEngine {
         return prompt
     }
 
-    // MARK: - Claude API
+    // MARK: - AI API Router
 
-    private func callClaudeAPI(apiKey: String, system: String,
+    private func callAI(provider: AIProvider, apiKey: String, system: String,
+                         messages: [(role: String, content: String)],
+                         completion: @escaping (String?) -> Void) {
+        switch provider {
+        case .anthropic:
+            callAnthropic(apiKey: apiKey, system: system, messages: messages, completion: completion)
+        case .openAI:
+            callOpenAI(apiKey: apiKey, system: system, messages: messages, completion: completion)
+        case .google:
+            callGoogle(apiKey: apiKey, system: system, messages: messages, completion: completion)
+        }
+    }
+
+    // MARK: - Anthropic (Claude)
+
+    private func callAnthropic(apiKey: String, system: String,
                                 messages: [(role: String, content: String)],
                                 completion: @escaping (String?) -> Void) {
         guard let url = URL(string: "https://api.anthropic.com/v1/messages") else {
@@ -248,31 +323,107 @@ class DMEngine {
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
 
-        let messagesPayload = messages.map { ["role": $0.role, "content": $0.content] }
-
         let body: [String: Any] = [
             "model": "claude-sonnet-4-5-20250929",
             "max_tokens": 300,
             "system": system,
-            "messages": messagesPayload
+            "messages": messages.map { ["role": $0.role, "content": $0.content] }
         ]
 
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            guard let data = data, error == nil else {
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            guard let data = data, error == nil,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let content = json["content"] as? [[String: Any]],
+                  let text = content.first?["text"] as? String else {
                 completion(nil)
                 return
             }
+            completion(text)
+        }.resume()
+    }
 
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let content = json["content"] as? [[String: Any]],
-               let firstBlock = content.first,
-               let text = firstBlock["text"] as? String {
-                completion(text)
-            } else {
+    // MARK: - OpenAI (GPT)
+
+    private func callOpenAI(apiKey: String, system: String,
+                             messages: [(role: String, content: String)],
+                             completion: @escaping (String?) -> Void) {
+        guard let url = URL(string: "https://api.openai.com/v1/chat/completions") else {
+            completion(nil)
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+
+        var oaiMessages: [[String: String]] = [["role": "system", "content": system]]
+        oaiMessages += messages.map { ["role": $0.role, "content": $0.content] }
+
+        let body: [String: Any] = [
+            "model": "gpt-4o-mini",
+            "max_tokens": 300,
+            "messages": oaiMessages
+        ]
+
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            guard let data = data, error == nil,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let choices = json["choices"] as? [[String: Any]],
+                  let message = choices.first?["message"] as? [String: Any],
+                  let text = message["content"] as? String else {
                 completion(nil)
+                return
             }
+            completion(text)
+        }.resume()
+    }
+
+    // MARK: - Google (Gemini)
+
+    private func callGoogle(apiKey: String, system: String,
+                             messages: [(role: String, content: String)],
+                             completion: @escaping (String?) -> Void) {
+        let urlString = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=\(apiKey)"
+        guard let url = URL(string: urlString) else {
+            completion(nil)
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+
+        // Gemini uses "contents" array with "parts". System instruction is separate.
+        var contents: [[String: Any]] = []
+        for msg in messages {
+            let role = msg.role == "assistant" ? "model" : "user"
+            contents.append(["role": role, "parts": [["text": msg.content]]])
+        }
+
+        let body: [String: Any] = [
+            "system_instruction": ["parts": [["text": system]]],
+            "contents": contents,
+            "generationConfig": ["maxOutputTokens": 300]
+        ]
+
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            guard let data = data, error == nil,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let candidates = json["candidates"] as? [[String: Any]],
+                  let content = candidates.first?["content"] as? [String: Any],
+                  let parts = content["parts"] as? [[String: Any]],
+                  let text = parts.first?["text"] as? String else {
+                completion(nil)
+                return
+            }
+            completion(text)
         }.resume()
     }
 }

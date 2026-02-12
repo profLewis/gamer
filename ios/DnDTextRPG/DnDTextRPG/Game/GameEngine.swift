@@ -343,19 +343,21 @@ class GameEngine: ObservableObject {
         clearTerminal()
         printTitle("Settings")
 
-        let hasKey = DMEngine.shared.isConfigured
+        let dm = DMEngine.shared
+        let currentProvider = dm.provider
+
         print("AI DUNGEON MASTER:", color: .cyan, bold: true)
-        if hasKey {
+        print("  Provider: \(currentProvider.displayName)", color: .dimGreen)
+        if dm.isConfigured {
             print("  API Key: configured", color: .brightGreen)
             print("  The DM is ready! Use 'Ask the DM' while exploring.", color: .dimGreen)
         } else {
             print("  API Key: not set", color: .yellow)
-            print("  Set an Anthropic API key to enable the AI Dungeon Master.", color: .dimGreen)
-            print("  Get a key at console.anthropic.com", color: .dimGreen)
+            print("  Get a key at \(currentProvider.keyURL)", color: .dimGreen)
         }
         print("")
 
-        let currentLevel = DMEngine.shared.adLibLevel
+        let currentLevel = dm.adLibLevel
         print("DM AD-LIB LEVEL:", color: .cyan, bold: true)
         print("  Current: \(currentLevel.displayName) — \(currentLevel.description)", color: .dimGreen)
         print("")
@@ -365,8 +367,8 @@ class GameEngine: ObservableObject {
         print("  Current: \(currentAutosave.displayName)", color: .dimGreen)
         print("")
 
-        var options = ["Set API Key", "DM Ad-lib Level", "Autosave"]
-        if hasKey {
+        var options = ["AI Provider", "Set API Key", "DM Ad-lib Level", "Autosave"]
+        if dm.isConfigured {
             options.append("Clear API Key")
         }
         options.append("< Back")
@@ -375,13 +377,15 @@ class GameEngine: ObservableObject {
 
         menuHandler = { [weak self] choice in
             if choice == 1 {
-                self?.promptAPIKey()
+                self?.showAIProviderMenu()
             } else if choice == 2 {
-                self?.showAdLibLevelMenu()
+                self?.promptAPIKey()
             } else if choice == 3 {
+                self?.showAdLibLevelMenu()
+            } else if choice == 4 {
                 self?.showAutosaveMenu()
-            } else if hasKey && choice == 4 {
-                DMEngine.shared.apiKey = nil
+            } else if dm.isConfigured && choice == 5 {
+                dm.apiKey = nil
                 self?.print("")
                 self?.print("API key cleared.", color: .yellow)
                 self?.print("")
@@ -392,6 +396,48 @@ class GameEngine: ObservableObject {
             } else {
                 self?.clearTerminal()
                 self?.showMainMenu()
+            }
+        }
+    }
+
+    func showAIProviderMenu() {
+        clearTerminal()
+        printTitle("AI Provider")
+        print("  Choose which AI powers your Dungeon Master.", color: .dimGreen)
+        print("  Each provider requires its own API key.", color: .dimGreen)
+        print("")
+
+        let current = DMEngine.shared.provider
+        for provider in AIProvider.allCases {
+            let marker = provider == current ? " <--" : ""
+            let hasKey = DMEngine.shared.apiKey(for: provider) != nil
+            let keyStatus = hasKey ? " [key set]" : ""
+            print("  \(provider.displayName)\(keyStatus)\(marker)",
+                  color: provider == current ? .brightGreen : .green)
+            print("     Get key: \(provider.keyURL)", color: .dimGreen)
+            print("")
+        }
+
+        let options = AIProvider.allCases.map { $0.displayName } + ["< Back"]
+        showMenu(options)
+
+        menuHandler = { [weak self] choice in
+            if choice <= AIProvider.allCases.count {
+                let selected = AIProvider.allCases[choice - 1]
+                DMEngine.shared.provider = selected
+                DMEngine.shared.clearHistory()
+                self?.print("")
+                self?.print("AI Provider set to: \(selected.displayName)", color: .brightGreen)
+                if DMEngine.shared.apiKey(for: selected) == nil {
+                    self?.print("You'll need to set an API key for this provider.", color: .yellow)
+                }
+                self?.print("")
+                self?.waitForContinue()
+                self?.inputHandler = { [weak self] _ in
+                    self?.showSettings()
+                }
+            } else {
+                self?.showSettings()
             }
         }
     }
@@ -461,8 +507,12 @@ class GameEngine: ObservableObject {
     }
 
     private func promptAPIKey() {
+        let provider = DMEngine.shared.provider
         print("")
-        promptText("Paste your Anthropic API key:")
+        print("  Provider: \(provider.displayName)", color: .cyan)
+        print("  Get a key at \(provider.keyURL)", color: .dimGreen)
+        print("")
+        promptText("Paste your \(provider.displayName) API key:")
 
         inputHandler = { [weak self] key in
             let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -472,7 +522,7 @@ class GameEngine: ObservableObject {
             }
             DMEngine.shared.apiKey = trimmed
             self?.print("")
-            self?.print("API key saved!", color: .brightGreen)
+            self?.print("\(provider.displayName) API key saved!", color: .brightGreen)
             self?.print("The AI Dungeon Master is now available while exploring.", color: .cyan)
             self?.print("")
             self?.waitForContinue()
