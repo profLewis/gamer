@@ -114,9 +114,10 @@ class GameEngine: ObservableObject {
     }
 
     func printTitle(_ text: String) {
-        let border = String(repeating: "═", count: text.count + 4)
+        let t = String(text.prefix(30))
+        let border = String(repeating: "═", count: t.count + 4)
         print("╔\(border)╗", color: .brightGreen, bold: true)
-        print("║  \(text)  ║", color: .brightGreen, bold: true)
+        print("║  \(t)  ║", color: .brightGreen, bold: true)
         print("╚\(border)╝", color: .brightGreen, bold: true)
         print("")
     }
@@ -139,6 +140,14 @@ class GameEngine: ObservableObject {
             self.currentMenuOptions = options.enumerated().map { index, text in
                 MenuOption(text, isDefault: index == defaultIndex)
             }
+            self.awaitingTextInput = false
+            self.awaitingContinue = false
+        }
+    }
+
+    func showMenuOptions(_ options: [MenuOption]) {
+        DispatchQueue.main.async {
+            self.currentMenuOptions = options
             self.awaitingTextInput = false
             self.awaitingContinue = false
         }
@@ -1116,10 +1125,11 @@ class GameEngine: ObservableObject {
 
         print("")
 
-        // Party status bar
+        // Party status
         print(formattedGameTime(), color: .dimGreen)
-        let partyStr = party.map { "\($0.name) \($0.currentHP)/\($0.maxHP)HP" }.joined(separator: "  ")
-        print(partyStr, color: .cyan)
+        for char in party {
+            print(" \(char.name) \(char.currentHP)/\(char.maxHP) HP", color: .cyan)
+        }
         print("")
 
         // Check for encounter
@@ -1130,47 +1140,49 @@ class GameEngine: ObservableObject {
         }
 
         // Build menu options
-        var options: [String] = []
+        var menuOpts: [MenuOption] = []
         var actions: [() -> Void] = []
 
+        // Always show all 4 directions — disabled if no exit
         for direction in Direction.allCases {
-            if room.exits[direction] != nil {
-                options.append("Go \(direction.rawValue)")
-                actions.append { [weak self] in self?.move(direction) }
+            let hasExit = room.exits[direction] != nil
+            menuOpts.append(MenuOption("Go \(direction.rawValue)", isDisabled: !hasExit))
+            actions.append { [weak self] in
+                if hasExit { self?.move(direction) }
             }
         }
 
-        options.append("Search Room")
+        menuOpts.append(MenuOption("Search Room"))
         actions.append { [weak self] in self?.searchRoom() }
 
         if !room.treasure.isEmpty {
-            options.append("Collect Treasure")
+            menuOpts.append(MenuOption("Collect Treasure"))
             actions.append { [weak self] in self?.collectTreasure() }
         }
 
-        options.append("Party Status")
+        menuOpts.append(MenuOption("Party Status"))
         actions.append { [weak self] in self?.showPartyStatus() }
 
-        options.append("Inventory")
+        menuOpts.append(MenuOption("Inventory"))
         actions.append { [weak self] in self?.showInventory() }
 
         if (room.roomType == .armory || room.roomType == .shrine) && (room.cleared || room.encounter == nil) {
-            options.append("Visit Merchant")
+            menuOpts.append(MenuOption("Visit Merchant"))
             actions.append { [weak self] in self?.visitShop() }
         }
 
-        options.append("Rest")
+        menuOpts.append(MenuOption("Rest"))
         actions.append { [weak self] in self?.rest() }
 
         if DMEngine.shared.isConfigured && DMEngine.shared.adLibLevel != .off {
-            options.append("Ask the DM")
+            menuOpts.append(MenuOption("Ask the DM"))
             actions.append { [weak self] in self?.askTheDM() }
         }
 
-        options.append("Save Game")
+        menuOpts.append(MenuOption("Save Game"))
         actions.append { [weak self] in self?.showSaveMenu() }
 
-        showMenu(options)
+        showMenuOptions(menuOpts)
 
         menuHandler = { choice in
             if choice > 0 && choice <= actions.count {
@@ -1735,14 +1747,63 @@ class GameEngine: ObservableObject {
                     self.print("")
                     self.logEvent("Asked DM: \(input)")
 
-                    // Let them ask again or go back
-                    self.showMenu(["Ask Again", "< Back"])
-                    self.menuHandler = { [weak self] choice in
-                        if choice == 1 {
-                            self?.askTheDM()
-                        } else {
-                            self?.showExplorationView()
+                    // Text prompt for follow-up, with Back button
+                    self.print("(Type another question, or tap Back)", color: .dimGreen)
+                    self.promptText(">")
+                    self.showMenu(["< Back"])
+
+                    self.inputHandler = { [weak self] followUp in
+                        guard let self = self else { return }
+                        if followUp.lowercased() == "back" || followUp.isEmpty {
+                            self.showExplorationView()
+                            return
                         }
+                        // Recurse — ask the DM again with new input
+                        self.print("")
+                        self.print("The DM considers...", color: .dimGreen)
+                        let ctx = self.buildDMContext()
+                        DMEngine.shared.ask(followUp, context: ctx) { [weak self] resp in
+                            DispatchQueue.main.async {
+                                guard let self = self else { return }
+                                let r = DMEngine.parseCommands(from: resp)
+                                let dt = DMEngine.shared.adLibLevel == .full ? r.cleanText : resp
+                                self.print("")
+                                self.print("DM:", color: .yellow, bold: true)
+                                for p in dt.components(separatedBy: "\n") {
+                                    let t = p.trimmingCharacters(in: .whitespaces)
+                                    if t.isEmpty { self.print("") }
+                                    else { self.print("  \(t)", color: .yellow) }
+                                }
+                                if DMEngine.shared.adLibLevel == .full {
+                                    if r.bonusGold > 0 {
+                                        self.party.first?.gold += r.bonusGold
+                                        self.print("  [+\(r.bonusGold) gold!]", color: .yellow, bold: true)
+                                    }
+                                    if r.healAmount > 0 {
+                                        for c in self.party { c.heal(r.healAmount) }
+                                        self.print("  [+\(r.healAmount) HP!]", color: .brightGreen, bold: true)
+                                    }
+                                    for itemName in r.grantedItems {
+                                        if let item = self.resolveItemByName(itemName),
+                                           let c = self.party.first, c.canCarry(item) {
+                                            _ = c.addItem(item)
+                                            self.print("  [Received: \(item.name)!]", color: .brightGreen, bold: true)
+                                        }
+                                    }
+                                }
+                                self.print("")
+                                self.logEvent("Asked DM: \(followUp)")
+                                self.print("(Type another question, or tap Back)", color: .dimGreen)
+                                self.promptText(">")
+                                self.showMenu(["< Back"])
+                                self.menuHandler = { [weak self] _ in
+                                    self?.showExplorationView()
+                                }
+                            }
+                        }
+                    }
+                    self.menuHandler = { [weak self] _ in
+                        self?.showExplorationView()
                     }
                 }
             }
@@ -1872,10 +1933,12 @@ class GameEngine: ObservableObject {
                     let diceTotal = rolls.reduce(0, +)
                     self.printLines(self.diceArt(diceTotal), color: .red)
 
-                    let rollStr = rolls.count == 1
-                        ? "[\(rolls[0])]"
-                        : rolls.map { "[\($0)]" }.joined(separator: "+")
-                    self.print("  \(rollStr) \(modSign)\(modVal) = \(totalDmg) damage!", color: report.isPlayerAttack ? .brightGreen : .red)
+                    if rolls.count <= 3 {
+                        let rollStr = rolls.map { "[\($0)]" }.joined(separator: "+")
+                        self.print("  \(rollStr) \(modSign)\(modVal) = \(totalDmg) damage!", color: report.isPlayerAttack ? .brightGreen : .red)
+                    } else {
+                        self.print("  \(totalDmg) damage!", color: report.isPlayerAttack ? .brightGreen : .red)
+                    }
                     self.print("")
 
                     if report.targetDefeated {
@@ -1913,9 +1976,23 @@ class GameEngine: ObservableObject {
         print("")
         printTitle("COMBAT!")
 
+        // Group monsters by type for cleaner display
+        var monsterCounts: [(type: MonsterType, count: Int)] = []
         for monster in encounter.monsters {
-            printLines(monster.type.asciiArt, color: .red)
-            print("\(monster.name) appears! — \(monster.type.description)", color: .red)
+            if let idx = monsterCounts.firstIndex(where: { $0.type == monster.type }) {
+                monsterCounts[idx].count += 1
+            } else {
+                monsterCounts.append((type: monster.type, count: 1))
+            }
+        }
+        for group in monsterCounts {
+            printLines(group.type.asciiArt, color: .red)
+            if group.count > 1 {
+                print("\(group.count) \(group.type.rawValue)s appear!", color: .red)
+            } else {
+                print("\(group.type.rawValue) appears!", color: .red)
+            }
+            print("  \(group.type.description)", color: .dimGreen)
             print("")
         }
         print("Rolling initiative...")
@@ -1989,10 +2066,13 @@ class GameEngine: ObservableObject {
         var options: [String] = []
         var actions: [() -> Void] = []
 
+        // Build display names that distinguish duplicate monsters
+        let monsterDisplayNames = Combat.numberedMonsterNames(aliveMonsters)
+
         // Attack options
-        for monster in aliveMonsters {
+        for (i, monster) in aliveMonsters.enumerated() {
             let monsterRef = monster
-            options.append("Attack \(monster.name)")
+            options.append("Attack \(monsterDisplayNames[i])")
             actions.append { [weak self] in
                 guard let self = self else { return }
                 if let report = combat.playerAttack(characterId: characterId, targetId: monsterRef.id) {
@@ -2053,10 +2133,100 @@ class GameEngine: ObservableObject {
             self.inputHandler = { [weak self] _ in self?.runCombatTurn() }
         }
 
+        // Run Away
+        options.append("Run Away!")
+        actions.append { [weak self] in
+            self?.attemptRunAway()
+        }
+
         showMenu(options)
         menuHandler = { choice in
             if choice > 0 && choice <= actions.count {
                 actions[choice - 1]()
+            }
+        }
+    }
+
+    // MARK: - Run Away
+
+    func attemptRunAway() {
+        guard let combat = currentCombat else { return }
+
+        clearTerminal()
+        printLines(combat.displayStatus())
+        print("")
+        print("The party attempts to flee!", color: .yellow, bold: true)
+        print("")
+
+        // Each conscious party member rolls DEX check
+        // DC = 10 + highest monster DEX-like bonus (simplified: attackBonus / 2)
+        let monsterDC = 10 + (combat.encounter.aliveMonsters.map { $0.attackBonus / 2 }.max() ?? 0)
+        print("  Escape DC: \(monsterDC)", color: .cyan)
+        print("")
+
+        var successes = 0
+        var total = 0
+        for char in party where char.isConscious {
+            total += 1
+            let roll = Dice.d20()
+            let dexMod = char.abilityScores.modifier(for: .dexterity)
+            let result = roll + dexMod
+            let passed = result >= monsterDC
+            if passed { successes += 1 }
+            print("  \(char.name): [\(roll)]+\(dexMod) = \(result) \(passed ? "OK" : "FAIL")",
+                  color: passed ? .brightGreen : .red)
+        }
+
+        print("")
+
+        // Need majority to escape
+        let escaped = successes > total / 2
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self else { return }
+
+            if escaped {
+                self.print("You escape!", color: .brightGreen, bold: true)
+                self.print("")
+
+                // Take opportunity attacks — each monster gets one free hit on a random party member
+                let opportunityHits = min(combat.encounter.aliveMonsters.count, 1)
+                if opportunityHits > 0, let monster = combat.encounter.aliveMonsters.first,
+                   let target = self.party.filter({ $0.isConscious }).randomElement() {
+                    let dmg = max(1, Dice.rollDamage(monster.damage).total)
+                    target.takeDamage(dmg)
+                    self.print("  \(monster.name) strikes as you flee!", color: .red)
+                    self.print("  \(target.name) takes \(dmg) damage!", color: .red)
+                    self.print("")
+                }
+
+                // Combat cleanup
+                for char in self.party {
+                    char.isRaging = false
+                    char.huntersMarkActive = false
+                }
+                self.currentCombat = nil
+                self.gameState = .exploring
+
+                // Don't clear the room — encounter stays
+                SoundManager.shared.startMusic(.exploration)
+
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.showExplorationView()
+                }
+            } else {
+                self.print("You can't escape!", color: .red, bold: true)
+                self.print("The monsters block your path!")
+                self.print("")
+
+                // Monsters get a free round of attacks
+                combat.nextTurn()
+
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.runCombatTurn()
+                }
             }
         }
     }
@@ -2174,7 +2344,8 @@ class GameEngine: ObservableObject {
         print("Choose target for \(spell.name):", color: .cyan)
         print("")
 
-        var options = aliveMonsters.map { "\($0.name) (\($0.currentHP)/\($0.maxHP) HP)" }
+        let monsterNames = Combat.numberedMonsterNames(aliveMonsters)
+        var options = aliveMonsters.enumerated().map { "\(monsterNames[$0.offset]) (\($0.element.currentHP)/\($0.element.maxHP) HP)" }
         options.append("< Back")
 
         showMenu(options)
@@ -2668,6 +2839,8 @@ class GameEngine: ObservableObject {
         case exploration
     }
 
+    private let maxSaves = 10
+
     func showSaveMenu() {
         clearTerminal()
 
@@ -2681,26 +2854,98 @@ class GameEngine: ObservableObject {
             return
         }
 
+        let saves = SaveGameManager.shared.listSaves()
+
+        if saves.count >= maxSaves {
+            // At limit — need to overwrite
+            showOverwriteMenu(saves: saves)
+        } else {
+            // Room for a new save
+            askForSaveName(overwriteId: nil)
+        }
+    }
+
+    private func askForSaveName(overwriteId: UUID?) {
         let dateFormatter = DateFormatter()
         dateFormatter.dateStyle = .medium
         dateFormatter.timeStyle = .short
         let defaultName = "\(party.first?.name ?? "Unknown") - \(dateFormatter.string(from: Date()))"
         print("Default: \(defaultName)", color: .dimGreen)
-        promptText("Enter a name for this save (or press Enter for default):")
+        promptText("Enter a name (or press Enter):")
 
         inputHandler = { [weak self] name in
             guard let self = self else { return }
             if !name.isEmpty && !self.isNameAppropriate(name) {
-                self.print("That save name is not appropriate. Try again.", color: .yellow)
+                self.print("Not appropriate. Try again.", color: .yellow)
                 self.print("")
-                self.showSaveMenu()
+                self.askForSaveName(overwriteId: overwriteId)
                 return
             }
-            self.performSave(saveName: name)
+            self.performSave(saveName: name, overwriteId: overwriteId)
         }
     }
 
-    private func performSave(saveName: String) {
+    private func showOverwriteMenu(saves: [SaveGame]) {
+        print("Save slots full (\(maxSaves)/\(maxSaves)).", color: .yellow)
+        print("Choose a save to overwrite:", color: .cyan)
+        print("")
+
+        // Show most recent save as default overwrite
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .short
+        dateFormatter.timeStyle = .short
+
+        // Sort: most recent first (already sorted)
+        for (i, save) in saves.enumerated() {
+            let dateStr = dateFormatter.string(from: save.savedAt)
+            let marker = i == 0 ? " (most recent)" : ""
+            print(" \(i + 1). \(save.slotName)\(marker)", color: i == 0 ? .brightGreen : .green)
+            print("    \(save.partyDescription)", color: .dimGreen)
+            print("    \(save.dungeonName) Lv\(save.dungeonLevel) — \(dateStr)", color: .dimGreen)
+        }
+        print("")
+
+        var options = saves.enumerated().map { i, s in
+            i == 0 ? "Overwrite: \(s.slotName) (recent)" : "Overwrite: \(s.slotName)"
+        }
+        options.append("< Back")
+
+        showMenu(options)
+
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == options.count {
+                self.showExplorationView()
+                return
+            }
+            guard choice > 0 && choice <= saves.count else { return }
+            let selected = saves[choice - 1]
+
+            self.clearTerminal()
+            self.print("Overwriting:", color: .yellow, bold: true)
+            self.print("  \(selected.slotName)", color: .yellow)
+            self.print("  \(selected.partyDescription)", color: .dimGreen)
+            self.print("  \(selected.dungeonName) Lv\(selected.dungeonLevel)", color: .dimGreen)
+            self.print("")
+
+            self.showMenu(["Yes, overwrite this save", "Choose a different save", "< Back"])
+            self.menuHandler = { [weak self] confirm in
+                guard let self = self else { return }
+                switch confirm {
+                case 1:
+                    self.askForSaveName(overwriteId: selected.id)
+                case 2:
+                    self.clearTerminal()
+                    self.printTitle("Save Game")
+                    self.showOverwriteMenu(saves: saves)
+                default:
+                    self.showExplorationView()
+                }
+            }
+        }
+    }
+
+    private func performSave(saveName: String, overwriteId: UUID?) {
         guard let dungeon = dungeon else { return }
 
         let partyDesc = party.map { "\($0.name) (\($0.characterClass.rawValue))" }.joined(separator: ", ")
@@ -2714,6 +2959,11 @@ class GameEngine: ObservableObject {
             slotName = "\(party.first?.name ?? "Unknown") - \(timestamp)"
         } else {
             slotName = saveName.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        // Delete the save being overwritten
+        if let overwriteId = overwriteId {
+            SaveGameManager.shared.delete(id: overwriteId)
         }
 
         logEvent("Game saved: \(slotName)")
@@ -2747,6 +2997,9 @@ class GameEngine: ObservableObject {
             print("Failed to save: \(error.localizedDescription)", color: .red)
         }
 
+        let saveCount = SaveGameManager.shared.listSaves().count
+        print("")
+        print("  Saves: \(saveCount)/\(maxSaves)", color: .dimGreen)
         print("")
 
         showMenu(["Continue Playing", "Load Another Game", "Exit to Main Menu"])
@@ -3076,15 +3329,14 @@ class GameEngine: ObservableObject {
 
     private var asciiFarewell: [String] {
         [
-            "  .     .       .  .   . .   .   . .    +  .",
-            "    .     .  :     .    .. :. .___---------_.",
-            "         .  .   .    .  :.:. _\".^ .^ ^.  '.. \\",
-            "      .  :       .  .  .:../:            . .=;.",
-            "    .   . :: +.  .  :  | ..    .;/        .-\"",
-            "     .  :    .     . . . ..    /   .   .    .",
-            "            .   . .. .   .. :/    .:        .",
-            "      +   .   .  .  . :  .:../       .  +  .",
-            "         .          .  . ..:./ .          .",
+            "  .   .     .  .   .  .",
+            "    .   .  :    .  :. .",
+            "      .  .   .   :.:. ",
+            "    .  :     .  ..:.. ",
+            "  .   . :: +.  . | ..",
+            "   .  :    .   . . . .",
+            "     +   .   .  . :  .",
+            "       .       .  . ..",
         ]
     }
 

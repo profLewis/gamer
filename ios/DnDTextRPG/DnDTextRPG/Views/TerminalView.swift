@@ -140,21 +140,25 @@ struct MenuButtonsView: View {
     let terminalDarkGreen = Color(red: 0.0, green: 0.4, blue: 0.15)
     let highlightGreen = Color(red: 0.0, green: 0.6, blue: 0.2)
 
+    let disabledRed = Color(red: 0.4, green: 0.15, blue: 0.15)
+
     var body: some View {
         LazyVGrid(columns: gridColumns, spacing: 8) {
             ForEach(Array(options.enumerated()), id: \.offset) { index, option in
                 Button(action: {
-                    onSelect(index + 1)
+                    if !option.isDisabled {
+                        onSelect(index + 1)
+                    }
                 }) {
                     HStack {
                         Text("\(index + 1).")
                             .font(.system(.caption, design: .monospaced))
-                            .foregroundColor(option.isDefault ? terminalGreen : terminalGreen.opacity(0.6))
+                            .foregroundColor(option.isDisabled ? Color.red.opacity(0.3) : (option.isDefault ? terminalGreen : terminalGreen.opacity(0.6)))
 
                         Text(option.text)
                             .font(.system(.body, design: .monospaced))
                             .fontWeight(option.isDefault ? .semibold : .regular)
-                            .foregroundColor(terminalGreen)
+                            .foregroundColor(option.isDisabled ? Color.red.opacity(0.3) : terminalGreen)
                             .lineLimit(2)
                             .minimumScaleFactor(0.7)
 
@@ -164,10 +168,11 @@ struct MenuButtonsView: View {
                     .padding(.vertical, 10)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
-                            .stroke(option.isDefault ? terminalGreen : terminalGreen.opacity(0.4), lineWidth: option.isDefault ? 2 : 1)
+                            .stroke(option.isDisabled ? Color.red.opacity(0.15) : (option.isDefault ? terminalGreen : terminalGreen.opacity(0.4)),
+                                    lineWidth: option.isDefault ? 2 : 1)
                             .background(
                                 RoundedRectangle(cornerRadius: 6)
-                                    .fill(option.isDefault ? highlightGreen.opacity(0.3) : terminalDarkGreen.opacity(0.15))
+                                    .fill(option.isDisabled ? disabledRed.opacity(0.2) : (option.isDefault ? highlightGreen.opacity(0.3) : terminalDarkGreen.opacity(0.15)))
                             )
                     )
                 }

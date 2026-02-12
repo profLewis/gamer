@@ -65,10 +65,12 @@ struct MenuOption: Identifiable {
     let id = UUID()
     let text: String
     let isDefault: Bool
+    let isDisabled: Bool
 
-    init(_ text: String, isDefault: Bool = false) {
+    init(_ text: String, isDefault: Bool = false, isDisabled: Bool = false) {
         self.text = text
         self.isDefault = isDefault
+        self.isDisabled = isDisabled
     }
 }
 

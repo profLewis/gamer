@@ -902,32 +902,45 @@ class Combat: ObservableObject {
         )
     }
 
+    /// Returns display names for a list of monsters, numbering duplicates (e.g. "Goblin 1", "Goblin 2")
+    static func numberedMonsterNames(_ monsters: [Monster]) -> [String] {
+        var nameCounts: [String: Int] = [:]
+        for m in monsters { nameCounts[m.name, default: 0] += 1 }
+
+        var nameIndex: [String: Int] = [:]
+        var result: [String] = []
+        for m in monsters {
+            if nameCounts[m.name, default: 1] > 1 {
+                nameIndex[m.name, default: 0] += 1
+                result.append("\(m.name) \(nameIndex[m.name]!)")
+            } else {
+                result.append(m.name)
+            }
+        }
+        return result
+    }
+
     func displayStatus() -> [String] {
         var lines: [String] = []
 
-        lines.append("══════════ COMBAT ══════════")
+        lines.append("───── COMBAT ─────")
         lines.append("")
 
-        // Party status
-        lines.append("PARTY:")
         for char in party {
-            let status = char.isConscious ? "●" : "✗"
-            lines.append("  \(status) \(char.name): \(char.currentHP)/\(char.maxHP) HP")
+            let s = char.isConscious ? "●" : "✗"
+            let n = String(char.name.prefix(16))
+            lines.append(" \(s) \(n) \(char.currentHP)/\(char.maxHP)")
         }
 
         lines.append("")
-        lines.append("ENEMIES:")
-        for monster in encounter.monsters {
-            let status = monster.isAlive ? "●" : "✗"
-            lines.append("  \(status) \(monster.name): \(monster.currentHP)/\(monster.maxHP) HP")
+        let monsterNames = Combat.numberedMonsterNames(encounter.monsters)
+        for (i, monster) in encounter.monsters.enumerated() {
+            let s = monster.isAlive ? "●" : "✗"
+            let n = String(monsterNames[i].prefix(16))
+            lines.append(" \(s) \(n) \(monster.currentHP)/\(monster.maxHP)")
         }
 
-        lines.append("")
-        if let current = currentCombatant {
-            lines.append("Current Turn: \(current.name)")
-        }
-
-        lines.append("════════════════════════════")
+        lines.append("──────────────────")
 
         return lines
     }

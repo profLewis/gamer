@@ -692,26 +692,37 @@ class Character: ObservableObject, Identifiable, Codable {
 
     // MARK: - Display
 
+    private static let boxW = 34 // inner width between ║ borders
+
     func displaySheet() -> [String] {
+        let w = Character.boxW
         var lines: [String] = []
 
-        lines.append("╔══════════════════════════════════════╗")
-        lines.append("║ \(name.padding(toLength: 36, withPad: " ", startingAt: 0)) ║")
-        lines.append("║ Level \(level) \(race.rawValue) \(characterClass.rawValue)".padding(toLength: 39, withPad: " ", startingAt: 0) + "║")
-        lines.append("╠══════════════════════════════════════╣")
-        lines.append("║ HP: \(currentHP)/\(maxHP)".padding(toLength: 20, withPad: " ", startingAt: 0) + "AC: \(armorClass)".padding(toLength: 18, withPad: " ", startingAt: 0) + "║")
-        lines.append("║ Gold: \(gold)".padding(toLength: 20, withPad: " ", startingAt: 0) + "Wt: \(String(format: "%.0f", currentWeight))/\(String(format: "%.0f", carryCapacity))lb".padding(toLength: 18, withPad: " ", startingAt: 0) + "║")
+        func row(_ s: String) -> String {
+            let t = String(s.prefix(w))
+            return "║" + t.padding(toLength: w, withPad: " ", startingAt: 0) + "║"
+        }
+        let bar = String(repeating: "═", count: w)
+
+        lines.append("╔\(bar)╗")
+        lines.append(row(" \(String(name.prefix(w - 2)))"))
+        lines.append(row(" Lv\(level) \(race.rawValue) \(characterClass.rawValue)"))
+        lines.append("╠\(bar)╣")
+        lines.append(row(" HP: \(currentHP)/\(maxHP)  AC: \(armorClass)"))
+        lines.append(row(" Gold: \(gold)  XP: \(experiencePoints)"))
         if let weapon = equippedWeapon {
-            lines.append("║ Wpn: \(weapon.name)".padding(toLength: 39, withPad: " ", startingAt: 0) + "║")
+            lines.append(row(" Wpn: \(String(weapon.name.prefix(w - 7)))"))
         }
         if let armor = equippedArmor {
-            lines.append("║ Arm: \(armor.name)".padding(toLength: 39, withPad: " ", startingAt: 0) + "║")
+            lines.append(row(" Arm: \(String(armor.name.prefix(w - 7)))"))
         }
-        lines.append("╠══════════════════════════════════════╣")
-        lines.append("║ STR: \(abilityScores.strength) (\(formatMod(abilityScores.modifier(for: .strength))))  INT: \(abilityScores.intelligence) (\(formatMod(abilityScores.modifier(for: .intelligence))))".padding(toLength: 39, withPad: " ", startingAt: 0) + "║")
-        lines.append("║ DEX: \(abilityScores.dexterity) (\(formatMod(abilityScores.modifier(for: .dexterity))))  WIS: \(abilityScores.wisdom) (\(formatMod(abilityScores.modifier(for: .wisdom))))".padding(toLength: 39, withPad: " ", startingAt: 0) + "║")
-        lines.append("║ CON: \(abilityScores.constitution) (\(formatMod(abilityScores.modifier(for: .constitution))))  CHA: \(abilityScores.charisma) (\(formatMod(abilityScores.modifier(for: .charisma))))".padding(toLength: 39, withPad: " ", startingAt: 0) + "║")
-        lines.append("╚══════════════════════════════════════╝")
+        lines.append("╠\(bar)╣")
+        let s = abilityScores
+        let fm = formatMod
+        lines.append(row(" STR \(s.strength)(\(fm(s.modifier(for: .strength)))) INT \(s.intelligence)(\(fm(s.modifier(for: .intelligence))))"))
+        lines.append(row(" DEX \(s.dexterity)(\(fm(s.modifier(for: .dexterity)))) WIS \(s.wisdom)(\(fm(s.modifier(for: .wisdom))))"))
+        lines.append(row(" CON \(s.constitution)(\(fm(s.modifier(for: .constitution)))) CHA \(s.charisma)(\(fm(s.modifier(for: .charisma))))"))
+        lines.append("╚\(bar)╝")
 
         return lines
     }

@@ -394,17 +394,17 @@ class Dungeon: ObservableObject, Codable {
         // Each room cell is 5 chars wide, corridor rows are 1 char tall
         var lines: [String] = []
 
-        let mapWidth = (maxX - minX + 1) * 6 + 3
-        let border = String(repeating: "═", count: max(mapWidth, 20))
-        lines.append("╔\(border)╗")
-        lines.append("║ DUNGEON MAP".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "║")
-        lines.append("╠\(border)╣")
+        let mapWidth = min((maxX - minX + 1) * 6 + 3, 32)
+        let border = String(repeating: "─", count: max(mapWidth, 18))
+        lines.append("┌\(border)┐")
+        lines.append("│ MAP".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "│")
+        lines.append("├\(border)┤")
 
         for y in minY...maxY {
             // Room row
-            var roomRow = "║ "
+            var roomRow = "│ "
             // Vertical corridor row (below this room row)
-            var corridorRow = "║ "
+            var corridorRow = "│ "
 
             for x in minX...maxX {
                 if let room = visitedRooms.first(where: { $0.x == x && $0.y == y }) {
@@ -441,19 +441,19 @@ class Dungeon: ObservableObject, Codable {
                 }
             }
 
-            roomRow = roomRow.padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "║"
+            roomRow = roomRow.padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "│"
             lines.append(roomRow)
 
             // Only add corridor row if not the last row
             if y < maxY {
-                corridorRow = corridorRow.padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "║"
+                corridorRow = corridorRow.padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "│"
                 lines.append(corridorRow)
             }
         }
 
-        lines.append("╠\(border)╣")
-        lines.append("║ @ You  E Entry  B Boss  ! Enemy".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "║")
-        lines.append("╚\(border)╝")
+        lines.append("├\(border)┤")
+        lines.append("│ @=You !=Danger B=Boss".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "│")
+        lines.append("└\(border)┘")
 
         return lines
     }
