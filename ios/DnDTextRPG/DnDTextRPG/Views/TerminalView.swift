@@ -42,10 +42,22 @@ struct TerminalView: View {
                 }
                 .background(terminalBackground)
 
-                // Menu buttons (when available)
-                if !gameEngine.currentMenuOptions.isEmpty {
-                    MenuButtonsView(options: gameEngine.currentMenuOptions) { choice in
-                        gameEngine.handleMenuChoice(choice)
+                // Direction pad + menu buttons
+                if !gameEngine.directionExits.isEmpty || !gameEngine.currentMenuOptions.isEmpty {
+                    VStack(spacing: 6) {
+                        // Direction D-pad (when exploring)
+                        if !gameEngine.directionExits.isEmpty {
+                            DirectionPadView(exits: gameEngine.directionExits) { direction in
+                                gameEngine.handleDirectionChoice(direction)
+                            }
+                        }
+
+                        // Action buttons
+                        if !gameEngine.currentMenuOptions.isEmpty {
+                            MenuButtonsView(options: gameEngine.currentMenuOptions) { choice in
+                                gameEngine.handleMenuChoice(choice)
+                            }
+                        }
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -187,6 +199,54 @@ struct MenuButtonsView: View {
         } else {
             return [GridItem(.flexible()), GridItem(.flexible())]
         }
+    }
+}
+
+// MARK: - Direction Pad
+
+struct DirectionPadView: View {
+    let exits: [Direction: Bool]
+    let onSelect: (Direction) -> Void
+
+    let terminalGreen = Color(red: 0.0, green: 0.9, blue: 0.3)
+    let terminalDarkGreen = Color(red: 0.0, green: 0.4, blue: 0.15)
+    let disabledRed = Color(red: 0.4, green: 0.15, blue: 0.15)
+
+    var body: some View {
+        VStack(spacing: 4) {
+            // North
+            dirButton(.north)
+            // West + East
+            HStack(spacing: 4) {
+                dirButton(.west)
+                dirButton(.east)
+            }
+            // South
+            dirButton(.south)
+        }
+    }
+
+    @ViewBuilder
+    private func dirButton(_ dir: Direction) -> some View {
+        let enabled = exits[dir] ?? false
+        Button(action: {
+            if enabled { onSelect(dir) }
+        }) {
+            Text(dir.rawValue)
+                .font(.system(.caption, design: .monospaced))
+                .fontWeight(.semibold)
+                .foregroundColor(enabled ? terminalGreen : Color.red.opacity(0.3))
+                .frame(width: 80, height: 34)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(enabled ? terminalGreen.opacity(0.6) : Color.red.opacity(0.15), lineWidth: 1)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(enabled ? terminalDarkGreen.opacity(0.2) : disabledRed.opacity(0.15))
+                        )
+                )
+        }
+        .buttonStyle(.plain)
     }
 }
 

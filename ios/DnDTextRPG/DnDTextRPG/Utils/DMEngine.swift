@@ -238,6 +238,7 @@ class DMEngine {
         \(context.inventorySummary)
 
         TIME: \(context.gameTime)
+        \(context.combatSummary.map { "\nCOMBAT IN PROGRESS:\n\($0)" } ?? "")
         """
 
         switch context.adLibLevel {
@@ -440,4 +441,5 @@ struct DMContext {
     let gameTime: String
     let inventorySummary: String
     let adLibLevel: DMAdLibLevel
+    var combatSummary: String? = nil
 }

@@ -13,6 +13,7 @@ class GameEngine: ObservableObject {
 
     @Published var terminalLines: [TerminalLine] = []
     @Published var currentMenuOptions: [MenuOption] = []
+    @Published var directionExits: [Direction: Bool] = [:]  // direction -> enabled
     @Published var awaitingTextInput: Bool = false
     @Published var awaitingContinue: Bool = false
     @Published var gameState: GameState = .mainMenu
@@ -31,6 +32,10 @@ class GameEngine: ObservableObject {
     private var monstersSlain: Int = 0
     private var combatsWon: Int = 0
 
+    // Save slot tracking
+    private var activeSlotId: UUID?
+    private var activeSlotName: String?
+
     // Character creation state
     private var creatingCharacterIndex: Int = 0
     private var totalCharacters: Int = 1
@@ -47,6 +52,7 @@ class GameEngine: ObservableObject {
     // Input handling
     var inputHandler: ((String) -> Void)?
     var menuHandler: ((Int) -> Void)?
+    var directionHandler: ((Direction) -> Void)?
 
     // Shop
     private lazy var shopEngine = ShopEngine(game: self)
@@ -137,6 +143,7 @@ class GameEngine: ObservableObject {
 
     func showMenu(_ options: [String], defaultIndex: Int = 0) {
         DispatchQueue.main.async {
+            self.directionExits = [:]
             self.currentMenuOptions = options.enumerated().map { index, text in
                 MenuOption(text, isDefault: index == defaultIndex)
             }
@@ -147,6 +154,16 @@ class GameEngine: ObservableObject {
 
     func showMenuOptions(_ options: [MenuOption]) {
         DispatchQueue.main.async {
+            self.directionExits = [:]
+            self.currentMenuOptions = options
+            self.awaitingTextInput = false
+            self.awaitingContinue = false
+        }
+    }
+
+    func showMenuWithDirections(_ options: [MenuOption], exits: [Direction: Bool]) {
+        DispatchQueue.main.async {
+            self.directionExits = exits
             self.currentMenuOptions = options
             self.awaitingTextInput = false
             self.awaitingContinue = false
@@ -156,6 +173,7 @@ class GameEngine: ObservableObject {
     func promptText(_ prompt: String) {
         print(prompt, color: .green)
         DispatchQueue.main.async {
+            self.directionExits = [:]
             self.currentMenuOptions = []
             self.awaitingTextInput = true
             self.awaitingContinue = false
@@ -164,6 +182,7 @@ class GameEngine: ObservableObject {
 
     func waitForContinue() {
         DispatchQueue.main.async {
+            self.directionExits = [:]
             self.currentMenuOptions = []
             self.awaitingTextInput = false
             self.awaitingContinue = true
@@ -173,10 +192,22 @@ class GameEngine: ObservableObject {
     func handleMenuChoice(_ choice: Int) {
         DispatchQueue.main.async {
             self.currentMenuOptions = []
+            self.directionExits = [:]
         }
 
         if let handler = menuHandler {
             handler(choice)
+        }
+    }
+
+    func handleDirectionChoice(_ direction: Direction) {
+        DispatchQueue.main.async {
+            self.currentMenuOptions = []
+            self.directionExits = [:]
+        }
+
+        if let handler = directionHandler {
+            handler(direction)
         }
     }
 
@@ -319,10 +350,20 @@ class GameEngine: ObservableObject {
         guard let dungeon = dungeon else { return }
 
         let partyDesc = party.map { "\($0.name) (\($0.characterClass.rawValue))" }.joined(separator: ", ")
-        let slotName = "Autosave — \(dungeon.name)"
+
+        // Use the active slot if we have one, otherwise create a new slot
+        let slotId = activeSlotId ?? UUID()
+        let slotName = activeSlotName ?? "\(party.first?.name ?? "Unknown") — \(dungeon.name)"
+
+        // Remember this slot for future autosaves
+        if activeSlotId == nil {
+            activeSlotId = slotId
+            activeSlotName = slotName
+        }
 
         let saveGame = SaveGame(
             id: UUID(),
+            slotId: slotId,
             savedAt: Date(),
             slotName: slotName,
             partyDescription: partyDesc,
@@ -336,12 +377,6 @@ class GameEngine: ObservableObject {
             monstersSlain: monstersSlain,
             combatsWon: combatsWon
         )
-
-        // Delete previous autosave to avoid clutter
-        let existing = SaveGameManager.shared.listSaves()
-        for save in existing where save.slotName.hasPrefix("Autosave") {
-            SaveGameManager.shared.delete(id: save.id)
-        }
 
         try? SaveGameManager.shared.save(saveGame)
     }
@@ -1139,18 +1174,15 @@ class GameEngine: ObservableObject {
             return
         }
 
-        // Build menu options
+        // Build direction exits for the D-pad
+        var exits: [Direction: Bool] = [:]
+        for direction in Direction.allCases {
+            exits[direction] = room.exits[direction] != nil
+        }
+
+        // Build menu options (non-direction actions)
         var menuOpts: [MenuOption] = []
         var actions: [() -> Void] = []
-
-        // Always show all 4 directions — disabled if no exit
-        for direction in Direction.allCases {
-            let hasExit = room.exits[direction] != nil
-            menuOpts.append(MenuOption("Go \(direction.rawValue)", isDisabled: !hasExit))
-            actions.append { [weak self] in
-                if hasExit { self?.move(direction) }
-            }
-        }
 
         menuOpts.append(MenuOption("Search Room"))
         actions.append { [weak self] in self?.searchRoom() }
@@ -1166,7 +1198,7 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("Inventory"))
         actions.append { [weak self] in self?.showInventory() }
 
-        if (room.roomType == .armory || room.roomType == .shrine) && (room.cleared || room.encounter == nil) {
+        if room.roomType == .armory && (room.cleared || room.encounter == nil) {
             menuOpts.append(MenuOption("Visit Merchant"))
             actions.append { [weak self] in self?.visitShop() }
         }
@@ -1182,8 +1214,11 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("Save Game"))
         actions.append { [weak self] in self?.showSaveMenu() }
 
-        showMenuOptions(menuOpts)
+        showMenuWithDirections(menuOpts, exits: exits)
 
+        directionHandler = { [weak self] direction in
+            self?.move(direction)
+        }
         menuHandler = { choice in
             if choice > 0 && choice <= actions.count {
                 actions[choice - 1]()
@@ -1810,7 +1845,65 @@ class GameEngine: ObservableObject {
         }
     }
 
-    private func buildDMContext() -> DMContext {
+    func askTheDMInCombat(characterId: UUID) {
+        guard let combat = currentCombat,
+              let character = party.first(where: { $0.id == characterId }) else { return }
+
+        clearTerminal()
+        printLines(combat.displayStatus())
+        print("")
+        print("DM — describe your action or ask a question:", color: .cyan, bold: true)
+        print("(e.g. throw oil from my pack, look for an exit...)", color: .dimGreen)
+        print("")
+
+        promptText(">")
+
+        inputHandler = { [weak self] input in
+            guard let self = self else { return }
+
+            if input.lowercased() == "back" || input.isEmpty {
+                self.showPlayerCombatMenu(characterId: characterId)
+                return
+            }
+
+            self.print("")
+            self.print("The DM considers...", color: .dimGreen)
+
+            let context = self.buildDMContext(combatContext: combat, activeCharacter: character)
+
+            DMEngine.shared.ask(input, context: context) { [weak self] response in
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+
+                    self.print("")
+                    self.print("DM:", color: .yellow, bold: true)
+                    for paragraph in response.components(separatedBy: "\n") {
+                        let trimmed = paragraph.trimmingCharacters(in: .whitespaces)
+                        if trimmed.isEmpty { self.print("") }
+                        else { self.print("  \(trimmed)", color: .yellow) }
+                    }
+                    self.print("")
+                    self.logEvent("Asked DM in combat: \(input)")
+
+                    // After DM responds, continue combat (counts as their turn action)
+                    self.print("(Press continue to proceed)", color: .dimGreen)
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in
+                        combat.checkCombatEnd()
+                        combat.nextTurn()
+                        self?.runCombatTurn()
+                    }
+                }
+            }
+        }
+
+        showMenu(["< Back"])
+        menuHandler = { [weak self] _ in
+            self?.showPlayerCombatMenu(characterId: characterId)
+        }
+    }
+
+    private func buildDMContext(combatContext: Combat? = nil, activeCharacter: Character? = nil) -> DMContext {
         let room = dungeon?.currentRoom
         let exitList = room?.exits.keys.map { $0.rawValue }.joined(separator: ", ") ?? "None"
         let partyStatus = party.map {
@@ -1824,6 +1917,20 @@ class GameEngine: ObservableObject {
             return "\(char.name): \(items.isEmpty ? "(empty)" : items.joined(separator: ", "))"
         }.joined(separator: "\n")
 
+        var combatSummary: String? = nil
+        if let combat = combatContext {
+            let aliveMonsters = combat.encounter.aliveMonsters
+            let monsterList = aliveMonsters.map { "\($0.name) HP:\($0.currentHP)/\($0.maxHP)" }.joined(separator: ", ")
+            let activeInfo = activeCharacter.map { "Active character: \($0.name) (\($0.characterClass.rawValue))" } ?? ""
+            combatSummary = """
+            Enemies: \(monsterList)
+            \(activeInfo)
+            The player is asking during their combat turn. They may describe creative actions \
+            (throwing items, using environment, intimidating enemies) or ask questions about \
+            the battlefield. Describe the outcome vividly but briefly.
+            """
+        }
+
         return DMContext(
             roomName: room?.name ?? "Unknown",
             roomType: room?.roomType.rawValue ?? "Unknown",
@@ -1833,7 +1940,8 @@ class GameEngine: ObservableObject {
             partyStatus: partyStatus,
             gameTime: formattedGameTime(),
             inventorySummary: inventorySummary,
-            adLibLevel: DMEngine.shared.adLibLevel
+            adLibLevel: DMEngine.shared.adLibLevel,
+            combatSummary: combatSummary
         )
     }
 
@@ -2131,6 +2239,14 @@ class GameEngine: ObservableObject {
             combat.nextTurn()
             self.waitForContinue()
             self.inputHandler = { [weak self] _ in self?.runCombatTurn() }
+        }
+
+        // Ask the DM (in combat)
+        if DMEngine.shared.isConfigured && DMEngine.shared.adLibLevel != .off {
+            options.append("Ask the DM")
+            actions.append { [weak self] in
+                self?.askTheDMInCombat(characterId: characterId)
+            }
         }
 
         // Run Away
@@ -2839,8 +2955,6 @@ class GameEngine: ObservableObject {
         case exploration
     }
 
-    private let maxSaves = 10
-
     func showSaveMenu() {
         clearTerminal()
 
@@ -2854,22 +2968,42 @@ class GameEngine: ObservableObject {
             return
         }
 
-        let saves = SaveGameManager.shared.listSaves()
+        let slots = SaveGameManager.shared.listSlots()
 
-        if saves.count >= maxSaves {
-            // At limit — need to overwrite
-            showOverwriteMenu(saves: saves)
+        if activeSlotId != nil {
+            // We already have an active slot — offer to save to it
+            let slotName = activeSlotName ?? "Current Game"
+            print("Save to: \(slotName)", color: .cyan)
+            print("")
+
+            var options = ["Save (new breakpoint)"]
+            if slots.count < SaveGameManager.maxSlots {
+                options.append("Save as New Slot")
+            }
+            options.append("< Back")
+
+            showMenu(options)
+            menuHandler = { [weak self] choice in
+                guard let self = self else { return }
+                if choice == 1 {
+                    self.performSave(slotId: self.activeSlotId!, slotName: slotName)
+                } else if choice == 2 && slots.count < SaveGameManager.maxSlots {
+                    self.askForNewSlotName()
+                } else {
+                    self.showExplorationView()
+                }
+            }
+        } else if slots.count >= SaveGameManager.maxSlots {
+            // No active slot and at limit — must pick a slot to overwrite
+            showOverwriteSlotMenu(slots: slots)
         } else {
-            // Room for a new save
-            askForSaveName(overwriteId: nil)
+            // No active slot, room for new one
+            askForNewSlotName()
         }
     }
 
-    private func askForSaveName(overwriteId: UUID?) {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateStyle = .medium
-        dateFormatter.timeStyle = .short
-        let defaultName = "\(party.first?.name ?? "Unknown") - \(dateFormatter.string(from: Date()))"
+    private func askForNewSlotName() {
+        let defaultName = "\(party.first?.name ?? "Unknown") — \(dungeon?.name ?? "Dungeon")"
         print("Default: \(defaultName)", color: .dimGreen)
         promptText("Enter a name (or press Enter):")
 
@@ -2878,36 +3012,42 @@ class GameEngine: ObservableObject {
             if !name.isEmpty && !self.isNameAppropriate(name) {
                 self.print("Not appropriate. Try again.", color: .yellow)
                 self.print("")
-                self.askForSaveName(overwriteId: overwriteId)
+                self.askForNewSlotName()
                 return
             }
-            self.performSave(saveName: name, overwriteId: overwriteId)
+
+            let slotName: String
+            if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                slotName = defaultName
+            } else {
+                slotName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+
+            let newSlotId = UUID()
+            self.activeSlotId = newSlotId
+            self.activeSlotName = slotName
+            self.performSave(slotId: newSlotId, slotName: slotName)
         }
     }
 
-    private func showOverwriteMenu(saves: [SaveGame]) {
-        print("Save slots full (\(maxSaves)/\(maxSaves)).", color: .yellow)
-        print("Choose a save to overwrite:", color: .cyan)
+    private func showOverwriteSlotMenu(slots: [SaveSlot]) {
+        print("Save slots full (\(SaveGameManager.maxSlots)/\(SaveGameManager.maxSlots)).", color: .yellow)
+        print("Choose a slot to replace:", color: .cyan)
         print("")
 
-        // Show most recent save as default overwrite
         let dateFormatter = DateFormatter()
         dateFormatter.dateStyle = .short
         dateFormatter.timeStyle = .short
 
-        // Sort: most recent first (already sorted)
-        for (i, save) in saves.enumerated() {
-            let dateStr = dateFormatter.string(from: save.savedAt)
-            let marker = i == 0 ? " (most recent)" : ""
-            print(" \(i + 1). \(save.slotName)\(marker)", color: i == 0 ? .brightGreen : .green)
-            print("    \(save.partyDescription)", color: .dimGreen)
-            print("    \(save.dungeonName) Lv\(save.dungeonLevel) — \(dateStr)", color: .dimGreen)
+        for (i, slot) in slots.enumerated() {
+            let dateStr = dateFormatter.string(from: slot.latest.savedAt)
+            print(" \(i + 1). \(slot.slotName)", color: .brightGreen)
+            print("    \(slot.latest.partyDescription)", color: .dimGreen)
+            print("    Lv\(slot.latest.dungeonLevel) — \(dateStr) (\(slot.breakpointCount) saves)", color: .dimGreen)
         }
         print("")
 
-        var options = saves.enumerated().map { i, s in
-            i == 0 ? "Overwrite: \(s.slotName) (recent)" : "Overwrite: \(s.slotName)"
-        }
+        var options = slots.map { "Replace: \($0.slotName)" }
         options.append("< Back")
 
         showMenu(options)
@@ -2918,26 +3058,26 @@ class GameEngine: ObservableObject {
                 self.showExplorationView()
                 return
             }
-            guard choice > 0 && choice <= saves.count else { return }
-            let selected = saves[choice - 1]
+            guard choice > 0 && choice <= slots.count else { return }
+            let selected = slots[choice - 1]
 
             self.clearTerminal()
-            self.print("Overwriting:", color: .yellow, bold: true)
-            self.print("  \(selected.slotName)", color: .yellow)
-            self.print("  \(selected.partyDescription)", color: .dimGreen)
-            self.print("  \(selected.dungeonName) Lv\(selected.dungeonLevel)", color: .dimGreen)
+            self.print("Replace slot:", color: .yellow, bold: true)
+            self.print("  \(selected.slotName) (\(selected.breakpointCount) saves)", color: .yellow)
+            self.print("  \(selected.latest.partyDescription)", color: .dimGreen)
             self.print("")
 
-            self.showMenu(["Yes, overwrite this save", "Choose a different save", "< Back"])
+            self.showMenu(["Yes, replace this slot", "Choose a different slot", "< Back"])
             self.menuHandler = { [weak self] confirm in
                 guard let self = self else { return }
                 switch confirm {
                 case 1:
-                    self.askForSaveName(overwriteId: selected.id)
+                    SaveGameManager.shared.deleteSlot(slotId: selected.slotId)
+                    self.askForNewSlotName()
                 case 2:
                     self.clearTerminal()
                     self.printTitle("Save Game")
-                    self.showOverwriteMenu(saves: saves)
+                    self.showOverwriteSlotMenu(slots: slots)
                 default:
                     self.showExplorationView()
                 }
@@ -2945,31 +3085,16 @@ class GameEngine: ObservableObject {
         }
     }
 
-    private func performSave(saveName: String, overwriteId: UUID?) {
+    private func performSave(slotId: UUID, slotName: String) {
         guard let dungeon = dungeon else { return }
 
         let partyDesc = party.map { "\($0.name) (\($0.characterClass.rawValue))" }.joined(separator: ", ")
-
-        let slotName: String
-        if saveName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateStyle = .medium
-            dateFormatter.timeStyle = .short
-            let timestamp = dateFormatter.string(from: Date())
-            slotName = "\(party.first?.name ?? "Unknown") - \(timestamp)"
-        } else {
-            slotName = saveName.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
-        // Delete the save being overwritten
-        if let overwriteId = overwriteId {
-            SaveGameManager.shared.delete(id: overwriteId)
-        }
 
         logEvent("Game saved: \(slotName)")
 
         let saveGame = SaveGame(
             id: UUID(),
+            slotId: slotId,
             savedAt: Date(),
             slotName: slotName,
             partyDescription: partyDesc,
@@ -2993,13 +3118,16 @@ class GameEngine: ObservableObject {
             print("  \(slotName)", color: .cyan)
             print("  \(partyDesc)", color: .dimGreen)
             print("  \(dungeon.name) (Level \(dungeon.level))", color: .dimGreen)
+
+            let breakpoints = SaveGameManager.shared.listBreakpoints(slotId: slotId)
+            let slotCount = SaveGameManager.shared.listSlots().count
+            print("")
+            print("  \(breakpoints.count) breakpoint(s) in this slot", color: .dimGreen)
+            print("  \(slotCount)/\(SaveGameManager.maxSlots) slots used", color: .dimGreen)
         } catch {
             print("Failed to save: \(error.localizedDescription)", color: .red)
         }
 
-        let saveCount = SaveGameManager.shared.listSaves().count
-        print("")
-        print("  Saves: \(saveCount)/\(maxSaves)", color: .dimGreen)
         print("")
 
         showMenu(["Continue Playing", "Load Another Game", "Exit to Main Menu"])
@@ -3018,9 +3146,9 @@ class GameEngine: ObservableObject {
         clearTerminal()
         printTitle("Load Game")
 
-        let saves = SaveGameManager.shared.listSaves()
+        let slots = SaveGameManager.shared.listSlots()
 
-        if saves.isEmpty {
+        if slots.isEmpty {
             print("No saved games found.", color: .yellow)
             print("")
 
@@ -3041,20 +3169,22 @@ class GameEngine: ObservableObject {
         dateFormatter.dateStyle = .medium
         dateFormatter.timeStyle = .short
 
-        for (index, save) in saves.enumerated() {
+        for (index, slot) in slots.enumerated() {
+            let save = slot.latest
             let dateStr = dateFormatter.string(from: save.savedAt)
             let day = save.gameTimeMinutes / 1440 + 1
             let hourOfDay = (save.gameTimeMinutes % 1440) / 60
             let period = hourOfDay >= 12 ? "PM" : "AM"
             let hour12 = hourOfDay == 0 ? 12 : (hourOfDay > 12 ? hourOfDay - 12 : hourOfDay)
-            print("\(index + 1). \(save.slotName)", color: .brightGreen)
+            let bpInfo = slot.breakpointCount > 1 ? " (\(slot.breakpointCount) saves)" : ""
+            print("\(index + 1). \(slot.slotName)\(bpInfo)", color: .brightGreen)
             print("   \(save.partyDescription)", color: .dimGreen)
-            print("   \(save.dungeonName) (Level \(save.dungeonLevel)) - Day \(day), \(hour12) \(period)", color: .dimGreen)
+            print("   \(save.dungeonName) (Lv\(save.dungeonLevel)) Day \(day), \(hour12) \(period)", color: .dimGreen)
             print("   Saved: \(dateStr)", color: .dimGreen)
             print("")
         }
 
-        var options = saves.map { $0.slotName }
+        var options = slots.map { $0.slotName }
         options.append("Manage Saves")
         options.append("< Back")
 
@@ -3077,8 +3207,55 @@ class GameEngine: ObservableObject {
                 return
             }
 
-            let selectedSave = saves[choice - 1]
-            self?.loadGame(selectedSave)
+            guard choice > 0 && choice <= slots.count else { return }
+            let slot = slots[choice - 1]
+
+            if slot.breakpointCount > 1 {
+                // Show breakpoint selection
+                self?.showBreakpointMenu(slot: slot, returnTo: origin)
+            } else {
+                self?.loadGame(slot.latest)
+            }
+        }
+    }
+
+    private func showBreakpointMenu(slot: SaveSlot, returnTo origin: LoadGameOrigin) {
+        clearTerminal()
+        printTitle(slot.slotName)
+        print("Select a breakpoint to load:", color: .cyan)
+        print("")
+
+        let breakpoints = SaveGameManager.shared.listBreakpoints(slotId: slot.slotId)
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .short
+        dateFormatter.timeStyle = .short
+
+        for (index, bp) in breakpoints.enumerated() {
+            let dateStr = dateFormatter.string(from: bp.savedAt)
+            let day = bp.gameTimeMinutes / 1440 + 1
+            let hourOfDay = (bp.gameTimeMinutes % 1440) / 60
+            let period = hourOfDay >= 12 ? "PM" : "AM"
+            let hour12 = hourOfDay == 0 ? 12 : (hourOfDay > 12 ? hourOfDay - 12 : hourOfDay)
+            let marker = index == 0 ? " (latest)" : ""
+            print("\(index + 1). Day \(day), \(hour12) \(period)\(marker)", color: index == 0 ? .brightGreen : .green)
+            print("   \(dateStr) — \(bp.dungeonName) Lv\(bp.dungeonLevel)", color: .dimGreen)
+        }
+        print("")
+
+        var options = breakpoints.enumerated().map { i, _ in
+            i == 0 ? "Load Latest" : "Load #\(i + 1)"
+        }
+        options.append("< Back")
+
+        showMenu(options)
+
+        menuHandler = { [weak self] choice in
+            if choice == options.count {
+                self?.showLoadGameMenu(returnTo: origin)
+                return
+            }
+            guard choice > 0 && choice <= breakpoints.count else { return }
+            self?.loadGame(breakpoints[choice - 1])
         }
     }
 
@@ -3086,9 +3263,9 @@ class GameEngine: ObservableObject {
         clearTerminal()
         printTitle("Manage Saves")
 
-        let saves = SaveGameManager.shared.listSaves()
+        let slots = SaveGameManager.shared.listSlots()
 
-        if saves.isEmpty {
+        if slots.isEmpty {
             print("No saved games.", color: .yellow)
             print("")
             showMenu(["< Back"])
@@ -3102,18 +3279,19 @@ class GameEngine: ObservableObject {
         dateFormatter.dateStyle = .medium
         dateFormatter.timeStyle = .short
 
-        for (index, save) in saves.enumerated() {
-            let dateStr = dateFormatter.string(from: save.savedAt)
-            print("\(index + 1). \(save.slotName)", color: .brightGreen)
-            print("   \(save.partyDescription)", color: .dimGreen)
+        for (index, slot) in slots.enumerated() {
+            let dateStr = dateFormatter.string(from: slot.latest.savedAt)
+            let bpInfo = slot.breakpointCount > 1 ? " (\(slot.breakpointCount) saves)" : ""
+            print("\(index + 1). \(slot.slotName)\(bpInfo)", color: .brightGreen)
+            print("   \(slot.latest.partyDescription)", color: .dimGreen)
             print("   \(dateStr)", color: .dimGreen)
             print("")
         }
 
-        var options = saves.map { $0.slotName }
+        var options = slots.map { $0.slotName }
         options.append("< Back")
 
-        print("Select a save to manage:", color: .cyan)
+        print("Select a slot to manage:", color: .cyan)
         showMenu(options)
 
         menuHandler = { [weak self] choice in
@@ -3121,66 +3299,72 @@ class GameEngine: ObservableObject {
                 self?.showLoadGameMenu(returnTo: origin)
                 return
             }
-            let selectedSave = saves[choice - 1]
-            self?.showSaveActions(save: selectedSave, returnTo: origin)
+            guard choice > 0 && choice <= slots.count else { return }
+            self?.showSlotActions(slot: slots[choice - 1], returnTo: origin)
         }
     }
 
-    private func showSaveActions(save: SaveGame, returnTo origin: LoadGameOrigin) {
+    private func showSlotActions(slot: SaveSlot, returnTo origin: LoadGameOrigin) {
         clearTerminal()
-        printSubtitle(save.slotName)
-        print("  \(save.partyDescription)", color: .dimGreen)
-        print("  \(save.dungeonName) (Level \(save.dungeonLevel))", color: .dimGreen)
+        printSubtitle(slot.slotName)
+        print("  \(slot.latest.partyDescription)", color: .dimGreen)
+        print("  \(slot.latest.dungeonName) (Level \(slot.latest.dungeonLevel))", color: .dimGreen)
+        print("  \(slot.breakpointCount) breakpoint(s)", color: .dimGreen)
         print("")
 
-        showMenu(["Rename", "Delete", "< Back"])
+        showMenu(["Rename", "Delete Slot", "< Back"])
 
         menuHandler = { [weak self] choice in
             switch choice {
-            case 1: self?.renameSave(save: save, returnTo: origin)
-            case 2: self?.confirmDeleteSave(save: save, returnTo: origin)
+            case 1: self?.renameSlot(slot: slot, returnTo: origin)
+            case 2: self?.confirmDeleteSlot(slot: slot, returnTo: origin)
             default: self?.showManageSavesMenu(returnTo: origin)
             }
         }
     }
 
-    private func renameSave(save: SaveGame, returnTo origin: LoadGameOrigin) {
+    private func renameSlot(slot: SaveSlot, returnTo origin: LoadGameOrigin) {
         print("")
-        promptText("Enter new name for this save:")
+        promptText("Enter new name for this slot:")
 
         inputHandler = { [weak self] newName in
             let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
                 self?.print("Name cannot be empty.", color: .yellow)
-                self?.showSaveActions(save: save, returnTo: origin)
+                self?.showSlotActions(slot: slot, returnTo: origin)
                 return
             }
 
-            let renamed = SaveGame(
-                id: save.id,
-                savedAt: save.savedAt,
-                slotName: trimmed,
-                partyDescription: save.partyDescription,
-                dungeonName: save.dungeonName,
-                dungeonLevel: save.dungeonLevel,
-                party: save.party,
-                dungeon: save.dungeon,
-                gameState: save.gameState,
-                gameTimeMinutes: save.gameTimeMinutes,
-                adventureLog: save.adventureLog,
-                monstersSlain: save.monstersSlain,
-                combatsWon: save.combatsWon
-            )
-
-            SaveGameManager.shared.delete(id: save.id)
-            do {
-                try SaveGameManager.shared.save(renamed)
-                self?.print("")
-                self?.print("Renamed to '\(trimmed)'", color: .brightGreen)
-            } catch {
-                self?.print("Error saving: \(error.localizedDescription)", color: .red)
+            // Rename all breakpoints in this slot
+            let breakpoints = SaveGameManager.shared.listBreakpoints(slotId: slot.slotId)
+            for bp in breakpoints {
+                let renamed = SaveGame(
+                    id: bp.id,
+                    slotId: bp.slotId,
+                    savedAt: bp.savedAt,
+                    slotName: trimmed,
+                    partyDescription: bp.partyDescription,
+                    dungeonName: bp.dungeonName,
+                    dungeonLevel: bp.dungeonLevel,
+                    party: bp.party,
+                    dungeon: bp.dungeon,
+                    gameState: bp.gameState,
+                    gameTimeMinutes: bp.gameTimeMinutes,
+                    adventureLog: bp.adventureLog,
+                    monstersSlain: bp.monstersSlain,
+                    combatsWon: bp.combatsWon
+                )
+                SaveGameManager.shared.delete(id: bp.id)
+                try? SaveGameManager.shared.save(renamed)
             }
 
+            // Update active slot name if this is our slot
+            if self?.activeSlotId == slot.slotId {
+                self?.activeSlotName = trimmed
+            }
+
+            self?.print("")
+            self?.print("Renamed to '\(trimmed)'", color: .brightGreen)
             self?.print("")
             self?.waitForContinue()
             self?.inputHandler = { [weak self] _ in
@@ -3189,26 +3373,31 @@ class GameEngine: ObservableObject {
         }
     }
 
-    private func confirmDeleteSave(save: SaveGame, returnTo origin: LoadGameOrigin) {
+    private func confirmDeleteSlot(slot: SaveSlot, returnTo origin: LoadGameOrigin) {
         print("")
-        print("Delete '\(save.slotName)'?", color: .red, bold: true)
+        print("Delete '\(slot.slotName)'?", color: .red, bold: true)
+        print("This will delete all \(slot.breakpointCount) breakpoint(s).", color: .yellow)
         print("This cannot be undone.", color: .yellow)
         print("")
 
-        showMenu(["Yes, Delete", "No, Keep It"])
+        showMenu(["Yes, Delete All", "No, Keep It"])
 
         menuHandler = { [weak self] choice in
             if choice == 1 {
-                SaveGameManager.shared.delete(id: save.id)
+                SaveGameManager.shared.deleteSlot(slotId: slot.slotId)
+                if self?.activeSlotId == slot.slotId {
+                    self?.activeSlotId = nil
+                    self?.activeSlotName = nil
+                }
                 self?.print("")
-                self?.print("Save deleted.", color: .red)
+                self?.print("Slot deleted.", color: .red)
                 self?.print("")
                 self?.waitForContinue()
                 self?.inputHandler = { [weak self] _ in
                     self?.showManageSavesMenu(returnTo: origin)
                 }
             } else {
-                self?.showSaveActions(save: save, returnTo: origin)
+                self?.showSlotActions(slot: slot, returnTo: origin)
             }
         }
     }
@@ -3222,6 +3411,10 @@ class GameEngine: ObservableObject {
         adventureLog = save.adventureLog
         monstersSlain = save.monstersSlain
         combatsWon = save.combatsWon
+
+        // Track the loaded slot for future saves/autosaves
+        activeSlotId = save.slotId
+        activeSlotName = save.slotName
 
         // Reroll encounters so monsters are different each load
         dungeon?.rerollEncounters()
@@ -3250,6 +3443,8 @@ class GameEngine: ObservableObject {
         adventureLog = []
         monstersSlain = 0
         combatsWon = 0
+        activeSlotId = nil
+        activeSlotName = nil
         clearTerminal()
         showMainMenu()
     }
