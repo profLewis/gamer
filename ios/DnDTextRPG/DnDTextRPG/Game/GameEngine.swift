@@ -732,31 +732,11 @@ class GameEngine: ObservableObject {
             }
         }
 
-        var options = ["< Back"]
-        if GameCenterManager.shared.isAuthenticated {
-            options.insert("Game Centre Leaderboards", at: 0)
-            options.insert("Game Centre Achievements", at: 1)
-        }
+        showMenu(["< Back"])
 
-        showMenu(options)
-
-        menuHandler = { [weak self] choice in
-            if GameCenterManager.shared.isAuthenticated {
-                switch choice {
-                case 1:
-                    GameCenterManager.shared.showLeaderboard()
-                    self?.showHallOfFame()
-                case 2:
-                    GameCenterManager.shared.showAchievements()
-                    self?.showHallOfFame()
-                default:
-                    self?.clearTerminal()
-                    self?.showMainMenu()
-                }
-            } else {
-                self?.clearTerminal()
-                self?.showMainMenu()
-            }
+        menuHandler = { [weak self] _ in
+            self?.clearTerminal()
+            self?.showMainMenu()
         }
     }
 
