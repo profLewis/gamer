@@ -17,6 +17,8 @@ struct TerminalView: View {
     let terminalDarkGreen = Color(red: 0.0, green: 0.6, blue: 0.2)
     let terminalBackground = Color.black
 
+    private var scale: CGFloat { gameEngine.fontScale }
+
     var body: some View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
@@ -25,7 +27,7 @@ struct TerminalView: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 2) {
                             ForEach(gameEngine.terminalLines) { line in
-                                TerminalLineView(line: line)
+                                TerminalLineView(line: line, scale: scale)
                                     .id(line.id)
                             }
                         }
@@ -47,14 +49,14 @@ struct TerminalView: View {
                     VStack(spacing: 6) {
                         // Direction D-pad (when exploring)
                         if !gameEngine.directionExits.isEmpty {
-                            DirectionPadView(exits: gameEngine.directionExits) { direction in
+                            DirectionPadView(exits: gameEngine.directionExits, scale: scale) { direction in
                                 gameEngine.handleDirectionChoice(direction)
                             }
                         }
 
                         // Action buttons
                         if !gameEngine.currentMenuOptions.isEmpty {
-                            MenuButtonsView(options: gameEngine.currentMenuOptions) { choice in
+                            MenuButtonsView(options: gameEngine.currentMenuOptions, scale: scale) { choice in
                                 gameEngine.handleMenuChoice(choice)
                             }
                         }
@@ -68,11 +70,11 @@ struct TerminalView: View {
                 if gameEngine.awaitingTextInput {
                     HStack {
                         Text(">")
-                            .font(.system(.body, design: .monospaced))
+                            .font(.system(size: 14 * scale, design: .monospaced))
                             .foregroundColor(terminalGreen)
 
                         TextField("", text: $inputText)
-                            .font(.system(.body, design: .monospaced))
+                            .font(.system(size: 14 * scale, design: .monospaced))
                             .foregroundColor(terminalGreen)
                             .textFieldStyle(PlainTextFieldStyle())
                             #if os(iOS)
@@ -86,6 +88,7 @@ struct TerminalView: View {
 
                         Button(action: submitInput) {
                             Image(systemName: "return")
+                                .font(.system(size: 14 * scale))
                                 .foregroundColor(terminalGreen)
                         }
                     }
@@ -103,7 +106,7 @@ struct TerminalView: View {
                         gameEngine.handleContinue()
                     }) {
                         Text("[ Press to Continue ]")
-                            .font(.system(.body, design: .monospaced))
+                            .font(.system(size: 14 * scale, design: .monospaced))
                             .foregroundColor(terminalGreen)
                             .padding()
                             .frame(maxWidth: .infinity)
@@ -127,10 +130,13 @@ struct TerminalView: View {
 
 struct TerminalLineView: View {
     let line: TerminalLine
+    let scale: CGFloat
+
+    private var scaledSize: CGFloat { line.fontSize * scale }
 
     var body: some View {
         Text(attributedString)
-            .font(.system(size: line.fontSize, design: .monospaced))
+            .font(.system(size: scaledSize, design: .monospaced))
             .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -138,7 +144,7 @@ struct TerminalLineView: View {
         var result = AttributedString(line.text)
         result.foregroundColor = line.color.swiftUIColor
         if line.isBold {
-            result.font = .system(size: line.fontSize, design: .monospaced).bold()
+            result.font = .system(size: scaledSize, design: .monospaced).bold()
         }
         return result
     }
@@ -146,6 +152,7 @@ struct TerminalLineView: View {
 
 struct MenuButtonsView: View {
     let options: [MenuOption]
+    let scale: CGFloat
     let onSelect: (Int) -> Void
 
     let terminalGreen = Color(red: 0.0, green: 0.9, blue: 0.3)
@@ -164,11 +171,11 @@ struct MenuButtonsView: View {
                 }) {
                     HStack {
                         Text("\(index + 1).")
-                            .font(.system(.caption, design: .monospaced))
+                            .font(.system(size: 11 * scale, design: .monospaced))
                             .foregroundColor(option.isDisabled ? Color.red.opacity(0.3) : (option.isDefault ? terminalGreen : terminalGreen.opacity(0.6)))
 
                         Text(option.text)
-                            .font(.system(.body, design: .monospaced))
+                            .font(.system(size: 14 * scale, design: .monospaced))
                             .fontWeight(option.isDefault ? .semibold : .regular)
                             .foregroundColor(option.isDisabled ? Color.red.opacity(0.3) : terminalGreen)
                             .lineLimit(2)
@@ -206,6 +213,7 @@ struct MenuButtonsView: View {
 
 struct DirectionPadView: View {
     let exits: [Direction: Bool]
+    let scale: CGFloat
     let onSelect: (Direction) -> Void
 
     let terminalGreen = Color(red: 0.0, green: 0.9, blue: 0.3)
@@ -233,10 +241,10 @@ struct DirectionPadView: View {
             if enabled { onSelect(dir) }
         }) {
             Text(dir.rawValue)
-                .font(.system(.caption, design: .monospaced))
+                .font(.system(size: 11 * scale, design: .monospaced))
                 .fontWeight(.semibold)
                 .foregroundColor(enabled ? terminalGreen : Color.red.opacity(0.3))
-                .frame(width: 80, height: 34)
+                .frame(width: 80 * scale, height: 34 * scale)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
                         .stroke(enabled ? terminalGreen.opacity(0.6) : Color.red.opacity(0.15), lineWidth: 1)

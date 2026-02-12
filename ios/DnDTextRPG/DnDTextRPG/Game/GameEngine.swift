@@ -307,6 +307,61 @@ class GameEngine: ObservableObject {
         }
     }
 
+    // MARK: - Font Size
+
+    enum FontSizeSetting: Int, CaseIterable {
+        case small = 0
+        case medium = 1
+        case large = 2
+
+        var displayName: String {
+            switch self {
+            case .small: return "Small"
+            case .medium: return "Medium"
+            case .large: return "Large"
+            }
+        }
+
+        var scale: CGFloat {
+            switch self {
+            case .small: return 1.0
+            case .medium: return 1.3
+            case .large: return 1.6
+            }
+        }
+
+        /// Default: medium on iPad, small on iPhone
+        static var defaultSetting: FontSizeSetting {
+            #if os(iOS)
+            return UIDevice.current.userInterfaceIdiom == .pad ? .medium : .small
+            #else
+            return .small
+            #endif
+        }
+    }
+
+    @Published var fontScale: CGFloat = {
+        let raw = UserDefaults.standard.object(forKey: "font_size_setting") as? Int
+        if let raw = raw, let setting = FontSizeSetting(rawValue: raw) {
+            return setting.scale
+        }
+        return FontSizeSetting.defaultSetting.scale
+    }()
+
+    var fontSizeSetting: FontSizeSetting {
+        get {
+            let raw = UserDefaults.standard.object(forKey: "font_size_setting") as? Int
+            if let raw = raw, let setting = FontSizeSetting(rawValue: raw) {
+                return setting
+            }
+            return FontSizeSetting.defaultSetting
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: "font_size_setting")
+            fontScale = newValue.scale
+        }
+    }
+
     // MARK: - Autosave
 
     enum AutosaveInterval: Int, CaseIterable {
@@ -406,12 +461,16 @@ class GameEngine: ObservableObject {
         print("  Current: \(currentLevel.displayName) — \(currentLevel.description)", color: .dimGreen)
         print("")
 
+        print("FONT SIZE:", color: .cyan, bold: true)
+        print("  Current: \(fontSizeSetting.displayName)", color: .dimGreen)
+        print("")
+
         let currentAutosave = autosaveInterval
         print("AUTOSAVE:", color: .cyan, bold: true)
         print("  Current: \(currentAutosave.displayName)", color: .dimGreen)
         print("")
 
-        var options = ["AI Provider", "Set API Key", "DM Ad-lib Level", "Autosave"]
+        var options = ["AI Provider", "Set API Key", "DM Ad-lib Level", "Font Size", "Autosave"]
         if dm.isConfigured {
             options.append("Clear API Key")
         }
@@ -427,8 +486,10 @@ class GameEngine: ObservableObject {
             } else if choice == 3 {
                 self?.showAdLibLevelMenu()
             } else if choice == 4 {
+                self?.showFontSizeMenu()
+            } else if choice == 5 {
                 self?.showAutosaveMenu()
-            } else if dm.isConfigured && choice == 5 {
+            } else if dm.isConfigured && choice == 6 {
                 dm.apiKey = nil
                 self?.print("")
                 self?.print("API key cleared.", color: .yellow)
@@ -539,6 +600,38 @@ class GameEngine: ObservableObject {
                 self?.autosaveInterval = selected
                 self?.print("")
                 self?.print("Autosave set to: \(selected.displayName)", color: .brightGreen)
+                self?.print("")
+                self?.waitForContinue()
+                self?.inputHandler = { [weak self] _ in
+                    self?.showSettings()
+                }
+            } else {
+                self?.showSettings()
+            }
+        }
+    }
+
+    func showFontSizeMenu() {
+        clearTerminal()
+        printTitle("Font Size")
+        print("")
+
+        let current = fontSizeSetting
+        for size in FontSizeSetting.allCases {
+            let marker = size == current ? " <--" : ""
+            print("  \(size.displayName)\(marker)", color: size == current ? .brightGreen : .green)
+        }
+        print("")
+
+        let options = FontSizeSetting.allCases.map { $0.displayName } + ["< Back"]
+        showMenu(options)
+
+        menuHandler = { [weak self] choice in
+            if choice <= FontSizeSetting.allCases.count {
+                let selected = FontSizeSetting.allCases[choice - 1]
+                self?.fontSizeSetting = selected
+                self?.print("")
+                self?.print("Font size set to: \(selected.displayName)", color: .brightGreen)
                 self?.print("")
                 self?.waitForContinue()
                 self?.inputHandler = { [weak self] _ in
