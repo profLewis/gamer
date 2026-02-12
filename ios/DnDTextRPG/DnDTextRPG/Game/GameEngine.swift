@@ -575,8 +575,8 @@ class GameEngine: ObservableObject {
 
         var options = ["< Back"]
         if GameCenterManager.shared.isAuthenticated {
-            options.insert("Game Center Leaderboards", at: 0)
-            options.insert("Game Center Achievements", at: 1)
+            options.insert("Game Centre Leaderboards", at: 0)
+            options.insert("Game Centre Achievements", at: 1)
         }
 
         showMenu(options)
@@ -584,8 +584,12 @@ class GameEngine: ObservableObject {
         menuHandler = { [weak self] choice in
             if GameCenterManager.shared.isAuthenticated {
                 switch choice {
-                case 1: GameCenterManager.shared.showLeaderboard()
-                case 2: GameCenterManager.shared.showAchievements()
+                case 1:
+                    GameCenterManager.shared.showLeaderboard()
+                    self?.showHallOfFame()
+                case 2:
+                    GameCenterManager.shared.showAchievements()
+                    self?.showHallOfFame()
                 default:
                     self?.clearTerminal()
                     self?.showMainMenu()
@@ -865,17 +869,85 @@ class GameEngine: ObservableObject {
         // Starting gold
         character.gold = Dice.rollSum(4, d: 4) * 10
 
+        // Auto-assign default starting equipment for class
+        let equipOptions = ItemCatalog.startingEquipmentOptions(for: charClass)
+        if let (_, items) = equipOptions.first {
+            for item in items {
+                _ = character.addItem(item)
+            }
+        }
+        autoEquip(character)
+
+        // Assign starting spells and spell slots
+        let startingSpells = SpellCatalog.startingSpells(for: charClass)
+        if !startingSpells.isEmpty {
+            character.knownSpells = startingSpells
+            character.spellSlots = SpellCatalog.startingSlots(for: charClass, level: 1)
+        }
+
+        // Barbarian starts with rage uses
+        if charClass == .barbarian {
+            character.rageUsesRemaining = character.rageMaxUses
+        }
+
         party.append(character)
 
         clearTerminal()
         print("\(character.name) joins the party!", color: .brightGreen, bold: true)
         print("")
         printLines(character.displaySheet())
+        print("")
+
+        if let w = character.equippedWeapon {
+            print("  Weapon: \(w.name)", color: .cyan)
+        }
+        if let a = character.equippedArmor {
+            print("  Armor: \(a.name)", color: .cyan)
+        }
+        if let s = character.equippedShield {
+            print("  Shield: \(s.name)", color: .cyan)
+        }
+
+        // Show other items in bag
+        let otherItems = character.inventory.filter { item in
+            item.id != character.equippedWeapon?.id &&
+            item.id != character.equippedArmor?.id &&
+            item.id != character.equippedShield?.id
+        }
+        if !otherItems.isEmpty {
+            print("  Also carrying:", color: .dimGreen)
+            for item in otherItems {
+                print("    \(item.name)", color: .dimGreen)
+            }
+        }
+
+        // Show spells
+        if !character.knownSpells.isEmpty {
+            print("")
+            let cantrips = character.knownSpells.filter { $0.level == .cantrip }
+            let leveled = character.knownSpells.filter { $0.level != .cantrip }
+            if !cantrips.isEmpty {
+                print("  Cantrips:", color: .cyan)
+                for s in cantrips { print("    \(s.name) — \(s.description)", color: .dimGreen) }
+            }
+            if !leveled.isEmpty {
+                let slots = character.spellSlots
+                print("  Spells (slots: \(slots.level1Current)/\(slots.level1Max)):", color: .cyan)
+                for s in leveled { print("    \(s.name) — \(s.description)", color: .dimGreen) }
+            }
+        }
+        print("")
 
         waitForContinue()
 
         inputHandler = { [weak self] _ in
-            self?.chooseStartingEquipment(for: character)
+            guard let self = self else { return }
+            self.creatingCharacterIndex += 1
+            if self.creatingCharacterIndex < self.totalCharacters {
+                self.startCharacterCreation()
+            } else {
+                self.startAdventure()
+            }
         }
     }
 
@@ -1549,6 +1621,10 @@ class GameEngine: ObservableObject {
                     char.heal(healAmount)
                     self.print("\(char.name) recovers \(healAmount) HP")
                     healed.append("\(char.name) +\(healAmount)HP")
+                    // Short rest: reset Second Wind
+                    if char.characterClass == .fighter {
+                        char.secondWindUsed = false
+                    }
                 }
                 self.logEvent("Short rest — \(healed.joined(separator: ", "))")
             } else {
@@ -1557,6 +1633,19 @@ class GameEngine: ObservableObject {
                 for char in self.party {
                     char.heal(char.maxHP)
                     self.print("\(char.name) fully recovers!")
+                    // Long rest: restore spell slots
+                    if !char.spellSlots.isEmpty {
+                        char.spellSlots.restoreAll()
+                        self.print("  Spell slots restored", color: .cyan)
+                    }
+                    // Long rest: reset class features
+                    char.secondWindUsed = false
+                    if char.characterClass == .barbarian {
+                        char.rageUsesRemaining = char.rageMaxUses
+                        char.isRaging = false
+                        self.print("  Rage uses restored", color: .cyan)
+                    }
+                    char.huntersMarkActive = false
                 }
                 self.logEvent("Long rest — party fully recovered")
             }
@@ -1610,19 +1699,14 @@ class GameEngine: ObservableObject {
                     self.print("")
                     self.print("DM:", color: .yellow, bold: true)
 
-                    // Word wrap the response into lines
-                    let words = displayText.split(separator: " ")
-                    var line = ""
-                    for word in words {
-                        if line.count + word.count + 1 > 60 {
-                            self.print("  \(line)", color: .yellow)
-                            line = String(word)
+                    // Print each paragraph, let SwiftUI handle word wrap
+                    for paragraph in displayText.components(separatedBy: "\n") {
+                        let trimmed = paragraph.trimmingCharacters(in: .whitespaces)
+                        if trimmed.isEmpty {
+                            self.print("")
                         } else {
-                            line += (line.isEmpty ? "" : " ") + word
+                            self.print("  \(trimmed)", color: .yellow)
                         }
-                    }
-                    if !line.isEmpty {
-                        self.print("  \(line)", color: .yellow)
                     }
 
                     // Apply DM commands at level 3
@@ -1872,7 +1956,13 @@ class GameEngine: ObservableObject {
         print("")
 
         if current.isPlayer {
-            showPlayerCombatMenu(characterId: current.id)
+            // Check if unconscious — death saving throw instead of normal turn
+            if let character = party.first(where: { $0.id == current.id }),
+               !character.isConscious {
+                showDeathSavingThrow(character: character)
+            } else {
+                showPlayerCombatMenu(characterId: current.id)
+            }
         } else {
             if let report = combat.runMonsterTurn() {
                 displayAttackReport(report) { [weak self] in
@@ -1897,48 +1987,501 @@ class GameEngine: ObservableObject {
 
         let aliveMonsters = combat.encounter.aliveMonsters
         var options: [String] = []
+        var actions: [() -> Void] = []
 
+        // Attack options
         for monster in aliveMonsters {
+            let monsterRef = monster
             options.append("Attack \(monster.name)")
-        }
-        options.append("Dodge (defensive stance)")
-
-        showMenu(options)
-
-        menuHandler = { [weak self] choice in
-            guard let self = self else { return }
-
-            if choice <= aliveMonsters.count {
-                let targetId = aliveMonsters[choice - 1].id
-                if let report = combat.playerAttack(characterId: characterId, targetId: targetId) {
+            actions.append { [weak self] in
+                guard let self = self else { return }
+                if let report = combat.playerAttack(characterId: characterId, targetId: monsterRef.id) {
                     self.clearTerminal()
                     self.printLines(combat.displayStatus())
                     self.print("")
-
                     self.displayAttackReport(report) { [weak self] in
-                        guard let self = self else { return }
                         combat.checkCombatEnd()
                         combat.nextTurn()
-                        self.runCombatTurn()
+                        self?.runCombatTurn()
                     }
-                }
-            } else {
-                self.clearTerminal()
-                self.printLines(combat.displayStatus())
-                self.print("")
-                self.printLines(self.asciiDodge, color: .cyan)
-                self.print("")
-                self.print("\(character.name) takes a defensive stance.")
-
-                combat.checkCombatEnd()
-                combat.nextTurn()
-
-                self.waitForContinue()
-                self.inputHandler = { [weak self] _ in
-                    self?.runCombatTurn()
                 }
             }
         }
+
+        // Cast Spell (spellcasters with spells)
+        if !character.knownSpells.isEmpty {
+            let hasCantrips = character.knownSpells.contains { $0.level == .cantrip }
+            let hasSlots = character.spellSlots.level1Current > 0 || character.spellSlots.level2Current > 0
+            if hasCantrips || hasSlots {
+                let slotInfo = character.spellSlots.isEmpty ? "" : " [\(character.spellSlots.level1Current) slots]"
+                options.append("Cast Spell\(slotInfo)")
+                actions.append { [weak self] in
+                    self?.showSpellMenu(characterId: characterId)
+                }
+            }
+        }
+
+        // Fighter: Second Wind
+        if character.characterClass == .fighter && !character.secondWindUsed {
+            options.append("Second Wind (heal 1d10+\(character.level))")
+            actions.append { [weak self] in
+                self?.useSecondWind(character: character)
+            }
+        }
+
+        // Barbarian: Rage
+        if character.characterClass == .barbarian && character.rageUsesRemaining > 0 && !character.isRaging {
+            options.append("Rage! (\(character.rageUsesRemaining) uses)")
+            actions.append { [weak self] in
+                self?.activateRage(character: character)
+            }
+        }
+
+        // Dodge
+        options.append("Dodge (defensive stance)")
+        actions.append { [weak self] in
+            guard let self = self else { return }
+            self.clearTerminal()
+            self.printLines(combat.displayStatus())
+            self.print("")
+            self.printLines(self.asciiDodge, color: .cyan)
+            self.print("")
+            self.print("\(character.name) takes a defensive stance.")
+            combat.checkCombatEnd()
+            combat.nextTurn()
+            self.waitForContinue()
+            self.inputHandler = { [weak self] _ in self?.runCombatTurn() }
+        }
+
+        showMenu(options)
+        menuHandler = { choice in
+            if choice > 0 && choice <= actions.count {
+                actions[choice - 1]()
+            }
+        }
+    }
+
+    // MARK: - Spell Casting UI
+
+    func showSpellMenu(characterId: UUID) {
+        guard let combat = currentCombat,
+              let character = party.first(where: { $0.id == characterId }) else { return }
+
+        clearTerminal()
+        printLines(combat.displayStatus())
+        print("")
+        print("Choose a spell:", color: .brightGreen, bold: true)
+        print("")
+
+        let cantrips = character.knownSpells.filter { $0.level == .cantrip }
+        let leveled = character.knownSpells.filter { $0.level != .cantrip && character.canCastSpell($0) }
+
+        var spellOptions: [Spell] = []
+
+        if !cantrips.isEmpty {
+            print("  CANTRIPS (unlimited):", color: .cyan, bold: true)
+            for c in cantrips {
+                print("    \(c.name) — \(c.description)", color: .dimGreen)
+            }
+            spellOptions.append(contentsOf: cantrips)
+            print("")
+        }
+
+        if !leveled.isEmpty {
+            let l1 = character.spellSlots.level1Current
+            let l1m = character.spellSlots.level1Max
+            print("  LEVEL 1 (slots: \(l1)/\(l1m)):", color: .cyan, bold: true)
+            for s in leveled {
+                print("    \(s.name) — \(s.description)", color: .dimGreen)
+            }
+            spellOptions.append(contentsOf: leveled)
+            print("")
+        }
+
+        var menuOpts = spellOptions.map { $0.name }
+        menuOpts.append("< Back")
+
+        showMenu(menuOpts)
+
+        menuHandler = { [weak self] choice in
+            if choice == menuOpts.count {
+                self?.clearTerminal()
+                self?.printLines(combat.displayStatus())
+                self?.print("")
+                self?.showPlayerCombatMenu(characterId: characterId)
+                return
+            }
+            guard choice > 0 && choice <= spellOptions.count else { return }
+            let spell = spellOptions[choice - 1]
+            self?.selectSpellTarget(characterId: characterId, spell: spell)
+        }
+    }
+
+    func selectSpellTarget(characterId: UUID, spell: Spell) {
+        guard let combat = currentCombat else { return }
+
+        // AoE spells target all enemies automatically
+        if spell.target == .allEnemies {
+            let targetIds = combat.encounter.aliveMonsters.map { $0.id }
+            executeSpell(characterId: characterId, spell: spell, targetIds: targetIds)
+            return
+        }
+
+        // Self/buff spells
+        if spell.target == .self_ {
+            executeSpell(characterId: characterId, spell: spell, targetIds: [characterId])
+            return
+        }
+
+        // Healing/utility — target allies
+        if spell.target == .singleAlly {
+            clearTerminal()
+            printLines(combat.displayStatus())
+            print("")
+            print("Choose target for \(spell.name):", color: .cyan)
+            print("")
+
+            var options: [String] = []
+            for char in party {
+                let status = char.isConscious ? "\(char.currentHP)/\(char.maxHP) HP" : "Unconscious"
+                options.append("\(char.name) (\(status))")
+            }
+            options.append("< Back")
+
+            showMenu(options)
+            menuHandler = { [weak self] choice in
+                if choice == options.count {
+                    self?.showSpellMenu(characterId: characterId)
+                    return
+                }
+                guard choice > 0 && choice <= self?.party.count ?? 0 else { return }
+                let targetId = self?.party[choice - 1].id ?? UUID()
+                self?.executeSpell(characterId: characterId, spell: spell, targetIds: [targetId])
+            }
+            return
+        }
+
+        // Single enemy target
+        let aliveMonsters = combat.encounter.aliveMonsters
+        if aliveMonsters.count == 1 {
+            executeSpell(characterId: characterId, spell: spell, targetIds: [aliveMonsters[0].id])
+            return
+        }
+
+        clearTerminal()
+        printLines(combat.displayStatus())
+        print("")
+        print("Choose target for \(spell.name):", color: .cyan)
+        print("")
+
+        var options = aliveMonsters.map { "\($0.name) (\($0.currentHP)/\($0.maxHP) HP)" }
+        options.append("< Back")
+
+        showMenu(options)
+        menuHandler = { [weak self] choice in
+            if choice == options.count {
+                self?.showSpellMenu(characterId: characterId)
+                return
+            }
+            guard choice > 0 && choice <= aliveMonsters.count else { return }
+            self?.executeSpell(characterId: characterId, spell: spell, targetIds: [aliveMonsters[choice - 1].id])
+        }
+    }
+
+    func executeSpell(characterId: UUID, spell: Spell, targetIds: [UUID]) {
+        guard let combat = currentCombat else { return }
+
+        guard let report = combat.castSpell(casterId: characterId, spell: spell, targetIds: targetIds) else { return }
+
+        clearTerminal()
+        printLines(combat.displayStatus())
+        print("")
+
+        displaySpellReport(report) { [weak self] in
+            combat.checkCombatEnd()
+            combat.nextTurn()
+            self?.runCombatTurn()
+        }
+    }
+
+    func displaySpellReport(_ report: SpellReport, completion: @escaping () -> Void) {
+        print("\(report.casterName) casts \(report.spellName)!", color: .cyan, bold: true)
+        print("")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self else { return }
+
+            switch report.spellType {
+            case .attack:
+                if let d20 = report.d20Roll {
+                    self.printLines(self.diceArt(d20), color: .yellow)
+                    let bonus = report.attackBonus ?? 0
+                    self.print("  d20 -> [\(d20)] +\(bonus) = \(report.totalAttack ?? 0) vs AC \(report.targetAC ?? 0)", color: .cyan)
+                    self.print("")
+                    if report.isCritical {
+                        self.print("  CRITICAL HIT!", color: .yellow, bold: true)
+                    } else if report.hits == true {
+                        self.print("  HIT!", color: .brightGreen, bold: true)
+                    } else {
+                        self.print("  Miss.", color: .dimGreen)
+                    }
+                }
+
+            case .savingThrow:
+                self.print("  Save DC: \(report.saveDC ?? 0)", color: .cyan)
+                for save in report.saveResults {
+                    self.print("  \(save.targetName): [\(save.roll)] +mod = \(save.total) — \(save.saved ? "SAVED" : "FAILED")",
+                               color: save.saved ? .dimGreen : .red)
+                }
+
+            case .autoHit:
+                if report.damageType == "sleep" {
+                    self.print("  Sleep power: \(report.totalDamage) HP", color: .cyan)
+                } else {
+                    self.print("  The missiles strike unerringly!", color: .brightGreen)
+                }
+
+            case .healing:
+                self.print("  Healed \(report.healAmount) HP!", color: .brightGreen, bold: true)
+                for status in report.targetStatuses {
+                    self.print("  \(status.name): \(status.currentHP)/\(status.maxHP) HP", color: .dimGreen)
+                }
+
+            case .buff:
+                self.print("  \(report.casterName) is empowered!", color: .brightGreen)
+
+            case .utility:
+                self.print("  \(report.targetName ?? "Ally") is stabilized!", color: .brightGreen)
+            }
+
+            self.print("")
+
+            // Show damage results
+            if report.totalDamage > 0 && report.spellType != .healing {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                    guard let self = self else { return }
+
+                    if !report.damageRolls.isEmpty {
+                        let total = report.damageRolls.reduce(0, +)
+                        self.printLines(self.diceArt(total), color: .red)
+                    }
+                    if let dt = report.damageType {
+                        self.print("  \(report.totalDamage) \(dt) damage!", color: .red, bold: true)
+                    } else {
+                        self.print("  \(report.totalDamage) damage!", color: .red, bold: true)
+                    }
+
+                    for defeated in report.targetsDefeated {
+                        self.print("  \(defeated) is defeated!", color: .yellow, bold: true)
+                    }
+                    for status in report.targetStatuses where !report.targetsDefeated.contains(status.name) {
+                        self.print("  \(status.name): \(status.currentHP)/\(status.maxHP) HP", color: .dimGreen)
+                    }
+                    self.print("")
+
+                    self.waitForContinue()
+                    self.inputHandler = { _ in completion() }
+                }
+            } else {
+                self.waitForContinue()
+                self.inputHandler = { _ in completion() }
+            }
+        }
+    }
+
+    // MARK: - Class Feature Actions
+
+    func useSecondWind(character: Character) {
+        guard let combat = currentCombat else { return }
+
+        clearTerminal()
+        printLines(combat.displayStatus())
+        print("")
+        print("\(character.name) uses Second Wind!", color: .brightGreen, bold: true)
+        print("")
+
+        let healRoll = Dice.rollSum(1, d: 10)
+        let healAmount = healRoll + character.level
+        character.heal(healAmount)
+        character.secondWindUsed = true
+
+        SoundManager.shared.playHeal()
+        printLines(diceArt(healRoll), color: .brightGreen)
+        print("  Healed \(healAmount) HP! (\(character.currentHP)/\(character.maxHP))", color: .brightGreen)
+        print("")
+
+        combat.checkCombatEnd()
+        combat.nextTurn()
+
+        waitForContinue()
+        inputHandler = { [weak self] _ in self?.runCombatTurn() }
+    }
+
+    func activateRage(character: Character) {
+        guard let combat = currentCombat else { return }
+
+        clearTerminal()
+        printLines(combat.displayStatus())
+        print("")
+        print("\(character.name) enters a RAGE!", color: .red, bold: true)
+        print("")
+        print("  +\(character.rageDamageBonus) bonus melee damage", color: .yellow)
+        print("  Resistance to physical damage", color: .yellow)
+        print("")
+
+        character.isRaging = true
+        character.rageUsesRemaining -= 1
+
+        combat.checkCombatEnd()
+        combat.nextTurn()
+
+        waitForContinue()
+        inputHandler = { [weak self] _ in self?.runCombatTurn() }
+    }
+
+    // MARK: - Death Saving Throws
+
+    func showDeathSavingThrow(character: Character) {
+        guard let combat = currentCombat else { return }
+
+        print("\(character.name) is unconscious! Death Saving Throw...", color: .red, bold: true)
+        print("")
+        print("  Successes: \(String(repeating: "●", count: character.deathSaveSuccesses))\(String(repeating: "○", count: 3 - character.deathSaveSuccesses))", color: .brightGreen)
+        print("  Failures:  \(String(repeating: "●", count: character.deathSaveFailures))\(String(repeating: "○", count: 3 - character.deathSaveFailures))", color: .red)
+        print("")
+
+        waitForContinue()
+        inputHandler = { [weak self] _ in
+            guard let self = self else { return }
+
+            let result = Dice.deathSave()
+            self.printLines(self.diceArt(result.roll), color: result.isSuccess ? .brightGreen : .red)
+            self.print("  Death Save: [\(result.roll)]", color: .cyan)
+            self.print("")
+
+            if result.isCriticalSuccess {
+                // Natural 20: revive with 1 HP
+                character.heal(1)
+                self.print("  NATURAL 20! \(character.name) revives with 1 HP!", color: .yellow, bold: true)
+                SoundManager.shared.playHeal()
+            } else if result.isCriticalFailure {
+                // Natural 1: 2 failures
+                character.deathSaveFailures += 2
+                self.print("  NATURAL 1! Two failures!", color: .red, bold: true)
+            } else if result.isSuccess {
+                character.deathSaveSuccesses += 1
+                self.print("  Success! (\(character.deathSaveSuccesses)/3)", color: .brightGreen)
+            } else {
+                character.deathSaveFailures += 1
+                self.print("  Failure! (\(character.deathSaveFailures)/3)", color: .red)
+            }
+
+            // Check outcomes
+            if character.deathSaveFailures >= 3 {
+                self.print("")
+                self.print("  \(character.name) has died!", color: .red, bold: true)
+            } else if character.deathSaveSuccesses >= 3 {
+                self.print("")
+                self.print("  \(character.name) is stabilized!", color: .brightGreen, bold: true)
+                character.deathSaveSuccesses = 0
+                character.deathSaveFailures = 0
+            }
+
+            self.print("")
+            combat.checkCombatEnd()
+            combat.nextTurn()
+
+            self.waitForContinue()
+            self.inputHandler = { [weak self] _ in self?.runCombatTurn() }
+        }
+    }
+
+    // MARK: - Level Up
+
+    func checkAndShowLevelUp(completion: @escaping () -> Void) {
+        // Find first party member who can level up
+        guard let character = party.first(where: { $0.canLevelUp }) else {
+            completion()
+            return
+        }
+        showLevelUpScreen(character: character) { [weak self] in
+            // Check if more characters need leveling
+            self?.checkAndShowLevelUp(completion: completion)
+        }
+    }
+
+    func showLevelUpScreen(character: Character, completion: @escaping () -> Void) {
+        let oldLevel = character.level
+        let newLevel = oldLevel + 1
+
+        character.level = newLevel
+
+        clearTerminal()
+        SoundManager.shared.playVictory()
+
+        printTitle("LEVEL UP!")
+        print("")
+        print("\(character.name) reaches Level \(newLevel)!", color: .yellow, bold: true)
+        print("")
+
+        // Roll hit die for HP
+        let hitDie = character.characterClass.hitDie
+        let conMod = character.abilityScores.modifier(for: .constitution)
+        let hpRoll = Dice.rollSum(1, d: hitDie)
+        let hpGain = max(1, hpRoll + conMod)
+        character.maxHP += hpGain
+        character.currentHP += hpGain
+
+        printLines(diceArt(hpRoll), color: .brightGreen)
+        print("  HP: +\(hpGain) (d\(hitDie)[\(hpRoll)] + \(conMod) CON) → \(character.maxHP) max HP", color: .brightGreen)
+        print("")
+
+        // Update spell slots
+        let newSlots = SpellCatalog.startingSlots(for: character.characterClass, level: newLevel)
+        if !newSlots.isEmpty {
+            character.spellSlots.level1Max = newSlots.level1Max
+            character.spellSlots.level1Current = newSlots.level1Max
+            character.spellSlots.level2Max = newSlots.level2Max
+            character.spellSlots.level2Current = newSlots.level2Max
+            if newSlots.level1Max > 0 {
+                print("  Spell Slots: \(newSlots.level1Max) L1\(newSlots.level2Max > 0 ? ", \(newSlots.level2Max) L2" : "")", color: .cyan)
+            }
+        }
+
+        // Learn new spells
+        let newSpells = SpellCatalog.spellsForLevelUp(characterClass: character.characterClass, newLevel: newLevel)
+        if !newSpells.isEmpty {
+            for spell in newSpells {
+                character.knownSpells.append(spell)
+                print("  New Spell: \(spell.name) — \(spell.description)", color: .cyan)
+            }
+        }
+
+        // Class feature announcements
+        switch character.characterClass {
+        case .fighter:
+            if newLevel == 2 {
+                print("  New Ability: Second Wind — heal 1d10+level once per short rest", color: .yellow)
+            }
+        case .rogue:
+            let dice = (newLevel + 1) / 2
+            if dice > (oldLevel + 1) / 2 {
+                print("  Sneak Attack: now \(dice)d6 bonus damage", color: .yellow)
+            }
+        case .barbarian:
+            character.rageUsesRemaining = character.rageMaxUses
+            if newLevel == 3 {
+                print("  Rage: now 3 uses per long rest", color: .yellow)
+            }
+        default:
+            break
+        }
+
+        print("")
+        logEvent("\(character.name) reached Level \(newLevel)! (+\(hpGain) HP)")
+
+        waitForContinue()
+        inputHandler = { _ in completion() }
     }
 
     func handleCombatVictory() {
@@ -1949,6 +2492,17 @@ class GameEngine: ObservableObject {
         // Track stats
         monstersSlain += combat.encounter.monsters.count
         combatsWon += 1
+
+        // Combat cleanup — end rage, hunter's mark, reset death saves
+        for char in party {
+            char.isRaging = false
+            char.huntersMarkActive = false
+            if !char.isConscious && char.deathSaveFailures < 3 {
+                // Stabilize unconscious survivors
+                char.deathSaveSuccesses = 0
+                char.deathSaveFailures = 0
+            }
+        }
 
         clearTerminal()
         printTitle("VICTORY!")
@@ -1965,6 +2519,10 @@ class GameEngine: ObservableObject {
 
         for char in party {
             char.experiencePoints += xpEach
+            let nextLevel = char.level + 1
+            if char.canLevelUp {
+                print("  \(char.name) has enough XP for Level \(nextLevel)!", color: .yellow)
+            }
         }
 
         // Mark room cleared
@@ -1983,11 +2541,21 @@ class GameEngine: ObservableObject {
 
         waitForContinue()
         inputHandler = { [weak self] _ in
-            self?.showExplorationView()
+            guard let self = self else { return }
+            // Check for level-ups before returning to exploration
+            self.checkAndShowLevelUp {
+                self.showExplorationView()
+            }
         }
     }
 
     func handleCombatDefeat() {
+        // Combat cleanup
+        for char in party {
+            char.isRaging = false
+            char.huntersMarkActive = false
+        }
+
         SoundManager.shared.stopMusic()
         SoundManager.shared.playDefeat()
         clearTerminal()

@@ -25,6 +25,7 @@
 		016 /* DMEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 116 /* DMEngine.swift */; };
 		017 /* ItemModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 117 /* ItemModels.swift */; };
 		018 /* ShopEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 118 /* ShopEngine.swift */; };
+		019 /* SpellModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 119 /* SpellModels.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -47,6 +48,7 @@
 		116 /* DMEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMEngine.swift; sourceTree = "<group>"; };
 		117 /* ItemModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemModels.swift; sourceTree = "<group>"; };
 		118 /* ShopEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShopEngine.swift; sourceTree = "<group>"; };
+		119 /* SpellModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpellModels.swift; sourceTree = "<group>"; };
 		D18E1F342F3DF78F0076A164 /* DnDTextRPG.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DnDTextRPG.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -111,6 +113,7 @@
 				112 /* SaveGameModels.swift */,
 				114 /* HallOfFame.swift */,
 				117 /* ItemModels.swift */,
+				119 /* SpellModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -221,6 +224,7 @@
 				016 /* DMEngine.swift in Sources */,
 				017 /* ItemModels.swift in Sources */,
 				018 /* ShopEngine.swift in Sources */,
+				019 /* SpellModels.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

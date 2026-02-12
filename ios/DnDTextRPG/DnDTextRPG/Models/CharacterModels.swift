@@ -364,11 +364,23 @@ class Character: ObservableObject, Identifiable, Codable {
     @Published var equippedArmor: Item?
     @Published var equippedShield: Item?
 
+    // Spellcasting
+    @Published var knownSpells: [Spell]
+    @Published var spellSlots: SpellSlots
+
+    // Class features
+    @Published var secondWindUsed: Bool      // Fighter: 1/short rest
+    @Published var rageUsesRemaining: Int    // Barbarian: uses per long rest
+    @Published var isRaging: Bool            // Barbarian: currently raging
+    @Published var huntersMarkActive: Bool   // Ranger: bonus damage active
+
     enum CodingKeys: String, CodingKey {
         case id, name, race, characterClass, level, abilityScores
         case currentHP, maxHP, tempHP, skillProficiencies, experiencePoints, gold
         case isConscious, deathSaveSuccesses, deathSaveFailures
         case inventory, equippedWeapon, equippedArmor, equippedShield
+        case knownSpells, spellSlots
+        case secondWindUsed, rageUsesRemaining, isRaging, huntersMarkActive
     }
 
     init(name: String, race: Race, characterClass: CharacterClass, abilityScores: AbilityScores) {
@@ -389,6 +401,16 @@ class Character: ObservableObject, Identifiable, Codable {
         self.equippedWeapon = nil
         self.equippedArmor = nil
         self.equippedShield = nil
+
+        // Spellcasting
+        self.knownSpells = SpellCatalog.startingSpells(for: characterClass)
+        self.spellSlots = SpellCatalog.startingSlots(for: characterClass, level: 1)
+
+        // Class features
+        self.secondWindUsed = false
+        self.rageUsesRemaining = characterClass == .barbarian ? 2 : 0
+        self.isRaging = false
+        self.huntersMarkActive = false
 
         // Calculate starting HP
         let conMod = abilityScores.modifier(for: .constitution)
@@ -418,6 +440,16 @@ class Character: ObservableObject, Identifiable, Codable {
         equippedWeapon = try? container.decodeIfPresent(Item.self, forKey: .equippedWeapon)
         equippedArmor = try? container.decodeIfPresent(Item.self, forKey: .equippedArmor)
         equippedShield = try? container.decodeIfPresent(Item.self, forKey: .equippedShield)
+
+        // Spellcasting (backward compatible)
+        knownSpells = (try? container.decodeIfPresent([Spell].self, forKey: .knownSpells)) ?? []
+        spellSlots = (try? container.decodeIfPresent(SpellSlots.self, forKey: .spellSlots)) ?? SpellSlots()
+
+        // Class features (backward compatible)
+        secondWindUsed = (try? container.decodeIfPresent(Bool.self, forKey: .secondWindUsed)) ?? false
+        rageUsesRemaining = (try? container.decodeIfPresent(Int.self, forKey: .rageUsesRemaining)) ?? 0
+        isRaging = (try? container.decodeIfPresent(Bool.self, forKey: .isRaging)) ?? false
+        huntersMarkActive = (try? container.decodeIfPresent(Bool.self, forKey: .huntersMarkActive)) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -441,6 +473,12 @@ class Character: ObservableObject, Identifiable, Codable {
         try container.encodeIfPresent(equippedWeapon, forKey: .equippedWeapon)
         try container.encodeIfPresent(equippedArmor, forKey: .equippedArmor)
         try container.encodeIfPresent(equippedShield, forKey: .equippedShield)
+        try container.encode(knownSpells, forKey: .knownSpells)
+        try container.encode(spellSlots, forKey: .spellSlots)
+        try container.encode(secondWindUsed, forKey: .secondWindUsed)
+        try container.encode(rageUsesRemaining, forKey: .rageUsesRemaining)
+        try container.encode(isRaging, forKey: .isRaging)
+        try container.encode(huntersMarkActive, forKey: .huntersMarkActive)
     }
 
     var proficiencyBonus: Int {
@@ -596,6 +634,63 @@ class Character: ObservableObject, Identifiable, Codable {
             equippedShield = nil
         }
     }
+
+    // MARK: - Spellcasting
+
+    var spellcastingAbility: Ability? {
+        switch characterClass {
+        case .wizard: return .intelligence
+        case .cleric, .ranger: return .wisdom
+        default: return nil
+        }
+    }
+
+    var spellAttackBonus: Int {
+        guard let ability = spellcastingAbility else { return 0 }
+        return abilityScores.modifier(for: ability) + proficiencyBonus
+    }
+
+    var spellSaveDC: Int {
+        guard let ability = spellcastingAbility else { return 10 }
+        return 8 + abilityScores.modifier(for: ability) + proficiencyBonus
+    }
+
+    func canCastSpell(_ spell: Spell) -> Bool {
+        if spell.level == .cantrip { return true }
+        return spellSlots.hasSlot(level: spell.level)
+    }
+
+    // MARK: - Level Up
+
+    static func xpForLevel(_ level: Int) -> Int {
+        switch level {
+        case 1: return 0
+        case 2: return 300
+        case 3: return 900
+        case 4: return 2700
+        case 5: return 6500
+        default: return 999999
+        }
+    }
+
+    var canLevelUp: Bool {
+        level < 5 && experiencePoints >= Character.xpForLevel(level + 1)
+    }
+
+    var sneakAttackDice: Int {
+        guard characterClass == .rogue else { return 0 }
+        return (level + 1) / 2  // 1 at L1, 1 at L2, 2 at L3, 2 at L4, 3 at L5
+    }
+
+    var rageMaxUses: Int {
+        level < 3 ? 2 : (level < 6 ? 3 : 4)
+    }
+
+    var rageDamageBonus: Int {
+        level < 9 ? 2 : 3
+    }
+
+    // MARK: - Display
 
     func displaySheet() -> [String] {
         var lines: [String] = []

@@ -492,7 +492,9 @@ class Combat: ObservableObject {
 
     private func isCombatantAlive(_ combatant: (id: UUID, name: String, isPlayer: Bool, initiative: Int)) -> Bool {
         if combatant.isPlayer {
-            return party.first { $0.id == combatant.id }?.isConscious ?? false
+            guard let char = party.first(where: { $0.id == combatant.id }) else { return false }
+            // Alive if conscious, or unconscious but still making death saves
+            return char.isConscious || (char.deathSaveFailures < 3 && char.deathSaveSuccesses < 3)
         } else {
             return encounter.monsters.first { $0.id == combatant.id }?.isAlive ?? false
         }
@@ -556,9 +558,30 @@ class Combat: ObservableObject {
                 ? Dice.rollCriticalDamage("\(baseDice)+\(damageMod)")
                 : Dice.rollDamage("\(baseDice)+\(damageMod)")
 
-            let damage = max(1, roll.total)
+            var damage = max(1, roll.total)
+            var allRolls = roll.rolls
+
+            // Rogue Sneak Attack: extra damage on every hit
+            if character.characterClass == .rogue && character.sneakAttackDice > 0 {
+                let sneakRolls = Dice.roll(character.sneakAttackDice, d: 6)
+                damage += sneakRolls.reduce(0, +)
+                allRolls.append(contentsOf: sneakRolls)
+            }
+
+            // Barbarian Rage: bonus melee damage
+            if character.isRaging && weaponStats?.isRanged != true {
+                damage += character.rageDamageBonus
+            }
+
+            // Ranger Hunter's Mark: bonus 1d6 damage
+            if character.huntersMarkActive {
+                let markRoll = Dice.d6()
+                damage += markRoll
+                allRolls.append(markRoll)
+            }
+
             totalDamage = damage
-            damageRolls = roll.rolls
+            damageRolls = allRolls
 
             monster.takeDamage(damage)
             encounter.monsters[monsterIndex] = monster
@@ -623,7 +646,13 @@ class Combat: ObservableObject {
                 ? Dice.rollCriticalDamage(monster.damage)
                 : Dice.rollDamage(monster.damage)
 
-            let damage = max(1, roll.total)
+            var damage = max(1, roll.total)
+
+            // Barbarian Rage: resistance to physical damage (half)
+            if character.isRaging {
+                damage = damage / 2
+            }
+
             totalDamage = damage
             damageRolls = roll.rolls
 
@@ -674,6 +703,203 @@ class Combat: ObservableObject {
         }
 
         return monsterAttack(monsterId: current.id, targetId: target.id)
+    }
+
+    // MARK: - Spell Casting
+
+    func castSpell(casterId: UUID, spell: Spell, targetIds: [UUID]) -> SpellReport? {
+        guard let caster = party.first(where: { $0.id == casterId }) else { return nil }
+
+        // Use spell slot
+        if spell.level != .cantrip {
+            caster.spellSlots.useSlot(level: spell.level)
+        }
+
+        let spellMod = caster.spellAttackBonus
+        let saveDC = caster.spellSaveDC
+        let casterAbilityMod: Int = {
+            guard let ability = caster.spellcastingAbility else { return 0 }
+            return caster.abilityScores.modifier(for: ability)
+        }()
+
+        var d20Roll: Int? = nil
+        var attackBonus: Int? = nil
+        var totalAttack: Int? = nil
+        var targetAC: Int? = nil
+        var hits: Bool? = nil
+        var isCritical = false
+        var saveResults: [(targetName: String, roll: Int, total: Int, saved: Bool)] = []
+        var damageRolls: [Int] = []
+        var totalDamage = 0
+        var healAmount = 0
+        var targetsHit: [String] = []
+        var targetsDefeated: [String] = []
+        var targetStatuses: [(name: String, currentHP: Int, maxHP: Int)] = []
+        var targetName: String? = nil
+
+        switch spell.spellType {
+        case .attack:
+            // Single target attack spell
+            guard let targetId = targetIds.first,
+                  let monsterIndex = encounter.monsters.firstIndex(where: { $0.id == targetId }) else { return nil }
+            var monster = encounter.monsters[monsterIndex]
+            targetName = monster.name
+
+            let attack = Dice.attackRoll(modifier: spellMod, targetAC: monster.armorClass)
+            d20Roll = attack.roll
+            attackBonus = spellMod
+            totalAttack = attack.total
+            targetAC = monster.armorClass
+            hits = attack.hits
+            isCritical = attack.isCritical
+
+            if attack.hits, let dmgDice = spell.damage {
+                let roll = attack.isCritical
+                    ? Dice.rollCriticalDamage(dmgDice)
+                    : Dice.rollDamage(dmgDice)
+                let damage = max(1, roll.total)
+                totalDamage = damage
+                damageRolls = roll.rolls
+                targetsHit.append(monster.name)
+
+                monster.takeDamage(damage)
+                encounter.monsters[monsterIndex] = monster
+                if !monster.isAlive { targetsDefeated.append(monster.name) }
+                targetStatuses.append((monster.name, monster.currentHP, monster.maxHP))
+            }
+
+        case .savingThrow:
+            // Can be single or all enemies
+            let targets: [(index: Int, monster: Monster)] = targetIds.compactMap { id in
+                guard let idx = encounter.monsters.firstIndex(where: { $0.id == id && $0.isAlive }) else { return nil }
+                return (idx, encounter.monsters[idx])
+            }
+
+            guard let dmgDice = spell.damage else { return nil }
+            let baseRoll = Dice.rollDamage(dmgDice)
+            let baseDamage = max(1, baseRoll.total)
+            damageRolls = baseRoll.rolls
+            totalDamage = 0
+
+            let saveAbility: Ability = {
+                switch spell.savingThrowAbility {
+                case "dexterity": return .dexterity
+                case "wisdom": return .wisdom
+                case "constitution": return .constitution
+                default: return .dexterity
+                }
+            }()
+
+            for (idx, var monster) in targets {
+                let saveMod = monster.armorClass > 14 ? 3 : 1  // Simple save estimate
+                let save = Dice.savingThrow(modifier: saveMod, dc: saveDC)
+                saveResults.append((monster.name, save.roll, save.total, save.success))
+
+                let damage: Int
+                if save.success && spell.halfDamageOnSave {
+                    damage = baseDamage / 2
+                } else if save.success {
+                    damage = 0
+                } else {
+                    damage = baseDamage
+                    targetsHit.append(monster.name)
+                }
+
+                if damage > 0 {
+                    totalDamage += damage
+                    monster.takeDamage(damage)
+                    encounter.monsters[idx] = monster
+                    if !monster.isAlive { targetsDefeated.append(monster.name) }
+                }
+                targetStatuses.append((monster.name, monster.currentHP, monster.maxHP))
+            }
+
+        case .autoHit:
+            // Magic Missile / Sleep
+            guard let targetId = targetIds.first,
+                  let monsterIndex = encounter.monsters.firstIndex(where: { $0.id == targetId }) else { return nil }
+            var monster = encounter.monsters[monsterIndex]
+            targetName = monster.name
+
+            if spell.damageType == "sleep" {
+                // Sleep: roll 5d8, if total >= monster HP, they "die" (knocked out)
+                let roll = Dice.rollDamage(spell.damage ?? "5d8")
+                damageRolls = roll.rolls
+                totalDamage = roll.total
+                if roll.total >= monster.currentHP {
+                    monster.takeDamage(monster.currentHP)
+                    encounter.monsters[monsterIndex] = monster
+                    targetsHit.append(monster.name)
+                    targetsDefeated.append(monster.name)
+                }
+                targetStatuses.append((monster.name, monster.currentHP, monster.maxHP))
+            } else {
+                // Magic Missile: auto-hit damage
+                let roll = Dice.rollDamage(spell.damage ?? "3d4+3")
+                let damage = max(1, roll.total)
+                totalDamage = damage
+                damageRolls = roll.rolls
+                targetsHit.append(monster.name)
+
+                monster.takeDamage(damage)
+                encounter.monsters[monsterIndex] = monster
+                if !monster.isAlive { targetsDefeated.append(monster.name) }
+                targetStatuses.append((monster.name, monster.currentHP, monster.maxHP))
+            }
+            hits = true
+
+        case .healing:
+            // Heal a party member
+            guard let targetId = targetIds.first,
+                  let target = party.first(where: { $0.id == targetId }) else { return nil }
+            targetName = target.name
+
+            let roll = Dice.rollDamage(spell.healAmount ?? "1d8")
+            var heal = max(1, roll.total)
+            if spell.usesCasterMod {
+                heal += casterAbilityMod
+            }
+            healAmount = heal
+            damageRolls = roll.rolls
+            target.heal(heal)
+            targetStatuses.append((target.name, target.currentHP, target.maxHP))
+
+        case .buff:
+            // Hunter's Mark
+            caster.huntersMarkActive = true
+            targetName = caster.name
+
+        case .utility:
+            // Spare the Dying
+            guard let targetId = targetIds.first,
+                  let target = party.first(where: { $0.id == targetId }) else { return nil }
+            targetName = target.name
+            target.deathSaveSuccesses = 3  // Stabilized
+        }
+
+        combatLog.append("\(caster.name) casts \(spell.name)")
+
+        return SpellReport(
+            casterName: caster.name,
+            spellName: spell.name,
+            spellType: spell.spellType,
+            d20Roll: d20Roll,
+            attackBonus: attackBonus,
+            totalAttack: totalAttack,
+            targetAC: targetAC,
+            hits: hits,
+            isCritical: isCritical,
+            saveDC: saveResults.isEmpty ? nil : saveDC,
+            saveResults: saveResults,
+            damageRolls: damageRolls,
+            totalDamage: totalDamage,
+            healAmount: healAmount,
+            damageType: spell.damageType,
+            targetName: targetName,
+            targetsHit: targetsHit,
+            targetsDefeated: targetsDefeated,
+            targetStatuses: targetStatuses
+        )
     }
 
     func displayStatus() -> [String] {
