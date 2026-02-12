@@ -348,15 +348,18 @@ struct Encounter: Codable {
         let bossType = MonsterType.boss(forLevel: level)
         var boss = Monster.create(bossType)
 
-        // Buff the boss
+        // Buff the boss (less at level 1 so it's survivable)
+        let hpMult = level == 1 ? 1.5 : 2.0
+        let acBonus = level == 1 ? 1 : 2
+        let atkBonus = level == 1 ? 1 : 2
         boss = Monster(
             id: UUID(),
             name: "The " + boss.name,
             type: boss.type,
-            currentHP: boss.maxHP * 2,
-            maxHP: boss.maxHP * 2,
-            armorClass: boss.armorClass + 2,
-            attackBonus: boss.attackBonus + 2,
+            currentHP: Int(Double(boss.maxHP) * hpMult),
+            maxHP: Int(Double(boss.maxHP) * hpMult),
+            armorClass: boss.armorClass + acBonus,
+            attackBonus: boss.attackBonus + atkBonus,
             damage: boss.damage,
             challengeRating: boss.challengeRating * 2,
             experiencePoints: boss.experiencePoints * 3
@@ -364,7 +367,7 @@ struct Encounter: Codable {
 
         var monsters = [boss]
 
-        // Add some minions
+        // Add some minions (not at level 1)
         if level >= 2 {
             let minionType = MonsterType.forLevel(max(1, level - 1)).randomElement()!
             monsters.append(Monster.create(minionType))

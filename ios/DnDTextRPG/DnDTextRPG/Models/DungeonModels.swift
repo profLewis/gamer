@@ -52,27 +52,73 @@ enum RoomType: String, CaseIterable, Codable {
     var description: String {
         switch self {
         case .entrance:
-            return "The dungeon entrance. Dim light filters in from outside."
+            return [
+                "The dungeon entrance. Dim light filters in from outside, casting long shadows on the damp stone walls.",
+                "Carved into the hillside, the entrance yawns like a mouth. Cold air rises from below, carrying the scent of earth and iron.",
+                "Crumbling steps descend into darkness. The last rays of daylight cling to the moss-covered threshold.",
+            ].randomElement()!
         case .corridor:
-            return "A narrow stone corridor stretches before you."
+            return [
+                "A narrow stone corridor stretches before you. Water drips from the ceiling, echoing in the stillness.",
+                "The walls press close here. Scratch marks score the stone — something clawed its way through.",
+                "Flickering torchlight reveals carvings on the walls: warnings in a language long forgotten.",
+                "The corridor bends ahead. A cold draft carries the faint sound of something breathing in the dark.",
+            ].randomElement()!
         case .chamber:
-            return "A large chamber with high ceilings."
+            return [
+                "A vast chamber opens before you. Pillars carved with serpentine figures hold up the vaulted ceiling.",
+                "The ceiling soars overhead, lost in shadow. Broken furniture and scattered bones hint at former inhabitants.",
+                "A large room with cracked flagstones. Faded tapestries hang in tatters from rusted hooks on the walls.",
+                "This wide chamber still echoes with the memory of voices. Soot marks on the walls suggest old campfires.",
+            ].randomElement()!
         case .treasure:
-            return "Gold glints in the torchlight. This room holds treasure!"
+            return [
+                "Gold glints in the torchlight! Coins and trinkets are scattered across a stone altar.",
+                "A glittering hoard catches your eye — someone, or something, has been collecting valuables here.",
+                "Jewels wink from crevices in the wall. A half-open chest sits in the corner, its lock long since broken.",
+            ].randomElement()!
         case .trap:
-            return "Something feels wrong about this room..."
+            return [
+                "Something feels wrong about this room. The floor tiles are unevenly spaced — deliberate, perhaps?",
+                "A faint clicking echoes from the walls. Tiny holes line the stonework at ankle height. Tread carefully.",
+                "The air here smells of old oil and copper. Grooves in the floor suggest something swings across this space.",
+            ].randomElement()!
         case .boss:
-            return "A massive chamber. You sense a powerful presence."
+            return [
+                "A massive chamber wreathed in shadow. The air thrums with malevolent energy. Something ancient waits here.",
+                "The room opens into a cathedral of darkness. Bones are arranged in patterns on the floor — an offering, or a warning.",
+                "A throne of blackened stone sits at the far end. The walls are scarred by claws and scorched by fire. You sense a powerful presence.",
+            ].randomElement()!
         case .shrine:
-            return "An ancient shrine stands in the center of the room."
+            return [
+                "An ancient shrine stands in the center, its stone basin filled with clear water that seems to glow faintly.",
+                "Candles that should have burned out long ago still flicker on the altar. The air feels calm and warm here.",
+                "A weathered statue of a forgotten deity watches over this room. Wildflowers grow impossibly from cracks in the stone floor.",
+            ].randomElement()!
         case .library:
-            return "Dusty tomes line the walls of this forgotten library."
+            return [
+                "Dusty tomes line the walls from floor to ceiling. A reading desk holds a book still open to a page on alchemy.",
+                "Scrolls and leather-bound volumes fill every shelf. The smell of old parchment and ink hangs heavy in the air.",
+                "Most books here have crumbled to dust, but a few remain intact — their spines glinting with gold leaf titles.",
+            ].randomElement()!
         case .armory:
-            return "Weapon racks and armor stands fill this room."
+            return [
+                "Weapon racks and armor stands fill this room. Most have been picked clean, but some items remain.",
+                "Swords, shields, and helms line the walls. A forge in the corner is cold but could be relit. A merchant has set up shop here.",
+                "Rows of rusted weapons stand at attention like silent soldiers. A workbench holds tools for repair and sharpening.",
+            ].randomElement()!
         case .prison:
-            return "Iron bars and chains suggest this was once a prison."
+            return [
+                "Iron bars and chains line the walls. Names and tallies are scratched into the stone — someone counted the days here.",
+                "Rows of cells stretch into the darkness. A skeletal hand reaches through the bars of one, frozen in its last plea.",
+                "The stench of old straw and despair clings to this place. Manacles hang open on the walls, their prisoners long gone.",
+            ].randomElement()!
         case .empty:
-            return "An unremarkable room, empty and silent."
+            return [
+                "An empty room, silent but for the drip of water. Cobwebs drape the corners like grey curtains.",
+                "This room seems to serve no purpose. Dust motes drift in the still air, undisturbed for ages.",
+                "Nothing of note here — just bare stone and silence. But the acoustics carry sounds from deeper in the dungeon.",
+            ].randomElement()!
         }
     }
 
@@ -162,32 +208,61 @@ class Room: Identifiable, ObservableObject, Codable {
     }
 
     static func generateName(for type: RoomType) -> String {
-        let adjectives = ["Dark", "Dusty", "Ancient", "Forgotten", "Crumbling", "Moss-covered", "Damp", "Cold", "Shadowy", "Torchlit"]
-        let adj = adjectives.randomElement()!
-
         switch type {
         case .entrance:
             return "Dungeon Entrance"
         case .corridor:
-            return "\(adj) Corridor"
+            return [
+                "Narrow Passage", "Winding Corridor", "Torchlit Passage",
+                "Echoing Tunnel", "Damp Corridor", "Crumbling Passage",
+                "Shadowy Hallway", "Stone Corridor", "Cobwebbed Passage",
+            ].randomElement()!
         case .chamber:
-            return "\(adj) Chamber"
+            return [
+                "Vaulted Chamber", "Pillared Hall", "Sunken Chamber",
+                "Dusty Great Room", "Ancient Hall", "Crumbling Chamber",
+                "Moss-Covered Hall", "Torchlit Chamber", "Echoing Hall",
+            ].randomElement()!
         case .treasure:
-            return "\(adj) Treasury"
+            return [
+                "Glittering Treasury", "Hidden Vault", "Treasure Alcove",
+                "Dragon's Hoard", "Forgotten Vault",
+            ].randomElement()!
         case .trap:
-            return "\(adj) Hall"
+            return [
+                "Suspicious Hall", "Clicking Chamber", "Trapped Passage",
+                "Pressure-Plate Room", "Grooved Corridor",
+            ].randomElement()!
         case .boss:
-            return "The Inner Sanctum"
+            return [
+                "The Inner Sanctum", "The Throne Room",
+                "The Heart of Darkness", "The Lair",
+            ].randomElement()!
         case .shrine:
-            return "\(adj) Shrine"
+            return [
+                "Moonlit Shrine", "Candlelit Altar", "Ancient Sanctuary",
+                "Blessed Shrine", "Forgotten Chapel",
+            ].randomElement()!
         case .library:
-            return "\(adj) Library"
+            return [
+                "Dusty Archives", "Forgotten Library", "Scholar's Study",
+                "Tome-Filled Chamber", "Ruined Scriptorium",
+            ].randomElement()!
         case .armory:
-            return "\(adj) Armory"
+            return [
+                "Rusted Armory", "Weapon Hall", "Iron Forge",
+                "Quartermaster's Store", "Blade-Lined Chamber",
+            ].randomElement()!
         case .prison:
-            return "\(adj) Prison"
+            return [
+                "The Iron Cells", "Abandoned Dungeon", "Bone-Strewn Prison",
+                "The Oubliette", "Shackled Chamber",
+            ].randomElement()!
         case .empty:
-            return "\(adj) Room"
+            return [
+                "Quiet Alcove", "Barren Chamber", "Silent Room",
+                "Hollow Chamber", "Vacant Hall",
+            ].randomElement()!
         }
     }
 
@@ -304,8 +379,13 @@ class Dungeon: ObservableObject, Codable {
                     if roomType != .entrance && roomType != .shrine {
                         if roomType == .boss {
                             newRoom.encounter = Encounter.generateBoss(level: level)
-                        } else if Bool.random() && roomType != .empty {
-                            newRoom.encounter = Encounter.generate(level: level, difficulty: .medium)
+                        } else if roomType != .empty {
+                            // Lower encounter rate and easier monsters at level 1
+                            let encounterChance = level == 1 ? 0.35 : 0.5
+                            let diff: EncounterDifficulty = level == 1 ? .easy : .medium
+                            if Double.random(in: 0...1) < encounterChance {
+                                newRoom.encounter = Encounter.generate(level: level, difficulty: diff)
+                            }
                         }
                     }
 
@@ -349,8 +429,14 @@ class Dungeon: ObservableObject, Codable {
 
             if room.roomType == .boss {
                 room.encounter = Encounter.generateBoss(level: level)
-            } else if room.roomType != .empty && Bool.random() {
-                room.encounter = Encounter.generate(level: level, difficulty: .medium)
+            } else if room.roomType != .empty {
+                let encounterChance = level == 1 ? 0.35 : 0.5
+                let diff: EncounterDifficulty = level == 1 ? .easy : .medium
+                guard Double.random(in: 0...1) < encounterChance else {
+                    room.encounter = nil
+                    continue
+                }
+                room.encounter = Encounter.generate(level: level, difficulty: diff)
             } else {
                 room.encounter = nil
             }
