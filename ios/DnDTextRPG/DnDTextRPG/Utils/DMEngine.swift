@@ -47,6 +47,76 @@ enum AIProvider: Int, CaseIterable {
     }
 }
 
+// MARK: - Age Rating
+
+enum AgeRating: Int, CaseIterable {
+    case age9 = 0
+    case age12 = 1
+    case age16 = 2
+    case adult = 3
+
+    var displayName: String {
+        switch self {
+        case .age9: return "Ages 9+"
+        case .age12: return "Ages 12+"
+        case .age16: return "Ages 16+"
+        case .adult: return "Adult"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .age9: return "Family-friendly, no gore or scary content"
+        case .age12: return "Mild peril, light fantasy violence"
+        case .age16: return "Fantasy violence, moderate peril"
+        case .adult: return "Unrestricted D&D themes"
+        }
+    }
+
+    var systemPromptRules: String {
+        switch self {
+        case .age9:
+            return """
+            STRICT CONTENT RULES (Ages 9+):
+            - Keep ALL content suitable for young children
+            - NO blood, gore, graphic violence, or body horror
+            - NO death descriptions — defeated monsters "flee" or "collapse" or "vanish"
+            - NO scary, disturbing, or nightmare-inducing imagery
+            - NO references to alcohol, drugs, romance, or adult themes
+            - Keep tone light, fun, and encouraging — like a friendly storybook adventure
+            - Monsters should be mischievous or silly rather than terrifying
+            - Use humor and wonder instead of fear and dread
+            """
+        case .age12:
+            return """
+            CONTENT RULES (Ages 12+):
+            - Keep content suitable for young teens
+            - Mild fantasy violence is OK (sword clashes, spell blasts)
+            - NO graphic gore, dismemberment, or torture
+            - NO heavy horror or disturbing psychological content
+            - NO references to drugs, alcohol abuse, or sexual content
+            - Light peril and spooky atmospheres are fine
+            - Keep defeated enemies falling or retreating, not gruesome deaths
+            """
+        case .age16:
+            return """
+            CONTENT RULES (Ages 16+):
+            - Standard fantasy violence is OK
+            - Moderate peril and darker themes are acceptable
+            - NO extremely graphic gore or torture scenes
+            - NO sexual content
+            - Dark atmosphere, undead horror, and dramatic tension are fine
+            """
+        case .adult:
+            return """
+            CONTENT RULES (Adult):
+            - Standard D&D fantasy content with no special restrictions
+            - Keep tone appropriate for a classic D&D adventure
+            """
+        }
+    }
+}
+
 // MARK: - DM Ad-lib Level
 
 enum DMAdLibLevel: Int, CaseIterable {
@@ -94,8 +164,12 @@ class DMEngine {
 
     var provider: AIProvider {
         get {
+            // Default to Google (Gemini) — free tier available
+            if UserDefaults.standard.object(forKey: "ai_provider") == nil {
+                return .google
+            }
             let raw = UserDefaults.standard.integer(forKey: "ai_provider")
-            return AIProvider(rawValue: raw) ?? .anthropic
+            return AIProvider(rawValue: raw) ?? .google
         }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: "ai_provider")
@@ -126,13 +200,21 @@ class DMEngine {
 
     var adLibLevel: DMAdLibLevel {
         get {
+            // Default to Off — user must enable in Settings
+            if UserDefaults.standard.object(forKey: "dm_adlib_level") == nil {
+                return .off
+            }
             let raw = UserDefaults.standard.integer(forKey: "dm_adlib_level")
-            return DMAdLibLevel(rawValue: raw) ?? .flavorOnly
+            return DMAdLibLevel(rawValue: raw) ?? .off
         }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: "dm_adlib_level")
         }
     }
+
+    // MARK: - Age Rating (hardcoded to 9+)
+
+    var ageRating: AgeRating { .age9 }
 
     // MARK: - Conversation
 
@@ -225,6 +307,8 @@ class DMEngine {
         You are a Dungeon Master for a D&D 5e text adventure. Be creative, atmospheric, \
         and immersive. Keep responses brief (2-4 sentences). Speak in second person ("You see...", \
         "You hear...").
+
+        \(ageRating.systemPromptRules)
 
         CURRENT LOCATION: \(context.roomName) (\(context.roomType))
         \(context.roomDescription)

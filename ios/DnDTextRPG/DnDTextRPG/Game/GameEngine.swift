@@ -471,10 +471,15 @@ class GameEngine: ObservableObject {
         print("  Provider: \(currentProvider.displayName)", color: .dimGreen)
         if dm.isConfigured {
             print("  API Key: configured", color: .brightGreen)
-            print("  The DM is ready! Use 'Ask the DM' while exploring.", color: .dimGreen)
+            print("  The DM is ready!", color: .dimGreen)
         } else {
             print("  API Key: not set", color: .yellow)
-            print("  Get a key at \(currentProvider.keyURL)", color: .dimGreen)
+            if currentProvider == .google {
+                print("  Gemini is FREE! Tap 'Set API Key'", color: .brightGreen)
+                print("  to get your free key.", color: .brightGreen)
+            } else {
+                print("  Get a key at \(currentProvider.keyURL)", color: .dimGreen)
+            }
         }
         print("")
 
@@ -667,11 +672,24 @@ class GameEngine: ObservableObject {
 
     private func promptAPIKey() {
         let provider = DMEngine.shared.provider
+        clearTerminal()
+        printTitle("Set API Key")
         print("")
         print("  Provider: \(provider.displayName)", color: .cyan)
-        print("  Get a key at \(provider.keyURL)", color: .dimGreen)
         print("")
-        promptText("Paste your \(provider.displayName) API key:")
+        if provider == .google {
+            print("  Gemini is FREE — no credit card", color: .brightGreen)
+            print("  needed! Just a Google account.", color: .brightGreen)
+            print("")
+            print("  1. Visit aistudio.google.com/apikey", color: .dimGreen)
+            print("  2. Sign in with Google", color: .dimGreen)
+            print("  3. Click 'Create API Key'", color: .dimGreen)
+            print("  4. Copy and paste it below", color: .dimGreen)
+        } else {
+            print("  Get a key at \(provider.keyURL)", color: .dimGreen)
+        }
+        print("")
+        promptText("Paste your API key:")
 
         inputHandler = { [weak self] key in
             let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
