@@ -750,40 +750,69 @@ class GameEngine: ObservableObject {
         }
     }
 
-    private func showVoiceChoiceMenu() {
+    private func showVoiceChoiceMenu(page: Int = 0) {
         clearTerminal()
         printTitle("Choose Voice")
 
         let speech = SpeechEngine.shared
-        let voices = speech.availableVoices()
-
-        // Show up to 8 best voices
-        let displayVoices = Array(voices.prefix(8))
+        let allVoices = speech.availableVoices()
         let currentId = speech.voiceIdentifier
 
-        for (i, v) in displayVoices.enumerated() {
+        if allVoices.isEmpty {
+            print("  No English voices available.", color: .red)
+            print("")
+            print("  Install voices in iOS Settings:", color: .dimGreen)
+            print("  Settings > Accessibility >", color: .dimGreen)
+            print("  Spoken Content > Voices > English", color: .dimGreen)
+            print("")
+            showMenu(["< Back"])
+            menuHandler = { [weak self] _ in self?.showVoiceSettings() }
+            return
+        }
+
+        // Tip if only standard voices
+        if !speech.hasHighQualityVoices {
+            print("  Tip: Download better voices in", color: .yellow)
+            print("  iOS Settings > Accessibility >", color: .yellow)
+            print("  Spoken Content > Voices > English", color: .yellow)
+            print("  (tap a voice to download Enhanced", color: .yellow)
+            print("  or Premium quality)", color: .yellow)
+            print("")
+        }
+
+        // Paginate — 6 voices per page
+        let perPage = 6
+        let totalPages = (allVoices.count + perPage - 1) / perPage
+        let startIdx = page * perPage
+        let endIdx = min(startIdx + perPage, allVoices.count)
+        let pageVoices = Array(allVoices[startIdx..<endIdx])
+
+        if totalPages > 1 {
+            print("  Page \(page + 1) of \(totalPages)", color: .dimGreen)
+            print("")
+        }
+
+        for v in pageVoices {
             let marker = v.identifier == currentId ? " <--" : ""
-            print("  \(i + 1). \(v.name) (\(v.language), \(v.quality))\(marker)",
+            print("  \(v.label)\(marker)",
                   color: v.identifier == currentId ? .brightGreen : .green)
         }
         print("")
 
-        var options = displayVoices.map { "\($0.name) (\($0.quality))" }
+        var options = pageVoices.map { $0.name }
+        if page < totalPages - 1 {
+            options.append("More Voices")
+        }
         options.append("< Back")
         showMenu(options)
 
         menuHandler = { [weak self] choice in
-            if choice <= displayVoices.count {
-                let selected = displayVoices[choice - 1]
+            if choice <= pageVoices.count {
+                let selected = pageVoices[choice - 1]
                 speech.voiceIdentifier = selected.identifier
-                self?.print("")
-                self?.print("Voice set to: \(selected.name)", color: .brightGreen)
-                speech.preview()
-                self?.print("")
-                self?.waitForContinue()
-                self?.inputHandler = { [weak self] _ in
-                    self?.showVoiceSettings()
-                }
+                self?.showVoicePreview()
+            } else if page < totalPages - 1 && choice == pageVoices.count + 1 {
+                self?.showVoiceChoiceMenu(page: page + 1)
             } else {
                 self?.showVoiceSettings()
             }

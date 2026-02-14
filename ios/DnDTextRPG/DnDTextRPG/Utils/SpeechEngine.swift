@@ -142,6 +142,7 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
         let name: String
         let language: String
         let quality: String
+        let label: String  // Friendly display label
     }
 
     /// Check if text-to-speech is available on this device
@@ -149,31 +150,58 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
         return !AVSpeechSynthesisVoice.speechVoices().isEmpty
     }
 
-    /// Returns English voices suitable for a DM, sorted by quality
-    func availableVoices() -> [VoiceOption] {
-        let voices = AVSpeechSynthesisVoice.speechVoices()
+    /// Whether any high-quality (enhanced/premium) voices are installed
+    var hasHighQualityVoices: Bool {
+        return AVSpeechSynthesisVoice.speechVoices()
             .filter { $0.language.hasPrefix("en") }
-            .sorted { v1, v2 in
-                // Sort by quality (enhanced/premium first), then name
-                if v1.quality.rawValue != v2.quality.rawValue {
-                    return v1.quality.rawValue > v2.quality.rawValue
-                }
-                return v1.name < v2.name
-            }
+            .contains { $0.quality.rawValue >= AVSpeechSynthesisVoiceQuality.enhanced.rawValue }
+    }
 
-        return voices.map { voice in
+    /// Returns curated English voices — best quality per name, with friendly labels
+    func availableVoices() -> [VoiceOption] {
+        let allVoices = AVSpeechSynthesisVoice.speechVoices()
+            .filter { $0.language.hasPrefix("en") }
+
+        // Deduplicate: keep only the highest quality version of each voice name
+        var bestByName: [String: AVSpeechSynthesisVoice] = [:]
+        for voice in allVoices {
+            if let existing = bestByName[voice.name] {
+                if voice.quality.rawValue > existing.quality.rawValue {
+                    bestByName[voice.name] = voice
+                }
+            } else {
+                bestByName[voice.name] = voice
+            }
+        }
+
+        let deduped = Array(bestByName.values).sorted { v1, v2 in
+            // Premium first, then enhanced, then standard
+            if v1.quality.rawValue != v2.quality.rawValue {
+                return v1.quality.rawValue > v2.quality.rawValue
+            }
+            return v1.name < v2.name
+        }
+
+        return deduped.map { voice in
             let qualityLabel: String
             switch voice.quality {
             case .premium: qualityLabel = "Premium"
             case .enhanced: qualityLabel = "Enhanced"
             default: qualityLabel = "Standard"
             }
-            let langCode = voice.language.suffix(2).uppercased()
+
+            let langCode = String(voice.language.suffix(2)).uppercased()
+            let accent = langCode == "GB" ? "British" : (langCode == "AU" ? "Australian" : (langCode == "IE" ? "Irish" : (langCode == "ZA" ? "South African" : (langCode == "IN" ? "Indian" : "American"))))
+
+            // Friendly label
+            let label = "\(voice.name) — \(accent), \(qualityLabel)"
+
             return VoiceOption(
                 identifier: voice.identifier,
                 name: voice.name,
                 language: langCode,
-                quality: qualityLabel
+                quality: qualityLabel,
+                label: label
             )
         }
     }
