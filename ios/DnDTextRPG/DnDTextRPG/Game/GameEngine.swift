@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Combine
+import AVFoundation
 
 class GameEngine: ObservableObject {
     // MARK: - Published Properties
@@ -35,6 +36,9 @@ class GameEngine: ObservableObject {
     // Save slot tracking
     private var activeSlotId: UUID?
     private var activeSlotName: String?
+
+    // DM chat log (persists across DM mode entries)
+    private var dmChatLog: [(isUser: Bool, text: String)] = []
 
     // Character creation state
     private var creatingCharacterIndex: Int = 0
@@ -492,12 +496,23 @@ class GameEngine: ObservableObject {
         print("  Current: \(fontSizeSetting.displayName)", color: .dimGreen)
         print("")
 
+        let speech = SpeechEngine.shared
+        print("DM VOICE:", color: .cyan, bold: true)
+        print("  Talking DM: \(speech.isEnabled ? "On" : "Off")", color: speech.isEnabled ? .brightGreen : .dimGreen)
+        if speech.isEnabled {
+            let voiceName = speech.voiceIdentifier.flatMap { id in
+                AVSpeechSynthesisVoice(identifier: id)?.name
+            } ?? "Default"
+            print("  Voice: \(voiceName)", color: .dimGreen)
+        }
+        print("")
+
         let currentAutosave = autosaveInterval
         print("AUTOSAVE:", color: .cyan, bold: true)
         print("  Current: \(currentAutosave.displayName)", color: .dimGreen)
         print("")
 
-        var options = ["AI Provider", "Set API Key", "DM Ad-lib Level", "Font Size", "Autosave"]
+        var options = ["AI Provider", "Set API Key", "DM Ad-lib Level", "DM Voice", "Font Size", "Autosave"]
         if dm.isConfigured {
             options.append("Clear API Key")
         }
@@ -513,10 +528,12 @@ class GameEngine: ObservableObject {
             } else if choice == 3 {
                 self?.showAdLibLevelMenu()
             } else if choice == 4 {
-                self?.showFontSizeMenu()
+                self?.showVoiceSettings()
             } else if choice == 5 {
+                self?.showFontSizeMenu()
+            } else if choice == 6 {
                 self?.showAutosaveMenu()
-            } else if dm.isConfigured && choice == 6 {
+            } else if dm.isConfigured && choice == 7 {
                 dm.apiKey = nil
                 self?.print("")
                 self?.print("API key cleared.", color: .yellow)
@@ -558,6 +575,7 @@ class GameEngine: ObservableObject {
                 let selected = AIProvider.allCases[choice - 1]
                 DMEngine.shared.provider = selected
                 DMEngine.shared.clearHistory()
+                self?.dmChatLog = []
                 self?.print("")
                 self?.print("AI Provider set to: \(selected.displayName)", color: .brightGreen)
                 if DMEngine.shared.apiKey(for: selected) == nil {
@@ -600,6 +618,252 @@ class GameEngine: ObservableObject {
                 }
             } else {
                 self?.showSettings()
+            }
+        }
+    }
+
+    func showVoiceSettings() {
+        clearTerminal()
+        printTitle("DM Voice")
+
+        let speech = SpeechEngine.shared
+
+        // Check if TTS is available at all
+        guard speech.isAvailable else {
+            print("  Text-to-speech is not available", color: .red)
+            print("  on this device.", color: .red)
+            print("")
+            print("  Make sure your device has voices", color: .dimGreen)
+            print("  installed in Settings > Accessibility", color: .dimGreen)
+            print("  > Spoken Content > Voices.", color: .dimGreen)
+            print("")
+            showMenu(["< Back"])
+            menuHandler = { [weak self] _ in self?.showSettings() }
+            return
+        }
+
+        // Check DM is active
+        if DMEngine.shared.adLibLevel == .off {
+            print("  DM Voice reads DM responses aloud.", color: .dimGreen)
+            print("")
+            print("  The DM is currently Off.", color: .yellow)
+            print("  Enable the DM first in", color: .yellow)
+            print("  'DM Ad-lib Level' settings.", color: .yellow)
+            print("")
+            showMenu(["< Back"])
+            menuHandler = { [weak self] _ in self?.showSettings() }
+            return
+        }
+
+        print("  The DM can read responses aloud", color: .dimGreen)
+        print("  using text-to-speech.", color: .dimGreen)
+        print("  (No API key needed — built into iOS)", color: .dimGreen)
+        print("")
+        print("  Talking DM: \(speech.isEnabled ? "On" : "Off")", color: speech.isEnabled ? .brightGreen : .yellow)
+
+        if speech.isEnabled {
+            let voiceName = speech.voiceIdentifier.flatMap { id in
+                AVSpeechSynthesisVoice(identifier: id)?.name
+            } ?? "Default (British)"
+            let speedLabel: String
+            if speech.rate < 0.4 { speedLabel = "Slow" }
+            else if speech.rate < 0.5 { speedLabel = "Normal" }
+            else { speedLabel = "Fast" }
+            let pitchLabel: String
+            if speech.pitch < 0.85 { pitchLabel = "Deep" }
+            else if speech.pitch < 1.05 { pitchLabel = "Normal" }
+            else { pitchLabel = "High" }
+            print("  Voice: \(voiceName)", color: .dimGreen)
+            print("  Speed: \(speedLabel)  Pitch: \(pitchLabel)", color: .dimGreen)
+        }
+        print("")
+
+        var options = [String]()
+        options.append(speech.isEnabled ? "Turn Off" : "Turn On")
+        if speech.isEnabled {
+            options.append("Choose Voice")
+            options.append("Speed")
+            options.append("Pitch")
+        }
+        options.append("Preview")
+        options.append("< Back")
+
+        showMenu(options)
+
+        menuHandler = { [weak self] choice in
+            if choice == 1 {
+                // Toggle on/off
+                speech.isEnabled = !speech.isEnabled
+                if speech.isEnabled {
+                    // Give immediate feedback
+                    speech.preview()
+                } else {
+                    speech.stop()
+                }
+                self?.showVoiceSettings()
+            } else if speech.isEnabled {
+                // On: choices are Toggle, Voice, Speed, Pitch, Preview, Back
+                if choice == 2 {
+                    self?.showVoiceChoiceMenu()
+                } else if choice == 3 {
+                    self?.showVoiceSpeedMenu()
+                } else if choice == 4 {
+                    self?.showVoicePitchMenu()
+                } else if choice == 5 {
+                    self?.showVoicePreview()
+                } else {
+                    self?.showSettings()
+                }
+            } else {
+                // Off: choices are Toggle, Preview, Back
+                if choice == 2 {
+                    self?.showVoicePreview()
+                } else {
+                    self?.showSettings()
+                }
+            }
+        }
+    }
+
+    private func showVoicePreview() {
+        let speech = SpeechEngine.shared
+        clearTerminal()
+        printTitle("DM Voice Preview")
+        print("")
+        print("  Speaking...", color: .cyan)
+        print("")
+        speech.preview()
+
+        showMenu(["Sounds Good", "Change Voice", "Change Speed", "Change Pitch"])
+
+        menuHandler = { [weak self] choice in
+            speech.stop()
+            if choice == 1 {
+                self?.showVoiceSettings()
+            } else if choice == 2 {
+                self?.showVoiceChoiceMenu()
+            } else if choice == 3 {
+                self?.showVoiceSpeedMenu()
+            } else if choice == 4 {
+                self?.showVoicePitchMenu()
+            }
+        }
+    }
+
+    private func showVoiceChoiceMenu() {
+        clearTerminal()
+        printTitle("Choose Voice")
+
+        let speech = SpeechEngine.shared
+        let voices = speech.availableVoices()
+
+        // Show up to 8 best voices
+        let displayVoices = Array(voices.prefix(8))
+        let currentId = speech.voiceIdentifier
+
+        for (i, v) in displayVoices.enumerated() {
+            let marker = v.identifier == currentId ? " <--" : ""
+            print("  \(i + 1). \(v.name) (\(v.language), \(v.quality))\(marker)",
+                  color: v.identifier == currentId ? .brightGreen : .green)
+        }
+        print("")
+
+        var options = displayVoices.map { "\($0.name) (\($0.quality))" }
+        options.append("< Back")
+        showMenu(options)
+
+        menuHandler = { [weak self] choice in
+            if choice <= displayVoices.count {
+                let selected = displayVoices[choice - 1]
+                speech.voiceIdentifier = selected.identifier
+                self?.print("")
+                self?.print("Voice set to: \(selected.name)", color: .brightGreen)
+                speech.preview()
+                self?.print("")
+                self?.waitForContinue()
+                self?.inputHandler = { [weak self] _ in
+                    self?.showVoiceSettings()
+                }
+            } else {
+                self?.showVoiceSettings()
+            }
+        }
+    }
+
+    private func showVoiceSpeedMenu() {
+        clearTerminal()
+        printTitle("Speech Speed")
+
+        let speech = SpeechEngine.shared
+        let speeds: [(name: String, value: Float)] = [
+            ("Slow", 0.35),
+            ("Normal", 0.45),
+            ("Fast", 0.55),
+            ("Very Fast", 0.65),
+        ]
+
+        for s in speeds {
+            let marker = abs(speech.rate - s.value) < 0.05 ? " <--" : ""
+            print("  \(s.name)\(marker)", color: abs(speech.rate - s.value) < 0.05 ? .brightGreen : .green)
+        }
+        print("")
+
+        var options = speeds.map { $0.name }
+        options.append("< Back")
+        showMenu(options)
+
+        menuHandler = { [weak self] choice in
+            if choice <= speeds.count {
+                speech.rate = speeds[choice - 1].value
+                self?.print("")
+                self?.print("Speed set to: \(speeds[choice - 1].name)", color: .brightGreen)
+                speech.preview()
+                self?.print("")
+                self?.waitForContinue()
+                self?.inputHandler = { [weak self] _ in
+                    self?.showVoiceSettings()
+                }
+            } else {
+                self?.showVoiceSettings()
+            }
+        }
+    }
+
+    private func showVoicePitchMenu() {
+        clearTerminal()
+        printTitle("Voice Pitch")
+
+        let speech = SpeechEngine.shared
+        let pitches: [(name: String, value: Float)] = [
+            ("Deep", 0.75),
+            ("Low", 0.85),
+            ("Normal", 1.0),
+            ("High", 1.15),
+        ]
+
+        for p in pitches {
+            let marker = abs(speech.pitch - p.value) < 0.08 ? " <--" : ""
+            print("  \(p.name)\(marker)", color: abs(speech.pitch - p.value) < 0.08 ? .brightGreen : .green)
+        }
+        print("")
+
+        var options = pitches.map { $0.name }
+        options.append("< Back")
+        showMenu(options)
+
+        menuHandler = { [weak self] choice in
+            if choice <= pitches.count {
+                speech.pitch = pitches[choice - 1].value
+                self?.print("")
+                self?.print("Pitch set to: \(pitches[choice - 1].name)", color: .brightGreen)
+                speech.preview()
+                self?.print("")
+                self?.waitForContinue()
+                self?.inputHandler = { [weak self] _ in
+                    self?.showVoiceSettings()
+                }
+            } else {
+                self?.showVoiceSettings()
             }
         }
     }
@@ -681,30 +945,124 @@ class GameEngine: ObservableObject {
             print("  Gemini is FREE — no credit card", color: .brightGreen)
             print("  needed! Just a Google account.", color: .brightGreen)
             print("")
-            print("  1. Visit aistudio.google.com/apikey", color: .dimGreen)
+            print("  1. Tap 'Get Free Key' below", color: .dimGreen)
             print("  2. Sign in with Google", color: .dimGreen)
             print("  3. Click 'Create API Key'", color: .dimGreen)
-            print("  4. Copy and paste it below", color: .dimGreen)
+            print("  4. Copy it, come back here", color: .dimGreen)
+            print("  5. Tap 'Paste from Clipboard'", color: .dimGreen)
         } else {
             print("  Get a key at \(provider.keyURL)", color: .dimGreen)
         }
         print("")
-        promptText("Paste your API key:")
 
-        inputHandler = { [weak self] key in
-            let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty {
+        var options = [String]()
+        if provider == .google {
+            options.append("Get Free Key")
+        } else {
+            options.append("Get Key")
+        }
+        options.append("Paste from Clipboard")
+        options.append("Type Key Manually")
+        options.append("< Back")
+
+        showMenu(options)
+
+        menuHandler = { [weak self] choice in
+            if choice == 1 {
+                // Open the provider's key URL in Safari
+                let urlString: String
+                switch provider {
+                case .google: urlString = "https://aistudio.google.com/apikey"
+                case .anthropic: urlString = "https://console.anthropic.com"
+                case .openAI: urlString = "https://platform.openai.com/api-keys"
+                }
+                if let url = URL(string: urlString) {
+                    DispatchQueue.main.async {
+                        UIApplication.shared.open(url)
+                    }
+                }
+                // When they come back, show the same menu again
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    self?.promptAPIKey()
+                }
+            } else if choice == 2 {
+                // Paste from clipboard
+                #if os(iOS)
+                if let clipText = UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !clipText.isEmpty {
+                    DMEngine.shared.apiKey = clipText
+                    self?.print("")
+                    self?.print("  Testing API key...", color: .dimGreen)
+                    self?.validateAndConfirmKey(provider: provider)
+                } else {
+                    self?.print("")
+                    self?.print("Clipboard is empty.", color: .yellow)
+                    self?.print("Copy your API key first.", color: .dimGreen)
+                    self?.print("")
+                    self?.waitForContinue()
+                    self?.inputHandler = { [weak self] _ in
+                        self?.promptAPIKey()
+                    }
+                }
+                #endif
+            } else if choice == 3 {
+                // Manual text entry
+                self?.print("")
+                self?.promptText("Paste your API key:")
+                self?.inputHandler = { [weak self] key in
+                    let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmed.isEmpty {
+                        self?.promptAPIKey()
+                        return
+                    }
+                    DMEngine.shared.apiKey = trimmed
+                    self?.print("")
+                    self?.print("  Testing API key...", color: .dimGreen)
+                    self?.validateAndConfirmKey(provider: provider)
+                }
+            } else {
                 self?.showSettings()
-                return
             }
-            DMEngine.shared.apiKey = trimmed
-            self?.print("")
-            self?.print("\(provider.displayName) API key saved!", color: .brightGreen)
-            self?.print("The AI Dungeon Master is now available while exploring.", color: .cyan)
-            self?.print("")
-            self?.waitForContinue()
-            self?.inputHandler = { [weak self] _ in
-                self?.showSettings()
+        }
+    }
+
+    private func validateAndConfirmKey(provider: AIProvider) {
+        DMEngine.shared.testAPIKey { [weak self] success, errorMessage in
+            DispatchQueue.main.async {
+                if success {
+                    self?.print("")
+                    self?.print("  Key verified!", color: .brightGreen)
+                    self?.print("  \(provider.displayName) is working.", color: .brightGreen)
+                    self?.print("  The AI Dungeon Master is now", color: .cyan)
+                    self?.print("  available.", color: .cyan)
+                    self?.print("")
+                    self?.waitForContinue()
+                    self?.inputHandler = { [weak self] _ in
+                        self?.showSettings()
+                    }
+                } else {
+                    self?.print("")
+                    self?.print("  Key test FAILED.", color: .red)
+                    if let msg = errorMessage {
+                        // Wrap long error messages
+                        let maxLen = 30
+                        var remaining = msg
+                        while !remaining.isEmpty {
+                            let line = String(remaining.prefix(maxLen))
+                            remaining = String(remaining.dropFirst(line.count))
+                            self?.print("  \(line)", color: .yellow)
+                        }
+                    }
+                    self?.print("")
+                    self?.print("  Check the key and try again.", color: .dimGreen)
+                    // Remove the bad key
+                    DMEngine.shared.apiKey = nil
+                    self?.print("")
+                    self?.waitForContinue()
+                    self?.inputHandler = { [weak self] _ in
+                        self?.promptAPIKey()
+                    }
+                }
             }
         }
     }
@@ -1237,6 +1595,7 @@ class GameEngine: ObservableObject {
         adventureLog = []
         roomsSinceLastSave = 0
         DMEngine.shared.clearHistory()
+        dmChatLog = []
         logEvent("Entered \(dungeon?.name ?? "the dungeon")")
         SoundManager.shared.startMusic(.exploration)
         showExplorationView()
@@ -1248,6 +1607,7 @@ class GameEngine: ObservableObject {
     func showExplorationView() {
         guard let dungeon = dungeon, let room = dungeon.currentRoom else { return }
 
+        SpeechEngine.shared.stop()
         clearTerminal()
 
         // Always show the map at the top
@@ -1257,7 +1617,7 @@ class GameEngine: ObservableObject {
 
         // Room description
         print(room.name, color: .brightGreen, bold: true)
-        print(room.roomType.description)
+        print(room.roomDescription)
 
         if !room.cleared && room.encounter != nil {
             print("You sense danger here...", color: .red)
@@ -1319,7 +1679,7 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("Rest"))
         actions.append { [weak self] in self?.rest() }
 
-        if DMEngine.shared.isConfigured && DMEngine.shared.adLibLevel != .off {
+        if DMEngine.shared.adLibLevel != .off {
             menuOpts.append(MenuOption("Ask the DM"))
             actions.append { [weak self] in self?.askTheDM() }
         }
@@ -1829,11 +2189,40 @@ class GameEngine: ObservableObject {
             print("")
         }
 
+        // Replay chat history
+        if !dmChatLog.isEmpty {
+            print("--- DM Conversation ---", color: .dimGreen)
+            print("")
+            for entry in dmChatLog {
+                if entry.isUser {
+                    print("> \(entry.text)", color: .cyan)
+                } else {
+                    print("DM:", color: .yellow, bold: true)
+                    for paragraph in entry.text.components(separatedBy: "\n") {
+                        let trimmed = paragraph.trimmingCharacters(in: .whitespaces)
+                        if trimmed.isEmpty { print("") }
+                        else { print("  \(trimmed)", color: .yellow) }
+                    }
+                }
+                print("")
+            }
+            print("--- End of History ---", color: .dimGreen)
+            print("")
+        }
+
         print("The DM awaits your question...", color: .cyan, bold: true)
-        print("(Type your question or action, or 'back' to return)", color: .dimGreen)
+        print("(Type your question or action, or tap Back)", color: .dimGreen)
         print("")
 
-        promptText(">")
+        dmPromptForQuestion()
+    }
+
+    private func dmPromptForQuestion() {
+        promptTextWithMenu(">", options: ["< Back"])
+
+        menuHandler = { [weak self] _ in
+            self?.showExplorationView()
+        }
 
         inputHandler = { [weak self] input in
             guard let self = self else { return }
@@ -1843,6 +2232,7 @@ class GameEngine: ObservableObject {
                 return
             }
 
+            self.dmChatLog.append((isUser: true, text: input))
             self.print("")
             self.print("The DM considers...", color: .dimGreen)
 
@@ -1852,21 +2242,17 @@ class GameEngine: ObservableObject {
                 DispatchQueue.main.async {
                     guard let self = self else { return }
 
-                    // Parse commands at level 3
                     let result = DMEngine.parseCommands(from: response)
                     let displayText = DMEngine.shared.adLibLevel == .full ? result.cleanText : response
 
+                    self.dmChatLog.append((isUser: false, text: displayText))
+
                     self.print("")
                     self.print("DM:", color: .yellow, bold: true)
-
-                    // Print each paragraph, let SwiftUI handle word wrap
                     for paragraph in displayText.components(separatedBy: "\n") {
                         let trimmed = paragraph.trimmingCharacters(in: .whitespaces)
-                        if trimmed.isEmpty {
-                            self.print("")
-                        } else {
-                            self.print("  \(trimmed)", color: .yellow)
-                        }
+                        if trimmed.isEmpty { self.print("") }
+                        else { self.print("  \(trimmed)", color: .yellow) }
                     }
 
                     // Apply DM commands at level 3
@@ -1874,83 +2260,29 @@ class GameEngine: ObservableObject {
                         if result.bonusGold > 0 {
                             self.party.first?.gold += result.bonusGold
                             self.print("")
-                            self.print("  [The DM grants \(result.bonusGold) gold!]", color: .yellow, bold: true)
+                            self.print("  [+\(result.bonusGold) gold!]", color: .yellow, bold: true)
                         }
                         if result.healAmount > 0 {
-                            for char in self.party {
-                                char.heal(result.healAmount)
-                            }
-                            self.print("  [The DM heals the party for \(result.healAmount) HP!]", color: .brightGreen, bold: true)
+                            for char in self.party { char.heal(result.healAmount) }
+                            self.print("  [+\(result.healAmount) HP!]", color: .brightGreen, bold: true)
                         }
                         for itemName in result.grantedItems {
-                            if let item = self.resolveItemByName(itemName) {
-                                if let char = self.party.first, char.canCarry(item) {
-                                    _ = char.addItem(item)
-                                    self.print("  [Received: \(item.name)!]", color: .brightGreen, bold: true)
-                                }
+                            if let item = self.resolveItemByName(itemName),
+                               let c = self.party.first, c.canCarry(item) {
+                                _ = c.addItem(item)
+                                self.print("  [Received: \(item.name)!]", color: .brightGreen, bold: true)
                             }
                         }
                     }
+
+                    // Speak the DM response
+                    SpeechEngine.shared.speak(displayText)
 
                     self.print("")
                     self.logEvent("Asked DM: \(input)")
 
-                    // Text prompt for follow-up, with Back button
                     self.print("(Type another question, or tap Back)", color: .dimGreen)
-                    self.promptTextWithMenu(">", options: ["< Back"])
-
-                    self.inputHandler = { [weak self] followUp in
-                        guard let self = self else { return }
-                        if followUp.lowercased() == "back" || followUp.isEmpty {
-                            self.showExplorationView()
-                            return
-                        }
-                        // Recurse — ask the DM again with new input
-                        self.print("")
-                        self.print("The DM considers...", color: .dimGreen)
-                        let ctx = self.buildDMContext()
-                        DMEngine.shared.ask(followUp, context: ctx) { [weak self] resp in
-                            DispatchQueue.main.async {
-                                guard let self = self else { return }
-                                let r = DMEngine.parseCommands(from: resp)
-                                let dt = DMEngine.shared.adLibLevel == .full ? r.cleanText : resp
-                                self.print("")
-                                self.print("DM:", color: .yellow, bold: true)
-                                for p in dt.components(separatedBy: "\n") {
-                                    let t = p.trimmingCharacters(in: .whitespaces)
-                                    if t.isEmpty { self.print("") }
-                                    else { self.print("  \(t)", color: .yellow) }
-                                }
-                                if DMEngine.shared.adLibLevel == .full {
-                                    if r.bonusGold > 0 {
-                                        self.party.first?.gold += r.bonusGold
-                                        self.print("  [+\(r.bonusGold) gold!]", color: .yellow, bold: true)
-                                    }
-                                    if r.healAmount > 0 {
-                                        for c in self.party { c.heal(r.healAmount) }
-                                        self.print("  [+\(r.healAmount) HP!]", color: .brightGreen, bold: true)
-                                    }
-                                    for itemName in r.grantedItems {
-                                        if let item = self.resolveItemByName(itemName),
-                                           let c = self.party.first, c.canCarry(item) {
-                                            _ = c.addItem(item)
-                                            self.print("  [Received: \(item.name)!]", color: .brightGreen, bold: true)
-                                        }
-                                    }
-                                }
-                                self.print("")
-                                self.logEvent("Asked DM: \(followUp)")
-                                self.print("(Type another question, or tap Back)", color: .dimGreen)
-                                self.promptTextWithMenu(">", options: ["< Back"])
-                                self.menuHandler = { [weak self] _ in
-                                    self?.showExplorationView()
-                                }
-                            }
-                        }
-                    }
-                    self.menuHandler = { [weak self] _ in
-                        self?.showExplorationView()
-                    }
+                    self.dmPromptForQuestion()
                 }
             }
         }
@@ -1997,6 +2329,9 @@ class GameEngine: ObservableObject {
                         if trimmed.isEmpty { self.print("") }
                         else { self.print("  \(trimmed)", color: .yellow) }
                     }
+                    // Speak the DM response
+                    SpeechEngine.shared.speak(response)
+
                     self.print("")
                     self.logEvent("Asked DM in combat: \(input)")
 
@@ -2027,6 +2362,33 @@ class GameEngine: ObservableObject {
             return "\(char.name): \(items.isEmpty ? "(empty)" : items.joined(separator: ", "))"
         }.joined(separator: "\n")
 
+        // Treasure in room
+        var treasureInfo: String? = nil
+        if let room = room, !room.treasure.isEmpty {
+            let items = room.treasure.map { "\($0.name) (worth \($0.value) gold)" }
+            treasureInfo = "Uncollected treasure: \(items.joined(separator: ", "))"
+        }
+
+        // Encounter info
+        var encounterInfo: String? = nil
+        if let room = room, let encounter = room.encounter {
+            if room.cleared {
+                let defeated = encounter.monsters.map { $0.name }
+                let grouped = Dictionary(grouping: defeated) { $0 }.map { "\($0.value.count) \($0.key)" }
+                encounterInfo = "Defeated enemies here: \(grouped.joined(separator: ", "))"
+            } else {
+                let alive = encounter.aliveMonsters.map { $0.name }
+                let grouped = Dictionary(grouping: alive) { $0 }.map { "\($0.value.count) \($0.key)" }
+                encounterInfo = "Enemies present: \(grouped.joined(separator: ", "))"
+            }
+        }
+
+        // Search history
+        var searchHistory: String? = nil
+        if let room = room, !room.searchedFor.isEmpty {
+            searchHistory = "Already searched for: \(room.searchedFor.joined(separator: ", "))"
+        }
+
         var combatSummary: String? = nil
         if let combat = combatContext {
             let aliveMonsters = combat.encounter.aliveMonsters
@@ -2044,13 +2406,16 @@ class GameEngine: ObservableObject {
         return DMContext(
             roomName: room?.name ?? "Unknown",
             roomType: room?.roomType.rawValue ?? "Unknown",
-            roomDescription: room?.roomType.description ?? "",
+            roomDescription: room?.roomDescription ?? "",
             exits: exitList,
             isCleared: room?.cleared ?? false,
             partyStatus: partyStatus,
             gameTime: formattedGameTime(),
             inventorySummary: inventorySummary,
             adLibLevel: DMEngine.shared.adLibLevel,
+            treasureInRoom: treasureInfo,
+            encounterInfo: encounterInfo,
+            searchHistory: searchHistory,
             combatSummary: combatSummary
         )
     }
@@ -2352,7 +2717,7 @@ class GameEngine: ObservableObject {
         }
 
         // Ask the DM (in combat)
-        if DMEngine.shared.isConfigured && DMEngine.shared.adLibLevel != .off {
+        if DMEngine.shared.adLibLevel != .off {
             options.append("Ask the DM")
             actions.append { [weak self] in
                 self?.askTheDMInCombat(characterId: characterId)

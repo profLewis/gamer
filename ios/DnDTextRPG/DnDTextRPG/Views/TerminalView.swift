@@ -35,10 +35,26 @@ struct TerminalView: View {
                         .padding(.vertical, 4)
                     }
                     .onChange(of: gameEngine.terminalLines.count) { _ in
-                        if let lastLine = gameEngine.terminalLines.last {
-                            withAnimation {
-                                scrollProxy.scrollTo(lastLine.id, anchor: .bottom)
+                        scrollToBottom(scrollProxy)
+                    }
+                    .onChange(of: isInputFocused) { focused in
+                        if focused {
+                            // Re-scroll after keyboard appears
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                scrollToBottom(scrollProxy)
                             }
+                        }
+                    }
+                    .onChange(of: gameEngine.awaitingTextInput) { awaiting in
+                        if awaiting {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                scrollToBottom(scrollProxy)
+                            }
+                        }
+                    }
+                    .onChange(of: gameEngine.currentMenuOptions.count) { _ in
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            scrollToBottom(scrollProxy)
                         }
                     }
                 }
@@ -118,6 +134,14 @@ struct TerminalView: View {
         }
         .onAppear {
             gameEngine.startGame()
+        }
+    }
+
+    private func scrollToBottom(_ proxy: ScrollViewProxy) {
+        if let lastLine = gameEngine.terminalLines.last {
+            withAnimation {
+                proxy.scrollTo(lastLine.id, anchor: .bottom)
+            }
         }
     }
 

@@ -26,6 +26,7 @@
 		017 /* ItemModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 117 /* ItemModels.swift */; };
 		018 /* ShopEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 118 /* ShopEngine.swift */; };
 		019 /* SpellModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 119 /* SpellModels.swift */; };
+		020 /* SpeechEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120 /* SpeechEngine.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -49,6 +50,7 @@
 		117 /* ItemModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemModels.swift; sourceTree = "<group>"; };
 		118 /* ShopEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShopEngine.swift; sourceTree = "<group>"; };
 		119 /* SpellModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpellModels.swift; sourceTree = "<group>"; };
+		120 /* SpeechEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechEngine.swift; sourceTree = "<group>"; };
 		D18E1F342F3DF78F0076A164 /* DnDTextRPG.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DnDTextRPG.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -134,6 +136,7 @@
 				113 /* SoundManager.swift */,
 				115 /* GameCenterManager.swift */,
 				116 /* DMEngine.swift */,
+				120 /* SpeechEngine.swift */,
 			);
 			path = Utils;
 			sourceTree = "<group>";
@@ -225,6 +228,7 @@
 				017 /* ItemModels.swift in Sources */,
 				018 /* ShopEngine.swift in Sources */,
 				019 /* SpellModels.swift in Sources */,
+				020 /* SpeechEngine.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

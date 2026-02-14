@@ -147,6 +147,7 @@ class Room: Identifiable, ObservableObject, Codable {
     let y: Int
     @Published var roomType: RoomType
     @Published var name: String
+    @Published var roomDescription: String  // Stored on creation, consistent forever
     @Published var exits: [Direction: Int]  // Direction -> Room ID
     @Published var visited: Bool
     @Published var cleared: Bool
@@ -156,7 +157,7 @@ class Room: Identifiable, ObservableObject, Codable {
     @Published var searchedFor: Set<String>  // Things already searched for
 
     enum CodingKeys: String, CodingKey {
-        case id, x, y, roomType, name, exits, visited, cleared
+        case id, x, y, roomType, name, roomDescription, exits, visited, cleared
         case encounter, treasure, isLocked, searchedFor
     }
 
@@ -166,6 +167,7 @@ class Room: Identifiable, ObservableObject, Codable {
         self.y = y
         self.roomType = type
         self.name = Room.generateName(for: type)
+        self.roomDescription = type.description  // Pick once, store forever
         self.exits = [:]
         self.visited = false
         self.cleared = false
@@ -180,8 +182,11 @@ class Room: Identifiable, ObservableObject, Codable {
         id = try container.decode(Int.self, forKey: .id)
         x = try container.decode(Int.self, forKey: .x)
         y = try container.decode(Int.self, forKey: .y)
-        roomType = try container.decode(RoomType.self, forKey: .roomType)
+        let decodedType = try container.decode(RoomType.self, forKey: .roomType)
+        roomType = decodedType
         name = try container.decode(String.self, forKey: .name)
+        // Backwards-compatible: old saves won't have roomDescription
+        roomDescription = try container.decodeIfPresent(String.self, forKey: .roomDescription) ?? decodedType.description
         exits = try container.decode([Direction: Int].self, forKey: .exits)
         visited = try container.decode(Bool.self, forKey: .visited)
         cleared = try container.decode(Bool.self, forKey: .cleared)
@@ -198,6 +203,7 @@ class Room: Identifiable, ObservableObject, Codable {
         try container.encode(y, forKey: .y)
         try container.encode(roomType, forKey: .roomType)
         try container.encode(name, forKey: .name)
+        try container.encode(roomDescription, forKey: .roomDescription)
         try container.encode(exits, forKey: .exits)
         try container.encode(visited, forKey: .visited)
         try container.encode(cleared, forKey: .cleared)
@@ -267,7 +273,7 @@ class Room: Identifiable, ObservableObject, Codable {
     }
 
     func describe() -> String {
-        var desc = "\(name)\n\n\(roomType.description)"
+        var desc = "\(name)\n\n\(roomDescription)"
 
         if !cleared && encounter != nil {
             desc += "\n\nYou sense danger here..."
