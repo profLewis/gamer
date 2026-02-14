@@ -81,10 +81,12 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
     // MARK: - Delegate
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        SoundManager.shared.unduckMusic()
         restoreAudioSession()
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        SoundManager.shared.unduckMusic()
         restoreAudioSession()
     }
 
@@ -105,6 +107,7 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
         }
 
         configureAudioSession()
+        SoundManager.shared.duckMusic()
 
         // Clean text — remove markdown-style formatting
         let cleaned = text
@@ -133,6 +136,7 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
+        SoundManager.shared.unduckMusic()
     }
 
     // MARK: - Available Voices

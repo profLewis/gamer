@@ -330,6 +330,15 @@ class SoundManager {
         musicNode.stop()
     }
 
+    /// Lower music volume for speech, restore after
+    func duckMusic() {
+        musicNode.volume = 0.05
+    }
+
+    func unduckMusic() {
+        musicNode.volume = 0.4
+    }
+
     private func melodyFor(_ type: MusicType) -> [MusicStep] {
         switch type {
         case .menu:
