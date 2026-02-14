@@ -17,6 +17,7 @@ class GameEngine: ObservableObject {
     @Published var directionExits: [Direction: Bool] = [:]  // direction -> enabled
     @Published var awaitingTextInput: Bool = false
     @Published var awaitingContinue: Bool = false
+    @Published var isHoldingScreen: Bool = false
     @Published var gameState: GameState = .mainMenu
 
     // MARK: - Game State
@@ -2151,6 +2152,10 @@ class GameEngine: ObservableObject {
                 return
             }
 
+            let isLongRest = choice == 2
+            let repeats = isLongRest ? 3 : 1
+            let header = isLongRest ? "Taking a long rest..." : "Resting..."
+
             self.clearTerminal()
 
             // Show map at top
@@ -2160,51 +2165,191 @@ class GameEngine: ObservableObject {
             }
 
             SoundManager.shared.stopMusic()
-            SoundManager.shared.playHeal()
-            if choice == 1 {
-                self.advanceTime(60)
-                self.print("Your party takes a short rest...", color: .cyan)
-                var healed: [String] = []
-                for char in self.party {
-                    let healAmount = Dice.rollSum(1, d: char.characterClass.hitDie)
-                    char.heal(healAmount)
-                    self.print("\(char.name) recovers \(healAmount) HP")
-                    healed.append("\(char.name) +\(healAmount)HP")
-                    // Short rest: reset Second Wind
-                    if char.characterClass == .fighter {
-                        char.secondWindUsed = false
-                    }
-                }
-                self.logEvent("Short rest — \(healed.joined(separator: ", "))")
-            } else {
-                self.advanceTime(480)
-                self.print("Your party takes a long rest...", color: .cyan)
-                for char in self.party {
-                    char.heal(char.maxHP)
-                    self.print("\(char.name) fully recovers!")
-                    // Long rest: restore spell slots
-                    if !char.spellSlots.isEmpty {
-                        char.spellSlots.restoreAll()
-                        self.print("  Spell slots restored", color: .cyan)
-                    }
-                    // Long rest: reset class features
-                    char.secondWindUsed = false
-                    if char.characterClass == .barbarian {
-                        char.rageUsesRemaining = char.rageMaxUses
-                        char.isRaging = false
-                        self.print("  Rage uses restored", color: .cyan)
-                    }
-                    char.huntersMarkActive = false
-                }
-                self.logEvent("Long rest — party fully recovered")
+            self.print(header, color: .cyan, bold: true)
+            if self.isHoldingScreen {
+                self.print("(Hold screen to rest faster)", color: .dimGreen)
             }
+            self.print("")
 
-            self.waitForContinue()
-            self.inputHandler = { [weak self] _ in
-                SoundManager.shared.startMusic(.exploration)
-                self?.showExplorationView()
+            self.playHourglassAnimation(repeats: repeats) { [weak self] in
+                guard let self = self else { return }
+
+                SoundManager.shared.playHeal()
+
+                if !isLongRest {
+                    self.advanceTime(60)
+                    self.print("")
+                    self.print("Short rest complete!", color: .cyan, bold: true)
+                    self.print("")
+                    var healed: [String] = []
+                    for char in self.party {
+                        let healAmount = Dice.rollSum(1, d: char.characterClass.hitDie)
+                        char.heal(healAmount)
+                        self.print("\(char.name) recovers \(healAmount) HP")
+                        healed.append("\(char.name) +\(healAmount)HP")
+                        if char.characterClass == .fighter {
+                            char.secondWindUsed = false
+                        }
+                    }
+                    self.logEvent("Short rest — \(healed.joined(separator: ", "))")
+                } else {
+                    self.advanceTime(480)
+                    self.print("")
+                    self.print("Long rest complete!", color: .cyan, bold: true)
+                    self.print("")
+                    for char in self.party {
+                        char.heal(char.maxHP)
+                        self.print("\(char.name) fully recovers!")
+                        if !char.spellSlots.isEmpty {
+                            char.spellSlots.restoreAll()
+                            self.print("  Spell slots restored", color: .cyan)
+                        }
+                        char.secondWindUsed = false
+                        if char.characterClass == .barbarian {
+                            char.rageUsesRemaining = char.rageMaxUses
+                            char.isRaging = false
+                            self.print("  Rage uses restored", color: .cyan)
+                        }
+                        char.huntersMarkActive = false
+                    }
+                    self.logEvent("Long rest — party fully recovered")
+                }
+
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    SoundManager.shared.startMusic(.exploration)
+                    self?.showExplorationView()
+                }
             }
         }
+    }
+
+    // MARK: - Hourglass Animation
+
+    private var hourglassFrames: [[String]] {
+        [
+            // Frame 0: full top
+            [
+                "    _____",
+                "   |     |",
+                "   |:::::|",
+                "   |:::::|",
+                "   |:::::|",
+                "    \\:::/",
+                "     \\:/",
+                "     /:\\",
+                "    /   \\",
+                "   |     |",
+                "   |     |",
+                "   |     |",
+                "   |_____|",
+            ],
+            // Frame 1: sand flowing
+            [
+                "    _____",
+                "   |     |",
+                "   |:::: |",
+                "   | ::: |",
+                "   |  :  |",
+                "    \\ : /",
+                "     \\:/",
+                "     /:\\",
+                "    / . \\",
+                "   |     |",
+                "   |  .  |",
+                "   | ... |",
+                "   |_____|",
+            ],
+            // Frame 2: half and half
+            [
+                "    _____",
+                "   |     |",
+                "   | ::: |",
+                "   |  :  |",
+                "   |     |",
+                "    \\ : /",
+                "     \\:/",
+                "     /:\\",
+                "    / . \\",
+                "   | . . |",
+                "   |:::::|",
+                "   |:::::|",
+                "   |_____|",
+            ],
+            // Frame 3: mostly bottom
+            [
+                "    _____",
+                "   |     |",
+                "   |  .  |",
+                "   |     |",
+                "   |     |",
+                "    \\ : /",
+                "     \\:/",
+                "     /:\\",
+                "    /:::\\",
+                "   |:::::|",
+                "   |:::::|",
+                "   |:::::|",
+                "   |_____|",
+            ],
+            // Frame 4: all bottom
+            [
+                "    _____",
+                "   |     |",
+                "   |     |",
+                "   |     |",
+                "   |     |",
+                "    \\   /",
+                "     \\ /",
+                "     / \\",
+                "    /:::\\",
+                "   |:::::|",
+                "   |:::::|",
+                "   |:::::|",
+                "   |_____|",
+            ],
+        ]
+    }
+
+    private func playHourglassAnimation(repeats: Int, completion: @escaping () -> Void) {
+        let frames = hourglassFrames
+        let frameCount = frames.count
+        let totalFrames = frameCount * repeats
+
+        // Track how many lines the hourglass uses so we can replace them
+        let linesPerFrame = frames[0].count
+
+        // Print initial frame
+        printLines(frames[0], color: .yellow)
+
+        var frameIndex = 1
+
+        func showNextFrame() {
+            if frameIndex >= totalFrames {
+                completion()
+                return
+            }
+
+            let delay = isHoldingScreen ? 0.15 : 0.8
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self = self else { return }
+
+                // Remove previous frame lines
+                let count = self.terminalLines.count
+                if count >= linesPerFrame {
+                    self.terminalLines.removeSubrange((count - linesPerFrame)..<count)
+                }
+
+                // Draw new frame
+                let frame = frames[frameIndex % frameCount]
+                self.printLines(frame, color: .yellow)
+
+                frameIndex += 1
+                showNextFrame()
+            }
+        }
+
+        showNextFrame()
     }
 
     // MARK: - AI Dungeon Master
@@ -2605,6 +2750,20 @@ class GameEngine: ObservableObject {
                 print("\(group.type.rawValue) appears!", color: .red)
             }
             print("  \(group.type.description)", color: .dimGreen)
+            print("")
+        }
+
+        // Boss difficulty flavor text
+        if let bossDiff = encounter.bossDifficulty {
+            let bossName = encounter.monsters.first?.name ?? "The boss"
+            switch bossDiff {
+            case .easy:
+                print("\(bossName) looks weakened...", color: .yellow)
+            case .medium:
+                break
+            case .hard:
+                print("\(bossName) looks fearsome!", color: .red, bold: true)
+            }
             print("")
         }
         print("Rolling initiative...")

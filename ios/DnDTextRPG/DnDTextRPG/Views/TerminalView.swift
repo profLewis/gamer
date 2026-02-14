@@ -59,6 +59,9 @@ struct TerminalView: View {
                     }
                 }
                 .background(terminalBackground)
+                .onLongPressGesture(minimumDuration: 999, pressing: { pressing in
+                    gameEngine.isHoldingScreen = pressing
+                }, perform: {})
 
                 // Direction pad + menu buttons
                 if !gameEngine.directionExits.isEmpty || !gameEngine.currentMenuOptions.isEmpty {

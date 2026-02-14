@@ -371,6 +371,7 @@ enum EncounterDifficulty: String, Codable {
 struct Encounter: Codable {
     var monsters: [Monster]
     let difficulty: EncounterDifficulty
+    var bossDifficulty: BossDifficulty? = nil
 
     var isDefeated: Bool {
         monsters.allSatisfy { !$0.isAlive }
@@ -416,14 +417,37 @@ struct Encounter: Codable {
         return Encounter(monsters: monsters, difficulty: difficulty)
     }
 
+    enum BossDifficulty: String, Codable {
+        case easy, medium, hard
+    }
+
     static func generateBoss(level: Int) -> Encounter {
         let bossType = MonsterType.boss(forLevel: level)
         var boss = Monster.create(bossType)
 
-        // Buff the boss (less at level 1 so it's survivable)
-        let hpMult = level == 1 ? 1.5 : 2.0
-        let acBonus = level == 1 ? 1 : 2
-        let atkBonus = level == 1 ? 1 : 2
+        // Roll boss difficulty: 20% easy, 50% medium, 30% hard
+        let roll = Int.random(in: 1...10)
+        let bossDiff: BossDifficulty
+        let hpMult: Double
+        let acBonus: Int
+        let atkBonus: Int
+        if roll <= 2 {
+            bossDiff = .easy
+            hpMult = level == 1 ? 1.3 : 1.5
+            acBonus = level == 1 ? 0 : 1
+            atkBonus = level == 1 ? 1 : 1
+        } else if roll <= 7 {
+            bossDiff = .medium
+            hpMult = level == 1 ? 1.8 : 2.0
+            acBonus = level == 1 ? 1 : 2
+            atkBonus = level == 1 ? 1 : 2
+        } else {
+            bossDiff = .hard
+            hpMult = level == 1 ? 2.2 : 2.5
+            acBonus = level == 1 ? 2 : 3
+            atkBonus = level == 1 ? 2 : 2
+        }
+
         boss = Monster(
             id: UUID(),
             name: "The " + boss.name,
@@ -448,7 +472,7 @@ struct Encounter: Codable {
             }
         }
 
-        return Encounter(monsters: monsters, difficulty: .deadly)
+        return Encounter(monsters: monsters, difficulty: .deadly, bossDifficulty: bossDiff)
     }
 
     private static func xpThreshold(for level: Int, difficulty: EncounterDifficulty) -> Int {
