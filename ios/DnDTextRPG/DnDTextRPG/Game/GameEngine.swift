@@ -1664,7 +1664,8 @@ class GameEngine: ObservableObject {
         print("")
 
         // Party status
-        print(formattedGameTime(), color: .dimGreen)
+        let levelStr = dungeon.level > 0 ? "Level \(dungeon.level) | " : ""
+        print("\(levelStr)\(formattedGameTime())", color: .dimGreen)
         for char in party {
             print(" \(char.name) \(char.currentHP)/\(char.maxHP) HP", color: .cyan)
         }
@@ -2070,7 +2071,10 @@ class GameEngine: ObservableObject {
         print("")
         printTitle("Party Status")
 
-        // Game time
+        // Game time & level
+        if let level = dungeon?.level {
+            print("  Dungeon Level: \(level)", color: .cyan)
+        }
         print("  Time: \(formattedGameTime())", color: .cyan)
         let roomsVisited = dungeon?.rooms.values.filter { $0.visited }.count ?? 0
         let totalRooms = dungeon?.rooms.count ?? 0
@@ -3533,7 +3537,10 @@ class GameEngine: ObservableObject {
         SoundManager.shared.playVictory()
         clearTerminal()
         gameState = .victory
-        logEvent("DUNGEON CONQUERED! \(dungeon?.name ?? "The dungeon") has been cleared!")
+
+        let currentLevel = dungeon?.level ?? 1
+        let dungeonName = dungeon?.name ?? "The dungeon"
+        logEvent("DUNGEON CONQUERED! \(dungeonName) has been cleared!")
 
         // Record in Hall of Fame + Game Center
         recordHallOfFame(outcome: .victory)
@@ -3543,7 +3550,7 @@ class GameEngine: ObservableObject {
         printTitle("DUNGEON CONQUERED!")
         print("You have defeated the dungeon boss!", color: .brightGreen, bold: true)
         print("")
-        print("Your party emerges victorious from \(dungeon?.name ?? "the dungeon")!")
+        print("Your party emerges victorious from \(dungeonName)!")
         print("")
 
         var totalGold = 0
@@ -3562,9 +3569,49 @@ class GameEngine: ObservableObject {
         print("Recorded in the Hall of Fame!", color: .yellow)
         print("")
 
-        waitForContinue()
-        inputHandler = { [weak self] _ in
-            self?.resetGame()
+        let nextLevel = currentLevel + 1
+        showMenu(["Continue to Level \(nextLevel)", "End Adventure"])
+
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                self.continueToNextLevel(nextLevel, dungeonName: dungeonName)
+            } else {
+                self.resetGame()
+            }
+        }
+    }
+
+    private func continueToNextLevel(_ nextLevel: Int, dungeonName: String) {
+        clearTerminal()
+
+        // Level up any eligible characters before proceeding
+        checkAndShowLevelUp { [weak self] in
+            guard let self = self else { return }
+
+            // Generate new dungeon at next level, keeping the party
+            self.dungeon = Dungeon(name: dungeonName, level: nextLevel)
+            self.currentCombat = nil
+            self.roomsSinceLastSave = 0
+            DMEngine.shared.clearHistory()
+            self.dmChatLog = []
+
+            self.gameState = .exploring
+            self.logEvent("Descended to Level \(nextLevel) of \(dungeonName)")
+
+            self.clearTerminal()
+            self.printTitle("LEVEL \(nextLevel)")
+            self.print("Your party descends deeper into \(dungeonName)...", color: .cyan)
+            self.print("")
+            self.print("The air grows heavier. Stronger foes await.", color: .dimGreen)
+            self.print("")
+
+            SoundManager.shared.startMusic(.exploration)
+
+            self.waitForContinue()
+            self.inputHandler = { [weak self] _ in
+                self?.showExplorationView()
+            }
         }
     }
 
