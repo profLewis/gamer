@@ -45,18 +45,28 @@ struct Monster: Identifiable, Codable {
 }
 
 enum MonsterType: String, CaseIterable, Codable {
+    // Starter (CR 0 / CR 1/8)
+    case giantRat = "Giant Rat"
+    case kobold = "Kobold"
+    case stirge = "Stirge"
+    case giantBat = "Giant Bat"
+    case crawlingClaw = "Crawling Claw"
+    // Low (CR 1/4)
     case goblin = "Goblin"
     case skeleton = "Skeleton"
     case zombie = "Zombie"
+    case wolf = "Wolf"
+    // Mid-low (CR 1/2)
     case orc = "Orc"
     case hobgoblin = "Hobgoblin"
     case gnoll = "Gnoll"
+    // Mid (CR 1-2)
     case bugbear = "Bugbear"
-    case ogre = "Ogre"
-    case troll = "Troll"
-    case owlbear = "Owlbear"
     case giantSpider = "Giant Spider"
-    case wolf = "Wolf"
+    case ogre = "Ogre"
+    // High (CR 3+)
+    case owlbear = "Owlbear"
+    case troll = "Troll"
     case demogorgon = "Demogorgon"
     case mindFlayer = "Mind Flayer"
     case vecna = "Vecna"
@@ -72,26 +82,41 @@ enum MonsterType: String, CaseIterable, Codable {
 
     var stats: Stats {
         switch self {
+        // Starter monsters — very weak, manageable for a solo level 1
+        case .giantRat:
+            return Stats(hp: 4, ac: 10, attackBonus: 2, damage: "1d4", cr: 0.125, xp: 25)
+        case .kobold:
+            return Stats(hp: 5, ac: 12, attackBonus: 3, damage: "1d4+1", cr: 0.125, xp: 25)
+        case .stirge:
+            return Stats(hp: 2, ac: 13, attackBonus: 3, damage: "1d4+1", cr: 0.125, xp: 25)
+        case .giantBat:
+            return Stats(hp: 4, ac: 11, attackBonus: 2, damage: "1d4+1", cr: 0.125, xp: 25)
+        case .crawlingClaw:
+            return Stats(hp: 3, ac: 12, attackBonus: 3, damage: "1d4+1", cr: 0, xp: 10)
+        // Standard low-level monsters
         case .goblin:
-            return Stats(hp: 7, ac: 15, attackBonus: 4, damage: "1d6+2", cr: 0.25, xp: 50)
+            return Stats(hp: 7, ac: 13, attackBonus: 3, damage: "1d6+1", cr: 0.25, xp: 50)
         case .skeleton:
-            return Stats(hp: 13, ac: 13, attackBonus: 4, damage: "1d6+2", cr: 0.25, xp: 50)
+            return Stats(hp: 10, ac: 12, attackBonus: 3, damage: "1d6+1", cr: 0.25, xp: 50)
         case .zombie:
-            return Stats(hp: 22, ac: 8, attackBonus: 3, damage: "1d6+1", cr: 0.25, xp: 50)
+            return Stats(hp: 15, ac: 8, attackBonus: 2, damage: "1d6", cr: 0.25, xp: 50)
         case .wolf:
-            return Stats(hp: 11, ac: 13, attackBonus: 4, damage: "2d4+2", cr: 0.25, xp: 50)
+            return Stats(hp: 8, ac: 12, attackBonus: 3, damage: "1d6+1", cr: 0.25, xp: 50)
+        // Mid-low
         case .orc:
             return Stats(hp: 15, ac: 13, attackBonus: 5, damage: "1d12+3", cr: 0.5, xp: 100)
         case .hobgoblin:
-            return Stats(hp: 11, ac: 18, attackBonus: 3, damage: "1d8+1", cr: 0.5, xp: 100)
-        case .giantSpider:
-            return Stats(hp: 26, ac: 14, attackBonus: 5, damage: "1d8+3", cr: 1, xp: 200)
+            return Stats(hp: 11, ac: 16, attackBonus: 3, damage: "1d8+1", cr: 0.5, xp: 100)
         case .gnoll:
-            return Stats(hp: 22, ac: 15, attackBonus: 4, damage: "1d8+2", cr: 0.5, xp: 100)
+            return Stats(hp: 18, ac: 14, attackBonus: 4, damage: "1d8+2", cr: 0.5, xp: 100)
+        // Mid
         case .bugbear:
             return Stats(hp: 27, ac: 16, attackBonus: 4, damage: "2d8+2", cr: 1, xp: 200)
+        case .giantSpider:
+            return Stats(hp: 26, ac: 14, attackBonus: 5, damage: "1d8+3", cr: 1, xp: 200)
         case .ogre:
             return Stats(hp: 59, ac: 11, attackBonus: 6, damage: "2d8+4", cr: 2, xp: 450)
+        // High
         case .owlbear:
             return Stats(hp: 59, ac: 13, attackBonus: 7, damage: "2d8+5", cr: 3, xp: 700)
         case .troll:
@@ -107,6 +132,11 @@ enum MonsterType: String, CaseIterable, Codable {
 
     var description: String {
         switch self {
+        case .giantRat: return "An oversized rat with beady red eyes and yellow teeth."
+        case .kobold: return "A small, scaly reptilian creature clutching a tiny spear."
+        case .stirge: return "A mosquito-like creature the size of a cat, buzzing hungrily."
+        case .giantBat: return "A bat with a wingspan wider than your arms, swooping silently."
+        case .crawlingClaw: return "A severed hand skittering across the floor on its fingertips."
         case .goblin: return "A small, vicious humanoid with sharp teeth."
         case .skeleton: return "Animated bones wielding rusty weapons."
         case .zombie: return "A shambling corpse with rotting flesh."
@@ -127,6 +157,45 @@ enum MonsterType: String, CaseIterable, Codable {
 
     var asciiArt: [String] {
         switch self {
+        case .giantRat:
+            return [
+                "      /\\  /\\",
+                "     (  ..  )",
+                "      )    (",
+                "     /||||||\\",
+                "    ~ ~~~~~  ~",
+            ]
+        case .kobold:
+            return [
+                "     /\\",
+                "    (><)",
+                "    /|\\",
+                "   / | \\",
+                "     A",
+            ]
+        case .stirge:
+            return [
+                "    _/\\_",
+                "   / () \\",
+                "   \\    /",
+                "    |--|",
+                "     \\/",
+            ]
+        case .giantBat:
+            return [
+                "  _/    \\_",
+                " / \\(oo)/ \\",
+                "/   \\  /   \\",
+                "     \\/",
+            ]
+        case .crawlingClaw:
+            return [
+                "    ___",
+                "   /   \\",
+                "  | === |",
+                "   \\|||/",
+                "    \\|/",
+            ]
         case .goblin:
             return [
                 "    /\\",
@@ -252,14 +321,16 @@ enum MonsterType: String, CaseIterable, Codable {
     static func forLevel(_ level: Int) -> [MonsterType] {
         switch level {
         case 1:
-            return [.goblin, .skeleton, .zombie, .wolf]
+            return [.giantRat, .kobold, .stirge, .giantBat, .crawlingClaw]
         case 2:
-            return [.goblin, .skeleton, .orc, .hobgoblin, .gnoll]
+            return [.goblin, .skeleton, .zombie, .wolf, .kobold]
         case 3:
-            return [.orc, .hobgoblin, .bugbear, .giantSpider, .gnoll]
+            return [.goblin, .skeleton, .orc, .hobgoblin, .gnoll]
         case 4:
-            return [.bugbear, .giantSpider, .ogre, .demogorgon]
+            return [.orc, .hobgoblin, .bugbear, .giantSpider, .gnoll]
         case 5:
+            return [.bugbear, .giantSpider, .ogre, .demogorgon]
+        case 6:
             return [.ogre, .owlbear, .troll, .demogorgon, .mindFlayer]
         default:
             return [.troll, .demogorgon, .mindFlayer]
@@ -268,11 +339,12 @@ enum MonsterType: String, CaseIterable, Codable {
 
     static func boss(forLevel level: Int) -> MonsterType {
         switch level {
-        case 1: return .bugbear
-        case 2: return .ogre
-        case 3: return .owlbear
-        case 4: return .demogorgon
-        case 5: return .mindFlayer
+        case 1: return .goblin  // A goblin chieftain — tough but beatable
+        case 2: return .bugbear
+        case 3: return .ogre
+        case 4: return .owlbear
+        case 5: return .demogorgon
+        case 6: return .mindFlayer
         default: return .vecna
         }
     }
