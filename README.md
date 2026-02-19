@@ -2,10 +2,6 @@
 
 A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS, with AI Dungeon Master support.
 
-<p align="center">
-  <img src="data/splash.jpg" width="300" alt="D&D Text Adventure splash screen">
-</p>
-
 ## Features
 
 ### Character Creation
