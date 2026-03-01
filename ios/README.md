@@ -38,14 +38,19 @@ A native iOS port of the D&D 5e Text-Based RPG, featuring a terminal-style inter
 - Monsters with flavourful attack descriptions
 
 ### AI Dungeon Master
-- **Apple On-Device AI**: Works on iPhone 16+ / iOS 26+ with no API key or account needed. Runs locally and offline. May refuse some queries — try rephrasing if needed.
-- **Cloud providers**: Claude (Anthropic), GPT (OpenAI), Gemini (Google — free, requires ages 18+ for API key)
+
+The game has three tiers of DM intelligence:
+
+1. **Basic DM** (all devices) — A simple built-in DM with canned responses. Works everywhere but gives only very basic room descriptions and atmosphere. No AI, no setup needed.
+2. **Apple On-Device AI** (iPhone 16 / iPad with M-series or newer, running iOS 26+) — A much smarter DM that runs entirely on your device. No API key, no account, works offline. May refuse some queries — try rephrasing if needed.
+3. **Cloud AI** (any device) — The best DM experience. Supports Claude (Anthropic), GPT (OpenAI), and **Gemini (Google — free if you have a Google account, ages 18+)**. Requires an API key configured in Settings.
+
+Features:
 - 4 DM ad-lib levels: Off, Flavor Only, Moderate, Full
 - At Moderate+, the DM can grant items, award gold, heal, deal damage, move the party, and teleport
 - DM actions update the game world in real time (map, inventory, HP)
 - ASCII art responses when asked to draw or show something
 - **DM Voice**: Text-to-speech reads DM responses aloud (built into iOS)
-- Falls back to a built-in simple DM on older devices without AI
 
 ### Save System
 - Multiple save slots with automatic breakpoints (up to 5 per slot)

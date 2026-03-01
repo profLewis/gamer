@@ -640,6 +640,24 @@ struct TreasureItem: Codable {
             items.append(TreasureItem(name: "Potion of Healing", value: 50, type: .potion))
         }
 
+        // Maybe an equipment item (higher chance at higher levels)
+        if Dice.d20() >= (level >= 2 ? 14 : 17) {
+            let itemPool: [(String, Int)]
+            if level >= 3 {
+                itemPool = [("Longsword", 15), ("Rapier", 25), ("Scale Mail", 50),
+                            ("Studded Leather", 45), ("Shield", 10), ("Longbow", 50),
+                            ("Potion of Greater Healing", 150)]
+            } else if level >= 2 {
+                itemPool = [("Shortsword", 10), ("Longsword", 15), ("Leather Armor", 10),
+                            ("Shield", 10), ("Dagger", 2), ("Mace", 5)]
+            } else {
+                itemPool = [("Dagger", 2), ("Shortsword", 10), ("Leather Armor", 10),
+                            ("Shield", 10), ("Torch", 1), ("Rope", 1)]
+            }
+            let pick = itemPool.randomElement()!
+            items.append(TreasureItem(name: pick.0, value: pick.1, type: .item))
+        }
+
         return items
     }
 }

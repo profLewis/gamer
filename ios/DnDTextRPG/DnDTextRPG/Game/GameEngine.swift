@@ -364,17 +364,27 @@ class GameEngine: ObservableObject {
         print("  - Defeat all enemies to win!")
         print("")
         print("DUNGEON MASTER:", color: .cyan, bold: true)
-        print("  - The AI DM adds story & atmosphere")
-        print("  - On newer devices, Apple on-device")
-        print("    AI works with no setup needed")
-        print("  - For a smarter DM, connect a cloud")
-        print("    AI in Settings > AI Provider")
-        print("  - Google Gemini is free (ages 18+)")
-        print("  - Apple AI can be fussy with some")
-        print("    queries — try rephrasing if it")
+        print("  The DM has three intelligence tiers:")
+        print("")
+        print("  Basic DM (all devices):", color: .yellow)
+        print("  - Very simple canned responses")
+        print("  - No AI needed, works everywhere")
+        print("")
+        print("  Apple On-Device AI:", color: .brightGreen)
+        print("  - iPhone 16+ / iPad M-series, iOS 26+")
+        print("  - Much smarter, runs locally/offline")
+        print("  - No account or API key needed")
+        print("  - Can be fussy — rephrase if it")
         print("    won't answer (e.g. 'tell me the")
         print("    contents of my pack' not 'whats")
         print("    in my pack')")
+        print("")
+        print("  Cloud AI (best experience):", color: .brightGreen)
+        print("  - Works on any device")
+        print("  - Google Gemini is FREE (ages 18+)")
+        print("  - Also supports Claude & OpenAI")
+        print("  - Set up in Settings > AI Provider")
+        print("")
         print("  - Adjust level: Settings > DM Ad-lib")
         print("")
         print("LICENSE:", color: .cyan, bold: true)
@@ -698,12 +708,24 @@ class GameEngine: ObservableObject {
                 self?.print("")
                 self?.print("AI Provider set to: \(selected.displayName)", color: .brightGreen)
                 if dm.apiKey(for: selected) == nil {
-                    self?.print("You'll need to set an API key for this provider.", color: .yellow)
+                    self?.print("")
+                    self?.print("You need an API key for \(selected.displayName).", color: .yellow)
+                    if selected == .google {
+                        self?.print("Gemini is free — just needs a Google", color: .brightGreen)
+                        self?.print("account (you must be 18+).", color: .brightGreen)
+                    }
+                    self?.print("")
+                    self?.print("Tap 'Set API Key' in Settings to", color: .dimGreen)
+                    self?.print("get your key and paste it in.", color: .dimGreen)
                 }
                 self?.print("")
                 self?.waitForContinue()
                 self?.inputHandler = { [weak self] _ in
-                    self?.showSettings()
+                    if dm.apiKey(for: selected) == nil {
+                        self?.promptAPIKey()
+                    } else {
+                        self?.showSettings()
+                    }
                 }
             } else {
                 self?.showSettings()
@@ -2394,9 +2416,33 @@ class GameEngine: ObservableObject {
 
         if total >= 15 {
             print("You found something!", color: .brightGreen)
-            if Dice.d6() >= 4 {
+            let findRoll = Dice.d6()
+            if findRoll >= 5 {
+                // Find an item
+                let level = dungeon?.level ?? 1
+                let itemPool: [String]
+                if level >= 3 {
+                    itemPool = ["Potion of Greater Healing", "Rapier", "Longsword", "Shield", "Studded Leather"]
+                } else if level >= 2 {
+                    itemPool = ["Potion of Healing", "Shortsword", "Dagger", "Leather Armor", "Shield"]
+                } else {
+                    itemPool = ["Potion of Healing", "Dagger", "Torch", "Rope"]
+                }
+                let itemName = itemPool.randomElement()!
+                if let item = resolveItemByName(itemName) {
+                    if let carrier = party.first(where: { $0.canCarry(item) }) {
+                        _ = carrier.addItem(item)
+                        print("  Hidden stash: \(item.name)!", color: .brightGreen)
+                        print("  \(carrier.name) takes it.", color: .dimGreen)
+                        logEvent("Found \(item.name) in a hidden stash")
+                    } else {
+                        print("  You find a \(item.name), but no one can carry it!", color: .yellow)
+                        logEvent("Found \(item.name) but couldn't carry it")
+                    }
+                }
+            } else if findRoll >= 3 {
                 let gold = Dice.rollSum(2, d: 6) * 5
-                print("Hidden stash: \(gold) gold pieces!")
+                print("  Hidden stash: \(gold) gold pieces!", color: .yellow)
                 party.first?.gold += gold
                 logEvent("Found \(gold) gold in a hidden stash")
             } else {
@@ -2435,19 +2481,36 @@ class GameEngine: ObservableObject {
         var totalGold = 0
         var itemNames: [String] = []
         for treasureItem in room.treasure {
-            if treasureItem.type == .potion {
-                let potion = ItemCatalog.healingPotion()
-                // Give to first party member who can carry it
-                if let carrier = party.first(where: { $0.canCarry(potion) }) {
-                    _ = carrier.addItem(potion)
-                    print("  \(treasureItem.name) — \(carrier.name) takes it!", color: .brightGreen)
+            if treasureItem.type == .gold {
+                totalGold += treasureItem.value
+                print("  \(treasureItem.name)", color: .yellow)
+            } else if treasureItem.type == .gem {
+                // Gems are inventory items that can be sold later
+                let gemItem = Item(id: UUID(), name: treasureItem.name,
+                                   description: "A precious gem worth \(treasureItem.value)gp.",
+                                   type: .gem, weight: 0.1, value: treasureItem.value,
+                                   weaponStats: nil, armorStats: nil, potionStats: nil)
+                if let carrier = party.first(where: { $0.canCarry(gemItem) }) {
+                    _ = carrier.addItem(gemItem)
+                    print("  \(treasureItem.name) (\(treasureItem.value)gp) — \(carrier.name) takes it!", color: .brightGreen)
                 } else {
                     totalGold += treasureItem.value
                     print("  \(treasureItem.name) — too heavy, sold for \(treasureItem.value)gp")
                 }
-            } else {
-                totalGold += treasureItem.value
-                print("  \(treasureItem.name) — \(treasureItem.value)gp")
+            } else if treasureItem.type == .potion || treasureItem.type == .item {
+                // Resolve to an actual game item
+                if let item = resolveItemByName(treasureItem.name) {
+                    if let carrier = party.first(where: { $0.canCarry(item) }) {
+                        _ = carrier.addItem(item)
+                        print("  \(item.name) — \(carrier.name) takes it!", color: .brightGreen)
+                    } else {
+                        totalGold += treasureItem.value
+                        print("  \(treasureItem.name) — too heavy, sold for \(treasureItem.value)gp")
+                    }
+                } else {
+                    totalGold += treasureItem.value
+                    print("  \(treasureItem.name) — \(treasureItem.value)gp")
+                }
             }
             itemNames.append(treasureItem.name)
         }

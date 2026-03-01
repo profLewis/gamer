@@ -37,8 +37,14 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS, with AI Dunge
 - Multi-level progression — defeat the boss to descend deeper
 
 ### AI Dungeon Master
-- **Apple On-Device AI** — works out of the box on iPhone 16+ / iOS 26+ with no API key or account needed
-- **Cloud providers**: Claude (Anthropic), GPT (OpenAI), Gemini (Google — free for ages 18+)
+
+The game has three tiers of DM intelligence:
+
+1. **Basic DM** (all devices) — A simple built-in DM with canned responses. Works everywhere but gives only very basic room descriptions and atmosphere. No AI, no setup needed.
+2. **Apple On-Device AI** (iPhone 16 / iPad with M-series or newer, iOS 26+) — A much smarter DM that runs entirely on your device. No API key, no account, works offline. May be fussy with some queries — try rephrasing if it won't answer.
+3. **Cloud AI** (any device) — The best DM experience. Supports Claude (Anthropic), GPT (OpenAI), and **Gemini (Google — free if you have a Google account, ages 18+)**. Requires an API key configured in Settings.
+
+Features:
 - 4 DM levels: Off, Flavor Only, Moderate, Full
 - At Moderate+, the DM can grant items, award gold, heal, deal damage, move the party, and teleport
 - Ask the DM during exploration or combat for creative actions
