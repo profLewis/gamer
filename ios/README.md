@@ -1,34 +1,61 @@
-# D&D 5e Text-Based RPG - iOS & tvOS App
+# D&D 5e Text-Based RPG — iOS App
 
-A native iOS and Apple TV port of the D&D 5e Text-Based RPG, featuring a terminal-style interface with green text on a black background.
+A native iOS port of the D&D 5e Text-Based RPG, featuring a terminal-style interface with green text on a black background.
 
 ## Features
 
 ### Terminal Interface
 - Authentic retro terminal look with green-on-black theme
 - Animated splash screen with ASCII dragon art
-- Tap-based menu selection (no keyboard required for most actions)
-- Back buttons in all menus for easy navigation
-- Persistent ASCII dungeon map during exploration
+- Tap-based menu selection with long-press shortcuts
+- Back buttons and Main Menu exit in all screens
+- Persistent ASCII dungeon minimap during exploration
 - Text input for naming characters and dungeons
+- Configurable font size (small, medium, large)
 
 ### Full D&D 5e Implementation (OGL)
 - **12 Races**: Human, Elf (High/Wood), Dwarf (Hill/Mountain), Halfling (Lightfoot/Stout), Half-Elf, Half-Orc, Gnome, Tiefling, Dragonborn
 - **6 Classes**: Fighter, Wizard, Rogue, Cleric, Ranger, Barbarian
 - **18 Skills**: Full skill proficiency system
-- **Combat**: Turn-based with initiative, attack rolls, and damage
+- **Spellcasting**: Cantrips and spell slots for Wizard, Cleric, Ranger
 
 ### Dungeon Exploration
-- Procedurally generated dungeons
-- Multiple room types (treasure, traps, shrines, etc.)
-- Persistent ASCII map with room connections
-- Search and collect mechanics
+- Procedurally generated multi-level dungeons
+- 11 room types: corridors, chambers, treasure, traps, shrines, libraries, armories, prisons, boss rooms, and more
+- Persistent ASCII minimap with dynamic key (only shows symbols present)
+- Search, collect, rest, and shop mechanics
+- Trap rooms with automatic triggers (poison darts, pit traps, flame jets, etc.)
 
 ### Combat System
-- D20-based attack rolls
-- Critical hits and misses
-- Multiple monster types with different stats
-- Boss encounters
+- D20-based attack rolls with advantage/disadvantage
+- Critical hits and misses, death saving throws
+- Class features: Sneak Attack, Rage, Second Wind, Hunter's Mark
+- **Dodge**: Grants attackers disadvantage on their next attack
+- **Play Dead**: Bluff with CHA + Deception to escape combat
+- **Flee**: Escape to the previous room
+- **Poison**: Venomous creatures can poison characters (CON save DC 14 to recover)
+- Creative actions via the AI Dungeon Master
+- Monsters with flavourful attack descriptions
+
+### AI Dungeon Master
+- **Apple On-Device AI**: Works on iPhone 16+ / iOS 26+ with no API key or account needed. Runs locally and offline. May refuse some queries — try rephrasing if needed.
+- **Cloud providers**: Claude (Anthropic), GPT (OpenAI), Gemini (Google — free, requires ages 18+ for API key)
+- 4 DM ad-lib levels: Off, Flavor Only, Moderate, Full
+- At Moderate+, the DM can grant items, award gold, heal, deal damage, move the party, and teleport
+- DM actions update the game world in real time (map, inventory, HP)
+- ASCII art responses when asked to draw or show something
+- **DM Voice**: Text-to-speech reads DM responses aloud (built into iOS)
+- Falls back to a built-in simple DM on older devices without AI
+
+### Save System
+- Multiple save slots with automatic breakpoints (up to 5 per slot)
+- Configurable autosave interval
+- Load any breakpoint from a slot's history
+- Rename and delete save slots
+
+### Hall of Fame & Game Center
+- Scoring: victories, gold, monsters slain, exploration, difficulty multiplier
+- Game Center leaderboards and achievements
 
 ## Platform Support
 
@@ -36,7 +63,6 @@ A native iOS and Apple TV port of the D&D 5e Text-Based RPG, featuring a termina
 |-----------|----------------|
 | iPhone    | iOS 16.0       |
 | iPad      | iPadOS 16.0    |
-| Apple TV  | tvOS 16.0      |
 
 ## Requirements
 
@@ -53,7 +79,7 @@ A native iOS and Apple TV port of the D&D 5e Text-Based RPG, featuring a termina
    open DnDTextRPG.xcodeproj
    ```
 
-2. Select a simulator from the device menu (e.g. "iPhone 17 Pro" or "Apple TV")
+2. Select a simulator from the device menu (e.g. "iPhone 17 Pro")
 
 3. Press Cmd+R to build and run
 
@@ -77,13 +103,6 @@ A native iOS and Apple TV port of the D&D 5e Text-Based RPG, featuring a termina
 5. On your iPhone, go to **Settings > General > VPN & Device Management** and trust your developer certificate (first time only)
 
 6. Press Cmd+R to build and install
-
-### Apple TV
-
-1. Ensure your Apple TV is on the same network as your Mac
-2. In Xcode, go to **Window > Devices and Simulators** and pair your Apple TV
-3. Select your Apple TV from the device dropdown
-4. Press Cmd+R to build and install
 
 ### Command-Line Installation
 
@@ -111,48 +130,66 @@ ios/DnDTextRPG/
     │   └── TerminalView.swift # Terminal UI components
     ├── Models/
     │   ├── TerminalModels.swift    # Terminal display models
-    │   ├── CharacterModels.swift   # Character, race, class
-    │   ├── DungeonModels.swift     # Dungeon and rooms
-    │   └── CombatModels.swift      # Combat and monsters
+    │   ├── CharacterModels.swift   # Character, race, class, status effects
+    │   ├── DungeonModels.swift     # Dungeon, rooms, minimap
+    │   └── CombatModels.swift      # Combat, monsters, poison, attacks
     ├── Game/
-    │   └── GameEngine.swift   # Main game logic
+    │   └── GameEngine.swift   # Main game logic (~5000+ lines)
     ├── Utils/
-    │   └── Dice.swift         # Dice rolling utilities
+    │   ├── Dice.swift         # Dice rolling utilities
+    │   ├── DMEngine.swift     # AI DM (Apple, Claude, GPT, Gemini)
+    │   ├── SpeechEngine.swift # Text-to-speech for DM voice
+    │   ├── SoundManager.swift # Music and sound effects
+    │   └── SaveGameManager.swift  # Save/load system
     └── Assets.xcassets/       # App icons and colors
 ```
 
 ## Gameplay
 
 ### Main Menu
-- **New Game**: Start a new adventure
-- **Load Game**: Resume a saved game (coming soon)
-- **How to Play**: View instructions and OGL notice
-- **Quit**: Return to title screen
+- **New Game**: Create a party and start a new adventure
+- **Load Game**: Resume a saved game
+- **Hall of Fame**: View high scores
+- **How to Play**: View instructions
+- **Settings**: AI provider, DM level, voice, font size, autosave
+- **Quit**: Exit the game
 
 ### Character Creation
-1. Choose party size (1-4 characters)
-2. Name each character
+1. Choose party size (1-4 characters, or Random Party)
+2. Name each character (or long-press to auto-generate)
 3. Select race (with ability bonuses)
 4. Select class (determines HP and abilities)
 5. Assign ability scores (Standard Array or 4d6 drop lowest)
 6. Choose skill proficiencies
+7. Name your dungeon and select difficulty
 
 Use **< Back** at any step to return to the previous choice.
 
 ### Exploration
-- ASCII dungeon map always visible at the top of screen
-- Move through the dungeon using directional buttons
-- Search rooms for hidden treasure
-- Collect loot from cleared rooms
-- Check party status
-- Rest to recover HP
+- ASCII dungeon minimap always visible at the top
+- Move through the dungeon using directional buttons (N/S/E/W)
+- Search rooms, collect treasure, visit merchants
+- Check party status and inventory
+- Rest to recover HP (short or long rest)
+- Ask the DM for hints, lore, or creative actions
+- Save your game at any time
+- Exit to Main Menu when needed
 
 ### Combat
 - Combat triggers automatically when entering rooms with enemies
 - Initiative determines turn order
-- Tap enemy names to attack
-- Defeat all enemies to win
-- Party wipe = game over
+- Attack, cast spells, dodge, play dead, flee, or ask the DM
+- Dodge gives attackers disadvantage
+- Play Dead uses CHA + Deception to bluff monsters
+- Flee escapes to the previous room
+- Beware of poison from venomous creatures
+- Defeat all enemies to win — or suffer a party wipe
+
+### Tips
+- Long-press a button to auto-fill all remaining choices
+- Hold the screen to speed up rest animations
+- The DM can move your party, give items, and affect HP
+- Trap rooms trigger automatically — some also have monsters!
 
 ## Open Gaming License
 

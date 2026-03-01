@@ -75,9 +75,14 @@ struct TerminalView: View {
 
                         // Action buttons
                         if !gameEngine.currentMenuOptions.isEmpty {
-                            MenuButtonsView(options: gameEngine.currentMenuOptions, scale: scale) { choice in
-                                gameEngine.handleMenuChoice(choice)
-                            }
+                            MenuButtonsView(options: gameEngine.currentMenuOptions, scale: scale,
+                                onSelect: { choice in
+                                    gameEngine.handleMenuChoice(choice)
+                                },
+                                onLongPress: { choice in
+                                    gameEngine.handleMenuLongPress(choice)
+                                }
+                            )
                         }
                     }
                     .padding(.horizontal, 8)
@@ -181,6 +186,7 @@ struct MenuButtonsView: View {
     let options: [MenuOption]
     let scale: CGFloat
     let onSelect: (Int) -> Void
+    var onLongPress: ((Int) -> Void)? = nil
 
     let terminalGreen = Color(red: 0.0, green: 0.9, blue: 0.3)
     let terminalDarkGreen = Color(red: 0.0, green: 0.4, blue: 0.15)
@@ -189,29 +195,30 @@ struct MenuButtonsView: View {
     let disabledRed = Color(red: 0.4, green: 0.15, blue: 0.15)
 
     var body: some View {
-        LazyVGrid(columns: gridColumns, spacing: 8) {
+        LazyVGrid(columns: gridColumns, spacing: 6) {
             ForEach(Array(options.enumerated()), id: \.offset) { index, option in
                 Button(action: {
                     if !option.isDisabled {
                         onSelect(index + 1)
                     }
                 }) {
-                    HStack {
+                    HStack(spacing: 4) {
                         Text("\(index + 1).")
                             .font(.system(size: 11 * scale, design: .monospaced))
                             .foregroundColor(option.isDisabled ? Color.red.opacity(0.3) : (option.isDefault ? terminalGreen : terminalGreen.opacity(0.6)))
 
                         Text(option.text)
-                            .font(.system(size: 14 * scale, design: .monospaced))
+                            .font(.system(size: 13 * scale, design: .monospaced))
                             .fontWeight(option.isDefault ? .semibold : .regular)
                             .foregroundColor(option.isDisabled ? Color.red.opacity(0.3) : terminalGreen)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.7)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
 
                         Spacer()
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .frame(minHeight: 38 * scale)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(option.isDisabled ? Color.red.opacity(0.15) : (option.isDefault ? terminalGreen : terminalGreen.opacity(0.4)),
@@ -223,6 +230,14 @@ struct MenuButtonsView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .simultaneousGesture(
+                    LongPressGesture(minimumDuration: 0.5)
+                        .onEnded { _ in
+                            if !option.isDisabled, let longPress = onLongPress {
+                                longPress(index + 1)
+                            }
+                        }
+                )
             }
         }
     }

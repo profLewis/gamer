@@ -9,14 +9,19 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS, with AI Dunge
 - **6 Classes**: Fighter, Wizard, Rogue, Cleric, Ranger, Barbarian
 - **Ability Scores**: Standard array or 4d6 drop lowest
 - **18 Skills** with proficiency system
-- **Parties** of 1-4 characters
+- **Parties** of 1-4 characters (human or AI-controlled)
+- **Long-press** any party size to auto-generate an all-AI party
 
 ### Combat (D&D 5e Rules)
 - Initiative, attack rolls, saving throws, critical hits
 - Death saving throws (nat 20 revive, nat 1 double failure)
-- Class features: Sneak Attack, Rage, Second Wind
-- Dodge, flee, and creative actions via the DM
+- Class features: Sneak Attack, Rage, Second Wind, Hunter's Mark
+- **Dodge** grants attackers disadvantage on their next attack
+- **Play Dead** — bluff your way out of a fight (CHA + Deception check)
+- **Flee** — escape to the previous room
+- Creative actions via the AI DM
 - Monsters grouped by type with numbered targeting
+- **Poison** — venomous creatures can poison party members (CON save to recover)
 
 ### Spellcasting
 - **Wizard**: Fire Bolt, Ray of Frost, Magic Missile, Burning Hands, Sleep
@@ -25,16 +30,21 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS, with AI Dunge
 - Cantrips (unlimited) and spell slots that recover on long rest
 
 ### Procedural Dungeons
-- 10 room types: corridors, chambers, treasure rooms, armories, shrines, boss chambers, and more
-- ASCII map with explored rooms, danger markers, and boss location
-- Encounters scaled by dungeon level
+- 11 room types: corridors, chambers, treasure rooms, armories, shrines, libraries, prisons, trap rooms, boss chambers, and more
+- ASCII minimap showing only visited rooms with dynamic key (only shows symbols present on the map)
+- Encounters and traps scaled by dungeon level
 - Treasure, equipment, potions, and a merchant in armory rooms
+- Multi-level progression — defeat the boss to descend deeper
 
 ### AI Dungeon Master
-- Supports **Claude** (Anthropic), **GPT** (OpenAI), and **Gemini** (Google)
-- 4 DM levels: Off, Flavor Only, Moderate, Full (can grant items and gold)
+- **Apple On-Device AI** — works out of the box on iPhone 16+ / iOS 26+ with no API key or account needed
+- **Cloud providers**: Claude (Anthropic), GPT (OpenAI), Gemini (Google — free for ages 18+)
+- 4 DM levels: Off, Flavor Only, Moderate, Full
+- At Moderate+, the DM can grant items, award gold, heal, deal damage, move the party, and teleport
 - Ask the DM during exploration or combat for creative actions
-- Persistent conversation context
+- DM actions update the world state in real time (map, inventory, HP)
+- ASCII art responses when you ask the DM to draw something
+- **DM Voice** — text-to-speech reads DM responses aloud (built into iOS, no API key needed)
 
 ### Save System
 - Save slots with automatic breakpoints (up to 5 per slot)
@@ -52,11 +62,13 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS, with AI Dunge
 
 ## Interface
 
-Green-on-black terminal aesthetic with monospaced text, ASCII art for characters and monsters, and a D-pad for dungeon navigation.
+Green-on-black terminal aesthetic with monospaced text, ASCII art for characters and monsters, and a D-pad for dungeon navigation. Configurable font size (small, medium, large).
 
 ## Building
 
-Requires Xcode. Open `ios/DnDTextRPG/DnDTextRPG.xcodeproj` and build for iOS.
+Requires Xcode 15.0+. Open `ios/DnDTextRPG/DnDTextRPG.xcodeproj` and build for iOS 16.0+.
+
+See [ios/README.md](ios/README.md) for detailed build instructions.
 
 ## Credits
 

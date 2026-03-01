@@ -57,6 +57,7 @@ class GameEngine: ObservableObject {
     // Input handling
     var inputHandler: ((String) -> Void)?
     var menuHandler: ((Int) -> Void)?
+    var menuLongPressHandler: ((Int) -> Void)?
     var directionHandler: ((Direction) -> Void)?
 
     // Shop
@@ -77,8 +78,18 @@ class GameEngine: ObservableObject {
         "whore", "piss", "bollocks", "wanker", "twat"
     ]
 
+    /// Reserved words that trigger navigation (go back) and cannot be used as names
+    private let reservedWords: Set<String> = ["quit", "back", "exit", "b"]
+
+    private func isReservedWord(_ text: String) -> Bool {
+        reservedWords.contains(text.lowercased().trimmingCharacters(in: .whitespaces))
+    }
+
     private func isNameAppropriate(_ name: String) -> Bool {
         let lower = name.lowercased()
+        // Reject reserved navigation words and shortcuts
+        if reservedWords.contains(lower) { return false }
+        if lower == "a" || lower == "auto" { return false }
         let words = lower.components(separatedBy: .alphanumerics.inverted)
         for word in words {
             if blockedWords.contains(word) { return false }
@@ -156,6 +167,7 @@ class GameEngine: ObservableObject {
     // MARK: - Input Handling
 
     func showMenu(_ options: [String], defaultIndex: Int = 0) {
+        menuLongPressHandler = nil
         DispatchQueue.main.async {
             self.directionExits = [:]
             self.currentMenuOptions = options.enumerated().map { index, text in
@@ -167,6 +179,7 @@ class GameEngine: ObservableObject {
     }
 
     func showMenuOptions(_ options: [MenuOption]) {
+        menuLongPressHandler = nil
         DispatchQueue.main.async {
             self.directionExits = [:]
             self.currentMenuOptions = options
@@ -176,6 +189,7 @@ class GameEngine: ObservableObject {
     }
 
     func showMenuWithDirections(_ options: [MenuOption], exits: [Direction: Bool]) {
+        menuLongPressHandler = nil
         DispatchQueue.main.async {
             self.directionExits = exits
             self.currentMenuOptions = options
@@ -217,12 +231,34 @@ class GameEngine: ObservableObject {
     }
 
     func handleMenuChoice(_ choice: Int) {
+        // Suppress taps briefly after a long-press screen transition
+        guard Date() > suppressMenuUntil else { return }
+
         DispatchQueue.main.async {
             self.currentMenuOptions = []
             self.directionExits = [:]
         }
 
         if let handler = menuHandler {
+            handler(choice)
+        }
+    }
+
+    private var suppressMenuUntil: Date = .distantPast
+
+    func handleMenuLongPress(_ choice: Int) {
+        DispatchQueue.main.async {
+            self.currentMenuOptions = []
+            self.directionExits = [:]
+        }
+
+        if let handler = menuLongPressHandler {
+            handler(choice)
+            // After a long-press triggers a screen change, briefly suppress
+            // menu taps to prevent finger-up from hitting the new menu
+            suppressMenuUntil = Date().addingTimeInterval(0.5)
+        } else if let handler = menuHandler {
+            // Fall back to normal handler if no long-press handler
             handler(choice)
         }
     }
@@ -239,13 +275,14 @@ class GameEngine: ObservableObject {
     }
 
     func handleTextInput(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         DispatchQueue.main.async {
             self.awaitingTextInput = false
         }
-        print("> \(text)", color: .dimGreen)
+        print("> \(trimmed)", color: .dimGreen)
 
         if let handler = inputHandler {
-            handler(text)
+            handler(trimmed)
         }
     }
 
@@ -300,30 +337,50 @@ class GameEngine: ObservableObject {
         print("Welcome to D&D 5e Text Adventure!", color: .brightGreen)
         print("")
         print("CONTROLS:", color: .cyan, bold: true)
-        print("  Tap menu options to select")
-        print("  Type text when prompted")
-        print("  Tap 'Continue' to advance")
-        print("  Use '< Back' to return to previous menu")
+        print("  - Tap menu options to select")
+        print("  - Type text when prompted")
+        print("  - Tap 'Continue' to advance")
+        print("  - Use '< Back' to go back")
         print("")
         print("GAMEPLAY:", color: .cyan, bold: true)
-        print("  Create a party of adventurers")
-        print("  Explore procedurally generated dungeons")
-        print("  Fight monsters in turn-based combat")
-        print("  Collect treasure and gain experience")
+        print("  - Create a party of adventurers")
+        print("  - Explore generated dungeons")
+        print("  - Fight monsters in turn-based combat")
+        print("  - Collect treasure and gain XP")
+        print("  - Defeat the boss to advance levels")
         print("")
         print("TIPS:", color: .cyan, bold: true)
-        print("  Hold the screen to speed up resting")
-        print("  Defeat the boss to advance levels")
+        print("  - Long-press a button to auto-fill")
+        print("    all remaining choices")
+        print("  - Hold the screen to speed up resting")
+        print("  - Use 'Ask the DM' to talk to the AI")
+        print("  - Dodge gives attackers disadvantage")
+        print("  - Play Dead to escape tough fights")
         print("")
         print("COMBAT:", color: .cyan, bold: true)
-        print("  Initiative determines turn order")
-        print("  Roll d20 + modifiers vs AC to hit")
-        print("  Defeat all enemies to win!")
+        print("  - Initiative determines turn order")
+        print("  - Roll d20 + modifiers vs AC to hit")
+        print("  - Beware of poison from some creatures")
+        print("  - Defeat all enemies to win!")
+        print("")
+        print("DUNGEON MASTER:", color: .cyan, bold: true)
+        print("  - The AI DM adds story & atmosphere")
+        print("  - On newer devices, Apple on-device")
+        print("    AI works with no setup needed")
+        print("  - For a smarter DM, connect a cloud")
+        print("    AI in Settings > AI Provider")
+        print("  - Google Gemini is free (ages 18+)")
+        print("  - Apple AI can be fussy with some")
+        print("    queries — try rephrasing if it")
+        print("    won't answer (e.g. 'tell me the")
+        print("    contents of my pack' not 'whats")
+        print("    in my pack')")
+        print("  - Adjust level: Settings > DM Ad-lib")
         print("")
         print("LICENSE:", color: .cyan, bold: true)
-        print("  Game mechanics from the D&D 5e SRD")
-        print("  under the Open Gaming License (OGL) v1.0a")
-        print("  by Wizards of the Coast LLC.")
+        print("  D&D 5e SRD under the Open Gaming")
+        print("  License (OGL) v1.0a by Wizards of")
+        print("  the Coast LLC.")
         print("")
         print("ABOUT:", color: .cyan, bold: true)
         print("  Created by Prof. Lewis")
@@ -477,18 +534,19 @@ class GameEngine: ObservableObject {
         let currentProvider = dm.provider
 
         print("AI DUNGEON MASTER:", color: .cyan, bold: true)
-        print("  Provider: \(currentProvider.displayName)", color: .dimGreen)
         if dm.isConfigured {
+            print("  Provider: \(currentProvider.displayName)", color: .brightGreen)
             print("  API Key: configured", color: .brightGreen)
-            print("  The DM is ready!", color: .dimGreen)
+        } else if dm.isAppleModelAvailable {
+            print("  Using: Apple On-Device AI", color: .brightGreen)
+            print("  No API key needed!", color: .dimGreen)
+            print("  (Upgrade to a cloud AI for a", color: .dimGreen)
+            print("  smarter DM — see AI Provider)", color: .dimGreen)
         } else {
-            print("  API Key: not set", color: .yellow)
-            if currentProvider == .google {
-                print("  Gemini is FREE! Tap 'Set API Key'", color: .brightGreen)
-                print("  to get your free key.", color: .brightGreen)
-            } else {
-                print("  Get a key at \(currentProvider.keyURL)", color: .dimGreen)
-            }
+            print("  DM: Basic (no AI available)", color: .red)
+            print("  For a smarter DM, set up a", color: .yellow)
+            print("  cloud AI in 'AI Provider'.", color: .yellow)
+            print("  Google Gemini is free (ages 18+).", color: .brightGreen)
         }
         print("")
 
@@ -557,33 +615,89 @@ class GameEngine: ObservableObject {
     func showAIProviderMenu() {
         clearTerminal()
         printTitle("AI Provider")
-        print("  Choose which AI powers your Dungeon Master.", color: .dimGreen)
-        print("  Each provider requires its own API key.", color: .dimGreen)
+
+        let dm = DMEngine.shared
+
+        // Show current DM status
+        print("CURRENT DM:", color: .cyan, bold: true)
+        if dm.isConfigured {
+            print("  \(dm.provider.displayName) [key set]", color: .brightGreen)
+        } else if dm.isAppleModelAvailable {
+            print("  Apple On-Device AI", color: .brightGreen)
+            print("  Running locally on this device.", color: .dimGreen)
+            print("  Works offline, no account needed.", color: .dimGreen)
+            print("  Upgrade to a cloud provider below", color: .dimGreen)
+            print("  for a more creative DM.", color: .dimGreen)
+        } else {
+            print("  Basic DM (no AI)", color: .red)
+            print("  This device doesn't support Apple", color: .yellow)
+            print("  on-device AI (requires iOS 26+", color: .yellow)
+            print("  on iPhone 16 or newer).", color: .yellow)
+            print("")
+            print("  Without AI, you get a simple DM", color: .yellow)
+            print("  with canned responses.", color: .yellow)
+            print("")
+            print("  OPTIONS:", color: .cyan, bold: true)
+            print("  - Set up a cloud AI below", color: .dimGreen)
+            print("    (Gemini is FREE for ages 18+)", color: .brightGreen)
+            print("  - Use a newer iPhone/iPad", color: .dimGreen)
+            print("  - Try the web version (coming soon)", color: .dimGreen)
+        }
         print("")
 
-        let current = DMEngine.shared.provider
+        print("CLOUD PROVIDERS:", color: .cyan, bold: true)
+        print("  These give the best DM experience.", color: .dimGreen)
+        print("  Each requires its own API key.", color: .dimGreen)
+        print("")
+
+        let current = dm.provider
         for provider in AIProvider.allCases {
-            let marker = provider == current ? " <--" : ""
-            let hasKey = DMEngine.shared.apiKey(for: provider) != nil
+            let marker = provider == current && dm.isConfigured ? " <--" : ""
+            let hasKey = dm.apiKey(for: provider) != nil
             let keyStatus = hasKey ? " [key set]" : ""
-            print("  \(provider.displayName)\(keyStatus)\(marker)",
-                  color: provider == current ? .brightGreen : .green)
-            print("     Get key: \(provider.keyURL)", color: .dimGreen)
+            let freeTag = provider == .google && !hasKey ? " (FREE!)" : ""
+            print("  \(provider.displayName)\(keyStatus)\(freeTag)\(marker)",
+                  color: hasKey ? .brightGreen : .green)
+            print("     \(provider.keyURL)", color: .dimGreen)
             print("")
         }
 
-        let options = AIProvider.allCases.map { $0.displayName } + ["< Back"]
+        var options: [String] = []
+        if dm.isAppleModelAvailable {
+            options.append("Apple On-Device AI")
+        }
+        options += AIProvider.allCases.map { $0.displayName }
+        options.append("< Back")
         showMenu(options)
 
+        let appleOffset = dm.isAppleModelAvailable ? 1 : 0
+
         menuHandler = { [weak self] choice in
-            if choice <= AIProvider.allCases.count {
-                let selected = AIProvider.allCases[choice - 1]
-                DMEngine.shared.provider = selected
-                DMEngine.shared.clearHistory()
+            if dm.isAppleModelAvailable && choice == 1 {
+                // Switch to Apple on-device model (clear API key)
+                dm.apiKey = nil
+                dm.clearHistory()
+                self?.dmChatLog = []
+                self?.print("")
+                self?.print("Switched to Apple On-Device AI.", color: .brightGreen)
+                self?.print("")
+                self?.print("  Runs locally, no account needed.", color: .dimGreen)
+                self?.print("  Works offline.", color: .dimGreen)
+                self?.print("  May refuse some queries — try", color: .dimGreen)
+                self?.print("  rephrasing if it won't answer.", color: .dimGreen)
+                self?.print("")
+                self?.waitForContinue()
+                self?.inputHandler = { [weak self] _ in
+                    self?.showSettings()
+                }
+            } else if choice - appleOffset >= 1 && choice - appleOffset <= AIProvider.allCases.count {
+                let selected = AIProvider.allCases[choice - appleOffset - 1]
+                dm.provider = selected
+                dm.clearHistory()
                 self?.dmChatLog = []
                 self?.print("")
                 self?.print("AI Provider set to: \(selected.displayName)", color: .brightGreen)
-                if DMEngine.shared.apiKey(for: selected) == nil {
+                if dm.apiKey(for: selected) == nil {
                     self?.print("You'll need to set an API key for this provider.", color: .yellow)
                 }
                 self?.print("")
@@ -614,13 +728,7 @@ class GameEngine: ObservableObject {
         menuHandler = { [weak self] choice in
             if choice <= DMAdLibLevel.allCases.count {
                 DMEngine.shared.adLibLevel = DMAdLibLevel(rawValue: choice - 1) ?? .flavorOnly
-                self?.print("")
-                self?.print("DM Ad-lib level set to: \(DMEngine.shared.adLibLevel.displayName)", color: .brightGreen)
-                self?.print("")
-                self?.waitForContinue()
-                self?.inputHandler = { [weak self] _ in
-                    self?.showSettings()
-                }
+                self?.showAdLibLevelMenu()
             } else {
                 self?.showSettings()
             }
@@ -979,6 +1087,9 @@ class GameEngine: ObservableObject {
             print("  Gemini is FREE — no credit card", color: .brightGreen)
             print("  needed! Just a Google account.", color: .brightGreen)
             print("")
+            print("  Note: You must be 18+ to create", color: .yellow)
+            print("  a Google API key.", color: .yellow)
+            print("")
             print("  1. Tap 'Get Free Key' below", color: .dimGreen)
             print("  2. Sign in with Google", color: .dimGreen)
             print("  3. Click 'Create API Key'", color: .dimGreen)
@@ -1155,21 +1266,161 @@ class GameEngine: ObservableObject {
     func startNewGame() {
         clearTerminal()
         printTitle("New Adventure")
-        print("How many adventurers in your party? (1-4)")
+        print("How many adventurers in your party?")
+        print("  (Long-press for all-AI party)", color: .dimGreen)
         print("")
 
-        showMenu(["1 Character (Solo)", "2 Characters", "3 Characters", "4 Characters (Full Party)", "< Back"])
+        showMenu(["1 Character", "2 Characters", "3 Characters", "4 Characters", "Random Party", "< Back"])
 
         menuHandler = { [weak self] choice in
-            if choice == 5 {
-                self?.clearTerminal()
-                self?.showMainMenu()
+            guard let self = self else { return }
+            if choice == 6 {
+                self.clearTerminal()
+                self.showMainMenu()
                 return
             }
-            self?.totalCharacters = choice
-            self?.creatingCharacterIndex = 0
-            self?.party = []
-            self?.startCharacterCreation()
+            if choice == 5 {
+                self.createRandomParty()
+                return
+            }
+            self.totalCharacters = choice
+            self.creatingCharacterIndex = 0
+            self.party = []
+            self.chooseCharacterType()
+        }
+
+        menuLongPressHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice >= 1 && choice <= 4 {
+                self.createRandomParty(count: choice, allAI: true)
+            }
+        }
+    }
+
+    /// Pick a name not already used by party members
+    private func pickUniqueName() -> String {
+        let existingNames = Set(party.map { $0.name.lowercased() })
+        let available = suggestedNames.filter { !existingNames.contains($0.lowercased()) }
+        return available.randomElement() ?? "Adventurer \(party.count + 1)"
+    }
+
+    /// Create a fully random party and present for confirmation
+    private func createRandomParty(count: Int? = nil, allAI: Bool = false) {
+        let count = count ?? Int.random(in: 1...4)
+        party = []
+        creatingCharacterIndex = 0
+        totalCharacters = count
+
+        for i in 0..<count {
+            let name = pickUniqueName()
+            let race = Race.allCases.randomElement()!
+            let charClass = CharacterClass.allCases.randomElement()!
+
+            // Auto scores
+            let sorted = AbilityScores.standardArray.sorted(by: >)
+            var scores = AbilityScores(strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10)
+            for (idx, ability) in charClass.abilityPriority.enumerated() {
+                scores.set(ability, to: sorted[idx])
+            }
+            // Racial bonuses
+            for (ability, bonus) in race.abilityBonuses {
+                scores.set(ability, to: scores.score(for: ability) + bonus)
+            }
+
+            // First character is always human-controlled
+            let isAI = allAI && i > 0
+            let character = Character(name: name, race: race, characterClass: charClass, abilityScores: scores, isComputerControlled: isAI)
+
+            // Skills
+            let skills = Array(charClass.skillChoices.shuffled().prefix(charClass.numSkillChoices))
+            for skill in skills { character.skillProficiencies.insert(skill) }
+
+            // Gold & equipment
+            character.gold = Dice.rollSum(4, d: 4) * 10
+            let equipOptions = ItemCatalog.startingEquipmentOptions(for: charClass)
+            if let (_, items) = equipOptions.first {
+                for item in items { _ = character.addItem(item) }
+            }
+            autoEquip(character)
+
+            // Spells
+            let startingSpells = SpellCatalog.startingSpells(for: charClass)
+            if !startingSpells.isEmpty {
+                character.knownSpells = startingSpells
+                character.spellSlots = SpellCatalog.startingSlots(for: charClass, level: 1)
+            }
+            if charClass == .barbarian {
+                character.rageUsesRemaining = character.rageMaxUses
+            }
+
+            party.append(character)
+        }
+
+        // Show the random party for confirmation
+        clearTerminal()
+        printTitle("Random Party")
+        for char in party {
+            let aiTag = char.isComputerControlled ? " [AI]" : ""
+            print("  \(char.name)\(aiTag) — \(char.race.rawValue) \(char.characterClass.rawValue)", color: .brightGreen)
+            print("    HP: \(char.maxHP)  AC: \(char.armorClass)  \(char.characterClass.primaryAbility.abbreviation): \(char.abilityScores.score(for: char.characterClass.primaryAbility))", color: .dimGreen)
+        }
+        print("")
+
+        showMenu(["Accept Party", "< Back", "Reroll"])
+        menuHandler = { [weak self] choice in
+            switch choice {
+            case 1: self?.startAdventure()
+            case 2:
+                self?.party = []
+                self?.startNewGame()
+            case 3: self?.createRandomParty()
+            default: break
+            }
+        }
+    }
+
+    /// Tracks whether the current character being created is AI
+    private var creatingAsAI: Bool = false
+
+    /// Ask if this character is human or AI, then proceed
+    private func chooseCharacterType() {
+        // Must have at least one human — skip choice for solo or if all others are AI
+        let hasHuman = party.contains(where: { !$0.isComputerControlled })
+        let isLastCharacter = creatingCharacterIndex == totalCharacters - 1
+        let mustBeHuman = totalCharacters == 1 || (isLastCharacter && !hasHuman)
+
+        if mustBeHuman {
+            creatingAsAI = false
+            startCharacterCreation()
+            return
+        }
+
+        clearTerminal()
+        printSubtitle("Character \(creatingCharacterIndex + 1) of \(totalCharacters)")
+        print("Who controls this character?")
+        print("")
+
+        showMenu(["Human Player", "Computer (AI)", "< Back"])
+
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1:
+                self.creatingAsAI = false
+                self.startCharacterCreation()
+            case 2:
+                self.creatingAsAI = true
+                self.autoCreateCharacter()
+            default:
+                if self.creatingCharacterIndex > 0 {
+                    // Go back to previous character
+                    self.creatingCharacterIndex -= 1
+                    self.party.removeLast()
+                    self.chooseCharacterType()
+                } else {
+                    self.startNewGame()
+                }
+            }
         }
     }
 
@@ -1187,23 +1438,61 @@ class GameEngine: ObservableObject {
 
         printSubtitle("Character \(creatingCharacterIndex + 1) of \(totalCharacters)")
 
-        // Show a few random Stranger Things character name suggestions
-        let suggestions = suggestedNames.shuffled().prefix(4).joined(separator: ", ")
+        // Show name suggestions (exclude already-used names)
+        let existingNames = Set(party.map { $0.name.lowercased() })
+        let available = suggestedNames.filter { !existingNames.contains($0.lowercased()) }
+        let suggestions = available.shuffled().prefix(4).joined(separator: ", ")
         print("  Suggestions: \(suggestions)", color: .dimGreen)
+        if !party.isEmpty {
+            let taken = party.map { $0.name }.joined(separator: ", ")
+            print("  Already in party: \(taken)", color: .dimGreen)
+        }
         print("")
 
-        promptText("Enter character name (or 'back'):")
+        promptTextWithMenu("Enter character name (or 'a' for auto):", options: ["< Back"])
+
+        menuHandler = { [weak self] _ in
+            guard let self = self else { return }
+            if self.creatingCharacterIndex > 0 {
+                self.creatingCharacterIndex -= 1
+                self.party.removeLast()
+                self.chooseCharacterType()
+            } else {
+                self.startNewGame()
+            }
+        }
 
         inputHandler = { [weak self] name in
             guard let self = self else { return }
-            if name.lowercased() == "back" {
-                self.clearTerminal()
-                self.startNewGame()
+            if self.isReservedWord(name) {
+                if self.creatingCharacterIndex > 0 {
+                    self.creatingCharacterIndex -= 1
+                    self.party.removeLast()
+                    self.chooseCharacterType()
+                } else {
+                    self.clearTerminal()
+                    self.startNewGame()
+                }
+                return
+            }
+            let lower = name.lowercased()
+            if lower == "a" || lower == "auto" {
+                self.autoCreateCharacter()
                 return
             }
             let cleanName = name.isEmpty ? "Adventurer" : name
             if !self.isNameAppropriate(cleanName) {
                 self.print("That name is not befitting of an adventurer. Try again.", color: .yellow)
+                self.print("")
+                self.startCharacterCreation()
+                return
+            }
+            // Check for duplicate character name
+            let isDuplicate = self.party.contains(where: {
+                $0.name.lowercased() == cleanName.lowercased()
+            })
+            if isDuplicate {
+                self.print("A character named \(cleanName) already exists in your party. Choose a different name.", color: .yellow)
                 self.print("")
                 self.startCharacterCreation()
                 return
@@ -1231,6 +1520,16 @@ class GameEngine: ObservableObject {
             self?.tempRace = races[choice - 1]
             self?.chooseClass()
         }
+
+        // Long-press: pick this race and auto-fill rest
+        menuLongPressHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice >= 1 && choice <= races.count {
+                self.tempRace = races[choice - 1]
+                self.tempClass = CharacterClass.allCases.randomElement()
+                self.autoAssignAndFinish()
+            }
+        }
     }
 
     func chooseClass() {
@@ -1251,6 +1550,15 @@ class GameEngine: ObservableObject {
             self?.tempClass = classes[choice - 1]
             self?.chooseAbilityMethod()
         }
+
+        // Long-press: pick this class and auto-fill rest
+        menuLongPressHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice >= 1 && choice <= classes.count {
+                self.tempClass = classes[choice - 1]
+                self.autoAssignAndFinish()
+            }
+        }
     }
 
     func chooseAbilityMethod() {
@@ -1260,20 +1568,133 @@ class GameEngine: ObservableObject {
         print("Choose how to generate ability scores:")
         print("")
 
-        showMenu(["Standard Array [15,14,13,12,10,8]", "Roll 4d6 drop lowest", "< Back"])
+        showMenu(["Auto (Recommended)", "Standard Array [15,14,13,12,10,8]", "Roll 4d6 drop lowest", "< Back"])
 
         menuHandler = { [weak self] choice in
-            if choice == 3 {
-                self?.chooseClass()
+            guard let self = self else { return }
+            if choice == 4 {
+                self.chooseClass()
                 return
             }
             if choice == 1 {
-                self?.tempScores = AbilityScores.standardArray
-            } else {
-                self?.tempScores = Dice.rollAbilityScores()
-                self?.print("You rolled: \(self?.tempScores ?? [])", color: .brightGreen)
+                // Auto-assign standard array optimally for this class
+                self.tempScores = AbilityScores.standardArray
+                self.autoAssignScores()
+                return
             }
-            self?.startAssigningScores()
+            if choice == 2 {
+                self.tempScores = AbilityScores.standardArray
+            } else {
+                self.tempScores = Dice.rollAbilityScores()
+                self.print("You rolled: \(self.tempScores ?? [])", color: .brightGreen)
+            }
+            self.startAssigningScores()
+        }
+
+        // Long-press on any option: auto-assign scores and finish
+        menuLongPressHandler = { [weak self] _ in
+            self?.autoAssignAndFinish()
+        }
+    }
+
+    func autoAssignScores() {
+        guard let charClass = tempClass else { return }
+
+        let sorted = tempScores.sorted(by: >)
+        let priority = charClass.abilityPriority
+
+        assignedScores = [:]
+        for (i, ability) in priority.enumerated() {
+            assignedScores[ability] = sorted[i]
+        }
+
+        clearTerminal()
+        print("Auto-assigned scores for \(charClass.rawValue):", color: .brightGreen)
+        print("")
+        for ability in Ability.allCases {
+            let score = assignedScores[ability] ?? 10
+            let isPrimary = ability == charClass.primaryAbility
+            let marker = isPrimary ? " (Primary)" : ""
+            print("  \(ability.rawValue): \(score)\(marker)", color: isPrimary ? .brightGreen : .green)
+        }
+        print("")
+
+        remainingScores = []
+        remainingAbilities = []
+        chooseSkills()
+    }
+
+    /// Auto-assign scores, skills and finish from current temp state (name/race/class already set)
+    private func autoAssignAndFinish() {
+        if tempRace == nil { tempRace = Race.allCases.randomElement() }
+        if tempClass == nil { tempClass = CharacterClass.allCases.randomElement() }
+        guard let charClass = tempClass else { return }
+
+        // Auto-assign scores
+        tempScores = AbilityScores.standardArray
+        let sorted = tempScores.sorted(by: >)
+        assignedScores = [:]
+        for (i, ability) in charClass.abilityPriority.enumerated() {
+            assignedScores[ability] = sorted[i]
+        }
+        remainingScores = []
+        remainingAbilities = []
+
+        // Auto-select skills
+        selectedSkills = Array(charClass.skillChoices.shuffled().prefix(charClass.numSkillChoices))
+
+        finishCharacterCreation()
+    }
+
+    /// Fully auto-create a character with random name, race, class, scores, and skills
+    func autoCreateCharacter() {
+        // Random unique name
+        tempCharacterName = pickUniqueName()
+        // Random race & class
+        tempRace = Race.allCases.randomElement()
+        tempClass = CharacterClass.allCases.randomElement()
+
+        guard let charClass = tempClass else { return }
+
+        // Auto-assign scores
+        tempScores = AbilityScores.standardArray
+        let sorted = tempScores.sorted(by: >)
+        assignedScores = [:]
+        for (i, ability) in charClass.abilityPriority.enumerated() {
+            assignedScores[ability] = sorted[i]
+        }
+        remainingScores = []
+        remainingAbilities = []
+
+        // Auto-select skills
+        selectedSkills = Array(charClass.skillChoices.shuffled().prefix(charClass.numSkillChoices))
+
+        // Show result for confirmation
+        clearTerminal()
+        printSubtitle("Auto-Generated Character")
+        print("  Name:  \(tempCharacterName)", color: .brightGreen)
+        print("  Race:  \(tempRace?.rawValue ?? "?")", color: .green)
+        print("  Class: \(charClass.rawValue)", color: .green)
+        print("")
+        for ability in Ability.allCases {
+            let score = assignedScores[ability] ?? 10
+            let isPrimary = ability == charClass.primaryAbility
+            let marker = isPrimary ? " *" : ""
+            print("  \(ability.abbreviation): \(score)\(marker)", color: isPrimary ? .brightGreen : .green)
+        }
+        print("")
+        let skillStr = selectedSkills.map { $0.rawValue }.joined(separator: ", ")
+        print("  Skills: \(skillStr)", color: .green)
+        print("")
+
+        showMenu(["Accept", "< Back", "Reroll"])
+        menuHandler = { [weak self] choice in
+            switch choice {
+            case 1: self?.finishCharacterCreation()
+            case 2: self?.startCharacterCreation()
+            case 3: self?.autoCreateCharacter()
+            default: break
+            }
         }
     }
 
@@ -1366,22 +1787,50 @@ class GameEngine: ObservableObject {
             return
         }
 
+        if !selectedSkills.isEmpty {
+            let chosen = selectedSkills.map { $0.rawValue }.joined(separator: ", ")
+            print("Selected: \(chosen)", color: .brightGreen)
+            print("")
+        }
+
         let unselected = available.filter { !selectedSkills.contains($0) }
         var skillNames = unselected.map { $0.rawValue }
-        skillNames.append("< Back (restart skills)")
+        skillNames.append("Restart Skills")
+        skillNames.append("< Back")
 
-        print("Skill \(selectedSkills.count + 1):")
+        print("Skill \(selectedSkills.count + 1) of \(selectedSkills.count + remaining):")
         showMenu(skillNames)
 
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == skillNames.count {
+                // Back — go up a level to ability method
+                self.chooseAbilityMethod()
+                return
+            }
+            if choice == skillNames.count - 1 {
+                // Restart skills from scratch
                 self.chooseSkills()
                 return
             }
             let skill = unselected[choice - 1]
             self.selectedSkills.append(skill)
             self.selectNextSkill(from: available, remaining: remaining - 1)
+        }
+
+        // Long-press: pick this skill and auto-fill rest randomly
+        menuLongPressHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice >= 1 && choice <= unselected.count {
+                self.selectedSkills.append(unselected[choice - 1])
+                let stillNeeded = remaining - 1
+                if stillNeeded > 0 {
+                    let leftover = unselected.filter { !self.selectedSkills.contains($0) }
+                    let autoSkills = Array(leftover.shuffled().prefix(stillNeeded))
+                    self.selectedSkills.append(contentsOf: autoSkills)
+                }
+                self.finishCharacterCreation()
+            }
         }
     }
 
@@ -1407,7 +1856,8 @@ class GameEngine: ObservableObject {
             name: tempCharacterName,
             race: race,
             characterClass: charClass,
-            abilityScores: scores
+            abilityScores: scores,
+            isComputerControlled: creatingAsAI
         )
 
         // Add skill proficiencies
@@ -1493,7 +1943,7 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             self.creatingCharacterIndex += 1
             if self.creatingCharacterIndex < self.totalCharacters {
-                self.startCharacterCreation()
+                self.chooseCharacterType()
             } else {
                 self.startAdventure()
             }
@@ -1560,7 +2010,7 @@ class GameEngine: ObservableObject {
                 guard let self = self else { return }
                 self.creatingCharacterIndex += 1
                 if self.creatingCharacterIndex < self.totalCharacters {
-                    self.startCharacterCreation()
+                    self.chooseCharacterType()
                 } else {
                     self.startAdventure()
                 }
@@ -1589,10 +2039,20 @@ class GameEngine: ObservableObject {
         clearTerminal()
         printTitle("Adventure Awaits!")
 
-        promptText("Name your dungeon (or press Enter for default):")
+        promptTextWithMenu("Name your dungeon (or press Enter for default):", options: ["< Back"])
+
+        menuHandler = { [weak self] _ in
+            self?.clearTerminal()
+            self?.startNewGame()
+        }
 
         inputHandler = { [weak self] name in
             guard let self = self else { return }
+            if self.isReservedWord(name) {
+                self.clearTerminal()
+                self.startNewGame()
+                return
+            }
             let dungeonName = name.isEmpty ? "The Dark Depths" : name
             if !self.isNameAppropriate(dungeonName) {
                 self.print("The DM frowns. Choose a more suitable name for your dungeon.", color: .yellow)
@@ -1682,6 +2142,14 @@ class GameEngine: ObservableObject {
             return
         }
 
+        // Trigger trap in trap rooms (once per room)
+        if !room.trapTriggered && room.roomType == .trap {
+            room.trapTriggered = true
+            room.cleared = true
+            triggerTrap(in: room)
+            return
+        }
+
         // Build direction exits for the D-pad
         var exits: [Direction: Bool] = [:]
         for direction in Direction.allCases {
@@ -1722,6 +2190,9 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("Save Game"))
         actions.append { [weak self] in self?.showSaveMenu() }
 
+        menuOpts.append(MenuOption("Main Menu"))
+        actions.append { [weak self] in self?.confirmExitToMainMenu() }
+
         showMenuWithDirections(menuOpts, exits: exits)
 
         directionHandler = { [weak self] direction in
@@ -1748,6 +2219,159 @@ class GameEngine: ObservableObject {
             print(result.message, color: .yellow)
         }
         showExplorationView()
+    }
+
+    private func triggerTrap(in room: Room) {
+        let traps: [(name: String, desc: String, dice: Int, sides: Int)] = [
+            ("Poison Dart Trap", "Darts shoot from hidden holes in the walls!", 1, 6),
+            ("Pit Trap", "The floor gives way beneath your feet!", 1, 8),
+            ("Swinging Blade", "A blade swings from a concealed slot!", 1, 10),
+            ("Flame Jet", "Fire erupts from vents in the floor!", 2, 6),
+            ("Falling Net", "A weighted net drops from the ceiling!", 1, 4),
+            ("Poison Gas", "A sickly green gas seeps from the walls!", 1, 6),
+        ]
+
+        let trap = traps.randomElement()!
+        let damage = Dice.rollSum(trap.dice, d: trap.sides)
+
+        print("")
+        print("*** TRAP! ***", color: .red, bold: true)
+        print(trap.desc, color: .red)
+        print("  \(trap.name) — \(damage) damage!", color: .red)
+        print("")
+
+        SoundManager.shared.playDeath()
+
+        // Damage a random party member (or the lead)
+        let target = party.randomElement() ?? party[0]
+        target.takeDamage(damage)
+        print("  \(target.name) takes \(damage) damage! (\(target.currentHP)/\(target.maxHP) HP)", color: .yellow)
+
+        if !target.isConscious {
+            print("  \(target.name) is knocked unconscious!", color: .red, bold: true)
+        }
+
+        logEvent("Trap: \(trap.name) hit \(target.name) for \(damage) damage")
+
+        print("")
+        waitForContinue()
+        inputHandler = { [weak self] _ in
+            self?.showExplorationView()
+        }
+    }
+
+    /// Apply a DM-requested movement, validating against actual dungeon exits
+    private func applyTeleportToEntrance() {
+        guard let dungeon = dungeon else { return }
+        let entranceId = 0  // Entrance is always room 0
+        if let entrance = dungeon.rooms[entranceId] {
+            dungeon.previousRoomId = dungeon.currentRoomId
+            dungeon.currentRoomId = entranceId
+            entrance.visited = true
+            print("")
+            print("  [TELEPORTED to \(entrance.name)!]", color: .cyan, bold: true)
+            print("")
+            printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
+            logEvent("Teleported to dungeon entrance")
+        }
+    }
+
+    private func applyDMMovement(_ dirName: String) {
+        guard let dungeon = dungeon, let room = dungeon.currentRoom else { return }
+
+        let direction: Direction?
+        switch dirName.lowercased() {
+        case "north": direction = .north
+        case "south": direction = .south
+        case "east":  direction = .east
+        case "west":  direction = .west
+        default: direction = nil
+        }
+
+        guard let dir = direction else {
+            print("  [The DM tried an invalid direction.]", color: .dimGreen)
+            return
+        }
+
+        // Validate the exit actually exists
+        if room.exits[dir] != nil {
+            let result = dungeon.move(direction: dir)
+            if result.success {
+                advanceTime(10)
+                if let newRoom = dungeon.currentRoom {
+                    logEvent("DM moved party \(dir.rawValue) to \(newRoom.name)")
+                    print("")
+                    print("  [Moved \(dir.rawValue) to \(newRoom.name)!]", color: .cyan, bold: true)
+                    print("")
+                    printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
+                }
+            }
+        } else {
+            print("  [No exit \(dir.rawValue) — the DM's path is blocked.]", color: .dimGreen)
+        }
+    }
+
+    private func applyDMDropItem(_ itemName: String) {
+        let lower = itemName.lowercased()
+        for char in party {
+            if let item = char.inventory.first(where: { $0.name.lowercased().contains(lower) }) {
+                char.removeItem(item)
+                print("  [Dropped: \(item.name)]", color: .yellow, bold: true)
+                logEvent("DM: \(char.name) dropped \(item.name)")
+                return
+            }
+            // Check equipped items
+            if let w = char.equippedWeapon, w.name.lowercased().contains(lower) {
+                char.unequipWeapon()
+                char.removeItem(w)
+                print("  [Dropped: \(w.name)]", color: .yellow, bold: true)
+                logEvent("DM: \(char.name) dropped \(w.name)")
+                return
+            }
+        }
+        print("  [No \(itemName) found to drop.]", color: .dimGreen)
+    }
+
+    private func applyDMEquipItem(_ itemName: String) {
+        let lower = itemName.lowercased()
+        for char in party {
+            if let item = char.inventory.first(where: { $0.name.lowercased().contains(lower) }) {
+                switch item.type {
+                case .weapon: char.equipWeapon(item)
+                case .armor: char.equipArmor(item)
+                case .shield: char.equipShield(item)
+                default:
+                    print("  [\(item.name) cannot be equipped.]", color: .dimGreen)
+                    return
+                }
+                print("  [Equipped: \(item.name)!]", color: .cyan, bold: true)
+                logEvent("DM: \(char.name) equipped \(item.name)")
+                return
+            }
+        }
+        print("  [No \(itemName) found to equip.]", color: .dimGreen)
+    }
+
+    private func applyDMUseItem(_ itemName: String) {
+        let lower = itemName.lowercased()
+        for char in party {
+            if let item = char.inventory.first(where: { $0.name.lowercased().contains(lower) }) {
+                if let healStr = item.potionStats?.healAmount {
+                    char.removeItem(item)
+                    let roll = Dice.rollDamage(healStr)
+                    let amount = max(1, roll.total)
+                    char.heal(amount)
+                    print("  [\(char.name) uses \(item.name): +\(amount) HP!]", color: .brightGreen, bold: true)
+                    logEvent("DM: \(char.name) used \(item.name), healed \(amount) HP")
+                } else {
+                    char.removeItem(item)
+                    print("  [\(char.name) uses \(item.name).]", color: .cyan, bold: true)
+                    logEvent("DM: \(char.name) used \(item.name)")
+                }
+                return
+            }
+        }
+        print("  [No \(itemName) found to use.]", color: .dimGreen)
     }
 
     func searchRoom() {
@@ -1813,9 +2437,10 @@ class GameEngine: ObservableObject {
         for treasureItem in room.treasure {
             if treasureItem.type == .potion {
                 let potion = ItemCatalog.healingPotion()
-                if let char = party.first, char.canCarry(potion) {
-                    _ = char.addItem(potion)
-                    print("  \(treasureItem.name) — added to bag!", color: .brightGreen)
+                // Give to first party member who can carry it
+                if let carrier = party.first(where: { $0.canCarry(potion) }) {
+                    _ = carrier.addItem(potion)
+                    print("  \(treasureItem.name) — \(carrier.name) takes it!", color: .brightGreen)
                 } else {
                     totalGold += treasureItem.value
                     print("  \(treasureItem.name) — too heavy, sold for \(treasureItem.value)gp")
@@ -1828,9 +2453,18 @@ class GameEngine: ObservableObject {
         }
 
         if totalGold > 0 {
-            party.first?.gold += totalGold
+            // Split gold evenly among party
+            let goldEach = totalGold / party.count
+            let remainder = totalGold % party.count
+            for (i, char) in party.enumerated() {
+                char.gold += goldEach + (i == 0 ? remainder : 0)
+            }
             print("")
-            print("  Total gold: +\(totalGold)", color: .yellow)
+            if party.count > 1 {
+                print("  Total gold: +\(totalGold) (\(goldEach)gp each)", color: .yellow)
+            } else {
+                print("  Total gold: +\(totalGold)", color: .yellow)
+            }
         }
         room.treasure.removeAll()
         logEvent("Collected treasure: \(itemNames.joined(separator: ", "))")
@@ -1843,8 +2477,44 @@ class GameEngine: ObservableObject {
 
     // MARK: - Inventory
 
+    private func pickCharacter(title: String, action: @escaping (Character) -> Void) {
+        if party.count == 1 {
+            action(party[0])
+            return
+        }
+
+        clearTerminal()
+        if let dungeon = dungeon {
+            printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
+            print("")
+        }
+        printSubtitle(title)
+
+        var options: [String] = []
+        for char in party {
+            options.append("\(char.name) — \(char.currentHP)/\(char.maxHP) HP, \(char.gold)gp")
+        }
+        options.append("< Back")
+
+        showMenu(options)
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == options.count {
+                self.showExplorationView()
+                return
+            }
+            guard choice > 0 && choice <= self.party.count else { return }
+            action(self.party[choice - 1])
+        }
+    }
+
     func showInventory() {
-        guard let character = party.first else { return }
+        pickCharacter(title: "Whose inventory?") { [weak self] character in
+            self?.showInventoryFor(character)
+        }
+    }
+
+    private func showInventoryFor(_ character: Character) {
 
         clearTerminal()
 
@@ -1913,14 +2583,14 @@ class GameEngine: ObservableObject {
             options.append("Unequip Weapon")
             actions.append { [weak self] in
                 character.unequipWeapon()
-                self?.showInventory()
+                self?.showInventoryFor(character)
             }
         }
         if character.equippedArmor != nil {
             options.append("Unequip Armor")
             actions.append { [weak self] in
                 character.unequipArmor()
-                self?.showInventory()
+                self?.showInventoryFor(character)
             }
         }
         if !character.inventory.isEmpty {
@@ -1962,7 +2632,7 @@ class GameEngine: ObservableObject {
 
         menuHandler = { [weak self] choice in
             if choice == options.count {
-                self?.showInventory()
+                self?.showInventoryFor(character)
                 return
             }
             guard choice > 0 && choice <= items.count else { return }
@@ -1974,7 +2644,7 @@ class GameEngine: ObservableObject {
             case .shield: character.equipShield(item)
             default: break
             }
-            self?.showInventory()
+            self?.showInventoryFor(character)
         }
     }
 
@@ -1997,7 +2667,7 @@ class GameEngine: ObservableObject {
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == options.count {
-                self.showInventory()
+                self.showInventoryFor(character)
                 return
             }
             guard choice > 0 && choice <= potions.count else { return }
@@ -2017,7 +2687,7 @@ class GameEngine: ObservableObject {
 
             self.waitForContinue()
             self.inputHandler = { [weak self] _ in
-                self?.showInventory()
+                self?.showInventoryFor(character)
             }
         }
     }
@@ -2037,7 +2707,7 @@ class GameEngine: ObservableObject {
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == options.count {
-                self.showInventory()
+                self.showInventoryFor(character)
                 return
             }
             guard choice > 0 && choice <= character.inventory.count else { return }
@@ -2047,7 +2717,7 @@ class GameEngine: ObservableObject {
             self.print("  Dropped \(item.name).", color: .yellow)
             self.waitForContinue()
             self.inputHandler = { [weak self] _ in
-                self?.showInventory()
+                self?.showInventoryFor(character)
             }
         }
     }
@@ -2055,10 +2725,13 @@ class GameEngine: ObservableObject {
     // MARK: - Shop
 
     func visitShop() {
-        guard let character = party.first, let dungeon = dungeon else { return }
+        guard let dungeon = dungeon else { return }
 
-        shopEngine.openShop(character: character, dungeonLevel: dungeon.level) { [weak self] in
-            self?.showExplorationView()
+        pickCharacter(title: "Who visits the merchant?") { [weak self] character in
+            guard let self = self else { return }
+            self.shopEngine.openShop(character: character, dungeonLevel: dungeon.level) { [weak self] in
+                self?.showExplorationView()
+            }
         }
     }
 
@@ -2101,10 +2774,12 @@ class GameEngine: ObservableObject {
             print("")
         }
 
-        showMenu(["Adventure Log", "< Back"])
+        showMenu(["Adventure Log", "Main Menu", "< Back"])
         menuHandler = { [weak self] choice in
             if choice == 1 {
                 self?.showAdventureLog()
+            } else if choice == 2 {
+                self?.confirmExitToMainMenu()
             } else {
                 self?.showExplorationView()
             }
@@ -2409,7 +3084,7 @@ class GameEngine: ObservableObject {
         inputHandler = { [weak self] input in
             guard let self = self else { return }
 
-            if input.lowercased() == "back" || input.isEmpty {
+            if self.isReservedWord(input) || input.isEmpty {
                 self.showExplorationView()
                 return
             }
@@ -2425,7 +3100,8 @@ class GameEngine: ObservableObject {
                     guard let self = self else { return }
 
                     let result = DMEngine.parseCommands(from: response)
-                    let displayText = DMEngine.shared.adLibLevel == .full ? result.cleanText : response
+                    let adLibLevel = DMEngine.shared.adLibLevel
+                    let displayText = adLibLevel.rawValue >= DMAdLibLevel.moderate.rawValue ? result.cleanText : response
 
                     self.dmChatLog.append((isUser: false, text: displayText))
 
@@ -2437,23 +3113,70 @@ class GameEngine: ObservableObject {
                         else { self.print("  \(trimmed)", color: .yellow) }
                     }
 
-                    // Apply DM commands at level 3
-                    if DMEngine.shared.adLibLevel == .full {
+                    // Apply DM commands at moderate and full levels
+                    var worldChanged = false
+                    if adLibLevel.rawValue >= DMAdLibLevel.moderate.rawValue {
                         if result.bonusGold > 0 {
                             self.party.first?.gold += result.bonusGold
                             self.print("")
                             self.print("  [+\(result.bonusGold) gold!]", color: .yellow, bold: true)
+                            worldChanged = true
                         }
                         if result.healAmount > 0 {
                             for char in self.party { char.heal(result.healAmount) }
                             self.print("  [+\(result.healAmount) HP!]", color: .brightGreen, bold: true)
+                            worldChanged = true
                         }
+                        if result.damageAmount > 0 {
+                            for char in self.party { char.takeDamage(result.damageAmount) }
+                            self.print("  [-\(result.damageAmount) HP!]", color: .red, bold: true)
+                            worldChanged = true
+                        }
+                        if result.damagePartyAmount > 0 {
+                            for char in self.party { char.takeDamage(result.damagePartyAmount) }
+                            self.print("  [-\(result.damagePartyAmount) HP!]", color: .red, bold: true)
+                            worldChanged = true
+                        }
+                        if let dir = result.moveDirection {
+                            self.applyDMMovement(dir)
+                            worldChanged = true
+                        }
+                        if result.teleport {
+                            self.applyTeleportToEntrance()
+                            worldChanged = true
+                        }
+                        // Item commands
                         for itemName in result.grantedItems {
-                            if let item = self.resolveItemByName(itemName),
-                               let c = self.party.first, c.canCarry(item) {
-                                _ = c.addItem(item)
-                                self.print("  [Received: \(item.name)!]", color: .brightGreen, bold: true)
+                            if let item = self.resolveItemByName(itemName) {
+                                if let c = self.party.first, c.canCarry(item) {
+                                    _ = c.addItem(item)
+                                    self.print("  [Received: \(item.name)!]", color: .brightGreen, bold: true)
+                                    self.logEvent("DM gave \(c.name) \(item.name)")
+                                } else {
+                                    self.print("  [Too heavy to carry: \(item.name)]", color: .yellow)
+                                }
                             }
+                            worldChanged = true
+                        }
+                        for itemName in result.droppedItems {
+                            self.applyDMDropItem(itemName)
+                            worldChanged = true
+                        }
+                        for itemName in result.equippedItems {
+                            self.applyDMEquipItem(itemName)
+                            worldChanged = true
+                        }
+                        for itemName in result.usedItems {
+                            self.applyDMUseItem(itemName)
+                            worldChanged = true
+                        }
+                    }
+
+                    // Show updated party status after world changes
+                    if worldChanged {
+                        self.print("")
+                        for char in self.party {
+                            self.print("  \(char.name) \(char.currentHP)/\(char.maxHP) HP  Gold: \(char.gold)", color: .cyan)
                         }
                     }
 
@@ -2463,8 +3186,16 @@ class GameEngine: ObservableObject {
                     self.print("")
                     self.logEvent("Asked DM: \(input)")
 
-                    self.print("(Type another question, or tap Back)", color: .dimGreen)
-                    self.dmPromptForQuestion()
+                    if worldChanged {
+                        // World changed — return to exploration to see updated state
+                        self.waitForContinue()
+                        self.inputHandler = { [weak self] _ in
+                            self?.showExplorationView()
+                        }
+                    } else {
+                        self.print("(Type another question, or tap Back)", color: .dimGreen)
+                        self.dmPromptForQuestion()
+                    }
                 }
             }
         }
@@ -2490,7 +3221,7 @@ class GameEngine: ObservableObject {
         inputHandler = { [weak self] input in
             guard let self = self else { return }
 
-            if input.lowercased() == "back" || input.isEmpty {
+            if self.isReservedWord(input) || input.isEmpty {
                 self.showPlayerCombatMenu(characterId: characterId)
                 return
             }
@@ -2504,26 +3235,92 @@ class GameEngine: ObservableObject {
                 DispatchQueue.main.async {
                     guard let self = self else { return }
 
+                    let adLibLevel = DMEngine.shared.adLibLevel
+                    let result = DMEngine.parseCommands(from: response)
+                    let displayText = result.cleanText
+
                     self.print("")
                     self.print("DM:", color: .yellow, bold: true)
-                    for paragraph in response.components(separatedBy: "\n") {
+                    for paragraph in displayText.components(separatedBy: "\n") {
                         let trimmed = paragraph.trimmingCharacters(in: .whitespaces)
                         if trimmed.isEmpty { self.print("") }
                         else { self.print("  \(trimmed)", color: .yellow) }
                     }
+
+                    // Apply DM commands if at moderate+ level
+                    var tookAction = false
+                    if adLibLevel.rawValue >= DMAdLibLevel.moderate.rawValue {
+                        if result.healAmount > 0 {
+                            for char in self.party { char.heal(result.healAmount) }
+                            self.print("  [+\(result.healAmount) HP!]", color: .brightGreen, bold: true)
+                            tookAction = true
+                        }
+                        if result.damageAmount > 0 {
+                            // In combat, DAMAGE hits the first alive monster
+                            if let idx = combat.encounter.monsters.firstIndex(where: { $0.isAlive }) {
+                                let name = combat.encounter.monsters[idx].name
+                                combat.encounter.monsters[idx].takeDamage(result.damageAmount)
+                                self.print("  [\(name) takes \(result.damageAmount) damage!]", color: .brightGreen, bold: true)
+                            }
+                            tookAction = true
+                        }
+                        if result.damagePartyAmount > 0 {
+                            // DAMAGE_PARTY hurts the party in combat
+                            for char in self.party { char.takeDamage(result.damagePartyAmount) }
+                            self.print("  [-\(result.damagePartyAmount) HP!]", color: .red, bold: true)
+                            tookAction = true
+                        }
+                        if result.bonusGold > 0 {
+                            self.party.first?.gold += result.bonusGold
+                            self.print("  [+\(result.bonusGold) gold!]", color: .yellow, bold: true)
+                            tookAction = true
+                        }
+                        for itemName in result.droppedItems {
+                            self.applyDMDropItem(itemName)
+                            tookAction = true
+                        }
+                        for itemName in result.equippedItems {
+                            self.applyDMEquipItem(itemName)
+                            tookAction = true
+                        }
+                        for itemName in result.usedItems {
+                            self.applyDMUseItem(itemName)
+                            tookAction = true
+                        }
+                        for itemName in result.grantedItems {
+                            if let item = self.resolveItemByName(itemName) {
+                                if let c = self.party.first, c.canCarry(item) {
+                                    _ = c.addItem(item)
+                                    self.print("  [Received: \(item.name)!]", color: .brightGreen, bold: true)
+                                    self.logEvent("DM gave \(c.name) \(item.name)")
+                                } else {
+                                    self.print("  [Too heavy to carry: \(item.name)]", color: .yellow)
+                                }
+                            }
+                            tookAction = true
+                        }
+                    }
+
                     // Speak the DM response
-                    SpeechEngine.shared.speak(response)
+                    SpeechEngine.shared.speak(displayText)
 
                     self.print("")
                     self.logEvent("Asked DM in combat: \(input)")
 
-                    // After DM responds, continue combat (counts as their turn action)
-                    self.print("(Press continue to proceed)", color: .dimGreen)
-                    self.waitForContinue()
-                    self.inputHandler = { [weak self] _ in
-                        combat.checkCombatEnd()
-                        combat.nextTurn()
-                        self?.runCombatTurn()
+                    if tookAction {
+                        // Action was taken — counts as their turn
+                        self.waitForContinue()
+                        self.inputHandler = { [weak self] _ in
+                            combat.checkCombatEnd()
+                            combat.nextTurn()
+                            self?.runCombatTurn()
+                        }
+                    } else {
+                        // Just a question / flavor — return to combat menu
+                        self.waitForContinue()
+                        self.inputHandler = { [weak self] _ in
+                            self?.showPlayerCombatMenu(characterId: characterId)
+                        }
                     }
                 }
             }
@@ -2604,14 +3401,42 @@ class GameEngine: ObservableObject {
 
     private func resolveItemByName(_ name: String) -> Item? {
         let lower = name.lowercased()
+
+        // Potions (check specific before generic)
         if lower.contains("greater") && lower.contains("healing") { return ItemCatalog.greaterHealingPotion() }
         if lower.contains("healing") || lower.contains("potion") { return ItemCatalog.healingPotion() }
-        if lower.contains("dagger") { return ItemCatalog.dagger() }
+
+        // Weapons
+        if lower.contains("greataxe") { return ItemCatalog.greataxe() }
+        if lower.contains("longsword") || lower.contains("long sword") { return ItemCatalog.longsword() }
+        if lower.contains("shortsword") || lower.contains("short sword") { return ItemCatalog.shortsword() }
+        if lower.contains("longbow") || lower.contains("long bow") { return ItemCatalog.longbow() }
+        if lower.contains("rapier") { return ItemCatalog.rapier() }
+        if lower.contains("quarterstaff") || lower.contains("staff") { return ItemCatalog.quarterstaff() }
+        if lower.contains("handaxe") || lower.contains("hand axe") { return ItemCatalog.handaxe() }
+        if lower.contains("mace") { return ItemCatalog.mace() }
+        if lower.contains("dagger") || lower.contains("knife") { return ItemCatalog.dagger() }
+
+        // Armor
+        if lower.contains("chain mail") || lower.contains("chainmail") { return ItemCatalog.chainMail() }
+        if lower.contains("scale mail") || lower.contains("scalemail") { return ItemCatalog.scaleMail() }
+        if lower.contains("studded leather") { return ItemCatalog.studdedLeather() }
+        if lower.contains("leather armor") || lower.contains("leather armour") { return ItemCatalog.leatherArmor() }
+        if lower.contains("shield") { return ItemCatalog.shield() }
+
+        // Misc gear
         if lower.contains("torch") { return ItemCatalog.torch() }
         if lower.contains("rope") { return ItemCatalog.rope() }
-        if lower.contains("shortsword") { return ItemCatalog.shortsword() }
-        if lower.contains("longsword") { return ItemCatalog.longsword() }
-        return nil
+        if lower.contains("holy symbol") { return ItemCatalog.holySymbol() }
+        if lower.contains("thieve") || lower.contains("lockpick") { return ItemCatalog.thievesTools() }
+        if lower.contains("spell component") || lower.contains("component pouch") { return ItemCatalog.spellComponentPouch() }
+
+        // Fallback — create a generic misc item so the DM's gift isn't lost
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanName.isEmpty else { return nil }
+        return Item(id: UUID(), name: cleanName, description: "A mysterious item from the DM.",
+                    type: .misc, weight: 1.0, value: 5,
+                    weaponStats: nil, armorStats: nil, potionStats: nil)
     }
 
     // MARK: - Combat Display
@@ -2633,10 +3458,75 @@ class GameEngine: ObservableObject {
         ]
     }
 
+    /// Render attacker vs defender side-by-side with weapon flourish
+    private func renderBattleScene(_ report: AttackReport) {
+        let attArt = report.attackerArt
+        let defArt = report.defenderArt
+        let maxLines = max(attArt.count, defArt.count)
+
+        // Pad each art to a fixed width for alignment
+        let attWidth = attArt.map { $0.count }.max() ?? 0
+        let defWidth = defArt.map { $0.count }.max() ?? 0
+        let padAtt = max(attWidth, 10)
+
+        // Weapon attack animations (center column)
+        let weaponLower = report.weaponName.lowercased()
+        let attackFrames: [String]
+        if weaponLower.contains("bow") || weaponLower.contains("crossbow") {
+            attackFrames = ["  ---->  ", "  =====> ", "  --*--> "]
+        } else if weaponLower.contains("staff") || weaponLower.contains("quarterstaff") {
+            attackFrames = ["  |===|  ", "  |===*  ", "   *==|  "]
+        } else if weaponLower.contains("dagger") || weaponLower.contains("rapier") {
+            attackFrames = ["   -->   ", "   -=>>  ", "   --*>  "]
+        } else if weaponLower.contains("great") || weaponLower.contains("maul") {
+            attackFrames = ["  >==>   ", "  >===>  ", "  >=*=>  "]
+        } else if weaponLower.contains("axe") || weaponLower.contains("hatchet") {
+            attackFrames = ["   )=>   ", "   )==>  ", "   )=*>  "]
+        } else {
+            // Default sword/melee slash
+            attackFrames = ["   \\     ", "    \\    ", "  ---*   "]
+        }
+
+        let attackColor: TerminalColor = report.isPlayerAttack ? .brightGreen : .red
+        let defendColor: TerminalColor = report.isPlayerAttack ? .red : .brightGreen
+
+        // Print scene header
+        let attLabel = report.attackerName
+        let defLabel = report.targetName
+        let headerGap = String(repeating: " ", count: max(0, padAtt - attLabel.count + 5))
+        print("\(attLabel)\(headerGap)\(defLabel)", color: .cyan, bold: true)
+        print("")
+
+        // Render side-by-side with animation frames
+        for i in 0..<maxLines {
+            let leftLine = i < attArt.count ? attArt[i] : ""
+            let rightLine = i < defArt.count ? defArt[i] : ""
+            let leftPadded = leftLine.padding(toLength: padAtt, withPad: " ", startingAt: 0)
+
+            let midFrame = i < attackFrames.count ? attackFrames[i] : "         "
+            // Show attacker in attack color, weapon in yellow, defender in defend color
+            print("  \(leftPadded)\(midFrame)\(rightLine)", color: i < attackFrames.count ? .yellow : attackColor)
+        }
+        print("")
+    }
+
     func displayAttackReport(_ report: AttackReport, completion: @escaping () -> Void) {
         let attackColor: TerminalColor = report.isPlayerAttack ? .brightGreen : .red
 
-        print("\(report.attackerName) attacks \(report.targetName)!", color: attackColor, bold: true)
+        // Show animated battle scene
+        renderBattleScene(report)
+
+        // Play weapon-appropriate sound
+        let wn = report.weaponName.lowercased()
+        if wn.contains("bow") || wn.contains("crossbow") {
+            SoundManager.shared.playArrowShot()
+        } else if wn.contains("staff") || wn.contains("quarterstaff") {
+            SoundManager.shared.playStaffStrike()
+        } else {
+            SoundManager.shared.playSwordSwing()
+        }
+
+        print("\(report.attackerName) attacks \(report.targetName) with \(report.weaponName)!", color: attackColor, bold: true)
         print("")
         print("  To Hit: d20 + \(report.attackModifier)", color: .cyan)
         print("  (\(report.modifierBreakdown))", color: .dimGreen)
@@ -2707,11 +3597,19 @@ class GameEngine: ObservableObject {
                     self.print("")
 
                     if report.targetDefeated {
+                        SoundManager.shared.playDeath()
                         self.print("  \(report.targetName) is defeated!", color: .yellow, bold: true)
                     } else if report.targetUnconscious {
+                        SoundManager.shared.playDeath()
                         self.print("  \(report.targetName) falls unconscious!", color: .red, bold: true)
                     } else {
                         self.print("  \(report.targetName): \(report.targetCurrentHP)/\(report.targetMaxHP) HP", color: .dimGreen)
+                    }
+
+                    if report.poisonApplied {
+                        self.print("")
+                        self.print("  POISONED! \(report.targetName) has been poisoned!", color: .magenta, bold: true)
+                        self.print("  (takes damage each turn until cured or it wears off)", color: .dimGreen)
                     }
                     self.print("")
 
@@ -2812,10 +3710,50 @@ class GameEngine: ObservableObject {
         print("")
 
         if current.isPlayer {
+            // Clear dodge at start of turn (dodge only lasts until your next turn)
+            if let character = party.first(where: { $0.id == current.id }) {
+                character.isDodging = false
+            }
+
+            // Check if character fled or is playing dead
+            if let character = party.first(where: { $0.id == current.id }),
+               (character.hasFledCombat || character.isPlayingDead) {
+                // Skip their turn
+                combat.nextTurn()
+                runCombatTurn()
+                return
+            }
+
+            // Tick poison at start of turn
+            if let character = party.first(where: { $0.id == current.id }),
+               character.isPoisoned {
+                let poisonResult = character.tickPoison()
+                if poisonResult.cured && poisonResult.damage == 0 {
+                    print("  \(character.name) shakes off the poison!", color: .brightGreen, bold: true)
+                } else if poisonResult.damage > 0 {
+                    print("  \(character.name) takes \(poisonResult.damage) poison damage!", color: .magenta)
+                    print("  (\(character.currentHP)/\(character.maxHP) HP)", color: .dimGreen)
+                    if poisonResult.cured {
+                        print("  The poison wears off.", color: .brightGreen)
+                    }
+                }
+                if !character.isConscious {
+                    combat.checkCombatEnd()
+                    if combat.state == .defeat {
+                        handleCombatDefeat()
+                        return
+                    }
+                }
+                print("")
+            }
+
             // Check if unconscious — death saving throw instead of normal turn
             if let character = party.first(where: { $0.id == current.id }),
                !character.isConscious {
                 showDeathSavingThrow(character: character)
+            } else if let character = party.first(where: { $0.id == current.id }),
+                      character.isComputerControlled {
+                runAICombatTurn(character: character)
             } else {
                 showPlayerCombatMenu(characterId: current.id)
             }
@@ -2831,6 +3769,141 @@ class GameEngine: ObservableObject {
                 combat.nextTurn()
                 runCombatTurn()
             }
+        }
+    }
+
+    // MARK: - AI Combat Turn
+
+    func runAICombatTurn(character: Character) {
+        guard let combat = currentCombat else { return }
+
+        let aliveMonsters = combat.encounter.aliveMonsters
+        guard !aliveMonsters.isEmpty else { return }
+
+        print("\(character.name) (AI) considers...", color: .cyan, bold: true)
+        print("")
+
+        // Decision priority:
+        // 0. If poisoned and very hurt, try to use antidote/potion or play dead
+        // 1. Barbarian: Rage if not raging and has uses
+        // 2. Cleric: Heal if any ally below 30% HP
+        // 3. Fighter: Second Wind if below 40% HP
+        // 4. Attack the weakest (lowest HP) monster
+
+        // 0. Poisoned and hurting — seek antidote or play dead
+        if character.isPoisoned {
+            // Try to find and use a healing potion
+            let potionIdx = character.inventory.firstIndex(where: {
+                $0.name.lowercased().contains("potion") && $0.name.lowercased().contains("heal")
+            })
+            if let idx = potionIdx {
+                let potion = character.inventory[idx]
+                let healAmt = Dice.rollSum(2, d: 4) + 2
+                character.heal(healAmt)
+                character.inventory.remove(at: idx)
+                print("  \(character.name) drinks a \(potion.name)! (+\(healAmt) HP)", color: .brightGreen)
+                character.curePoison()
+                print("  The poison is cleansed!", color: .brightGreen)
+                combat.nextTurn()
+                waitForContinue()
+                inputHandler = { [weak self] _ in self?.runCombatTurn() }
+                return
+            }
+
+            // Very hurt and poisoned — might play dead
+            let hpPercent = Double(character.currentHP) / Double(character.maxHP)
+            if hpPercent < 0.25 {
+                print("  \(character.name) is badly poisoned and collapses, playing dead!", color: .yellow)
+                character.isPlayingDead = true
+                combat.nextTurn()
+                waitForContinue()
+                inputHandler = { [weak self] _ in self?.runCombatTurn() }
+                return
+            }
+        }
+
+        // 1. Barbarian Rage
+        if character.characterClass == .barbarian && !character.isRaging && character.rageUsesRemaining > 0 {
+            print("  \(character.name) enters a furious RAGE!", color: .red, bold: true)
+            activateRage(character: character)
+            return
+        }
+
+        // 2. Cleric healing — if any conscious ally is below 30% HP
+        if character.characterClass == .cleric {
+            let woundedAlly = party.first(where: {
+                $0.isConscious && $0.currentHP < $0.maxHP * 30 / 100
+            })
+            if let ally = woundedAlly {
+                // Try to cast a healing spell
+                let spells = character.knownSpells
+                let slots = character.spellSlots.level1Current
+                let foundHealSpell: Spell? = spells.first(where: { (s: Spell) -> Bool in
+                    s.spellType == .healing && (s.level == .cantrip || slots > 0)
+                })
+                if let healSpell = foundHealSpell {
+                    let msg = "  \(character.name) casts \(healSpell.name) on \(ally.name)!"
+                    print(msg, color: .brightGreen)
+                    let allyId = ally.id
+                    if let report = combat.castSpell(casterId: character.id, spell: healSpell, targetIds: [allyId]) {
+                        SoundManager.shared.playSpellCast()
+                        displaySpellReport(report) { [weak self] in
+                            combat.checkCombatEnd()
+                            combat.nextTurn()
+                            self?.runCombatTurn()
+                        }
+                        return
+                    }
+                }
+            }
+        }
+
+        // 3. Fighter Second Wind when hurt
+        if character.characterClass == .fighter && !character.secondWindUsed
+            && character.currentHP < character.maxHP * 40 / 100 {
+            print("  \(character.name) uses Second Wind!", color: .brightGreen)
+            useSecondWind(character: character)
+            return
+        }
+
+        // 4. Spellcaster: use an attack cantrip or spell on weakest monster
+        if character.characterClass == .wizard || character.characterClass == .ranger {
+            let weakestMonster = aliveMonsters.min(by: { $0.currentHP < $1.currentHP })!
+            let atkSpells = character.knownSpells
+            let atkSlots = character.spellSlots.level1Current
+            let foundAttackSpell: Spell? = atkSpells.first(where: { (s: Spell) -> Bool in
+                s.spellType == .attack && (s.level == .cantrip || atkSlots > 0)
+            })
+            if let attackSpell = foundAttackSpell {
+                let atkMsg = "  \(character.name) casts \(attackSpell.name)!"
+                print(atkMsg, color: .yellow)
+                let targetId = weakestMonster.id
+                if let report = combat.castSpell(casterId: character.id, spell: attackSpell, targetIds: [targetId]) {
+                    SoundManager.shared.playSpellCast()
+                    displaySpellReport(report) { [weak self] in
+                        combat.checkCombatEnd()
+                        combat.nextTurn()
+                        self?.runCombatTurn()
+                    }
+                    return
+                }
+            }
+        }
+
+        // 5. Default: attack the weakest monster
+        let target = aliveMonsters.min(by: { $0.currentHP < $1.currentHP })!
+        if let report = combat.playerAttack(characterId: character.id, targetId: target.id) {
+            let weaponName = character.equippedWeapon?.name ?? "fists"
+            print("  \(character.name) attacks \(target.name) with \(weaponName)!", color: .brightGreen)
+            displayAttackReport(report) { [weak self] in
+                combat.checkCombatEnd()
+                combat.nextTurn()
+                self?.runCombatTurn()
+            }
+        } else {
+            // Fallback: skip turn
+            combat.nextTurn()
+            runCombatTurn()
         }
     }
 
@@ -2905,7 +3978,10 @@ class GameEngine: ObservableObject {
             self.print("")
             self.printLines(self.asciiDodge, color: .cyan)
             self.print("")
-            self.print("\(character.name) takes a defensive stance.")
+            character.isDodging = true
+            self.print("\(character.name) takes a defensive stance!", color: .cyan, bold: true)
+            self.print("  Enemies attacking \(character.name) have DISADVANTAGE", color: .dimGreen)
+            self.print("  (they roll twice, take the worse result)", color: .dimGreen)
             combat.checkCombatEnd()
             combat.nextTurn()
             self.waitForContinue()
@@ -2918,6 +3994,12 @@ class GameEngine: ObservableObject {
             actions.append { [weak self] in
                 self?.askTheDMInCombat(characterId: characterId)
             }
+        }
+
+        // Play Dead
+        options.append("Play Dead")
+        actions.append { [weak self] in
+            self?.attemptPlayDead(characterId: characterId)
         }
 
         // Run Away
@@ -2991,11 +4073,20 @@ class GameEngine: ObservableObject {
                 for char in self.party {
                     char.isRaging = false
                     char.huntersMarkActive = false
+                    char.hasFledCombat = false
+                    char.isPlayingDead = false
+                    char.curePoison()
                 }
                 self.currentCombat = nil
                 self.gameState = .exploring
 
-                // Don't clear the room — encounter stays
+                // Move to previous room if possible
+                if let dungeon = self.dungeon, let prevRoom = dungeon.previousRoom {
+                    dungeon.currentRoom = prevRoom
+                    self.print("  You retreat to the \(prevRoom.name).", color: .dimGreen)
+                    self.print("")
+                }
+
                 SoundManager.shared.startMusic(.exploration)
 
                 self.waitForContinue()
@@ -3014,6 +4105,108 @@ class GameEngine: ObservableObject {
                 self.inputHandler = { [weak self] _ in
                     self?.runCombatTurn()
                 }
+            }
+        }
+    }
+
+    // MARK: - Play Dead
+
+    func attemptPlayDead(characterId: UUID) {
+        guard let combat = currentCombat,
+              let character = party.first(where: { $0.id == characterId }) else { return }
+
+        clearTerminal()
+        printLines(combat.displayStatus())
+        print("")
+        print("\(character.name) collapses dramatically, playing dead!", color: .yellow, bold: true)
+        print("")
+
+        // Performance check: CHA or Deception-based
+        // Higher success chance than Run Away (DC 8 instead of DC 10)
+        let chaMod = character.abilityScores.modifier(for: .charisma)
+        let profBonus = character.skillProficiencies.contains(.deception) ? character.proficiencyBonus : 0
+        let roll = Dice.d20()
+        let total = roll + chaMod + profBonus
+        let dc = 8 + (combat.encounter.aliveMonsters.map { $0.attackBonus / 3 }.max() ?? 0)
+
+        let profStr = profBonus > 0 ? " + Deception +\(profBonus)" : ""
+        print("  Performance: d20 + CHA \(chaMod >= 0 ? "+" : "")\(chaMod)\(profStr)", color: .cyan)
+        print("  [\(roll)] + \(chaMod + profBonus) = \(total) vs DC \(dc)", color: .cyan)
+        print("")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self else { return }
+
+            if total >= dc {
+                // Success — monster reaction
+                let reactions = [
+                    "The monsters glance at the fallen body and lose interest.",
+                    "A creature sniffs at \(character.name) suspiciously... then wanders off.",
+                    "The enemies step over what they think is a corpse.",
+                    "\(character.name) lies perfectly still. The monsters look elsewhere.",
+                ]
+                self.print(reactions.randomElement()!, color: .brightGreen)
+                self.print("")
+                self.print("  \(character.name) is out of the fight (playing dead).", color: .dimGreen)
+
+                character.isPlayingDead = true
+
+                // Check if all party members are out of the fight
+                let activeFighters = self.party.filter {
+                    $0.isConscious && !$0.isPlayingDead && !$0.hasFledCombat
+                }
+                if activeFighters.isEmpty {
+                    // Everyone is out — end combat, retreat to previous room
+                    self.print("")
+                    self.print("With no one left fighting, the monsters lose interest.", color: .yellow)
+
+                    for char in self.party {
+                        char.isPlayingDead = false
+                        char.hasFledCombat = false
+                        char.isRaging = false
+                        char.huntersMarkActive = false
+                    }
+                    self.currentCombat = nil
+                    self.gameState = .exploring
+
+                    if let dungeon = self.dungeon, let prevRoom = dungeon.previousRoom {
+                        dungeon.currentRoom = prevRoom
+                        self.print("  You quietly retreat to the \(prevRoom.name).", color: .dimGreen)
+                    }
+
+                    SoundManager.shared.startMusic(.exploration)
+                    self.print("")
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in
+                        self?.showExplorationView()
+                    }
+                } else {
+                    combat.nextTurn()
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in self?.runCombatTurn() }
+                }
+            } else {
+                // Failed — monster sees through the ruse
+                let reactions = [
+                    "The creature isn't fooled! It kicks \(character.name) roughly.",
+                    "A monster prods \(character.name) with a weapon. \"Not dead yet!\"",
+                    "The ruse fails! The enemies aren't buying it.",
+                ]
+                self.print(reactions.randomElement()!, color: .red)
+
+                // Take a hit as punishment
+                if let monster = combat.encounter.aliveMonsters.randomElement() {
+                    let dmg = max(1, Dice.rollDamage(monster.damage).total / 2)
+                    character.takeDamage(dmg)
+                    self.print("  \(character.name) takes \(dmg) damage!", color: .red)
+                    self.print("  (\(character.currentHP)/\(character.maxHP) HP)", color: .dimGreen)
+                }
+                self.print("")
+
+                combat.checkCombatEnd()
+                combat.nextTurn()
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in self?.runCombatTurn() }
             }
         }
     }
@@ -3451,10 +4644,13 @@ class GameEngine: ObservableObject {
         monstersSlain += combat.encounter.monsters.count
         combatsWon += 1
 
-        // Combat cleanup — end rage, hunter's mark, reset death saves
+        // Combat cleanup — end rage, hunter's mark, reset death saves, clear status
         for char in party {
             char.isRaging = false
             char.huntersMarkActive = false
+            char.isPlayingDead = false
+            char.hasFledCombat = false
+            char.isDodging = false
             if !char.isConscious && char.deathSaveFailures < 3 {
                 // Stabilize unconscious survivors
                 char.deathSaveSuccesses = 0
@@ -3497,12 +4693,20 @@ class GameEngine: ObservableObject {
         gameState = .exploring
         SoundManager.shared.startMusic(.exploration)
 
+        // If this was a trap room, trigger the trap after combat
+        let pendingTrap = dungeon?.currentRoom?.roomType == .trap && dungeon?.currentRoom?.trapTriggered == false
+
         waitForContinue()
         inputHandler = { [weak self] _ in
             guard let self = self else { return }
             // Check for level-ups before returning to exploration
             self.checkAndShowLevelUp {
-                self.showExplorationView()
+                if pendingTrap, let room = self.dungeon?.currentRoom {
+                    room.trapTriggered = true
+                    self.triggerTrap(in: room)
+                } else {
+                    self.showExplorationView()
+                }
             }
         }
     }
@@ -3512,6 +4716,9 @@ class GameEngine: ObservableObject {
         for char in party {
             char.isRaging = false
             char.huntersMarkActive = false
+            char.isPlayingDead = false
+            char.hasFledCombat = false
+            char.isDodging = false
         }
 
         SoundManager.shared.stopMusic()
@@ -3723,6 +4930,10 @@ class GameEngine: ObservableObject {
 
         inputHandler = { [weak self] name in
             guard let self = self else { return }
+            if self.isReservedWord(name) {
+                self.showExplorationView()
+                return
+            }
             if !name.isEmpty && !self.isNameAppropriate(name) {
                 self.print("Not appropriate. Try again.", color: .yellow)
                 self.print("")
@@ -4042,10 +5253,15 @@ class GameEngine: ObservableObject {
         promptText("Enter new name for this slot:")
 
         inputHandler = { [weak self] newName in
+            guard let self = self else { return }
+            if self.isReservedWord(newName) {
+                self.showSlotActions(slot: slot, returnTo: origin)
+                return
+            }
             let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
-                self?.print("Name cannot be empty.", color: .yellow)
-                self?.showSlotActions(slot: slot, returnTo: origin)
+                self.print("Name cannot be empty.", color: .yellow)
+                self.showSlotActions(slot: slot, returnTo: origin)
                 return
             }
 
@@ -4073,15 +5289,15 @@ class GameEngine: ObservableObject {
             }
 
             // Update active slot name if this is our slot
-            if self?.activeSlotId == slot.slotId {
-                self?.activeSlotName = trimmed
+            if self.activeSlotId == slot.slotId {
+                self.activeSlotName = trimmed
             }
 
-            self?.print("")
-            self?.print("Renamed to '\(trimmed)'", color: .brightGreen)
-            self?.print("")
-            self?.waitForContinue()
-            self?.inputHandler = { [weak self] _ in
+            self.print("")
+            self.print("Renamed to '\(trimmed)'", color: .brightGreen)
+            self.print("")
+            self.waitForContinue()
+            self.inputHandler = { [weak self] _ in
                 self?.showManageSavesMenu(returnTo: origin)
             }
         }
@@ -4149,6 +5365,23 @@ class GameEngine: ObservableObject {
         }
     }
 
+    func confirmExitToMainMenu() {
+        clearTerminal()
+        print("Exit to Main Menu?", color: .yellow, bold: true)
+        print("")
+        print("Unsaved progress will be lost.", color: .red)
+        print("")
+
+        showMenu(["Yes, Exit", "No, Keep Playing"])
+        menuHandler = { [weak self] choice in
+            if choice == 1 {
+                self?.resetGame()
+            } else {
+                self?.showExplorationView()
+            }
+        }
+    }
+
     func resetGame() {
         party = []
         dungeon = nil
@@ -4173,12 +5406,9 @@ class GameEngine: ObservableObject {
         print("Goodbye, adventurer...", color: .dimGreen)
         print("")
 
-        waitForContinue()
-        inputHandler = { _ in
-            // Suspend the app (go to home screen)
-            DispatchQueue.main.async {
-                UIApplication.shared.perform(#selector(NSXPCConnection.suspend))
-            }
+        // Exit the app after a brief pause
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            exit(0)
         }
     }
 

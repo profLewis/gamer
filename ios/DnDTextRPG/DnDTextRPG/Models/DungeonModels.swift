@@ -155,10 +155,11 @@ class Room: Identifiable, ObservableObject, Codable {
     @Published var treasure: [TreasureItem]
     @Published var isLocked: [Direction: Bool]
     @Published var searchedFor: Set<String>  // Things already searched for
+    @Published var trapTriggered: Bool
 
     enum CodingKeys: String, CodingKey {
         case id, x, y, roomType, name, roomDescription, exits, visited, cleared
-        case encounter, treasure, isLocked, searchedFor
+        case encounter, treasure, isLocked, searchedFor, trapTriggered
     }
 
     init(id: Int, x: Int, y: Int, type: RoomType) {
@@ -175,6 +176,7 @@ class Room: Identifiable, ObservableObject, Codable {
         self.treasure = []
         self.isLocked = [:]
         self.searchedFor = []
+        self.trapTriggered = false
     }
 
     required init(from decoder: Decoder) throws {
@@ -194,6 +196,7 @@ class Room: Identifiable, ObservableObject, Codable {
         treasure = try container.decode([TreasureItem].self, forKey: .treasure)
         isLocked = try container.decode([Direction: Bool].self, forKey: .isLocked)
         searchedFor = try container.decode(Set<String>.self, forKey: .searchedFor)
+        trapTriggered = try container.decodeIfPresent(Bool.self, forKey: .trapTriggered) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -211,6 +214,7 @@ class Room: Identifiable, ObservableObject, Codable {
         try container.encode(treasure, forKey: .treasure)
         try container.encode(isLocked, forKey: .isLocked)
         try container.encode(searchedFor, forKey: .searchedFor)
+        try container.encode(trapTriggered, forKey: .trapTriggered)
     }
 
     static func generateName(for type: RoomType) -> String {
@@ -299,13 +303,25 @@ class Dungeon: ObservableObject, Codable {
     let level: Int
     @Published var rooms: [Int: Room]
     @Published var currentRoomId: Int
+    @Published var previousRoomId: Int?
 
     var currentRoom: Room? {
-        rooms[currentRoomId]
+        get { rooms[currentRoomId] }
+        set {
+            if let room = newValue {
+                previousRoomId = currentRoomId
+                currentRoomId = room.id
+            }
+        }
+    }
+
+    var previousRoom: Room? {
+        guard let prevId = previousRoomId else { return nil }
+        return rooms[prevId]
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, level, rooms, currentRoomId
+        case name, level, rooms, currentRoomId, previousRoomId
     }
 
     init(name: String, level: Int) {
@@ -313,6 +329,7 @@ class Dungeon: ObservableObject, Codable {
         self.level = level
         self.rooms = [:]
         self.currentRoomId = 0
+        self.previousRoomId = nil
 
         generateDungeon()
     }
@@ -328,6 +345,7 @@ class Dungeon: ObservableObject, Codable {
         }
         rooms = roomsDict
         currentRoomId = try container.decode(Int.self, forKey: .currentRoomId)
+        previousRoomId = try? container.decodeIfPresent(Int.self, forKey: .previousRoomId)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -337,6 +355,7 @@ class Dungeon: ObservableObject, Codable {
         let roomsArray = Array(rooms.values).sorted { $0.id < $1.id }
         try container.encode(roomsArray, forKey: .rooms)
         try container.encode(currentRoomId, forKey: .currentRoomId)
+        try container.encodeIfPresent(previousRoomId, forKey: .previousRoomId)
     }
 
     private func generateDungeon() {
@@ -467,6 +486,7 @@ class Dungeon: ObservableObject, Codable {
             return (false, "Error: Room not found")
         }
 
+        previousRoomId = currentRoomId
         currentRoomId = nextRoomId
         nextRoom.visited = true
 
@@ -486,8 +506,8 @@ class Dungeon: ObservableObject, Codable {
         // Each room cell is 5 chars wide, corridor rows are 1 char tall
         var lines: [String] = []
 
-        let mapWidth = min((maxX - minX + 1) * 6 + 3, 32)
-        let border = String(repeating: "─", count: max(mapWidth, 18))
+        let mapWidth = min((maxX - minX + 1) * 5 + 3, 32)
+        let border = String(repeating: "─", count: max(mapWidth, 26))
         lines.append("┌\(border)┐")
         lines.append("│ MAP".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "│")
         lines.append("├\(border)┤")
@@ -526,10 +546,6 @@ class Dungeon: ObservableObject, Codable {
                 } else {
                     roomRow += "     "
                     corridorRow += "     "
-
-                    // Extra space for east corridor slot
-                    roomRow += " "
-                    corridorRow += " "
                 }
             }
 
@@ -543,8 +559,47 @@ class Dungeon: ObservableObject, Codable {
             }
         }
 
-        lines.append("├\(border)┤")
-        lines.append("│ @=You !=Danger B=Boss".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "│")
+        // Build key from symbols actually visible on the map
+        var visibleSymbols = Set<String>()
+        visibleSymbols.insert("@") // current room is always shown
+        for room in visitedRooms {
+            if room.id == currentRoomId {
+                // already added @
+            } else if !room.cleared && room.encounter != nil {
+                visibleSymbols.insert("!")
+            } else {
+                visibleSymbols.insert(room.roomType.symbol)
+            }
+            // Also add the room type symbol even for current/danger rooms
+            visibleSymbols.insert(room.roomType.symbol)
+        }
+
+        let allKeyEntries: [(symbol: String, label: String)] = [
+            ("@", "You"), ("!", "Danger"), (".", "Empty"),
+            ("E", "Entry"), ("=", "Hall"), ("#", "Room"),
+            ("$", "Loot"), ("+", "Shrine"), ("L", "Library"),
+            ("B", "Boss"), ("A", "Armory"), ("P", "Prison")
+        ]
+        let activeEntries = allKeyEntries.filter { visibleSymbols.contains($0.symbol) }
+
+        if !activeEntries.isEmpty {
+            lines.append("├\(border)┤")
+            // Pack entries into rows, ~3 per line
+            var row = ""
+            for (i, entry) in activeEntries.enumerated() {
+                let item = "\(entry.symbol)=\(entry.label)"
+                if row.isEmpty {
+                    row = item
+                } else {
+                    row += "  \(item)"
+                }
+                if (i + 1) % 3 == 0 || i == activeEntries.count - 1 {
+                    let padded = " \(row)".padding(toLength: border.count, withPad: " ", startingAt: 0)
+                    lines.append("│ \(padded)│")
+                    row = ""
+                }
+            }
+        }
         lines.append("└\(border)┘")
 
         return lines

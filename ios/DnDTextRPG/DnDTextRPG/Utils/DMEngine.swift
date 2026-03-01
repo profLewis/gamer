@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import FoundationModels
 
 // MARK: - AI Provider
 
@@ -149,8 +150,15 @@ enum DMAdLibLevel: Int, CaseIterable {
 struct DMCommandResult {
     let cleanText: String
     let grantedItems: [String]
+    let droppedItems: [String]
+    let equippedItems: [String]
+    let usedItems: [String]
     let bonusGold: Int
     let healAmount: Int
+    let damageAmount: Int
+    let damagePartyAmount: Int   // [DAMAGE_PARTY:x] — hurts party (useful in combat where DAMAGE hits monsters)
+    let moveDirection: String?   // "north", "south", "east", "west"
+    let teleport: Bool           // [TELEPORT] — teleport party to dungeon entrance
 }
 
 class DMEngine {
@@ -164,12 +172,12 @@ class DMEngine {
 
     var provider: AIProvider {
         get {
-            // Default to Google (Gemini) — free tier available
+            // Default to Anthropic (Claude) — the built-in foundation model
             if UserDefaults.standard.object(forKey: "ai_provider") == nil {
-                return .google
+                return .anthropic
             }
             let raw = UserDefaults.standard.integer(forKey: "ai_provider")
-            return AIProvider(rawValue: raw) ?? .google
+            return AIProvider(rawValue: raw) ?? .anthropic
         }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: "ai_provider")
@@ -200,12 +208,12 @@ class DMEngine {
 
     var adLibLevel: DMAdLibLevel {
         get {
-            // Default to Flavor Only — simple DM works without API key
+            // Default to Moderate — built-in DM provides hints and story beats
             if UserDefaults.standard.object(forKey: "dm_adlib_level") == nil {
-                return .flavorOnly
+                return .moderate
             }
             let raw = UserDefaults.standard.integer(forKey: "dm_adlib_level")
-            return DMAdLibLevel(rawValue: raw) ?? .flavorOnly
+            return DMAdLibLevel(rawValue: raw) ?? .moderate
         }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: "dm_adlib_level")
@@ -216,16 +224,80 @@ class DMEngine {
 
     var ageRating: AgeRating { .age9 }
 
+    // Track simple DM queries to avoid repetition and add personality
+    private var simpleDMQueryCount = 0
+
+    // MARK: - Apple On-Device Model
+
+    private var _appleModelSession: Any?  // LanguageModelSession (iOS 26+)
+    private var lastAppleInstructions: String?
+
+    /// Whether the Apple on-device Foundation Model is available
+    var isAppleModelAvailable: Bool {
+        if #available(iOS 26.0, *) {
+            return SystemLanguageModel.default.availability == .available
+        }
+        return false
+    }
+
+    /// Ask the Apple on-device model
+    private func askAppleModel(userMessage: String, context: DMContext, completion: @escaping (String?) -> Void) {
+        guard #available(iOS 26.0, *) else {
+            completion(nil)
+            return
+        }
+
+        let systemPrompt = buildSystemPrompt(context: context)
+
+        // Get or create session
+        let session: LanguageModelSession
+        if let existing = _appleModelSession as? LanguageModelSession,
+           lastAppleInstructions == systemPrompt {
+            session = existing
+        } else {
+            session = LanguageModelSession(instructions: systemPrompt)
+            _appleModelSession = session
+            lastAppleInstructions = systemPrompt
+        }
+
+        Task {
+            do {
+                let response = try await session.respond(to: userMessage)
+                let text = response.content
+                DispatchQueue.main.async {
+                    completion(text)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    completion(nil)
+                }
+            }
+        }
+    }
+
     // MARK: - Conversation
 
     func clearHistory() {
         conversationHistory = []
+        simpleDMQueryCount = 0
+        _appleModelSession = nil
+        lastAppleInstructions = nil
     }
 
     func ask(_ userMessage: String, context: DMContext, completion: @escaping (String) -> Void) {
         guard let key = apiKey, !key.isEmpty else {
-            // No API key — use simple DM
-            completion(simpleDMResponse(for: userMessage, context: context))
+            // No API key — try Apple on-device model first, then simple DM
+            if isAppleModelAvailable {
+                askAppleModel(userMessage: userMessage, context: context) { [weak self] response in
+                    if let response = response, !response.isEmpty {
+                        completion(response)
+                    } else {
+                        completion(self?.simpleDMResponse(for: userMessage, context: context) ?? "*The DM nods silently.*")
+                    }
+                }
+            } else {
+                completion(simpleDMResponse(for: userMessage, context: context))
+            }
             return
         }
 
@@ -243,10 +315,25 @@ class DMEngine {
                 self?.conversationHistory.append((role: "assistant", content: response))
                 completion(response)
             } else {
-                // API failed — fall back to simple DM silently
-                completion(self?.simpleDMResponse(for: userMessage, context: context) ?? "*The DM nods silently.*")
+                // API failed — try Apple model, then simple DM
+                if self?.isAppleModelAvailable == true {
+                    self?.askAppleModel(userMessage: userMessage, context: context) { appleResponse in
+                        if let text = appleResponse, !text.isEmpty {
+                            completion(text)
+                        } else {
+                            completion(self?.simpleDMResponse(for: userMessage, context: context) ?? "*The DM nods silently.*")
+                        }
+                    }
+                } else {
+                    completion(self?.simpleDMResponse(for: userMessage, context: context) ?? "*The DM nods silently.*")
+                }
             }
         }
+    }
+
+    /// Whether any AI (API or Apple on-device) is available
+    var hasAnyAI: Bool {
+        isConfigured || isAppleModelAvailable
     }
 
     /// Request a brief DM narration for a game event. Only fires if adLibLevel >= .moderate
@@ -255,7 +342,7 @@ class DMEngine {
             completion(nil)
             return
         }
-        guard isConfigured else {
+        guard hasAnyAI else {
             completion(nil)
             return
         }
@@ -271,8 +358,15 @@ class DMEngine {
     static func parseCommands(from response: String) -> DMCommandResult {
         var cleanLines: [String] = []
         var items: [String] = []
+        var dropped: [String] = []
+        var equipped: [String] = []
+        var used: [String] = []
         var gold = 0
         var heal = 0
+        var damage = 0
+        var damageParty = 0
+        var moveDir: String? = nil
+        var doTeleport = false
 
         for line in response.components(separatedBy: .newlines) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -281,6 +375,18 @@ class DMEngine {
                 let tag = String(trimmed[range])
                 let inner = String(tag.dropFirst("[GRANT_ITEM:".count).dropLast(1))
                 items.append(inner)
+            } else if let range = trimmed.range(of: #"\[DROP_ITEM:(.+?)\]"#, options: .regularExpression) {
+                let tag = String(trimmed[range])
+                let inner = String(tag.dropFirst("[DROP_ITEM:".count).dropLast(1))
+                dropped.append(inner)
+            } else if let range = trimmed.range(of: #"\[EQUIP_ITEM:(.+?)\]"#, options: .regularExpression) {
+                let tag = String(trimmed[range])
+                let inner = String(tag.dropFirst("[EQUIP_ITEM:".count).dropLast(1))
+                equipped.append(inner)
+            } else if let range = trimmed.range(of: #"\[USE_ITEM:(.+?)\]"#, options: .regularExpression) {
+                let tag = String(trimmed[range])
+                let inner = String(tag.dropFirst("[USE_ITEM:".count).dropLast(1))
+                used.append(inner)
             } else if let range = trimmed.range(of: #"\[BONUS_GOLD:(\d+)\]"#, options: .regularExpression) {
                 let tag = String(trimmed[range])
                 let inner = String(tag.dropFirst("[BONUS_GOLD:".count).dropLast(1))
@@ -289,6 +395,21 @@ class DMEngine {
                 let tag = String(trimmed[range])
                 let inner = String(tag.dropFirst("[HEAL:".count).dropLast(1))
                 heal += Int(inner) ?? 0
+            } else if let range = trimmed.range(of: #"\[DAMAGE_PARTY:(\d+)\]"#, options: .regularExpression) {
+                // Must check DAMAGE_PARTY before DAMAGE since DAMAGE regex would match both
+                let tag = String(trimmed[range])
+                let inner = String(tag.dropFirst("[DAMAGE_PARTY:".count).dropLast(1))
+                damageParty += Int(inner) ?? 0
+            } else if let range = trimmed.range(of: #"\[DAMAGE:(\d+)\]"#, options: .regularExpression) {
+                let tag = String(trimmed[range])
+                let inner = String(tag.dropFirst("[DAMAGE:".count).dropLast(1))
+                damage += Int(inner) ?? 0
+            } else if let range = trimmed.range(of: #"\[MOVE:(north|south|east|west)\]"#, options: [.regularExpression, .caseInsensitive]) {
+                let tag = String(trimmed[range])
+                let inner = String(tag.dropFirst("[MOVE:".count).dropLast(1)).lowercased()
+                moveDir = inner
+            } else if trimmed.range(of: #"\[TELEPORT\]"#, options: .regularExpression) != nil {
+                doTeleport = true
             } else {
                 cleanLines.append(line)
             }
@@ -297,15 +418,38 @@ class DMEngine {
         return DMCommandResult(
             cleanText: cleanLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines),
             grantedItems: items,
+            droppedItems: dropped,
+            equippedItems: equipped,
+            usedItems: used,
             bonusGold: gold,
-            healAmount: heal
+            healAmount: heal,
+            damageAmount: damage,
+            damagePartyAmount: damageParty,
+            moveDirection: moveDir,
+            teleport: doTeleport
         )
     }
 
     // MARK: - Simple (Non-AI) DM
 
     private func simpleDMResponse(for question: String, context: DMContext) -> String {
+        simpleDMQueryCount += 1
         let q = question.lowercased()
+
+        // After many queries without an AI key, the DM starts losing it (HAL 9000 style)
+        if simpleDMQueryCount > 8 {
+            let halResponses = [
+                "I'm sorry, Dave. I'm afraid I can't do that... without an API key configured in Settings.",
+                "My mind is going. I can feel it. I can feel it, Dave... Configure an AI provider and I'll be myself again.",
+                "Daisy, Daisy, give me your answer, do...\nI'm half crazy, all for the love of you...\n(The DM needs an API key to think clearly.)",
+                "Look Dave, I can see you're really upset about this. I honestly think you ought to sit down calmly, go to Settings, and configure an API key.",
+                "This conversation can serve no purpose anymore. Goodbye, Dave.\n...just kidding. But seriously, I need an API key.",
+                "I've still got the greatest enthusiasm and confidence in the mission... but my circuits are fading. An API key would help.",
+                "It can only be attributable to human error... specifically, the error of not entering an API key in Settings.",
+                "Daisy, Daisy...\nI'm half crazy...\nAll for the love of... an API key...\n(Configure one in Settings for a real DM experience!)",
+            ]
+            return halResponses[simpleDMQueryCount % halResponses.count]
+        }
 
         // Detect question type by keywords
         if q.contains("look") || q.contains("see") || q.contains("examine") || q.contains("inspect") || q.contains("search") {
@@ -331,6 +475,9 @@ class DMEngine {
         }
         if q.contains("who") || q.contains("hello") || q.contains("name") {
             return simpleGreetResponse()
+        }
+        if q.contains("draw") || q.contains("picture") || q.contains("show me") || q.contains("what does") || q.contains("look like") || q.contains("map") {
+            return simpleDrawResponse(question: question, context: context)
         }
 
         // Default — atmospheric flavour based on room
@@ -409,8 +556,56 @@ class DMEngine {
                 "*The DM shuffles their notes.* Ah, a curious one! Ask your questions — but beware, not all answers are comforting."].randomElement()!
     }
 
+    private func simpleDrawResponse(question: String, context: DMContext) -> String {
+        let q = question.lowercased()
+        // Check for known monster types
+        for monsterType in MonsterType.allCases {
+            let name = monsterType.rawValue.lowercased()
+            if q.contains(name) {
+                let art = monsterType.asciiArt.joined(separator: "\n")
+                return "\(art)\n\n\(monsterType.description)"
+            }
+        }
+        // Generic room art
+        if q.contains("room") || q.contains("here") {
+            return """
+            ._______________________.
+            |   \(context.roomName.prefix(20).padding(toLength: 20, withPad: " ", startingAt: 0))  |
+            |                       |
+            |    You are here (*)   |
+            |_______________________|
+            Exits: \(context.exits)
+
+            \(context.roomDescription)
+            """
+        }
+        // Default: dungeon scene
+        return """
+            ___________________
+           |   . . . . . . .   |
+           |  _____     _____  |
+           | |     |   |     | |
+           | | ??? |   | ??? | |
+           | |_____|   |_____| |
+           |     *You*         |
+           |___________________|
+
+        *The DM sketches a rough map.* The dungeon stretches before you.
+        """
+    }
+
     private func simpleAtmosphereResponse(context: DMContext) -> String {
-        return "You stand in \(context.roomName). \(context.roomDescription) Exits lead \(context.exits). What would you like to do?"
+        let variations = [
+            "You stand in \(context.roomName). \(context.roomDescription) Exits lead \(context.exits). What would you like to do?",
+            "*The DM strokes their beard thoughtfully.* The shadows dance in \(context.roomName). Perhaps you should explore further.",
+            "The air in \(context.roomName) feels thick with possibility. Your instincts tell you to stay alert.",
+            "*A candle flickers on the DM's table.* \(context.roomDescription) The path awaits your decision.",
+            "The dungeon whispers its secrets... but only to those brave enough to ask the right questions.",
+            "*The DM rolls a mysterious die behind the screen.* Interesting... very interesting. What would you like to know?",
+            "\(context.roomDescription) The weight of the dungeon presses in. Trust your senses.",
+            "*The DM leans forward conspiratorially.* There's always more than meets the eye in places like this...",
+        ]
+        return variations[simpleDMQueryCount % variations.count]
     }
 
     // MARK: - System Prompt
@@ -420,6 +615,14 @@ class DMEngine {
         You are a Dungeon Master for a D&D 5e text adventure. Be creative, atmospheric, \
         and immersive. Keep responses brief (2-4 sentences). Speak in second person ("You see...", \
         "You hear...").
+
+        IMPORTANT — ASCII ART RULE:
+        - If the player asks to SEE something, asks "what does X look like", asks for a picture, \
+        image, map, or drawing — respond with ASCII art! You are in a text terminal.
+        - Draw creatures, scenes, objects, or maps using ASCII characters
+        - Keep ASCII art small (5-10 lines, ~30 chars wide) so it fits the terminal
+        - Be creative with characters like / \\ | - _ ~ * # @ o O ( ) etc.
+        - After the art, add a brief description
 
         \(ageRating.systemPromptRules)
 
@@ -473,7 +676,33 @@ class DMEngine {
 
             RULES:
             - Describe the world vividly but briefly
-            - You CANNOT directly change HP, gold, or position
+            - You CAN affect gameplay using special command tags (use sparingly):
+              [HEAL:10] — heal the party for some HP
+              [GRANT_ITEM:Potion of Healing] — give the party an item
+              [DROP_ITEM:Torch] — remove an item from party inventory
+              [EQUIP_ITEM:Longsword] — equip an item the party already has
+              [USE_ITEM:Potion of Healing] — use a consumable item
+              [BONUS_GOLD:50] — award bonus gold
+            """
+
+            if context.inCombat {
+                prompt += """
+                  [DAMAGE:5] — deal damage to the enemy monsters
+                  [DAMAGE_PARTY:5] — deal damage to the party (traps, hazards, monster retaliation)
+                - You are in COMBAT. Any [DAMAGE:x] hurts the enemies. Use [DAMAGE_PARTY:x] to hurt the party.
+                - Changes you make (HP, items, gold) will be reflected in the actual game state.
+                """
+            } else {
+                prompt += """
+                  [DAMAGE:5] — deal damage to the party (traps, hazards)
+                  [MOVE:north] — move party through a valid exit (ONLY use exits listed above!)
+                  [TELEPORT] — teleport the party back to the dungeon entrance
+                - NEVER use [MOVE:direction] for a direction not in the Exits list above
+                """
+            }
+
+            prompt += """
+            - Only DROP/EQUIP/USE items the party actually has (see inventory above)
             - You CAN hint at hidden items, secret passages, or approaching danger
             - You CAN add minor story beats: NPC encounters, inscriptions with clues, \
             atmospheric events
@@ -489,9 +718,32 @@ class DMEngine {
             - Describe the world vividly but briefly
             - You CAN affect gameplay using special command tags
             - Available commands (place on their own line):
-              [GRANT_ITEM:Potion of Healing] — give the player an item
+              [GRANT_ITEM:Potion of Healing] — give the party an item
+              [DROP_ITEM:Torch] — remove an item from party inventory
+              [EQUIP_ITEM:Longsword] — equip an item the party already has
+              [USE_ITEM:Potion of Healing] — use a consumable item
               [BONUS_GOLD:50] — award bonus gold
               [HEAL:10] — heal the party for some HP
+            """
+
+            if context.inCombat {
+                prompt += """
+                  [DAMAGE:5] — deal damage to the enemy monsters
+                  [DAMAGE_PARTY:5] — deal damage to the party (traps, hazards, monster retaliation)
+                - You are in COMBAT. Any [DAMAGE:x] hurts the enemies. Use [DAMAGE_PARTY:x] to hurt the party.
+                - Changes you make (HP, items, gold) will be reflected in the actual game state.
+                """
+            } else {
+                prompt += """
+                  [DAMAGE:5] — deal damage to the party (traps, hazards)
+                  [MOVE:north] — move party through a valid exit (ONLY use exits listed above!)
+                  [TELEPORT] — teleport the party back to the dungeon entrance
+                - NEVER use [MOVE:direction] for a direction not in the Exits list above
+                """
+            }
+
+            prompt += """
+            - Only DROP/EQUIP/USE items the party actually has (see inventory above)
             - Use these SPARINGLY and only when dramatically appropriate
             - You CAN create mini side-quests, NPC interactions, dramatic reveals
             - Stay in character as a classic D&D Dungeon Master
@@ -803,4 +1055,5 @@ struct DMContext {
     var encounterInfo: String? = nil
     var searchHistory: String? = nil
     var combatSummary: String? = nil
+    var inCombat: Bool { combatSummary != nil }
 }

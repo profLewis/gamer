@@ -155,6 +155,80 @@ enum MonsterType: String, CaseIterable, Codable {
         }
     }
 
+    /// Flavorful attack descriptions — randomly selected each attack
+    var attackDescriptions: [String] {
+        switch self {
+        case .giantRat:
+            return ["its filthy teeth", "a savage bite", "its diseased claws", "a lunging gnaw"]
+        case .kobold:
+            return ["a rusty spear", "a tiny dagger", "a crude sling stone", "a sharpened stick"]
+        case .stirge:
+            return ["its blood-draining proboscis", "a piercing sting", "its barbed tongue"]
+        case .giantBat:
+            return ["razor-sharp talons", "a swooping bite", "its leathery wings"]
+        case .crawlingClaw:
+            return ["its bony fingers", "a crushing grip", "a scratching swipe", "a throttling squeeze"]
+        case .goblin:
+            return ["a jagged scimitar", "a crude shortbow", "a rusty dagger", "its foul breath and a wild swing"]
+        case .skeleton:
+            return ["a rusty shortsword", "a crumbling mace", "a notched battleaxe", "its bony fist"]
+        case .zombie:
+            return ["its rotting fists", "a shambling lunge", "grasping dead hands", "a putrid bite"]
+        case .wolf:
+            return ["snapping jaws", "a lunging bite", "its powerful fangs", "a pouncing tackle"]
+        case .orc:
+            return ["a brutal greataxe", "a heavy javelin", "a savage headbutt", "its iron-shod fist"]
+        case .hobgoblin:
+            return ["a disciplined longsword strike", "a heavy crossbow bolt", "a shield bash", "a precise spear thrust"]
+        case .giantSpider:
+            return ["venomous fangs", "a web-tangling spray", "its dripping mandibles", "a poisoned bite"]
+        case .gnoll:
+            return ["a barbed spear", "its hyena-like jaws", "a crude flail", "a savage claw swipe"]
+        case .bugbear:
+            return ["a heavy morningstar", "a crushing bear hug", "a spiked club", "a sneaky backstab"]
+        case .ogre:
+            return ["a massive greatclub", "a boulder-like fist", "a sweeping tree-trunk swing", "a ground-shaking stomp"]
+        case .owlbear:
+            return ["its razor beak", "massive claws", "a devastating bear swipe", "a screeching lunge"]
+        case .troll:
+            return ["its regenerating claws", "a raking slash", "its foul bite", "a long-armed backhand"]
+        case .demogorgon:
+            return ["its gaping flower-maw", "a tentacle lash", "a psychic screech", "its crushing tendrils"]
+        case .mindFlayer:
+            return ["a mind-shattering blast", "its writhing tentacles", "a psionic assault", "its brain-extracting grasp"]
+        case .vecna:
+            return ["a necrotic ray", "the Hand of Vecna", "a soul-rending spell", "a withering touch of undeath"]
+        }
+    }
+
+    /// Whether this monster type can inflict poison
+    var canPoison: Bool {
+        switch self {
+        case .giantSpider, .stirge, .giantRat: return true
+        default: return false
+        }
+    }
+
+    /// Chance of inflicting poison (0.0-1.0) on a successful hit
+    var poisonChance: Double {
+        switch self {
+        case .giantSpider: return 0.35
+        case .stirge: return 0.25
+        case .giantRat: return 0.15
+        default: return 0.0
+        }
+    }
+
+    /// Poison damage per turn
+    var poisonDamagePerTurn: Int {
+        switch self {
+        case .giantSpider: return 3
+        case .stirge: return 2
+        case .giantRat: return 1
+        default: return 0
+        }
+    }
+
     var asciiArt: [String] {
         switch self {
         case .giantRat:
@@ -519,6 +593,14 @@ struct AttackReport {
     let targetUnconscious: Bool
     let targetCurrentHP: Int
     let targetMaxHP: Int
+
+    // Battle scene visuals
+    let attackerArt: [String]
+    let defenderArt: [String]
+    let weaponName: String
+
+    // Status effects
+    let poisonApplied: Bool
 }
 
 // MARK: - Combat State
@@ -706,7 +788,11 @@ class Combat: ObservableObject {
             targetDefeated: targetDefeated,
             targetUnconscious: false,
             targetCurrentHP: monster.currentHP,
-            targetMaxHP: monster.maxHP
+            targetMaxHP: monster.maxHP,
+            attackerArt: character.characterClass.asciiArt,
+            defenderArt: monster.type.asciiArt,
+            weaponName: character.equippedWeapon?.name ?? "Unarmed",
+            poisonApplied: false
         )
 
         combatLog.append("\(character.name) attacks \(monster.name)")
@@ -719,8 +805,12 @@ class Combat: ObservableObject {
             return nil
         }
 
-        let attack = Dice.attackRoll(modifier: monster.attackBonus, targetAC: character.armorClass)
-        let breakdown = "Attack +\(monster.attackBonus)"
+        let attackDesc = monster.type.attackDescriptions.randomElement() ?? monster.type.rawValue
+        let hasDisadvantage = character.isDodging
+        let attack = Dice.attackRoll(modifier: monster.attackBonus, targetAC: character.armorClass, disadvantage: hasDisadvantage)
+        let breakdown = hasDisadvantage
+            ? "Attack +\(monster.attackBonus) (DISADVANTAGE — target dodging!)"
+            : "Attack +\(monster.attackBonus)"
 
         var damageDice: String? = nil
         var damageRolls: [Int]? = nil
@@ -759,6 +849,17 @@ class Combat: ObservableObject {
             targetUnconscious = !character.isConscious
         }
 
+        // Check for poison
+        var didPoison = false
+        if attack.hits && monster.type.canPoison && !character.isPoisoned {
+            let roll = Double.random(in: 0...1)
+            if roll < monster.type.poisonChance {
+                let turns = Int.random(in: 2...4)
+                character.applyPoison(damagePerTurn: monster.type.poisonDamagePerTurn, turns: turns)
+                didPoison = true
+            }
+        }
+
         let report = AttackReport(
             attackerName: monster.name,
             targetName: character.name,
@@ -778,10 +879,14 @@ class Combat: ObservableObject {
             targetDefeated: false,
             targetUnconscious: targetUnconscious,
             targetCurrentHP: character.currentHP,
-            targetMaxHP: character.maxHP
+            targetMaxHP: character.maxHP,
+            attackerArt: monster.type.asciiArt,
+            defenderArt: character.characterClass.asciiArt,
+            weaponName: attackDesc,
+            poisonApplied: didPoison
         )
 
-        combatLog.append("\(monster.name) attacks \(character.name)")
+        combatLog.append("\(monster.name) attacks \(character.name) with \(attackDesc)")
         return report
     }
 

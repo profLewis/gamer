@@ -180,6 +180,18 @@ enum CharacterClass: String, CaseIterable, Codable {
         }
     }
 
+    /// Optimal ability score assignment order for auto-assign
+    var abilityPriority: [Ability] {
+        switch self {
+        case .fighter:   return [.strength, .constitution, .dexterity, .wisdom, .charisma, .intelligence]
+        case .barbarian: return [.strength, .constitution, .dexterity, .wisdom, .charisma, .intelligence]
+        case .wizard:    return [.intelligence, .dexterity, .constitution, .wisdom, .charisma, .strength]
+        case .rogue:     return [.dexterity, .constitution, .wisdom, .charisma, .intelligence, .strength]
+        case .cleric:    return [.wisdom, .constitution, .strength, .charisma, .dexterity, .intelligence]
+        case .ranger:    return [.dexterity, .wisdom, .constitution, .strength, .charisma, .intelligence]
+        }
+    }
+
     var savingThrows: [Ability] {
         switch self {
         case .fighter: return [.strength, .constitution]
@@ -374,6 +386,17 @@ class Character: ObservableObject, Identifiable, Codable {
     @Published var isRaging: Bool            // Barbarian: currently raging
     @Published var huntersMarkActive: Bool   // Ranger: bonus damage active
 
+    // AI control
+    @Published var isComputerControlled: Bool
+
+    // Status effects
+    @Published var isPoisoned: Bool
+    @Published var poisonDamagePerTurn: Int
+    @Published var poisonTurnsRemaining: Int
+    @Published var isPlayingDead: Bool       // Pretending to be dead in combat
+    @Published var hasFledCombat: Bool       // Has fled this combat
+    @Published var isDodging: Bool           // Took Dodge action — attackers have disadvantage
+
     enum CodingKeys: String, CodingKey {
         case id, name, race, characterClass, level, abilityScores
         case currentHP, maxHP, tempHP, skillProficiencies, experiencePoints, gold
@@ -381,9 +404,11 @@ class Character: ObservableObject, Identifiable, Codable {
         case inventory, equippedWeapon, equippedArmor, equippedShield
         case knownSpells, spellSlots
         case secondWindUsed, rageUsesRemaining, isRaging, huntersMarkActive
+        case isComputerControlled
+        case isPoisoned, poisonDamagePerTurn, poisonTurnsRemaining
     }
 
-    init(name: String, race: Race, characterClass: CharacterClass, abilityScores: AbilityScores) {
+    init(name: String, race: Race, characterClass: CharacterClass, abilityScores: AbilityScores, isComputerControlled: Bool = false) {
         self.id = UUID()
         self.name = name
         self.race = race
@@ -401,6 +426,7 @@ class Character: ObservableObject, Identifiable, Codable {
         self.equippedWeapon = nil
         self.equippedArmor = nil
         self.equippedShield = nil
+        self.isComputerControlled = isComputerControlled
 
         // Spellcasting
         self.knownSpells = SpellCatalog.startingSpells(for: characterClass)
@@ -411,6 +437,14 @@ class Character: ObservableObject, Identifiable, Codable {
         self.rageUsesRemaining = characterClass == .barbarian ? 2 : 0
         self.isRaging = false
         self.huntersMarkActive = false
+
+        // Status effects
+        self.isPoisoned = false
+        self.poisonDamagePerTurn = 0
+        self.poisonTurnsRemaining = 0
+        self.isPlayingDead = false
+        self.hasFledCombat = false
+        self.isDodging = false
 
         // Calculate starting HP
         let conMod = abilityScores.modifier(for: .constitution)
@@ -450,6 +484,13 @@ class Character: ObservableObject, Identifiable, Codable {
         rageUsesRemaining = (try? container.decodeIfPresent(Int.self, forKey: .rageUsesRemaining)) ?? 0
         isRaging = (try? container.decodeIfPresent(Bool.self, forKey: .isRaging)) ?? false
         huntersMarkActive = (try? container.decodeIfPresent(Bool.self, forKey: .huntersMarkActive)) ?? false
+        isComputerControlled = (try? container.decodeIfPresent(Bool.self, forKey: .isComputerControlled)) ?? false
+        isPoisoned = (try? container.decodeIfPresent(Bool.self, forKey: .isPoisoned)) ?? false
+        poisonDamagePerTurn = (try? container.decodeIfPresent(Int.self, forKey: .poisonDamagePerTurn)) ?? 0
+        poisonTurnsRemaining = (try? container.decodeIfPresent(Int.self, forKey: .poisonTurnsRemaining)) ?? 0
+        isPlayingDead = false
+        hasFledCombat = false
+        isDodging = false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -479,6 +520,10 @@ class Character: ObservableObject, Identifiable, Codable {
         try container.encode(rageUsesRemaining, forKey: .rageUsesRemaining)
         try container.encode(isRaging, forKey: .isRaging)
         try container.encode(huntersMarkActive, forKey: .huntersMarkActive)
+        try container.encode(isComputerControlled, forKey: .isComputerControlled)
+        try container.encode(isPoisoned, forKey: .isPoisoned)
+        try container.encode(poisonDamagePerTurn, forKey: .poisonDamagePerTurn)
+        try container.encode(poisonTurnsRemaining, forKey: .poisonTurnsRemaining)
     }
 
     var proficiencyBonus: Int {
@@ -551,6 +596,39 @@ class Character: ObservableObject, Identifiable, Codable {
             deathSaveSuccesses = 0
             deathSaveFailures = 0
         }
+    }
+
+    func applyPoison(damagePerTurn: Int, turns: Int) {
+        isPoisoned = true
+        poisonDamagePerTurn = damagePerTurn
+        poisonTurnsRemaining = turns
+    }
+
+    func curePoison() {
+        isPoisoned = false
+        poisonDamagePerTurn = 0
+        poisonTurnsRemaining = 0
+    }
+
+    /// Called each combat turn — returns damage taken from poison, or 0 if recovered
+    func tickPoison() -> (damage: Int, cured: Bool) {
+        guard isPoisoned, poisonTurnsRemaining > 0 else { return (0, false) }
+
+        // 20% chance of naturally recovering each turn (CON save)
+        let conMod = abilityScores.modifier(for: .constitution)
+        let saveRoll = Int.random(in: 1...20) + conMod
+        if saveRoll >= 14 {
+            curePoison()
+            return (0, true)
+        }
+
+        let dmg = poisonDamagePerTurn
+        takeDamage(dmg)
+        poisonTurnsRemaining -= 1
+        if poisonTurnsRemaining <= 0 {
+            curePoison()
+        }
+        return (dmg, poisonTurnsRemaining <= 0)
     }
 
     // MARK: - Carry Capacity
@@ -705,7 +783,8 @@ class Character: ObservableObject, Identifiable, Codable {
         let bar = String(repeating: "═", count: w)
 
         lines.append("╔\(bar)╗")
-        lines.append(row(" \(String(name.prefix(w - 2)))"))
+        let aiTag = isComputerControlled ? " [AI]" : ""
+        lines.append(row(" \(String(name.prefix(w - 2 - aiTag.count)))\(aiTag)"))
         lines.append(row(" Lv\(level) \(race.rawValue) \(characterClass.rawValue)"))
         lines.append("╠\(bar)╣")
         lines.append(row(" HP: \(currentHP)/\(maxHP)  AC: \(armorClass)"))

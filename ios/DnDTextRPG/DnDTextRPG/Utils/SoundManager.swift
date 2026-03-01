@@ -217,6 +217,65 @@ class SoundManager {
         ])
     }
 
+    /// Sword swing — whooshing slash
+    func playSwordSwing() {
+        playSequence([
+            (300, 0.04, 0.2, .noise),
+            (500, 0.05, 0.25, .noise),
+            (700, 0.04, 0.2, .noise),
+            (400, 0.03, 0.15, .noise),
+        ])
+    }
+
+    /// Arrow shot — twang then whistle
+    func playArrowShot() {
+        playSequence([
+            (880, 0.04, 0.2, .square),
+            (1200, 0.03, 0.15, .sine),
+            (1400, 0.04, 0.12, .sine),
+            (1600, 0.05, 0.08, .sine),
+        ])
+    }
+
+    /// Staff strike — deep thud
+    func playStaffStrike() {
+        playSequence([
+            (120, 0.06, 0.3, .square),
+            (100, 0.08, 0.25, .triangle),
+            (80, 0.06, 0.2, .sine),
+        ])
+    }
+
+    /// Shield block — metallic clang
+    func playShieldBlock() {
+        playSequence([
+            (800, 0.03, 0.3, .square),
+            (600, 0.04, 0.25, .square),
+            (400, 0.06, 0.2, .triangle),
+        ])
+    }
+
+    /// Spell cast — magical shimmer
+    func playSpellCast() {
+        playSequence([
+            (523, 0.06, 0.15, .sine),
+            (784, 0.06, 0.18, .sine),
+            (1047, 0.06, 0.2, .sine),
+            (1568, 0.08, 0.15, .sine),
+            (1047, 0.06, 0.12, .sine),
+        ])
+    }
+
+    /// Death — grim descending tone
+    func playDeath() {
+        playSequence([
+            (300, 0.15, 0.25, .square),
+            (200, 0.15, 0.2, .square),
+            (150, 0.2, 0.18, .triangle),
+            (100, 0.3, 0.15, .sine),
+        ])
+    }
+
     /// Dice roll — rapid random clicks
     func playDiceRoll() {
         playSequence([
