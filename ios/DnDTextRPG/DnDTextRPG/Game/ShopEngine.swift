@@ -61,9 +61,7 @@ class ShopEngine {
 
         var options: [String] = []
         for item in stock {
-            let affordable = character.gold >= item.value ? "" : " [can't afford]"
-            let heavy = character.canCarry(item) ? "" : " [too heavy]"
-            options.append("\(item.name) — \(item.value)gp (\(String(format: "%.1f", item.weight))lb)\(affordable)\(heavy)")
+            options.append("\(item.name)  \(item.value)gp  \(String(format: "%.1f", item.weight))lb")
         }
         options.append("< Back")
 
@@ -140,7 +138,7 @@ class ShopEngine {
         var options: [String] = []
         for item in sellableItems {
             let sellValue = max(1, item.value / 2)
-            options.append("\(item.name) — sells for \(sellValue)gp")
+            options.append("\(item.name)  +\(sellValue)gp")
         }
         options.append("< Back")
 

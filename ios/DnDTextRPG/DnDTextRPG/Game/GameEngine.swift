@@ -2539,7 +2539,7 @@ class GameEngine: ObservableObject {
             self?.rest()
         }
         dpadCenterLongPressHandler = { [weak self] in
-            self?.performRest(isLongRest: true)
+            self?.performRest(isLongRest: true, fast: true)
         }
         menuHandler = { choice in
             if choice > 0 && choice <= actions.count {
@@ -3404,7 +3404,7 @@ class GameEngine: ObservableObject {
         showInventoryFor(defaultChar, onBack: back)
     }
 
-    private func showInventoryFor(_ character: Character, onBack: (() -> Void)? = nil) {
+    private func showInventoryFor(_ character: Character, onBack: (() -> Void)? = nil, fromDM: Bool = false) {
 
         clearTerminal()
 
@@ -3456,47 +3456,53 @@ class GameEngine: ObservableObject {
 
         if !equipableWeapons.isEmpty {
             options.append("Equip Weapon")
-            actions.append { [weak self] in self?.showEquipMenu(character: character, type: .weapon, label: "Weapon", onBack: onBack) }
+            actions.append { [weak self] in self?.showEquipMenu(character: character, type: .weapon, label: "Weapon", onBack: onBack, fromDM: fromDM) }
         }
         if !equipableArmor.isEmpty {
             options.append("Equip Armor")
-            actions.append { [weak self] in self?.showEquipMenu(character: character, type: .armor, label: "Armor", onBack: onBack) }
+            actions.append { [weak self] in self?.showEquipMenu(character: character, type: .armor, label: "Armor", onBack: onBack, fromDM: fromDM) }
         }
         if !equipableShields.isEmpty {
             options.append("Equip Shield")
-            actions.append { [weak self] in self?.showEquipMenu(character: character, type: .shield, label: "Shield", onBack: onBack) }
+            actions.append { [weak self] in self?.showEquipMenu(character: character, type: .shield, label: "Shield", onBack: onBack, fromDM: fromDM) }
         }
         if !usablePotions.isEmpty {
             options.append("Use Potion")
-            actions.append { [weak self] in self?.showUsePotionMenu(character: character, onBack: onBack) }
+            actions.append { [weak self] in self?.showUsePotionMenu(character: character, onBack: onBack, fromDM: fromDM) }
         }
         if character.equippedWeapon != nil {
             options.append("Unequip Weapon")
             actions.append { [weak self] in
                 character.unequipWeapon()
-                self?.showInventoryFor(character, onBack: onBack)
+                self?.showInventoryFor(character, onBack: onBack, fromDM: fromDM)
             }
         }
         if character.equippedArmor != nil {
             options.append("Unequip Armor")
             actions.append { [weak self] in
                 character.unequipArmor()
-                self?.showInventoryFor(character, onBack: onBack)
+                self?.showInventoryFor(character, onBack: onBack, fromDM: fromDM)
             }
         }
         if !character.inventory.isEmpty {
             options.append("Drop Item")
-            actions.append { [weak self] in self?.showDropItemMenu(character: character, onBack: onBack) }
+            actions.append { [weak self] in self?.showDropItemMenu(character: character, onBack: onBack, fromDM: fromDM) }
         }
 
         // Add switcher buttons for other party members
         if party.count > 1 {
             for other in party where other.id != character.id {
-                options.append("\(other.name)'s Pack")
+                options.append("\(shortName(for: other))'s Pack")
                 actions.append { [weak self] in
-                    self?.showInventoryFor(other, onBack: onBack)
+                    self?.showInventoryFor(other, onBack: onBack, fromDM: fromDM)
                 }
             }
+        }
+
+        // Ask the DM (not shown if we came from DM mode)
+        if !fromDM && DMEngine.shared.adLibLevel != .off {
+            options.append("Ask the DM")
+            actions.append { [weak self] in self?.askTheDM() }
         }
 
         options.append("< Back")
@@ -3511,7 +3517,7 @@ class GameEngine: ObservableObject {
         }
     }
 
-    private func showEquipMenu(character: Character, type: ItemType, label: String, onBack: (() -> Void)? = nil) {
+    private func showEquipMenu(character: Character, type: ItemType, label: String, onBack: (() -> Void)? = nil, fromDM: Bool = false) {
         let items = character.inventory.filter { $0.type == type }
 
         clearTerminal()
@@ -3534,7 +3540,7 @@ class GameEngine: ObservableObject {
 
         menuHandler = { [weak self] choice in
             if choice == options.count {
-                self?.showInventoryFor(character, onBack: onBack)
+                self?.showInventoryFor(character, onBack: onBack, fromDM: fromDM)
                 return
             }
             guard choice > 0 && choice <= items.count else { return }
@@ -3546,11 +3552,11 @@ class GameEngine: ObservableObject {
             case .shield: character.equipShield(item)
             default: break
             }
-            self?.showInventoryFor(character, onBack: onBack)
+            self?.showInventoryFor(character, onBack: onBack, fromDM: fromDM)
         }
     }
 
-    private func showUsePotionMenu(character: Character, onBack: (() -> Void)? = nil) {
+    private func showUsePotionMenu(character: Character, onBack: (() -> Void)? = nil, fromDM: Bool = false) {
         let potions = character.inventory.filter { $0.type == .potion }
 
         clearTerminal()
@@ -3569,7 +3575,7 @@ class GameEngine: ObservableObject {
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == options.count {
-                self.showInventoryFor(character, onBack: onBack)
+                self.showInventoryFor(character, onBack: onBack, fromDM: fromDM)
                 return
             }
             guard choice > 0 && choice <= potions.count else { return }
@@ -3589,14 +3595,14 @@ class GameEngine: ObservableObject {
 
                 self.waitForContinue()
                 self.inputHandler = { [weak self] _ in
-                    self?.showInventoryFor(character, onBack: onBack)
+                    self?.showInventoryFor(character, onBack: onBack, fromDM: fromDM)
                 }
             }
 
             // Ask who should drink it when there are multiple party members
             if self.party.count > 1 {
                 self.pickCharacter(title: "Who drinks the \(potion.name)?", onBack: {
-                    self.showUsePotionMenu(character: character, onBack: onBack)
+                    self.showUsePotionMenu(character: character, onBack: onBack, fromDM: fromDM)
                 }) { target in
                     applyPotion(target)
                 }
@@ -3606,7 +3612,7 @@ class GameEngine: ObservableObject {
         }
     }
 
-    private func showDropItemMenu(character: Character, onBack: (() -> Void)? = nil) {
+    private func showDropItemMenu(character: Character, onBack: (() -> Void)? = nil, fromDM: Bool = false) {
         clearTerminal()
         printSubtitle("Drop Item")
 
@@ -3621,7 +3627,7 @@ class GameEngine: ObservableObject {
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == options.count {
-                self.showInventoryFor(character, onBack: onBack)
+                self.showInventoryFor(character, onBack: onBack, fromDM: fromDM)
                 return
             }
             guard choice > 0 && choice <= character.inventory.count else { return }
@@ -3630,7 +3636,7 @@ class GameEngine: ObservableObject {
             // If multiple party members, offer to give to another character
             let others = self.party.filter { $0.id != character.id }
             if !others.isEmpty {
-                self.showItemTransferMenu(item: item, from: character, others: others, onBack: onBack)
+                self.showItemTransferMenu(item: item, from: character, others: others, onBack: onBack, fromDM: fromDM)
             } else {
                 character.removeItem(item)
                 if let room = self.dungeon?.currentRoom {
@@ -3640,13 +3646,13 @@ class GameEngine: ObservableObject {
                 self.print("  Dropped \(item.name) in the room.", color: .yellow)
                 self.waitForContinue()
                 self.inputHandler = { [weak self] _ in
-                    self?.showInventoryFor(character, onBack: onBack)
+                    self?.showInventoryFor(character, onBack: onBack, fromDM: fromDM)
                 }
             }
         }
     }
 
-    private func showItemTransferMenu(item: Item, from: Character, others: [Character], onBack: (() -> Void)? = nil) {
+    private func showItemTransferMenu(item: Item, from: Character, others: [Character], onBack: (() -> Void)? = nil, fromDM: Bool = false) {
         clearTerminal()
         printSubtitle("Give or Drop: \(item.name)")
         print("  \(from.name) has selected \(item.name).", color: .dimGreen)
@@ -3673,7 +3679,7 @@ class GameEngine: ObservableObject {
                 }
                 self.waitForContinue()
                 self.inputHandler = { [weak self] _ in
-                    self?.showInventoryFor(from, onBack: onBack)
+                    self?.showInventoryFor(from, onBack: onBack, fromDM: fromDM)
                 }
             }
         }
@@ -3689,13 +3695,13 @@ class GameEngine: ObservableObject {
             self.print("  Dropped \(item.name) in the room.", color: .yellow)
             self.waitForContinue()
             self.inputHandler = { [weak self] _ in
-                self?.showInventoryFor(from, onBack: onBack)
+                self?.showInventoryFor(from, onBack: onBack, fromDM: fromDM)
             }
         }
 
         options.append("< Back")
         actions.append { [weak self] in
-            self?.showDropItemMenu(character: from, onBack: onBack)
+            self?.showDropItemMenu(character: from, onBack: onBack, fromDM: fromDM)
         }
 
         showMenu(options)
@@ -3830,7 +3836,7 @@ class GameEngine: ObservableObject {
         }
     }
 
-    func performRest(isLongRest: Bool) {
+    func performRest(isLongRest: Bool, fast: Bool = false) {
         let repeats = isLongRest ? 3 : 1
         let header = isLongRest ? "Taking a long rest..." : "Resting..."
 
@@ -3844,12 +3850,12 @@ class GameEngine: ObservableObject {
 
         SoundManager.shared.stopMusic()
         print(header, color: .cyan, bold: true)
-        if isHoldingScreen {
+        if isHoldingScreen && !fast {
             print("(Hold screen to rest faster)", color: .dimGreen)
         }
         print("")
 
-        playHourglassAnimation(repeats: repeats) { [weak self] in
+        playHourglassAnimation(repeats: repeats, fast: fast) { [weak self] in
             guard let self = self else { return }
 
             SoundManager.shared.playHeal()
@@ -3988,7 +3994,7 @@ class GameEngine: ObservableObject {
         ]
     }
 
-    private func playHourglassAnimation(repeats: Int, completion: @escaping () -> Void) {
+    private func playHourglassAnimation(repeats: Int, fast: Bool = false, completion: @escaping () -> Void) {
         let frames = hourglassFrames
         let frameCount = frames.count
         let totalFrames = frameCount * repeats
@@ -4007,7 +4013,7 @@ class GameEngine: ObservableObject {
                 return
             }
 
-            let delay = isHoldingScreen ? 0.15 : 0.8
+            let delay = (fast || isHoldingScreen) ? 0.15 : 0.8
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self = self else { return }
 
@@ -4154,7 +4160,7 @@ class GameEngine: ObservableObject {
                 let back: () -> Void = { [weak self] in self?.askTheDM() }
                 let humans = self.party.filter { !$0.isComputerControlled }
                 let defaultChar = humans.randomElement() ?? self.party.first!
-                self.showInventoryFor(defaultChar, onBack: back)
+                self.showInventoryFor(defaultChar, onBack: back, fromDM: true)
                 return
             }
 
