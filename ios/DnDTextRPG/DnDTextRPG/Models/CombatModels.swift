@@ -422,6 +422,44 @@ enum MonsterType: String, CaseIterable, Codable {
         default: return .vecna
         }
     }
+
+    /// Roll for possible loot drop from this monster type
+    func rollLoot() -> TreasureItem? {
+        let roll = Dice.d20()
+        switch self {
+        // Starter monsters — rare small drops
+        case .giantRat, .stirge, .giantBat, .crawlingClaw:
+            if roll >= 18 { return TreasureItem(name: "Dagger", value: 2, type: .item) }
+            if roll >= 15 { return TreasureItem(name: "\(Dice.d6() * 2) Gold Pieces", value: Dice.d6() * 2, type: .gold) }
+            return nil
+        case .kobold:
+            if roll >= 16 { return TreasureItem(name: "Shortsword", value: 10, type: .item) }
+            if roll >= 12 { return TreasureItem(name: "\(Dice.d6() * 3) Gold Pieces", value: Dice.d6() * 3, type: .gold) }
+            return nil
+        // Low — occasional drops
+        case .goblin, .skeleton, .zombie, .wolf:
+            if roll >= 17 { return TreasureItem(name: "Potion of Healing", value: 50, type: .potion) }
+            if roll >= 14 { return TreasureItem(name: "Dagger", value: 2, type: .item) }
+            if roll >= 10 { return TreasureItem(name: "\(Dice.rollSum(2, d: 6) * 5) Gold Pieces", value: Dice.rollSum(2, d: 6) * 5, type: .gold) }
+            return nil
+        // Mid — better drops
+        case .orc, .hobgoblin, .gnoll:
+            if roll >= 16 { return TreasureItem(name: "Potion of Healing", value: 50, type: .potion) }
+            if roll >= 13 { return TreasureItem(name: "Longsword", value: 15, type: .item) }
+            if roll >= 8 { return TreasureItem(name: "\(Dice.rollSum(3, d: 6) * 5) Gold Pieces", value: Dice.rollSum(3, d: 6) * 5, type: .gold) }
+            return nil
+        // High — good drops
+        case .bugbear, .giantSpider, .ogre:
+            if roll >= 15 { return TreasureItem(name: "Potion of Greater Healing", value: 150, type: .potion) }
+            if roll >= 12 { return TreasureItem(name: "Scale Mail", value: 50, type: .item) }
+            if roll >= 7 { return TreasureItem(name: "\(Dice.rollSum(4, d: 6) * 10) Gold Pieces", value: Dice.rollSum(4, d: 6) * 10, type: .gold) }
+            return nil
+        // Boss — guaranteed drops
+        case .owlbear, .troll, .demogorgon, .mindFlayer, .vecna:
+            if roll >= 10 { return TreasureItem(name: "Potion of Greater Healing", value: 150, type: .potion) }
+            return TreasureItem(name: "\(Dice.rollSum(5, d: 6) * 10) Gold Pieces", value: Dice.rollSum(5, d: 6) * 10, type: .gold)
+        }
+    }
 }
 
 // MARK: - Encounter

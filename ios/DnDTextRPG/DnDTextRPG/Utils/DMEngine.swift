@@ -651,6 +651,13 @@ class DMEngine {
 
         TIME: \(context.gameTime)
         \(context.combatSummary.map { "\nCOMBAT IN PROGRESS:\n\($0)" } ?? "")
+        \(context.adventureLogSummary.map { """
+
+        RECENT ADVENTURE LOG (what has happened so far):
+        \($0)
+
+        Use this log to maintain narrative continuity. Do NOT contradict events that already happened.
+        """ } ?? "")
         """
 
         switch context.adLibLevel {
@@ -1055,5 +1062,6 @@ struct DMContext {
     var encounterInfo: String? = nil
     var searchHistory: String? = nil
     var combatSummary: String? = nil
+    var adventureLogSummary: String? = nil
     var inCombat: Bool { combatSummary != nil }
 }

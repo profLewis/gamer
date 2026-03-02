@@ -116,9 +116,13 @@ class GameEngine: ObservableObject {
         gameTimeMinutes += minutes
     }
 
-    private func logEvent(_ message: String) {
+    private func logEvent(_ message: String, category: String? = nil) {
         let timestamp = formattedGameTime()
-        adventureLog.append("[\(timestamp)] \(message)")
+        if let cat = category {
+            adventureLog.append("[\(timestamp)] [\(cat)] \(message)")
+        } else {
+            adventureLog.append("[\(timestamp)] \(message)")
+        }
     }
 
     // MARK: - Terminal Output
@@ -2112,7 +2116,7 @@ class GameEngine: ObservableObject {
         roomsSinceLastSave = 0
         DMEngine.shared.clearHistory()
         dmChatLog = []
-        logEvent("Entered \(dungeon?.name ?? "the dungeon")")
+        logEvent("Entered \(dungeon?.name ?? "the dungeon")", category: "EXPLORE")
         SoundManager.shared.startMusic(.exploration)
         showExplorationView()
     }
@@ -2234,7 +2238,7 @@ class GameEngine: ObservableObject {
         if result.success {
             advanceTime(10)
             if let room = dungeon.currentRoom {
-                logEvent("Moved \(direction.rawValue) to \(room.name)")
+                logEvent("Moved \(direction.rawValue) to \(room.name)", category: "EXPLORE")
             }
             autosaveIfNeeded()
         } else {
@@ -2273,7 +2277,7 @@ class GameEngine: ObservableObject {
             print("  \(target.name) is knocked unconscious!", color: .red, bold: true)
         }
 
-        logEvent("Trap: \(trap.name) hit \(target.name) for \(damage) damage")
+        logEvent("Trap: \(trap.name) hit \(target.name) for \(damage) damage", category: "TRAP")
 
         print("")
         waitForContinue()
@@ -2294,7 +2298,7 @@ class GameEngine: ObservableObject {
             print("  [TELEPORTED to \(entrance.name)!]", color: .cyan, bold: true)
             print("")
             printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
-            logEvent("Teleported to dungeon entrance")
+            logEvent("Teleported to dungeon entrance", category: "DM")
         }
     }
 
@@ -2321,7 +2325,7 @@ class GameEngine: ObservableObject {
             if result.success {
                 advanceTime(10)
                 if let newRoom = dungeon.currentRoom {
-                    logEvent("DM moved party \(dir.rawValue) to \(newRoom.name)")
+                    logEvent("DM moved party \(dir.rawValue) to \(newRoom.name)", category: "DM")
                     print("")
                     print("  [Moved \(dir.rawValue) to \(newRoom.name)!]", color: .cyan, bold: true)
                     print("")
@@ -2339,7 +2343,7 @@ class GameEngine: ObservableObject {
             if let item = char.inventory.first(where: { $0.name.lowercased().contains(lower) }) {
                 char.removeItem(item)
                 print("  [Dropped: \(item.name)]", color: .yellow, bold: true)
-                logEvent("DM: \(char.name) dropped \(item.name)")
+                logEvent("DM: \(char.name) dropped \(item.name)", category: "DM")
                 return
             }
             // Check equipped items
@@ -2347,7 +2351,7 @@ class GameEngine: ObservableObject {
                 char.unequipWeapon()
                 char.removeItem(w)
                 print("  [Dropped: \(w.name)]", color: .yellow, bold: true)
-                logEvent("DM: \(char.name) dropped \(w.name)")
+                logEvent("DM: \(char.name) dropped \(w.name)", category: "DM")
                 return
             }
         }
@@ -2367,7 +2371,7 @@ class GameEngine: ObservableObject {
                     return
                 }
                 print("  [Equipped: \(item.name)!]", color: .cyan, bold: true)
-                logEvent("DM: \(char.name) equipped \(item.name)")
+                logEvent("DM: \(char.name) equipped \(item.name)", category: "DM")
                 return
             }
         }
@@ -2384,11 +2388,11 @@ class GameEngine: ObservableObject {
                     let amount = max(1, roll.total)
                     char.heal(amount)
                     print("  [\(char.name) uses \(item.name): +\(amount) HP!]", color: .brightGreen, bold: true)
-                    logEvent("DM: \(char.name) used \(item.name), healed \(amount) HP")
+                    logEvent("DM: \(char.name) used \(item.name), healed \(amount) HP", category: "DM")
                 } else {
                     char.removeItem(item)
                     print("  [\(char.name) uses \(item.name).]", color: .cyan, bold: true)
-                    logEvent("DM: \(char.name) used \(item.name)")
+                    logEvent("DM: \(char.name) used \(item.name)", category: "DM")
                 }
                 return
             }
@@ -2430,28 +2434,24 @@ class GameEngine: ObservableObject {
                 }
                 let itemName = itemPool.randomElement()!
                 if let item = resolveItemByName(itemName) {
-                    if let carrier = party.first(where: { $0.canCarry(item) }) {
-                        _ = carrier.addItem(item)
-                        print("  Hidden stash: \(item.name)!", color: .brightGreen)
-                        print("  \(carrier.name) takes it.", color: .dimGreen)
-                        logEvent("Found \(item.name) in a hidden stash")
-                    } else {
-                        print("  You find a \(item.name), but no one can carry it!", color: .yellow)
-                        logEvent("Found \(item.name) but couldn't carry it")
+                    print("  Hidden stash: \(item.name)!", color: .brightGreen)
+                    showItemPickupMenu(item: item, source: "Hidden stash") { [weak self] in
+                        self?.showExplorationView()
                     }
+                    return
                 }
             } else if findRoll >= 3 {
                 let gold = Dice.rollSum(2, d: 6) * 5
                 print("  Hidden stash: \(gold) gold pieces!", color: .yellow)
                 party.first?.gold += gold
-                logEvent("Found \(gold) gold in a hidden stash")
+                logEvent("Found \(gold) gold in a hidden stash", category: "LOOT")
             } else {
                 print("A secret alcove, but it's empty.")
-                logEvent("Searched room — found an empty alcove")
+                logEvent("Searched room — found an empty alcove", category: "EXPLORE")
             }
         } else {
             print("You don't find anything of interest.")
-            logEvent("Searched room — found nothing")
+            logEvent("Searched room — found nothing", category: "EXPLORE")
         }
 
         waitForContinue()
@@ -2478,45 +2478,36 @@ class GameEngine: ObservableObject {
         print("Collected treasure:", color: .brightGreen, bold: true)
         print("")
 
+        // Separate gold from pickable items
         var totalGold = 0
+        var pickableItems: [Item] = []
         var itemNames: [String] = []
+
         for treasureItem in room.treasure {
+            itemNames.append(treasureItem.name)
             if treasureItem.type == .gold {
                 totalGold += treasureItem.value
                 print("  \(treasureItem.name)", color: .yellow)
             } else if treasureItem.type == .gem {
-                // Gems are inventory items that can be sold later
                 let gemItem = Item(id: UUID(), name: treasureItem.name,
                                    description: "A precious gem worth \(treasureItem.value)gp.",
                                    type: .gem, weight: 0.1, value: treasureItem.value,
                                    weaponStats: nil, armorStats: nil, potionStats: nil)
-                if let carrier = party.first(where: { $0.canCarry(gemItem) }) {
-                    _ = carrier.addItem(gemItem)
-                    print("  \(treasureItem.name) (\(treasureItem.value)gp) — \(carrier.name) takes it!", color: .brightGreen)
-                } else {
-                    totalGold += treasureItem.value
-                    print("  \(treasureItem.name) — too heavy, sold for \(treasureItem.value)gp")
-                }
+                pickableItems.append(gemItem)
+                print("  \(treasureItem.name) (\(treasureItem.value)gp)", color: .brightGreen)
             } else if treasureItem.type == .potion || treasureItem.type == .item {
-                // Resolve to an actual game item
                 if let item = resolveItemByName(treasureItem.name) {
-                    if let carrier = party.first(where: { $0.canCarry(item) }) {
-                        _ = carrier.addItem(item)
-                        print("  \(item.name) — \(carrier.name) takes it!", color: .brightGreen)
-                    } else {
-                        totalGold += treasureItem.value
-                        print("  \(treasureItem.name) — too heavy, sold for \(treasureItem.value)gp")
-                    }
+                    pickableItems.append(item)
+                    print("  \(item.name)", color: .brightGreen)
                 } else {
                     totalGold += treasureItem.value
-                    print("  \(treasureItem.name) — \(treasureItem.value)gp")
+                    print("  \(treasureItem.name) — \(treasureItem.value)gp", color: .yellow)
                 }
             }
-            itemNames.append(treasureItem.name)
         }
 
+        // Auto-collect gold (no choice needed)
         if totalGold > 0 {
-            // Split gold evenly among party
             let goldEach = totalGold / party.count
             let remainder = totalGold % party.count
             for (i, char) in party.enumerated() {
@@ -2528,13 +2519,173 @@ class GameEngine: ObservableObject {
             } else {
                 print("  Total gold: +\(totalGold)", color: .yellow)
             }
+            logEvent("Collected \(totalGold) gold from treasure", category: "LOOT")
         }
-        room.treasure.removeAll()
-        logEvent("Collected treasure: \(itemNames.joined(separator: ", "))")
 
-        waitForContinue()
-        inputHandler = { [weak self] _ in
-            self?.showExplorationView()
+        room.treasure.removeAll()
+
+        if !itemNames.isEmpty {
+            logEvent("Collected treasure: \(itemNames.joined(separator: ", "))", category: "LOOT")
+        }
+
+        // Show pickup sequence for non-gold items, or return to exploration
+        if !pickableItems.isEmpty {
+            waitForContinue()
+            inputHandler = { [weak self] _ in
+                self?.showItemPickupSequence(items: pickableItems, source: "Treasure") { [weak self] in
+                    self?.showExplorationView()
+                }
+            }
+        } else {
+            waitForContinue()
+            inputHandler = { [weak self] _ in
+                self?.showExplorationView()
+            }
+        }
+    }
+
+    // MARK: - Item Pickup
+
+    /// Show a menu for a found item — pick up, equip, use, or leave it
+    private func showItemPickupMenu(item: Item, source: String, onDone: @escaping () -> Void) {
+        clearTerminal()
+
+        if let dungeon = dungeon {
+            printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
+            print("")
+        }
+
+        printSubtitle("Found: \(item.name)")
+        print("  \(source)", color: .dimGreen)
+        print("")
+        print("  \(item.description)", color: .cyan)
+        if let ws = item.weaponStats {
+            print("  Damage: \(ws.damage) \(ws.damageType)", color: .dimGreen)
+        }
+        if let as_ = item.armorStats {
+            print("  AC: \(as_.baseAC)", color: .dimGreen)
+        }
+        if let ps = item.potionStats {
+            print("  Effect: \(ps.effect)", color: .dimGreen)
+        }
+        print("  Weight: \(String(format: "%.1f", item.weight))lb  Value: \(item.value)gp", color: .dimGreen)
+        print("")
+
+        var options: [String] = []
+        var actions: [() -> Void] = []
+
+        // Pick up options — one per character for multi-party, or just "Pick Up"
+        if party.count > 1 {
+            for char in party {
+                let canCarry = char.canCarry(item)
+                let tag = canCarry ? "" : " [too heavy]"
+                options.append("\(char.name) picks up\(tag)")
+                actions.append { [weak self] in
+                    guard let self = self else { return }
+                    if canCarry {
+                        _ = char.addItem(item)
+                        self.print("  \(char.name) takes the \(item.name).", color: .brightGreen)
+                        self.logEvent("\(char.name) picked up \(item.name)", category: "LOOT")
+                    } else {
+                        self.print("  \(char.name) can't carry any more!", color: .yellow)
+                    }
+                    self.waitForContinue()
+                    self.inputHandler = { _ in onDone() }
+                }
+            }
+        } else if let char = party.first {
+            let canCarry = char.canCarry(item)
+            let tag = canCarry ? "" : " [too heavy]"
+            options.append("Pick Up\(tag)")
+            actions.append { [weak self] in
+                guard let self = self else { return }
+                if canCarry {
+                    _ = char.addItem(item)
+                    self.print("  \(char.name) takes the \(item.name).", color: .brightGreen)
+                    self.logEvent("\(char.name) picked up \(item.name)", category: "LOOT")
+                } else {
+                    self.print("  Too heavy to carry!", color: .yellow)
+                }
+                self.waitForContinue()
+                self.inputHandler = { _ in onDone() }
+            }
+        }
+
+        // Equip option for weapon/armor/shield
+        if item.type == .weapon || item.type == .armor || item.type == .shield {
+            let label = item.type == .weapon ? "Equip as Weapon" : (item.type == .shield ? "Equip as Shield" : "Equip as Armor")
+            options.append(label)
+            actions.append { [weak self] in
+                guard let self = self else { return }
+                let doEquip = { (char: Character) in
+                    switch item.type {
+                    case .weapon: char.equipWeapon(item)
+                    case .armor: char.equipArmor(item)
+                    case .shield: char.equipShield(item)
+                    default: break
+                    }
+                    self.print("  \(char.name) equips the \(item.name)!", color: .brightGreen)
+                    self.logEvent("\(char.name) equipped \(item.name)", category: "LOOT")
+                    self.waitForContinue()
+                    self.inputHandler = { _ in onDone() }
+                }
+                if self.party.count > 1 {
+                    self.pickCharacter(title: "Who equips it?") { char in doEquip(char) }
+                } else if let char = self.party.first {
+                    doEquip(char)
+                }
+            }
+        }
+
+        // Use option for potions
+        if item.type == .potion, let healStr = item.potionStats?.healAmount {
+            options.append("Use Now")
+            actions.append { [weak self] in
+                guard let self = self else { return }
+                let doUse = { (char: Character) in
+                    let roll = Dice.rollDamage(healStr)
+                    let amount = max(1, roll.total)
+                    char.heal(amount)
+                    self.print("  \(char.name) drinks the \(item.name)!", color: .brightGreen)
+                    self.print("  Restored \(amount) HP! (\(char.currentHP)/\(char.maxHP))", color: .brightGreen)
+                    self.logEvent("\(char.name) used \(item.name) — healed \(amount) HP", category: "LOOT")
+                    self.waitForContinue()
+                    self.inputHandler = { _ in onDone() }
+                }
+                if self.party.count > 1 {
+                    self.pickCharacter(title: "Who drinks it?") { char in doUse(char) }
+                } else if let char = self.party.first {
+                    doUse(char)
+                }
+            }
+        }
+
+        // Leave it
+        options.append("Leave It")
+        actions.append { [weak self] in
+            self?.print("  You leave the \(item.name) behind.", color: .dimGreen)
+            self?.waitForContinue()
+            self?.inputHandler = { _ in onDone() }
+        }
+
+        showMenu(options)
+        menuHandler = { choice in
+            if choice > 0 && choice <= actions.count {
+                actions[choice - 1]()
+            }
+        }
+    }
+
+    /// Process multiple items one at a time
+    private func showItemPickupSequence(items: [Item], source: String, onDone: @escaping () -> Void) {
+        guard !items.isEmpty else {
+            onDone()
+            return
+        }
+        var remaining = items
+        let current = remaining.removeFirst()
+        showItemPickupMenu(item: current, source: source) { [weak self] in
+            self?.showItemPickupSequence(items: remaining, source: source, onDone: onDone)
         }
     }
 
@@ -2863,14 +3014,21 @@ class GameEngine: ObservableObject {
         if adventureLog.isEmpty {
             print("  No events recorded yet.", color: .dimGreen)
         } else {
-            // Show most recent events first, limit to last 30
-            let recentLog = adventureLog.suffix(30)
+            // Show most recent 50 entries with color-coding by category
+            let recentLog = adventureLog.suffix(50)
             for entry in recentLog {
-                print("  \(entry)", color: .dimGreen)
+                let color: TerminalColor
+                if entry.contains("[COMBAT]") { color = .red }
+                else if entry.contains("[LOOT]") { color = .yellow }
+                else if entry.contains("[DM]") { color = .cyan }
+                else if entry.contains("[LEVEL]") { color = .brightGreen }
+                else if entry.contains("[TRAP]") { color = .red }
+                else { color = .dimGreen }
+                print("  \(entry)", color: color)
             }
-            if adventureLog.count > 30 {
+            if adventureLog.count > 50 {
                 print("")
-                print("  (\(adventureLog.count - 30) earlier entries omitted)", color: .dimGreen)
+                print("  (\(adventureLog.count - 50) earlier entries omitted)", color: .dimGreen)
             }
         }
 
@@ -2942,7 +3100,7 @@ class GameEngine: ObservableObject {
                             char.secondWindUsed = false
                         }
                     }
-                    self.logEvent("Short rest — \(healed.joined(separator: ", "))")
+                    self.logEvent("Short rest — \(healed.joined(separator: ", "))", category: "REST")
                 } else {
                     self.advanceTime(480)
                     self.print("")
@@ -2963,7 +3121,7 @@ class GameEngine: ObservableObject {
                         }
                         char.huntersMarkActive = false
                     }
-                    self.logEvent("Long rest — party fully recovered")
+                    self.logEvent("Long rest — party fully recovered", category: "REST")
                 }
 
                 self.waitForContinue()
@@ -3183,26 +3341,31 @@ class GameEngine: ObservableObject {
 
                     // Apply DM commands at moderate and full levels
                     var worldChanged = false
+                    var pendingPickupItems: [Item] = []
                     if adLibLevel.rawValue >= DMAdLibLevel.moderate.rawValue {
                         if result.bonusGold > 0 {
                             self.party.first?.gold += result.bonusGold
                             self.print("")
                             self.print("  [+\(result.bonusGold) gold!]", color: .yellow, bold: true)
+                            self.logEvent("DM awarded \(result.bonusGold) bonus gold", category: "DM")
                             worldChanged = true
                         }
                         if result.healAmount > 0 {
                             for char in self.party { char.heal(result.healAmount) }
                             self.print("  [+\(result.healAmount) HP!]", color: .brightGreen, bold: true)
+                            self.logEvent("DM healed party for \(result.healAmount) HP", category: "DM")
                             worldChanged = true
                         }
                         if result.damageAmount > 0 {
                             for char in self.party { char.takeDamage(result.damageAmount) }
                             self.print("  [-\(result.damageAmount) HP!]", color: .red, bold: true)
+                            self.logEvent("DM dealt \(result.damageAmount) damage to party", category: "DM")
                             worldChanged = true
                         }
                         if result.damagePartyAmount > 0 {
                             for char in self.party { char.takeDamage(result.damagePartyAmount) }
                             self.print("  [-\(result.damagePartyAmount) HP!]", color: .red, bold: true)
+                            self.logEvent("DM dealt \(result.damagePartyAmount) damage to party", category: "DM")
                             worldChanged = true
                         }
                         if let dir = result.moveDirection {
@@ -3216,13 +3379,8 @@ class GameEngine: ObservableObject {
                         // Item commands
                         for itemName in result.grantedItems {
                             if let item = self.resolveItemByName(itemName) {
-                                if let c = self.party.first, c.canCarry(item) {
-                                    _ = c.addItem(item)
-                                    self.print("  [Received: \(item.name)!]", color: .brightGreen, bold: true)
-                                    self.logEvent("DM gave \(c.name) \(item.name)")
-                                } else {
-                                    self.print("  [Too heavy to carry: \(item.name)]", color: .yellow)
-                                }
+                                pendingPickupItems.append(item)
+                                self.print("  [Found: \(item.name)!]", color: .brightGreen, bold: true)
                             }
                             worldChanged = true
                         }
@@ -3252,13 +3410,19 @@ class GameEngine: ObservableObject {
                     SpeechEngine.shared.speak(displayText)
 
                     self.print("")
-                    self.logEvent("Asked DM: \(input)")
+                    self.logEvent("Asked DM: \(input)", category: "DM")
 
                     if worldChanged {
-                        // World changed — return to exploration to see updated state
+                        // World changed — return to exploration, with item pickup if needed
                         self.waitForContinue()
                         self.inputHandler = { [weak self] _ in
-                            self?.showExplorationView()
+                            if !pendingPickupItems.isEmpty {
+                                self?.showItemPickupSequence(items: pendingPickupItems, source: "DM gift") { [weak self] in
+                                    self?.showExplorationView()
+                                }
+                            } else {
+                                self?.showExplorationView()
+                            }
                         }
                     } else {
                         self.print("(Type another question, or tap Back)", color: .dimGreen)
@@ -3321,6 +3485,7 @@ class GameEngine: ObservableObject {
                         if result.healAmount > 0 {
                             for char in self.party { char.heal(result.healAmount) }
                             self.print("  [+\(result.healAmount) HP!]", color: .brightGreen, bold: true)
+                            self.logEvent("DM healed party for \(result.healAmount) HP in combat", category: "DM")
                             tookAction = true
                         }
                         if result.damageAmount > 0 {
@@ -3329,6 +3494,7 @@ class GameEngine: ObservableObject {
                                 let name = combat.encounter.monsters[idx].name
                                 combat.encounter.monsters[idx].takeDamage(result.damageAmount)
                                 self.print("  [\(name) takes \(result.damageAmount) damage!]", color: .brightGreen, bold: true)
+                                self.logEvent("DM: \(name) took \(result.damageAmount) damage", category: "DM")
                             }
                             tookAction = true
                         }
@@ -3336,11 +3502,13 @@ class GameEngine: ObservableObject {
                             // DAMAGE_PARTY hurts the party in combat
                             for char in self.party { char.takeDamage(result.damagePartyAmount) }
                             self.print("  [-\(result.damagePartyAmount) HP!]", color: .red, bold: true)
+                            self.logEvent("DM dealt \(result.damagePartyAmount) damage to party in combat", category: "DM")
                             tookAction = true
                         }
                         if result.bonusGold > 0 {
                             self.party.first?.gold += result.bonusGold
                             self.print("  [+\(result.bonusGold) gold!]", color: .yellow, bold: true)
+                            self.logEvent("DM awarded \(result.bonusGold) gold in combat", category: "DM")
                             tookAction = true
                         }
                         for itemName in result.droppedItems {
@@ -3360,7 +3528,7 @@ class GameEngine: ObservableObject {
                                 if let c = self.party.first, c.canCarry(item) {
                                     _ = c.addItem(item)
                                     self.print("  [Received: \(item.name)!]", color: .brightGreen, bold: true)
-                                    self.logEvent("DM gave \(c.name) \(item.name)")
+                                    self.logEvent("DM gave \(c.name) \(item.name)", category: "DM")
                                 } else {
                                     self.print("  [Too heavy to carry: \(item.name)]", color: .yellow)
                                 }
@@ -3373,7 +3541,7 @@ class GameEngine: ObservableObject {
                     SpeechEngine.shared.speak(displayText)
 
                     self.print("")
-                    self.logEvent("Asked DM in combat: \(input)")
+                    self.logEvent("Asked DM in combat: \(input)", category: "DM")
 
                     if tookAction {
                         // Action was taken — counts as their turn
@@ -3450,6 +3618,13 @@ class GameEngine: ObservableObject {
             """
         }
 
+        // Build adventure log summary for DM context (last 15, excluding SYSTEM)
+        let relevantLog = adventureLog
+            .filter { !$0.contains("[SYSTEM]") }
+            .suffix(15)
+            .map { String($0) }
+        let logSummary: String? = relevantLog.isEmpty ? nil : relevantLog.joined(separator: "\n")
+
         return DMContext(
             roomName: room?.name ?? "Unknown",
             roomType: room?.roomType.rawValue ?? "Unknown",
@@ -3463,7 +3638,8 @@ class GameEngine: ObservableObject {
             treasureInRoom: treasureInfo,
             encounterInfo: encounterInfo,
             searchHistory: searchHistory,
-            combatSummary: combatSummary
+            combatSummary: combatSummary,
+            adventureLogSummary: logSummary
         )
     }
 
@@ -3700,7 +3876,7 @@ class GameEngine: ObservableObject {
         SoundManager.shared.playBattleStart()
 
         let monsterNames = encounter.monsters.map { $0.name }.joined(separator: ", ")
-        logEvent("Battle! Encountered \(monsterNames)")
+        logEvent("Battle! Encountered \(monsterNames)", category: "COMBAT")
 
         clearTerminal()
         printLines(asciiSwords, color: .red)
@@ -4697,7 +4873,7 @@ class GameEngine: ObservableObject {
         }
 
         print("")
-        logEvent("\(character.name) reached Level \(newLevel)! (+\(hpGain) HP)")
+        logEvent("\(character.name) reached Level \(newLevel)! (+\(hpGain) HP)", category: "LEVEL")
 
         waitForContinue()
         inputHandler = { _ in completion() }
@@ -4733,7 +4909,7 @@ class GameEngine: ObservableObject {
         let xpEach = xp / party.count
 
         let defeated = combat.encounter.monsters.map { $0.name }.joined(separator: ", ")
-        logEvent("Victory! Defeated \(defeated) (+\(xp) XP)")
+        logEvent("Victory! Defeated \(defeated) (+\(xp) XP)", category: "COMBAT")
 
         print("All enemies defeated!", color: .brightGreen)
         print("")
@@ -4745,6 +4921,33 @@ class GameEngine: ObservableObject {
             if char.canLevelUp {
                 print("  \(char.name) has enough XP for Level \(nextLevel)!", color: .yellow)
             }
+        }
+
+        // Generate loot from defeated monsters
+        var lootGold = 0
+        var lootItems: [Item] = []
+        for monster in combat.encounter.monsters {
+            if let loot = monster.type.rollLoot() {
+                if loot.type == .gold {
+                    lootGold += loot.value
+                    print("  \(monster.name) dropped \(loot.value) gold", color: .yellow)
+                } else if loot.type == .potion || loot.type == .item {
+                    if let item = resolveItemByName(loot.name) {
+                        lootItems.append(item)
+                        print("  \(monster.name) dropped \(loot.name)!", color: .brightGreen)
+                    }
+                }
+            }
+        }
+        if lootGold > 0 {
+            let goldEach = lootGold / party.count
+            let remainder = lootGold % party.count
+            for (i, char) in party.enumerated() {
+                char.gold += goldEach + (i == 0 ? remainder : 0)
+            }
+            print("")
+            print("  Loot gold: +\(lootGold)", color: .yellow)
+            logEvent("Combat loot: \(lootGold) gold", category: "LOOT")
         }
 
         // Mark room cleared
@@ -4767,14 +4970,22 @@ class GameEngine: ObservableObject {
         waitForContinue()
         inputHandler = { [weak self] _ in
             guard let self = self else { return }
-            // Check for level-ups before returning to exploration
-            self.checkAndShowLevelUp {
-                if pendingTrap, let room = self.dungeon?.currentRoom {
-                    room.trapTriggered = true
-                    self.triggerTrap(in: room)
-                } else {
-                    self.showExplorationView()
+            // Show loot pickup first, then level-ups, then exploration
+            let afterLoot = { [weak self] in
+                guard let self = self else { return }
+                self.checkAndShowLevelUp {
+                    if pendingTrap, let room = self.dungeon?.currentRoom {
+                        room.trapTriggered = true
+                        self.triggerTrap(in: room)
+                    } else {
+                        self.showExplorationView()
+                    }
                 }
+            }
+            if !lootItems.isEmpty {
+                self.showItemPickupSequence(items: lootItems, source: "Combat loot", onDone: afterLoot)
+            } else {
+                afterLoot()
             }
         }
     }
@@ -4793,7 +5004,7 @@ class GameEngine: ObservableObject {
         SoundManager.shared.playDefeat()
         clearTerminal()
         gameState = .gameOver
-        logEvent("The party has fallen...")
+        logEvent("The party has fallen...", category: "COMBAT")
 
         // Record in Hall of Fame
         recordHallOfFame(outcome: .defeat)
@@ -4819,7 +5030,7 @@ class GameEngine: ObservableObject {
 
         let currentLevel = dungeon?.level ?? 1
         let dungeonName = dungeon?.name ?? "The dungeon"
-        logEvent("DUNGEON CONQUERED! \(dungeonName) has been cleared!")
+        logEvent("DUNGEON CONQUERED! \(dungeonName) has been cleared!", category: "EXPLORE")
 
         // Record in Hall of Fame + Game Center
         recordHallOfFame(outcome: .victory)
@@ -4876,7 +5087,7 @@ class GameEngine: ObservableObject {
             self.dmChatLog = []
 
             self.gameState = .exploring
-            self.logEvent("Descended to Level \(nextLevel) of \(dungeonName)")
+            self.logEvent("Descended to Level \(nextLevel) of \(dungeonName)", category: "EXPLORE")
 
             self.clearTerminal()
             self.printTitle("LEVEL \(nextLevel)")
@@ -5083,7 +5294,7 @@ class GameEngine: ObservableObject {
 
         let partyDesc = party.map { "\($0.name) (\($0.characterClass.rawValue))" }.joined(separator: ", ")
 
-        logEvent("Game saved: \(slotName)")
+        logEvent("Game saved: \(slotName)", category: "SYSTEM")
 
         let saveGame = SaveGame(
             id: UUID(),
@@ -5417,7 +5628,7 @@ class GameEngine: ObservableObject {
         // Reroll encounters so monsters are different each load
         dungeon?.rerollEncounters()
 
-        logEvent("Game loaded: \(save.slotName)")
+        logEvent("Game loaded: \(save.slotName)", category: "SYSTEM")
         SoundManager.shared.startMusic(.exploration)
 
         clearTerminal()
