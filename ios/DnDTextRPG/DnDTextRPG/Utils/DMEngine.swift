@@ -458,27 +458,28 @@ class DMEngine {
         var suggestions: [String] = []
         let lower = narrativeText.lowercased()
 
-        if appliedResult.healAmount == 0 {
-            let patterns = ["heal", "restore", "mend wounds", "cure", "bandage",
-                           "drink the potion", "wounds close", "regain health"]
+        // Only flag missed healing if no items were granted (avoids false positive
+        // from "healing potion" pickups) and the text clearly describes active healing.
+        if appliedResult.healAmount == 0 && appliedResult.grantedItems.isEmpty {
+            let patterns = ["wounds close", "regain health", "mend your wounds",
+                           "you are healed", "heals you", "feel restored"]
             if patterns.contains(where: { lower.contains($0) }) {
-                suggestions.append("DM described healing but no [HEAL:x] tag was applied")
+                suggestions.append("The healing magic fizzles before taking effect.")
             }
         }
 
         if appliedResult.damageAmount == 0 && appliedResult.damagePartyAmount == 0 {
-            let patterns = ["take damage", "takes damage", "suffer", "wounded",
+            let patterns = ["take damage", "takes damage",
                           "struck by", "hit by", "burns you", "you are poisoned"]
             if patterns.contains(where: { lower.contains($0) }) {
-                suggestions.append("DM described damage but no [DAMAGE:x] tag was applied")
+                suggestions.append("A blow glances off harmlessly — fate intervenes.")
             }
         }
 
         if appliedResult.grantedItems.isEmpty {
-            let patterns = ["hands you", "gives you", "receive a", "find a sword",
-                           "find a potion", "discover a", "take this", "offers you"]
+            let patterns = ["hands you", "gives you", "take this", "offers you"]
             if patterns.contains(where: { lower.contains($0) }) {
-                suggestions.append("DM described giving an item but no [GRANT_ITEM:x] tag was applied")
+                suggestions.append("You reach out, but the item slips away like a dream.")
             }
         }
 
@@ -486,7 +487,7 @@ class DMEngine {
             let patterns = ["gold coins", "gold pieces", "handful of gold",
                            "pays you", "reward of gold"]
             if patterns.contains(where: { lower.contains($0) }) {
-                suggestions.append("DM described gold reward but no [BONUS_GOLD:x] tag was applied")
+                suggestions.append("Gold glimmers in the distance, but none reaches your pouch.")
             }
         }
 

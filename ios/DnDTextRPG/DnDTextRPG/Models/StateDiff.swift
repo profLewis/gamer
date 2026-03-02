@@ -84,7 +84,7 @@ struct StateDiff {
             if beforeChar.equippedArmor != afterChar.equippedArmor {
                 let from = beforeChar.equippedArmor ?? "None"
                 let to = afterChar.equippedArmor ?? "None"
-                changes.append(StateChange(description: "\(name): Armor \(from) -> \(to)", color: .yellow))
+                changes.append(StateChange(description: "\(name): Armour \(from) -> \(to)", color: .yellow))
             }
             if beforeChar.equippedShield != afterChar.equippedShield {
                 let from = beforeChar.equippedShield ?? "None"

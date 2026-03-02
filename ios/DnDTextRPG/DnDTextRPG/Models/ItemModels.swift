@@ -152,7 +152,7 @@ struct ItemCatalog {
     // MARK: Armor
 
     static func leatherArmor() -> Item {
-        Item(id: UUID(), name: "Leather Armor", description: "Light, flexible protection.",
+        Item(id: UUID(), name: "Leather Armour", description: "Light, flexible protection.",
              type: .armor, weight: 10.0, value: 10,
              weaponStats: nil,
              armorStats: ArmorStats(baseAC: 11, maxDexBonus: nil, stealthDisadvantage: false, isShield: false),
@@ -176,7 +176,7 @@ struct ItemCatalog {
     }
 
     static func studdedLeather() -> Item {
-        Item(id: UUID(), name: "Studded Leather", description: "Reinforced leather armor.",
+        Item(id: UUID(), name: "Studded Leather", description: "Reinforced leather armour.",
              type: .armor, weight: 13.0, value: 45,
              weaponStats: nil,
              armorStats: ArmorStats(baseAC: 12, maxDexBonus: nil, stealthDisadvantage: false, isShield: false),
@@ -256,7 +256,7 @@ struct ItemCatalog {
             ]
         case .rogue:
             return [
-                ("Rapier + Leather Armor + Thieves' Tools", [rapier(), leatherArmor(), thievesTools(), dagger(), healingPotion()]),
+                ("Rapier + Leather Armour + Thieves' Tools", [rapier(), leatherArmor(), thievesTools(), dagger(), healingPotion()]),
                 ("Two Shortswords + Studded Leather", [shortsword(), shortsword(), studdedLeather(), thievesTools(), healingPotion()]),
             ]
         case .cleric:

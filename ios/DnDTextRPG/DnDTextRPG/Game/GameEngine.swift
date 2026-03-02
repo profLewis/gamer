@@ -492,10 +492,53 @@ class GameEngine: ObservableObject {
         print("  github.com/profLewis/gamer")
         print("")
 
-        waitForContinue()
-        inputHandler = { [weak self] _ in
-            self?.clearTerminal()
-            self?.showMainMenu()
+        showMenu(["Bestiary", "< Back"])
+        menuHandler = { [weak self] choice in
+            if choice == 1 {
+                self?.showBestiary()
+            } else {
+                self?.showMainMenu()
+            }
+        }
+    }
+
+    func showBestiary() {
+        clearTerminal()
+        printTitle("Bestiary")
+        print("Creatures you may encounter:", color: .dimGreen)
+        print("")
+
+        // Group monsters by tier
+        let tiers: [(String, [MonsterType])] = [
+            ("STARTER", [.giantRat, .kobold, .stirge, .giantBat, .crawlingClaw]),
+            ("LOW", [.goblin, .skeleton, .zombie, .wolf]),
+            ("MID-LOW", [.orc, .hobgoblin, .gnoll, .rustMonster]),
+            ("MID", [.bugbear, .giantSpider, .ogre, .gargoyle, .mimic, .gelatinousCube]),
+            ("HIGH", [.owlbear, .troll, .minotaur, .basilisk, .displacerBeast, .wraith, .demogorgon, .mindFlayer]),
+            ("BOSS", [.beholder, .youngDragon, .vecna]),
+        ]
+
+        for (tier, monsters) in tiers {
+            print("  \(tier):", color: .cyan, bold: true)
+            for monster in monsters {
+                let art = monster.asciiArt
+                let maxArtWidth = art.map { $0.count }.max() ?? 0
+                let padded = art.map { $0.padding(toLength: maxArtWidth, withPad: " ", startingAt: 0) }
+
+                // Print name
+                print("    \(monster.rawValue)", color: .brightGreen)
+                // Print art lines
+                for line in padded {
+                    print("    \(line)", color: .green)
+                }
+                print("    \(monster.description)", color: .dimGreen)
+                print("")
+            }
+        }
+
+        showMenu(["< Back"])
+        menuHandler = { [weak self] _ in
+            self?.showHowToPlay()
         }
     }
 
@@ -2206,7 +2249,7 @@ class GameEngine: ObservableObject {
             print("  Weapon: \(w.name)", color: .cyan)
         }
         if let a = character.equippedArmor {
-            print("  Armor: \(a.name)", color: .cyan)
+            print("  Armour: \(a.name)", color: .cyan)
         }
         if let s = character.equippedShield {
             print("  Shield: \(s.name)", color: .cyan)
@@ -2303,7 +2346,7 @@ class GameEngine: ObservableObject {
                 self.print("  Equipped weapon: \(w.name)", color: .cyan)
             }
             if let a = character.equippedArmor {
-                self.print("  Equipped armor: \(a.name)", color: .cyan)
+                self.print("  Equipped armour: \(a.name)", color: .cyan)
             }
             if let s = character.equippedShield {
                 self.print("  Equipped shield: \(s.name)", color: .cyan)
@@ -3009,8 +3052,8 @@ class GameEngine: ObservableObject {
         switch roomType {
         case .armory:
             return ["You don't find anything yet, but some of these weapon racks look like they have false backs...",
-                    "Nothing this time, but you notice scratches near one of the armor stands...",
-                    "You come up empty, but something glints in the shadows of the armory..."].randomElement()!
+                    "Nothing this time, but you notice scratches near one of the armour stands...",
+                    "You come up empty, but something glints in the shadows of the armoury..."].randomElement()!
         case .library:
             return ["You don't find anything, but some of these books look like they could be hiding something...",
                     "Nothing yet, but you notice a desk drawer that seems stuck — worth another look...",
@@ -3187,7 +3230,7 @@ class GameEngine: ObservableObject {
 
         // Equip option for weapon/armor/shield
         if item.type == .weapon || item.type == .armor || item.type == .shield {
-            let label = item.type == .weapon ? "Equip" : (item.type == .shield ? "Equip Shield" : "Equip Armor")
+            let label = item.type == .weapon ? "Equip" : (item.type == .shield ? "Equip Shield" : "Equip Armour")
             options.append(label)
             actions.append { [weak self] in
                 guard let self = self else { return }
@@ -3421,7 +3464,7 @@ class GameEngine: ObservableObject {
 
         print("  EQUIPPED:", color: .cyan, bold: true)
         print("    Weapon: \(character.equippedWeapon?.name ?? "(none)")", color: .brightGreen)
-        print("    Armor:  \(character.equippedArmor?.name ?? "(none)")", color: .brightGreen)
+        print("    Armour:  \(character.equippedArmor?.name ?? "(none)")", color: .brightGreen)
         print("    Shield: \(character.equippedShield?.name ?? "(none)")", color: .brightGreen)
         print("")
 
@@ -3459,8 +3502,8 @@ class GameEngine: ObservableObject {
             actions.append { [weak self] in self?.showEquipMenu(character: character, type: .weapon, label: "Weapon", onBack: onBack, fromDM: fromDM) }
         }
         if !equipableArmor.isEmpty {
-            options.append("Equip Armor")
-            actions.append { [weak self] in self?.showEquipMenu(character: character, type: .armor, label: "Armor", onBack: onBack, fromDM: fromDM) }
+            options.append("Equip Armour")
+            actions.append { [weak self] in self?.showEquipMenu(character: character, type: .armor, label: "Armour", onBack: onBack, fromDM: fromDM) }
         }
         if !equipableShields.isEmpty {
             options.append("Equip Shield")
@@ -3478,7 +3521,7 @@ class GameEngine: ObservableObject {
             }
         }
         if character.equippedArmor != nil {
-            options.append("Unequip Armor")
+            options.append("Unequip Armour")
             actions.append { [weak self] in
                 character.unequipArmor()
                 self?.showInventoryFor(character, onBack: onBack, fromDM: fromDM)
@@ -4349,9 +4392,8 @@ class GameEngine: ObservableObject {
                     )
                     if !missedHints.isEmpty {
                         self.print("")
-                        self.print("  [Note: DM described changes that may not have been applied:]", color: .dimGreen)
                         for hint in missedHints {
-                            self.print("    - \(hint)", color: .dimGreen)
+                            self.print("  \(hint)", color: .dimGreen)
                         }
                     }
 

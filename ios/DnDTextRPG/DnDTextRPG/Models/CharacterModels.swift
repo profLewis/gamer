@@ -133,7 +133,7 @@ enum Race: String, CaseIterable, Codable {
         case .hillDwarf:
             return ["Darkvision", "Dwarven Resilience", "Dwarven Toughness"]
         case .mountainDwarf:
-            return ["Darkvision", "Dwarven Resilience", "Armor Proficiency"]
+            return ["Darkvision", "Dwarven Resilience", "Armour Proficiency"]
         case .lightfootHalfling:
             return ["Lucky", "Brave", "Nimble", "Naturally Stealthy"]
         case .stoutHalfling:
@@ -237,11 +237,11 @@ enum CharacterClass: String, CaseIterable, Codable {
 
     var armorProficiencies: [String] {
         switch self {
-        case .fighter: return ["All Armor", "Shields"]
-        case .cleric: return ["Light Armor", "Medium Armor", "Shields"]
-        case .ranger: return ["Light Armor", "Medium Armor", "Shields"]
-        case .barbarian: return ["Light Armor", "Medium Armor", "Shields"]
-        case .rogue: return ["Light Armor"]
+        case .fighter: return ["All Armour", "Shields"]
+        case .cleric: return ["Light Armour", "Medium Armour", "Shields"]
+        case .ranger: return ["Light Armour", "Medium Armour", "Shields"]
+        case .barbarian: return ["Light Armour", "Medium Armour", "Shields"]
+        case .rogue: return ["Light Armour"]
         case .wizard: return []
         }
     }

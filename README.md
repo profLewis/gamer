@@ -2,6 +2,8 @@
 
 A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS, with AI Dungeon Master support.
 
+![Dragon](dragon_animation.gif)
+
 ## Features
 
 ### Character Creation
@@ -35,6 +37,12 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS, with AI Dunge
 - Encounters and traps scaled by dungeon level
 - Treasure, equipment, potions, and a merchant in armory rooms
 - Multi-level progression — defeat the boss to descend deeper
+
+### 30 Monsters
+
+The dungeon is home to 30 different creature types, from lowly rats and kobolds to terrifying beholders and dragons.
+
+![Bestiary](all_monsters.png)
 
 ### AI Dungeon Master
 

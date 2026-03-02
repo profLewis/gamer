@@ -60,15 +60,26 @@ enum MonsterType: String, CaseIterable, Codable {
     case orc = "Orc"
     case hobgoblin = "Hobgoblin"
     case gnoll = "Gnoll"
+    case rustMonster = "Rust Monster"
     // Mid (CR 1-2)
     case bugbear = "Bugbear"
     case giantSpider = "Giant Spider"
     case ogre = "Ogre"
+    case gargoyle = "Gargoyle"
+    case mimic = "Mimic"
+    case gelatinousCube = "Gelatinous Cube"
     // High (CR 3+)
     case owlbear = "Owlbear"
     case troll = "Troll"
+    case minotaur = "Minotaur"
+    case basilisk = "Basilisk"
+    case displacerBeast = "Displacer Beast"
+    case wraith = "Wraith"
     case demogorgon = "Demogorgon"
     case mindFlayer = "Mind Flayer"
+    // Boss (CR 10+)
+    case beholder = "Beholder"
+    case youngDragon = "Young Dragon"
     case vecna = "Vecna"
 
     struct Stats {
@@ -109,6 +120,8 @@ enum MonsterType: String, CaseIterable, Codable {
             return Stats(hp: 11, ac: 16, attackBonus: 3, damage: "1d8+1", cr: 0.5, xp: 100)
         case .gnoll:
             return Stats(hp: 18, ac: 14, attackBonus: 4, damage: "1d8+2", cr: 0.5, xp: 100)
+        case .rustMonster:
+            return Stats(hp: 27, ac: 14, attackBonus: 3, damage: "1d8+1", cr: 0.5, xp: 100)
         // Mid
         case .bugbear:
             return Stats(hp: 27, ac: 16, attackBonus: 4, damage: "2d8+2", cr: 1, xp: 200)
@@ -116,15 +129,33 @@ enum MonsterType: String, CaseIterable, Codable {
             return Stats(hp: 26, ac: 14, attackBonus: 5, damage: "1d8+3", cr: 1, xp: 200)
         case .ogre:
             return Stats(hp: 59, ac: 11, attackBonus: 6, damage: "2d8+4", cr: 2, xp: 450)
+        case .gargoyle:
+            return Stats(hp: 52, ac: 15, attackBonus: 4, damage: "2d6+2", cr: 2, xp: 450)
+        case .mimic:
+            return Stats(hp: 58, ac: 12, attackBonus: 5, damage: "1d8+3", cr: 2, xp: 450)
+        case .gelatinousCube:
+            return Stats(hp: 84, ac: 6, attackBonus: 4, damage: "2d6+1", cr: 2, xp: 450)
         // High
         case .owlbear:
             return Stats(hp: 59, ac: 13, attackBonus: 7, damage: "2d8+5", cr: 3, xp: 700)
         case .troll:
             return Stats(hp: 84, ac: 15, attackBonus: 7, damage: "2d6+4", cr: 5, xp: 1800)
+        case .minotaur:
+            return Stats(hp: 76, ac: 14, attackBonus: 6, damage: "2d8+4", cr: 3, xp: 700)
+        case .basilisk:
+            return Stats(hp: 52, ac: 15, attackBonus: 5, damage: "2d6+3", cr: 3, xp: 700)
+        case .displacerBeast:
+            return Stats(hp: 85, ac: 13, attackBonus: 6, damage: "1d10+4", cr: 3, xp: 700)
+        case .wraith:
+            return Stats(hp: 67, ac: 13, attackBonus: 6, damage: "3d6+3", cr: 5, xp: 1800)
         case .demogorgon:
             return Stats(hp: 68, ac: 14, attackBonus: 7, damage: "2d8+4", cr: 4, xp: 1100)
         case .mindFlayer:
             return Stats(hp: 71, ac: 15, attackBonus: 7, damage: "2d10+3", cr: 7, xp: 2900)
+        case .beholder:
+            return Stats(hp: 180, ac: 18, attackBonus: 9, damage: "3d8+4", cr: 13, xp: 10000)
+        case .youngDragon:
+            return Stats(hp: 142, ac: 18, attackBonus: 10, damage: "2d10+5", cr: 10, xp: 5900)
         case .vecna:
             return Stats(hp: 120, ac: 18, attackBonus: 9, damage: "3d8+5", cr: 10, xp: 5900)
         }
@@ -142,15 +173,25 @@ enum MonsterType: String, CaseIterable, Codable {
         case .zombie: return "A shambling corpse with rotting flesh."
         case .wolf: return "A fierce predator with gleaming eyes."
         case .orc: return "A brutish warrior with green skin and tusks."
-        case .hobgoblin: return "A disciplined goblinoid soldier in armor."
+        case .hobgoblin: return "A disciplined goblinoid soldier in armour."
         case .giantSpider: return "A massive arachnid with dripping fangs."
         case .gnoll: return "A hyena-headed humanoid savage."
+        case .rustMonster: return "An insectoid creature whose antennae corrode metal on contact."
         case .bugbear: return "A large, hairy goblinoid ambusher."
         case .ogre: return "A towering brute of immense strength."
+        case .gargoyle: return "A winged stone creature that lurks motionless until it strikes."
+        case .mimic: return "A shapeshifter disguised as a treasure chest, waiting to devour the greedy."
+        case .gelatinousCube: return "A nearly transparent cube of acidic jelly that fills the corridor."
         case .owlbear: return "A fearsome hybrid of owl and bear."
         case .troll: return "A lanky giant with regenerating flesh."
+        case .minotaur: return "A hulking bull-headed humanoid that charges through the labyrinth."
+        case .basilisk: return "An eight-legged reptile whose gaze turns flesh to stone."
+        case .displacerBeast: return "A six-legged panther with barbed tentacles, its image always shifting."
+        case .wraith: return "A spectral undead wreathed in shadow, draining the life from all it touches."
         case .demogorgon: return "A terrifying creature from the Upside Down with a gaping flower-like maw."
         case .mindFlayer: return "An aberration with tentacles protruding from its face, wielding psionic power."
+        case .beholder: return "A floating sphere of flesh with a central eye and many stalks, each firing a deadly ray."
+        case .youngDragon: return "A fearsome dragon not yet fully grown, but deadly with fang, claw, and fiery breath."
         case .vecna: return "The Undying King, a lich of immense power reaching between worlds."
         }
     }
@@ -184,18 +225,38 @@ enum MonsterType: String, CaseIterable, Codable {
             return ["venomous fangs", "a web-tangling spray", "its dripping mandibles", "a poisoned bite"]
         case .gnoll:
             return ["a barbed spear", "its hyena-like jaws", "a crude flail", "a savage claw swipe"]
+        case .rustMonster:
+            return ["its corroding antennae", "a rusting touch", "its gnashing mandibles", "an armour-dissolving swipe"]
         case .bugbear:
             return ["a heavy morningstar", "a crushing bear hug", "a spiked club", "a sneaky backstab"]
         case .ogre:
             return ["a massive greatclub", "a boulder-like fist", "a sweeping tree-trunk swing", "a ground-shaking stomp"]
+        case .gargoyle:
+            return ["its stone claws", "a diving swoop", "a crushing stone fist", "its fanged bite"]
+        case .mimic:
+            return ["its adhesive pseudopod", "a snapping lid-jaw", "a grasping tongue", "its crushing bite"]
+        case .gelatinousCube:
+            return ["its engulfing mass", "a wave of acid", "a dissolving pseudopod", "its corrosive surface"]
         case .owlbear:
             return ["its razor beak", "massive claws", "a devastating bear swipe", "a screeching lunge"]
         case .troll:
             return ["its regenerating claws", "a raking slash", "its foul bite", "a long-armed backhand"]
+        case .minotaur:
+            return ["its massive horns", "a charging gore", "a greataxe cleave", "a trampling hoof"]
+        case .basilisk:
+            return ["its petrifying gaze", "venomous fangs", "a lunging bite", "its crushing jaws"]
+        case .displacerBeast:
+            return ["a barbed tentacle", "its shifting claws", "a lashing tendril", "a pouncing bite"]
+        case .wraith:
+            return ["its life-draining touch", "a spectral claw", "a chilling grasp", "a soul-sapping swipe"]
         case .demogorgon:
             return ["its gaping flower-maw", "a tentacle lash", "a psychic screech", "its crushing tendrils"]
         case .mindFlayer:
             return ["a mind-shattering blast", "its writhing tentacles", "a psionic assault", "its brain-extracting grasp"]
+        case .beholder:
+            return ["a disintegration ray", "its antimagic eye", "a paralyzing beam", "a death ray"]
+        case .youngDragon:
+            return ["a searing fire breath", "its rending claws", "a crushing tail swipe", "its snapping jaws"]
         case .vecna:
             return ["a necrotic ray", "the Hand of Vecna", "a soul-rending spell", "a withering touch of undeath"]
         }
@@ -204,7 +265,7 @@ enum MonsterType: String, CaseIterable, Codable {
     /// Whether this monster type can inflict poison
     var canPoison: Bool {
         switch self {
-        case .giantSpider, .stirge, .giantRat: return true
+        case .giantSpider, .stirge, .giantRat, .gelatinousCube, .basilisk, .youngDragon: return true
         default: return false
         }
     }
@@ -215,6 +276,9 @@ enum MonsterType: String, CaseIterable, Codable {
         case .giantSpider: return 0.35
         case .stirge: return 0.25
         case .giantRat: return 0.15
+        case .gelatinousCube: return 0.40
+        case .basilisk: return 0.30
+        case .youngDragon: return 0.25
         default: return 0.0
         }
     }
@@ -225,6 +289,9 @@ enum MonsterType: String, CaseIterable, Codable {
         case .giantSpider: return 3
         case .stirge: return 2
         case .giantRat: return 1
+        case .gelatinousCube: return 4
+        case .basilisk: return 3
+        case .youngDragon: return 5
         default: return 0
         }
     }
@@ -333,6 +400,14 @@ enum MonsterType: String, CaseIterable, Codable {
                 "   /| |\\",
                 "   d| |b",
             ]
+        case .rustMonster:
+            return [
+                "    /\\  /\\",
+                "   (  ==  )",
+                "  /|~~~~~~|\\",
+                "   |  ()  |",
+                "   d d  d d",
+            ]
         case .bugbear:
             return [
                 "   (\\=/)",
@@ -348,6 +423,30 @@ enum MonsterType: String, CaseIterable, Codable {
                 "  |  __  |",
                 "  /|/  \\|\\",
                 " / |    | \\",
+            ]
+        case .gargoyle:
+            return [
+                "   _/|\\_",
+                "  / o  o \\",
+                "  | \\VV/ |",
+                " _/| || |\\_",
+                " V  |/\\|  V",
+            ]
+        case .mimic:
+            return [
+                "  .-------.",
+                " / ~ ~~ ~ \\",
+                " | |@  @| |",
+                " | |VVVV| |",
+                "  \\_______/",
+            ]
+        case .gelatinousCube:
+            return [
+                "  .-------.",
+                "  | .   . |",
+                "  |  ; ;  |",
+                "  | .   . |",
+                "  '-------'",
             ]
         case .owlbear:
             return [
@@ -365,6 +464,38 @@ enum MonsterType: String, CaseIterable, Codable {
                 "  / | | \\",
                 " /  | |  \\",
             ]
+        case .minotaur:
+            return [
+                "   (\\   /)",
+                "    \\o_o/",
+                "   --|+|--",
+                "   /|| ||\\",
+                "   d|   |b",
+            ]
+        case .basilisk:
+            return [
+                "   ___/\\",
+                "  (o  o >",
+                "  /\\~~~~\\",
+                " / /||||  \\",
+                " d d    d d",
+            ]
+        case .displacerBeast:
+            return [
+                "    /\\_/\\",
+                "   ( o.o )",
+                "  ~/|   |\\~",
+                " / /|   |\\ \\",
+                "  d d   d d",
+            ]
+        case .wraith:
+            return [
+                "   .oOOo.",
+                "  ( O  O )",
+                "   \\~~~~/ ",
+                "   /|  |\\",
+                "  ~ ~  ~ ~",
+            ]
         case .demogorgon:
             return [
                 "   \\|/|\\|/",
@@ -380,6 +511,22 @@ enum MonsterType: String, CaseIterable, Codable {
                 "    \\|||||/",
                 "   /||   ||\\",
                 "    /|   |\\",
+            ]
+        case .beholder:
+            return [
+                "  \\~ ~|~ ~/",
+                "   .-----.",
+                "  ( ( O ) )",
+                "   '-----'",
+                "  /~ ~|~ ~\\",
+            ]
+        case .youngDragon:
+            return [
+                "    /\\/\\",
+                "   ( oo )",
+                "  _/|><|\\_ ",
+                " /  /  \\  \\",
+                "   (=)(=)",
             ]
         case .vecna:
             return [
@@ -399,26 +546,27 @@ enum MonsterType: String, CaseIterable, Codable {
         case 2:
             return [.goblin, .skeleton, .zombie, .wolf, .kobold]
         case 3:
-            return [.goblin, .skeleton, .orc, .hobgoblin, .gnoll]
+            return [.goblin, .skeleton, .orc, .hobgoblin, .gnoll, .rustMonster]
         case 4:
-            return [.orc, .hobgoblin, .bugbear, .giantSpider, .gnoll]
+            return [.orc, .hobgoblin, .bugbear, .giantSpider, .gnoll, .gargoyle, .mimic]
         case 5:
-            return [.bugbear, .giantSpider, .ogre, .demogorgon]
+            return [.bugbear, .giantSpider, .ogre, .gelatinousCube, .minotaur, .basilisk]
         case 6:
-            return [.ogre, .owlbear, .troll, .demogorgon, .mindFlayer]
+            return [.ogre, .owlbear, .troll, .displacerBeast, .wraith, .demogorgon, .mindFlayer]
         default:
-            return [.troll, .demogorgon, .mindFlayer]
+            return [.troll, .demogorgon, .mindFlayer, .beholder, .youngDragon, .wraith]
         }
     }
 
     static func boss(forLevel level: Int) -> MonsterType {
         switch level {
-        case 1: return .goblin  // A goblin chieftain — tough but beatable
+        case 1: return .goblin
         case 2: return .bugbear
         case 3: return .ogre
         case 4: return .owlbear
         case 5: return .demogorgon
         case 6: return .mindFlayer
+        case 7: return .beholder
         default: return .vecna
         }
     }
@@ -443,19 +591,19 @@ enum MonsterType: String, CaseIterable, Codable {
             if roll >= 10 { return TreasureItem(name: "\(Dice.rollSum(2, d: 6) * 5) Gold Pieces", value: Dice.rollSum(2, d: 6) * 5, type: .gold) }
             return nil
         // Mid — better drops
-        case .orc, .hobgoblin, .gnoll:
+        case .orc, .hobgoblin, .gnoll, .rustMonster:
             if roll >= 16 { return TreasureItem(name: "Potion of Healing", value: 50, type: .potion) }
             if roll >= 13 { return TreasureItem(name: "Longsword", value: 15, type: .item) }
             if roll >= 8 { return TreasureItem(name: "\(Dice.rollSum(3, d: 6) * 5) Gold Pieces", value: Dice.rollSum(3, d: 6) * 5, type: .gold) }
             return nil
         // High — good drops
-        case .bugbear, .giantSpider, .ogre:
+        case .bugbear, .giantSpider, .ogre, .gargoyle, .mimic, .gelatinousCube:
             if roll >= 15 { return TreasureItem(name: "Potion of Greater Healing", value: 150, type: .potion) }
             if roll >= 12 { return TreasureItem(name: "Scale Mail", value: 50, type: .item) }
             if roll >= 7 { return TreasureItem(name: "\(Dice.rollSum(4, d: 6) * 10) Gold Pieces", value: Dice.rollSum(4, d: 6) * 10, type: .gold) }
             return nil
         // Boss — guaranteed drops
-        case .owlbear, .troll, .demogorgon, .mindFlayer, .vecna:
+        case .owlbear, .troll, .minotaur, .basilisk, .displacerBeast, .wraith, .demogorgon, .mindFlayer, .beholder, .youngDragon, .vecna:
             if roll >= 10 { return TreasureItem(name: "Potion of Greater Healing", value: 150, type: .potion) }
             return TreasureItem(name: "\(Dice.rollSum(5, d: 6) * 10) Gold Pieces", value: Dice.rollSum(5, d: 6) * 10, type: .gold)
         }

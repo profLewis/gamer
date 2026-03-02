@@ -45,7 +45,7 @@ enum RoomType: String, CaseIterable, Codable {
     case boss = "Boss Chamber"
     case shrine = "Shrine"
     case library = "Library"
-    case armory = "Armory"
+    case armory = "Armoury"
     case prison = "Prison"
     case empty = "Empty Room"
 
@@ -91,7 +91,7 @@ enum RoomType: String, CaseIterable, Codable {
             ].randomElement()!
         case .shrine:
             return [
-                "An ancient shrine stands in the center, its stone basin filled with clear water that seems to glow faintly.",
+                "An ancient shrine stands in the centre, its stone basin filled with clear water that seems to glow faintly.",
                 "Candles that should have burned out long ago still flicker on the altar. The air feels calm and warm here.",
                 "A weathered statue of a forgotten deity watches over this room. Wildflowers grow impossibly from cracks in the stone floor.",
             ].randomElement()!
@@ -103,7 +103,7 @@ enum RoomType: String, CaseIterable, Codable {
             ].randomElement()!
         case .armory:
             return [
-                "Weapon racks and armor stands fill this room. Most have been picked clean, but some items remain.",
+                "Weapon racks and armour stands fill this room. Most have been picked clean, but some items remain.",
                 "Swords, shields, and helms line the walls. A forge in the corner is cold but could be relit. A merchant has set up shop here.",
                 "Rows of rusted weapons stand at attention like silent soldiers. A workbench holds tools for repair and sharpening.",
             ].randomElement()!
@@ -273,7 +273,7 @@ class Room: Identifiable, ObservableObject, Codable {
             ].randomElement()!
         case .armory:
             return [
-                "Rusted Armory", "Weapon Hall", "Iron Forge",
+                "Rusted Armoury", "Weapon Hall", "Iron Forge",
                 "Quartermaster's Store", "Blade-Lined Chamber",
             ].randomElement()!
         case .prison:
@@ -767,7 +767,7 @@ class Dungeon: ObservableObject, Codable {
             ("@", "You"), ("!", "Danger"), (".", "Empty"),
             ("E", "Entry"), ("=", "Hall"), ("#", "Room"),
             ("$", "Loot"), ("+", "Shrine"), ("L", "Library"),
-            ("B", "Boss"), ("A", "Armory"), ("P", "Prison")
+            ("B", "Boss"), ("A", "Armoury"), ("P", "Prison")
         ]
         let activeEntries = allKeyEntries.filter { visibleSymbols.contains($0.symbol) }
 
@@ -837,10 +837,10 @@ struct TreasureItem: Codable {
                             ("Studded Leather", 45), ("Shield", 10), ("Longbow", 50),
                             ("Potion of Greater Healing", 150)]
             } else if level >= 2 {
-                itemPool = [("Shortsword", 10), ("Longsword", 15), ("Leather Armor", 10),
+                itemPool = [("Shortsword", 10), ("Longsword", 15), ("Leather Armour", 10),
                             ("Shield", 10), ("Dagger", 2), ("Mace", 5)]
             } else {
-                itemPool = [("Dagger", 2), ("Shortsword", 10), ("Leather Armor", 10),
+                itemPool = [("Dagger", 2), ("Shortsword", 10), ("Leather Armour", 10),
                             ("Shield", 10), ("Torch", 1), ("Rope", 1)]
             }
             let pick = itemPool.randomElement()!
