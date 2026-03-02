@@ -101,7 +101,8 @@ struct TerminalView: View {
                                         gameEngine.handleDirectionChoice(direction)
                                     },
                                     centerLabel: gameEngine.dpadCenterLabel,
-                                    onCenterTap: gameEngine.dpadCenterHandler
+                                    onCenterTap: gameEngine.dpadCenterHandler,
+                                    onCenterLongPress: gameEngine.dpadCenterLongPressHandler
                                 )
                             }
 
@@ -474,6 +475,7 @@ struct DirectionPadView: View {
     let onSelect: (Direction) -> Void
     var centerLabel: String? = nil
     var onCenterTap: (() -> Void)? = nil
+    var onCenterLongPress: (() -> Void)? = nil
 
     let terminalGreen = Color(red: 0.0, green: 0.9, blue: 0.3)
     let terminalDarkGreen = Color(red: 0.0, green: 0.4, blue: 0.15)
@@ -504,6 +506,12 @@ struct DirectionPadView: View {
                             )
                     }
                     .buttonStyle(.plain)
+                    .simultaneousGesture(
+                        LongPressGesture(minimumDuration: 0.5)
+                            .onEnded { _ in
+                                onCenterLongPress?()
+                            }
+                    )
                 }
                 dirButton(.east)
             }

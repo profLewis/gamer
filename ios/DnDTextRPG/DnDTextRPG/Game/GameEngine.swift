@@ -76,6 +76,7 @@ class GameEngine: ObservableObject {
     var directionHandler: ((Direction) -> Void)?
     @Published var dpadCenterLabel: String? = nil
     var dpadCenterHandler: (() -> Void)?
+    var dpadCenterLongPressHandler: (() -> Void)?
 
     // Shop
     private lazy var shopEngine = ShopEngine(game: self)
@@ -116,6 +117,53 @@ class GameEngine: ObservableObject {
             if lower.contains(blocked) { return false }
         }
         return true
+    }
+
+    /// Produce short display names for the party that fit on buttons.
+    /// Drops " the X" titles, abbreviates to "First L" if needed, keeps full name if short enough.
+    func shortNames(maxLen: Int = 12) -> [UUID: String] {
+        let chars = party
+        var result: [UUID: String] = [:]
+
+        // Phase 1: strip " the ..." suffix
+        var candidates: [(Character, String)] = chars.map { char in
+            let name = char.name
+            if let range = name.range(of: " the ", options: .caseInsensitive) {
+                return (char, String(name[name.startIndex..<range.lowerBound]))
+            }
+            return (char, name)
+        }
+
+        // Phase 2: if still too long, abbreviate multi-word names to "First L"
+        candidates = candidates.map { (char, name) in
+            if name.count <= maxLen { return (char, name) }
+            let words = name.split(separator: " ")
+            if words.count >= 2 {
+                let short = "\(words[0]) \(words[1].prefix(1))"
+                return (char, short)
+            }
+            return (char, String(name.prefix(maxLen)))
+        }
+
+        // Phase 3: ensure uniqueness — append class initial if needed
+        let names = candidates.map { $0.1.lowercased() }
+        for (i, (char, name)) in candidates.enumerated() {
+            let isDuplicate = names.enumerated().contains { $0.offset != i && $0.element == name.lowercased() }
+            if isDuplicate {
+                let classInitial = String(char.characterClass.rawValue.prefix(3))
+                result[char.id] = "\(name) (\(classInitial))"
+            } else {
+                result[char.id] = name
+            }
+        }
+
+        return result
+    }
+
+    /// Get a short display name for a character in the context of the current party.
+    func shortName(for char: Character) -> String {
+        let map = shortNames()
+        return map[char.id] ?? char.name
     }
 
     // MARK: - Game Time & Adventure Log
@@ -193,6 +241,7 @@ class GameEngine: ObservableObject {
             self.directionExits = [:]
             self.dpadCenterLabel = nil
             self.dpadCenterHandler = nil
+            self.dpadCenterLongPressHandler = nil
             self.currentMenuOptions = options.enumerated().map { index, text in
                 MenuOption(text, isDefault: index == defaultIndex)
             }
@@ -207,6 +256,7 @@ class GameEngine: ObservableObject {
             self.directionExits = [:]
             self.dpadCenterLabel = nil
             self.dpadCenterHandler = nil
+            self.dpadCenterLongPressHandler = nil
             self.currentMenuOptions = options
             self.awaitingTextInput = false
             self.awaitingContinue = false
@@ -2488,6 +2538,9 @@ class GameEngine: ObservableObject {
         dpadCenterHandler = { [weak self] in
             self?.rest()
         }
+        dpadCenterLongPressHandler = { [weak self] in
+            self?.performRest(isLongRest: true)
+        }
         menuHandler = { choice in
             if choice > 0 && choice <= actions.count {
                 actions[choice - 1]()
@@ -3096,7 +3149,7 @@ class GameEngine: ObservableObject {
             for char in party {
                 let canCarry = char.canCarry(item)
                 let tag = canCarry ? "" : (char.isInventoryFull ? " [full]" : " [heavy]")
-                options.append("Give to \(char.name)\(tag)")
+                options.append("Give to \(shortName(for: char))\(tag)")
                 actions.append { [weak self] in
                     guard let self = self else { return }
                     if canCarry {
@@ -3255,7 +3308,7 @@ class GameEngine: ObservableObject {
 
             // Give all to one character
             for char in party {
-                options.append("\(char.name) +\(gold)gp")
+                options.append("\(shortName(for: char)) +\(gold)gp")
                 actions.append { [weak self] in
                     char.gold += gold
                     self?.print("  \(char.name) takes all \(gold) gold.", color: .yellow)
@@ -3326,10 +3379,8 @@ class GameEngine: ObservableObject {
         printSubtitle(title)
 
         var options: [String] = []
-        let maxN = party.map { $0.name.count }.max() ?? 8
         for char in party {
-            let n = char.name.padding(toLength: maxN, withPad: " ", startingAt: 0)
-            options.append("\(n) \(char.currentHP)/\(char.maxHP)HP \(char.gold)gp")
+            options.append("\(shortName(for: char)) \(char.currentHP)/\(char.maxHP)HP")
         }
         options.append("< Back")
 
@@ -3607,7 +3658,7 @@ class GameEngine: ObservableObject {
         for other in others {
             let canCarry = other.canCarry(item)
             let tag = canCarry ? "" : (other.isInventoryFull ? " [full]" : " [heavy]")
-            options.append("Give to \(other.name)\(tag)")
+            options.append("Give to \(shortName(for: other))\(tag)")
             actions.append { [weak self] in
                 guard let self = self else { return }
                 if canCarry {
@@ -3775,74 +3826,77 @@ class GameEngine: ObservableObject {
                 return
             }
 
-            let isLongRest = choice == 2
-            let repeats = isLongRest ? 3 : 1
-            let header = isLongRest ? "Taking a long rest..." : "Resting..."
+            self.performRest(isLongRest: choice == 2)
+        }
+    }
 
-            self.clearTerminal()
+    func performRest(isLongRest: Bool) {
+        let repeats = isLongRest ? 3 : 1
+        let header = isLongRest ? "Taking a long rest..." : "Resting..."
 
-            // Show map at top
-            if let dungeon = self.dungeon {
-                self.printLines(dungeon.getMapDisplay(visibilityRadius: effectiveMapRadius()), color: .dimGreen, size: mapFontSize)
+        clearTerminal()
+
+        // Show map at top
+        if let dungeon = dungeon {
+            printLines(dungeon.getMapDisplay(visibilityRadius: effectiveMapRadius()), color: .dimGreen, size: mapFontSize)
+            print("")
+        }
+
+        SoundManager.shared.stopMusic()
+        print(header, color: .cyan, bold: true)
+        if isHoldingScreen {
+            print("(Hold screen to rest faster)", color: .dimGreen)
+        }
+        print("")
+
+        playHourglassAnimation(repeats: repeats) { [weak self] in
+            guard let self = self else { return }
+
+            SoundManager.shared.playHeal()
+
+            if !isLongRest {
+                self.advanceTime(60)
                 self.print("")
-            }
-
-            SoundManager.shared.stopMusic()
-            self.print(header, color: .cyan, bold: true)
-            if self.isHoldingScreen {
-                self.print("(Hold screen to rest faster)", color: .dimGreen)
-            }
-            self.print("")
-
-            self.playHourglassAnimation(repeats: repeats) { [weak self] in
-                guard let self = self else { return }
-
-                SoundManager.shared.playHeal()
-
-                if !isLongRest {
-                    self.advanceTime(60)
-                    self.print("")
-                    self.print("Short rest complete!", color: .cyan, bold: true)
-                    self.print("")
-                    var healed: [String] = []
-                    for char in self.party {
-                        let healAmount = Dice.rollSum(1, d: char.characterClass.hitDie)
-                        char.heal(healAmount)
-                        self.print("\(char.name) recovers \(healAmount) HP")
-                        healed.append("\(char.name) +\(healAmount)HP")
-                        if char.characterClass == .fighter {
-                            char.secondWindUsed = false
-                        }
-                    }
-                    self.logEvent("Short rest — \(healed.joined(separator: ", "))", category: "REST")
-                } else {
-                    self.advanceTime(480)
-                    self.print("")
-                    self.print("Long rest complete!", color: .cyan, bold: true)
-                    self.print("")
-                    for char in self.party {
-                        char.heal(char.maxHP)
-                        self.print("\(char.name) fully recovers!")
-                        if !char.spellSlots.isEmpty {
-                            char.spellSlots.restoreAll()
-                            self.print("  Spell slots restored", color: .cyan)
-                        }
+                self.print("Short rest complete!", color: .cyan, bold: true)
+                self.print("")
+                var healed: [String] = []
+                for char in self.party {
+                    let healAmount = Dice.rollSum(1, d: char.characterClass.hitDie)
+                    char.heal(healAmount)
+                    self.print("\(char.name) recovers \(healAmount) HP")
+                    healed.append("\(char.name) +\(healAmount)HP")
+                    if char.characterClass == .fighter {
                         char.secondWindUsed = false
-                        if char.characterClass == .barbarian {
-                            char.rageUsesRemaining = char.rageMaxUses
-                            char.isRaging = false
-                            self.print("  Rage uses restored", color: .cyan)
-                        }
-                        char.huntersMarkActive = false
                     }
-                    self.logEvent("Long rest — party fully recovered", category: "REST")
                 }
+                self.logEvent("Short rest — \(healed.joined(separator: ", "))", category: "REST")
+            } else {
+                self.advanceTime(480)
+                self.print("")
+                self.print("Long rest complete!", color: .cyan, bold: true)
+                self.print("")
+                for char in self.party {
+                    char.heal(char.maxHP)
+                    self.print("\(char.name) fully recovers!")
+                    if !char.spellSlots.isEmpty {
+                        char.spellSlots.restoreAll()
+                        self.print("  Spell slots restored", color: .cyan)
+                    }
+                    char.secondWindUsed = false
+                    if char.characterClass == .barbarian {
+                        char.rageUsesRemaining = char.rageMaxUses
+                        char.isRaging = false
+                        self.print("  Rage uses restored", color: .cyan)
+                    }
+                    char.huntersMarkActive = false
+                }
+                self.logEvent("Long rest — party fully recovered", category: "REST")
+            }
 
-                self.waitForContinue()
-                self.inputHandler = { [weak self] _ in
-                    SoundManager.shared.startMusic(.exploration)
-                    self?.showExplorationView()
-                }
+            self.waitForContinue()
+            self.inputHandler = { [weak self] _ in
+                SoundManager.shared.startMusic(.exploration)
+                self?.showExplorationView()
             }
         }
     }
@@ -5449,7 +5503,7 @@ class GameEngine: ObservableObject {
             var options: [String] = []
             for char in party {
                 let status = char.isConscious ? "\(char.currentHP)/\(char.maxHP) HP" : "Unconscious"
-                options.append("\(char.name) (\(status))")
+                options.append("\(shortName(for: char)) (\(status))")
             }
             options.append("< Back")
 
