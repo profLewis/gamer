@@ -284,6 +284,17 @@ class DMEngine {
         lastAppleInstructions = nil
     }
 
+    /// Restore conversation history from saved DM chat log entries
+    func restoreHistory(from chatLog: [DMChatEntry]) {
+        conversationHistory = chatLog.map { entry in
+            (role: entry.isUser ? "user" : "assistant", content: entry.text)
+        }
+        // Trim to max history size
+        if conversationHistory.count > maxHistory {
+            conversationHistory = Array(conversationHistory.suffix(maxHistory))
+        }
+    }
+
     func ask(_ userMessage: String, context: DMContext, completion: @escaping (String) -> Void) {
         guard let key = apiKey, !key.isEmpty else {
             // No API key — try Apple on-device model first, then simple DM

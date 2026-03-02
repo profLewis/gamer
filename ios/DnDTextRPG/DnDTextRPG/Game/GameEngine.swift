@@ -528,6 +528,7 @@ class GameEngine: ObservableObject {
             activeSlotName = slotName
         }
 
+        let chatEntries = dmChatLog.map { DMChatEntry(isUser: $0.isUser, text: $0.text) }
         let saveGame = SaveGame(
             id: UUID(),
             slotId: slotId,
@@ -541,6 +542,7 @@ class GameEngine: ObservableObject {
             gameState: .exploring,
             gameTimeMinutes: gameTimeMinutes,
             adventureLog: adventureLog,
+            dmChatLog: chatEntries,
             monstersSlain: monstersSlain,
             combatsWon: combatsWon
         )
@@ -1094,25 +1096,33 @@ class GameEngine: ObservableObject {
         print("  More = better narrative continuity", color: .dimGreen)
         print("  but uses more AI tokens.", color: .dimGreen)
         print("")
-
-        let current = dmLogContextSize
-        let sizes = [32, 64, 128, 256, 512]
-        for size in sizes {
-            let marker = size == current ? " <--" : ""
-            print("  \(size) entries\(marker)", color: size == current ? .brightGreen : .green)
-        }
+        print("  Current: \(dmLogContextSize) entries", color: .brightGreen)
         print("")
+        print("  Enter a number (16–1024):", color: .cyan)
 
-        var options = sizes.map { "\($0) entries" }
-        options.append("< Back")
-        showMenu(options)
+        promptTextWithMenu(">", options: ["< Back"])
 
-        menuHandler = { [weak self] choice in
-            if choice <= sizes.count {
-                self?.dmLogContextSize = sizes[choice - 1]
-                self?.showDMLogContextMenu()
+        menuHandler = { [weak self] _ in
+            self?.showSettings()
+        }
+
+        inputHandler = { [weak self] input in
+            guard let self = self else { return }
+            let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let value = Int(trimmed) {
+                let clamped = min(1024, max(16, value))
+                self.dmLogContextSize = clamped
+                self.print("  Set to \(clamped) entries.", color: .brightGreen)
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.showDMLogContextMenu()
+                }
             } else {
-                self?.showSettings()
+                self.print("  Not a valid number.", color: .red)
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.showDMLogContextMenu()
+                }
             }
         }
     }
@@ -2448,6 +2458,8 @@ class GameEngine: ObservableObject {
     }
 
     func searchRoom() {
+        guard let room = dungeon?.currentRoom else { return }
+
         clearTerminal()
 
         // Show map at top
@@ -2456,56 +2468,129 @@ class GameEngine: ObservableObject {
             print("")
         }
 
-        print("You search the room carefully...", color: .cyan)
+        let hasHiddenLoot = !room.hiddenItems.isEmpty || room.hiddenGold > 0
+
+        // If nothing left to find, say so definitively
+        if !hasHiddenLoot {
+            print("You search the room carefully...", color: .cyan)
+            print("")
+            advanceTime(10)
+            print("You've thoroughly searched this room. There's nothing left to find.", color: .dimGreen)
+            logEvent("Searched \(room.name) — nothing left to find", category: "EXPLORE")
+            waitForContinue()
+            inputHandler = { [weak self] _ in
+                self?.showExplorationView()
+            }
+            return
+        }
+
+        print("You search the \(room.name.lowercased()) carefully...", color: .cyan)
         print("")
 
         advanceTime(15)
 
+        // Perception check
         let roll = Dice.d20()
         let bestPerception = party.map { $0.skillModifier(for: .perception) }.max() ?? 0
         let total = roll + bestPerception
 
         if total >= 15 {
+            // Success — find something from the room's hidden loot
             print("You found something!", color: .brightGreen)
-            let findRoll = Dice.d6()
-            if findRoll >= 5 {
-                // Find an item
-                let level = dungeon?.level ?? 1
-                let itemPool: [String]
-                if level >= 3 {
-                    itemPool = ["Potion of Greater Healing", "Rapier", "Longsword", "Shield", "Studded Leather"]
-                } else if level >= 2 {
-                    itemPool = ["Potion of Healing", "Shortsword", "Dagger", "Leather Armor", "Shield"]
-                } else {
-                    itemPool = ["Potion of Healing", "Dagger", "Torch", "Rope"]
-                }
-                let itemName = itemPool.randomElement()!
-                if let item = resolveItemByName(itemName) {
-                    print("  Hidden stash: \(item.name)!", color: .brightGreen)
-                    showItemPickupMenu(item: item, source: "Hidden stash") { [weak self] in
-                        self?.showExplorationView()
-                    }
-                    return
-                }
-            } else if findRoll >= 3 {
-                let gold = Dice.rollSum(2, d: 6) * 5
-                print("  Hidden stash: \(gold) gold pieces!", color: .yellow)
-                showGoldPickupMenu(gold: gold, source: "Hidden stash") { [weak self] in
+
+            // Prefer items first, then gold
+            if !room.hiddenItems.isEmpty {
+                let item = room.hiddenItems.removeFirst()
+                let source = searchSourceDescription(for: room.roomType)
+                print("  \(source): \(item.name)!", color: .brightGreen)
+                showItemPickupMenu(item: item, source: source) { [weak self] in
                     self?.showExplorationView()
                 }
                 return
-            } else {
-                print("A secret alcove, but it's empty.")
-                logEvent("Searched room — found an empty alcove", category: "EXPLORE")
+            } else if room.hiddenGold > 0 {
+                let gold = room.hiddenGold
+                room.hiddenGold = 0
+                let source = searchSourceDescription(for: room.roomType)
+                print("  \(source): \(gold) gold pieces!", color: .yellow)
+                showGoldPickupMenu(gold: gold, source: source) { [weak self] in
+                    self?.showExplorationView()
+                }
+                return
             }
         } else {
-            print("You don't find anything of interest.")
-            logEvent("Searched room — found nothing", category: "EXPLORE")
+            // Failed check — hint if there's still something here
+            let hints = searchFailHints(for: room.roomType)
+            print(hints, color: .dimGreen)
+            logEvent("Searched \(room.name) — missed something", category: "EXPLORE")
         }
 
         waitForContinue()
         inputHandler = { [weak self] _ in
             self?.showExplorationView()
+        }
+    }
+
+    /// Thematic description of where an item was found, based on room type
+    private func searchSourceDescription(for roomType: RoomType) -> String {
+        switch roomType {
+        case .armory:
+            return ["Behind a weapon rack", "Under a fallen shield", "In a rusted locker",
+                    "Beneath a pile of broken blades"].randomElement()!
+        case .library:
+            return ["Hidden behind old tomes", "In a scholar's desk drawer", "Tucked inside a hollowed book",
+                    "Under a pile of scrolls"].randomElement()!
+        case .shrine:
+            return ["At the base of the altar", "In a prayer niche", "Behind a sacred tapestry",
+                    "Inside a reliquary"].randomElement()!
+        case .prison:
+            return ["Hidden in a loose stone", "Under a pile of straw", "Wedged between iron bars",
+                    "In a prisoner's hollow boot"].randomElement()!
+        case .treasure:
+            return ["In a hidden compartment", "Behind a false wall panel", "Under the main hoard",
+                    "Inside a locked chest"].randomElement()!
+        case .chamber:
+            return ["In a crack in the wall", "Behind a fallen pillar", "Under broken furniture",
+                    "In a dusty corner"].randomElement()!
+        case .corridor:
+            return ["In a gap between stones", "Behind a loose brick", "Wedged in a wall crack"].randomElement()!
+        case .trap:
+            return ["Near the trap mechanism", "Hidden by the trap builder", "In a maintenance alcove"].randomElement()!
+        default:
+            return "Hidden stash"
+        }
+    }
+
+    /// Thematic hint when search fails but items remain
+    private func searchFailHints(for roomType: RoomType) -> String {
+        switch roomType {
+        case .armory:
+            return ["You don't find anything yet, but some of these weapon racks look like they have false backs...",
+                    "Nothing this time, but you notice scratches near one of the armor stands...",
+                    "You come up empty, but something glints in the shadows of the armory..."].randomElement()!
+        case .library:
+            return ["You don't find anything, but some of these books look like they could be hiding something...",
+                    "Nothing yet, but you notice a desk drawer that seems stuck — worth another look...",
+                    "You come up empty, but a hollow sound from one of the shelves catches your attention..."].randomElement()!
+        case .shrine:
+            return ["You don't find anything, but the altar has carvings that might conceal a compartment...",
+                    "Nothing yet, but there's a loose flagstone near the shrine...",
+                    "You come up empty, but a faint shimmer near the offering bowl draws your eye..."].randomElement()!
+        case .prison:
+            return ["You don't find anything, but some of these stones look loose...",
+                    "Nothing yet, but there are scratch marks near one of the cells — a hiding spot?",
+                    "You come up empty, but a pile of straw in the corner looks recently disturbed..."].randomElement()!
+        case .treasure:
+            return ["You don't find anything more, but this room clearly held great wealth — there may be hidden compartments...",
+                    "Nothing yet, but the walls have suspicious seams...",
+                    "You come up empty, but you suspect a false panel nearby..."].randomElement()!
+        case .chamber:
+            return ["You don't find anything, but the room is large — there may be something you missed...",
+                    "Nothing this time, but a draught from the walls suggests a hidden space...",
+                    "You come up empty, though something in the shadows catches your eye..."].randomElement()!
+        default:
+            return ["You don't find anything, but you suspect there may still be something here...",
+                    "Nothing this time. Still, something about this room nags at you...",
+                    "You come up empty, but your instincts say there's more to find..."].randomElement()!
         }
     }
 
@@ -2911,6 +2996,16 @@ class GameEngine: ObservableObject {
         if !character.inventory.isEmpty {
             options.append("Drop Item")
             actions.append { [weak self] in self?.showDropItemMenu(character: character, onBack: onBack) }
+        }
+
+        // Add switcher buttons for other party members
+        if party.count > 1 {
+            for other in party where other.id != character.id {
+                options.append("\(other.name)'s Inventory")
+                actions.append { [weak self] in
+                    self?.showInventoryFor(other, onBack: onBack)
+                }
+            }
         }
 
         options.append("< Back")
@@ -5257,21 +5352,20 @@ class GameEngine: ObservableObject {
             print("Save to: \(slotName)", color: .cyan)
             print("")
 
-            var options = ["Save (new breakpoint)"]
+            var options = ["< Back", "Save (new breakpoint)"]
             if slots.count < SaveGameManager.maxSlots {
                 options.append("Save as New Slot")
             }
-            options.append("< Back")
 
             showMenu(options)
             menuHandler = { [weak self] choice in
                 guard let self = self else { return }
                 if choice == 1 {
-                    self.performSave(slotId: self.activeSlotId!, slotName: slotName)
-                } else if choice == 2 && slots.count < SaveGameManager.maxSlots {
-                    self.askForNewSlotName()
-                } else {
                     self.showExplorationView()
+                } else if choice == 2 {
+                    self.performSave(slotId: self.activeSlotId!, slotName: slotName)
+                } else if choice == 3 && slots.count < SaveGameManager.maxSlots {
+                    self.askForNewSlotName()
                 }
             }
         } else if slots.count >= SaveGameManager.maxSlots {
@@ -5377,6 +5471,7 @@ class GameEngine: ObservableObject {
 
         logEvent("Game saved: \(slotName)", category: "SYSTEM")
 
+        let chatEntries = dmChatLog.map { DMChatEntry(isUser: $0.isUser, text: $0.text) }
         let saveGame = SaveGame(
             id: UUID(),
             slotId: slotId,
@@ -5390,6 +5485,7 @@ class GameEngine: ObservableObject {
             gameState: .exploring,
             gameTimeMinutes: gameTimeMinutes,
             adventureLog: adventureLog,
+            dmChatLog: chatEntries,
             monstersSlain: monstersSlain,
             combatsWon: combatsWon
         )
@@ -5415,13 +5511,13 @@ class GameEngine: ObservableObject {
 
         print("")
 
-        showMenu(["Continue Playing", "Load Another Game", "Exit to Main Menu"])
+        showMenu(["< Back", "Continue Playing", "Load Another Game", "Exit to Main Menu"])
 
         menuHandler = { [weak self] choice in
             switch choice {
-            case 1: self?.showExplorationView()
-            case 2: self?.showLoadGameMenu(returnTo: .exploration)
-            case 3: self?.resetGame()
+            case 1, 2: self?.showExplorationView()
+            case 3: self?.showLoadGameMenu(returnTo: .exploration)
+            case 4: self?.resetGame()
             default: self?.showExplorationView()
             }
         }
@@ -5641,6 +5737,7 @@ class GameEngine: ObservableObject {
                     gameState: bp.gameState,
                     gameTimeMinutes: bp.gameTimeMinutes,
                     adventureLog: bp.adventureLog,
+                    dmChatLog: bp.dmChatLog,
                     monstersSlain: bp.monstersSlain,
                     combatsWon: bp.combatsWon
                 )
@@ -5701,6 +5798,15 @@ class GameEngine: ObservableObject {
         adventureLog = save.adventureLog
         monstersSlain = save.monstersSlain
         combatsWon = save.combatsWon
+
+        // Restore DM chat log and seed AI conversation history
+        if let savedChat = save.dmChatLog {
+            dmChatLog = savedChat.map { (isUser: $0.isUser, text: $0.text) }
+            DMEngine.shared.restoreHistory(from: savedChat)
+        } else {
+            dmChatLog = []
+            DMEngine.shared.clearHistory()
+        }
 
         // Track the loaded slot for future saves/autosaves
         activeSlotId = save.slotId

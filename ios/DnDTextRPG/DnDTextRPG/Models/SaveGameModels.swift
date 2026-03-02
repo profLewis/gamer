@@ -7,6 +7,13 @@
 
 import Foundation
 
+// MARK: - DM Chat Entry (Codable wrapper for chat log tuples)
+
+struct DMChatEntry: Codable {
+    let isUser: Bool
+    let text: String
+}
+
 // MARK: - Save Game
 
 struct SaveGame: Codable, Identifiable {
@@ -26,6 +33,9 @@ struct SaveGame: Codable, Identifiable {
     // Time & history
     let gameTimeMinutes: Int
     let adventureLog: [String]
+
+    // DM conversation history (persists across saves/loads)
+    let dmChatLog: [DMChatEntry]?
 
     // Run stats
     let monstersSlain: Int

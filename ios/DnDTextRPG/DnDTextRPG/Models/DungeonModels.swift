@@ -156,10 +156,13 @@ class Room: Identifiable, ObservableObject, Codable {
     @Published var isLocked: [Direction: Bool]
     @Published var searchedFor: Set<String>  // Things already searched for
     @Published var trapTriggered: Bool
+    @Published var hiddenItems: [Item]      // Items discoverable by searching (thematic per room type)
+    @Published var hiddenGold: Int           // Gold discoverable by searching
 
     enum CodingKeys: String, CodingKey {
         case id, x, y, roomType, name, roomDescription, exits, visited, cleared
         case encounter, treasure, isLocked, searchedFor, trapTriggered
+        case hiddenItems, hiddenGold
     }
 
     init(id: Int, x: Int, y: Int, type: RoomType) {
@@ -177,6 +180,8 @@ class Room: Identifiable, ObservableObject, Codable {
         self.isLocked = [:]
         self.searchedFor = []
         self.trapTriggered = false
+        self.hiddenItems = []
+        self.hiddenGold = 0
     }
 
     required init(from decoder: Decoder) throws {
@@ -197,6 +202,8 @@ class Room: Identifiable, ObservableObject, Codable {
         isLocked = try container.decode([Direction: Bool].self, forKey: .isLocked)
         searchedFor = try container.decode(Set<String>.self, forKey: .searchedFor)
         trapTriggered = try container.decodeIfPresent(Bool.self, forKey: .trapTriggered) ?? false
+        hiddenItems = try container.decodeIfPresent([Item].self, forKey: .hiddenItems) ?? []
+        hiddenGold = try container.decodeIfPresent(Int.self, forKey: .hiddenGold) ?? 0
     }
 
     func encode(to encoder: Encoder) throws {
@@ -215,6 +222,8 @@ class Room: Identifiable, ObservableObject, Codable {
         try container.encode(isLocked, forKey: .isLocked)
         try container.encode(searchedFor, forKey: .searchedFor)
         try container.encode(trapTriggered, forKey: .trapTriggered)
+        try container.encode(hiddenItems, forKey: .hiddenItems)
+        try container.encode(hiddenGold, forKey: .hiddenGold)
     }
 
     static func generateName(for type: RoomType) -> String {
@@ -293,6 +302,95 @@ class Room: Identifiable, ObservableObject, Codable {
         }
 
         return desc
+    }
+
+    /// Generate thematic hidden items and gold for a room based on its type and dungeon level
+    static func generateHiddenLoot(roomType: RoomType, level: Int) -> (items: [Item], gold: Int) {
+        var items: [Item] = []
+        var gold = 0
+
+        switch roomType {
+        case .armory:
+            // Armory — weapons and armor, scaled by level
+            let pool: [() -> Item]
+            if level >= 3 {
+                pool = [ItemCatalog.longsword, ItemCatalog.rapier, ItemCatalog.scaleMail,
+                        ItemCatalog.studdedLeather, ItemCatalog.shield, ItemCatalog.handaxe]
+            } else if level >= 2 {
+                pool = [ItemCatalog.shortsword, ItemCatalog.longsword, ItemCatalog.leatherArmor,
+                        ItemCatalog.shield, ItemCatalog.mace, ItemCatalog.handaxe]
+            } else {
+                pool = [ItemCatalog.dagger, ItemCatalog.shortsword, ItemCatalog.leatherArmor,
+                        ItemCatalog.shield, ItemCatalog.handaxe, ItemCatalog.mace]
+            }
+            // 1-2 items
+            let count = Dice.d4() >= 3 ? 2 : 1
+            for _ in 0..<count {
+                items.append(pool.randomElement()!())
+            }
+            gold = Dice.rollSum(1, d: 6) * 5
+
+        case .library:
+            // Library — scholarly items, spell components, occasional potion
+            let pool: [() -> Item] = level >= 2
+                ? [ItemCatalog.spellComponentPouch, ItemCatalog.holySymbol,
+                   ItemCatalog.healingPotion, ItemCatalog.torch]
+                : [ItemCatalog.spellComponentPouch, ItemCatalog.holySymbol, ItemCatalog.torch]
+            items.append(pool.randomElement()!())
+            if Dice.d6() >= 5 { items.append(pool.randomElement()!()) }
+
+        case .shrine:
+            // Shrine — healing items, holy relics
+            if level >= 3 {
+                items.append(ItemCatalog.greaterHealingPotion())
+            } else {
+                items.append(ItemCatalog.healingPotion())
+            }
+            if Dice.d6() >= 4 { items.append(ItemCatalog.holySymbol()) }
+
+        case .prison:
+            // Prison — makeshift weapons, escape tools
+            let pool: [() -> Item] = [ItemCatalog.dagger, ItemCatalog.rope,
+                                       ItemCatalog.torch, ItemCatalog.thievesTools]
+            items.append(pool.randomElement()!())
+            if Dice.d6() >= 5 { items.append(pool.randomElement()!()) }
+            gold = Dice.d6() >= 4 ? Dice.rollSum(1, d: 6) * 3 : 0
+
+        case .treasure:
+            // Treasure rooms already have treasure array — add a bonus hidden item
+            if level >= 3 && Dice.d6() >= 3 {
+                items.append([ItemCatalog.greaterHealingPotion, ItemCatalog.rapier,
+                              ItemCatalog.studdedLeather].randomElement()!())
+            } else if Dice.d6() >= 3 {
+                items.append([ItemCatalog.healingPotion, ItemCatalog.dagger,
+                              ItemCatalog.shield].randomElement()!())
+            }
+
+        case .chamber:
+            // Chamber — small chance of minor items
+            if Dice.d6() >= 5 {
+                items.append([ItemCatalog.torch, ItemCatalog.rope, ItemCatalog.dagger].randomElement()!())
+            }
+            if Dice.d6() >= 5 { gold = Dice.rollSum(1, d: 6) * 3 }
+
+        case .trap:
+            // Trap rooms — rare finds, tools
+            if Dice.d6() >= 5 {
+                items.append([ItemCatalog.thievesTools, ItemCatalog.dagger].randomElement()!())
+            }
+
+        case .corridor:
+            // Corridor — very rare minor finds
+            if Dice.d8() >= 7 {
+                items.append([ItemCatalog.torch, ItemCatalog.rope].randomElement()!())
+            }
+
+        case .entrance, .boss, .empty:
+            // No hidden loot
+            break
+        }
+
+        return (items, gold)
     }
 }
 
@@ -418,6 +516,11 @@ class Dungeon: ObservableObject, Codable {
                     if roomType == .treasure {
                         newRoom.treasure = TreasureItem.generateTreasure(level: level)
                     }
+
+                    // Add thematic hidden items based on room type
+                    let hiddenLoot = Room.generateHiddenLoot(roomType: roomType, level: level)
+                    newRoom.hiddenItems = hiddenLoot.items
+                    newRoom.hiddenGold = hiddenLoot.gold
 
                     rooms[roomId] = newRoom
                     frontier.append((newX, newY))
