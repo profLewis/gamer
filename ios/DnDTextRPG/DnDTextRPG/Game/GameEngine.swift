@@ -2540,7 +2540,7 @@ class GameEngine: ObservableObject {
 
     // MARK: - Inventory
 
-    private func pickCharacter(title: String, action: @escaping (Character) -> Void) {
+    private func pickCharacter(title: String, onBack: (() -> Void)? = nil, action: @escaping (Character) -> Void) {
         if party.count == 1 {
             action(party[0])
             return
@@ -2563,7 +2563,7 @@ class GameEngine: ObservableObject {
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == options.count {
-                self.showExplorationView()
+                if let onBack = onBack { onBack() } else { self.showExplorationView() }
                 return
             }
             guard choice > 0 && choice <= self.party.count else { return }
@@ -2573,11 +2573,15 @@ class GameEngine: ObservableObject {
 
     func showInventory() {
         pickCharacter(title: "Whose inventory?") { [weak self] character in
-            self?.showInventoryFor(character)
+            guard let self = self else { return }
+            let back: () -> Void = self.party.count > 1
+                ? { [weak self] in self?.showInventory() }
+                : { [weak self] in self?.showExplorationView() }
+            self.showInventoryFor(character, onBack: back)
         }
     }
 
-    private func showInventoryFor(_ character: Character) {
+    private func showInventoryFor(_ character: Character, onBack: (() -> Void)? = nil) {
 
         clearTerminal()
 
@@ -2628,41 +2632,42 @@ class GameEngine: ObservableObject {
 
         if !equipableWeapons.isEmpty {
             options.append("Equip Weapon")
-            actions.append { [weak self] in self?.showEquipMenu(character: character, type: .weapon, label: "Weapon") }
+            actions.append { [weak self] in self?.showEquipMenu(character: character, type: .weapon, label: "Weapon", onBack: onBack) }
         }
         if !equipableArmor.isEmpty {
             options.append("Equip Armor")
-            actions.append { [weak self] in self?.showEquipMenu(character: character, type: .armor, label: "Armor") }
+            actions.append { [weak self] in self?.showEquipMenu(character: character, type: .armor, label: "Armor", onBack: onBack) }
         }
         if !equipableShields.isEmpty {
             options.append("Equip Shield")
-            actions.append { [weak self] in self?.showEquipMenu(character: character, type: .shield, label: "Shield") }
+            actions.append { [weak self] in self?.showEquipMenu(character: character, type: .shield, label: "Shield", onBack: onBack) }
         }
         if !usablePotions.isEmpty {
             options.append("Use Potion")
-            actions.append { [weak self] in self?.showUsePotionMenu(character: character) }
+            actions.append { [weak self] in self?.showUsePotionMenu(character: character, onBack: onBack) }
         }
         if character.equippedWeapon != nil {
             options.append("Unequip Weapon")
             actions.append { [weak self] in
                 character.unequipWeapon()
-                self?.showInventoryFor(character)
+                self?.showInventoryFor(character, onBack: onBack)
             }
         }
         if character.equippedArmor != nil {
             options.append("Unequip Armor")
             actions.append { [weak self] in
                 character.unequipArmor()
-                self?.showInventoryFor(character)
+                self?.showInventoryFor(character, onBack: onBack)
             }
         }
         if !character.inventory.isEmpty {
             options.append("Drop Item")
-            actions.append { [weak self] in self?.showDropItemMenu(character: character) }
+            actions.append { [weak self] in self?.showDropItemMenu(character: character, onBack: onBack) }
         }
 
         options.append("< Back")
-        actions.append { [weak self] in self?.showExplorationView() }
+        let backAction = onBack ?? { [weak self] in self?.showExplorationView() }
+        actions.append { backAction() }
 
         showMenu(options)
         menuHandler = { choice in
@@ -2672,7 +2677,7 @@ class GameEngine: ObservableObject {
         }
     }
 
-    private func showEquipMenu(character: Character, type: ItemType, label: String) {
+    private func showEquipMenu(character: Character, type: ItemType, label: String, onBack: (() -> Void)? = nil) {
         let items = character.inventory.filter { $0.type == type }
 
         clearTerminal()
@@ -2695,7 +2700,7 @@ class GameEngine: ObservableObject {
 
         menuHandler = { [weak self] choice in
             if choice == options.count {
-                self?.showInventoryFor(character)
+                self?.showInventoryFor(character, onBack: onBack)
                 return
             }
             guard choice > 0 && choice <= items.count else { return }
@@ -2707,11 +2712,11 @@ class GameEngine: ObservableObject {
             case .shield: character.equipShield(item)
             default: break
             }
-            self?.showInventoryFor(character)
+            self?.showInventoryFor(character, onBack: onBack)
         }
     }
 
-    private func showUsePotionMenu(character: Character) {
+    private func showUsePotionMenu(character: Character, onBack: (() -> Void)? = nil) {
         let potions = character.inventory.filter { $0.type == .potion }
 
         clearTerminal()
@@ -2730,7 +2735,7 @@ class GameEngine: ObservableObject {
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == options.count {
-                self.showInventoryFor(character)
+                self.showInventoryFor(character, onBack: onBack)
                 return
             }
             guard choice > 0 && choice <= potions.count else { return }
@@ -2750,12 +2755,12 @@ class GameEngine: ObservableObject {
 
             self.waitForContinue()
             self.inputHandler = { [weak self] _ in
-                self?.showInventoryFor(character)
+                self?.showInventoryFor(character, onBack: onBack)
             }
         }
     }
 
-    private func showDropItemMenu(character: Character) {
+    private func showDropItemMenu(character: Character, onBack: (() -> Void)? = nil) {
         clearTerminal()
         printSubtitle("Drop Item")
 
@@ -2770,7 +2775,7 @@ class GameEngine: ObservableObject {
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == options.count {
-                self.showInventoryFor(character)
+                self.showInventoryFor(character, onBack: onBack)
                 return
             }
             guard choice > 0 && choice <= character.inventory.count else { return }
@@ -2780,7 +2785,7 @@ class GameEngine: ObservableObject {
             self.print("  Dropped \(item.name).", color: .yellow)
             self.waitForContinue()
             self.inputHandler = { [weak self] _ in
-                self?.showInventoryFor(character)
+                self?.showInventoryFor(character, onBack: onBack)
             }
         }
     }
