@@ -492,6 +492,16 @@ class GameEngine: ObservableObject {
         }
     }
 
+    var dmLogContextSize: Int {
+        get {
+            let val = UserDefaults.standard.integer(forKey: "dm_log_context_size")
+            return val > 0 ? val : 128
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "dm_log_context_size")
+        }
+    }
+
     private func autosaveIfNeeded() {
         let interval = autosaveInterval
         guard interval != .off, dungeon != nil else { return }
@@ -589,7 +599,11 @@ class GameEngine: ObservableObject {
         print("  Current: \(currentAutosave.displayName)", color: .dimGreen)
         print("")
 
-        var options = ["AI Provider", "Set API Key", "DM Ad-lib Level", "DM Voice", "Font Size", "Autosave"]
+        print("DM LOG CONTEXT:", color: .cyan, bold: true)
+        print("  Entries sent to DM: \(dmLogContextSize)", color: .dimGreen)
+        print("")
+
+        var options = ["AI Provider", "Set API Key", "DM Ad-lib Level", "DM Voice", "Font Size", "Autosave", "DM Log Context"]
         if dm.isConfigured {
             options.append("Clear API Key")
         }
@@ -610,7 +624,9 @@ class GameEngine: ObservableObject {
                 self?.showFontSizeMenu()
             } else if choice == 6 {
                 self?.showAutosaveMenu()
-            } else if dm.isConfigured && choice == 7 {
+            } else if choice == 7 {
+                self?.showDMLogContextMenu()
+            } else if dm.isConfigured && choice == 8 {
                 dm.apiKey = nil
                 self?.print("")
                 self?.print("API key cleared.", color: .yellow)
@@ -1064,6 +1080,37 @@ class GameEngine: ObservableObject {
                 self?.inputHandler = { [weak self] _ in
                     self?.showSettings()
                 }
+            } else {
+                self?.showSettings()
+            }
+        }
+    }
+
+    func showDMLogContextMenu() {
+        clearTerminal()
+        printTitle("DM Log Context")
+        print("  How many adventure log entries are", color: .dimGreen)
+        print("  sent to the AI DM for context.", color: .dimGreen)
+        print("  More = better narrative continuity", color: .dimGreen)
+        print("  but uses more AI tokens.", color: .dimGreen)
+        print("")
+
+        let current = dmLogContextSize
+        let sizes = [32, 64, 128, 256, 512]
+        for size in sizes {
+            let marker = size == current ? " <--" : ""
+            print("  \(size) entries\(marker)", color: size == current ? .brightGreen : .green)
+        }
+        print("")
+
+        var options = sizes.map { "\($0) entries" }
+        options.append("< Back")
+        showMenu(options)
+
+        menuHandler = { [weak self] choice in
+            if choice <= sizes.count {
+                self?.dmLogContextSize = sizes[choice - 1]
+                self?.showDMLogContextMenu()
             } else {
                 self?.showSettings()
             }
@@ -3618,10 +3665,10 @@ class GameEngine: ObservableObject {
             """
         }
 
-        // Build adventure log summary for DM context (last 15, excluding SYSTEM)
+        // Build adventure log summary for DM context (configurable, default 128)
         let relevantLog = adventureLog
             .filter { !$0.contains("[SYSTEM]") }
-            .suffix(15)
+            .suffix(dmLogContextSize)
             .map { String($0) }
         let logSummary: String? = relevantLog.isEmpty ? nil : relevantLog.joined(separator: "\n")
 
