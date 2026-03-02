@@ -594,8 +594,8 @@ class Dungeon: ObservableObject, Codable {
                     row += "  \(item)"
                 }
                 if (i + 1) % 3 == 0 || i == activeEntries.count - 1 {
-                    let padded = " \(row)".padding(toLength: border.count, withPad: " ", startingAt: 0)
-                    lines.append("│ \(padded)│")
+                    let keyLine = "│ \(row)".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "│"
+                    lines.append(keyLine)
                     row = ""
                 }
             }
