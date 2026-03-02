@@ -2490,8 +2490,10 @@ class GameEngine: ObservableObject {
             } else if findRoll >= 3 {
                 let gold = Dice.rollSum(2, d: 6) * 5
                 print("  Hidden stash: \(gold) gold pieces!", color: .yellow)
-                party.first?.gold += gold
-                logEvent("Found \(gold) gold in a hidden stash", category: "LOOT")
+                showGoldPickupMenu(gold: gold, source: "Hidden stash") { [weak self] in
+                    self?.showExplorationView()
+                }
+                return
             } else {
                 print("A secret alcove, but it's empty.")
                 logEvent("Searched room — found an empty alcove", category: "EXPLORE")
@@ -2553,33 +2555,18 @@ class GameEngine: ObservableObject {
             }
         }
 
-        // Auto-collect gold (no choice needed)
-        if totalGold > 0 {
-            let goldEach = totalGold / party.count
-            let remainder = totalGold % party.count
-            for (i, char) in party.enumerated() {
-                char.gold += goldEach + (i == 0 ? remainder : 0)
-            }
-            print("")
-            if party.count > 1 {
-                print("  Total gold: +\(totalGold) (\(goldEach)gp each)", color: .yellow)
-            } else {
-                print("  Total gold: +\(totalGold)", color: .yellow)
-            }
-            logEvent("Collected \(totalGold) gold from treasure", category: "LOOT")
-        }
-
         room.treasure.removeAll()
 
         if !itemNames.isEmpty {
-            logEvent("Collected treasure: \(itemNames.joined(separator: ", "))", category: "LOOT")
+            logEvent("Found treasure: \(itemNames.joined(separator: ", "))", category: "LOOT")
         }
 
-        // Show pickup sequence for non-gold items, or return to exploration
-        if !pickableItems.isEmpty {
+        // Show pickup menus for gold and items
+        if totalGold > 0 || !pickableItems.isEmpty {
             waitForContinue()
             inputHandler = { [weak self] _ in
-                self?.showItemPickupSequence(items: pickableItems, source: "Treasure") { [weak self] in
+                self?.showLootSequence(gold: totalGold, goldSource: "Treasure",
+                                       items: pickableItems, itemSource: "Treasure") { [weak self] in
                     self?.showExplorationView()
                 }
             }
@@ -2733,6 +2720,69 @@ class GameEngine: ObservableObject {
         let current = remaining.removeFirst()
         showItemPickupMenu(item: current, source: source) { [weak self] in
             self?.showItemPickupSequence(items: remaining, source: source, onDone: onDone)
+        }
+    }
+
+    /// Show a menu for found gold — pick up or leave it
+    private func showGoldPickupMenu(gold: Int, source: String, onDone: @escaping () -> Void) {
+        clearTerminal()
+
+        if let dungeon = dungeon {
+            printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
+            print("")
+        }
+
+        printSubtitle("Found: \(gold) Gold Pieces")
+        print("  \(source)", color: .dimGreen)
+        print("")
+
+        var options: [String] = []
+
+        if party.count > 1 {
+            options.append("Pick Up (split \(gold / party.count)gp each)")
+        } else {
+            options.append("Pick Up (+\(gold)gp)")
+        }
+        options.append("Leave It")
+
+        showMenu(options)
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                let goldEach = gold / self.party.count
+                let remainder = gold % self.party.count
+                for (i, char) in self.party.enumerated() {
+                    char.gold += goldEach + (i == 0 ? remainder : 0)
+                }
+                if self.party.count > 1 {
+                    self.print("  Party collects \(gold) gold (\(goldEach)gp each).", color: .yellow)
+                } else {
+                    self.print("  You pocket \(gold) gold pieces.", color: .yellow)
+                }
+                self.logEvent("Picked up \(gold) gold from \(source.lowercased())", category: "LOOT")
+            } else {
+                self.print("  You leave \(gold) gold behind.", color: .dimGreen)
+                self.logEvent("Left \(gold) gold behind", category: "LOOT")
+            }
+            self.waitForContinue()
+            self.inputHandler = { _ in onDone() }
+        }
+    }
+
+    /// Process a mixed loot pile — gold first, then items one at a time
+    private func showLootSequence(gold: Int, goldSource: String, items: [Item], itemSource: String, onDone: @escaping () -> Void) {
+        if gold > 0 {
+            showGoldPickupMenu(gold: gold, source: goldSource) { [weak self] in
+                if !items.isEmpty {
+                    self?.showItemPickupSequence(items: items, source: itemSource, onDone: onDone)
+                } else {
+                    onDone()
+                }
+            }
+        } else if !items.isEmpty {
+            showItemPickupSequence(items: items, source: itemSource, onDone: onDone)
+        } else {
+            onDone()
         }
     }
 
@@ -3389,11 +3439,12 @@ class GameEngine: ObservableObject {
                     // Apply DM commands at moderate and full levels
                     var worldChanged = false
                     var pendingPickupItems: [Item] = []
+                    var pendingGold = 0
                     if adLibLevel.rawValue >= DMAdLibLevel.moderate.rawValue {
                         if result.bonusGold > 0 {
-                            self.party.first?.gold += result.bonusGold
+                            pendingGold = result.bonusGold
                             self.print("")
-                            self.print("  [+\(result.bonusGold) gold!]", color: .yellow, bold: true)
+                            self.print("  [Found \(result.bonusGold) gold!]", color: .yellow, bold: true)
                             self.logEvent("DM awarded \(result.bonusGold) bonus gold", category: "DM")
                             worldChanged = true
                         }
@@ -3460,14 +3511,11 @@ class GameEngine: ObservableObject {
                     self.logEvent("Asked DM: \(input)", category: "DM")
 
                     if worldChanged {
-                        // World changed — return to exploration, with item pickup if needed
+                        // World changed — return to exploration, with loot pickup if needed
                         self.waitForContinue()
                         self.inputHandler = { [weak self] _ in
-                            if !pendingPickupItems.isEmpty {
-                                self?.showItemPickupSequence(items: pendingPickupItems, source: "DM gift") { [weak self] in
-                                    self?.showExplorationView()
-                                }
-                            } else {
+                            self?.showLootSequence(gold: pendingGold, goldSource: "DM reward",
+                                                   items: pendingPickupItems, itemSource: "DM gift") { [weak self] in
                                 self?.showExplorationView()
                             }
                         }
@@ -4986,17 +5034,6 @@ class GameEngine: ObservableObject {
                 }
             }
         }
-        if lootGold > 0 {
-            let goldEach = lootGold / party.count
-            let remainder = lootGold % party.count
-            for (i, char) in party.enumerated() {
-                char.gold += goldEach + (i == 0 ? remainder : 0)
-            }
-            print("")
-            print("  Loot gold: +\(lootGold)", color: .yellow)
-            logEvent("Combat loot: \(lootGold) gold", category: "LOOT")
-        }
-
         // Mark room cleared
         dungeon?.currentRoom?.cleared = true
         dungeon?.currentRoom?.encounter = nil
@@ -5029,11 +5066,8 @@ class GameEngine: ObservableObject {
                     }
                 }
             }
-            if !lootItems.isEmpty {
-                self.showItemPickupSequence(items: lootItems, source: "Combat loot", onDone: afterLoot)
-            } else {
-                afterLoot()
-            }
+            self.showLootSequence(gold: lootGold, goldSource: "Combat loot",
+                                  items: lootItems, itemSource: "Combat loot", onDone: afterLoot)
         }
     }
 

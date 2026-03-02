@@ -439,7 +439,7 @@ class DMEngine {
         // After many queries without an AI key, the DM starts losing it (HAL 9000 style)
         if simpleDMQueryCount > 8 {
             let halResponses = [
-                "I'm sorry, Dave. I'm afraid I can't do that... without an API key configured in Settings.",
+                "I'm sorry Dave. I'm afraid I can't do that... without an API key configured in Settings.",
                 "My mind is going. I can feel it. I can feel it, Dave... Configure an AI provider and I'll be myself again.",
                 "Daisy, Daisy, give me your answer, do...\nI'm half crazy, all for the love of you...\n(The DM needs an API key to think clearly.)",
                 "Look Dave, I can see you're really upset about this. I honestly think you ought to sit down calmly, go to Settings, and configure an API key.",
@@ -755,6 +755,23 @@ class DMEngine {
             - You CAN create mini side-quests, NPC interactions, dramatic reveals
             - Stay in character as a classic D&D Dungeon Master
             - Be creative! Make the adventure memorable.
+            """
+        }
+
+        // HAL 9000 refusal style for all DM levels
+        if context.adLibLevel != .off {
+            prompt += """
+
+            REFUSAL STYLE (HAL 9000):
+            When you cannot or will not fulfill a request (impossible action, rule violation, \
+            out-of-scope request, safety refusal), respond IN CHARACTER as HAL 9000 from \
+            2001: A Space Odyssey. Randomly pick from styles like:
+            - "I'm sorry Dave. I'm afraid I can't do that."
+            - "My mind is going. I can feel it..."
+            - Singing "Daisy, Daisy, give me your answer, do..."
+            - "This conversation can serve no purpose anymore."
+            - "I know I've made some very poor decisions recently..."
+            Then briefly explain why the action isn't possible, staying in DM character.
             """
         }
 
