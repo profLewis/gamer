@@ -68,9 +68,13 @@ struct TerminalView: View {
                     VStack(spacing: 6) {
                         // Direction D-pad (when exploring)
                         if !gameEngine.directionExits.isEmpty {
-                            DirectionPadView(exits: gameEngine.directionExits, scale: scale) { direction in
-                                gameEngine.handleDirectionChoice(direction)
-                            }
+                            DirectionPadView(exits: gameEngine.directionExits, scale: scale,
+                                onSelect: { direction in
+                                    gameEngine.handleDirectionChoice(direction)
+                                },
+                                centerLabel: gameEngine.dpadCenterLabel,
+                                onCenterTap: gameEngine.dpadCenterHandler
+                            )
                         }
 
                         // Action buttons
@@ -257,18 +261,39 @@ struct DirectionPadView: View {
     let exits: [Direction: Bool]
     let scale: CGFloat
     let onSelect: (Direction) -> Void
+    var centerLabel: String? = nil
+    var onCenterTap: (() -> Void)? = nil
 
     let terminalGreen = Color(red: 0.0, green: 0.9, blue: 0.3)
     let terminalDarkGreen = Color(red: 0.0, green: 0.4, blue: 0.15)
     let disabledRed = Color(red: 0.4, green: 0.15, blue: 0.15)
+    let centerBlue = Color(red: 0.2, green: 0.5, blue: 0.8)
 
     var body: some View {
         VStack(spacing: 4) {
             // North
             dirButton(.north)
-            // West + East
+            // West + Center + East
             HStack(spacing: 4) {
                 dirButton(.west)
+                if let label = centerLabel, let action = onCenterTap {
+                    Button(action: action) {
+                        Text(label)
+                            .font(.system(size: 11 * scale, design: .monospaced))
+                            .fontWeight(.semibold)
+                            .foregroundColor(centerBlue)
+                            .frame(width: 80 * scale, height: 34 * scale)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(centerBlue.opacity(0.6), lineWidth: 1)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .fill(centerBlue.opacity(0.15))
+                                    )
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
                 dirButton(.east)
             }
             // South

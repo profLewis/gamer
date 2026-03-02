@@ -46,6 +46,11 @@ struct ContentView: View {
 struct SplashView: View {
     let onDismiss: () -> Void
     @State private var animationPhase = 0
+    @State private var isWinking = false
+    @State private var isSnorting = false
+    @State private var isBothEyesBlink = false
+    @State private var eyeSpinFrame: Int = -1  // -1 = no spin, 0-7 = spin frames
+    @State private var isToeTapping = false
 
     let terminalGreen = Color(red: 0.0, green: 0.9, blue: 0.3)
     let terminalBackground = Color.black
@@ -58,10 +63,10 @@ struct SplashView: View {
                 Spacer()
 
                 // Dragon ASCII art
-                Text(dragonArt)
+                Text(currentDragonArt)
                     .font(.system(size: 8, design: .monospaced))
                     .foregroundColor(terminalGreen)
-                    .multilineTextAlignment(.center)
+                    .multilineTextAlignment(.leading)
                     .opacity(animationPhase >= 1 ? 1 : 0)
 
                 // Title
@@ -94,7 +99,7 @@ struct SplashView: View {
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundColor(terminalGreen.opacity(0.5))
 
-                    Text("Version 1.2.0 — 2026")
+                    Text("Version 2.0 — 2026")
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(terminalGreen.opacity(0.4))
                 }
@@ -127,6 +132,11 @@ struct SplashView: View {
             animationPhase = 1
         }
 
+        // Spin dragon eyes when first appearing
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            startEyeSpin()
+        }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             withAnimation(.easeIn(duration: 0.5)) {
                 animationPhase = 2
@@ -154,26 +164,106 @@ struct SplashView: View {
                 blinkOpacity = blinkOpacity == 1.0 ? 0.3 : 1.0
             }
         }
+        // Start dragon wink after 5 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+            startDragonAnimations()
+        }
     }
 
-    private var dragonArt: String {
+    // Spin characters: clockwise |, /, -, \  and counter-clockwise |, \, -, /
+    private let spinCW: [String]  = ["|", "/", "-", "\\", "|", "/", "-", "\\"]
+    private let spinCCW: [String] = ["|", "\\", "-", "/", "|", "\\", "-", "/"]
+
+    private func startEyeSpin() {
+        eyeSpinFrame = 0
+        Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { timer in
+            eyeSpinFrame += 1
+            if eyeSpinFrame >= spinCW.count {
+                timer.invalidate()
+                eyeSpinFrame = -1
+            }
+        }
+    }
+
+    private func startDragonAnimations() {
+        // Wink every 4-6 seconds
+        Timer.scheduledTimer(withTimeInterval: 4.5, repeats: true) { _ in
+            isWinking = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                isWinking = false
+            }
+        }
+        // Snort every 8-10 seconds (offset from wink)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            Timer.scheduledTimer(withTimeInterval: 7.0, repeats: true) { _ in
+                isSnorting = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    isSnorting = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        isSnorting = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            isSnorting = false
+                        }
+                    }
+                }
+            }
+        }
+        // Toe tapping + eye spin every 3-4 seconds (with slight variation)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            Timer.scheduledTimer(withTimeInterval: 3.5, repeats: true) { _ in
+                // Toe tap
+                isToeTapping = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    isToeTapping = false
+                }
+                // Eye spin shortly after (slight offset for variety)
+                let spinDelay = Double.random(in: 0.0...0.4)
+                DispatchQueue.main.asyncAfter(deadline: .now() + spinDelay) {
+                    startEyeSpin()
+                }
+            }
+        }
+    }
+
+    private var currentDragonArt: String {
+        var art = dragonArtBase
+        if eyeSpinFrame >= 0 && eyeSpinFrame < spinCW.count {
+            let left = spinCW[eyeSpinFrame]
+            let right = spinCCW[eyeSpinFrame]
+            art = art.replacingOccurrences(of: "(@::@)", with: "(\(left)::\(right))")
+        } else if isBothEyesBlink {
+            art = art.replacingOccurrences(of: "(@::@)", with: "(-::-)")
+        } else if isWinking {
+            art = art.replacingOccurrences(of: "(@::@)", with: "(-::@)")
+        }
+        if isSnorting {
+            art = art.replacingOccurrences(of: "(oo)", with: "(OO)")
+        }
+        if isToeTapping {
+            // Lift left foot, tap right foot
+            art = art.replacingOccurrences(of: "(vvv(VVV)(VVV)vvv)", with: "(vvv(VVV)(^^^)vvv)")
+        }
+        return art
+    }
+
+    private var dragonArtBase: String {
         """
-____
-/    \\
-_.---.._    /  ##  \\
-_.-'`       `'-./   ##   |
-_.-'    \\.    .    /         |
-.-'  ####   \\\\  //  ./   ####   |
-.'    ######   \\\\//  /   ######  /
-/    ########\\   \\/  /  ######## /
-;    ##########`-----'  ########.'
-|   ##########    \\/   ########/
-|   ########       \\  ########;
-|  ########    /\\   \\########;
-\\  ######    .'  \\   \\######/
- \\  ####   .'     \\   \\####/
-  \\  ##  .'        \\   \\##/
-   `.__.'           `.__.'
+                  ___====-_  _-====___
+            _--^^^#####//      \\\\#####^^^--_
+         _-^##########// (    ) \\\\##########^-_
+        -############//  |\\^^/|  \\\\############-
+      _/############//   (@::@)   \\\\############\\_
+     /#############((     \\\\//     ))#############\\
+    -###############\\\\    (oo)    //###############-
+   -#################\\\\  / VV \\  //#################-
+  -###################\\\\/      \\//###################-
+ _#/|##########/\\######(   /\\   )######/\\##########|\\#_
+ |/ |#/\\#/\\#/\\/  \\#/\\##\\  |  |  /##/\\#/  \\/\\#/\\#/\\#| \\|
+ `  |/  V  V  `   V  \\#\\| |  | |/#/  V   '  V  V  \\|  '
+    `   `  `      `   / | |  | | \\   '      '  '   '
+                       (  | |  | |  )
+                      __\\ | |  | | /__
+                     (vvv(VVV)(VVV)vvv)
 """
     }
 }

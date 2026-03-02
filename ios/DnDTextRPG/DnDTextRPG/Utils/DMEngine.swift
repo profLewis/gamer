@@ -295,6 +295,15 @@ class DMEngine {
         }
     }
 
+    /// Inject a system-level context message into conversation history (not shown to user as chat)
+    func injectContext(_ message: String) {
+        conversationHistory.append((role: "user", content: "[SYSTEM CONTEXT] \(message)"))
+        conversationHistory.append((role: "assistant", content: "Understood, I'm aware of these recent events."))
+        if conversationHistory.count > maxHistory {
+            conversationHistory = Array(conversationHistory.suffix(maxHistory))
+        }
+    }
+
     func ask(_ userMessage: String, context: DMContext, completion: @escaping (String) -> Void) {
         guard let key = apiKey, !key.isEmpty else {
             // No API key — try Apple on-device model first, then simple DM
@@ -439,6 +448,49 @@ class DMEngine {
             moveDirection: moveDir,
             teleport: doTeleport
         )
+    }
+
+    /// Detect narrative text that implies state changes without matching command tags.
+    static func detectMissedCommands(
+        narrativeText: String,
+        appliedResult: DMCommandResult
+    ) -> [String] {
+        var suggestions: [String] = []
+        let lower = narrativeText.lowercased()
+
+        if appliedResult.healAmount == 0 {
+            let patterns = ["heal", "restore", "mend wounds", "cure", "bandage",
+                           "drink the potion", "wounds close", "regain health"]
+            if patterns.contains(where: { lower.contains($0) }) {
+                suggestions.append("DM described healing but no [HEAL:x] tag was applied")
+            }
+        }
+
+        if appliedResult.damageAmount == 0 && appliedResult.damagePartyAmount == 0 {
+            let patterns = ["take damage", "takes damage", "suffer", "wounded",
+                          "struck by", "hit by", "burns you", "you are poisoned"]
+            if patterns.contains(where: { lower.contains($0) }) {
+                suggestions.append("DM described damage but no [DAMAGE:x] tag was applied")
+            }
+        }
+
+        if appliedResult.grantedItems.isEmpty {
+            let patterns = ["hands you", "gives you", "receive a", "find a sword",
+                           "find a potion", "discover a", "take this", "offers you"]
+            if patterns.contains(where: { lower.contains($0) }) {
+                suggestions.append("DM described giving an item but no [GRANT_ITEM:x] tag was applied")
+            }
+        }
+
+        if appliedResult.bonusGold == 0 {
+            let patterns = ["gold coins", "gold pieces", "handful of gold",
+                           "pays you", "reward of gold"]
+            if patterns.contains(where: { lower.contains($0) }) {
+                suggestions.append("DM described gold reward but no [BONUS_GOLD:x] tag was applied")
+            }
+        }
+
+        return suggestions
     }
 
     // MARK: - Simple (Non-AI) DM
@@ -721,6 +773,10 @@ class DMEngine {
 
             prompt += """
             - Only DROP/EQUIP/USE items the party actually has (see inventory above)
+            - CRITICAL: If you describe ANY state change (dropping, using, giving, healing, \
+            damaging) you MUST include the matching command tag on its own line. Without the \
+            tag, the game state will NOT change. For example, if a character drops a torch, \
+            you MUST include [DROP_ITEM:Torch] on its own line.
             - You CAN hint at hidden items, secret passages, or approaching danger
             - You CAN add minor story beats: NPC encounters, inscriptions with clues, \
             atmospheric events
@@ -762,6 +818,10 @@ class DMEngine {
 
             prompt += """
             - Only DROP/EQUIP/USE items the party actually has (see inventory above)
+            - CRITICAL: If you describe ANY state change (dropping, using, giving, healing, \
+            damaging) you MUST include the matching command tag on its own line. Without the \
+            tag, the game state will NOT change. For example, if a character drops a torch, \
+            you MUST include [DROP_ITEM:Torch] on its own line.
             - Use these SPARINGLY and only when dramatically appropriate
             - You CAN create mini side-quests, NPC interactions, dramatic reveals
             - Stay in character as a classic D&D Dungeon Master

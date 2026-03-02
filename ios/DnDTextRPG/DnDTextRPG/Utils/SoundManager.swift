@@ -288,6 +288,18 @@ class SoundManager {
         ])
     }
 
+    /// Quit / farewell — gentle descending melody
+    func playQuit() {
+        playSequence([
+            (523, 0.2, 0.2, .sine),     // C5
+            (494, 0.2, 0.18, .sine),    // B4
+            (440, 0.2, 0.16, .sine),    // A4
+            (392, 0.2, 0.14, .sine),    // G4
+            (330, 0.3, 0.12, .sine),    // E4
+            (262, 0.5, 0.1, .sine),     // C4 (long fade)
+        ])
+    }
+
     // MARK: - Multi-Voice Buffer Generation
 
     /// A single step in the music: multiple voices sounding simultaneously

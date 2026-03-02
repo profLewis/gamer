@@ -1168,18 +1168,31 @@ class Combat: ObservableObject {
         lines.append("───── COMBAT ─────")
         lines.append("")
 
+        let maxPartyName = party.map { $0.name.prefix(16).count }.max() ?? 8
         for char in party {
-            let s = char.isConscious ? "●" : "✗"
-            let n = String(char.name.prefix(16))
-            lines.append(" \(s) \(n) \(char.currentHP)/\(char.maxHP)")
+            let s: String
+            if char.hasFledCombat || char.isPlayingDead {
+                s = "○"  // Out of the fight but not dead
+            } else if !char.isConscious {
+                s = "✗"
+            } else {
+                s = char.isComputerControlled ? "◆" : "●"  // ◆ = AI, ● = human
+            }
+            let n = String(char.name.prefix(16)).padding(toLength: maxPartyName, withPad: " ", startingAt: 0)
+            let aiTag = char.isComputerControlled ? " [AI]" : ""
+            let statusTag = char.hasFledCombat ? " [fled]" : (char.isPlayingDead ? " [playing dead]" : "")
+            let hp = String("\(char.currentHP)/\(char.maxHP)").padding(toLength: 7, withPad: " ", startingAt: 0)
+            lines.append(" \(s) \(n)  \(hp)\(statusTag)\(aiTag)")
         }
 
         lines.append("")
         let monsterNames = Combat.numberedMonsterNames(encounter.monsters)
+        let maxMonName = monsterNames.map { $0.prefix(16).count }.max() ?? 8
         for (i, monster) in encounter.monsters.enumerated() {
             let s = monster.isAlive ? "●" : "✗"
-            let n = String(monsterNames[i].prefix(16))
-            lines.append(" \(s) \(n) \(monster.currentHP)/\(monster.maxHP)")
+            let n = String(monsterNames[i].prefix(16)).padding(toLength: maxMonName, withPad: " ", startingAt: 0)
+            let hp = String("\(monster.currentHP)/\(monster.maxHP)").padding(toLength: 7, withPad: " ", startingAt: 0)
+            lines.append(" \(s) \(n)  \(hp)")
         }
 
         lines.append("──────────────────")

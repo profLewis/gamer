@@ -37,6 +37,10 @@ struct SaveGame: Codable, Identifiable {
     // DM conversation history (persists across saves/loads)
     let dmChatLog: [DMChatEntry]?
 
+    // Torch state
+    let torchLit: Bool?
+    let torchTurnsRemaining: Int?
+
     // Run stats
     let monstersSlain: Int
     let combatsWon: Int

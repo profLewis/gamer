@@ -158,11 +158,12 @@ class Room: Identifiable, ObservableObject, Codable {
     @Published var trapTriggered: Bool
     @Published var hiddenItems: [Item]      // Items discoverable by searching (thematic per room type)
     @Published var hiddenGold: Int           // Gold discoverable by searching
+    @Published var droppedItems: [Item]     // Items left behind by the party
 
     enum CodingKeys: String, CodingKey {
         case id, x, y, roomType, name, roomDescription, exits, visited, cleared
         case encounter, treasure, isLocked, searchedFor, trapTriggered
-        case hiddenItems, hiddenGold
+        case hiddenItems, hiddenGold, droppedItems
     }
 
     init(id: Int, x: Int, y: Int, type: RoomType) {
@@ -182,6 +183,7 @@ class Room: Identifiable, ObservableObject, Codable {
         self.trapTriggered = false
         self.hiddenItems = []
         self.hiddenGold = 0
+        self.droppedItems = []
     }
 
     required init(from decoder: Decoder) throws {
@@ -204,6 +206,7 @@ class Room: Identifiable, ObservableObject, Codable {
         trapTriggered = try container.decodeIfPresent(Bool.self, forKey: .trapTriggered) ?? false
         hiddenItems = try container.decodeIfPresent([Item].self, forKey: .hiddenItems) ?? []
         hiddenGold = try container.decodeIfPresent(Int.self, forKey: .hiddenGold) ?? 0
+        droppedItems = try container.decodeIfPresent([Item].self, forKey: .droppedItems) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -224,6 +227,7 @@ class Room: Identifiable, ObservableObject, Codable {
         try container.encode(trapTriggered, forKey: .trapTriggered)
         try container.encode(hiddenItems, forKey: .hiddenItems)
         try container.encode(hiddenGold, forKey: .hiddenGold)
+        try container.encode(droppedItems, forKey: .droppedItems)
     }
 
     static func generateName(for type: RoomType) -> String {
@@ -419,7 +423,7 @@ class Dungeon: ObservableObject, Codable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, level, rooms, currentRoomId, previousRoomId
+        case name, level, rooms, currentRoomId, previousRoomId, nextRoomId
     }
 
     init(name: String, level: Int) {
@@ -444,6 +448,8 @@ class Dungeon: ObservableObject, Codable {
         rooms = roomsDict
         currentRoomId = try container.decode(Int.self, forKey: .currentRoomId)
         previousRoomId = try? container.decodeIfPresent(Int.self, forKey: .previousRoomId)
+        nextRoomId = try container.decodeIfPresent(Int.self, forKey: .nextRoomId)
+            ?? (roomsDict.keys.max().map { $0 + 1 } ?? 0)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -454,10 +460,14 @@ class Dungeon: ObservableObject, Codable {
         try container.encode(roomsArray, forKey: .rooms)
         try container.encode(currentRoomId, forKey: .currentRoomId)
         try container.encodeIfPresent(previousRoomId, forKey: .previousRoomId)
+        try container.encode(nextRoomId, forKey: .nextRoomId)
     }
 
+    /// Next room ID for dynamic expansion
+    private var nextRoomId: Int = 0
+
     private func generateDungeon() {
-        let numRooms = 8 + level * 2
+        let numRooms = 20 + level * 5
 
         // Create entrance
         let entrance = Room(id: 0, x: 0, y: 0, type: .entrance)
@@ -467,6 +477,10 @@ class Dungeon: ObservableObject, Codable {
         var roomId = 1
         var frontier: [(Int, Int)] = [(0, 0)]
         var occupied: Set<String> = ["0,0"]
+
+        // Track the farthest room from entrance for boss placement
+        var farthestId = 0
+        var farthestDist = 0
 
         // Generate rooms using flood fill
         while roomId < numRooms && !frontier.isEmpty {
@@ -483,14 +497,7 @@ class Dungeon: ObservableObject, Codable {
                 if !occupied.contains(key) {
                     occupied.insert(key)
 
-                    // Determine room type
-                    let roomType: RoomType
-                    if roomId == numRooms - 1 {
-                        roomType = .boss
-                    } else {
-                        roomType = randomRoomType()
-                    }
-
+                    let roomType: RoomType = randomRoomType()
                     let newRoom = Room(id: roomId, x: newX, y: newY, type: roomType)
 
                     // Connect rooms
@@ -500,10 +507,7 @@ class Dungeon: ObservableObject, Codable {
 
                     // Add encounter based on room type
                     if roomType != .entrance && roomType != .shrine {
-                        if roomType == .boss {
-                            newRoom.encounter = Encounter.generateBoss(level: level)
-                        } else if roomType != .empty {
-                            // Lower encounter rate and easier monsters at level 1
+                        if roomType != .empty {
                             let encounterChance = level == 1 ? 0.35 : 0.5
                             let diff: EncounterDifficulty = level == 1 ? .easy : .medium
                             if Double.random(in: 0...1) < encounterChance {
@@ -524,12 +528,86 @@ class Dungeon: ObservableObject, Codable {
 
                     rooms[roomId] = newRoom
                     frontier.append((newX, newY))
+
+                    // Track farthest room for boss
+                    let dist = abs(newX) + abs(newY)
+                    if dist > farthestDist {
+                        farthestDist = dist
+                        farthestId = roomId
+                    }
+
                     roomId += 1
                 }
             }
 
             // Remove from frontier if no more directions
             frontier.removeAll { $0.0 == x && $0.1 == y }
+        }
+
+        // Place boss in the farthest room from entrance
+        if let bossRoom = rooms[farthestId], bossRoom.roomType != .entrance {
+            bossRoom.roomType = .boss
+            bossRoom.name = Room.generateName(for: .boss)
+            bossRoom.roomDescription = RoomType.boss.description
+            bossRoom.encounter = Encounter.generateBoss(level: level)
+            bossRoom.treasure = []
+            bossRoom.hiddenItems = []
+            bossRoom.hiddenGold = 0
+        }
+
+        nextRoomId = roomId
+    }
+
+    // MARK: - Dynamic Dungeon Expansion
+
+    /// Expand the dungeon by adding new rooms around the given room.
+    /// Called when the player enters a room near the edge of the map.
+    func expandIfNeeded(from room: Room) {
+        // Only expand from rooms that have open adjacent cells
+        let occupied = Set(rooms.values.map { "\($0.x),\($0.y)" })
+
+        for direction in Direction.allCases.shuffled() {
+            // Skip directions that already have exits
+            if room.exits[direction] != nil { continue }
+
+            let newX = room.x + direction.offset.x
+            let newY = room.y + direction.offset.y
+            let key = "\(newX),\(newY)"
+
+            // Skip if something already occupies that cell
+            if occupied.contains(key) { continue }
+
+            // 60% chance to generate a new room in each open direction
+            guard Dice.d100() <= 60 else { continue }
+
+            let roomType = randomRoomType()
+            let newRoom = Room(id: nextRoomId, x: newX, y: newY, type: roomType)
+
+            // Connect
+            room.exits[direction] = nextRoomId
+            newRoom.exits[direction.opposite] = room.id
+
+            // Encounter
+            if roomType != .entrance && roomType != .shrine && roomType != .empty {
+                let encounterChance = level == 1 ? 0.35 : 0.5
+                let diff: EncounterDifficulty = level == 1 ? .easy : .medium
+                if Double.random(in: 0...1) < encounterChance {
+                    newRoom.encounter = Encounter.generate(level: level, difficulty: diff)
+                }
+            }
+
+            // Treasure
+            if roomType == .treasure {
+                newRoom.treasure = TreasureItem.generateTreasure(level: level)
+            }
+
+            // Hidden loot
+            let hiddenLoot = Room.generateHiddenLoot(roomType: roomType, level: level)
+            newRoom.hiddenItems = hiddenLoot.items
+            newRoom.hiddenGold = hiddenLoot.gold
+
+            rooms[nextRoomId] = newRoom
+            nextRoomId += 1
         }
     }
 
@@ -593,36 +671,45 @@ class Dungeon: ObservableObject, Codable {
         currentRoomId = nextRoomId
         nextRoom.visited = true
 
+        // Expand the dungeon around the new room
+        expandIfNeeded(from: nextRoom)
+
         return (true, "You move \(direction.rawValue).\n\n\(nextRoom.describe())")
     }
 
-    func getMapDisplay() -> [String] {
-        let visitedRooms = rooms.values.filter { $0.visited }
-        guard !visitedRooms.isEmpty else { return ["No map available."] }
+    func getMapDisplay(visibilityRadius: Int = 3) -> [String] {
+        guard let current = rooms[currentRoomId] else { return ["No map available."] }
 
-        let minX = visitedRooms.map { $0.x }.min()!
-        let maxX = visitedRooms.map { $0.x }.max()!
-        let minY = visitedRooms.map { $0.y }.min()!
-        let maxY = visitedRooms.map { $0.y }.max()!
+        // Viewport centered on current room
+        let viewMinX = current.x - visibilityRadius
+        let viewMaxX = current.x + visibilityRadius
+        let viewMinY = current.y - visibilityRadius
+        let viewMaxY = current.y + visibilityRadius
+
+        // Only show visited rooms within the viewport
+        let visibleRooms = rooms.values.filter {
+            $0.visited && $0.x >= viewMinX && $0.x <= viewMaxX && $0.y >= viewMinY && $0.y <= viewMaxY
+        }
+        guard !visibleRooms.isEmpty else { return ["No map available."] }
 
         // Build a grid with rooms and corridors between them
         // Each room cell is 5 chars wide, corridor rows are 1 char tall
         var lines: [String] = []
 
-        let mapWidth = min((maxX - minX + 1) * 5 + 3, 32)
+        let mapWidth = min((viewMaxX - viewMinX + 1) * 5 + 3, 40)
         let border = String(repeating: "─", count: max(mapWidth, 26))
         lines.append("┌\(border)┐")
         lines.append("│ MAP".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "│")
         lines.append("├\(border)┤")
 
-        for y in minY...maxY {
+        for y in viewMinY...viewMaxY {
             // Room row
             var roomRow = "│ "
             // Vertical corridor row (below this room row)
             var corridorRow = "│ "
 
-            for x in minX...maxX {
-                if let room = visitedRooms.first(where: { $0.x == x && $0.y == y }) {
+            for x in viewMinX...viewMaxX {
+                if let room = visibleRooms.first(where: { $0.x == x && $0.y == y }) {
                     if room.id == currentRoomId {
                         roomRow += "[@]"
                     } else if room.cleared {
@@ -656,7 +743,7 @@ class Dungeon: ObservableObject, Codable {
             lines.append(roomRow)
 
             // Only add corridor row if not the last row
-            if y < maxY {
+            if y < viewMaxY {
                 corridorRow = corridorRow.padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "│"
                 lines.append(corridorRow)
             }
@@ -665,7 +752,7 @@ class Dungeon: ObservableObject, Codable {
         // Build key from symbols actually visible on the map
         var visibleSymbols = Set<String>()
         visibleSymbols.insert("@") // current room is always shown
-        for room in visitedRooms {
+        for room in visibleRooms {
             if room.id == currentRoomId {
                 // already added @
             } else if !room.cleared && room.encounter != nil {
@@ -673,7 +760,6 @@ class Dungeon: ObservableObject, Codable {
             } else {
                 visibleSymbols.insert(room.roomType.symbol)
             }
-            // Also add the room type symbol even for current/danger rooms
             visibleSymbols.insert(room.roomType.symbol)
         }
 

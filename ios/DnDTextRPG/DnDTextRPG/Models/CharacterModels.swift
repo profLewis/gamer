@@ -633,6 +633,8 @@ class Character: ObservableObject, Identifiable, Codable {
 
     // MARK: - Carry Capacity
 
+    static let maxInventorySlots = 10
+
     var carryCapacity: Double {
         Double(abilityScores.strength) * 15.0
     }
@@ -649,8 +651,12 @@ class Character: ObservableObject, Identifiable, Codable {
         currentWeight > carryCapacity
     }
 
+    var isInventoryFull: Bool {
+        inventory.count >= Character.maxInventorySlots
+    }
+
     func canCarry(_ item: Item) -> Bool {
-        currentWeight + item.weight <= carryCapacity
+        currentWeight + item.weight <= carryCapacity && inventory.count < Character.maxInventorySlots
     }
 
     // MARK: - Inventory Management

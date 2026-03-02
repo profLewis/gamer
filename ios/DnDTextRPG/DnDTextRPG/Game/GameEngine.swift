@@ -40,6 +40,18 @@ class GameEngine: ObservableObject {
 
     // DM chat log (persists across DM mode entries)
     private var dmChatLog: [(isUser: Bool, text: String)] = []
+    private var adventureLogIndexAtLastDM: Int = 0
+
+    // Torch state
+    var torchLit: Bool = false
+    var torchTurnsRemaining: Int = 0
+
+    // DM mode tracking
+    var returnToDMAfterCombat: Bool = false
+    var inDMMode: Bool = false
+
+    // Transient status message shown once in exploration view
+    private var explorationStatusMessage: (text: String, color: TerminalColor)? = nil
 
     // Character creation state
     private var creatingCharacterIndex: Int = 0
@@ -59,6 +71,8 @@ class GameEngine: ObservableObject {
     var menuHandler: ((Int) -> Void)?
     var menuLongPressHandler: ((Int) -> Void)?
     var directionHandler: ((Direction) -> Void)?
+    @Published var dpadCenterLabel: String? = nil
+    var dpadCenterHandler: (() -> Void)?
 
     // Shop
     private lazy var shopEngine = ShopEngine(game: self)
@@ -174,6 +188,8 @@ class GameEngine: ObservableObject {
         menuLongPressHandler = nil
         DispatchQueue.main.async {
             self.directionExits = [:]
+            self.dpadCenterLabel = nil
+            self.dpadCenterHandler = nil
             self.currentMenuOptions = options.enumerated().map { index, text in
                 MenuOption(text, isDefault: index == defaultIndex)
             }
@@ -186,6 +202,8 @@ class GameEngine: ObservableObject {
         menuLongPressHandler = nil
         DispatchQueue.main.async {
             self.directionExits = [:]
+            self.dpadCenterLabel = nil
+            self.dpadCenterHandler = nil
             self.currentMenuOptions = options
             self.awaitingTextInput = false
             self.awaitingContinue = false
@@ -319,17 +337,36 @@ class GameEngine: ObservableObject {
         print("A text-based role-playing game", color: .dimGreen)
         print("")
 
-        showMenu(["New Game", "Load Game", "Hall of Fame", "How to Play", "Settings", "Quit"])
+        let hasActiveGame = dungeon != nil && !party.isEmpty
 
-        menuHandler = { [weak self] choice in
-            switch choice {
-            case 1: self?.startNewGame()
-            case 2: self?.showLoadGameMenu(returnTo: .mainMenu)
-            case 3: self?.showHallOfFame()
-            case 4: self?.showHowToPlay()
-            case 5: self?.showSettings()
-            case 6: self?.quitApp()
-            default: self?.showMainMenu()
+        if hasActiveGame {
+            showMenu(["Continue Game", "New Game", "Load Game", "Hall of Fame", "How to Play", "Settings", "Quit"])
+
+            menuHandler = { [weak self] choice in
+                switch choice {
+                case 1: self?.showExplorationView()
+                case 2: self?.startNewGame()
+                case 3: self?.showLoadGameMenu(returnTo: .mainMenu)
+                case 4: self?.showHallOfFame()
+                case 5: self?.showHowToPlay()
+                case 6: self?.showSettings()
+                case 7: self?.quitApp()
+                default: self?.showMainMenu()
+                }
+            }
+        } else {
+            showMenu(["New Game", "Load Game", "Hall of Fame", "How to Play", "Settings", "Quit"])
+
+            menuHandler = { [weak self] choice in
+                switch choice {
+                case 1: self?.startNewGame()
+                case 2: self?.showLoadGameMenu(returnTo: .mainMenu)
+                case 3: self?.showHallOfFame()
+                case 4: self?.showHowToPlay()
+                case 5: self?.showSettings()
+                case 6: self?.quitApp()
+                default: self?.showMainMenu()
+                }
             }
         }
     }
@@ -495,10 +532,30 @@ class GameEngine: ObservableObject {
     var dmLogContextSize: Int {
         get {
             let val = UserDefaults.standard.integer(forKey: "dm_log_context_size")
-            return val > 0 ? val : 128
+            return val == 0 ? Int.max : val  // 0 or unset = unlimited
         }
         set {
             UserDefaults.standard.set(newValue, forKey: "dm_log_context_size")
+        }
+    }
+
+    var mapRadius: Int {
+        get {
+            let val = UserDefaults.standard.integer(forKey: "map_radius")
+            return val > 0 ? val : 3
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "map_radius")
+        }
+    }
+
+    func effectiveMapRadius() -> Int {
+        return torchLit ? mapRadius : 1
+    }
+
+    func partyHasTorch() -> Bool {
+        return party.contains { char in
+            char.inventory.contains { $0.name.lowercased().contains("torch") }
         }
     }
 
@@ -543,6 +600,8 @@ class GameEngine: ObservableObject {
             gameTimeMinutes: gameTimeMinutes,
             adventureLog: adventureLog,
             dmChatLog: chatEntries,
+            torchLit: torchLit,
+            torchTurnsRemaining: torchTurnsRemaining,
             monstersSlain: monstersSlain,
             combatsWon: combatsWon
         )
@@ -602,44 +661,90 @@ class GameEngine: ObservableObject {
         print("")
 
         print("DM LOG CONTEXT:", color: .cyan, bold: true)
-        print("  Entries sent to DM: \(dmLogContextSize)", color: .dimGreen)
+        let logCtx = dmLogContextSize == Int.max ? "Unlimited" : "\(dmLogContextSize)"
+        print("  Entries sent to DM: \(logCtx)", color: .dimGreen)
         print("")
 
-        var options = ["AI Provider", "Set API Key", "DM Ad-lib Level", "DM Voice", "Font Size", "Autosave", "DM Log Context"]
+        print("MAP RADIUS:", color: .cyan, bold: true)
+        let hasTorch = party.contains { char in
+            char.inventory.contains { $0.name.lowercased().contains("torch") }
+        }
+        let effective = effectiveMapRadius()
+        print("  Setting: \(mapRadius)  Effective: \(effective)\(hasTorch ? "" : " (no torch!)")", color: hasTorch ? .dimGreen : .yellow)
+        print("")
+
+        var options = ["AI Provider", "API Key", "DM Ad-lib", "DM Voice", "Font Size", "Autosave", "Log Context", "Map Radius"]
         if dm.isConfigured {
             options.append("Clear API Key")
         }
+        options.append("Clear All Saves")
         options.append("< Back")
 
         showMenu(options)
 
         menuHandler = { [weak self] choice in
+            guard let self = self else { return }
             if choice == 1 {
-                self?.showAIProviderMenu()
+                self.showAIProviderMenu()
             } else if choice == 2 {
-                self?.promptAPIKey()
+                self.promptAPIKey()
             } else if choice == 3 {
-                self?.showAdLibLevelMenu()
+                self.showAdLibLevelMenu()
             } else if choice == 4 {
-                self?.showVoiceSettings()
+                self.showVoiceSettings()
             } else if choice == 5 {
-                self?.showFontSizeMenu()
+                self.showFontSizeMenu()
             } else if choice == 6 {
-                self?.showAutosaveMenu()
+                self.showAutosaveMenu()
             } else if choice == 7 {
-                self?.showDMLogContextMenu()
-            } else if dm.isConfigured && choice == 8 {
-                dm.apiKey = nil
-                self?.print("")
-                self?.print("API key cleared.", color: .yellow)
-                self?.print("")
-                self?.waitForContinue()
-                self?.inputHandler = { [weak self] _ in
+                self.showDMLogContextMenu()
+            } else if choice == 8 {
+                self.showMapRadiusMenu()
+            } else if choice == options.count {
+                // < Back
+                self.clearTerminal()
+                self.showMainMenu()
+            } else {
+                // Dynamic options: Clear API Key or Clear All Saves
+                let selected = options[choice - 1]
+                if selected == "Clear API Key" {
+                    dm.apiKey = nil
+                    self.print("")
+                    self.print("API key cleared.", color: .yellow)
+                    self.print("")
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in
+                        self?.showSettings()
+                    }
+                } else if selected == "Clear All Saves" {
+                    self.confirmClearAllSaves()
+                }
+            }
+        }
+    }
+
+    private func confirmClearAllSaves() {
+        clearTerminal()
+        printTitle("Clear All Saves")
+        let saves = SaveGameManager.shared.listAllSaves()
+        print("This will permanently delete \(saves.count) save file\(saves.count == 1 ? "" : "s").", color: .red)
+        print("")
+        showMenu(["Yes, Delete All", "< Cancel"])
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                for save in saves {
+                    SaveGameManager.shared.delete(id: save.id)
+                }
+                self.print("")
+                self.print("All saves deleted.", color: .yellow)
+                self.print("")
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
                     self?.showSettings()
                 }
             } else {
-                self?.clearTerminal()
-                self?.showMainMenu()
+                self.showSettings()
             }
         }
     }
@@ -1096,9 +1201,10 @@ class GameEngine: ObservableObject {
         print("  More = better narrative continuity", color: .dimGreen)
         print("  but uses more AI tokens.", color: .dimGreen)
         print("")
-        print("  Current: \(dmLogContextSize) entries", color: .brightGreen)
+        let current = dmLogContextSize == Int.max ? "Unlimited" : "\(dmLogContextSize)"
+        print("  Current: \(current)", color: .brightGreen)
         print("")
-        print("  Enter a number (16–1024):", color: .cyan)
+        print("  Enter a number (16+), or 0 for unlimited:", color: .cyan)
 
         promptTextWithMenu(">", options: ["< Back"])
 
@@ -1110,9 +1216,14 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
             if let value = Int(trimmed) {
-                let clamped = min(1024, max(16, value))
-                self.dmLogContextSize = clamped
-                self.print("  Set to \(clamped) entries.", color: .brightGreen)
+                if value == 0 {
+                    self.dmLogContextSize = 0  // unlimited
+                    self.print("  Set to unlimited.", color: .brightGreen)
+                } else {
+                    let clamped = max(16, value)
+                    self.dmLogContextSize = clamped
+                    self.print("  Set to \(clamped) entries.", color: .brightGreen)
+                }
                 self.waitForContinue()
                 self.inputHandler = { [weak self] _ in
                     self?.showDMLogContextMenu()
@@ -1123,6 +1234,39 @@ class GameEngine: ObservableObject {
                 self.inputHandler = { [weak self] _ in
                     self?.showDMLogContextMenu()
                 }
+            }
+        }
+    }
+
+    func showMapRadiusMenu() {
+        clearTerminal()
+        printTitle("Map Radius")
+        print("  How far you can see on the minimap.", color: .dimGreen)
+        print("  Without a torch, visibility drops to 1.", color: .dimGreen)
+        print("")
+        let hasTorch = party.contains { char in
+            char.inventory.contains { $0.name.lowercased().contains("torch") }
+        }
+        let effective = effectiveMapRadius()
+        print("  Setting: \(mapRadius)  Effective: \(effective)", color: .brightGreen)
+        if !hasTorch {
+            print("  No torch — visibility reduced!", color: .yellow)
+        }
+        print("")
+
+        showMenu(["1", "2", "3", "4", "5", "< Back"])
+
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice >= 1 && choice <= 5 {
+                self.mapRadius = choice
+                self.print("  Map radius set to \(choice).", color: .brightGreen)
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.showMapRadiusMenu()
+                }
+            } else {
+                self.showSettings()
             }
         }
     }
@@ -1189,8 +1333,8 @@ class GameEngine: ObservableObject {
         } else {
             options.append("Get Key")
         }
-        options.append("Paste from Clipboard")
-        options.append("Type Key Manually")
+        options.append("Paste Key")
+        options.append("Type Key")
         options.append("< Back")
 
         showMenu(options)
@@ -1651,7 +1795,7 @@ class GameEngine: ObservableObject {
         print("Choose how to generate ability scores:")
         print("")
 
-        showMenu(["Auto (Recommended)", "Standard Array [15,14,13,12,10,8]", "Roll 4d6 drop lowest", "< Back"])
+        showMenu(["Auto", "Standard Array", "Roll 4d6", "< Back"])
 
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
@@ -2188,8 +2332,17 @@ class GameEngine: ObservableObject {
         clearTerminal()
 
         // Always show the map at the top
-        let mapLines = dungeon.getMapDisplay()
-        printLines(mapLines, color: .dimGreen, size: mapFontSize)
+        let mapLines = dungeon.getMapDisplay(visibilityRadius: effectiveMapRadius())
+        printLines(mapLines, color: torchLit ? .dimGreen : .gray, size: mapFontSize)
+        if !torchLit {
+            if partyHasTorch() {
+                print("  Torch unlit — light it to see further!", color: .yellow)
+            } else {
+                print("  No torch — visibility reduced!", color: .yellow)
+            }
+        } else if torchTurnsRemaining > 0 && torchTurnsRemaining <= 5 {
+            print("  Torch flickering... (\(torchTurnsRemaining) rooms left)", color: .yellow)
+        }
         print("")
 
         // Room description
@@ -2202,6 +2355,10 @@ class GameEngine: ObservableObject {
         if !room.treasure.isEmpty && room.cleared {
             print("You see treasure on the ground.", color: .yellow)
         }
+        if !room.droppedItems.isEmpty {
+            let names = room.droppedItems.map { $0.name }.joined(separator: ", ")
+            print("Items on the floor: \(names)", color: .yellow)
+        }
 
         let exitList = room.exits.keys.map { $0.rawValue }.joined(separator: ", ")
         if !exitList.isEmpty {
@@ -2213,8 +2370,11 @@ class GameEngine: ObservableObject {
         // Party status
         let levelStr = dungeon.level > 0 ? "Level \(dungeon.level) | " : ""
         print("\(levelStr)\(formattedGameTime())", color: .dimGreen)
+        let maxNameLen = party.map { $0.name.count }.max() ?? 10
         for char in party {
-            print(" \(char.name) \(char.currentHP)/\(char.maxHP) HP", color: .cyan)
+            let padded = char.name.padding(toLength: maxNameLen, withPad: " ", startingAt: 0)
+            let hp = "\(char.currentHP)/\(char.maxHP) HP"
+            print(" \(padded)  \(hp)", color: .cyan)
         }
         print("")
 
@@ -2233,6 +2393,13 @@ class GameEngine: ObservableObject {
             return
         }
 
+        // Show transient status message if set
+        if let msg = explorationStatusMessage {
+            print("  \(msg.text)", color: msg.color)
+            print("")
+            explorationStatusMessage = nil
+        }
+
         // Build direction exits for the D-pad
         var exits: [Direction: Bool] = [:]
         for direction in Direction.allCases {
@@ -2246,45 +2413,134 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("Search Room"))
         actions.append { [weak self] in self?.searchRoom() }
 
-        if !room.treasure.isEmpty {
-            menuOpts.append(MenuOption("Collect Treasure"))
-            actions.append { [weak self] in self?.collectTreasure() }
+        if !room.droppedItems.isEmpty {
+            menuOpts.append(MenuOption("Pick Up Items"))
+            actions.append { [weak self] in self?.pickUpDroppedItems() }
         }
 
-        menuOpts.append(MenuOption("Party Status"))
-        actions.append { [weak self] in self?.showPartyStatus() }
+        if !room.treasure.isEmpty {
+            menuOpts.append(MenuOption("Take Treasure"))
+            actions.append { [weak self] in self?.collectTreasure() }
+        }
 
         menuOpts.append(MenuOption("Inventory"))
         actions.append { [weak self] in self?.showInventory() }
 
         if room.roomType == .armory && (room.cleared || room.encounter == nil) {
-            menuOpts.append(MenuOption("Visit Merchant"))
+            menuOpts.append(MenuOption("Merchant"))
             actions.append { [weak self] in self?.visitShop() }
         }
 
-        menuOpts.append(MenuOption("Rest"))
-        actions.append { [weak self] in self?.rest() }
+        // Torch light/douse
+        if torchLit {
+            menuOpts.append(MenuOption("Douse Torch"))
+            actions.append { [weak self] in self?.douseTorch() }
+        } else if partyHasTorch() {
+            menuOpts.append(MenuOption("Light Torch"))
+            actions.append { [weak self] in self?.lightTorch() }
+        }
+
+        menuOpts.append(MenuOption("Party Status"))
+        actions.append { [weak self] in self?.showPartyStatus() }
 
         if DMEngine.shared.adLibLevel != .off {
             menuOpts.append(MenuOption("Ask the DM"))
             actions.append { [weak self] in self?.askTheDM() }
         }
 
-        menuOpts.append(MenuOption("Save Game"))
+        menuOpts.append(MenuOption("Save/Quit"))
         actions.append { [weak self] in self?.showSaveMenu() }
-
-        menuOpts.append(MenuOption("Main Menu"))
-        actions.append { [weak self] in self?.confirmExitToMainMenu() }
 
         showMenuWithDirections(menuOpts, exits: exits)
 
         directionHandler = { [weak self] direction in
             self?.move(direction)
         }
+        dpadCenterLabel = "Rest"
+        dpadCenterHandler = { [weak self] in
+            self?.rest()
+        }
         menuHandler = { choice in
             if choice > 0 && choice <= actions.count {
                 actions[choice - 1]()
             }
+        }
+    }
+
+    // MARK: - Dropped Items Pickup
+
+    private func pickUpDroppedItems() {
+        guard let room = dungeon?.currentRoom, !room.droppedItems.isEmpty else {
+            showExplorationView()
+            return
+        }
+        let item = room.droppedItems[0]
+        room.droppedItems.removeFirst()
+        showItemPickupMenu(item: item, source: "Left on the floor") { [weak self] in
+            guard let self = self else { return }
+            if let room = self.dungeon?.currentRoom, !room.droppedItems.isEmpty {
+                self.pickUpDroppedItems()
+            } else {
+                self.showExplorationView()
+            }
+        }
+    }
+
+    // MARK: - Torch Mechanics
+
+    private func lightTorch() {
+        guard partyHasTorch() else {
+            explorationStatusMessage = ("No torch to light!", .red)
+            showExplorationView()
+            return
+        }
+        torchLit = true
+        torchTurnsRemaining = 60
+        logEvent("Lit a torch", category: "EXPLORE")
+        explorationStatusMessage = ("You light a torch. The shadows retreat.", .yellow)
+        showExplorationView()
+    }
+
+    private func douseTorch() {
+        torchLit = false
+        torchTurnsRemaining = 0
+        logEvent("Doused torch", category: "EXPLORE")
+        explorationStatusMessage = ("You extinguish the torch. Darkness closes in.", .gray)
+        showExplorationView()
+    }
+
+    private func tickTorch() {
+        guard torchLit else { return }
+        torchTurnsRemaining -= 1
+        if torchTurnsRemaining <= 0 {
+            torchLit = false
+            torchTurnsRemaining = 0
+            // Consume the torch
+            for char in party {
+                if let torch = char.inventory.first(where: { $0.name.lowercased().contains("torch") }) {
+                    char.removeItem(torch)
+                    break
+                }
+            }
+            print("")
+            print("  Your torch sputters and goes out!", color: .red)
+            logEvent("Torch burned out", category: "EXPLORE")
+            if partyHasTorch() {
+                print("  You have another torch you could light.", color: .yellow)
+            }
+        }
+    }
+
+    /// Called at combat start — random chance of torch blowing out
+    func checkTorchBlowout() {
+        guard torchLit else { return }
+        let roll = Int.random(in: 1...20)
+        if roll <= 3 {
+            torchLit = false
+            // Torch item stays — just needs relighting
+            print("")
+            print("  A gust of wind blows out your torch!", color: .red)
+            logEvent("Torch blown out in combat", category: "COMBAT")
         }
     }
 
@@ -2294,6 +2550,7 @@ class GameEngine: ObservableObject {
         let result = dungeon.move(direction: direction)
         if result.success {
             advanceTime(10)
+            tickTorch()
             if let room = dungeon.currentRoom {
                 logEvent("Moved \(direction.rawValue) to \(room.name)", category: "EXPLORE")
             }
@@ -2354,7 +2611,7 @@ class GameEngine: ObservableObject {
             print("")
             print("  [TELEPORTED to \(entrance.name)!]", color: .cyan, bold: true)
             print("")
-            printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
+            printLines(dungeon.getMapDisplay(visibilityRadius: effectiveMapRadius()), color: .dimGreen, size: mapFontSize)
             logEvent("Teleported to dungeon entrance", category: "DM")
         }
     }
@@ -2386,7 +2643,7 @@ class GameEngine: ObservableObject {
                     print("")
                     print("  [Moved \(dir.rawValue) to \(newRoom.name)!]", color: .cyan, bold: true)
                     print("")
-                    printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
+                    printLines(dungeon.getMapDisplay(visibilityRadius: effectiveMapRadius()), color: .dimGreen, size: mapFontSize)
                 }
             }
         } else {
@@ -2397,22 +2654,133 @@ class GameEngine: ObservableObject {
     private func applyDMDropItem(_ itemName: String) {
         let lower = itemName.lowercased()
         for char in party {
-            if let item = char.inventory.first(where: { $0.name.lowercased().contains(lower) }) {
+            // Try exact contains first, then word-by-word matching
+            if let item = char.inventory.first(where: { $0.name.lowercased().contains(lower) })
+                ?? char.inventory.first(where: { lower.contains($0.name.lowercased()) })
+                ?? char.inventory.first(where: {
+                    let words = lower.split(separator: " ")
+                    let itemWords = $0.name.lowercased().split(separator: " ")
+                    return words.contains(where: { w in itemWords.contains(where: { $0 == w && w.count > 2 }) })
+                }) {
                 char.removeItem(item)
+                if let room = dungeon?.currentRoom {
+                    room.droppedItems.append(item)
+                }
                 print("  [Dropped: \(item.name)]", color: .yellow, bold: true)
                 logEvent("DM: \(char.name) dropped \(item.name)", category: "DM")
                 return
             }
-            // Check equipped items
-            if let w = char.equippedWeapon, w.name.lowercased().contains(lower) {
+            // Check equipped items (bidirectional match)
+            if let w = char.equippedWeapon, (w.name.lowercased().contains(lower) || lower.contains(w.name.lowercased())) {
                 char.unequipWeapon()
                 char.removeItem(w)
+                if let room = dungeon?.currentRoom { room.droppedItems.append(w) }
                 print("  [Dropped: \(w.name)]", color: .yellow, bold: true)
                 logEvent("DM: \(char.name) dropped \(w.name)", category: "DM")
                 return
             }
+            if let a = char.equippedArmor, (a.name.lowercased().contains(lower) || lower.contains(a.name.lowercased())) {
+                char.unequipArmor()
+                char.removeItem(a)
+                if let room = dungeon?.currentRoom { room.droppedItems.append(a) }
+                print("  [Dropped: \(a.name)]", color: .yellow, bold: true)
+                logEvent("DM: \(char.name) dropped \(a.name)", category: "DM")
+                return
+            }
+            if let s = char.equippedShield, (s.name.lowercased().contains(lower) || lower.contains(s.name.lowercased())) {
+                char.unequipShield()
+                char.removeItem(s)
+                if let room = dungeon?.currentRoom { room.droppedItems.append(s) }
+                print("  [Dropped: \(s.name)]", color: .yellow, bold: true)
+                logEvent("DM: \(char.name) dropped \(s.name)", category: "DM")
+                return
+            }
         }
         print("  [No \(itemName) found to drop.]", color: .dimGreen)
+    }
+
+    /// Scan DM narrative for implied item state changes that lack command tags.
+    /// Auto-applies drops, uses, and equips mentioned in text but not tagged.
+    private func applyNarrativeFallbacks(text: String, alreadyApplied: DMCommandResult) -> Bool {
+        let lower = text.lowercased()
+        var changed = false
+
+        // Collect all inventory item names for matching
+        var allItems: [(char: Character, item: Item, equipped: Bool)] = []
+        for char in party {
+            for item in char.inventory {
+                allItems.append((char, item, false))
+            }
+            if let w = char.equippedWeapon { allItems.append((char, w, true)) }
+            if let a = char.equippedArmor { allItems.append((char, a, true)) }
+            if let s = char.equippedShield { allItems.append((char, s, true)) }
+        }
+
+        // Drop patterns: "drops the X", "throws away X", "discards X", "sets down X", "tosses X"
+        let dropPatterns = ["drops the ", "drop the ", "drops his ", "drops her ",
+                            "throws away ", "discards the ", "sets down the ",
+                            "tosses the ", "tosses away ", "gets rid of the ",
+                            "puts down the ", "removes the ", "takes off the "]
+
+        for item in allItems {
+            let iName = item.item.name.lowercased()
+            // Skip if already handled by a tag
+            if alreadyApplied.droppedItems.contains(where: { $0.lowercased().contains(iName) || iName.contains($0.lowercased()) }) {
+                continue
+            }
+            for pattern in dropPatterns {
+                if lower.contains(pattern + iName) || lower.contains(pattern + iName.replacingOccurrences(of: " ", with: "")) {
+                    // Narrative implies dropping this item
+                    if item.equipped {
+                        switch item.item.type {
+                        case .weapon: item.char.unequipWeapon()
+                        case .armor: item.char.unequipArmor()
+                        case .shield: item.char.unequipShield()
+                        default: break
+                        }
+                    }
+                    item.char.removeItem(item.item)
+                    if let room = dungeon?.currentRoom {
+                        room.droppedItems.append(item.item)
+                    }
+                    print("  [Auto-applied: \(item.char.name) dropped \(item.item.name)]", color: .yellow)
+                    logEvent("DM (auto): \(item.char.name) dropped \(item.item.name)", category: "DM")
+                    changed = true
+                    break
+                }
+            }
+        }
+
+        // Use patterns: "drinks the X", "eats the X", "uses the X", "consumes the X"
+        let usePatterns = ["drinks the ", "drinks a ", "eats the ", "eats a ",
+                           "uses the ", "uses a ", "consumes the ", "consumes a ",
+                           "quaffs the ", "quaffs a "]
+        for item in allItems where !item.equipped {
+            let iName = item.item.name.lowercased()
+            if alreadyApplied.usedItems.contains(where: { $0.lowercased().contains(iName) || iName.contains($0.lowercased()) }) {
+                continue
+            }
+            for pattern in usePatterns {
+                if lower.contains(pattern + iName) || lower.contains(pattern + iName.replacingOccurrences(of: " ", with: "")) {
+                    if let healStr = item.item.potionStats?.healAmount {
+                        item.char.removeItem(item.item)
+                        let roll = Dice.rollDamage(healStr)
+                        let amount = max(1, roll.total)
+                        item.char.heal(amount)
+                        print("  [Auto-applied: \(item.char.name) used \(item.item.name) — +\(amount) HP]", color: .brightGreen)
+                        logEvent("DM (auto): \(item.char.name) used \(item.item.name), healed \(amount) HP", category: "DM")
+                    } else {
+                        item.char.removeItem(item.item)
+                        print("  [Auto-applied: \(item.char.name) used \(item.item.name)]", color: .cyan)
+                        logEvent("DM (auto): \(item.char.name) used \(item.item.name)", category: "DM")
+                    }
+                    changed = true
+                    break
+                }
+            }
+        }
+
+        return changed
     }
 
     private func applyDMEquipItem(_ itemName: String) {
@@ -2464,23 +2832,18 @@ class GameEngine: ObservableObject {
 
         // Show map at top
         if let dungeon = dungeon {
-            printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
+            printLines(dungeon.getMapDisplay(visibilityRadius: effectiveMapRadius()), color: .dimGreen, size: mapFontSize)
             print("")
         }
 
         let hasHiddenLoot = !room.hiddenItems.isEmpty || room.hiddenGold > 0
 
-        // If nothing left to find, say so definitively
+        // If nothing left to find, stay on exploration view
         if !hasHiddenLoot {
-            print("You search the room carefully...", color: .cyan)
-            print("")
             advanceTime(10)
-            print("You've thoroughly searched this room. There's nothing left to find.", color: .dimGreen)
             logEvent("Searched \(room.name) — nothing left to find", category: "EXPLORE")
-            waitForContinue()
-            inputHandler = { [weak self] _ in
-                self?.showExplorationView()
-            }
+            explorationStatusMessage = ("You search carefully... nothing left to find.", .dimGreen)
+            showExplorationView()
             return
         }
 
@@ -2605,7 +2968,7 @@ class GameEngine: ObservableObject {
 
         // Show map at top
         if let dungeon = dungeon {
-            printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
+            printLines(dungeon.getMapDisplay(visibilityRadius: effectiveMapRadius()), color: .dimGreen, size: mapFontSize)
             print("")
         }
 
@@ -2670,7 +3033,7 @@ class GameEngine: ObservableObject {
         clearTerminal()
 
         if let dungeon = dungeon {
-            printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
+            printLines(dungeon.getMapDisplay(visibilityRadius: effectiveMapRadius()), color: .dimGreen, size: mapFontSize)
             print("")
         }
 
@@ -2690,6 +3053,13 @@ class GameEngine: ObservableObject {
         print("  Weight: \(String(format: "%.1f", item.weight))lb  Value: \(item.value)gp", color: .dimGreen)
         print("")
 
+        if party.count > 1 {
+            print("Who should pick up the \(item.name)?", color: .cyan)
+        } else {
+            print("What do you want to do with the \(item.name)?", color: .cyan)
+        }
+        print("")
+
         var options: [String] = []
         var actions: [() -> Void] = []
 
@@ -2697,14 +3067,16 @@ class GameEngine: ObservableObject {
         if party.count > 1 {
             for char in party {
                 let canCarry = char.canCarry(item)
-                let tag = canCarry ? "" : " [too heavy]"
-                options.append("\(char.name) picks up\(tag)")
+                let tag = canCarry ? "" : (char.isInventoryFull ? " [full]" : " [heavy]")
+                options.append("Give to \(char.name)\(tag)")
                 actions.append { [weak self] in
                     guard let self = self else { return }
                     if canCarry {
                         _ = char.addItem(item)
                         self.print("  \(char.name) takes the \(item.name).", color: .brightGreen)
                         self.logEvent("\(char.name) picked up \(item.name)", category: "LOOT")
+                    } else if char.isInventoryFull {
+                        self.print("  \(char.name)'s bag is full! (\(char.inventory.count)/\(Character.maxInventorySlots))", color: .yellow)
                     } else {
                         self.print("  \(char.name) can't carry any more!", color: .yellow)
                     }
@@ -2714,7 +3086,7 @@ class GameEngine: ObservableObject {
             }
         } else if let char = party.first {
             let canCarry = char.canCarry(item)
-            let tag = canCarry ? "" : " [too heavy]"
+            let tag = canCarry ? "" : (char.isInventoryFull ? " [full]" : " [heavy]")
             options.append("Pick Up\(tag)")
             actions.append { [weak self] in
                 guard let self = self else { return }
@@ -2722,6 +3094,8 @@ class GameEngine: ObservableObject {
                     _ = char.addItem(item)
                     self.print("  \(char.name) takes the \(item.name).", color: .brightGreen)
                     self.logEvent("\(char.name) picked up \(item.name)", category: "LOOT")
+                } else if char.isInventoryFull {
+                    self.print("  Bag is full! (\(char.inventory.count)/\(Character.maxInventorySlots))", color: .yellow)
                 } else {
                     self.print("  Too heavy to carry!", color: .yellow)
                 }
@@ -2732,7 +3106,7 @@ class GameEngine: ObservableObject {
 
         // Equip option for weapon/armor/shield
         if item.type == .weapon || item.type == .armor || item.type == .shield {
-            let label = item.type == .weapon ? "Equip as Weapon" : (item.type == .shield ? "Equip as Shield" : "Equip as Armor")
+            let label = item.type == .weapon ? "Equip" : (item.type == .shield ? "Equip Shield" : "Equip Armor")
             options.append(label)
             actions.append { [weak self] in
                 guard let self = self else { return }
@@ -2743,7 +3117,7 @@ class GameEngine: ObservableObject {
                     case .shield: char.equipShield(item)
                     default: break
                     }
-                    self.print("  \(char.name) equips the \(item.name)!", color: .brightGreen)
+                    self.print("  \(char.name) equips themselves with the \(item.name)!", color: .brightGreen)
                     self.logEvent("\(char.name) equipped \(item.name)", category: "LOOT")
                     self.waitForContinue()
                     self.inputHandler = { _ in onDone() }
@@ -2779,9 +3153,12 @@ class GameEngine: ObservableObject {
             }
         }
 
-        // Leave it
+        // Leave it — item stays in the room
         options.append("Leave It")
         actions.append { [weak self] in
+            if let room = self?.dungeon?.currentRoom {
+                room.droppedItems.append(item)
+            }
             self?.print("  You leave the \(item.name) behind.", color: .dimGreen)
             self?.waitForContinue()
             self?.inputHandler = { _ in onDone() }
@@ -2813,7 +3190,7 @@ class GameEngine: ObservableObject {
         clearTerminal()
 
         if let dungeon = dungeon {
-            printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
+            printLines(dungeon.getMapDisplay(visibilityRadius: effectiveMapRadius()), color: .dimGreen, size: mapFontSize)
             print("")
         }
 
@@ -2822,35 +3199,69 @@ class GameEngine: ObservableObject {
         print("")
 
         var options: [String] = []
+        var actions: [() -> Void] = []
 
         if party.count > 1 {
-            options.append("Pick Up (split \(gold / party.count)gp each)")
+            // Split equally
+            let goldEach = gold / party.count
+            let remainder = gold % party.count
+            options.append("Split (\(goldEach)gp each)")
+            actions.append { [weak self] in
+                guard let self = self else { return }
+                // Distribute remainder randomly one coin at a time
+                var indices = Array(0..<self.party.count)
+                indices.shuffle()
+                for (i, char) in self.party.enumerated() {
+                    let bonus = indices.firstIndex(of: i)! < remainder ? 1 : 0
+                    char.gold += goldEach + bonus
+                }
+                if remainder > 0 {
+                    self.print("  Gold split (\(goldEach)gp each, +\(remainder) extra spread around).", color: .yellow)
+                } else {
+                    self.print("  Gold split among the party (\(goldEach)gp each).", color: .yellow)
+                }
+                self.logEvent("Split \(gold) gold equally from \(source.lowercased())", category: "LOOT")
+                self.waitForContinue()
+                self.inputHandler = { _ in onDone() }
+            }
+
+            // Give all to one character
+            for char in party {
+                options.append("\(char.name) +\(gold)gp")
+                actions.append { [weak self] in
+                    char.gold += gold
+                    self?.print("  \(char.name) takes all \(gold) gold.", color: .yellow)
+                    self?.logEvent("\(char.name) took \(gold) gold from \(source.lowercased())", category: "LOOT")
+                    self?.waitForContinue()
+                    self?.inputHandler = { _ in onDone() }
+                }
+            }
         } else {
-            options.append("Pick Up (+\(gold)gp)")
+            // Solo — just pick up
+            options.append("Take +\(gold)gp")
+            actions.append { [weak self] in
+                self?.party.first?.gold += gold
+                self?.print("  You pocket \(gold) gold pieces.", color: .yellow)
+                self?.logEvent("Picked up \(gold) gold from \(source.lowercased())", category: "LOOT")
+                self?.waitForContinue()
+                self?.inputHandler = { _ in onDone() }
+            }
         }
+
+        // Leave it
         options.append("Leave It")
+        actions.append { [weak self] in
+            self?.print("  You leave \(gold) gold behind.", color: .dimGreen)
+            self?.logEvent("Left \(gold) gold behind", category: "LOOT")
+            self?.waitForContinue()
+            self?.inputHandler = { _ in onDone() }
+        }
 
         showMenu(options)
-        menuHandler = { [weak self] choice in
-            guard let self = self else { return }
-            if choice == 1 {
-                let goldEach = gold / self.party.count
-                let remainder = gold % self.party.count
-                for (i, char) in self.party.enumerated() {
-                    char.gold += goldEach + (i == 0 ? remainder : 0)
-                }
-                if self.party.count > 1 {
-                    self.print("  Party collects \(gold) gold (\(goldEach)gp each).", color: .yellow)
-                } else {
-                    self.print("  You pocket \(gold) gold pieces.", color: .yellow)
-                }
-                self.logEvent("Picked up \(gold) gold from \(source.lowercased())", category: "LOOT")
-            } else {
-                self.print("  You leave \(gold) gold behind.", color: .dimGreen)
-                self.logEvent("Left \(gold) gold behind", category: "LOOT")
+        menuHandler = { choice in
+            if choice > 0 && choice <= actions.count {
+                actions[choice - 1]()
             }
-            self.waitForContinue()
-            self.inputHandler = { _ in onDone() }
         }
     }
 
@@ -2881,14 +3292,16 @@ class GameEngine: ObservableObject {
 
         clearTerminal()
         if let dungeon = dungeon {
-            printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
+            printLines(dungeon.getMapDisplay(visibilityRadius: effectiveMapRadius()), color: .dimGreen, size: mapFontSize)
             print("")
         }
         printSubtitle(title)
 
         var options: [String] = []
+        let maxN = party.map { $0.name.count }.max() ?? 8
         for char in party {
-            options.append("\(char.name) — \(char.currentHP)/\(char.maxHP) HP, \(char.gold)gp")
+            let n = char.name.padding(toLength: maxN, withPad: " ", startingAt: 0)
+            options.append("\(n) \(char.currentHP)/\(char.maxHP)HP \(char.gold)gp")
         }
         options.append("< Back")
 
@@ -2905,13 +3318,11 @@ class GameEngine: ObservableObject {
     }
 
     func showInventory() {
-        pickCharacter(title: "Whose inventory?") { [weak self] character in
-            guard let self = self else { return }
-            let back: () -> Void = self.party.count > 1
-                ? { [weak self] in self?.showInventory() }
-                : { [weak self] in self?.showExplorationView() }
-            self.showInventoryFor(character, onBack: back)
-        }
+        // Default to a random human-controlled character
+        let humans = party.filter { !$0.isComputerControlled }
+        let defaultChar = humans.randomElement() ?? party.first!
+        let back: () -> Void = { [weak self] in self?.showExplorationView() }
+        showInventoryFor(defaultChar, onBack: back)
     }
 
     private func showInventoryFor(_ character: Character, onBack: (() -> Void)? = nil) {
@@ -2919,7 +3330,7 @@ class GameEngine: ObservableObject {
         clearTerminal()
 
         if let dungeon = dungeon {
-            printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
+            printLines(dungeon.getMapDisplay(visibilityRadius: effectiveMapRadius()), color: .dimGreen, size: mapFontSize)
             print("")
         }
 
@@ -2935,7 +3346,8 @@ class GameEngine: ObservableObject {
         print("    Shield: \(character.equippedShield?.name ?? "(none)")", color: .brightGreen)
         print("")
 
-        print("  BAG:", color: .cyan, bold: true)
+        let slotColor: TerminalColor = character.isInventoryFull ? .red : .cyan
+        print("  BAG (\(character.inventory.count)/\(Character.maxInventorySlots)):", color: slotColor, bold: true)
         if character.inventory.isEmpty {
             print("    (empty)", color: .dimGreen)
         } else {
@@ -3001,7 +3413,7 @@ class GameEngine: ObservableObject {
         // Add switcher buttons for other party members
         if party.count > 1 {
             for other in party where other.id != character.id {
-                options.append("\(other.name)'s Inventory")
+                options.append("\(other.name)'s Pack")
                 actions.append { [weak self] in
                     self?.showInventoryFor(other, onBack: onBack)
                 }
@@ -3064,7 +3476,7 @@ class GameEngine: ObservableObject {
 
         clearTerminal()
         printSubtitle("Use Potion")
-        print("  \(character.name) HP: \(character.currentHP)/\(character.maxHP)", color: .cyan)
+        print("  \(character.name)'s potions:", color: .cyan)
         print("")
 
         var options: [String] = []
@@ -3084,21 +3496,33 @@ class GameEngine: ObservableObject {
             guard choice > 0 && choice <= potions.count else { return }
             let potion = potions[choice - 1]
 
-            // Parse heal amount and apply
-            if let healStr = potion.potionStats?.healAmount {
-                character.removeItem(potion)
-                let roll = Dice.rollDamage(healStr)
-                let amount = max(1, roll.total)
-                character.heal(amount)
+            let applyPotion = { (target: Character) in
+                if let healStr = potion.potionStats?.healAmount {
+                    character.removeItem(potion)
+                    let roll = Dice.rollDamage(healStr)
+                    let amount = max(1, roll.total)
+                    target.heal(amount)
 
-                self.print("")
-                self.print("  \(character.name) drinks \(potion.name)!", color: .brightGreen)
-                self.print("  Restored \(amount) HP! (\(character.currentHP)/\(character.maxHP))", color: .brightGreen)
+                    self.print("")
+                    self.print("  \(target.name) drinks \(potion.name)!", color: .brightGreen)
+                    self.print("  Restored \(amount) HP! (\(target.currentHP)/\(target.maxHP))", color: .brightGreen)
+                }
+
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.showInventoryFor(character, onBack: onBack)
+                }
             }
 
-            self.waitForContinue()
-            self.inputHandler = { [weak self] _ in
-                self?.showInventoryFor(character, onBack: onBack)
+            // Ask who should drink it when there are multiple party members
+            if self.party.count > 1 {
+                self.pickCharacter(title: "Who drinks the \(potion.name)?", onBack: {
+                    self.showUsePotionMenu(character: character, onBack: onBack)
+                }) { target in
+                    applyPotion(target)
+                }
+            } else {
+                applyPotion(character)
             }
         }
     }
@@ -3123,12 +3547,82 @@ class GameEngine: ObservableObject {
             }
             guard choice > 0 && choice <= character.inventory.count else { return }
             let item = character.inventory[choice - 1]
-            character.removeItem(item)
+
+            // If multiple party members, offer to give to another character
+            let others = self.party.filter { $0.id != character.id }
+            if !others.isEmpty {
+                self.showItemTransferMenu(item: item, from: character, others: others, onBack: onBack)
+            } else {
+                character.removeItem(item)
+                if let room = self.dungeon?.currentRoom {
+                    room.droppedItems.append(item)
+                }
+                self.print("")
+                self.print("  Dropped \(item.name) in the room.", color: .yellow)
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.showInventoryFor(character, onBack: onBack)
+                }
+            }
+        }
+    }
+
+    private func showItemTransferMenu(item: Item, from: Character, others: [Character], onBack: (() -> Void)? = nil) {
+        clearTerminal()
+        printSubtitle("Give or Drop: \(item.name)")
+        print("  \(from.name) has selected \(item.name).", color: .dimGreen)
+        print("")
+
+        var options: [String] = []
+        var actions: [() -> Void] = []
+
+        for other in others {
+            let canCarry = other.canCarry(item)
+            let tag = canCarry ? "" : (other.isInventoryFull ? " [full]" : " [heavy]")
+            options.append("Give to \(other.name)\(tag)")
+            actions.append { [weak self] in
+                guard let self = self else { return }
+                if canCarry {
+                    from.removeItem(item)
+                    _ = other.addItem(item)
+                    self.print("")
+                    self.print("  \(from.name) gives \(item.name) to \(other.name).", color: .brightGreen)
+                    self.logEvent("\(from.name) gave \(item.name) to \(other.name)", category: "ITEM")
+                } else {
+                    self.print("")
+                    self.print("  \(other.name) can't carry any more!", color: .yellow)
+                }
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.showInventoryFor(from, onBack: onBack)
+                }
+            }
+        }
+
+        options.append("Drop on Floor")
+        actions.append { [weak self] in
+            guard let self = self else { return }
+            from.removeItem(item)
+            if let room = self.dungeon?.currentRoom {
+                room.droppedItems.append(item)
+            }
             self.print("")
-            self.print("  Dropped \(item.name).", color: .yellow)
+            self.print("  Dropped \(item.name) in the room.", color: .yellow)
             self.waitForContinue()
             self.inputHandler = { [weak self] _ in
-                self?.showInventoryFor(character, onBack: onBack)
+                self?.showInventoryFor(from, onBack: onBack)
+            }
+        }
+
+        options.append("< Back")
+        actions.append { [weak self] in
+            self?.showDropItemMenu(character: from, onBack: onBack)
+        }
+
+        showMenu(options)
+        menuHandler = { choice in
+            if choice > 0 && choice <= actions.count {
+                actions[choice - 1]()
             }
         }
     }
@@ -3151,7 +3645,7 @@ class GameEngine: ObservableObject {
 
         // Show map at top
         if let dungeon = dungeon {
-            printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
+            printLines(dungeon.getMapDisplay(visibilityRadius: effectiveMapRadius()), color: .dimGreen, size: mapFontSize)
             print("")
         }
 
@@ -3237,13 +3731,13 @@ class GameEngine: ObservableObject {
 
         // Show map at top
         if let dungeon = dungeon {
-            printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
+            printLines(dungeon.getMapDisplay(visibilityRadius: effectiveMapRadius()), color: .dimGreen, size: mapFontSize)
             print("")
         }
 
         print("Choose rest type:")
 
-        showMenu(["Short Rest (Recover some HP)", "Long Rest (Full Recovery)", "< Back"])
+        showMenu(["Short Rest", "Long Rest", "< Back"])
 
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
@@ -3261,7 +3755,7 @@ class GameEngine: ObservableObject {
 
             // Show map at top
             if let dungeon = self.dungeon {
-                self.printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
+                self.printLines(dungeon.getMapDisplay(visibilityRadius: effectiveMapRadius()), color: .dimGreen, size: mapFontSize)
                 self.print("")
             }
 
@@ -3456,19 +3950,37 @@ class GameEngine: ObservableObject {
     // MARK: - AI Dungeon Master
 
     func askTheDM() {
+        inDMMode = true
+        // If the current room has an encounter, start combat and return to DM after
+        if let room = dungeon?.currentRoom, !room.cleared, let encounter = room.encounter {
+            returnToDMAfterCombat = true
+            startCombat(encounter: encounter)
+            return
+        }
+
         clearTerminal()
+
+        // Snapshot state when entering DM mode
+        if StateSnapshotManager.shared.dmEntrySnapshot == nil {
+            let snapshot = StateSnapshot.capture(
+                label: "dm_entry",
+                party: party,
+                dungeon: dungeon,
+                gameTimeMinutes: gameTimeMinutes
+            )
+            StateSnapshotManager.shared.write(snapshot)
+        }
 
         // Show map at top
         if let dungeon = dungeon {
-            printLines(dungeon.getMapDisplay(), color: .dimGreen, size: mapFontSize)
+            printLines(dungeon.getMapDisplay(visibilityRadius: effectiveMapRadius()), color: .dimGreen, size: mapFontSize)
             print("")
         }
 
-        // Replay chat history
+        // Replay chat history (compact — just recent exchanges)
         if !dmChatLog.isEmpty {
-            print("--- DM Conversation ---", color: .dimGreen)
-            print("")
-            for entry in dmChatLog {
+            let recentEntries = dmChatLog.suffix(6)
+            for entry in recentEntries {
                 if entry.isUser {
                     print("> \(entry.text)", color: .cyan)
                 } else {
@@ -3481,29 +3993,150 @@ class GameEngine: ObservableObject {
                 }
                 print("")
             }
-            print("--- End of History ---", color: .dimGreen)
-            print("")
         }
 
-        print("The DM awaits your question...", color: .cyan, bold: true)
-        print("(Type your question or action, or tap Back)", color: .dimGreen)
-        print("")
+        // Inject recent actions into DM context and show as history
+        if adventureLogIndexAtLastDM < adventureLog.count {
+            let newEntries = Array(adventureLog[adventureLogIndexAtLastDM...])
+            if !newEntries.isEmpty {
+                let summary = newEntries.joined(separator: "\n")
+                DMEngine.shared.injectContext("The party has been busy since we last talked. Here is a summary of recent events:\n\(summary)")
+                for entry in newEntries {
+                    print("  \(entry)", color: .dimGreen)
+                }
+                print("")
+            }
+            adventureLogIndexAtLastDM = adventureLog.count
+        }
 
         dmPromptForQuestion()
     }
 
-    private func dmPromptForQuestion() {
-        promptTextWithMenu(">", options: ["< Back"])
+    private func leaveDMMode() {
+        inDMMode = false
+        SpeechEngine.shared.stop()
 
-        menuHandler = { [weak self] _ in
-            self?.showExplorationView()
+        let exitSnapshot = StateSnapshot.capture(
+            label: "dm_exit",
+            party: party,
+            dungeon: dungeon,
+            gameTimeMinutes: gameTimeMinutes
+        )
+        StateSnapshotManager.shared.write(exitSnapshot)
+
+        // Show diff if we have an entry snapshot
+        if let entrySnapshot = StateSnapshotManager.shared.dmEntrySnapshot {
+            let diff = StateDiff.compute(before: entrySnapshot, after: exitSnapshot)
+            if diff.hasChanges {
+                clearTerminal()
+                print("--- DM Session Summary ---", color: .cyan, bold: true)
+                print("")
+                for change in diff.changes {
+                    print("  \(change.description)", color: change.color)
+                }
+                print("")
+                print("--------------------------", color: .cyan)
+                print("")
+
+                StateSnapshotManager.shared.clearDMEntry()
+
+                waitForContinue()
+                inputHandler = { [weak self] _ in
+                    self?.showExplorationView()
+                }
+                return
+            }
         }
+
+        StateSnapshotManager.shared.clearDMEntry()
+        showExplorationView()
+    }
+
+    private func dmPromptForQuestion() {
+        promptTextWithMenu("Ask the DM:", options: [])
 
         inputHandler = { [weak self] input in
             guard let self = self else { return }
 
-            if self.isReservedWord(input) || input.isEmpty {
-                self.showExplorationView()
+            let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Empty input or explicit exit commands — leave DM mode
+            if trimmed.isEmpty || ["back", "b", "quit dm", "quit dm mode", "exit", "quit", "q", "leave"].contains(trimmed.lowercased()) {
+                self.leaveDMMode()
+                return
+            }
+            let lower = trimmed.lowercased()
+
+            // Inventory shortcut — opens inventory, Back returns to DM mode
+            if lower == "i" || lower == "inventory" {
+                let back: () -> Void = { [weak self] in self?.askTheDM() }
+                let humans = self.party.filter { !$0.isComputerControlled }
+                let defaultChar = humans.randomElement() ?? self.party.first!
+                self.showInventoryFor(defaultChar, onBack: back)
+                return
+            }
+
+            // Map shortcut — show minimap inline
+            if lower == "m" || lower == "map" || lower == "where" || lower == "where am i" {
+                self.print("")
+                if let dungeon = self.dungeon {
+                    self.printLines(dungeon.getMapDisplay(visibilityRadius: self.effectiveMapRadius()), color: .dimGreen, size: self.mapFontSize)
+                }
+                self.print("")
+                self.dmPromptForQuestion()
+                return
+            }
+
+            // Teleport shortcut — return to dungeon entrance
+            if lower == "t" || lower == "teleport" {
+                self.applyTeleportToEntrance()
+                self.logEvent("Teleported to entrance", category: "DM")
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.askTheDM()
+                }
+                return
+            }
+
+            // Stop any ongoing DM speech from previous response
+            SpeechEngine.shared.stop()
+
+            // Interpret N/S/E/W as movement shortcuts
+            let directionMap: [String: Direction] = [
+                "n": .north, "north": .north, "go north": .north,
+                "s": .south, "south": .south, "go south": .south,
+                "e": .east, "east": .east, "go east": .east,
+                "w": .west, "west": .west, "go west": .west,
+            ]
+            if let dir = directionMap[lower] {
+                // Move but stay in DM mode
+                if let dungeon = self.dungeon, let current = dungeon.currentRoom,
+                   let nextId = current.exits[dir], let _ = dungeon.rooms[nextId] {
+                    let _ = dungeon.move(direction: dir)
+                    self.logEvent("Moved \(dir.rawValue)", category: "MOVE")
+                    self.roomsSinceLastSave += 1
+                    self.tickTorch()
+                    // Check for encounter
+                    if let newRoom = dungeon.currentRoom, !newRoom.cleared, newRoom.encounter != nil {
+                        self.returnToDMAfterCombat = true
+                        self.askTheDM()
+                        return
+                    }
+                    // Show map and room name inline
+                    self.print("")
+                    self.printLines(dungeon.getMapDisplay(visibilityRadius: self.effectiveMapRadius()), color: self.torchLit ? .dimGreen : .gray, size: self.mapFontSize)
+                    if let newRoom = dungeon.currentRoom {
+                        self.print("")
+                        self.print(newRoom.name, color: .brightGreen, bold: true)
+                        self.print(newRoom.roomDescription, color: .dimGreen)
+                    }
+                    self.print("")
+                    self.dmPromptForQuestion()
+                } else {
+                    self.print("")
+                    self.print("Can't go that way.", color: .red)
+                    self.dmPromptForQuestion()
+                }
                 return
             }
 
@@ -3594,24 +4227,61 @@ class GameEngine: ObservableObject {
                     // Show updated party status after world changes
                     if worldChanged {
                         self.print("")
+                        let maxN = self.party.map { $0.name.count }.max() ?? 8
                         for char in self.party {
-                            self.print("  \(char.name) \(char.currentHP)/\(char.maxHP) HP  Gold: \(char.gold)", color: .cyan)
+                            let n = char.name.padding(toLength: maxN, withPad: " ", startingAt: 0)
+                            self.print("  \(n)  \(char.currentHP)/\(char.maxHP) HP  \(char.gold)gp", color: .cyan)
+                        }
+
+                        // Snapshot after DM commands applied
+                        let postSnapshot = StateSnapshot.capture(
+                            label: "dm_command",
+                            party: self.party,
+                            dungeon: self.dungeon,
+                            gameTimeMinutes: self.gameTimeMinutes
+                        )
+                        StateSnapshotManager.shared.write(postSnapshot)
+                    }
+
+                    // Auto-apply narrative-implied item changes that lack tags
+                    if adLibLevel.rawValue >= DMAdLibLevel.moderate.rawValue {
+                        let fallbackApplied = self.applyNarrativeFallbacks(
+                            text: result.cleanText,
+                            alreadyApplied: result
+                        )
+                        if fallbackApplied {
+                            worldChanged = true
                         }
                     }
 
-                    // Speak the DM response
-                    SpeechEngine.shared.speak(displayText)
+                    // Check for remaining missed commands (healing, damage, gold)
+                    let missedHints = DMEngine.detectMissedCommands(
+                        narrativeText: result.cleanText,
+                        appliedResult: result
+                    )
+                    if !missedHints.isEmpty {
+                        self.print("")
+                        self.print("  [Note: DM described changes that may not have been applied:]", color: .dimGreen)
+                        for hint in missedHints {
+                            self.print("    - \(hint)", color: .dimGreen)
+                        }
+                    }
+
+                    // Speak the DM response (only if still in DM mode)
+                    if self.inDMMode {
+                        SpeechEngine.shared.speak(displayText)
+                    }
 
                     self.print("")
                     self.logEvent("Asked DM: \(input)", category: "DM")
 
                     if worldChanged {
-                        // World changed — return to exploration, with loot pickup if needed
+                        // World changed — handle loot pickup then stay in DM mode
                         self.waitForContinue()
                         self.inputHandler = { [weak self] _ in
                             self?.showLootSequence(gold: pendingGold, goldSource: "DM reward",
                                                    items: pendingPickupItems, itemSource: "DM gift") { [weak self] in
-                                self?.showExplorationView()
+                                self?.askTheDM()
                             }
                         }
                     } else {
@@ -3727,25 +4397,35 @@ class GameEngine: ObservableObject {
                         }
                     }
 
+                    // Auto-apply narrative-implied item changes in combat too
+                    if adLibLevel.rawValue >= DMAdLibLevel.moderate.rawValue {
+                        let fallbackApplied = self.applyNarrativeFallbacks(
+                            text: result.cleanText,
+                            alreadyApplied: result
+                        )
+                        if fallbackApplied { tookAction = true }
+                    }
+
                     // Speak the DM response
                     SpeechEngine.shared.speak(displayText)
 
                     self.print("")
                     self.logEvent("Asked DM in combat: \(input)", category: "DM")
 
-                    if tookAction {
-                        // Action was taken — counts as their turn
-                        self.waitForContinue()
-                        self.inputHandler = { [weak self] _ in
+                    // Stay in DM conversation — don't leave DM mode after each action
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in
+                        if tookAction {
                             combat.checkCombatEnd()
-                            combat.nextTurn()
-                            self?.runCombatTurn()
-                        }
-                    } else {
-                        // Just a question / flavor — return to combat menu
-                        self.waitForContinue()
-                        self.inputHandler = { [weak self] _ in
-                            self?.showPlayerCombatMenu(characterId: characterId)
+                            if combat.state == .victory {
+                                self?.handleCombatVictory()
+                            } else if combat.state == .defeat {
+                                self?.handleCombatDefeat()
+                            } else {
+                                self?.askTheDMInCombat(characterId: characterId)
+                            }
+                        } else {
+                            self?.askTheDMInCombat(characterId: characterId)
                         }
                     }
                 }
@@ -4064,6 +4744,7 @@ class GameEngine: ObservableObject {
         currentCombat = Combat(party: party, encounter: encounter)
         SoundManager.shared.startMusic(.combat)
         SoundManager.shared.playBattleStart()
+        checkTorchBlowout()
 
         let monsterNames = encounter.monsters.map { $0.name }.joined(separator: ", ")
         logEvent("Battle! Encountered \(monsterNames)", category: "COMBAT")
@@ -4389,7 +5070,7 @@ class GameEngine: ObservableObject {
 
         // Fighter: Second Wind
         if character.characterClass == .fighter && !character.secondWindUsed {
-            options.append("Second Wind (heal 1d10+\(character.level))")
+            options.append("Second Wind")
             actions.append { [weak self] in
                 self?.useSecondWind(character: character)
             }
@@ -4397,14 +5078,14 @@ class GameEngine: ObservableObject {
 
         // Barbarian: Rage
         if character.characterClass == .barbarian && character.rageUsesRemaining > 0 && !character.isRaging {
-            options.append("Rage! (\(character.rageUsesRemaining) uses)")
+            options.append("Rage!")
             actions.append { [weak self] in
                 self?.activateRage(character: character)
             }
         }
 
         // Dodge
-        options.append("Dodge (defensive stance)")
+        options.append("Dodge")
         actions.append { [weak self] in
             guard let self = self else { return }
             self.clearTerminal()
@@ -4522,10 +5203,16 @@ class GameEngine: ObservableObject {
                 }
 
                 SoundManager.shared.startMusic(.exploration)
+                let shouldReturnToDM = self.returnToDMAfterCombat
+                self.returnToDMAfterCombat = false
 
                 self.waitForContinue()
                 self.inputHandler = { [weak self] _ in
-                    self?.showExplorationView()
+                    if shouldReturnToDM {
+                        self?.askTheDM()
+                    } else {
+                        self?.showExplorationView()
+                    }
                 }
             } else {
                 self.print("You can't escape!", color: .red, bold: true)
@@ -4609,10 +5296,16 @@ class GameEngine: ObservableObject {
                     }
 
                     SoundManager.shared.startMusic(.exploration)
+                    let shouldReturnToDM = self.returnToDMAfterCombat
+                    self.returnToDMAfterCombat = false
                     self.print("")
                     self.waitForContinue()
                     self.inputHandler = { [weak self] _ in
-                        self?.showExplorationView()
+                        if shouldReturnToDM {
+                            self?.askTheDM()
+                        } else {
+                            self?.showExplorationView()
+                        }
                     }
                 } else {
                     combat.nextTurn()
@@ -5145,17 +5838,21 @@ class GameEngine: ObservableObject {
 
         // If this was a trap room, trigger the trap after combat
         let pendingTrap = dungeon?.currentRoom?.roomType == .trap && dungeon?.currentRoom?.trapTriggered == false
+        let shouldReturnToDM = returnToDMAfterCombat
+        returnToDMAfterCombat = false
 
         waitForContinue()
         inputHandler = { [weak self] _ in
             guard let self = self else { return }
-            // Show loot pickup first, then level-ups, then exploration
+            // Show loot pickup first, then level-ups, then back to DM or exploration
             let afterLoot = { [weak self] in
                 guard let self = self else { return }
                 self.checkAndShowLevelUp {
                     if pendingTrap, let room = self.dungeon?.currentRoom {
                         room.trapTriggered = true
                         self.triggerTrap(in: room)
+                    } else if shouldReturnToDM {
+                        self.askTheDM()
                     } else {
                         self.showExplorationView()
                     }
@@ -5333,10 +6030,7 @@ class GameEngine: ObservableObject {
 
     func showSaveMenu() {
         clearTerminal()
-
-        printLines(asciiScroll, color: .cyan)
-        print("")
-        printTitle("Save Game")
+        printTitle("Save/Quit")
 
         guard let _ = dungeon else {
             print("Error: No dungeon to save.", color: .red)
@@ -5352,10 +6046,11 @@ class GameEngine: ObservableObject {
             print("Save to: \(slotName)", color: .cyan)
             print("")
 
-            var options = ["< Back", "Save (new breakpoint)"]
+            var options = ["< Back", "Save"]
             if slots.count < SaveGameManager.maxSlots {
-                options.append("Save as New Slot")
+                options.append("Save as New")
             }
+            options.append("Quit")
 
             showMenu(options)
             menuHandler = { [weak self] choice in
@@ -5366,6 +6061,8 @@ class GameEngine: ObservableObject {
                     self.performSave(slotId: self.activeSlotId!, slotName: slotName)
                 } else if choice == 3 && slots.count < SaveGameManager.maxSlots {
                     self.askForNewSlotName()
+                } else if choice == options.count {
+                    self.confirmExitToMainMenu()
                 }
             }
         } else if slots.count >= SaveGameManager.maxSlots {
@@ -5380,7 +6077,11 @@ class GameEngine: ObservableObject {
     private func askForNewSlotName() {
         let defaultName = "\(party.first?.name ?? "Unknown") — \(dungeon?.name ?? "Dungeon")"
         print("Default: \(defaultName)", color: .dimGreen)
-        promptText("Enter a name (or press Enter):")
+        promptTextWithMenu("Enter a name (or press Enter):", options: ["< Back"])
+
+        menuHandler = { [weak self] _ in
+            self?.showExplorationView()
+        }
 
         inputHandler = { [weak self] name in
             guard let self = self else { return }
@@ -5446,7 +6147,7 @@ class GameEngine: ObservableObject {
             self.print("  \(selected.latest.partyDescription)", color: .dimGreen)
             self.print("")
 
-            self.showMenu(["Yes, replace this slot", "Choose a different slot", "< Back"])
+            self.showMenu(["Yes, Replace", "Different Slot", "< Back"])
             self.menuHandler = { [weak self] confirm in
                 guard let self = self else { return }
                 switch confirm {
@@ -5455,7 +6156,7 @@ class GameEngine: ObservableObject {
                     self.askForNewSlotName()
                 case 2:
                     self.clearTerminal()
-                    self.printTitle("Save Game")
+                    self.printTitle("Save/Quit")
                     self.showOverwriteSlotMenu(slots: slots)
                 default:
                     self.showExplorationView()
@@ -5486,6 +6187,8 @@ class GameEngine: ObservableObject {
             gameTimeMinutes: gameTimeMinutes,
             adventureLog: adventureLog,
             dmChatLog: chatEntries,
+            torchLit: torchLit,
+            torchTurnsRemaining: torchTurnsRemaining,
             monstersSlain: monstersSlain,
             combatsWon: combatsWon
         )
@@ -5493,6 +6196,7 @@ class GameEngine: ObservableObject {
         do {
             try SaveGameManager.shared.save(saveGame)
             SoundManager.shared.playSave()
+            printLines(asciiScroll, color: .brightGreen)
             print("")
             print("Game saved!", color: .brightGreen, bold: true)
             print("")
@@ -5511,7 +6215,7 @@ class GameEngine: ObservableObject {
 
         print("")
 
-        showMenu(["< Back", "Continue Playing", "Load Another Game", "Exit to Main Menu"])
+        showMenu(["< Back", "Continue", "Load Game", "Main Menu"])
 
         menuHandler = { [weak self] choice in
             switch choice {
@@ -5738,6 +6442,8 @@ class GameEngine: ObservableObject {
                     gameTimeMinutes: bp.gameTimeMinutes,
                     adventureLog: bp.adventureLog,
                     dmChatLog: bp.dmChatLog,
+                    torchLit: bp.torchLit,
+                    torchTurnsRemaining: bp.torchTurnsRemaining,
                     monstersSlain: bp.monstersSlain,
                     combatsWon: bp.combatsWon
                 )
@@ -5798,6 +6504,8 @@ class GameEngine: ObservableObject {
         adventureLog = save.adventureLog
         monstersSlain = save.monstersSlain
         combatsWon = save.combatsWon
+        torchLit = save.torchLit ?? false
+        torchTurnsRemaining = save.torchTurnsRemaining ?? 0
 
         // Restore DM chat log and seed AI conversation history
         if let savedChat = save.dmChatLog {
@@ -5833,15 +6541,15 @@ class GameEngine: ObservableObject {
 
     func confirmExitToMainMenu() {
         clearTerminal()
-        print("Exit to Main Menu?", color: .yellow, bold: true)
+        print("Quit Game?", color: .yellow, bold: true)
         print("")
         print("Unsaved progress will be lost.", color: .red)
         print("")
 
-        showMenu(["Yes, Exit", "No, Keep Playing"])
+        showMenu(["Yes, Quit", "No, Stay"])
         menuHandler = { [weak self] choice in
             if choice == 1 {
-                self?.resetGame()
+                self?.quitApp()
             } else {
                 self?.showExplorationView()
             }
@@ -5864,6 +6572,7 @@ class GameEngine: ObservableObject {
 
     func quitApp() {
         SoundManager.shared.stopMusic()
+        SoundManager.shared.playQuit()
         clearTerminal()
         printLines(asciiFarewell, color: .dimGreen)
         print("")
@@ -5872,8 +6581,8 @@ class GameEngine: ObservableObject {
         print("Goodbye, adventurer...", color: .dimGreen)
         print("")
 
-        // Exit the app after a brief pause
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+        // Exit the app after the farewell tune finishes
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
             exit(0)
         }
     }
@@ -5995,6 +6704,28 @@ class GameEngine: ObservableObject {
             "    \\        /",
             "     \\  /\\  /",
             "      \\/  \\/",
+        ]
+    }
+
+    private var asciiDragon: [String] {
+        [
+            "                    /\\/\\",
+            "        _.---._    / oo \\",
+            "       /       \\__| >< |",
+            "      / \\  /\\     \\_--_/",
+            "     /   \\/  \\    / /",
+            "    /  /\\/ /\\ \\--' /",
+            "   /  /  \\/ /\\   /`",
+            "  /  /      \\ `-'   __",
+            "  \\ /        \\   .-'  '.",
+            "   V     /\\   `-' )) ) )",
+            "         \\ \\      )) ) )",
+            "          \\ '-.   )) ) )",
+            "           \\   `-------'",
+            "            \\  |    |",
+            "            |  |    |",
+            "            |_/    \\|",
+            "            (=)    (=)",
         ]
     }
 
