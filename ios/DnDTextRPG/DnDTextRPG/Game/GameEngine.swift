@@ -8,6 +8,9 @@
 import SwiftUI
 import Combine
 import AVFoundation
+#if os(macOS)
+import AppKit
+#endif
 
 class GameEngine: ObservableObject {
     // MARK: - Published Properties
@@ -1350,7 +1353,11 @@ class GameEngine: ObservableObject {
                 }
                 if let url = URL(string: urlString) {
                     DispatchQueue.main.async {
+                        #if canImport(UIKit)
                         UIApplication.shared.open(url)
+                        #elseif os(macOS)
+                        NSWorkspace.shared.open(url)
+                        #endif
                     }
                 }
                 // When they come back, show the same menu again
@@ -1654,9 +1661,30 @@ class GameEngine: ObservableObject {
     // MARK: - Character Creation
 
     private let suggestedNames = [
+        // Stranger Things
         "Will the Wise", "Eleven", "Zoomer", "Sundar the Bold",
         "Eddie Munson", "Lady Applejack", "Steve", "Nancy",
-        "Hopper", "Robin", "Jonathan", "Murray", "Joyce", "Nog"
+        "Hopper", "Robin", "Jonathan", "Murray", "Joyce", "Nog",
+        // Community (D&D episodes)
+        "Abed", "Troy", "Hector the Well-Endowed", "Brutalitops",
+        // Futurama (Bender's Game)
+        "Titanius", "Leegola", "Frydo",
+        // Big Bang Theory (D&D references)
+        "Sheldon", "Raj", "Wolowitz",
+        // Freaks and Geeks
+        "Daniel Desario", "Carlos the Dwarf",
+        // Honor Among Thieves
+        "Edgin", "Holga", "Simon", "Doric", "Xenk",
+        // Classic sci-fi (1960s-1980s)
+        "Deckard", "Ripley", "Hicks", "Newt",
+        "Atreides", "Stilgar", "Chani",
+        "Bowman", "HAL", "Poole",
+        "Case", "Molly", "Wintermute",
+        "Ender", "Valentine", "Bean",
+        "Zaphod", "Trillian", "Slartibartfast",
+        "Kal-El", "Logan 5", "Korben",
+        "Snake Plissken", "Riddick", "Quaid",
+        "Neo", "Morpheus", "Trinity"
     ]
 
     func startCharacterCreation() {

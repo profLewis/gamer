@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 @main
 struct DnDTextRPGApp: App {
@@ -16,6 +19,15 @@ struct DnDTextRPGApp: App {
             ContentView()
                 .environmentObject(gameEngine)
                 .preferredColorScheme(.dark)
+                #if os(macOS)
+                .onAppear {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        if let window = NSApplication.shared.windows.first {
+                            window.toggleFullScreen(nil)
+                        }
+                    }
+                }
+                #endif
         }
     }
 }

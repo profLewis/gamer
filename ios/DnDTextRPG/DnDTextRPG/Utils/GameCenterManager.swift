@@ -6,6 +6,9 @@
 //
 
 import GameKit
+#if canImport(UIKit)
+import UIKit
+#endif
 
 class GameCenterManager {
     static let shared = GameCenterManager()
@@ -32,18 +35,18 @@ class GameCenterManager {
     func authenticatePlayer() {
         GKLocalPlayer.local.authenticateHandler = { [weak self] viewController, error in
             if let vc = viewController {
-                // Present Game Center login if needed
+                #if canImport(UIKit)
                 DispatchQueue.main.async {
                     if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                        let rootVC = windowScene.windows.first?.rootViewController {
                         rootVC.present(vc, animated: true)
                     }
                 }
+                #endif
             } else if GKLocalPlayer.local.isAuthenticated {
                 self?.isAuthenticated = true
             } else {
                 self?.isAuthenticated = false
-                // Silent failure — Game Center is optional
             }
         }
     }
@@ -63,12 +66,14 @@ class GameCenterManager {
         let gcVC = GKGameCenterViewController(state: .leaderboards)
         gcVC.gameCenterDelegate = GameCenterDismisser.shared
 
+        #if canImport(UIKit)
         DispatchQueue.main.async {
             if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                let rootVC = windowScene.windows.first?.rootViewController {
                 rootVC.present(gcVC, animated: true)
             }
         }
+        #endif
     }
 
     func showAchievements() {
@@ -77,12 +82,14 @@ class GameCenterManager {
         let gcVC = GKGameCenterViewController(state: .achievements)
         gcVC.gameCenterDelegate = GameCenterDismisser.shared
 
+        #if canImport(UIKit)
         DispatchQueue.main.async {
             if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                let rootVC = windowScene.windows.first?.rootViewController {
                 rootVC.present(gcVC, animated: true)
             }
         }
+        #endif
     }
 
     // MARK: - Achievements
@@ -100,35 +107,26 @@ class GameCenterManager {
     /// Check and report achievements based on current game state
     func checkAchievements(combatsWon: Int, monstersSlain: Int, goldCollected: Int,
                            dungeonLevel: Int, isVictory: Bool) {
-        // First Blood — win first combat
         if combatsWon >= 1 {
             reportAchievement(Self.achievementFirstBlood)
         }
 
-        // Dungeon Master — conquer first dungeon
         let totalVictories = HallOfFameManager.shared.totalVictories()
         if isVictory {
             if totalVictories >= 1 {
                 reportAchievement(Self.achievementDungeonMaster)
             }
-
-            // Veteran — conquer 5 dungeons
             if totalVictories >= 5 {
                 reportAchievement(Self.achievementVeteran)
             }
-
-            // Legend — conquer Level 3 dungeon
             if dungeonLevel >= 3 {
                 reportAchievement(Self.achievementLegend)
             }
         }
 
-        // Hoarder — 500+ gold in a single run
         if goldCollected >= 500 {
             reportAchievement(Self.achievementHoarder)
         }
-
-        // Slayer — 20+ monsters in a single run
         if monstersSlain >= 20 {
             reportAchievement(Self.achievementSlayer)
         }
@@ -141,6 +139,8 @@ class GameCenterDismisser: NSObject, GKGameCenterControllerDelegate {
     static let shared = GameCenterDismisser()
 
     func gameCenterViewControllerDidFinish(_ gameCenterViewController: GKGameCenterViewController) {
+        #if canImport(UIKit)
         gameCenterViewController.dismiss(animated: true)
+        #endif
     }
 }
