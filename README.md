@@ -1,6 +1,6 @@
 # D&D 5e Text Adventure
 
-A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS, with AI Dungeon Master support.
+A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS and macOS, with AI Dungeon Master support.
 
 ![Dragon](dragon_animation.gif)
 
@@ -13,6 +13,7 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS, with AI Dunge
 - **18 Skills** with proficiency system
 - **Parties** of 1-4 characters (human or AI-controlled)
 - **Long-press** any party size to auto-generate an all-AI party
+- **Name suggestions** drawn from D&D shows, films, and sci-fi classics (Stranger Things, Community, Futurama, Dune, The Matrix, and more)
 
 ### Combat (D&D 5e Rules)
 - Initiative, attack rolls, saving throws, critical hits
@@ -44,6 +45,10 @@ The dungeon is home to 30 different creature types, from lowly rats and kobolds 
 
 ![Bestiary](all_monsters.png)
 
+### 13 NPCs
+
+Friendly NPCs appear in dungeon rooms — traders, healers, scholars, smiths, scouts, and more. Talk to them for quests, services, and lore. The Gatekeeper guards the entrance and offers gold rewards for clearing the dungeon.
+
 ### AI Dungeon Master
 
 The game has three tiers of DM intelligence:
@@ -53,12 +58,13 @@ The game has three tiers of DM intelligence:
 3. **Cloud AI** (any device) — The best DM experience. Supports Claude (Anthropic), GPT (OpenAI), and **Gemini (Google — free if you have a Google account, ages 18+)**. Requires an API key configured in Settings.
 
 Features:
-- 4 DM levels: Off, Flavor Only, Moderate, Full
+- 4 DM levels: Off, Flavour Only, Moderate, Full
 - At Moderate+, the DM can grant items, award gold, heal, deal damage, move the party, and teleport
 - Ask the DM during exploration or combat for creative actions
 - DM actions update the world state in real time (map, inventory, HP)
 - ASCII art responses when you ask the DM to draw something
 - **DM Voice** — text-to-speech reads DM responses aloud (built into iOS, no API key needed)
+- **Speaker Mode** — persistent read-aloud toggle that narrates story text as you play
 
 ### Save System
 - Save slots with automatic breakpoints (up to 5 per slot)
@@ -73,14 +79,38 @@ Features:
 ### Game Center
 - Leaderboards: Gold collected, Victories, Monsters slain
 - 6 Achievements: First Blood, Dungeon Master, Hoarder, Slayer, Veteran, Legend
+- Turn-based multiplayer via Game Center
+
+### Multiplayer
+- Turn-based async multiplayer via Game Center
+- Host controls exploration; each player controls their own character in combat
+- Party chat with @mentions
+- Invite friends mid-game or during party setup
+- Nudge idle players
+
+### Comprehensive Help System
+- 12 help topics: Getting Started, Exploration, Combat, Character & Party, Recovery, Dungeon Master, Multiplayer, Tips & Tricks, FAQs, Bestiary, NPCs, Name Lore
+- 50+ FAQ entries organised by topic
+- Context-sensitive gameplay tips
+- In-game bestiary with ASCII art for all 30 monsters
+- Name Lore gallery with Top Trump-style cards and pop culture origins
 
 ## Interface
 
-Green-on-black terminal aesthetic with monospaced text, ASCII art for characters and monsters, and a D-pad for dungeon navigation. Configurable font size (small, medium, large).
+Green-on-black terminal aesthetic with monospaced text, ASCII art for characters and monsters, and a D-pad for dungeon navigation. Features include:
+- Configurable font size (small, medium, large, extra large)
+- Animated dragon GIF on the main menu
+- Swipe-left to go back from any screen
+- Voice input via microphone
+- Speaker mode for hands-free narration
+- Custom on-screen keyboard
+- Undo/redo for character editing and settings
+- macOS keyboard shortcuts (arrow keys, WASD, letter keys for menus)
+- Long-press shortcuts throughout the UI
 
 ## Building
 
-Requires Xcode 15.0+. Open `ios/DnDTextRPG/DnDTextRPG.xcodeproj` and build for iOS 16.0+.
+Requires Xcode 15.0+. Open `ios/DnDTextRPG/DnDTextRPG.xcodeproj` and build for iOS 16.0+ or macOS.
 
 See [ios/README.md](ios/README.md) for detailed build instructions.
 

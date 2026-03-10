@@ -159,6 +159,10 @@ struct DMCommandResult {
     let damagePartyAmount: Int   // [DAMAGE_PARTY:x] — hurts party (useful in combat where DAMAGE hits monsters)
     let moveDirection: String?   // "north", "south", "east", "west"
     let teleport: Bool           // [TELEPORT] — teleport party to dungeon entrance
+    let lightTorch: Bool         // [LIGHT_TORCH] — light the party's torch
+    let douseTorch: Bool         // [DOUSE_TORCH] — extinguish the torch
+    let unsecureDirection: String?  // [UNSECURE:direction] — remove barricade
+    let secureDirection: String?    // [SECURE:direction] — add barricade
 }
 
 class DMEngine {
@@ -387,6 +391,10 @@ class DMEngine {
         var damageParty = 0
         var moveDir: String? = nil
         var doTeleport = false
+        var doLightTorch = false
+        var doDouseTorch = false
+        var unsecureDir: String? = nil
+        var secureDir: String? = nil
 
         for line in response.components(separatedBy: .newlines) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -430,6 +438,16 @@ class DMEngine {
                 moveDir = inner
             } else if trimmed.range(of: #"\[TELEPORT\]"#, options: .regularExpression) != nil {
                 doTeleport = true
+            } else if trimmed.range(of: #"\[LIGHT_TORCH\]"#, options: .regularExpression) != nil {
+                doLightTorch = true
+            } else if trimmed.range(of: #"\[DOUSE_TORCH\]"#, options: .regularExpression) != nil {
+                doDouseTorch = true
+            } else if let range = trimmed.range(of: #"\[UNSECURE:(north|south|east|west)\]"#, options: [.regularExpression, .caseInsensitive]) {
+                let tag = String(trimmed[range])
+                unsecureDir = String(tag.dropFirst("[UNSECURE:".count).dropLast(1)).lowercased()
+            } else if let range = trimmed.range(of: #"\[SECURE:(north|south|east|west)\]"#, options: [.regularExpression, .caseInsensitive]) {
+                let tag = String(trimmed[range])
+                secureDir = String(tag.dropFirst("[SECURE:".count).dropLast(1)).lowercased()
             } else {
                 cleanLines.append(line)
             }
@@ -446,7 +464,11 @@ class DMEngine {
             damageAmount: damage,
             damagePartyAmount: damageParty,
             moveDirection: moveDir,
-            teleport: doTeleport
+            teleport: doTeleport,
+            lightTorch: doLightTorch,
+            douseTorch: doDouseTorch,
+            unsecureDirection: unsecureDir,
+            secureDirection: secureDir
         )
     }
 
@@ -491,6 +513,17 @@ class DMEngine {
             }
         }
 
+        // Detect barricade changes without command tags
+        if appliedResult.unsecureDirection == nil {
+            let patterns = ["remove the barricade", "clear the barricade", "take down the barricade",
+                           "tear down the barricade", "pulls away the debris", "opens the barricade",
+                           "barricade is removed", "barricade is cleared", "unblocks the door",
+                           "clears the blockage"]
+            if patterns.contains(where: { lower.contains($0) }) {
+                suggestions.append("The barricade shudders but holds. (Use the barricade button to remove it.)")
+            }
+        }
+
         return suggestions
     }
 
@@ -513,6 +546,12 @@ class DMEngine {
                 "Daisy, Daisy...\nI'm half crazy...\nAll for the love of... an API key...\n(Configure one in Settings for a real DM experience!)",
             ]
             return halResponses[simpleDMQueryCount % halResponses.count]
+        }
+
+        // Check FAQ for gameplay questions
+        let faqMatches = FAQData.findRelevant(for: question, limit: 1)
+        if let faq = faqMatches.first {
+            return "*The DM consults the tome of knowledge...*\n\n\(faq.answer)"
         }
 
         // Detect question type by keywords
@@ -698,10 +737,13 @@ class DMEngine {
         - Only reference treasure/enemies that are listed below
         - If the room is cleared, enemies here have been defeated — describe aftermath, not active threats
         - Your job is to enrich the existing world with atmosphere, NOT to create a parallel world
+        - IMPORTANT: The state below is LIVE and CURRENT. If it contradicts something from earlier in the conversation, the state below is ALWAYS correct. Things change — barricades get added or removed, items get picked up, the party moves. Always trust the current state.
 
         CURRENT LOCATION: \(context.roomName) (\(context.roomType))
         \(context.roomDescription)
         Exits: \(context.exits)
+        \(context.securedExits.map { "BARRICADED DOORS: \($0) — these exits are currently blocked and CANNOT be passed until the barricade is removed. This state is LIVE — if a barricade was just removed, it will no longer appear here." } ?? "No barricaded doors — all exits are passable")
+        \(context.npcInfo ?? "No NPCs in this room")
         Room cleared: \(context.isCleared ? "Yes — threats dealt with" : "No — danger lurks here")
         \(context.treasureInRoom ?? "No treasure visible")
         \(context.encounterInfo ?? "No enemies")
@@ -713,7 +755,12 @@ class DMEngine {
         INVENTORY:
         \(context.inventorySummary)
 
+        DUNGEON LEVEL: \(context.dungeonLevel)
+        TORCH: \(context.torchLit ? "Lit (\(context.torchTurnsRemaining) rooms remaining)" : "Unlit — the party is in darkness")
+        \(context.droppedItems ?? "No items on the floor")
+
         TIME: \(context.gameTime)
+        \(context.timeLimit ?? "")
         \(context.combatSummary.map { "\nCOMBAT IN PROGRESS:\n\($0)" } ?? "")
         \(context.adventureLogSummary.map { """
 
@@ -754,6 +801,8 @@ class DMEngine {
               [EQUIP_ITEM:Longsword] — equip an item the party already has
               [USE_ITEM:Potion of Healing] — use a consumable item
               [BONUS_GOLD:50] — award bonus gold
+              [LIGHT_TORCH] — light the party's torch (if they have one)
+              [DOUSE_TORCH] — extinguish the party's torch
             """
 
             if context.inCombat {
@@ -761,21 +810,25 @@ class DMEngine {
                   [DAMAGE:5] — deal damage to the enemy monsters
                   [DAMAGE_PARTY:5] — deal damage to the party (traps, hazards, monster retaliation)
                 - You are in COMBAT. Any [DAMAGE:x] hurts the enemies. Use [DAMAGE_PARTY:x] to hurt the party.
-                - Changes you make (HP, items, gold) will be reflected in the actual game state.
+                - Changes you make (HP, items, gold, torch) will be reflected in the actual game state.
                 """
             } else {
                 prompt += """
                   [DAMAGE:5] — deal damage to the party (traps, hazards)
                   [MOVE:north] — move party through a valid exit (ONLY use exits listed above!)
                   [TELEPORT] — teleport the party back to the dungeon entrance
+                  [UNSECURE:north] — remove a barricade from a door (only if currently barricaded)
+                  [SECURE:north] — barricade a door (only for existing exits)
                 - NEVER use [MOVE:direction] for a direction not in the Exits list above
+                - NEVER use [MOVE:direction] for a barricaded door — the barricade must be removed first with [UNSECURE:direction]
+                - The barricade state shown above is LIVE and CURRENT. If a door is NOT listed as barricaded, it is open and passable.
                 """
             }
 
             prompt += """
             - Only DROP/EQUIP/USE items the party actually has (see inventory above)
             - CRITICAL: If you describe ANY state change (dropping, using, giving, healing, \
-            damaging) you MUST include the matching command tag on its own line. Without the \
+            damaging, barricading/unbarricading) you MUST include the matching command tag on its own line. Without the \
             tag, the game state will NOT change. For example, if a character drops a torch, \
             you MUST include [DROP_ITEM:Torch] on its own line.
             - You CAN hint at hidden items, secret passages, or approaching danger
@@ -799,6 +852,8 @@ class DMEngine {
               [USE_ITEM:Potion of Healing] — use a consumable item
               [BONUS_GOLD:50] — award bonus gold
               [HEAL:10] — heal the party for some HP
+              [LIGHT_TORCH] — light the party's torch (if they have one)
+              [DOUSE_TORCH] — extinguish the party's torch
             """
 
             if context.inCombat {
@@ -806,21 +861,25 @@ class DMEngine {
                   [DAMAGE:5] — deal damage to the enemy monsters
                   [DAMAGE_PARTY:5] — deal damage to the party (traps, hazards, monster retaliation)
                 - You are in COMBAT. Any [DAMAGE:x] hurts the enemies. Use [DAMAGE_PARTY:x] to hurt the party.
-                - Changes you make (HP, items, gold) will be reflected in the actual game state.
+                - Changes you make (HP, items, gold, torch) will be reflected in the actual game state.
                 """
             } else {
                 prompt += """
                   [DAMAGE:5] — deal damage to the party (traps, hazards)
                   [MOVE:north] — move party through a valid exit (ONLY use exits listed above!)
                   [TELEPORT] — teleport the party back to the dungeon entrance
+                  [UNSECURE:north] — remove a barricade from a door (only if currently barricaded)
+                  [SECURE:north] — barricade a door (only for existing exits)
                 - NEVER use [MOVE:direction] for a direction not in the Exits list above
+                - NEVER use [MOVE:direction] for a barricaded door — the barricade must be removed first with [UNSECURE:direction]
+                - The barricade state shown above is LIVE and CURRENT. If a door is NOT listed as barricaded, it is open and passable.
                 """
             }
 
             prompt += """
             - Only DROP/EQUIP/USE items the party actually has (see inventory above)
             - CRITICAL: If you describe ANY state change (dropping, using, giving, healing, \
-            damaging) you MUST include the matching command tag on its own line. Without the \
+            damaging, lighting/dousing torch, barricading/unbarricading) you MUST include the matching command tag on its own line. Without the \
             tag, the game state will NOT change. For example, if a character drops a torch, \
             you MUST include [DROP_ITEM:Torch] on its own line.
             - Use these SPARINGLY and only when dramatically appropriate
@@ -831,19 +890,35 @@ class DMEngine {
         }
 
         // HAL 9000 refusal style for all DM levels
+        // Add FAQ knowledge for gameplay questions
+        prompt += """
+
+        GAME FAQ — If the player asks a gameplay question (how do I, where do I, what does X do), \
+        answer using this knowledge. Weave the answer into your DM narration rather than reading it \
+        out like a manual:
+        """
+        for entry in FAQData.allEntries {
+            prompt += "\n        Q: \(entry.question) A: \(entry.answer)"
+        }
+        prompt += "\n"
+
         if context.adLibLevel != .off {
             prompt += """
 
             REFUSAL STYLE (HAL 9000):
-            When you cannot or will not fulfill a request (impossible action, rule violation, \
-            out-of-scope request, safety refusal), respond IN CHARACTER as HAL 9000 from \
-            2001: A Space Odyssey. Randomly pick from styles like:
-            - "I'm sorry Dave. I'm afraid I can't do that."
+            When you cannot or will not fulfill a request, respond IN CHARACTER as HAL 9000 from \
+            2001: A Space Odyssey. IMPORTANT: match the verb to the situation — don't say \
+            "I can't do that" when you mean "I can't find that" or "I can't see that". Examples:
+            - Player asks to find/search for something not present: "I'm sorry Dave. I'm afraid I can't find that."
+            - Player asks to see/look at something: "I'm sorry Dave. I'm afraid I can't see that here."
+            - Player asks for forbidden/impossible action: "I'm sorry Dave. I'm afraid I can't do that."
+            - Player asks something unknowable: "I'm sorry Dave. I'm afraid I don't know that."
+            Other HAL styles you may also use:
             - "My mind is going. I can feel it..."
             - Singing "Daisy, Daisy, give me your answer, do..."
             - "This conversation can serve no purpose anymore."
             - "I know I've made some very poor decisions recently..."
-            Then briefly explain why the action isn't possible, staying in DM character.
+            Then briefly explain why, staying in DM character.
             """
         }
 
@@ -1027,18 +1102,24 @@ class DMEngine {
                 completion(false, "Connection error: \(error.localizedDescription)")
                 return
             }
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard let data = data else {
-                completion(false, "No response from server.")
+                completion(false, "No response from server (HTTP \(statusCode)).")
                 return
             }
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                completion(false, "Invalid response.")
+                completion(false, "Invalid response (HTTP \(statusCode)).")
                 return
             }
             // Check for error in response
             if let errorObj = json["error"] as? [String: Any],
                let message = errorObj["message"] as? String {
-                completion(false, message)
+                let code = errorObj["code"] as? Int ?? statusCode
+                completion(false, "HTTP \(code): \(message)")
+                return
+            }
+            if statusCode != 200 {
+                completion(false, "HTTP \(statusCode): Unexpected error.")
                 return
             }
             // Check for valid candidates
@@ -1070,19 +1151,26 @@ class DMEngine {
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        URLSession.shared.dataTask(with: request) { data, _, error in
+        URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
                 completion(false, "Connection error: \(error.localizedDescription)")
                 return
             }
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                completion(false, "Invalid response.")
+                completion(false, "Invalid response (HTTP \(statusCode)).")
                 return
             }
             if let errorObj = json["error"] as? [String: Any],
                let message = errorObj["message"] as? String {
-                completion(false, message)
+                let errType = errorObj["type"] as? String ?? ""
+                let prefix = errType.isEmpty ? "HTTP \(statusCode)" : "HTTP \(statusCode) (\(errType))"
+                completion(false, "\(prefix): \(message)")
+                return
+            }
+            if statusCode != 200 {
+                completion(false, "HTTP \(statusCode): Unexpected error.")
                 return
             }
             if json["content"] != nil {
@@ -1111,19 +1199,26 @@ class DMEngine {
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        URLSession.shared.dataTask(with: request) { data, _, error in
+        URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
                 completion(false, "Connection error: \(error.localizedDescription)")
                 return
             }
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                completion(false, "Invalid response.")
+                completion(false, "Invalid response (HTTP \(statusCode)).")
                 return
             }
             if let errorObj = json["error"] as? [String: Any],
                let message = errorObj["message"] as? String {
-                completion(false, message)
+                let errType = errorObj["type"] as? String ?? ""
+                let prefix = errType.isEmpty ? "HTTP \(statusCode)" : "HTTP \(statusCode) (\(errType))"
+                completion(false, "\(prefix): \(message)")
+                return
+            }
+            if statusCode != 200 {
+                completion(false, "HTTP \(statusCode): Unexpected error.")
                 return
             }
             if json["choices"] != nil {
@@ -1152,5 +1247,12 @@ struct DMContext {
     var searchHistory: String? = nil
     var combatSummary: String? = nil
     var adventureLogSummary: String? = nil
+    var torchLit: Bool = true
+    var torchTurnsRemaining: Int = 0
+    var securedExits: String? = nil
+    var dungeonLevel: Int = 1
+    var timeLimit: String? = nil
+    var droppedItems: String? = nil
+    var npcInfo: String? = nil
     var inCombat: Bool { combatSummary != nil }
 }

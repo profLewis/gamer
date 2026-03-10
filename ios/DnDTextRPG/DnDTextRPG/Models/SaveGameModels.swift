@@ -41,6 +41,9 @@ struct SaveGame: Codable, Identifiable {
     let torchLit: Bool?
     let torchTurnsRemaining: Int?
 
+    // Party chat log
+    let partyChatLog: [PartyChatMessage]?
+
     // Run stats
     let monstersSlain: Int
     let combatsWon: Int

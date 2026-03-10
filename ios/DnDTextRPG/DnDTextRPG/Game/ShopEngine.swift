@@ -63,19 +63,13 @@ class ShopEngine {
         for item in stock {
             options.append("\(item.name)  \(item.value)gp  \(String(format: "%.1f", item.weight))lb")
         }
-        options.append("< Back")
 
-        game.showMenu(options)
-
-        game.menuHandler = { [weak self] choice in
+        let stockItems = self.stock
+        game.showPaginatedMenuOptions(options, pinned: ["< Back"], handler: { [weak self] idx in
             guard let self = self, let game = self.game else { return }
-            if choice == options.count {
-                self.showShopMain(completion: completion)
-                return
-            }
 
-            guard choice > 0 && choice <= self.stock.count else { return }
-            let item = self.stock[choice - 1]
+            guard idx >= 0 && idx < stockItems.count else { return }
+            let item = stockItems[idx]
 
             guard character.gold >= item.value else {
                 game.print("")
@@ -109,7 +103,9 @@ class ShopEngine {
             game.inputHandler = { [weak self] _ in
                 self?.showBuyMenu(completion: completion)
             }
-        }
+        }, pinnedHandler: { [weak self] _ in
+            self?.showShopMain(completion: completion)
+        })
     }
 
     // MARK: - Sell
@@ -140,19 +136,12 @@ class ShopEngine {
             let sellValue = max(1, item.value / 2)
             options.append("\(item.name)  +\(sellValue)gp")
         }
-        options.append("< Back")
 
-        game.showMenu(options)
-
-        game.menuHandler = { [weak self] choice in
+        game.showPaginatedMenuOptions(options, pinned: ["< Back"], handler: { [weak self] idx in
             guard let self = self, let game = self.game else { return }
-            if choice == options.count {
-                self.showShopMain(completion: completion)
-                return
-            }
 
-            guard choice > 0 && choice <= sellableItems.count else { return }
-            let item = sellableItems[choice - 1]
+            guard idx >= 0 && idx < sellableItems.count else { return }
+            let item = sellableItems[idx]
             let sellValue = max(1, item.value / 2)
 
             character.removeItem(item)
@@ -166,6 +155,8 @@ class ShopEngine {
             game.inputHandler = { [weak self] _ in
                 self?.showSellMenu(completion: completion)
             }
-        }
+        }, pinnedHandler: { [weak self] _ in
+            self?.showShopMain(completion: completion)
+        })
     }
 }

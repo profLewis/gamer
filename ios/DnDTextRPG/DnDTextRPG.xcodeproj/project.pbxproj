@@ -30,6 +30,13 @@
 		A1B2C3D4E5F6A7B800112234 /* StateSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800112233 /* StateSnapshot.swift */; };
 		A1B2C3D4E5F6A7B800112236 /* StateDiff.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800112235 /* StateDiff.swift */; };
 		A1B2C3D4E5F6A7B800112238 /* StateSnapshotManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800112237 /* StateSnapshotManager.swift */; };
+		B3C4D5E6F7A8B9C000334456 /* MultiplayerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3C4D5E6F7A8B9C000334455 /* MultiplayerModels.swift */; };
+		C4D5E6F7A8B9C0D100445567 /* VoiceInputManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4D5E6F7A8B9C0D100445566 /* VoiceInputManager.swift */; };
+		D5E6F7A8B9C0D1E200556678 /* FAQData.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5E6F7A8B9C0D1E200556677 /* FAQData.swift */; };
+		E6F7A8B9C0D1E2F300667790 /* NPCModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F7A8B9C0D1E2F300667789 /* NPCModels.swift */; };
+		AA00000000000000000004 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000003 /* Localizable.xcstrings */; };
+		BB00000000000000000002 /* GameKeyboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000000000000000001 /* GameKeyboardView.swift */; };
+		CC00000000000000000002 /* dragon_animation.gif in Resources */ = {isa = PBXBuildFile; fileRef = CC00000000000000000001 /* dragon_animation.gif */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -57,7 +64,14 @@
 		A1B2C3D4E5F6A7B800112233 /* StateSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateSnapshot.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B800112235 /* StateDiff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateDiff.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B800112237 /* StateSnapshotManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateSnapshotManager.swift; sourceTree = "<group>"; };
+		B3C4D5E6F7A8B9C000334455 /* MultiplayerModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiplayerModels.swift; sourceTree = "<group>"; };
+		C4D5E6F7A8B9C0D100445566 /* VoiceInputManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInputManager.swift; sourceTree = "<group>"; };
+		D5E6F7A8B9C0D1E200556677 /* FAQData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FAQData.swift; sourceTree = "<group>"; };
+		E6F7A8B9C0D1E2F300667789 /* NPCModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NPCModels.swift; sourceTree = "<group>"; };
 		D18E1F342F3DF78F0076A164 /* DnDTextRPG.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DnDTextRPG.entitlements; sourceTree = "<group>"; };
+		AA00000000000000000003 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		BB00000000000000000001 /* GameKeyboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameKeyboardView.swift; sourceTree = "<group>"; };
+		CC00000000000000000001 /* dragon_animation.gif */ = {isa = PBXFileReference; lastKnownFileType = image.gif; path = dragon_animation.gif; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -90,6 +104,8 @@
 				306 /* Utils */,
 				110 /* Assets.xcassets */,
 				111 /* PrivacyInfo.xcprivacy */,
+				AA00000000000000000003 /* Localizable.xcstrings */,
+				CC00000000000000000001 /* dragon_animation.gif */,
 			);
 			path = DnDTextRPG;
 			sourceTree = "<group>";
@@ -107,6 +123,7 @@
 			children = (
 				102 /* ContentView.swift */,
 				103 /* TerminalView.swift */,
+				BB00000000000000000001 /* GameKeyboardView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -124,6 +141,8 @@
 				119 /* SpellModels.swift */,
 				A1B2C3D4E5F6A7B800112233 /* StateSnapshot.swift */,
 				A1B2C3D4E5F6A7B800112235 /* StateDiff.swift */,
+				B3C4D5E6F7A8B9C000334455 /* MultiplayerModels.swift */,
+				E6F7A8B9C0D1E2F300667789 /* NPCModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -146,6 +165,8 @@
 				116 /* DMEngine.swift */,
 				120 /* SpeechEngine.swift */,
 				A1B2C3D4E5F6A7B800112237 /* StateSnapshotManager.swift */,
+				C4D5E6F7A8B9C0D100445566 /* VoiceInputManager.swift */,
+				D5E6F7A8B9C0D1E200556677 /* FAQData.swift */,
 			);
 			path = Utils;
 			sourceTree = "<group>";
@@ -210,6 +231,8 @@
 			files = (
 				010 /* Assets.xcassets in Resources */,
 				011 /* PrivacyInfo.xcprivacy in Resources */,
+				AA00000000000000000004 /* Localizable.xcstrings in Resources */,
+				CC00000000000000000002 /* dragon_animation.gif in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -241,6 +264,11 @@
 				A1B2C3D4E5F6A7B800112234 /* StateSnapshot.swift in Sources */,
 				A1B2C3D4E5F6A7B800112236 /* StateDiff.swift in Sources */,
 				A1B2C3D4E5F6A7B800112238 /* StateSnapshotManager.swift in Sources */,
+				B3C4D5E6F7A8B9C000334456 /* MultiplayerModels.swift in Sources */,
+				C4D5E6F7A8B9C0D100445567 /* VoiceInputManager.swift in Sources */,
+				D5E6F7A8B9C0D1E200556678 /* FAQData.swift in Sources */,
+				E6F7A8B9C0D1E2F300667790 /* NPCModels.swift in Sources */,
+				BB00000000000000000002 /* GameKeyboardView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -384,6 +412,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "DnD RPG";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.role-playing-games";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "The microphone is used for voice commands in chat.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Voice commands let you speak to the Dungeon Master instead of typing.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -419,6 +449,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "DnD RPG";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.role-playing-games";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "The microphone is used for voice commands in chat.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Voice commands let you speak to the Dungeon Master instead of typing.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

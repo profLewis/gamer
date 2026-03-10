@@ -47,6 +47,7 @@ enum RoomType: String, CaseIterable, Codable {
     case library = "Library"
     case armory = "Armoury"
     case prison = "Prison"
+    case shop = "Shop"
     case empty = "Empty Room"
 
     var description: String {
@@ -113,6 +114,12 @@ enum RoomType: String, CaseIterable, Codable {
                 "Rows of cells stretch into the darkness. A skeletal hand reaches through the bars of one, frozen in its last plea.",
                 "The stench of old straw and despair clings to this place. Manacles hang open on the walls, their prisoners long gone.",
             ].randomElement()!
+        case .shop:
+            return [
+                "A cluttered merchant's stall fills the alcove, lanterns casting warm light on stacked crates and hanging wares.",
+                "Shelves of potions, weapons, and curious trinkets line the walls. A merchant beckons you closer with a grin.",
+                "A travelling trader has set up shop here, their cart overflowing with supplies. The clink of coin fills the air.",
+            ].randomElement()!
         case .empty:
             return [
                 "An empty room, silent but for the drip of water. Cobwebs drape the corners like grey curtains.",
@@ -134,6 +141,7 @@ enum RoomType: String, CaseIterable, Codable {
         case .library: return "L"
         case .armory: return "A"
         case .prison: return "P"
+        case .shop: return "S"
         case .empty: return "."
         }
     }
@@ -159,11 +167,13 @@ class Room: Identifiable, ObservableObject, Codable {
     @Published var hiddenItems: [Item]      // Items discoverable by searching (thematic per room type)
     @Published var hiddenGold: Int           // Gold discoverable by searching
     @Published var droppedItems: [Item]     // Items left behind by the party
+    @Published var npc: DungeonNPC?         // NPC present in this room
+    @Published var secured: Set<Direction>  // Barred/secured exits
 
     enum CodingKeys: String, CodingKey {
         case id, x, y, roomType, name, roomDescription, exits, visited, cleared
         case encounter, treasure, isLocked, searchedFor, trapTriggered
-        case hiddenItems, hiddenGold, droppedItems
+        case hiddenItems, hiddenGold, droppedItems, npc, secured
     }
 
     init(id: Int, x: Int, y: Int, type: RoomType) {
@@ -184,6 +194,8 @@ class Room: Identifiable, ObservableObject, Codable {
         self.hiddenItems = []
         self.hiddenGold = 0
         self.droppedItems = []
+        self.npc = nil
+        self.secured = []
     }
 
     required init(from decoder: Decoder) throws {
@@ -207,6 +219,8 @@ class Room: Identifiable, ObservableObject, Codable {
         hiddenItems = try container.decodeIfPresent([Item].self, forKey: .hiddenItems) ?? []
         hiddenGold = try container.decodeIfPresent(Int.self, forKey: .hiddenGold) ?? 0
         droppedItems = try container.decodeIfPresent([Item].self, forKey: .droppedItems) ?? []
+        npc = try container.decodeIfPresent(DungeonNPC.self, forKey: .npc)
+        secured = try container.decodeIfPresent(Set<Direction>.self, forKey: .secured) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -228,6 +242,8 @@ class Room: Identifiable, ObservableObject, Codable {
         try container.encode(hiddenItems, forKey: .hiddenItems)
         try container.encode(hiddenGold, forKey: .hiddenGold)
         try container.encode(droppedItems, forKey: .droppedItems)
+        try container.encodeIfPresent(npc, forKey: .npc)
+        try container.encode(secured, forKey: .secured)
     }
 
     static func generateName(for type: RoomType) -> String {
@@ -280,6 +296,11 @@ class Room: Identifiable, ObservableObject, Codable {
             return [
                 "The Iron Cells", "Abandoned Dungeon", "Bone-Strewn Prison",
                 "The Oubliette", "Shackled Chamber",
+            ].randomElement()!
+        case .shop:
+            return [
+                "Merchant's Corner", "Trading Post", "Dusty Bazaar",
+                "Wanderer's Wares", "The Trinket Cart",
             ].randomElement()!
         case .empty:
             return [
@@ -389,7 +410,7 @@ class Room: Identifiable, ObservableObject, Codable {
                 items.append([ItemCatalog.torch, ItemCatalog.rope].randomElement()!())
             }
 
-        case .entrance, .boss, .empty:
+        case .entrance, .boss, .shop, .empty:
             // No hidden loot
             break
         }
@@ -555,6 +576,42 @@ class Dungeon: ObservableObject, Codable {
             bossRoom.hiddenGold = 0
         }
 
+        // Place exactly one shop room — pick a non-entrance, non-boss room roughly mid-dungeon
+        let candidates = rooms.values
+            .filter { $0.roomType != .entrance && $0.roomType != .boss }
+            .sorted { (abs($0.x) + abs($0.y)) < (abs($1.x) + abs($1.y)) }
+        let midIndex = candidates.count / 2
+        let shopRange = max(0, midIndex - 2)...min(candidates.count - 1, midIndex + 2)
+        if let shopRoom = candidates[shopRange].randomElement() {
+            shopRoom.roomType = .shop
+            shopRoom.name = Room.generateName(for: .shop)
+            shopRoom.roomDescription = RoomType.shop.description
+            shopRoom.encounter = nil
+            shopRoom.hiddenItems = []
+            shopRoom.hiddenGold = 0
+        }
+
+        // Spawn NPCs in ~30-40% of non-boss, non-entrance rooms (max 6)
+        let npcCandidates = rooms.values.filter {
+            $0.roomType != .entrance && $0.roomType != .boss && $0.encounter == nil
+        }.shuffled()
+        let maxNPCs = min(6, max(2, npcCandidates.count / 3))
+        var npcCount = 0
+        for room in npcCandidates where npcCount < maxNPCs {
+            if let npcType = NPCType.randomFor(roomType: room.roomType) {
+                room.npc = DungeonNPC(type: npcType)
+                npcCount += 1
+            }
+        }
+
+        // Place Gatekeeper at entrance
+        if let entrance = rooms[0] {
+            var gatekeeper = DungeonNPC(type: .gatekeeper)
+            gatekeeper.trustworthiness = .random()
+            gatekeeper.questGold = 50 * level
+            entrance.npc = gatekeeper
+        }
+
         nextRoomId = roomId
     }
 
@@ -588,7 +645,7 @@ class Dungeon: ObservableObject, Codable {
             newRoom.exits[direction.opposite] = room.id
 
             // Encounter
-            if roomType != .entrance && roomType != .shrine && roomType != .empty {
+            if roomType != .entrance && roomType != .shrine && roomType != .shop && roomType != .empty {
                 let encounterChance = level == 1 ? 0.35 : 0.5
                 let diff: EncounterDifficulty = level == 1 ? .easy : .medium
                 if Double.random(in: 0...1) < encounterChance {
@@ -631,7 +688,7 @@ class Dungeon: ObservableObject, Codable {
     func rerollEncounters() {
         for room in rooms.values {
             guard !room.cleared else { continue }
-            guard room.roomType != .entrance && room.roomType != .shrine else { continue }
+            guard room.roomType != .entrance && room.roomType != .shrine && room.roomType != .shop else { continue }
 
             if room.roomType == .boss {
                 room.encounter = Encounter.generateBoss(level: level)
@@ -677,14 +734,47 @@ class Dungeon: ObservableObject, Codable {
         return (true, "You move \(direction.rawValue).\n\n\(nextRoom.describe())")
     }
 
-    func getMapDisplay(visibilityRadius: Int = 3) -> [String] {
+    /// Calculate how many terminal lines a map with the given radius will produce
+    func mapLineCount(visibilityRadius: Int, torchLit: Bool, compact: Bool = false, verticalRadius: Int? = nil) -> Int {
+        let vRadius = verticalRadius ?? visibilityRadius
+        if !torchLit {
+            // Top border + header + separator + 3 rows + bottom border = 7, or 5 compact
+            return compact ? 5 : 7
+        }
+        let headerLines = compact ? 1 : 3  // just top border (compact) vs top + MAP + separator
+        let gridLines = (2 * vRadius + 1) + (2 * vRadius)  // room rows + corridor rows
+        let legendLines = compact ? 1 : 4  // compact: just bottom border; full: separator + ~2 legend rows + bottom border
+        return headerLines + gridLines + legendLines
+    }
+
+    func getMapDisplay(visibilityRadius: Int = 3, torchLit: Bool = true, compact: Bool = false, verticalRadius: Int? = nil) -> [String] {
         guard let current = rooms[currentRoomId] else { return ["No map available."] }
 
-        // Viewport centered on current room
+        // Torch off: show only [@] with no direction info — you can't see the passages
+        if !torchLit {
+            let border = String(repeating: "-", count: 26)
+            let emptyRow = "|".padding(toLength: 28, withPad: " ", startingAt: 0) + "|"
+            let centerRow = "|      [@]".padding(toLength: 28, withPad: " ", startingAt: 0) + "|"
+
+            var lines: [String] = []
+            lines.append("+\(border)+")
+            if !compact {
+                lines.append("| MAP".padding(toLength: 27, withPad: " ", startingAt: 0) + "|")
+                lines.append("+\(border)+")
+            }
+            lines.append(emptyRow)
+            lines.append(centerRow)
+            lines.append(emptyRow)
+            lines.append("+\(border)+")
+            return lines
+        }
+
+        // Viewport centered on current room (may be non-square)
+        let vRadius = verticalRadius ?? visibilityRadius
         let viewMinX = current.x - visibilityRadius
         let viewMaxX = current.x + visibilityRadius
-        let viewMinY = current.y - visibilityRadius
-        let viewMaxY = current.y + visibilityRadius
+        let viewMinY = current.y - vRadius
+        let viewMaxY = current.y + vRadius
 
         // Only show visited rooms within the viewport
         let visibleRooms = rooms.values.filter {
@@ -697,39 +787,45 @@ class Dungeon: ObservableObject, Codable {
         var lines: [String] = []
 
         let mapWidth = min((viewMaxX - viewMinX + 1) * 5 + 3, 40)
-        let border = String(repeating: "─", count: max(mapWidth, 26))
-        lines.append("┌\(border)┐")
-        lines.append("│ MAP".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "│")
-        lines.append("├\(border)┤")
+        let border = String(repeating: "-", count: max(mapWidth, 26))
+        lines.append("+\(border)+")
+        if !compact {
+            lines.append("| MAP".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|")
+            lines.append("+\(border)+")
+        }
 
         for y in viewMinY...viewMaxY {
             // Room row
-            var roomRow = "│ "
+            var roomRow = "| "
             // Vertical corridor row (below this room row)
-            var corridorRow = "│ "
+            var corridorRow = "| "
 
             for x in viewMinX...viewMaxX {
                 if let room = visibleRooms.first(where: { $0.x == x && $0.y == y }) {
                     if room.id == currentRoomId {
                         roomRow += "[@]"
-                    } else if room.cleared {
-                        roomRow += "[\(room.roomType.symbol)]"
-                    } else if room.encounter != nil {
+                    } else if !room.cleared && room.encounter != nil {
                         roomRow += "[!]"
+                    } else if room.npc != nil && !(room.npc?.hasBeenTalkedTo ?? true) {
+                        roomRow += "[?]"
                     } else {
                         roomRow += "[\(room.roomType.symbol)]"
                     }
 
-                    // East corridor
-                    if room.exits[.east] != nil {
-                        roomRow += "──"
+                    // East corridor (XX = secured/barred from either side)
+                    if let eastId = room.exits[.east] {
+                        let eastRoom = rooms[eastId]
+                        let barred = room.secured.contains(.east) || (eastRoom?.secured.contains(.west) ?? false)
+                        roomRow += barred ? "XX" : "--"
                     } else {
                         roomRow += "  "
                     }
 
-                    // South corridor
-                    if room.exits[.south] != nil {
-                        corridorRow += " |   "
+                    // South corridor (X = secured/barred from either side)
+                    if let southId = room.exits[.south] {
+                        let southRoom = rooms[southId]
+                        let barred = room.secured.contains(.south) || (southRoom?.secured.contains(.north) ?? false)
+                        corridorRow += barred ? " X   " : " |   "
                     } else {
                         corridorRow += "     "
                     }
@@ -739,12 +835,12 @@ class Dungeon: ObservableObject, Codable {
                 }
             }
 
-            roomRow = roomRow.padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "│"
+            roomRow = roomRow.padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|"
             lines.append(roomRow)
 
             // Only add corridor row if not the last row
             if y < viewMaxY {
-                corridorRow = corridorRow.padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "│"
+                corridorRow = corridorRow.padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|"
                 lines.append(corridorRow)
             }
         }
@@ -763,16 +859,22 @@ class Dungeon: ObservableObject, Codable {
             visibleSymbols.insert(room.roomType.symbol)
         }
 
+        // Check if any secured doors are visible
+        if visibleRooms.contains(where: { !$0.secured.isEmpty }) {
+            visibleSymbols.insert("X")
+        }
+
         let allKeyEntries: [(symbol: String, label: String)] = [
             ("@", "You"), ("!", "Danger"), (".", "Empty"),
             ("E", "Entry"), ("=", "Hall"), ("#", "Room"),
             ("$", "Loot"), ("+", "Shrine"), ("L", "Library"),
-            ("B", "Boss"), ("A", "Armoury"), ("P", "Prison")
+            ("B", "Boss"), ("A", "Armoury"), ("P", "Prison"),
+            ("S", "Shop"), ("X", "Secured")
         ]
         let activeEntries = allKeyEntries.filter { visibleSymbols.contains($0.symbol) }
 
-        if !activeEntries.isEmpty {
-            lines.append("├\(border)┤")
+        if !compact && !activeEntries.isEmpty {
+            lines.append("+\(border)+")
             // Pack entries into rows, ~3 per line
             var row = ""
             for (i, entry) in activeEntries.enumerated() {
@@ -783,13 +885,13 @@ class Dungeon: ObservableObject, Codable {
                     row += "  \(item)"
                 }
                 if (i + 1) % 3 == 0 || i == activeEntries.count - 1 {
-                    let keyLine = "│ \(row)".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "│"
+                    let keyLine = "| \(row)".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|"
                     lines.append(keyLine)
                     row = ""
                 }
             }
         }
-        lines.append("└\(border)┘")
+        lines.append("+\(border)+")
 
         return lines
     }

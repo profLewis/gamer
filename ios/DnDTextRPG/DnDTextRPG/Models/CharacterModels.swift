@@ -109,47 +109,6 @@ enum Race: String, CaseIterable, Codable {
         }
     }
 
-    var speed: Int {
-        switch self {
-        case .hillDwarf, .mountainDwarf:
-            return 25
-        case .lightfootHalfling, .stoutHalfling, .gnome:
-            return 25
-        case .woodElf:
-            return 35
-        default:
-            return 30
-        }
-    }
-
-    var traits: [String] {
-        switch self {
-        case .human:
-            return ["Extra Language"]
-        case .highElf:
-            return ["Darkvision", "Fey Ancestry", "Trance", "Cantrip"]
-        case .woodElf:
-            return ["Darkvision", "Fey Ancestry", "Trance", "Mask of the Wild"]
-        case .hillDwarf:
-            return ["Darkvision", "Dwarven Resilience", "Dwarven Toughness"]
-        case .mountainDwarf:
-            return ["Darkvision", "Dwarven Resilience", "Armour Proficiency"]
-        case .lightfootHalfling:
-            return ["Lucky", "Brave", "Nimble", "Naturally Stealthy"]
-        case .stoutHalfling:
-            return ["Lucky", "Brave", "Nimble", "Stout Resilience"]
-        case .halfElf:
-            return ["Darkvision", "Fey Ancestry", "Skill Versatility"]
-        case .halfOrc:
-            return ["Darkvision", "Menacing", "Relentless Endurance", "Savage Attacks"]
-        case .gnome:
-            return ["Darkvision", "Gnome Cunning", "Tinker"]
-        case .tiefling:
-            return ["Darkvision", "Hellish Resistance", "Infernal Legacy"]
-        case .dragonborn:
-            return ["Breath Weapon", "Damage Resistance"]
-        }
-    }
 }
 
 // MARK: - Class
@@ -192,17 +151,6 @@ enum CharacterClass: String, CaseIterable, Codable {
         }
     }
 
-    var savingThrows: [Ability] {
-        switch self {
-        case .fighter: return [.strength, .constitution]
-        case .wizard: return [.intelligence, .wisdom]
-        case .rogue: return [.dexterity, .intelligence]
-        case .cleric: return [.wisdom, .charisma]
-        case .ranger: return [.strength, .dexterity]
-        case .barbarian: return [.strength, .constitution]
-        }
-    }
-
     var skillChoices: [Skill] {
         switch self {
         case .fighter:
@@ -225,35 +173,6 @@ enum CharacterClass: String, CaseIterable, Codable {
         case .rogue: return 4
         case .ranger: return 3
         default: return 2
-        }
-    }
-
-    var isSpellcaster: Bool {
-        switch self {
-        case .wizard, .cleric, .ranger: return true
-        default: return false
-        }
-    }
-
-    var armorProficiencies: [String] {
-        switch self {
-        case .fighter: return ["All Armour", "Shields"]
-        case .cleric: return ["Light Armour", "Medium Armour", "Shields"]
-        case .ranger: return ["Light Armour", "Medium Armour", "Shields"]
-        case .barbarian: return ["Light Armour", "Medium Armour", "Shields"]
-        case .rogue: return ["Light Armour"]
-        case .wizard: return []
-        }
-    }
-
-    var weaponProficiencies: [String] {
-        switch self {
-        case .fighter: return ["Simple Weapons", "Martial Weapons"]
-        case .barbarian: return ["Simple Weapons", "Martial Weapons"]
-        case .ranger: return ["Simple Weapons", "Martial Weapons"]
-        case .cleric: return ["Simple Weapons"]
-        case .rogue: return ["Simple Weapons", "Rapier", "Shortsword", "Hand Crossbow"]
-        case .wizard: return ["Dagger", "Quarterstaff", "Light Crossbow"]
         }
     }
 
@@ -306,6 +225,48 @@ enum CharacterClass: String, CaseIterable, Codable {
                 " /|\\",
                 "=||=",
                 " /  \\",
+            ]
+        }
+    }
+
+    /// Animation frames for idle weapon display (2 frames each)
+    var asciiArtFrames: [[String]] {
+        switch self {
+        case .fighter:
+            return [
+                ["  o  ", " /|\\=+>", " / \\", "[===]"],       // sword forward
+                ["  o  ", "<+=|/", "   / \\", "  [===]"],       // sword pulled back
+                ["  o  ", " /|\\  +>", " / \\", "[===]"],       // mid-swing
+            ]
+        case .wizard:
+            return [
+                [" /\\", " /~~\\", "  o", " /|\\*", " / \\"],   // casting
+                [" /\\", " /~~\\", "  o", " /|\\  *", " / \\"], // spark out
+                [" /\\", " /~~\\", "  o", " /|\\✦", " / \\"],   // spell ready
+            ]
+        case .rogue:
+            return [
+                ["  o", " /|\\", " /|  >>", " / \\"],           // dagger ready
+                ["  o", " /|\\     >>", " /|", " / \\"],        // dagger thrown!
+                ["  o", " /|\\", " /|>>", " / \\"],             // caught it
+            ]
+        case .cleric:
+            return [
+                ["  +", "  o", " /|\\", " [+]", " / \\"],       // praying
+                ["  ✦", "  o", " /|\\", " [+]", " / \\"],       // blessing
+                ["  +", "  o", " \\|/", " [+]", " / \\"],       // arms wide
+            ]
+        case .ranger:
+            return [
+                ["  o", " /|\\", " )| \\>", " / \\"],           // aim
+                ["  o", " /|\\", " )|   --->", " / \\"],        // fire!
+                ["  o", " /|\\", " )|\\", " / \\"],              // reload
+            ]
+        case .barbarian:
+            return [
+                ["  o", " /|\\", "=||=", " /  \\"],             // ready
+                ["  o", "  |\\", "  || =>>", " /  \\"],         // swing!
+                ["  o", " /|", "<<= ||", "   /  \\"],           // backswing
             ]
         }
     }
@@ -556,9 +517,6 @@ class Character: ObservableObject, Identifiable, Codable {
         return ac
     }
 
-    var initiative: Int {
-        return abilityScores.modifier(for: .dexterity)
-    }
 
     func skillModifier(for skill: Skill) -> Int {
         let abilityMod = abilityScores.modifier(for: skill.ability)
@@ -657,6 +615,32 @@ class Character: ObservableObject, Identifiable, Codable {
 
     func canCarry(_ item: Item) -> Bool {
         currentWeight + item.weight <= carryCapacity && inventory.count < Character.maxInventorySlots
+    }
+
+    /// Recalculate maxHP based on current class and CON (for class/race changes)
+    func recalculateMaxHP() {
+        let conMod = abilityScores.modifier(for: .constitution)
+        let newMax = characterClass.startingHP + conMod
+        maxHP = max(1, newMax)
+        currentHP = maxHP
+    }
+
+    // MARK: - AI Control
+
+    /// Mark as computer-controlled and add "R." prefix (Asimov convention)
+    func markAsAI() {
+        isComputerControlled = true
+        if !name.hasPrefix("R. ") {
+            name = "R. " + name
+        }
+    }
+
+    /// Remove computer control and "R." prefix
+    func unmarkAsAI() {
+        isComputerControlled = false
+        if name.hasPrefix("R. ") {
+            name = String(name.dropFirst(3))
+        }
     }
 
     // MARK: - Inventory Management
@@ -789,8 +773,7 @@ class Character: ObservableObject, Identifiable, Codable {
         let bar = String(repeating: "═", count: w)
 
         lines.append("╔\(bar)╗")
-        let aiTag = isComputerControlled ? " [AI]" : ""
-        lines.append(row(" \(String(name.prefix(w - 2 - aiTag.count)))\(aiTag)"))
+        lines.append(row(" \(String(name.prefix(w - 2)))"))
         lines.append(row(" Lv\(level) \(race.rawValue) \(characterClass.rawValue)"))
         lines.append("╠\(bar)╣")
         lines.append(row(" HP: \(currentHP)/\(maxHP)  AC: \(armorClass)"))

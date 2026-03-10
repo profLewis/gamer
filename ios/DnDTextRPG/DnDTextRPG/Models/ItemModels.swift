@@ -59,15 +59,34 @@ struct Item: Codable, Identifiable, Equatable {
     let armorStats: ArmorStats?
     let potionStats: PotionStats?
 
+    /// Torch remaining life in minutes (nil = not a torch). Fresh torch = 720 (12 hours).
+    var torchLife: Int?
+
+    static let torchFullLife = 720  // 12 hours in minutes
+
+    var isTorch: Bool { name.lowercased().contains("torch") }
+
+    /// Human-readable torch life remaining
+    var torchLifeDescription: String? {
+        guard let life = torchLife else { return nil }
+        let hours = life / 60
+        let mins = life % 60
+        if hours > 0 && mins > 0 { return "\(hours)h \(mins)m" }
+        if hours > 0 { return "\(hours)h" }
+        return "\(mins)m"
+    }
+
     static func == (lhs: Item, rhs: Item) -> Bool {
         lhs.id == rhs.id
     }
 
     /// Create a fresh copy with a new UUID
     func newInstance() -> Item {
-        Item(id: UUID(), name: name, description: description, type: type,
+        var copy = Item(id: UUID(), name: name, description: description, type: type,
              weight: weight, value: value, weaponStats: weaponStats,
              armorStats: armorStats, potionStats: potionStats)
+        copy.torchLife = torchLife
+        return copy
     }
 }
 
@@ -207,12 +226,21 @@ struct ItemCatalog {
              potionStats: PotionStats(healAmount: "4d4+4", effect: "Restores 4d4+4 HP"))
     }
 
+    static func antidote() -> Item {
+        Item(id: UUID(), name: "Antidote", description: "Cures poison instantly. Herbalists and clerics make the best use of these.",
+             type: .potion, weight: 0.2, value: 30,
+             weaponStats: nil, armorStats: nil,
+             potionStats: PotionStats(healAmount: "0", effect: "Cures poison"))
+    }
+
     // MARK: Misc
 
     static func torch() -> Item {
-        Item(id: UUID(), name: "Torch", description: "Provides light for 1 hour.",
+        var t = Item(id: UUID(), name: "Torch", description: "Burns for about 12 hours.",
              type: .misc, weight: 1.0, value: 1,
              weaponStats: nil, armorStats: nil, potionStats: nil)
+        t.torchLife = Item.torchFullLife
+        return t
     }
 
     static func rope() -> Item {
@@ -245,34 +273,34 @@ struct ItemCatalog {
         switch characterClass {
         case .fighter:
             return [
-                ("Longsword + Chain Mail + Shield", [longsword(), chainMail(), shield(), healingPotion()]),
-                ("Greataxe + Chain Mail", [greataxe(), chainMail(), healingPotion(), healingPotion()]),
-                ("Two Handaxes + Scale Mail + Shield", [handaxe(), handaxe(), scaleMail(), shield(), healingPotion()]),
+                ("Longsword + Chain Mail + Shield", [longsword(), chainMail(), shield(), healingPotion(), torch()]),
+                ("Greataxe + Chain Mail", [greataxe(), chainMail(), healingPotion(), healingPotion(), torch()]),
+                ("Two Handaxes + Scale Mail + Shield", [handaxe(), handaxe(), scaleMail(), shield(), healingPotion(), torch()]),
             ]
         case .wizard:
             return [
-                ("Quarterstaff + Spell Components", [quarterstaff(), spellComponentPouch(), dagger(), healingPotion()]),
-                ("Dagger + Spell Components + Extra Potions", [dagger(), spellComponentPouch(), healingPotion(), healingPotion()]),
+                ("Quarterstaff + Spell Components", [quarterstaff(), spellComponentPouch(), dagger(), healingPotion(), torch()]),
+                ("Dagger + Spell Components + Extra Potions", [dagger(), spellComponentPouch(), healingPotion(), healingPotion(), torch()]),
             ]
         case .rogue:
             return [
-                ("Rapier + Leather Armour + Thieves' Tools", [rapier(), leatherArmor(), thievesTools(), dagger(), healingPotion()]),
-                ("Two Shortswords + Studded Leather", [shortsword(), shortsword(), studdedLeather(), thievesTools(), healingPotion()]),
+                ("Rapier + Leather Armour + Thieves' Tools", [rapier(), leatherArmor(), thievesTools(), dagger(), healingPotion(), torch()]),
+                ("Two Shortswords + Studded Leather", [shortsword(), shortsword(), studdedLeather(), thievesTools(), healingPotion(), torch()]),
             ]
         case .cleric:
             return [
-                ("Mace + Scale Mail + Shield + Holy Symbol", [mace(), scaleMail(), shield(), holySymbol(), healingPotion()]),
-                ("Mace + Chain Mail + Holy Symbol", [mace(), chainMail(), holySymbol(), healingPotion(), healingPotion()]),
+                ("Mace + Scale Mail + Shield + Holy Symbol", [mace(), scaleMail(), shield(), holySymbol(), healingPotion(), torch()]),
+                ("Mace + Chain Mail + Holy Symbol", [mace(), chainMail(), holySymbol(), healingPotion(), healingPotion(), torch()]),
             ]
         case .ranger:
             return [
-                ("Longbow + Studded Leather + Shortsword", [longbow(), studdedLeather(), shortsword(), healingPotion()]),
-                ("Two Shortswords + Scale Mail", [shortsword(), shortsword(), scaleMail(), healingPotion()]),
+                ("Longbow + Studded Leather + Shortsword", [longbow(), studdedLeather(), shortsword(), healingPotion(), torch()]),
+                ("Two Shortswords + Scale Mail", [shortsword(), shortsword(), scaleMail(), healingPotion(), torch()]),
             ]
         case .barbarian:
             return [
-                ("Greataxe + Two Handaxes", [greataxe(), handaxe(), handaxe(), healingPotion(), healingPotion()]),
-                ("Two Handaxes + Leather Armor", [handaxe(), handaxe(), leatherArmor(), healingPotion(), healingPotion()]),
+                ("Greataxe + Two Handaxes", [greataxe(), handaxe(), handaxe(), healingPotion(), healingPotion(), torch()]),
+                ("Two Handaxes + Leather Armor", [handaxe(), handaxe(), leatherArmor(), healingPotion(), healingPotion(), torch()]),
             ]
         }
     }
@@ -285,6 +313,7 @@ struct ItemCatalog {
         // Always available
         stock.append(healingPotion())
         stock.append(healingPotion())
+        stock.append(antidote())
         stock.append(torch())
         stock.append(rope())
         stock.append(dagger())

@@ -11,16 +11,18 @@ import SwiftUI
 
 struct TerminalLine: Identifiable {
     let id = UUID()
-    let text: String
+    var text: String
     let color: TerminalColor
     let isBold: Bool
     let fontSize: CGFloat
+    let isCentered: Bool
 
-    init(_ text: String, color: TerminalColor = .green, bold: Bool = false, size: CGFloat = 14) {
+    init(_ text: String, color: TerminalColor = .green, bold: Bool = false, size: CGFloat = 14, centered: Bool = false) {
         self.text = text
         self.color = color
         self.isBold = bold
         self.fontSize = size
+        self.isCentered = centered
     }
 }
 
@@ -34,6 +36,7 @@ enum TerminalColor {
     case magenta
     case white
     case gray
+    case orange
 
     var swiftUIColor: Color {
         switch self {
@@ -55,22 +58,38 @@ enum TerminalColor {
             return Color.white
         case .gray:
             return Color(red: 0.5, green: 0.5, blue: 0.5)
+        case .orange:
+            return Color(red: 1.0, green: 0.6, blue: 0.2)
         }
     }
 }
 
 // MARK: - Menu Option
 
+enum MenuTint {
+    case normal      // Bright green — action buttons (attack, equip, search, etc.)
+    case navigation  // Dim green — Done, back, close buttons
+    case cyan        // Cyan — chat, multiplayer / remote actions
+    case amber       // Amber — other character's pack, secondary actions
+    case danger      // Red — destructive actions (delete, clear, quit)
+}
+
 struct MenuOption: Identifiable {
     let id = UUID()
     let text: String
     let isDefault: Bool
     let isDisabled: Bool
+    let isAlert: Bool  // Flashing red button for urgent actions (e.g. multiplayer invite)
+    let tint: MenuTint
 
-    init(_ text: String, isDefault: Bool = false, isDisabled: Bool = false) {
-        self.text = text
+    static let maxButtonLength = 20
+
+    init(_ text: String, isDefault: Bool = false, isDisabled: Bool = false, isAlert: Bool = false, tint: MenuTint = .normal) {
+        self.text = text.count > Self.maxButtonLength ? String(text.prefix(Self.maxButtonLength - 1)) + "…" : text
         self.isDefault = isDefault
         self.isDisabled = isDisabled
+        self.isAlert = isAlert
+        self.tint = tint
     }
 }
 

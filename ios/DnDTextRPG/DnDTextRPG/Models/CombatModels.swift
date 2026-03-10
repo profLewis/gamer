@@ -14,8 +14,8 @@ struct Monster: Identifiable, Codable {
     let name: String
     let type: MonsterType
     var currentHP: Int
-    let maxHP: Int
-    let armorClass: Int
+    var maxHP: Int
+    var armorClass: Int
     let attackBonus: Int
     let damage: String
     let challengeRating: Double
@@ -522,11 +522,11 @@ enum MonsterType: String, CaseIterable, Codable {
             ]
         case .youngDragon:
             return [
-                "    /\\/\\",
-                "   ( oo )",
-                "  _/|><|\\_ ",
-                " /  /  \\  \\",
-                "   (=)(=)",
+                "   /\\_/\\  __",
+                "  / o o \\/  \\",
+                "  \\ >><  \\--/",
+                " /|/    \\|\\",
+                " d d    d d~~",
             ]
         case .vecna:
             return [
@@ -535,6 +535,192 @@ enum MonsterType: String, CaseIterable, Codable {
                 "  | /===\\ |",
                 "  /| /#\\ |\\",
                 " / |/   \\| \\",
+            ]
+        }
+    }
+
+    /// Animation frames for bestiary idle animations (eyes, tails, limbs)
+    var asciiArtFrames: [[String]] {
+        switch self {
+        case .giantRat:
+            return [
+                ["      /\\  /\\", "     (  ..  )", "      )    (", "     /||||||\\", "    ~ ~~~~~  ~"],
+                ["      /\\  /\\", "     (  oo  )", "      )    (", "     /||||||\\", "    ~  ~~~~~ ~"],
+                ["      /\\  /\\", "     ( ..   )", "      )    (", "     /||||||\\", "    ~ ~~~~~  ~"],
+            ]
+        case .kobold:
+            return [
+                ["     /\\", "    (><)", "    /|\\", "   / | \\", "     A"],
+                ["     /\\", "    (>< )", "    /|\\", "   / | \\", "    A"],
+                ["     /\\", "    ( ><)", "    /|\\", "   / | \\", "     A"],
+            ]
+        case .stirge:
+            return [
+                ["    _/\\_", "   / () \\", "   \\    /", "    |--|", "     \\/"],
+                ["   _/ \\_", "  /  () \\", "   \\    /", "    |--|", "     \\/"],
+                ["    _/\\_", "   / () \\", "   \\    /", "    |--|", "     \\/"],
+            ]
+        case .giantBat:
+            return [
+                ["  _/    \\_", " / \\(oo)/ \\", "/   \\  /   \\", "     \\/"],
+                [" _/      \\_", "/  \\(oo)/  \\", "    \\  /", "     \\/"],
+                ["  _/    \\_", " / \\(oo)/ \\", "/   \\  /   \\", "     \\/"],
+            ]
+        case .crawlingClaw:
+            return [
+                ["    ___", "   /   \\", "  | === |", "   \\|||/", "    \\|/"],
+                ["    ___", "   /   \\", "  | === |", "   \\|||/", "     |/"],
+                ["    ___", "   /   \\", "  | === |", "   \\|||/", "    \\|"],
+            ]
+        case .goblin:
+            return [
+                ["    /\\", "   (oo)", "  _/||\\_", " / /||  \\", "   /  \\"],
+                ["    /\\", "   (oO)", "  _/||\\_", " / /||  \\", "   /  \\"],
+                ["    /\\", "   (Oo)", "  _/||\\_", " / /||  \\", "  /  \\"],
+            ]
+        case .skeleton:
+            return [
+                ["    .-..", "   (o o)", "   | O |", "   /| |\\", "   d| |b"],
+                ["    .-..", "   ( oo)", "   | O |", "   /| |\\", "   d| |b"],
+                ["    .-..", "   (oo )", "   | O |", "   /| |\\", "   d| |b"],
+            ]
+        case .zombie:
+            return [
+                ["   _____", "  /x   x\\", "  | ~~~ |", "  /|   |\\", "   |___|"],
+                ["   _____", "  /x   x\\", "  | ~~~ |", " /|    |\\", "   |___|"],
+                ["   _____", "  / x  x\\", "  | ~~~ |", "  /|   |\\", "   |___|"],
+            ]
+        case .wolf:
+            return [
+                ["   /\\_/\\", "  ( o.o )", "   > ^ <", "  /|   |\\", "  _/   \\_"],
+                ["   /\\_/\\", "  ( o.o )", "   > ^ <", "  /|   |\\", " _/    \\_"],
+                ["   /\\_/\\", "  ( O.O )", "   > ^ <", "  /|   |\\", "  _/   \\_"],
+            ]
+        case .orc:
+            return [
+                ["   ___", "  /o_o\\", "  \\VVV/", "  /| |\\", "  d| |b"],
+                ["   ___", "  /O_o\\", "  \\VVV/", "  /| |\\", "  d| |b"],
+                ["   ___", "  /o_O\\", "  \\VVV/", "  /| |\\", "  d| |b"],
+            ]
+        case .hobgoblin:
+            return [
+                ["  [===]", "  |o_o|", "  /|#|\\", " /=| |=\\", "   d b"],
+                ["  [===]", "  |o_O|", "  /|#|\\", " /=| |=\\", "   d b"],
+                ["  [===]", "  |O_o|", "  /|#|\\", " /=| |=\\", "   d b"],
+            ]
+        case .giantSpider:
+            return [
+                [" \\ |o o| /", "  \\(   )/", "  /(   )\\", " / |___| \\"],
+                ["  \\|o o|/", "  \\(   )/", "  /(   )\\", "  /|___| \\"],
+                [" \\ |o o| /", "  \\(   )/", "  /(   )\\", " / |___| \\"],
+            ]
+        case .gnoll:
+            return [
+                ["    /V\\", "   (o o)", "  --|~|--", "   /| |\\", "   d| |b"],
+                ["    /V\\", "   (o.o)", "  --|~|--", "   /| |\\", "   d| |b"],
+                ["    /V\\", "   (O o)", "  --|~|--", "   /| |\\", "   d| |b"],
+            ]
+        case .rustMonster:
+            return [
+                ["    /\\  /\\", "   (  ==  )", "  /|~~~~~~|\\", "   |  ()  |", "   d d  d d"],
+                ["    /\\  /\\", "   (  ==  )", "  /|~~~~~~|\\", "   |  ()  |", "  d d    d d"],
+                ["    /\\  /\\", "   ( ==   )", "  /|~~~~~~|\\", "   |  ()  |", "   d d  d d"],
+            ]
+        case .bugbear:
+            return [
+                ["   (\\=/)", "   (o.o)", "  //| |\\\\", " // | | \\\\", "    d b"],
+                ["   (\\=/)", "   (O.o)", "  //| |\\\\", " // | | \\\\", "    d b"],
+                ["   (\\=/)", "   (o.O)", "  //| |\\\\", " // | | \\\\", "   d   b"],
+            ]
+        case .ogre:
+            return [
+                ["   .-\"\"-.", "  / O  O \\", "  |  __  |", "  /|/  \\|\\", " / |    | \\"],
+                ["   .-\"\"-.", "  /  O O  \\", "  |  __  |", "  /|/  \\|\\", " / |    | \\"],
+                ["   .-\"\"-.", "  / O  O \\", "  |  __  |", " /|/  \\|\\", "  / |    | \\"],
+            ]
+        case .gargoyle:
+            return [
+                ["   _/|\\_", "  / o  o \\", "  | \\VV/ |", " _/| || |\\_", " V  |/\\|  V"],
+                ["   _/|\\_", "  / O  o \\", "  | \\VV/ |", " _/| || |\\_", " V  |/\\|  V"],
+                ["   _/|\\_", "  / o  O \\", "  | \\VV/ |", " _/| || |\\_", " V  |/\\|  V"],
+            ]
+        case .mimic:
+            return [
+                ["  .-------.", " / ~ ~~ ~ \\", " | |@  @| |", " | |VVVV| |", "  \\_______/"],
+                ["  .-------.", " / ~ ~~ ~ \\", " | |@  @| |", " | | VV | |", "  \\_______/"],
+                ["  .------.", " /~ ~~ ~ ~\\", " | |@  @| |", " | |VVVV| |", "  \\_______/"],
+            ]
+        case .gelatinousCube:
+            return [
+                ["  .-------.", "  | .   . |", "  |  ; ;  |", "  | .   . |", "  '-------'"],
+                ["  .-------.", "  |  .  . |", "  | ;   ; |", "  |  . .  |", "  '-------'"],
+                ["  .-------.", "  | .  .  |", "  |  ;  ; |", "  | .   . |", "  '-------'"],
+            ]
+        case .owlbear:
+            return [
+                ["   /\\'v'/\\", "  ( o   o )", "  /|  ^  |\\", " / | /|\\ | \\", "   |/   \\|"],
+                ["   /\\'v'/\\", "  (  o  o )", "  /|  ^  |\\", " / | /|\\ | \\", "   |/   \\|"],
+                ["   /\\'v'/\\", "  ( o  o  )", "  /|  ^  |\\", " / | /|\\ | \\", "   |/   \\|"],
+            ]
+        case .troll:
+            return [
+                ["     /|", "   (x x)", "   /| |\\", "  / | | \\", " /  | |  \\"],
+                ["     /|", "   (X x)", "   /| |\\", "  / | | \\", " /  | |  \\"],
+                ["     /|", "   (x X)", "   /| |\\", "  / | |  \\", " /  | | \\"],
+            ]
+        case .minotaur:
+            return [
+                ["   (\\   /)", "    \\o_o/", "   --|+|--", "   /|| ||\\", "   d|   |b"],
+                ["   (\\   /)", "    \\O_o/", "   --|+|--", "   /|| ||\\", "   d|   |b"],
+                ["   (\\   /)", "    \\o_O/", "  ---|+|--", "   /|| ||\\", "   d|   |b"],
+            ]
+        case .basilisk:
+            return [
+                ["   ___/\\", "  (o  o >", "  /\\~~~~\\", " / /||||  \\", " d d    d d"],
+                ["   ___/\\", "  (O  o >", "  /\\~~~~\\", " / /||||  \\", "  d d  d d"],
+                ["   ___/\\", "  (o  O >", "  /\\~~~~\\", " / /||||  \\", " d d    d d"],
+            ]
+        case .displacerBeast:
+            return [
+                ["    /\\_/\\", "   ( o.o )", "  ~/|   |\\~", " / /|   |\\ \\", "  d d   d d"],
+                ["    /\\_/\\", "   ( O.o )", " ~/|    |\\~", " / /|   |\\ \\", "  d d   d d"],
+                ["    /\\_/\\", "   ( o.O )", "  ~/|   |\\~", " / /|   |\\ \\", " d d     d d"],
+            ]
+        case .wraith:
+            return [
+                ["   .oOOo.", "  ( O  O )", "   \\~~~~/ ", "   /|  |\\", "  ~ ~  ~ ~"],
+                ["   .oOOo.", "  (  O O  )", "   \\~~~~/ ", "   /|  |\\", "  ~  ~ ~  ~"],
+                ["   .oOOo.", "  ( O  O )", "   \\~~~~/ ", "  /|    |\\", "  ~ ~  ~ ~"],
+            ]
+        case .demogorgon:
+            return [
+                ["   \\|/|\\|/", "    \\|||/", "   (     )", "   /|   |\\", "  / |   | \\"],
+                ["   \\|/|\\|/", "    \\|||/", "   (     )", "   /|   |\\", "  / |   | \\"],
+                ["    |/|\\|/", "    \\|||/", "   (     )", "  /|    |\\", "  / |   | \\"],
+            ]
+        case .mindFlayer:
+            return [
+                ["    .-\"\"\"-.  ", "   ( o   o )", "    \\|||||/", "   /||   ||\\", "    /|   |\\"],
+                ["    .-\"\"\"-.  ", "   (  o  o )", "    \\|||||/", "   /||   ||\\", "    /|   |\\"],
+                ["    .-\"\"\"-.  ", "   ( o  o  )", "    \\|||||/", "   /||   ||\\", "    /|   |\\"],
+            ]
+        case .beholder:
+            return [
+                ["  \\~ ~|~ ~/", "   .-----.", "  ( ( O ) )", "   '-----'", "  /~ ~|~ ~\\"],
+                ["  \\~ ~|~ ~/", "   .-----.", "  (( O )  )", "   '-----'", "  /~ ~|~ ~\\"],
+                ["  \\~~| ~~/ ", "   .-----.", "  (  ( O ))", "   '-----'", "  /~ ~|~ ~\\"],
+            ]
+        case .youngDragon:
+            return [
+                ["   /\\_/\\  __", "  / o o \\/  \\", "  \\ >><  \\--/", " /|/    \\|\\", " d d    d d~~"],
+                ["   /\\_/\\  __", "  / O o \\/  \\", "  \\ >><  \\--/", " /|/    \\|\\", " d d    d d ~"],
+                ["   /\\_/\\  __", "  / o O \\/  \\", "  \\ >><  \\--/", " /|/    \\|\\", " d d    d d~~"],
+            ]
+        case .vecna:
+            return [
+                ["   .--VVV--.", "  / (X) (o) \\", "  | /===\\ |", "  /| /#\\ |\\", " / |/   \\| \\"],
+                ["   .--VVV--.", "  / (X) (O) \\", "  | /===\\ |", "  /| /#\\ |\\", " / |/   \\| \\"],
+                ["   .--VVV--.", "  / (X) (o) \\", "  | /===\\ |", " /| /#\\ |\\", "  / |/   \\| \\"],
             ]
         }
     }
@@ -579,8 +765,11 @@ enum MonsterType: String, CaseIterable, Codable {
         case .giantRat, .stirge, .giantBat, .crawlingClaw:
             if roll >= 18 { return TreasureItem(name: "Dagger", value: 2, type: .item) }
             if roll >= 15 { return TreasureItem(name: "\(Dice.d6() * 2) Gold Pieces", value: Dice.d6() * 2, type: .gold) }
+            // Poisonous creatures sometimes drop antidotes (from their own resistance)
+            if canPoison && roll >= 12 { return TreasureItem(name: "Antidote", value: 30, type: .potion) }
             return nil
         case .kobold:
+            if roll >= 18 { return TreasureItem(name: "Antidote", value: 30, type: .potion) }
             if roll >= 16 { return TreasureItem(name: "Shortsword", value: 10, type: .item) }
             if roll >= 12 { return TreasureItem(name: "\(Dice.d6() * 3) Gold Pieces", value: Dice.d6() * 3, type: .gold) }
             return nil
@@ -599,6 +788,7 @@ enum MonsterType: String, CaseIterable, Codable {
         // High — good drops
         case .bugbear, .giantSpider, .ogre, .gargoyle, .mimic, .gelatinousCube:
             if roll >= 15 { return TreasureItem(name: "Potion of Greater Healing", value: 150, type: .potion) }
+            if canPoison && roll >= 13 { return TreasureItem(name: "Antidote", value: 30, type: .potion) }
             if roll >= 12 { return TreasureItem(name: "Scale Mail", value: 50, type: .item) }
             if roll >= 7 { return TreasureItem(name: "\(Dice.rollSum(4, d: 6) * 10) Gold Pieces", value: Dice.rollSum(4, d: 6) * 10, type: .gold) }
             return nil
@@ -631,6 +821,24 @@ enum EncounterDifficulty: String, Codable {
 struct Encounter: Codable {
     var monsters: [Monster]
     let difficulty: EncounterDifficulty
+
+    /// Adjust monster ACs so the party hits roughly 65% of the time (medium).
+    /// Easy = 75%, Medium = 65%, Hard = 55%, Deadly = 50%.
+    mutating func balanceAC(partyAvgAttackBonus: Int) {
+        let targetRoll: Int
+        switch difficulty {
+        case .easy:   targetRoll = 6   // 75% hit
+        case .medium: targetRoll = 8   // 65% hit
+        case .hard:   targetRoll = 10  // 55% hit
+        case .deadly: targetRoll = 11  // 50% hit
+        }
+        let idealAC = targetRoll + partyAvgAttackBonus
+        for i in monsters.indices {
+            let baseAC = monsters[i].type.stats.ac
+            // Don't deviate more than ±3 from base stats
+            monsters[i].armorClass = max(baseAC - 3, min(baseAC + 3, idealAC))
+        }
+    }
     var bossDifficulty: BossDifficulty? = nil
 
     var isDefeated: Bool {
@@ -791,21 +999,28 @@ struct AttackReport {
 
 // MARK: - Combat State
 
-enum CombatState {
+enum CombatState: String, Codable {
     case ongoing
     case victory
     case defeat
 }
 
-class Combat: ObservableObject {
+struct TurnOrderEntry: Codable, Equatable {
+    let id: UUID
+    let name: String
+    let isPlayer: Bool
+    let initiative: Int
+}
+
+final class Combat: ObservableObject {
     @Published var party: [Character]
     @Published var encounter: Encounter
-    @Published var turnOrder: [(id: UUID, name: String, isPlayer: Bool, initiative: Int)]
+    @Published var turnOrder: [TurnOrderEntry]
     @Published var currentTurnIndex: Int
     @Published var state: CombatState
     @Published var combatLog: [String]
 
-    var currentCombatant: (id: UUID, name: String, isPlayer: Bool, initiative: Int)? {
+    var currentCombatant: TurnOrderEntry? {
         guard currentTurnIndex >= 0 && currentTurnIndex < turnOrder.count else { return nil }
         return turnOrder[currentTurnIndex]
     }
@@ -822,18 +1037,18 @@ class Combat: ObservableObject {
     }
 
     private func rollInitiative() {
-        var initiatives: [(id: UUID, name: String, isPlayer: Bool, initiative: Int)] = []
+        var initiatives: [TurnOrderEntry] = []
 
         // Roll for party
         for char in party {
             let initiative = Dice.rollInitiative(dexModifier: char.abilityScores.modifier(for: .dexterity))
-            initiatives.append((id: char.id, name: char.name, isPlayer: true, initiative: initiative))
+            initiatives.append(TurnOrderEntry(id: char.id, name: char.name, isPlayer: true, initiative: initiative))
         }
 
         // Roll for monsters
         for monster in encounter.monsters {
             let initiative = Dice.d20() + 1  // Simplified monster initiative
-            initiatives.append((id: monster.id, name: monster.name, isPlayer: false, initiative: initiative))
+            initiatives.append(TurnOrderEntry(id: monster.id, name: monster.name, isPlayer: false, initiative: initiative))
         }
 
         // Sort by initiative (descending)
@@ -857,7 +1072,7 @@ class Combat: ObservableObject {
         checkCombatEnd()
     }
 
-    private func isCombatantAlive(_ combatant: (id: UUID, name: String, isPlayer: Bool, initiative: Int)) -> Bool {
+    private func isCombatantAlive(_ combatant: TurnOrderEntry) -> Bool {
         if combatant.isPlayer {
             guard let char = party.first(where: { $0.id == combatant.id }) else { return false }
             // Alive if conscious, or unconscious but still making death saves
@@ -881,7 +1096,7 @@ class Combat: ObservableObject {
         }
     }
 
-    func playerAttack(characterId: UUID, targetId: UUID) -> AttackReport? {
+    func playerAttack(characterId: UUID, targetId: UUID, disadvantage: Bool = false) -> AttackReport? {
         guard let character = party.first(where: { $0.id == characterId }),
               let monsterIndex = encounter.monsters.firstIndex(where: { $0.id == targetId }) else {
             return nil
@@ -904,7 +1119,7 @@ class Combat: ObservableObject {
         }
 
         let attackMod = attackAbilityMod + profBonus
-        let attack = Dice.attackRoll(modifier: attackMod, targetAC: monster.armorClass)
+        let attack = Dice.attackRoll(modifier: attackMod, targetAC: monster.armorClass, disadvantage: disadvantage)
 
         let abilityLabel = (weaponStats?.isRanged == true) ? "DEX" : (weaponStats?.isFinesse == true && dexMod > strMod) ? "DEX" : "STR"
         let breakdown = "\(abilityLabel) \(attackAbilityMod >= 0 ? "+" : "")\(attackAbilityMod), Prof +\(profBonus)"
@@ -1327,10 +1542,9 @@ class Combat: ObservableObject {
                 s = char.isComputerControlled ? "◆" : "●"  // ◆ = AI, ● = human
             }
             let n = String(char.name.prefix(16)).padding(toLength: maxPartyName, withPad: " ", startingAt: 0)
-            let aiTag = char.isComputerControlled ? " [AI]" : ""
             let statusTag = char.hasFledCombat ? " [fled]" : (char.isPlayingDead ? " [playing dead]" : "")
             let hp = String("\(char.currentHP)/\(char.maxHP)").padding(toLength: 7, withPad: " ", startingAt: 0)
-            lines.append(" \(s) \(n)  \(hp)\(statusTag)\(aiTag)")
+            lines.append(" \(s) \(n)  \(hp)\(statusTag)")
         }
 
         lines.append("")
@@ -1346,5 +1560,39 @@ class Combat: ObservableObject {
         lines.append("──────────────────")
 
         return lines
+    }
+}
+
+// MARK: - Combat Codable
+
+extension Combat: Codable {
+    enum CodingKeys: String, CodingKey {
+        case encounter, turnOrder, currentTurnIndex, state, combatLog, partyCharacterIds
+    }
+
+    convenience init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let encounter = try container.decode(Encounter.self, forKey: .encounter)
+        self.init(party: [], encounter: encounter)
+        self.turnOrder = try container.decode([TurnOrderEntry].self, forKey: .turnOrder)
+        self.currentTurnIndex = try container.decode(Int.self, forKey: .currentTurnIndex)
+        self.state = try container.decode(CombatState.self, forKey: .state)
+        self.combatLog = try container.decode([String].self, forKey: .combatLog)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(encounter, forKey: .encounter)
+        try container.encode(turnOrder, forKey: .turnOrder)
+        try container.encode(currentTurnIndex, forKey: .currentTurnIndex)
+        try container.encode(state, forKey: .state)
+        try container.encode(combatLog, forKey: .combatLog)
+        let ids = party.map { $0.id }
+        try container.encode(ids, forKey: .partyCharacterIds)
+    }
+
+    /// Re-link party references after decoding from match data
+    func relinkParty(_ fullParty: [Character]) {
+        self.party = fullParty
     }
 }
