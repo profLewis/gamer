@@ -81,10 +81,10 @@ struct TerminalView: View {
                                     }
                                 }
                                 // Animated GIF (e.g. main menu dragon)
-                                if gameEngine.showDragonGif {
+                                if let gifName = gameEngine.dragonGifName {
                                     HStack {
                                         Spacer()
-                                        AnimatedGIFView(gifName: "dragon_animation")
+                                        AnimatedGIFView(gifName: gifName)
                                             .frame(width: 280 * scale, height: 186 * scale)
                                             .offset(x: -6 * scale) // Centre the dragon's head, not the image
                                         Spacer()
@@ -106,8 +106,10 @@ struct TerminalView: View {
                             }
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
+                            .opacity(gameEngine.textFlashOpacity)
+                            .animation(.easeInOut(duration: 0.12), value: gameEngine.textFlashOpacity)
                         }
-                        .scrollDisabled(gameEngine.suppressAutoScroll)
+                        .scrollDisabled(gameEngine.scrollLocked)
                         .onChange(of: gameEngine.terminalLines.count) { _ in
                             guard !gameEngine.suppressAutoScroll else { return }
                             scrollToBottom(scrollProxy)

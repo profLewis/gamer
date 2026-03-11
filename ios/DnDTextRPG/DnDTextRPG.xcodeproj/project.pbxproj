@@ -37,6 +37,8 @@
 		AA00000000000000000004 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000003 /* Localizable.xcstrings */; };
 		BB00000000000000000002 /* GameKeyboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000000000000000001 /* GameKeyboardView.swift */; };
 		CC00000000000000000002 /* dragon_animation.gif in Resources */ = {isa = PBXBuildFile; fileRef = CC00000000000000000001 /* dragon_animation.gif */; };
+		DD00000000000000000002 /* dragon_castle.gif in Resources */ = {isa = PBXBuildFile; fileRef = DD00000000000000000001 /* dragon_castle.gif */; };
+		EE00000000000000000002 /* dragon_flapping.gif in Resources */ = {isa = PBXBuildFile; fileRef = EE00000000000000000001 /* dragon_flapping.gif */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -72,6 +74,8 @@
 		AA00000000000000000003 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		BB00000000000000000001 /* GameKeyboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameKeyboardView.swift; sourceTree = "<group>"; };
 		CC00000000000000000001 /* dragon_animation.gif */ = {isa = PBXFileReference; lastKnownFileType = image.gif; path = dragon_animation.gif; sourceTree = "<group>"; };
+		DD00000000000000000001 /* dragon_castle.gif */ = {isa = PBXFileReference; lastKnownFileType = image.gif; path = dragon_castle.gif; sourceTree = "<group>"; };
+		EE00000000000000000001 /* dragon_flapping.gif */ = {isa = PBXFileReference; lastKnownFileType = image.gif; path = dragon_flapping.gif; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -106,6 +110,8 @@
 				111 /* PrivacyInfo.xcprivacy */,
 				AA00000000000000000003 /* Localizable.xcstrings */,
 				CC00000000000000000001 /* dragon_animation.gif */,
+				DD00000000000000000001 /* dragon_castle.gif */,
+				EE00000000000000000001 /* dragon_flapping.gif */,
 			);
 			path = DnDTextRPG;
 			sourceTree = "<group>";
@@ -233,6 +239,8 @@
 				011 /* PrivacyInfo.xcprivacy in Resources */,
 				AA00000000000000000004 /* Localizable.xcstrings in Resources */,
 				CC00000000000000000002 /* dragon_animation.gif in Resources */,
+				DD00000000000000000002 /* dragon_castle.gif in Resources */,
+				EE00000000000000000002 /* dragon_flapping.gif in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

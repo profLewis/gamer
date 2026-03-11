@@ -23,12 +23,15 @@ class GameEngine: ObservableObject {
     /// Set to a 1-based menu index to animate a button press (e.g. from voice input)
     @Published var pressedMenuIndex: Int?
     @Published var menuImageName: String? = nil
-    /// Show the animated dragon GIF on the main menu
-    @Published var showDragonGif: Bool = false
+    /// Name of the dragon GIF to show (nil = hidden)
+    @Published var dragonGifName: String? = nil
     @Published var awaitingTextInput: Bool = false
     @Published var awaitingContinue: Bool = false
     @Published var chatInputMode: Bool = false
     @Published var isHoldingScreen: Bool = false
+
+    /// Brief dim-then-restore pulse for text content (e.g. re-pressing a help button)
+    @Published var textFlashOpacity: CGFloat = 1.0
 
     /// When set, TerminalView shows an icon bar (close + optional mic/chat-focus)
     @Published var closeHandler: (() -> Void)?
@@ -39,8 +42,10 @@ class GameEngine: ObservableObject {
     /// Card navigation style: true = arrow buttons, false = swipe gesture only
     @Published var useArrowNavigation: Bool = UserDefaults.standard.object(forKey: "useArrowNavigation") == nil ? false : UserDefaults.standard.bool(forKey: "useArrowNavigation")
 
-    /// Suppress auto-scroll-to-bottom (for card views where top content matters)
+    /// Suppress auto-scroll-to-bottom (for help/card views where top content matters)
     @Published var suppressAutoScroll: Bool = false
+    /// Lock scrolling entirely (for card views with swipe navigation)
+    @Published var scrollLocked: Bool = false
 
     /// Swipe left/right handlers for top-trump card navigation
     var swipeLeftHandler: (() -> Void)?
@@ -447,12 +452,13 @@ class GameEngine: ObservableObject {
         closeHandler = nil
         rerollHandler = nil
         suppressAutoScroll = false
+        scrollLocked = false
         swipeLeftHandler = nil
         swipeRightHandler = nil
         swipeRandomHandler = nil
         cardPositionLabel = nil
         menuImageName = nil
-        showDragonGif = false
+        dragonGifName = nil
         speakerHasReadCurrentPage = false
         DispatchQueue.main.async {
             self.terminalLines.removeAll()
@@ -1754,13 +1760,15 @@ class GameEngine: ObservableObject {
     private func renderMainMenu() {
         clearTerminal()
         stopMenuAnimation()
+        print("")
+        print("")
         print("D&D 5e ASCII Adventure", color: .brightGreen, bold: true, centered: true)
         print("A text-based role-playing game", color: .dimGreen, centered: true)
         print("")
 
-        // Dragon mascot — animated GIF
+        // Dragon mascot — animated GIF (positioned ~1/3 down screen)
         DispatchQueue.main.async {
-            self.showDragonGif = true
+            self.dragonGifName = "dragon_castle"
         }
         print("")
 
@@ -2013,6 +2021,7 @@ class GameEngine: ObservableObject {
 
     private func showPlayHelp() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Play Menu Help")
         print("")
         print("  NEW ADVENTURE", color: .cyan, bold: true)
@@ -2146,8 +2155,22 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Track which help topic is currently displayed (for re-press flash)
+    private var currentHelpTopic: Int = -1
+
+    /// Dim-then-restore pulse on the text area
+    func flashText() {
+        DispatchQueue.main.async {
+            self.textFlashOpacity = 0.3
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                self.textFlashOpacity = 1.0
+            }
+        }
+    }
+
     func showHowToPlay() {
         clearTerminal()
+        currentHelpTopic = -1
         printTitle("How to Play")
         printWrapped("Navigate with buttons, type commands at the > prompt, or tap the mic to speak. Swipe left to go back from any screen.", indent: 2, color: .dimGreen)
         print("")
@@ -2167,11 +2190,18 @@ class GameEngine: ObservableObject {
 
         showPaginatedMenu(helpTopics) { [weak self] idx in
             guard let self = self, idx >= 0 && idx < helpActions.count else { return }
+            if idx == self.currentHelpTopic {
+                // Same topic re-pressed — flash the text as feedback
+                self.flashText()
+                return
+            }
+            self.currentHelpTopic = idx
             helpActions[idx](self)
         }
 
         closeHandler = { [weak self] in
             self?.closeHandler = nil
+            self?.currentHelpTopic = -1
             self?.showMainMenu()
         }
     }
@@ -2180,6 +2210,7 @@ class GameEngine: ObservableObject {
 
     private func showHelpGettingStarted() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Getting Started")
 
         print("CREATE YOUR PARTY", color: .cyan, bold: true)
@@ -2219,6 +2250,7 @@ class GameEngine: ObservableObject {
 
     private func showHelpExploration() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Exploration")
 
         print("MOVEMENT", color: .cyan, bold: true)
@@ -2270,6 +2302,7 @@ class GameEngine: ObservableObject {
 
     private func showHelpCombat() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Combat")
 
         print("INITIATIVE", color: .cyan, bold: true)
@@ -2322,14 +2355,11 @@ class GameEngine: ObservableObject {
         }
 
         closeHandler = { [weak self] in self?.showHowToPlay() }
-        showMenu(["Curing Poison"])
-        menuHandler = { [weak self] choice in
-            if choice == 1 { self?.showPoisonInfo(onBack: { self?.showHelpCombat() }) }
-        }
     }
 
     func showPoisonInfo(onBack: @escaping () -> Void) {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Curing Poison")
         print("")
 
@@ -2399,12 +2429,15 @@ class GameEngine: ObservableObject {
         print("CLASS ADVANTAGES", color: .cyan, bold: true)
         printWrapped("Clerics and Rangers are natural herbalists. They get +3 on CON saves to cure poison during rest. Keep one in your party if you're heading into spider territory!", indent: 2, color: .dimGreen)
         print("")
+        printWrapped("Poison can be switched on or off in Settings > Gameplay.", indent: 2, color: .dimGreen)
+        print("")
 
         closeHandler = { onBack() }
     }
 
     private func showHelpCharacter() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Character & Party")
 
         print("RACES", color: .cyan, bold: true)
@@ -2462,6 +2495,7 @@ class GameEngine: ObservableObject {
 
     private func showHelpRecovery() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Recovery")
 
         print("RESTING", color: .cyan, bold: true)
@@ -2485,11 +2519,16 @@ class GameEngine: ObservableObject {
         printWrapped("Healing Potions restore 2d4+2 HP. Use them from your Inventory or the Use Item button in combat. Stock up at shops when you can — they can save your life.", indent: 2, color: .green)
         print("")
 
+        showMenu(["Curing Poison"])
         closeHandler = { [weak self] in self?.showHowToPlay() }
+        menuHandler = { [weak self] choice in
+            if choice == 1 { self?.showPoisonInfo(onBack: { self?.showHelpRecovery() }) }
+        }
     }
 
     private func showHelpDM() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Dungeon Master (Robot)")
 
         printWrapped("The DM narrates your adventure. There are three intelligence tiers:", indent: 2)
@@ -2539,6 +2578,7 @@ class GameEngine: ObservableObject {
 
     private func showHelpMultiplayer() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Multiplayer")
 
         print("OVERVIEW", color: .cyan, bold: true)
@@ -2590,6 +2630,7 @@ class GameEngine: ObservableObject {
 
     private func showHelpTips() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Tips & Tricks")
 
         // --- Combat Example ---
@@ -2904,6 +2945,7 @@ class GameEngine: ObservableObject {
 
         clearTerminal()
         suppressAutoScroll = true
+        scrollLocked = true
 
         // Stat card border
         let s = monster.stats
@@ -3155,6 +3197,7 @@ class GameEngine: ObservableObject {
 
         clearTerminal()
         suppressAutoScroll = true
+        scrollLocked = true
 
         // Card layout — compact single-page
         let name = npc.rawValue
@@ -3523,6 +3566,12 @@ class GameEngine: ObservableObject {
         printWrapped("Ancient scrolls listing the heroes and dungeons whose names echo through the ages.", indent: 2, color: .dimGreen)
         print("")
 
+        // Animated dragon GIF
+        DispatchQueue.main.async {
+            self.dragonGifName = "dragon_flapping"
+        }
+        print("")
+
         showMenu(["Heroes & Villains", "Dungeon Names"])
 
         closeHandler = { [weak self] in self?.showHowToPlay() }
@@ -3639,6 +3688,7 @@ class GameEngine: ObservableObject {
 
     private func showNameLoreHelp(category: String) {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Name Lore Help")
         print("")
 
@@ -3714,6 +3764,7 @@ class GameEngine: ObservableObject {
         nameLoreAnimTimer = nil
         clearTerminal()
         suppressAutoScroll = true
+        scrollLocked = true
 
         let entry = entries[index]
         let cardW = 27
@@ -3972,6 +4023,16 @@ class GameEngine: ObservableObject {
         }
         set {
             UserDefaults.standard.set(newValue, forKey: "npcs_enabled")
+        }
+    }
+
+    var poisonEnabled: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: "poison_enabled") == nil { return true }
+            return UserDefaults.standard.bool(forKey: "poison_enabled")
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "poison_enabled")
         }
     }
 
@@ -4369,6 +4430,7 @@ class GameEngine: ObservableObject {
 
     private func showAccessibilityHelp() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Accessibility Help")
         print("")
 
@@ -4443,6 +4505,11 @@ class GameEngine: ObservableObject {
         printWrapped("Non-player characters spawn in dungeons. They can trade, heal, teach, and give information.", indent: 2, color: .dimGreen)
         print("")
 
+        print("POISON:", color: .cyan, bold: true)
+        print("  \(poisonEnabled ? "Enabled" : "Disabled")", color: poisonEnabled ? .brightGreen : .dimGreen)
+        printWrapped("When enabled, venomous creatures can poison your party. Cure with antidotes, potions, or rest.", indent: 2, color: .dimGreen)
+        print("")
+
         print("MULTIPLAYER:", color: .cyan, bold: true)
         print("  \(multiplayerEnabled ? "Enabled" : "Disabled")", color: multiplayerEnabled ? .brightGreen : .dimGreen)
         printWrapped("When enabled, you can invite remote players to control party members via Game Centre.", indent: 2, color: .dimGreen)
@@ -4472,7 +4539,7 @@ class GameEngine: ObservableObject {
         print("")
         #endif
 
-        var options = ["Map Radius", useArrowNavigation ? "Use Swipe" : "Use Arrows", "Info Timeout", "Button Limit", "Long Press", npcsEnabled ? "NPCs Off" : "NPCs On", multiplayerEnabled ? "Multi Off" : "Multi On", "Log Limit", "Time Limit", idlePromptsEnabled ? "Idle Off" : "Idle On"]
+        var options = ["Map Radius", useArrowNavigation ? "Use Swipe" : "Use Arrows", "Info Timeout", "Button Limit", "Long Press", npcsEnabled ? "NPCs Off" : "NPCs On", poisonEnabled ? "Poison Off" : "Poison On", multiplayerEnabled ? "Multi Off" : "Multi On", "Log Limit", "Time Limit", idlePromptsEnabled ? "Idle Off" : "Idle On"]
         #if os(iOS)
         options.append(useCustomKeyboard ? "System KB" : "In-App KB")
         #endif
@@ -4504,6 +4571,9 @@ class GameEngine: ObservableObject {
             } else if selected.hasPrefix("NPCs") {
                 self.npcsEnabled.toggle()
                 self.showGameplaySettings()
+            } else if selected.hasPrefix("Poison") {
+                self.poisonEnabled.toggle()
+                self.showGameplaySettings()
             } else if selected.hasPrefix("Multi") {
                 self.multiplayerEnabled.toggle()
                 self.showGameplaySettings()
@@ -4530,6 +4600,7 @@ class GameEngine: ObservableObject {
 
     private func showGameplaySettingsHelp() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Gameplay Help")
         print("")
 
@@ -5117,6 +5188,7 @@ class GameEngine: ObservableObject {
 
     private func showSaveSettingsHelp() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Save & Backup Help")
         print("")
 
@@ -5210,6 +5282,7 @@ class GameEngine: ObservableObject {
 
     private func showDMSettingsHelp() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("DM Settings Help")
         print("")
 
@@ -5270,6 +5343,7 @@ class GameEngine: ObservableObject {
 
     private func showSettingsHelp() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Settings — Help")
         print("")
 
@@ -5387,6 +5461,7 @@ class GameEngine: ObservableObject {
 
     private func showMusicSettingsHelp() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Mood Help")
         print("")
 
@@ -5745,6 +5820,7 @@ class GameEngine: ObservableObject {
 
     private func showCompanionVoiceHelp() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Companion Voices — Help")
         print("")
         printWrapped("HOW IT WORKS", indent: 2, color: .cyan, bold: true)
@@ -5820,8 +5896,7 @@ class GameEngine: ObservableObject {
             print("  Text-to-speech is not available", color: .red)
             print("  on this device.", color: .red)
             print("")
-            showMenu(["< Back"])
-            menuHandler = { [weak self] _ in self?.showEditCharacter(index: index) }
+            closeHandler = { [weak self] in self?.showEditCharacter(index: index) }
             return
         }
 
@@ -5922,16 +5997,20 @@ class GameEngine: ObservableObject {
         print("  \(allEligible.count) voices available.", color: .dimGreen)
         print("")
 
-        showPaginatedMenuOptions(options, pinned: ["< Back"], handler: { [weak self] idx in
+        showMenu(options)
+        menuHandler = { [weak self] choice in
             guard let self = self else { return }
+            let idx = choice - 1
             guard idx >= 0 && idx < voiceIds.count else { return }
             let selectedId = voiceIds[idx]
             speech.setVoiceOverride(forCharacter: char.name, voiceId: selectedId)
             speech.previewVoice(selectedId)
             self.showVoicePicker(forCharacter: char, editIndex: editIndex)
-        }, pinnedHandler: { [weak self] _ in
+        }
+
+        closeHandler = { [weak self] in
             self?.showCharacterVoiceEdit(index: editIndex)
-        })
+        }
 
         // Dice icon → shuffle new random voices
         rerollHandler = { [weak self] in
@@ -6643,6 +6722,7 @@ class GameEngine: ObservableObject {
     private func showTaleSelector(entries: [HallOfFameEntry], selectedIndex: Int = 0) {
         clearTerminal()
         suppressAutoScroll = true
+        scrollLocked = true
         printTitle("Choose a Tale")
         print("")
 
@@ -7256,6 +7336,7 @@ class GameEngine: ObservableObject {
 
     private func showCharacterReviewCardHelp(index: Int, inGame: Bool) {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Character Review Help")
         print("")
         printWrapped("Tap a character's name to view their card and edit options.", indent: 2, color: .green)
@@ -7362,6 +7443,7 @@ class GameEngine: ObservableObject {
 
     private func showEditCharacterHelp(index: Int) {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Edit Character — Help")
         print("")
 
@@ -7692,6 +7774,7 @@ class GameEngine: ObservableObject {
 
     private func showPartyReviewHelp() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Party Review — Help")
         print("")
 
@@ -7716,6 +7799,7 @@ class GameEngine: ObservableObject {
 
     private func showRemotePlayerHelp() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Multiplayer — Help")
         print("")
 
@@ -8126,6 +8210,7 @@ class GameEngine: ObservableObject {
     /// Show detailed multiplayer help screen
     private func showMultiplayerHelp() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Multiplayer — Help")
         print("")
 
@@ -8864,6 +8949,7 @@ class GameEngine: ObservableObject {
     private func showSkillsHelp() {
         guard let charClass = tempClass else { return }
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Skills Help")
 
         print("WHAT ARE SKILLS?", color: .cyan, bold: true)
@@ -9165,6 +9251,7 @@ class GameEngine: ObservableObject {
     /// Context-sensitive help for the New Adventure (party size) screen
     private func showNewGameHelp() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Party Help")
 
         print("PARTY SIZE", color: .cyan, bold: true)
@@ -9188,6 +9275,7 @@ class GameEngine: ObservableObject {
     /// Context-sensitive help for character naming screen
     private func showCharacterHelp() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Character Help")
 
         print("NAMING", color: .cyan, bold: true)
@@ -9216,6 +9304,7 @@ class GameEngine: ObservableObject {
     /// Context-sensitive help for ability score methods
     private func showAbilityScoreHelp() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Ability Scores Help")
 
         print("THE SIX ABILITIES", color: .cyan, bold: true)
@@ -9252,6 +9341,7 @@ class GameEngine: ObservableObject {
     /// Context-sensitive help for the dungeon naming / Adventure Awaits screen
     private func showDungeonHelp() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Dungeon Help")
 
         print("DUNGEON NAME", color: .cyan, bold: true)
@@ -9278,6 +9368,7 @@ class GameEngine: ObservableObject {
     /// Context-sensitive help for the difficulty selection screen
     private func showDifficultyHelp(dungeonName: String) {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Difficulty Help")
 
         print("DIFFICULTY LEVELS", color: .cyan, bold: true)
@@ -9412,6 +9503,11 @@ class GameEngine: ObservableObject {
         clearTerminal()
         printTitle("Ready to Begin?")
 
+        // Castle dragon on the entry screen
+        DispatchQueue.main.async {
+            self.dragonGifName = "dragon_castle"
+        }
+
         let diffName = difficultyName(for: level)
         let levelStr = level.truncatingRemainder(dividingBy: 1) == 0
             ? "\(Int(level))" : String(format: "%.1f", level)
@@ -9432,6 +9528,7 @@ class GameEngine: ObservableObject {
         var opts = ["Enter the Dungeon", "Difficulty", "Rename"]
         if !adventureUndoStack.isEmpty { opts.append("Undo") }
         if !adventureRedoStack.isEmpty { opts.append("Redo") }
+        opts.append("Help")
 
         showMenu(opts)
 
@@ -9470,9 +9567,34 @@ class GameEngine: ObservableObject {
                     self.adventureUndoStack.append((dungeonName, level))
                     self.confirmAdventure(dungeonName: next.0, level: next.1)
                 }
+            case "Help":
+                self.showReadyToBeginHelp(dungeonName: dungeonName, level: level)
             default: break
             }
         }
+    }
+
+    private func showReadyToBeginHelp(dungeonName: String, level: Double) {
+        clearTerminal()
+        suppressAutoScroll = true
+        printTitle("Ready to Begin — Help")
+        print("")
+        print("  ENTER THE DUNGEON", color: .cyan, bold: true)
+        printWrapped("Begin your adventure with the current dungeon and difficulty. Your party will enter the first room and the quest begins!", indent: 2, color: .dimGreen)
+        print("")
+        print("  DIFFICULTY", color: .cyan, bold: true)
+        printWrapped("Change the difficulty level. Easy (1) suits small parties, Medium (2) is balanced for four, and Hard (3+) is for veterans. You can also enter custom values like 1.5 for fine-tuning.", indent: 2, color: .dimGreen)
+        print("")
+        print("  RENAME", color: .cyan, bold: true)
+        printWrapped("Give your dungeon a custom name. Type anything you like, or leave it to get a randomly generated name.", indent: 2, color: .dimGreen)
+        print("")
+        print("  UNDO / REDO", color: .cyan, bold: true)
+        printWrapped("Step back or forward through changes you've made to the dungeon name or difficulty on this screen.", indent: 2, color: .dimGreen)
+        print("")
+
+        showMenu(["< Back"])
+        closeHandler = { [weak self] in self?.confirmAdventure(dungeonName: dungeonName, level: level) }
+        menuHandler = { [weak self] _ in self?.confirmAdventure(dungeonName: dungeonName, level: level) }
     }
 
     private func changeDifficultyInline(currentName: String, currentLevel: Double) {
@@ -9653,6 +9775,7 @@ class GameEngine: ObservableObject {
     /// Help screen for exploration — explains the map, buttons, and gameplay
     private func showExplorationHelp() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Exploration Help")
         print("")
         print("  THE MAP", color: .cyan, bold: true)
@@ -11289,6 +11412,7 @@ class GameEngine: ObservableObject {
 
     private func showSecureHelp() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Secure Help")
         print("")
         print("  SECURING EXITS", color: .cyan, bold: true)
@@ -12483,6 +12607,7 @@ class GameEngine: ObservableObject {
 
     private func showInventoryHelp(character: Character, onBack: (() -> Void)? = nil, fromDM: Bool = false) {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Inventory — Help")
         print("")
 
@@ -13131,6 +13256,7 @@ class GameEngine: ObservableObject {
 
     private func showPartyStatusHelp() {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Party Status — Help")
         print("")
 
@@ -13780,6 +13906,7 @@ class GameEngine: ObservableObject {
 
     private func showRetrainHelp(index: Int) {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Class Change Help")
         print("")
         print("  SOCIAL MOBILITY", color: .cyan, bold: true)
@@ -13887,6 +14014,7 @@ class GameEngine: ObservableObject {
 
     private func showChangeNameHelp(index: Int) {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Change Name — Help")
         print("")
 
@@ -14003,6 +14131,7 @@ class GameEngine: ObservableObject {
 
     private func showChangeTypeHelp(index: Int) {
         clearTerminal()
+        suppressAutoScroll = true
         printTitle("Player Type — Help")
         print("")
 
@@ -15470,9 +15599,16 @@ class GameEngine: ObservableObject {
                     }
 
                     if report.poisonApplied {
-                        self.print("")
-                        self.print("  POISONED! \(report.targetName) has been poisoned!", color: .magenta, bold: true)
-                        self.print("  (takes damage each turn until cured or it wears off)", color: .dimGreen)
+                        if self.poisonEnabled {
+                            self.print("")
+                            self.print("  POISONED! \(report.targetName) has been poisoned!", color: .magenta, bold: true)
+                            self.print("  (takes damage each turn until cured or it wears off)", color: .dimGreen)
+                        } else {
+                            // Poison disabled — immediately cure
+                            if let char = self.party.first(where: { $0.name == report.targetName }), char.isPoisoned {
+                                char.curePoison()
+                            }
+                        }
                     }
                     self.print("")
 
@@ -16859,6 +16995,11 @@ class GameEngine: ObservableObject {
 
         clearTerminal()
         printTitle("VICTORY!")
+
+        // Celebratory dragon animation
+        DispatchQueue.main.async {
+            self.dragonGifName = "dragon_castle"
+        }
 
         let xp = combat.encounter.totalXP
         let rewardParty = fighters.isEmpty ? party : fighters
@@ -18584,22 +18725,34 @@ class GameEngine: ObservableObject {
         performQuit()
     }
 
+    /// Timer for twinkling farewell stars
+    private var starTwinkleTimer: Timer?
+    /// Indices into terminalLines that hold star rows
+    private var starLineIndices: [Int] = []
+
+    private func randomStarLine(width: Int) -> String {
+        let stars: [String] = ["·", "✦", "✧", "★", "☆", "*", "°", "∙"]
+        var chars = Array(repeating: " ", count: width)
+        let numStars = Int.random(in: 3...6)
+        for _ in 0..<numStars {
+            let pos = Int.random(in: 0..<width)
+            chars[pos] = stars.randomElement()!
+        }
+        return chars.joined()
+    }
+
     private func performQuit() {
         SoundManager.shared.stopMusic()
         SoundManager.shared.playQuit()
         clearTerminal()
 
-        // Star field
         let w = 34
-        let stars: [String] = ["·", "✦", "✧", "★", "☆", "*", "°", "∙"]
+
+        // Star field (top)
+        var starIndices: [Int] = []
         for _ in 0..<4 {
-            var chars = Array(repeating: " ", count: w)
-            let numStars = Int.random(in: 3...6)
-            for _ in 0..<numStars {
-                let pos = Int.random(in: 0..<w)
-                chars[pos] = stars.randomElement()!
-            }
-            print(chars.joined(), color: .dimGreen)
+            starIndices.append(terminalLines.count)
+            print(randomStarLine(width: w), color: .dimGreen)
         }
         print("")
 
@@ -18615,22 +18768,31 @@ class GameEngine: ObservableObject {
         print("  \(farewells.randomElement()!)", color: .dimGreen)
         print("")
 
-        // More stars below
+        // Star field (bottom)
         for _ in 0..<3 {
-            var chars2 = Array(repeating: " ", count: w)
-            let numStars2 = Int.random(in: 2...5)
-            for _ in 0..<numStars2 {
-                let pos = Int.random(in: 0..<w)
-                chars2[pos] = stars.randomElement()!
-            }
-            print(chars2.joined(), color: .dimGreen)
+            starIndices.append(terminalLines.count)
+            print(randomStarLine(width: w), color: .dimGreen)
         }
         print("")
         print("  Goodbye.", color: .dimGreen)
         print("")
 
+        // Twinkle animation — update star lines every 400ms
+        self.starLineIndices = starIndices
+        starTwinkleTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            DispatchQueue.main.async {
+                for idx in self.starLineIndices {
+                    if idx < self.terminalLines.count {
+                        self.terminalLines[idx].text = self.randomStarLine(width: w)
+                    }
+                }
+            }
+        }
+
         // Exit the app after the farewell tune finishes
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+            self?.starTwinkleTimer?.invalidate()
             exit(0)
         }
     }

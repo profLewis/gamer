@@ -1,11 +1,13 @@
 #!/bin/bash
 # Resize all image files to a target size with black padding, centered.
-# Skips files already prefixed with n_.
-# Usage: ./resize_images.sh [WIDTHxHEIGHT]
+# Operates on images/ directory relative to the repo root.
+# Usage: ./bin/resize_images.sh [WIDTHxHEIGHT]
 
 SIZE="${1:-1242x2688}"
 
-OUTDIR="outputs"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+IMGDIR="$REPO_ROOT/images"
+OUTDIR="$IMGDIR/outputs"
 mkdir -p "$OUTDIR"
 
 if ! command -v magick &>/dev/null; then
@@ -19,7 +21,7 @@ if ! command -v magick &>/dev/null; then
 fi
 
 count=0
-for f in *.{jpg,jpeg,png,gif,bmp,tiff,webp}; do
+for f in "$IMGDIR"/*.{jpg,jpeg,png,gif,bmp,tiff,webp}; do
     [ -f "$f" ] || continue
     basename="$(basename "$f")"
     out="$OUTDIR/${basename}"

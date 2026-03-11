@@ -2,7 +2,7 @@
 
 A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS and macOS, with AI Dungeon Master support.
 
-![Dragon](dragon_animation.gif)
+![Dragon](images/dragon_animation.gif)
 
 ## Features
 
@@ -43,7 +43,7 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS and macOS, wit
 
 The dungeon is home to 30 different creature types, from lowly rats and kobolds to terrifying beholders and dragons.
 
-![Bestiary](all_monsters.png)
+![Bestiary](images/all_monsters.png)
 
 ### 13 NPCs
 
@@ -93,7 +93,7 @@ Features:
 - 50+ FAQ entries organised by topic
 - Context-sensitive gameplay tips
 - In-game bestiary with ASCII art for all 30 monsters
-- Name Lore gallery with Top Trump-style cards and pop culture origins
+- Name Lore gallery with character cards and pop culture origins
 
 ## Interface
 

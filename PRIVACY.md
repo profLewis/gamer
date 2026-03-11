@@ -1,6 +1,6 @@
 # Privacy Policy — DnD Text RPG
 
-**Last updated:** 1 March 2026
+**Last updated:** 11 March 2026
 
 ## Overview
 
@@ -33,6 +33,10 @@ The AI Dungeon Master is an optional feature that enhances gameplay with narrati
 - Note: Google requires users to be 18+ to create an API key.
 
 In both modes, AI content is filtered through system-level prompt constraints appropriate to the selected age rating.
+
+## Game Center
+
+If you sign in to Game Center on your device, the app submits leaderboard scores and achievements to Apple's Game Center service. Multiplayer matches are coordinated through Game Center's turn-based matchmaking. This data is handled by Apple according to their [privacy policy](https://www.apple.com/legal/privacy/).
 
 ## Third-Party Data Sharing
 

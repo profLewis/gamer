@@ -7,8 +7,8 @@ Run this file to start the game.
 import sys
 import os
 
-# Ensure we can import the gamer package
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Ensure we can import the gamer package (one level up from bin/)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from gamer.main import main
 
