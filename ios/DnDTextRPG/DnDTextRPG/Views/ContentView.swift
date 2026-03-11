@@ -57,14 +57,10 @@ struct SplashView: View {
             VStack(spacing: 20) {
                 Spacer()
 
-                // Cross-stitch dragon
+                // Animated dragon
                 VStack(spacing: 4) {
-                    Image("MenuPortrait")
-                        .resizable()
-                        .interpolation(.none)
-                        .scaledToFit()
-                        .frame(maxWidth: 280)
-                        .opacity(0.5)
+                    AnimatedGIFView(gifName: "dragon_castle")
+                        .frame(width: 280, height: 186)
 
                     Text("\u{00A9} Timbaloo Ltd. 2026")
                         .font(.system(size: 8, design: .monospaced))
@@ -102,7 +98,7 @@ struct SplashView: View {
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundColor(terminalGreen.opacity(0.5))
 
-                    Text("Version 2.1 — 2026")
+                    Text("Version 2.3 — 2026")
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(terminalGreen.opacity(0.4))
                 }

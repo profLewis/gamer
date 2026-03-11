@@ -2507,9 +2507,12 @@ class GameEngine: ObservableObject {
         printWrapped("Many actions require a lit torch. Without light you cannot search rooms, scavenge for supplies, or see properly in combat. Torches burn for about 60 minutes of game time. Keep spares in your inventory or buy them from merchants.", indent: 2, color: .green)
         print("")
 
+        let poisonStartLine = terminalLines.count
         print("POISON", color: .cyan, bold: true)
         printWrapped("Poisoned characters take damage each turn in combat. Cure poison with an Antidote (consumable item from shops or loot), a Cleric's healing spell, or by visiting a Healer NPC. Poison wears off after several turns but can be deadly if ignored.", indent: 2, color: .green)
+        print("  (long-press for details)", color: .dimGreen)
         print("")
+        let poisonEndLine = terminalLines.count
 
         print("HEALING SPELLS", color: .cyan, bold: true)
         printWrapped("Clerics know Cure Wounds (1d8 + WIS mod HP, costs a spell slot) and Healing Word (1d4 + WIS mod HP, bonus action). Rangers learn Cure Wounds at level 2. Cantrip Spare the Dying stabilises an unconscious ally without using a spell slot.", indent: 2, color: .green)
@@ -2519,10 +2522,15 @@ class GameEngine: ObservableObject {
         printWrapped("Healing Potions restore 2d4+2 HP. Use them from your Inventory or the Use Item button in combat. Stock up at shops when you can — they can save your life.", indent: 2, color: .green)
         print("")
 
-        showMenu(["Curing Poison"])
         closeHandler = { [weak self] in self?.showHowToPlay() }
-        menuHandler = { [weak self] choice in
-            if choice == 1 { self?.showPoisonInfo(onBack: { self?.showHelpRecovery() }) }
+
+        // Long-press on the POISON section navigates to Curing Poison page
+        textLongPressHandler = { [weak self] lineIndex in
+            guard let self = self else { return }
+            if lineIndex >= poisonStartLine && lineIndex < poisonEndLine {
+                self.textLongPressHandler = nil
+                self.showPoisonInfo(onBack: { self.showHelpRecovery() })
+            }
         }
     }
 
@@ -2614,13 +2622,25 @@ class GameEngine: ObservableObject {
         printWrapped("Remote games show in cyan in the Play menu. Status shows [your turn], [waiting], or [invite].", indent: 2)
         print("")
 
+        let mpOn = UserDefaults.standard.object(forKey: "multiplayer_enabled") == nil ? true : UserDefaults.standard.bool(forKey: "multiplayer_enabled")
+        print("SETTING", color: .cyan, bold: true)
+        print("  Multiplayer is currently \(mpOn ? "ON" : "OFF").", color: mpOn ? .brightGreen : .red)
+        let settingsLinkLine = terminalLines.count
+        printWrapped("Long-press here to change this in Settings > Gameplay.", indent: 2, color: .yellow)
+        let settingsLinkEndLine = terminalLines.count
+        print("")
+
         let hasGame = dungeon != nil && !party.isEmpty
         textLongPressHandler = { [weak self] lineIndex in
             guard let self = self else { return }
-            // Party Review reference — not navigable (requires setup flow), skip
             // Party Status — navigable if game active
             if hasGame && lineIndex >= partyStatusLine && lineIndex < partyStatusEndLine {
                 self.showPartyStatus()
+                self.closeHandler = { [weak self] in self?.showHelpMultiplayer() }
+            }
+            // Settings link — navigate to gameplay settings
+            if lineIndex >= settingsLinkLine && lineIndex < settingsLinkEndLine {
+                self.showGameplaySettings()
                 self.closeHandler = { [weak self] in self?.showHelpMultiplayer() }
             }
         }
