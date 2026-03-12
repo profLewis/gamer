@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DnD Card Dex</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="bg-orb orb-a"></div>
+  <div class="bg-orb orb-b"></div>
+  <div class="scanlines"></div>
+
+  <header class="topbar">
+    <div>
+      <h1>DnD Card Dex</h1>
+      <p class="subtitle">Player, Monster, and Location Cards from iOS</p>
+    </div>
+    <a class="md-link" href="../README.md">Markdown Catalog</a>
+  </header>
+
+  <section class="controls">
+    <label>Category
+      <select id="categorySelect">
+        <option value="all">All</option>
+        <option value="player">Players</option>
+        <option value="monster">Monsters</option>
+        <option value="location">Locations</option>
+      </select>
+    </label>
+
+    <label>Search
+      <input id="searchInput" type="text" placeholder="Name, source, description..." />
+    </label>
+
+    <label>Sort
+      <select id="sortSelect">
+        <option value="name">Name</option>
+        <option value="type">Type</option>
+      </select>
+    </label>
+
+    <div class="music-panel">
+      <button id="musicToggle" class="btn">Play Music</button>
+      <label>Track
+        <select id="musicMode">
+          <option value="auto">Auto</option>
+          <option value="exploration">Exploration</option>
+          <option value="combat">Combat</option>
+          <option value="menu">Menu</option>
+          <option value="off">Off</option>
+        </select>
+      </label>
+      <label>Vol
+        <input id="volumeSlider" type="range" min="0" max="1" step="0.05" value="0.5" />
+      </label>
+    </div>
+  </section>
+
+  <main class="layout">
+    <section class="cards-panel">
+      <div class="panel-head">
+        <h2>Cards</h2>
+        <span id="countLabel" class="count"></span>
+      </div>
+      <div id="cardGrid" class="card-grid"></div>
+    </section>
+
+    <aside class="detail-panel" id="detailPanel">
+      <h2 id="detailTitle">Select a card</h2>
+      <p id="detailMeta" class="meta"></p>
+      <img id="detailImage" alt="Card art" />
+      <div id="detailStats" class="stats"></div>
+      <p id="detailDesc" class="desc"></p>
+    </aside>
+  </main>
+
+  <audio id="bgm" loop preload="none"></audio>
+  <script src="../cards.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

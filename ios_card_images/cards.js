@@ -1,0 +1,2078 @@
+window.CARD_DATA = {
+  "players": [
+    {
+      "id": "player-001",
+      "type": "player",
+      "name": "Flash Gordon",
+      "source": "Flash Gordon (1934)",
+      "description": "Space adventurer supreme. Flash, a Yale polo player, rocketed to Mongo with Dale Arden and Dr Zarkov to face Ming the Merciless. Alex Raymond's strip defined space opera: ray guns, rocket ships, and a square-jawed hero saving the universe. Every space adventure since owes Flash a debt.",
+      "stats": {
+        "Power": 8,
+        "Cunning": 5,
+        "Magic": 1,
+        "Fame": 10,
+        "Charm": 8
+      },
+      "image": "players/001-flash-gordon.png"
+    },
+    {
+      "id": "player-002",
+      "type": "player",
+      "name": "Buck Rogers",
+      "source": "Buck Rogers (1929)",
+      "description": "Anthony Rogers fell asleep in a mine in 1927 and woke in the 25th century. The first science fiction comic strip hero, Buck fought sky pirates and alien invaders with ray guns and rocket belts. He predates Flash Gordon by five years and gave the world its first taste of space adventure in the Sunday papers.",
+      "stats": {
+        "Power": 7,
+        "Cunning": 6,
+        "Magic": 1,
+        "Fame": 9,
+        "Charm": 6
+      },
+      "image": "players/002-buck-rogers.png"
+    },
+    {
+      "id": "player-003",
+      "type": "player",
+      "name": "Dan Dare",
+      "source": "Dan Dare (1950)",
+      "description": "Pilot of the Future! Colonel Dan Dare of the Interplanet Space Fleet battled the Mekon \u00e2\u0080\u0094 a green, dome-headed Venusian genius \u00e2\u0080\u0094 across the pages of Eagle comic. Frank Hampson's beautifully painted strip was thoughtful, optimistic sci-fi. Dan was a gentleman hero: brave, decent, and unfailingly polite.",
+      "stats": {
+        "Power": 7,
+        "Cunning": 7,
+        "Magic": 1,
+        "Fame": 8,
+        "Charm": 7
+      },
+      "image": "players/003-dan-dare.png"
+    },
+    {
+      "id": "player-004",
+      "type": "player",
+      "name": "Prince Valiant",
+      "source": "Prince Valiant (1937)",
+      "description": "Prince of Thule, Knight of the Round Table, star of Hal Foster's magnificent comic strip. Valiant's adventures span decades of Arthurian glory \u00e2\u0080\u0094 questing, jousting, and romancing Princess Aleta. The strip is painted, not drawn, and its visual splendour set a standard no other comic has matched.",
+      "stats": {
+        "Power": 8,
+        "Cunning": 6,
+        "Magic": 2,
+        "Fame": 8,
+        "Charm": 7
+      },
+      "image": "players/004-prince-valiant.png"
+    },
+    {
+      "id": "player-005",
+      "type": "player",
+      "name": "The Phantom",
+      "source": "The Phantom (1936)",
+      "description": "The Ghost Who Walks. For over four hundred years, the Phantom has haunted the jungles of Bengalla. Each Phantom trains his son to succeed him, creating the legend of an immortal hero. Lee Falk's masked avenger was the first costumed superhero in comics, predating Batman by three years.",
+      "stats": {
+        "Power": 8,
+        "Cunning": 7,
+        "Magic": 1,
+        "Fame": 8,
+        "Charm": 6
+      },
+      "image": "players/005-the-phantom.png"
+    },
+    {
+      "id": "player-006",
+      "type": "player",
+      "name": "Judge Dredd",
+      "source": "Judge Dredd (1977)",
+      "description": "I am the Law! In the irradiated wasteland of Mega-City One, Judge Dredd is judge, jury, and executioner. He never removes his helmet, never smiles, and never bends the rules. 2000 AD's greatest creation is a fascist lawman played straight in a satirical world \u00e2\u0080\u0094 and somehow, you root for him anyway.",
+      "stats": {
+        "Power": 9,
+        "Cunning": 7,
+        "Magic": 1,
+        "Fame": 9,
+        "Charm": 2
+      },
+      "image": "players/006-judge-dredd.png"
+    },
+    {
+      "id": "player-007",
+      "type": "player",
+      "name": "Will the Wise",
+      "source": "Stranger Things",
+      "description": "A boy who survived the Upside Down and emerged wiser for it. His D&D character became his truest self \u00e2\u0080\u0094 a divination wizard who sees what others cannot. Will proved that the bravest heroes are not the strongest, but the ones who endure.",
+      "stats": {
+        "Power": 3,
+        "Cunning": 7,
+        "Magic": 8,
+        "Fame": 9,
+        "Charm": 6
+      },
+      "image": "players/007-will-the-wise.png"
+    },
+    {
+      "id": "player-008",
+      "type": "player",
+      "name": "Eleven",
+      "source": "Stranger Things",
+      "description": "She has powers no wizard could match \u00e2\u0080\u0094 telekinesis, remote viewing, and the ability to close rifts between dimensions. Raised in a laboratory, she escaped and found a family. Her favourite spell component? Eggo waffles.",
+      "stats": {
+        "Power": 9,
+        "Cunning": 5,
+        "Magic": 10,
+        "Fame": 10,
+        "Charm": 7
+      },
+      "image": "players/008-eleven.png"
+    },
+    {
+      "id": "player-009",
+      "type": "player",
+      "name": "Eddie Munson",
+      "source": "Stranger Things",
+      "description": "Dungeon Master of the Hellfire Club and metalhead bard extraordinaire. Eddie played guitar on a trailer roof to draw demobats away from his friends. He never ran from a fight \u00e2\u0080\u0094 not even his last one. The campaign continues without him, but the seat at the head of the table stays empty.",
+      "stats": {
+        "Power": 5,
+        "Cunning": 6,
+        "Magic": 3,
+        "Fame": 8,
+        "Charm": 9
+      },
+      "image": "players/009-eddie-munson.png"
+    },
+    {
+      "id": "player-010",
+      "type": "player",
+      "name": "Hopper",
+      "source": "Stranger Things",
+      "description": "Chief of Hawkins police and reluctant father figure. Tough as chain mail on the outside, soft as a healing potion when it counts. Survived a Russian gulag and punched a demogorgon. His character class would be Paladin \u00e2\u0080\u0094 sworn to protect, no matter the cost.",
+      "stats": {
+        "Power": 8,
+        "Cunning": 6,
+        "Magic": 1,
+        "Fame": 8,
+        "Charm": 6
+      },
+      "image": "players/010-hopper.png"
+    },
+    {
+      "id": "player-011",
+      "type": "player",
+      "name": "Steve",
+      "source": "Stranger Things",
+      "description": "Once the popular kid with perfect hair, now the party's unlikely protector. Steve wields a nail bat like a mace and babysits a group of adventurous children through literal hellscapes. His hair remains perfect throughout. A fighter with surprising depth.",
+      "stats": {
+        "Power": 6,
+        "Cunning": 4,
+        "Magic": 1,
+        "Fame": 7,
+        "Charm": 8
+      },
+      "image": "players/011-steve.png"
+    },
+    {
+      "id": "player-012",
+      "type": "player",
+      "name": "Hector the Well-Endowed",
+      "source": "Community",
+      "description": "Troy Barnes's legendary D&D character, blessed with exceptional... abilities. All of them. A human fighter of prodigious talent and even more prodigious name. The Community study group's most memorable campaign moment, proving that sometimes the best character concepts come from sheer enthusiasm.",
+      "stats": {
+        "Power": 9,
+        "Cunning": 3,
+        "Magic": 1,
+        "Fame": 7,
+        "Charm": 10
+      },
+      "image": "players/012-hector-the-well-endowed.png"
+    },
+    {
+      "id": "player-013",
+      "type": "player",
+      "name": "Brutalitops",
+      "source": "Community",
+      "description": "The magician! Created by Abed Nadir during the Community D&D episode. Abed proved that the quiet, observant player can absolutely dominate a campaign. Named with the subtlety of a fireball spell, Brutalitops the Magician brought arcane devastation and dry wit in equal measure.",
+      "stats": {
+        "Power": 4,
+        "Cunning": 8,
+        "Magic": 9,
+        "Fame": 6,
+        "Charm": 5
+      },
+      "image": "players/013-brutalitops.png"
+    },
+    {
+      "id": "player-014",
+      "type": "player",
+      "name": "Titanius",
+      "source": "Futurama",
+      "description": "Titanius Anglesmith, Fancy Man of Cornwood! Bender's fantasy alter-ego from Bender's Game, wielding a sword and an ego of legendary proportions. A warrior who fights with more style than skill and more mouth than either. His armour is polished to a mirror shine \u00e2\u0080\u0094 naturally.",
+      "stats": {
+        "Power": 7,
+        "Cunning": 4,
+        "Magic": 2,
+        "Fame": 7,
+        "Charm": 6
+      },
+      "image": "players/014-titanius.png"
+    },
+    {
+      "id": "player-015",
+      "type": "player",
+      "name": "Leegola",
+      "source": "Futurama",
+      "description": "Leela's fantasy form \u00e2\u0080\u0094 a fearsome elf centaur with a bow and a legendary temper. Half horse, all warrior, and absolutely not taking any nonsense from Titanius. The deadliest archer in Cornwood, with depth perception issues that somehow never affect her aim.",
+      "stats": {
+        "Power": 8,
+        "Cunning": 6,
+        "Magic": 4,
+        "Fame": 6,
+        "Charm": 5
+      },
+      "image": "players/015-leegola.png"
+    },
+    {
+      "id": "player-016",
+      "type": "player",
+      "name": "Edgin",
+      "source": "Honour Among Thieves",
+      "description": "A bard who plans heists instead of singing ballads. Edgin Darvis lost his wife to the Red Wizards of Thay and turned to thievery to cope. His only weapon is a lute and his only armour is audacity. He inspires the party not through magic but through sheer stubbornness and surprisingly good plans.",
+      "stats": {
+        "Power": 3,
+        "Cunning": 8,
+        "Magic": 2,
+        "Fame": 8,
+        "Charm": 9
+      },
+      "image": "players/016-edgin.png"
+    },
+    {
+      "id": "player-017",
+      "type": "player",
+      "name": "Holga",
+      "source": "Honour Among Thieves",
+      "description": "A barbarian who solves problems by hitting them. Hard. Holga Kilgore is an exile from the Elk Tribe with a heart of gold beneath her battle-scarred exterior. She once knocked a man unconscious with a potato. Her rage is matched only by her loyalty and her cooking.",
+      "stats": {
+        "Power": 10,
+        "Cunning": 4,
+        "Magic": 1,
+        "Fame": 7,
+        "Charm": 6
+      },
+      "image": "players/017-holga.png"
+    },
+    {
+      "id": "player-018",
+      "type": "player",
+      "name": "Xenk",
+      "source": "Honour Among Thieves",
+      "description": "A paladin of unwavering virtue and absolutely no sense of humour. Xenk Yendar walks through every scene like a walking cathedral. He is annoyingly perfect at everything \u00e2\u0080\u0094 fighting, diplomacy, moral integrity \u00e2\u0080\u0094 and completely unaware of how irritating this makes him to rogues and bards.",
+      "stats": {
+        "Power": 9,
+        "Cunning": 5,
+        "Magic": 6,
+        "Fame": 7,
+        "Charm": 4
+      },
+      "image": "players/018-xenk.png"
+    },
+    {
+      "id": "player-019",
+      "type": "player",
+      "name": "Ripley",
+      "source": "Classic Sci-Fi",
+      "description": "Ellen Ripley, warrant officer of the Nostromo and the ultimate survivor. She faced xenomorphs, corporate betrayal, and an android with milk for blood \u00e2\u0080\u0094 and she won every time. If transported to a dungeon, she'd be a Ranger with a flamethrower and zero patience for NPCs who say 'let's split up'.",
+      "stats": {
+        "Power": 8,
+        "Cunning": 9,
+        "Magic": 1,
+        "Fame": 10,
+        "Charm": 6
+      },
+      "image": "players/019-ripley.png"
+    },
+    {
+      "id": "player-020",
+      "type": "player",
+      "name": "Deckard",
+      "source": "Classic Sci-Fi",
+      "description": "Rick Deckard, blade runner, hunter of replicants in the neon rain of 2019 Los Angeles. He asks the questions that make androids dream of electric sheep. Is he human? Even he doesn't know. In a dungeon, he'd be an Investigator \u00e2\u0080\u0094 always asking questions, never quite trusting the answers.",
+      "stats": {
+        "Power": 6,
+        "Cunning": 8,
+        "Magic": 1,
+        "Fame": 9,
+        "Charm": 5
+      },
+      "image": "players/020-deckard.png"
+    },
+    {
+      "id": "player-021",
+      "type": "player",
+      "name": "Atreides",
+      "source": "Classic Sci-Fi",
+      "description": "House Atreides rules through honour in a universe of treachery. Paul Atreides walked the desert of Arrakis, drank the Water of Life, and became Muad'Dib \u00e2\u0080\u0094 the Kwisatz Haderach. He could see the future but couldn't prevent the jihad his name would inspire. The most reluctant messiah in fiction.",
+      "stats": {
+        "Power": 7,
+        "Cunning": 9,
+        "Magic": 10,
+        "Fame": 10,
+        "Charm": 7
+      },
+      "image": "players/021-atreides.png"
+    },
+    {
+      "id": "player-022",
+      "type": "player",
+      "name": "Snake Plissken",
+      "source": "Classic Sci-Fi",
+      "description": "War hero turned outlaw, eyepatch, leather jacket, and an escape plan for everything. Snake was dropped into Manhattan Maximum Security Prison and told to rescue the President. His response was essentially 'fine, but I'm not happy about it'. A rogue with a military background and a permanent scowl.",
+      "stats": {
+        "Power": 8,
+        "Cunning": 9,
+        "Magic": 1,
+        "Fame": 8,
+        "Charm": 4
+      },
+      "image": "players/022-snake-plissken.png"
+    },
+    {
+      "id": "player-023",
+      "type": "player",
+      "name": "Daneel",
+      "source": "Famous Robots",
+      "description": "R. Daneel Olivaw \u00e2\u0080\u0094 Asimov's positronic detective who served humanity for twenty thousand years. He began as a robot detective on Earth and ended as the secret guardian of the entire galaxy. He followed the Three Laws of Robotics so well that he invented a Zeroth Law. The most loyal companion imaginable.",
+      "stats": {
+        "Power": 6,
+        "Cunning": 9,
+        "Magic": 1,
+        "Fame": 7,
+        "Charm": 7
+      },
+      "image": "players/023-daneel.png"
+    },
+    {
+      "id": "player-024",
+      "type": "player",
+      "name": "Marvin",
+      "source": "Famous Robots",
+      "description": "The Paranoid Android from The Hitchhiker's Guide to the Galaxy. Brain the size of a planet, asked to open doors. Terribly, terribly depressed about everything, and not shy about telling you. He once talked an alien battleship into committing suicide out of sheer existential despair.",
+      "stats": {
+        "Power": 2,
+        "Cunning": 10,
+        "Magic": 1,
+        "Fame": 9,
+        "Charm": 2
+      },
+      "image": "players/024-marvin.png"
+    },
+    {
+      "id": "player-025",
+      "type": "player",
+      "name": "K-9",
+      "source": "Famous Robots",
+      "description": "The Doctor's faithful robot dog. Affirmative, Master. K-9 Mark III defended Sarah Jane Smith with a nose laser and an unshakeable sense of duty. He plays chess, solves equations, and occasionally saves the universe \u00e2\u0080\u0094 all while rolling on tiny wheels and calling everyone 'Master' or 'Mistress'.",
+      "stats": {
+        "Power": 5,
+        "Cunning": 8,
+        "Magic": 3,
+        "Fame": 8,
+        "Charm": 9
+      },
+      "image": "players/025-k-9.png"
+    },
+    {
+      "id": "player-026",
+      "type": "player",
+      "name": "Roy Batty",
+      "source": "Famous Robots",
+      "description": "A Nexus-6 replicant who wanted more life. Roy Batty was stronger, faster, and smarter than any human, but was given only four years to live. In his final moments, he saved the man sent to kill him and delivered the most beautiful death speech in cinema: 'All those moments will be lost in time, like tears in rain.'",
+      "stats": {
+        "Power": 10,
+        "Cunning": 7,
+        "Magic": 1,
+        "Fame": 9,
+        "Charm": 8
+      },
+      "image": "players/026-roy-batty.png"
+    },
+    {
+      "id": "player-027",
+      "type": "player",
+      "name": "Madmartigan",
+      "source": "Willow (1988)",
+      "description": "The greatest swordsman who ever lived \u00e2\u0080\u0094 just ask him. Val Kilmer's rogue warrior in Willow was charming, reckless, and surprisingly heroic when it counted. Locked in a cage when we meet him, he talks his way out with nothing but charisma. His romance with Sorsha involved a love potion, a snowball fight, and a stolen kiss on a battlefield.",
+      "stats": {
+        "Power": 8,
+        "Cunning": 7,
+        "Magic": 1,
+        "Fame": 8,
+        "Charm": 10
+      },
+      "image": "players/027-madmartigan.png"
+    },
+    {
+      "id": "player-028",
+      "type": "player",
+      "name": "Willow",
+      "source": "Willow (1988)",
+      "description": "Willow Ufgood, a Nelwyn farmer who dreamed of being a sorcerer. When he found an abandoned baby destined to overthrow an evil queen, he could have walked away. Instead, this small farmer became the bravest member of the party. He proved that heroes come in all sizes \u00e2\u0080\u0094 especially the ones nobody expected.",
+      "stats": {
+        "Power": 3,
+        "Cunning": 6,
+        "Magic": 7,
+        "Fame": 8,
+        "Charm": 8
+      },
+      "image": "players/028-willow.png"
+    },
+    {
+      "id": "player-029",
+      "type": "player",
+      "name": "Atreyu",
+      "source": "The NeverEnding Story (1984)",
+      "description": "A young warrior of the Plains People, chosen to find a cure for the Childlike Empress. Atreyu crossed the Swamps of Sadness (where his horse Artax was lost), faced the Nothing, and stood before the Southern Oracle. All before his fourteenth birthday. A ranger with the heart of a lion and the determination of a legend.",
+      "stats": {
+        "Power": 7,
+        "Cunning": 6,
+        "Magic": 4,
+        "Fame": 9,
+        "Charm": 7
+      },
+      "image": "players/029-atreyu.png"
+    },
+    {
+      "id": "player-030",
+      "type": "player",
+      "name": "Conan",
+      "source": "Conan the Barbarian (1982)",
+      "description": "The Cimmerian. Born on a battlefield, orphaned by Thulsa Doom, enslaved at the Wheel of Pain, and trained as a gladiator. What is best in life? To crush your enemies, see them driven before you, and hear the lamentation of their women. Arnold Schwarzenegger gave this barbarian a soul beneath the muscle.",
+      "stats": {
+        "Power": 10,
+        "Cunning": 4,
+        "Magic": 1,
+        "Fame": 10,
+        "Charm": 5
+      },
+      "image": "players/030-conan.png"
+    },
+    {
+      "id": "player-031",
+      "type": "player",
+      "name": "Connor MacLeod",
+      "source": "Highlander (1986)",
+      "description": "An immortal Scotsman born in 1518, banished from his village for witchcraft after surviving a mortal wound. Trained by Ramirez, he fought through centuries of history in the great Game. There can be only one. Christopher Lambert brought melancholy grace to a man who watched everyone he loved grow old and die.",
+      "stats": {
+        "Power": 9,
+        "Cunning": 5,
+        "Magic": 5,
+        "Fame": 9,
+        "Charm": 6
+      },
+      "image": "players/031-connor-macleod.png"
+    },
+    {
+      "id": "player-032",
+      "type": "player",
+      "name": "Jareth",
+      "source": "Labyrinth (1986)",
+      "description": "The Goblin King, played by David Bowie with otherworldly charisma. Jareth stole baby Toby and offered Sarah her dreams in exchange. He juggles crystal balls, sings haunting songs, and rules a labyrinth of impossible geometry. Part villain, part tragic figure \u00e2\u0080\u0094 a fey lord who fell in love with a mortal girl.",
+      "stats": {
+        "Power": 7,
+        "Cunning": 8,
+        "Magic": 9,
+        "Fame": 10,
+        "Charm": 10
+      },
+      "image": "players/032-jareth.png"
+    },
+    {
+      "id": "player-033",
+      "type": "player",
+      "name": "Darkness",
+      "source": "Legend (1985)",
+      "description": "The Lord of Darkness himself, played by Tim Curry in the greatest practical makeup ever created. Towering red horns, cloven hooves, and a voice like velvet thunder. He wanted to destroy all sunlight and plunge the world into eternal night. A villain so magnificent he made evil look like performance art.",
+      "stats": {
+        "Power": 10,
+        "Cunning": 6,
+        "Magic": 10,
+        "Fame": 9,
+        "Charm": 7
+      },
+      "image": "players/033-darkness.png"
+    },
+    {
+      "id": "player-034",
+      "type": "player",
+      "name": "Taran",
+      "source": "The Black Cauldron (1985)",
+      "description": "An assistant pig-keeper in the land of Prydain who dreamed of being a great warrior. Based on Lloyd Alexander's beloved Chronicles of Prydain, Taran proved that heroism isn't about swords and glory \u00e2\u0080\u0094 it's about protecting a magical pig called Hen Wen and stopping the Horned King from raising an army of the dead.",
+      "stats": {
+        "Power": 5,
+        "Cunning": 5,
+        "Magic": 3,
+        "Fame": 6,
+        "Charm": 7
+      },
+      "image": "players/034-taran.png"
+    },
+    {
+      "id": "player-035",
+      "type": "player",
+      "name": "Hawk",
+      "source": "Ladyhawke (1985)",
+      "description": "Captain Etienne Navarre, cursed by an evil bishop. By day, his beloved Isabeau becomes a hawk. By night, he becomes a wolf. Always together, eternally apart. Rutger Hauer played this doomed knight with stoic grace and a very large sword. The ultimate star-crossed lovers' quest.",
+      "stats": {
+        "Power": 8,
+        "Cunning": 5,
+        "Magic": 4,
+        "Fame": 7,
+        "Charm": 8
+      },
+      "image": "players/035-hawk.png"
+    },
+    {
+      "id": "player-036",
+      "type": "player",
+      "name": "Red Sonja",
+      "source": "Red Sonja (1985)",
+      "description": "A fierce swordswoman blessed by a goddess after her family was murdered. Brigitte Nielsen played the flame-haired warrior who swore no man would have her unless he could defeat her in fair combat. She needs no rescuing, no sidekick, and no permission. The original warrior woman of sword-and-sorcery cinema.",
+      "stats": {
+        "Power": 9,
+        "Cunning": 5,
+        "Magic": 2,
+        "Fame": 8,
+        "Charm": 7
+      },
+      "image": "players/036-red-sonja.png"
+    },
+    {
+      "id": "player-037",
+      "type": "player",
+      "name": "Beast Master",
+      "source": "The Beastmaster (1982)",
+      "description": "Dar, the last of his people, born with the power to communicate with animals. A black tiger, two ferrets, and an eagle became his companions in a quest against the sorcerer Maax. Marc Singer brought warmth to this barbarian-with-a-heart, proving that a hero's greatest weapon is friendship with nature.",
+      "stats": {
+        "Power": 7,
+        "Cunning": 6,
+        "Magic": 5,
+        "Fame": 7,
+        "Charm": 7
+      },
+      "image": "players/037-beast-master.png"
+    },
+    {
+      "id": "player-038",
+      "type": "player",
+      "name": "Valerian",
+      "source": "Dragonslayer (1981)",
+      "description": "Galen Bradwarden, a sorcerer's apprentice who inherited his master's quest to slay the dragon Vermithrax Pejorative. Armed with a magic amulet and more courage than skill, he faced the last and greatest dragon. Dragonslayer featured the most realistic dragon in cinema until CGI arrived \u00e2\u0080\u0094 and some say still does.",
+      "stats": {
+        "Power": 5,
+        "Cunning": 6,
+        "Magic": 7,
+        "Fame": 7,
+        "Charm": 6
+      },
+      "image": "players/038-valerian.png"
+    },
+    {
+      "id": "player-039",
+      "type": "player",
+      "name": "Elric",
+      "source": "Michael Moorcock",
+      "description": "The albino emperor of Melnibone, last of an ancient decadent race, wielder of the black runesword Stormbringer that drinks the souls of those it slays \u00e2\u0080\u0094 including, inevitably, everyone Elric loves. Moorcock's eternal champion is the anti-Conan: frail, philosophical, drug-dependent, and cursed by his own weapon.",
+      "stats": {
+        "Power": 8,
+        "Cunning": 7,
+        "Magic": 9,
+        "Fame": 9,
+        "Charm": 5
+      },
+      "image": "players/039-elric.png"
+    },
+    {
+      "id": "player-040",
+      "type": "player",
+      "name": "Ged",
+      "source": "Ursula K. Le Guin",
+      "description": "Sparrowhawk, the greatest mage of Earthsea, who learned that true power is knowing your own shadow \u00e2\u0080\u0094 literally. As a young student, he recklessly summoned a shadow creature and spent years hunting it across the archipelago, only to discover it was himself. Le Guin's wizard is about wisdom, not fireballs.",
+      "stats": {
+        "Power": 5,
+        "Cunning": 8,
+        "Magic": 10,
+        "Fame": 9,
+        "Charm": 6
+      },
+      "image": "players/040-ged.png"
+    },
+    {
+      "id": "player-041",
+      "type": "player",
+      "name": "Drizzt",
+      "source": "R.A. Salvatore",
+      "description": "Drizzt Do'Urden, a dark elf who rejected the evil of Menzoberranzan and fled to the surface world. With his twin scimitars Twinkle and Icingdeath, his panther companion Guenhwyvar, and his unshakeable moral compass, he became the most famous ranger in D&D history. Proof that your birth doesn't define your destiny.",
+      "stats": {
+        "Power": 9,
+        "Cunning": 8,
+        "Magic": 4,
+        "Fame": 10,
+        "Charm": 7
+      },
+      "image": "players/041-drizzt.png"
+    },
+    {
+      "id": "player-042",
+      "type": "player",
+      "name": "Raistlin",
+      "source": "Dragonlance",
+      "description": "Raistlin Majere, the sickly mage with golden skin and hourglass eyes that see all things as dying. He is brilliant, ambitious, and ruthlessly pragmatic. He chose the Black Robes of evil magic, challenged the gods themselves, and nearly won. The most compelling villain-hero in fantasy \u00e2\u0080\u0094 you never stop wanting him to be redeemed.",
+      "stats": {
+        "Power": 4,
+        "Cunning": 10,
+        "Magic": 10,
+        "Fame": 9,
+        "Charm": 3
+      },
+      "image": "players/042-raistlin.png"
+    },
+    {
+      "id": "player-043",
+      "type": "player",
+      "name": "Tasslehoff",
+      "source": "Dragonlance",
+      "description": "Tasslehoff Burrfoot, kender extraordinaire. He is NOT a thief \u00e2\u0080\u0094 he just finds things. In your pockets. On your belt. In your locked safe. Fearless to the point of foolishness, endlessly curious, and the most annoying companion in fantasy literature. Also, somehow, the bravest. He faced a god and didn't flinch.",
+      "stats": {
+        "Power": 2,
+        "Cunning": 9,
+        "Magic": 1,
+        "Fame": 8,
+        "Charm": 10
+      },
+      "image": "players/043-tasslehoff.png"
+    },
+    {
+      "id": "player-044",
+      "type": "player",
+      "name": "Rincewind",
+      "source": "Terry Pratchett",
+      "description": "The worst wizard on the Discworld. He can't cast a single spell because the most powerful spell ever written lodged in his brain and scared all the others away. His chief skill is running away, which he has elevated to an art form. His Luggage follows him everywhere on hundreds of tiny legs. Somehow, he always saves the world.",
+      "stats": {
+        "Power": 1,
+        "Cunning": 6,
+        "Magic": 2,
+        "Fame": 8,
+        "Charm": 5
+      },
+      "image": "players/044-rincewind.png"
+    },
+    {
+      "id": "player-045",
+      "type": "player",
+      "name": "Granny Weatherwax",
+      "source": "Terry Pratchett",
+      "description": "Esmerelda Weatherwax, the most powerful witch on the Discworld. She doesn't do magic \u00e2\u0080\u0094 she does headology, which is much more effective. She can Borrow the minds of animals, stare down vampires, and make you do what she wants by simply raising an eyebrow. She is not nice. She is good. There's a difference.",
+      "stats": {
+        "Power": 5,
+        "Cunning": 10,
+        "Magic": 9,
+        "Fame": 8,
+        "Charm": 3
+      },
+      "image": "players/045-granny-weatherwax.png"
+    },
+    {
+      "id": "player-046",
+      "type": "player",
+      "name": "Belgarion",
+      "source": "David Eddings",
+      "description": "Garion, a farmboy raised by his aunt (who happens to be a three-thousand-year-old sorceress) who discovers he's the heir to an ancient throne and the chosen vessel of a cosmic prophecy. He must recover a stolen magical orb and face the mad god Torak. It's always a farmboy. Always.",
+      "stats": {
+        "Power": 7,
+        "Cunning": 5,
+        "Magic": 8,
+        "Fame": 7,
+        "Charm": 7
+      },
+      "image": "players/046-belgarion.png"
+    },
+    {
+      "id": "player-047",
+      "type": "player",
+      "name": "Fafhrd",
+      "source": "Fritz Leiber",
+      "description": "A seven-foot northern barbarian with a poet's soul and a thief's instincts, from the frozen Waste of Nehwon. With his partner the Grey Mouser, he defined the sword-and-sorcery buddy adventure. Leiber created the original mismatched duo \u00e2\u0080\u0094 the big dreamy fighter and the small cunning rogue.",
+      "stats": {
+        "Power": 8,
+        "Cunning": 6,
+        "Magic": 2,
+        "Fame": 8,
+        "Charm": 7
+      },
+      "image": "players/047-fafhrd.png"
+    },
+    {
+      "id": "player-048",
+      "type": "player",
+      "name": "Grey Mouser",
+      "source": "Fritz Leiber",
+      "description": "A small, quick swordsman and former wizard's apprentice from the city of Lankhmar. The original rogue archetype \u00e2\u0080\u0094 before D&D codified the class, the Grey Mouser was picking locks, backstabbing villains, and spending his loot on wine and questionable romantic choices. He and Fafhrd are the eternal adventuring party.",
+      "stats": {
+        "Power": 6,
+        "Cunning": 10,
+        "Magic": 4,
+        "Fame": 8,
+        "Charm": 8
+      },
+      "image": "players/048-grey-mouser.png"
+    },
+    {
+      "id": "player-049",
+      "type": "player",
+      "name": "Thomas Covenant",
+      "source": "Stephen Donaldson",
+      "description": "A leper transported to a land of magic he refuses to believe in. Donaldson's anti-hero is deliberately unlikeable \u00e2\u0080\u0094 he commits a terrible act upon arrival and spends three trilogies wrestling with guilt, disbelief, and wild magic he can't control. The most morally complex protagonist in fantasy. Not for the faint-hearted.",
+      "stats": {
+        "Power": 7,
+        "Cunning": 4,
+        "Magic": 9,
+        "Fame": 7,
+        "Charm": 1
+      },
+      "image": "players/049-thomas-covenant.png"
+    },
+    {
+      "id": "player-050",
+      "type": "player",
+      "name": "Tenar",
+      "source": "Ursula K. Le Guin",
+      "description": "Born Arha, the Eaten One, priestess of the Nameless Ones in the Tombs of Atuan. She lived in darkness, serving ancient powers, until the wizard Ged came seeking the Ring of Erreth-Akbe. She chose light over duty, freedom over ritual, and became Tenar \u00e2\u0080\u0094 a woman who defined herself rather than being defined by gods.",
+      "stats": {
+        "Power": 4,
+        "Cunning": 7,
+        "Magic": 6,
+        "Fame": 8,
+        "Charm": 7
+      },
+      "image": "players/050-tenar.png"
+    },
+    {
+      "id": "player-051",
+      "type": "player",
+      "name": "John Carter",
+      "source": "Edgar Rice Burroughs",
+      "description": "A Confederate cavalry officer mysteriously transported to Mars \u00e2\u0080\u0094 Barsoom, where the lower gravity gave him superhuman strength. He fought four-armed Tharks, won the love of Princess Dejah Thoris, and became Warlord of Mars. Burroughs invented planetary romance in 1912 and every space hero since carries a piece of John Carter.",
+      "stats": {
+        "Power": 9,
+        "Cunning": 6,
+        "Magic": 1,
+        "Fame": 8,
+        "Charm": 7
+      },
+      "image": "players/051-john-carter.png"
+    },
+    {
+      "id": "player-052",
+      "type": "player",
+      "name": "Conan",
+      "source": "Robert E. Howard",
+      "description": "The original Cimmerian, created by Robert E. Howard in 1932. Before the films, before the comics, Conan was a literary barbarian \u00e2\u0080\u0094 not just a brute but a thief, a pirate, a mercenary, and eventually a king. Howard's Conan is smarter and more nuanced than his imitators. He defined sword and sorcery.",
+      "stats": {
+        "Power": 10,
+        "Cunning": 6,
+        "Magic": 1,
+        "Fame": 10,
+        "Charm": 5
+      },
+      "image": "players/052-conan-robert-e-howard.png"
+    },
+    {
+      "id": "player-053",
+      "type": "player",
+      "name": "Aragorn",
+      "source": "J.R.R. Tolkien",
+      "description": "Strider, the Ranger of the North. Heir of Isildur, who waited eighty-seven years for his crown. He led the Fellowship, faced the Paths of the Dead, and drew the armies of Mordor to the Black Gate as a diversion. His love for Arwen cost her immortality. The king who returned.",
+      "stats": {
+        "Power": 9,
+        "Cunning": 8,
+        "Magic": 4,
+        "Fame": 10,
+        "Charm": 8
+      },
+      "image": "players/053-aragorn.png"
+    },
+    {
+      "id": "player-054",
+      "type": "player",
+      "name": "DEATH",
+      "source": "Terry Pratchett",
+      "description": "A seven-foot skeleton in a black robe who speaks IN CAPITAL LETTERS. He rides a pale horse called Binky, has a granddaughter called Susan, and takes a professional interest in humanity. He once tried being human and found it bewildering. The most beloved personification of mortality in literature. DO NOT FEED THE ELEPHANT.",
+      "stats": {
+        "Power": 10,
+        "Cunning": 5,
+        "Magic": 10,
+        "Fame": 9,
+        "Charm": 8
+      },
+      "image": "players/054-death.png"
+    },
+    {
+      "id": "player-055",
+      "type": "player",
+      "name": "Corwin",
+      "source": "Roger Zelazny",
+      "description": "Prince of Amber, the one true city of which all other worlds \u00e2\u0080\u0094 including Earth \u00e2\u0080\u0094 are mere shadows. Corwin woke in a hospital bed with amnesia, discovered he was an immortal prince, and walked the Pattern to reclaim his birthright. Zelazny's Chronicles of Amber blend swashbuckling with cosmology. Everything is a reflection.",
+      "stats": {
+        "Power": 8,
+        "Cunning": 9,
+        "Magic": 7,
+        "Fame": 7,
+        "Charm": 8
+      },
+      "image": "players/055-corwin.png"
+    },
+    {
+      "id": "player-056",
+      "type": "player",
+      "name": "Corum",
+      "source": "Michael Moorcock",
+      "description": "Prince Corum Jhaelen Irsei, the Prince in the Scarlet Robe. Last of the Vadhagh, he lost his hand and eye and replaced them with the Hand of Kwll and the Eye of Rhynn \u00e2\u0080\u0094 grafts from dead gods that let him summon the dead to fight. Another face of Moorcock's Eternal Champion, elegant where Elric is tormented.",
+      "stats": {
+        "Power": 7,
+        "Cunning": 7,
+        "Magic": 8,
+        "Fame": 7,
+        "Charm": 6
+      },
+      "image": "players/056-corum.png"
+    },
+    {
+      "id": "player-057",
+      "type": "player",
+      "name": "Sauron",
+      "source": "J.R.R. Tolkien",
+      "description": "The Dark Lord, Lieutenant of Morgoth, forger of the One Ring. Once a Maia spirit of great skill, he fell into darkness and spent three ages trying to dominate Middle-earth. He poured his power into a golden ring and lost everything when a hobbit dropped it into a volcano. The greatest villain in fantasy.",
+      "stats": {
+        "Power": 10,
+        "Cunning": 9,
+        "Magic": 10,
+        "Fame": 10,
+        "Charm": 3
+      },
+      "image": "players/057-sauron.png"
+    },
+    {
+      "id": "player-058",
+      "type": "player",
+      "name": "Skeletor",
+      "source": "He-Man (1983)",
+      "description": "Lord of Snake Mountain, skull-faced nemesis of He-Man. His plans to conquer Castle Greyskull are endlessly thwarted, but he never stops trying. Beneath the buffoonery of the cartoon, Skeletor is a genuinely menacing villain \u00e2\u0080\u0094 a sorcerer of immense power trapped in an endless cycle of failure. NYEH HEH HEH!",
+      "stats": {
+        "Power": 8,
+        "Cunning": 7,
+        "Magic": 9,
+        "Fame": 9,
+        "Charm": 4
+      },
+      "image": "players/058-skeletor.png"
+    },
+    {
+      "id": "player-059",
+      "type": "player",
+      "name": "Ming the Merciless",
+      "source": "Flash Gordon (1934)",
+      "description": "Emperor of Mongo, tyrant of a thousand worlds. Ming rules through fear, technology, and a magnificent wardrobe. He is Flash Gordon's eternal nemesis \u00e2\u0080\u0094 cruel, intelligent, and utterly without mercy. Every space villain since owes something to Ming: the pointed beard, the flowing robes, the casual cruelty of absolute power.",
+      "stats": {
+        "Power": 9,
+        "Cunning": 8,
+        "Magic": 7,
+        "Fame": 9,
+        "Charm": 4
+      },
+      "image": "players/059-ming-the-merciless.png"
+    },
+    {
+      "id": "player-060",
+      "type": "player",
+      "name": "He-Man",
+      "source": "He-Man (1983)",
+      "description": "Prince Adam of Eternia raises the Sword of Power and becomes He-Man, the most powerful man in the universe. By the power of Greyskull! With Battle Cat at his side, he defends Castle Greyskull against the forces of Skeletor. Also, every episode ends with a moral lesson. A paladin in every sense.",
+      "stats": {
+        "Power": 10,
+        "Cunning": 3,
+        "Magic": 6,
+        "Fame": 10,
+        "Charm": 7
+      },
+      "image": "players/060-he-man.png"
+    },
+    {
+      "id": "player-061",
+      "type": "player",
+      "name": "Lion-O",
+      "source": "ThunderCats (1985)",
+      "description": "Lord of the ThunderCats, wielder of the Sword of Omens. 'Thunder, Thunder, ThunderCats, HO!' Lion-O was a boy in a man's body \u00e2\u0080\u0094 his suspension capsule aged him during the flight from Thundera. He must learn to lead while wielding Sight Beyond Sight. A young king with an ancient blade and everything to prove.",
+      "stats": {
+        "Power": 9,
+        "Cunning": 5,
+        "Magic": 7,
+        "Fame": 9,
+        "Charm": 7
+      },
+      "image": "players/061-lion-o.png"
+    },
+    {
+      "id": "player-062",
+      "type": "player",
+      "name": "Noggin",
+      "source": "Noggin the Nog (1959)",
+      "description": "Noggin was the gentle prince of the Nogs, kind-hearted ruler of the icy fjords. Never violent, Noggin solved every problem with wisdom, friendship, and hot soup. His nemesis Nogbad the Bad schemed endlessly, but good always prevailed in Oliver Postgate's Norse saga. A cleric by temperament \u00e2\u0080\u0094 he'd rather heal than harm.",
+      "stats": {
+        "Power": 3,
+        "Cunning": 5,
+        "Magic": 4,
+        "Fame": 7,
+        "Charm": 9
+      },
+      "image": "players/062-noggin.png"
+    },
+    {
+      "id": "player-063",
+      "type": "player",
+      "name": "Nogbad the Bad",
+      "source": "Noggin the Nog (1959)",
+      "description": "The scheming uncle of Prince Noggin, forever plotting to steal the crown of the Nogs. Nogbad's plans are elaborate, his machines are improbable, and his defeat is inevitable. He is the perfect villain for a gentle saga \u00e2\u0080\u0094 menacing enough to create tension, foolish enough to always lose. Oliver Postgate's finest scoundrel.",
+      "stats": {
+        "Power": 4,
+        "Cunning": 7,
+        "Magic": 3,
+        "Fame": 7,
+        "Charm": 5
+      },
+      "image": "players/063-nogbad-the-bad.png"
+    },
+    {
+      "id": "player-064",
+      "type": "player",
+      "name": "The Doctor",
+      "source": "Doctor Who (1963)",
+      "description": "A Time Lord from Gallifrey who stole a TARDIS and never stopped running. The Doctor has saved Earth so many times it is practically a hobby. Regenerating into new forms, wielding only a sonic screwdriver, defeating monsters with intelligence rather than violence. The longest-running science fiction show in history.",
+      "stats": {
+        "Power": 5,
+        "Cunning": 10,
+        "Magic": 7,
+        "Fame": 10,
+        "Charm": 9
+      },
+      "image": "players/064-the-doctor.png"
+    },
+    {
+      "id": "player-065",
+      "type": "player",
+      "name": "Davros",
+      "source": "Doctor Who (1963)",
+      "description": "Creator of the Daleks. A crippled Kaled scientist who saw the future of his race and decided it was extermination. Davros built the ultimate weapon \u00e2\u0080\u0094 mutants inside armoured shells \u00e2\u0080\u0094 and lost control of his own creation. He is the dark mirror of the Doctor: both geniuses, but one chose compassion and the other chose power.",
+      "stats": {
+        "Power": 8,
+        "Cunning": 10,
+        "Magic": 6,
+        "Fame": 9,
+        "Charm": 2
+      },
+      "image": "players/065-davros.png"
+    },
+    {
+      "id": "player-066",
+      "type": "player",
+      "name": "Avon",
+      "source": "Blake's 7 (1978)",
+      "description": "Kerr Avon, computer genius and reluctant rebel. He joined Blake's revolution not out of idealism but because the alternative was prison. Cold, sarcastic, and brilliant, Avon trusted machines more than people \u00e2\u0080\u0094 and was usually right to do so. Paul Darrow played him with ice-cold charisma. The anti-hero before it was fashionable.",
+      "stats": {
+        "Power": 6,
+        "Cunning": 10,
+        "Magic": 1,
+        "Fame": 7,
+        "Charm": 5
+      },
+      "image": "players/066-avon.png"
+    },
+    {
+      "id": "player-067",
+      "type": "player",
+      "name": "Ulysses",
+      "source": "Ulysses 31 (1981)",
+      "description": "Captain Ulysses, transported across the galaxy by the wrath of the gods after destroying the Cyclops. His crew frozen in suspended animation, he wanders the cosmos with his son Telemachus, the alien girl Yumi, and the robot Nono, seeking the Kingdom of Hades to free his companions. Homer's Odyssey retold among the stars.",
+      "stats": {
+        "Power": 8,
+        "Cunning": 7,
+        "Magic": 3,
+        "Fame": 7,
+        "Charm": 7
+      },
+      "image": "players/067-ulysses.png"
+    },
+    {
+      "id": "player-068",
+      "type": "player",
+      "name": "Esteban",
+      "source": "Mysterious Cities of Gold (1982)",
+      "description": "Child of the Sun, orphan of Barcelona, seeker of the lost Cities of Gold in the New World. Esteban can summon sunlight through sheer willpower. With Zia and Tao, he discovered the golden condor \u00e2\u0080\u0094 a solar-powered flying machine left by a lost civilisation. One of the greatest animated adventures ever made.",
+      "stats": {
+        "Power": 4,
+        "Cunning": 6,
+        "Magic": 7,
+        "Fame": 7,
+        "Charm": 8
+      },
+      "image": "players/068-esteban.png"
+    },
+    {
+      "id": "player-069",
+      "type": "player",
+      "name": "Robin of Loxley",
+      "source": "Robin of Sherwood (1984)",
+      "description": "Herne's Son, the hooded man of Sherwood Forest. This Robin Hood was touched by pagan magic \u00e2\u0080\u0094 chosen by Herne the Hunter to protect the poor of England. Michael Praed and later Jason Connery played a Robin who was part outlaw, part mystic. Clannad's haunting soundtrack made every arrow fly in slow motion.",
+      "stats": {
+        "Power": 7,
+        "Cunning": 7,
+        "Magic": 5,
+        "Fame": 9,
+        "Charm": 8
+      },
+      "image": "players/069-robin-of-loxley.png"
+    },
+    {
+      "id": "player-070",
+      "type": "player",
+      "name": "Dogtanian",
+      "source": "Dogtanian (1981)",
+      "description": "The brave young pup who travelled from Gascony to Paris to join the King's Muskehounds. With his friends Porthos, Athos, and Aramis, Dogtanian fought Cardinal Richelieu's guards and won the heart of fair Juliette. One for all, and all for one! This anime adaptation taught a generation about loyalty, honour, and excellent swordsmanship.",
+      "stats": {
+        "Power": 6,
+        "Cunning": 6,
+        "Magic": 1,
+        "Fame": 7,
+        "Charm": 9
+      },
+      "image": "players/070-dogtanian.png"
+    }
+  ],
+  "locations": [
+    {
+      "id": "location-001",
+      "type": "location",
+      "name": "Moria",
+      "source": "Tolkien",
+      "description": "Khazad-dum, the greatest mansion of the dwarves, delved deep beneath the Misty Mountains. Its halls once blazed with mithril light. Then the dwarves dug too deep and woke a Balrog \u00e2\u0080\u0094 a demon of the ancient world wreathed in shadow and flame. Now its endless corridors echo with goblin drums and the fellowship's most desperate battle.",
+      "stats": {
+        "Danger": 10,
+        "Puzzle": 5,
+        "Magic": 8,
+        "Fame": 10,
+        "Dread": 3
+      },
+      "image": "locations/001-moria.png"
+    },
+    {
+      "id": "location-002",
+      "type": "location",
+      "name": "Barad-dur",
+      "source": "Tolkien",
+      "description": "The Dark Tower of Sauron, raised with the power of the One Ring. A fortress of iron and obsidian so vast it cast a shadow across Mordor. At its summit, the Eye of Sauron \u00e2\u0080\u0094 lidless, wreathed in flame \u00e2\u0080\u0094 searched endlessly for the Ring. Its foundations could not be destroyed while the Ring survived.",
+      "stats": {
+        "Danger": 10,
+        "Puzzle": 7,
+        "Magic": 10,
+        "Fame": 10,
+        "Dread": 1
+      },
+      "image": "locations/002-barad-dur.png"
+    },
+    {
+      "id": "location-003",
+      "type": "location",
+      "name": "Cirith Ungol",
+      "source": "Tolkien",
+      "description": "The Pass of the Spider, the secret way into Mordor above Minas Morgul. Gollum led Frodo and Sam through Shelob's lair \u00e2\u0080\u0094 a darkness so total that even elven light barely pierced it. The tower of Cirith Ungol held Frodo prisoner and Sam had to fight through an entire orc garrison alone to rescue him.",
+      "stats": {
+        "Danger": 8,
+        "Puzzle": 8,
+        "Magic": 6,
+        "Fame": 9,
+        "Dread": 1
+      },
+      "image": "locations/003-cirith-ungol.png"
+    },
+    {
+      "id": "location-004",
+      "type": "location",
+      "name": "Isengard",
+      "source": "Tolkien",
+      "description": "Saruman's fortress at the southern end of the Misty Mountains. The tower of Orthanc rose from its centre \u00e2\u0080\u0094 an unbreakable spire of ancient stone. Saruman turned the surrounding gardens into a war factory, breeding Uruk-hai in pits beneath the earth. The Ents marched on Isengard and tore it apart with roots and rage.",
+      "stats": {
+        "Danger": 9,
+        "Puzzle": 8,
+        "Magic": 9,
+        "Fame": 9,
+        "Dread": 2
+      },
+      "image": "locations/004-isengard.png"
+    },
+    {
+      "id": "location-005",
+      "type": "location",
+      "name": "Mount Doom",
+      "source": "Tolkien",
+      "description": "Orodruin, the Fire-mountain \u00e2\u0080\u0094 where Sauron forged the One Ring and where Frodo carried it to be destroyed. The Crack of Doom, a chasm of liquid fire inside the volcano, is the only place hot enough to unmake the Ring. In the end, it was Gollum's obsession, not Frodo's will, that cast the Ring into the flames.",
+      "stats": {
+        "Danger": 10,
+        "Puzzle": 3,
+        "Magic": 10,
+        "Fame": 10,
+        "Dread": 1
+      },
+      "image": "locations/005-mount-doom.png"
+    },
+    {
+      "id": "location-006",
+      "type": "location",
+      "name": "Minas Morgul",
+      "source": "Tolkien",
+      "description": "Once Minas Ithil, the Tower of the Moon, a beautiful fortress of Gondor. Taken by the Nazgul, it became Minas Morgul \u00e2\u0080\u0094 the Tower of Sorcery. Its walls glow with a corpse-light that makes the living sick. The Witch-king rules from its summit, and the road to Cirith Ungol begins at its cursed gate.",
+      "stats": {
+        "Danger": 9,
+        "Puzzle": 7,
+        "Magic": 9,
+        "Fame": 8,
+        "Dread": 2
+      },
+      "image": "locations/006-minas-morgul.png"
+    },
+    {
+      "id": "location-007",
+      "type": "location",
+      "name": "Dol Guldur",
+      "source": "Tolkien",
+      "description": "The Hill of Sorcery in southern Mirkwood, where Sauron hid as 'the Necromancer' for centuries before the War of the Ring. Gandalf entered alone and discovered the truth. The fortress corrupted the forest around it, turning Greenwood the Great into Mirkwood. A dungeon where shadow itself is the enemy.",
+      "stats": {
+        "Danger": 8,
+        "Puzzle": 8,
+        "Magic": 9,
+        "Fame": 7,
+        "Dread": 1
+      },
+      "image": "locations/007-dol-guldur.png"
+    },
+    {
+      "id": "location-008",
+      "type": "location",
+      "name": "Helm's Deep",
+      "source": "Tolkien",
+      "description": "The fortress of Rohan, carved into the White Mountains behind the Deeping Wall. Ten thousand Uruk-hai marched against it and nearly won. The battle of Helm's Deep is the definitive siege in fantasy \u00e2\u0080\u0094 ladders, a culvert bomb, and a dawn charge led by Gandalf. The Glittering Caves behind it are said to be breathtaking.",
+      "stats": {
+        "Danger": 9,
+        "Puzzle": 6,
+        "Magic": 4,
+        "Fame": 10,
+        "Dread": 5
+      },
+      "image": "locations/008-helm-s-deep.png"
+    },
+    {
+      "id": "location-009",
+      "type": "location",
+      "name": "Tomb of Horrors",
+      "source": "D&D Module (1978)",
+      "description": "Acererak's tomb, written by Gary Gygax himself. The deadliest dungeon ever published. Thousands of characters have died here \u00e2\u0080\u0094 crushed, disintegrated, soul-trapped, or simply erased from existence. Every room is a death trap. Every treasure is bait. The demilich at the end can kill with a glance. Approach with multiple backup characters.",
+      "stats": {
+        "Danger": 10,
+        "Puzzle": 10,
+        "Magic": 9,
+        "Fame": 10,
+        "Dread": 1
+      },
+      "image": "locations/009-tomb-of-horrors.png"
+    },
+    {
+      "id": "location-010",
+      "type": "location",
+      "name": "Ravenloft",
+      "source": "D&D Module (1983)",
+      "description": "Castle Ravenloft, domain of Count Strahd von Zarovich, the first vampire in D&D. Gothic horror meets dungeon crawling in a castle perched on a cliff above the village of Barovia. Strahd is a tragic villain \u00e2\u0080\u0094 a warrior who made a pact with dark powers for love and lost his humanity. The castle changes with each play.",
+      "stats": {
+        "Danger": 9,
+        "Puzzle": 8,
+        "Magic": 9,
+        "Fame": 10,
+        "Dread": 5
+      },
+      "image": "locations/010-ravenloft.png"
+    },
+    {
+      "id": "location-011",
+      "type": "location",
+      "name": "White Plume Mountain",
+      "source": "D&D Module (1979)",
+      "description": "A volcanic dungeon hiding three legendary weapons: Wave (a trident), Whelm (a hammer), and Blackrazor (a soul-drinking sword). Created by the wizard Keraptis, every room is an ingenious puzzle or deadly trap. The dungeon is inside a volcanic mountain that perpetually vents steam \u00e2\u0080\u0094 hence the white plume.",
+      "stats": {
+        "Danger": 8,
+        "Puzzle": 9,
+        "Magic": 8,
+        "Fame": 9,
+        "Dread": 3
+      },
+      "image": "locations/011-white-plume-mountain.png"
+    },
+    {
+      "id": "location-012",
+      "type": "location",
+      "name": "Caves of Chaos",
+      "source": "D&D Module (1979)",
+      "description": "A ravine filled with monster-infested caves \u00e2\u0080\u0094 the first dungeon for millions of D&D players. The Keep on the Borderlands module introduced an entire generation to tabletop gaming. Multiple caves hold different monster tribes: kobolds, goblins, orcs, gnolls, and worse. At the very end, a temple of chaos awaits the brave.",
+      "stats": {
+        "Danger": 6,
+        "Puzzle": 5,
+        "Magic": 4,
+        "Fame": 10,
+        "Dread": 4
+      },
+      "image": "locations/012-caves-of-chaos.png"
+    },
+    {
+      "id": "location-013",
+      "type": "location",
+      "name": "Barrier Peaks",
+      "source": "D&D Module (1980)",
+      "description": "A crashed spaceship in a fantasy world. Expedition to the Barrier Peaks combined science fiction and fantasy decades before it was fashionable. Robots patrol the corridors, ray guns lie beside treasure chests, and a colour-coded keycard system guards the doors. Your fighters will be very confused by the blaster pistols.",
+      "stats": {
+        "Danger": 8,
+        "Puzzle": 7,
+        "Magic": 3,
+        "Fame": 8,
+        "Dread": 5
+      },
+      "image": "locations/013-barrier-peaks.png"
+    },
+    {
+      "id": "location-014",
+      "type": "location",
+      "name": "Temple of Elemental Evil",
+      "source": "D&D Module (1985)",
+      "description": "The ruined temple near the village of Hommlet, where cultists of four elemental factions scheme and fight each other. Gary Gygax and Frank Mentzer's mega-adventure spans four dungeon levels, each dedicated to Earth, Air, Fire, or Water. At the bottom lurks Zuggtmoy, the Demon Queen of Fungi. Bring a large party.",
+      "stats": {
+        "Danger": 9,
+        "Puzzle": 8,
+        "Magic": 9,
+        "Fame": 9,
+        "Dread": 2
+      },
+      "image": "locations/014-temple-of-elemental-evil.png"
+    },
+    {
+      "id": "location-015",
+      "type": "location",
+      "name": "Isle of Dread",
+      "source": "D&D Module (1981)",
+      "description": "A tropical island of dinosaurs, pirates, and lost civilisations. The Isle of Dread was D&D's first wilderness adventure \u00e2\u0080\u0094 a hex-crawl across jungles and mountains to find a ruined temple and its treasure. There are actual dinosaurs. And kopru. And a volcano. It is basically D&D does King Kong meets Jurassic Park.",
+      "stats": {
+        "Danger": 7,
+        "Puzzle": 5,
+        "Magic": 5,
+        "Fame": 8,
+        "Dread": 6
+      },
+      "image": "locations/015-isle-of-dread.png"
+    },
+    {
+      "id": "location-016",
+      "type": "location",
+      "name": "Melnibone",
+      "source": "Michael Moorcock",
+      "description": "The Dragon Isle, home of Elric's dying empire. For ten thousand years the Melniboneans ruled with dragon fire and demon pacts, building a civilisation of exquisite cruelty and beauty. Their dreaming towers rise from an island that exists partly in another dimension. The last great empire of Chaos.",
+      "stats": {
+        "Danger": 9,
+        "Puzzle": 8,
+        "Magic": 10,
+        "Fame": 8,
+        "Dread": 4
+      },
+      "image": "locations/016-melnibone.png"
+    },
+    {
+      "id": "location-017",
+      "type": "location",
+      "name": "Tanelorn",
+      "source": "Michael Moorcock",
+      "description": "The eternal city of peace that exists in every version of the multiverse. Every wanderer seeks it; few ever find it. It is the one place where the Eternal Champion can rest between incarnations. Tanelorn offers no excitement, no glory, no adventure \u00e2\u0080\u0094 only peace. For weary heroes, that is the greatest treasure of all.",
+      "stats": {
+        "Danger": 1,
+        "Puzzle": 5,
+        "Magic": 8,
+        "Fame": 8,
+        "Dread": 10
+      },
+      "image": "locations/017-tanelorn.png"
+    },
+    {
+      "id": "location-018",
+      "type": "location",
+      "name": "Tombs of Atuan",
+      "source": "Ursula K. Le Guin",
+      "description": "A sacred labyrinth beneath the desert where the young priestess Tenar served the Nameless Ones. In total darkness, she navigated by touch through tunnels that had swallowed countless victims. When Ged came seeking the other half of the Ring of Erreth-Akbe, she had to choose between ancient duty and human connection.",
+      "stats": {
+        "Danger": 7,
+        "Puzzle": 6,
+        "Magic": 9,
+        "Fame": 8,
+        "Dread": 3
+      },
+      "image": "locations/018-tombs-of-atuan.png"
+    },
+    {
+      "id": "location-019",
+      "type": "location",
+      "name": "Roke",
+      "source": "Ursula K. Le Guin",
+      "description": "The island of the wise, home of the great school of wizardry in Earthsea. On Roke, young mages learn the true names of things \u00e2\u0080\u0094 for to know a thing's true name is to have power over it. The Immanent Grove stands at its heart, and the Master Patterner walks among the trees. Hogwarts wishes it were Roke.",
+      "stats": {
+        "Danger": 5,
+        "Puzzle": 8,
+        "Magic": 10,
+        "Fame": 8,
+        "Dread": 7
+      },
+      "image": "locations/019-roke.png"
+    },
+    {
+      "id": "location-020",
+      "type": "location",
+      "name": "The Dry Land",
+      "source": "Ursula K. Le Guin",
+      "description": "The land of the dead in Earthsea \u00e2\u0080\u0094 not a hell but an endless twilight of dust and silence where the dead walk without purpose. There is no sun, no wind, no water. The wall between life and death was broken, and Ged spent his last magic to mend it. The most haunting afterlife in fantasy.",
+      "stats": {
+        "Danger": 6,
+        "Puzzle": 4,
+        "Magic": 10,
+        "Fame": 7,
+        "Dread": 1
+      },
+      "image": "locations/020-the-dry-land.png"
+    },
+    {
+      "id": "location-021",
+      "type": "location",
+      "name": "Selidor",
+      "source": "Ursula K. Le Guin",
+      "description": "The westernmost island of Earthsea, where the dragon Orm Embar lived and where Ged faced the broken wall between life and death. Beyond Selidor there is only the Open Sea and the edge of the world. It is the end of all maps, the last shore \u00e2\u0080\u0094 where heroes go when there is nowhere else left.",
+      "stats": {
+        "Danger": 8,
+        "Puzzle": 5,
+        "Magic": 9,
+        "Fame": 7,
+        "Dread": 4
+      },
+      "image": "locations/021-selidor.png"
+    },
+    {
+      "id": "location-022",
+      "type": "location",
+      "name": "Havnor",
+      "source": "Ursula K. Le Guin",
+      "description": "The great city of the Archipelago, once the seat of kings in Earthsea. Its tower rises above a harbour that has seen ten thousand ships. When the kings ceased, Havnor fell into squabbling and piracy. Ged restored the king \u00e2\u0080\u0094 a young man named Lebannen \u00e2\u0080\u0094 and the city shone again. The heart of a world of islands.",
+      "stats": {
+        "Danger": 5,
+        "Puzzle": 7,
+        "Magic": 7,
+        "Fame": 7,
+        "Dread": 8
+      },
+      "image": "locations/022-havnor.png"
+    },
+    {
+      "id": "location-023",
+      "type": "location",
+      "name": "Lankhmar",
+      "source": "Fritz Leiber",
+      "description": "The City of Sevenscore Thousand Smokes, greatest metropolis on Nehwon. Its thieves' guild is legendary, its temples countless, and its sewers full of rats (some of which are quite large and disturbingly intelligent). Fafhrd and the Grey Mouser call it home between adventures. The original fantasy city of rogues.",
+      "stats": {
+        "Danger": 7,
+        "Puzzle": 10,
+        "Magic": 5,
+        "Fame": 8,
+        "Dread": 6
+      },
+      "image": "locations/023-lankhmar.png"
+    },
+    {
+      "id": "location-024",
+      "type": "location",
+      "name": "Ankh-Morpork",
+      "source": "Terry Pratchett",
+      "description": "The greatest city on the Discworld \u00e2\u0080\u0094 which is to say, the most interesting in the way that a compost heap is interesting. Built on the River Ankh (a body of water you can walk across if you are brave enough), ruled by the Patrician, and policed by Sam Vimes. It smells. It works. It is magnificent.",
+      "stats": {
+        "Danger": 6,
+        "Puzzle": 9,
+        "Magic": 7,
+        "Fame": 9,
+        "Dread": 8
+      },
+      "image": "locations/024-ankh-morpork.png"
+    },
+    {
+      "id": "location-025",
+      "type": "location",
+      "name": "Gormenghast",
+      "source": "Mervyn Peake",
+      "description": "A castle so vast its inhabitants have forgotten most of its rooms. The Groan family has ruled Gormenghast for seventy-seven generations, performing rituals whose meaning is lost. Steerpike climbs from the kitchens to challenge everything. Peake's gothic masterpiece is a dungeon made of tradition, madness, and crumbling stone.",
+      "stats": {
+        "Danger": 6,
+        "Puzzle": 8,
+        "Magic": 4,
+        "Fame": 8,
+        "Dread": 7
+      },
+      "image": "locations/025-gormenghast.png"
+    },
+    {
+      "id": "location-026",
+      "type": "location",
+      "name": "Cimmeria",
+      "source": "Robert E. Howard",
+      "description": "A bleak, grey land of hills and forests, birthplace of Conan. The Cimmerians are a fierce, dark-haired people who worship Crom \u00e2\u0080\u0094 a god who gives you nothing but the strength to fight. Howard described it as perpetually overcast, perpetually dangerous, and perpetually producing the hardest warriors in the Hyborian Age.",
+      "stats": {
+        "Danger": 9,
+        "Puzzle": 4,
+        "Magic": 2,
+        "Fame": 8,
+        "Dread": 2
+      },
+      "image": "locations/026-cimmeria.png"
+    },
+    {
+      "id": "location-027",
+      "type": "location",
+      "name": "Barsoom",
+      "source": "Edgar Rice Burroughs",
+      "description": "Mars as Burroughs imagined it: a dying world of red deserts, ancient canals, and warring city-states. The atmosphere is thin, the oceans are gone, and four-armed green warriors roam the dead sea-bottoms. Barsoom has two moons, eight-legged beasts called thoats, and a princess worth crossing a planet for.",
+      "stats": {
+        "Danger": 8,
+        "Puzzle": 6,
+        "Magic": 4,
+        "Fame": 8,
+        "Dread": 6
+      },
+      "image": "locations/027-barsoom.png"
+    },
+    {
+      "id": "location-028",
+      "type": "location",
+      "name": "Nostromo",
+      "source": "Alien (1979)",
+      "description": "USCSS Nostromo, a commercial towing vessel. Crew of seven. Dark corridors, dripping condensation, chains hanging from ceilings, and something hunting the crew. Ridley Scott's spaceship is the ultimate dungeon \u00e2\u0080\u0094 claustrophobic, industrial, and inescapable. The air ducts are just big enough for a xenomorph.",
+      "stats": {
+        "Danger": 8,
+        "Puzzle": 7,
+        "Magic": 1,
+        "Fame": 10,
+        "Dread": 2
+      },
+      "image": "locations/028-nostromo.png"
+    },
+    {
+      "id": "location-029",
+      "type": "location",
+      "name": "Trantor",
+      "source": "Isaac Asimov",
+      "description": "The city-planet at the heart of the Galactic Empire. An entire world covered in metal, housing forty billion people in interconnected domes. When the Empire fell, Trantor's surface crumbled and its inhabitants returned to farming between the ruins. The ultimate megadungeon \u00e2\u0080\u0094 a planet-sized ruin of a fallen civilisation.",
+      "stats": {
+        "Danger": 7,
+        "Puzzle": 9,
+        "Magic": 3,
+        "Fame": 9,
+        "Dread": 4
+      },
+      "image": "locations/029-trantor.png"
+    },
+    {
+      "id": "location-030",
+      "type": "location",
+      "name": "Castle Greyskull",
+      "source": "He-Man (1983)",
+      "description": "A skull-shaped fortress holding the secrets of the universe on the planet Eternia. Castle Greyskull is the source of He-Man's power and Skeletor's obsession. Inside, the Sorceress guards ancient magic. The jawbridge entrance is one of the most iconic images in 1980s pop culture. By the power of Greyskull!",
+      "stats": {
+        "Danger": 10,
+        "Puzzle": 5,
+        "Magic": 10,
+        "Fame": 10,
+        "Dread": 6
+      },
+      "image": "locations/030-castle-greyskull.png"
+    },
+    {
+      "id": "location-031",
+      "type": "location",
+      "name": "The Labyrinth",
+      "source": "Labyrinth (1986)",
+      "description": "Thirteen hours to solve it, or the baby becomes a goblin forever. Jim Henson's Labyrinth is a maze of impossible geometry, trick doors, and unhelpful creatures. The rules change whenever the Goblin King feels like it. It's not fair \u00e2\u0080\u0094 but as Sarah learned, that's exactly the point. The journey matters more than the destination.",
+      "stats": {
+        "Danger": 6,
+        "Puzzle": 10,
+        "Magic": 8,
+        "Fame": 10,
+        "Dread": 8
+      },
+      "image": "locations/031-the-labyrinth.png"
+    },
+    {
+      "id": "location-032",
+      "type": "location",
+      "name": "Fantasia",
+      "source": "The NeverEnding Story (1984)",
+      "description": "A world being consumed by the Nothing \u00e2\u0080\u0094 the void left when humans stop dreaming. Fantasia is not a dungeon in the traditional sense but a dying realm that contains every story ever imagined. The Ivory Tower crumbles, the Swamps of Sadness claim the brave, and only a human child's imagination can restore what was lost.",
+      "stats": {
+        "Danger": 5,
+        "Puzzle": 4,
+        "Magic": 10,
+        "Fame": 10,
+        "Dread": 9
+      },
+      "image": "locations/032-fantasia.png"
+    },
+    {
+      "id": "location-033",
+      "type": "location",
+      "name": "Snake Mountain",
+      "source": "He-Man (1983)",
+      "description": "Skeletor's lair on Eternia \u00e2\u0080\u0094 a mountain shaped like a coiled serpent with a gaping mouth for an entrance. Inside, Skeletor plots his endless schemes to conquer Castle Greyskull, surrounded by his bumbling henchmen Evil-Lyn, Beast Man, and Trap Jaw. The ultimate villain's headquarters, designed by someone who really loved snakes.",
+      "stats": {
+        "Danger": 8,
+        "Puzzle": 7,
+        "Magic": 7,
+        "Fame": 9,
+        "Dread": 3
+      },
+      "image": "locations/033-snake-mountain.png"
+    },
+    {
+      "id": "location-034",
+      "type": "location",
+      "name": "Death Star",
+      "source": "Star Wars (1977)",
+      "description": "That is no moon. The Galactic Empire's ultimate weapon \u00e2\u0080\u0094 a space station the size of a small moon with a superlaser capable of destroying a planet. Its one weakness: a thermal exhaust port, two metres wide, leading directly to the main reactor. The biggest dungeon crawl in cinema. Watch out for the trash compactor.",
+      "stats": {
+        "Danger": 10,
+        "Puzzle": 6,
+        "Magic": 3,
+        "Fame": 10,
+        "Dread": 2
+      },
+      "image": "locations/034-death-star.png"
+    },
+    {
+      "id": "location-035",
+      "type": "location",
+      "name": "Skull Island",
+      "source": "King Kong (1933)",
+      "description": "A fog-shrouded island where dinosaurs still roam and a giant ape rules from a mountaintop. Beyond the great wall, the jungle is lethal \u00e2\u0080\u0094 every vine might be a snake, every shadow might be a predator. Kong is king here, and the natives know enough to stay behind the wall. The original monster island.",
+      "stats": {
+        "Danger": 9,
+        "Puzzle": 4,
+        "Magic": 3,
+        "Fame": 10,
+        "Dread": 5
+      },
+      "image": "locations/035-skull-island.png"
+    },
+    {
+      "id": "location-036",
+      "type": "location",
+      "name": "Krell Laboratory",
+      "source": "Forbidden Planet (1956)",
+      "description": "Buried beneath the surface of Altair IV, the Krell \u00e2\u0080\u0094 an ancient civilisation \u00e2\u0080\u0094 built a machine twenty miles across. It could materialise thought into reality. The Krell forgot one thing: the monsters of the id. Dr Morbius found their laboratory and their power. The machine still works. The monsters still come at night.",
+      "stats": {
+        "Danger": 9,
+        "Puzzle": 9,
+        "Magic": 8,
+        "Fame": 8,
+        "Dread": 3
+      },
+      "image": "locations/036-krell-laboratory.png"
+    }
+  ],
+  "monsters": [
+    {
+      "id": "monster-giantRat",
+      "type": "monster",
+      "name": "Giant Rat",
+      "source": "Bestiary",
+      "description": "An oversized rat with beady red eyes and yellow teeth.",
+      "stats": {
+        "HP": 4,
+        "AC": 10,
+        "ATK": "+2",
+        "DMG": "1d4",
+        "CR": "0.125",
+        "XP": 25
+      },
+      "image": "monsters/giant-rat.png"
+    },
+    {
+      "id": "monster-kobold",
+      "type": "monster",
+      "name": "Kobold",
+      "source": "Bestiary",
+      "description": "A small, scaly reptilian creature clutching a tiny spear.",
+      "stats": {
+        "HP": 5,
+        "AC": 12,
+        "ATK": "+3",
+        "DMG": "1d4+1",
+        "CR": "0.125",
+        "XP": 25
+      },
+      "image": "monsters/kobold.png"
+    },
+    {
+      "id": "monster-stirge",
+      "type": "monster",
+      "name": "Stirge",
+      "source": "Bestiary",
+      "description": "A mosquito-like creature the size of a cat, buzzing hungrily.",
+      "stats": {
+        "HP": 2,
+        "AC": 13,
+        "ATK": "+3",
+        "DMG": "1d4+1",
+        "CR": "0.125",
+        "XP": 25
+      },
+      "image": "monsters/stirge.png"
+    },
+    {
+      "id": "monster-giantBat",
+      "type": "monster",
+      "name": "Giant Bat",
+      "source": "Bestiary",
+      "description": "A bat with a wingspan wider than your arms, swooping silently.",
+      "stats": {
+        "HP": 4,
+        "AC": 11,
+        "ATK": "+2",
+        "DMG": "1d4+1",
+        "CR": "0.125",
+        "XP": 25
+      },
+      "image": "monsters/giant-bat.png"
+    },
+    {
+      "id": "monster-crawlingClaw",
+      "type": "monster",
+      "name": "Crawling Claw",
+      "source": "Bestiary",
+      "description": "A severed hand skittering across the floor on its fingertips.",
+      "stats": {
+        "HP": 3,
+        "AC": 12,
+        "ATK": "+3",
+        "DMG": "1d4+1",
+        "CR": "0",
+        "XP": 10
+      },
+      "image": "monsters/crawling-claw.png"
+    },
+    {
+      "id": "monster-goblin",
+      "type": "monster",
+      "name": "Goblin",
+      "source": "Bestiary",
+      "description": "A small, vicious humanoid with sharp teeth.",
+      "stats": {
+        "HP": 7,
+        "AC": 13,
+        "ATK": "+3",
+        "DMG": "1d6+1",
+        "CR": "0.25",
+        "XP": 50
+      },
+      "image": "monsters/goblin.png"
+    },
+    {
+      "id": "monster-skeleton",
+      "type": "monster",
+      "name": "Skeleton",
+      "source": "Bestiary",
+      "description": "Animated bones wielding rusty weapons.",
+      "stats": {
+        "HP": 10,
+        "AC": 12,
+        "ATK": "+3",
+        "DMG": "1d6+1",
+        "CR": "0.25",
+        "XP": 50
+      },
+      "image": "monsters/skeleton.png"
+    },
+    {
+      "id": "monster-zombie",
+      "type": "monster",
+      "name": "Zombie",
+      "source": "Bestiary",
+      "description": "A shambling corpse with rotting flesh.",
+      "stats": {
+        "HP": 15,
+        "AC": 8,
+        "ATK": "+2",
+        "DMG": "1d6",
+        "CR": "0.25",
+        "XP": 50
+      },
+      "image": "monsters/zombie.png"
+    },
+    {
+      "id": "monster-wolf",
+      "type": "monster",
+      "name": "Wolf",
+      "source": "Bestiary",
+      "description": "A fierce predator with gleaming eyes.",
+      "stats": {
+        "HP": 8,
+        "AC": 12,
+        "ATK": "+3",
+        "DMG": "1d6+1",
+        "CR": "0.25",
+        "XP": 50
+      },
+      "image": "monsters/wolf.png"
+    },
+    {
+      "id": "monster-orc",
+      "type": "monster",
+      "name": "Orc",
+      "source": "Bestiary",
+      "description": "A brutish warrior with green skin and tusks.",
+      "stats": {
+        "HP": 15,
+        "AC": 13,
+        "ATK": "+5",
+        "DMG": "1d12+3",
+        "CR": "0.5",
+        "XP": 100
+      },
+      "image": "monsters/orc.png"
+    },
+    {
+      "id": "monster-hobgoblin",
+      "type": "monster",
+      "name": "Hobgoblin",
+      "source": "Bestiary",
+      "description": "A disciplined goblinoid soldier in armour.",
+      "stats": {
+        "HP": 11,
+        "AC": 16,
+        "ATK": "+3",
+        "DMG": "1d8+1",
+        "CR": "0.5",
+        "XP": 100
+      },
+      "image": "monsters/hobgoblin.png"
+    },
+    {
+      "id": "monster-gnoll",
+      "type": "monster",
+      "name": "Gnoll",
+      "source": "Bestiary",
+      "description": "A hyena-headed humanoid savage.",
+      "stats": {
+        "HP": 18,
+        "AC": 14,
+        "ATK": "+4",
+        "DMG": "1d8+2",
+        "CR": "0.5",
+        "XP": 100
+      },
+      "image": "monsters/gnoll.png"
+    },
+    {
+      "id": "monster-rustMonster",
+      "type": "monster",
+      "name": "Rust Monster",
+      "source": "Bestiary",
+      "description": "An insectoid creature whose antennae corrode metal on contact.",
+      "stats": {
+        "HP": 27,
+        "AC": 14,
+        "ATK": "+3",
+        "DMG": "1d8+1",
+        "CR": "0.5",
+        "XP": 100
+      },
+      "image": "monsters/rust-monster.png"
+    },
+    {
+      "id": "monster-bugbear",
+      "type": "monster",
+      "name": "Bugbear",
+      "source": "Bestiary",
+      "description": "A large, hairy goblinoid ambusher.",
+      "stats": {
+        "HP": 27,
+        "AC": 16,
+        "ATK": "+4",
+        "DMG": "2d8+2",
+        "CR": "1",
+        "XP": 200
+      },
+      "image": "monsters/bugbear.png"
+    },
+    {
+      "id": "monster-giantSpider",
+      "type": "monster",
+      "name": "Giant Spider",
+      "source": "Bestiary",
+      "description": "A massive arachnid with dripping fangs.",
+      "stats": {
+        "HP": 26,
+        "AC": 14,
+        "ATK": "+5",
+        "DMG": "1d8+3",
+        "CR": "1",
+        "XP": 200
+      },
+      "image": "monsters/giant-spider.png"
+    },
+    {
+      "id": "monster-ogre",
+      "type": "monster",
+      "name": "Ogre",
+      "source": "Bestiary",
+      "description": "A towering brute of immense strength.",
+      "stats": {
+        "HP": 59,
+        "AC": 11,
+        "ATK": "+6",
+        "DMG": "2d8+4",
+        "CR": "2",
+        "XP": 450
+      },
+      "image": "monsters/ogre.png"
+    },
+    {
+      "id": "monster-gargoyle",
+      "type": "monster",
+      "name": "Gargoyle",
+      "source": "Bestiary",
+      "description": "A winged stone creature that lurks motionless until it strikes.",
+      "stats": {
+        "HP": 52,
+        "AC": 15,
+        "ATK": "+4",
+        "DMG": "2d6+2",
+        "CR": "2",
+        "XP": 450
+      },
+      "image": "monsters/gargoyle.png"
+    },
+    {
+      "id": "monster-mimic",
+      "type": "monster",
+      "name": "Mimic",
+      "source": "Bestiary",
+      "description": "A shapeshifter disguised as a treasure chest, waiting to devour the greedy.",
+      "stats": {
+        "HP": 58,
+        "AC": 12,
+        "ATK": "+5",
+        "DMG": "1d8+3",
+        "CR": "2",
+        "XP": 450
+      },
+      "image": "monsters/mimic.png"
+    },
+    {
+      "id": "monster-gelatinousCube",
+      "type": "monster",
+      "name": "Gelatinous Cube",
+      "source": "Bestiary",
+      "description": "A nearly transparent cube of acidic jelly that fills the corridor.",
+      "stats": {
+        "HP": 84,
+        "AC": 6,
+        "ATK": "+4",
+        "DMG": "2d6+1",
+        "CR": "2",
+        "XP": 450
+      },
+      "image": "monsters/gelatinous-cube.png"
+    },
+    {
+      "id": "monster-owlbear",
+      "type": "monster",
+      "name": "Owlbear",
+      "source": "Bestiary",
+      "description": "A fearsome hybrid of owl and bear.",
+      "stats": {
+        "HP": 59,
+        "AC": 13,
+        "ATK": "+7",
+        "DMG": "2d8+5",
+        "CR": "3",
+        "XP": 700
+      },
+      "image": "monsters/owlbear.png"
+    },
+    {
+      "id": "monster-troll",
+      "type": "monster",
+      "name": "Troll",
+      "source": "Bestiary",
+      "description": "A lanky giant with regenerating flesh.",
+      "stats": {
+        "HP": 84,
+        "AC": 15,
+        "ATK": "+7",
+        "DMG": "2d6+4",
+        "CR": "5",
+        "XP": 1800
+      },
+      "image": "monsters/troll.png"
+    },
+    {
+      "id": "monster-minotaur",
+      "type": "monster",
+      "name": "Minotaur",
+      "source": "Bestiary",
+      "description": "A hulking bull-headed humanoid that charges through the labyrinth.",
+      "stats": {
+        "HP": 76,
+        "AC": 14,
+        "ATK": "+6",
+        "DMG": "2d8+4",
+        "CR": "3",
+        "XP": 700
+      },
+      "image": "monsters/minotaur.png"
+    },
+    {
+      "id": "monster-basilisk",
+      "type": "monster",
+      "name": "Basilisk",
+      "source": "Bestiary",
+      "description": "An eight-legged reptile whose gaze turns flesh to stone.",
+      "stats": {
+        "HP": 52,
+        "AC": 15,
+        "ATK": "+5",
+        "DMG": "2d6+3",
+        "CR": "3",
+        "XP": 700
+      },
+      "image": "monsters/basilisk.png"
+    },
+    {
+      "id": "monster-displacerBeast",
+      "type": "monster",
+      "name": "Displacer Beast",
+      "source": "Bestiary",
+      "description": "A six-legged panther with barbed tentacles, its image always shifting.",
+      "stats": {
+        "HP": 85,
+        "AC": 13,
+        "ATK": "+6",
+        "DMG": "1d10+4",
+        "CR": "3",
+        "XP": 700
+      },
+      "image": "monsters/displacer-beast.png"
+    },
+    {
+      "id": "monster-wraith",
+      "type": "monster",
+      "name": "Wraith",
+      "source": "Bestiary",
+      "description": "A spectral undead wreathed in shadow, draining the life from all it touches.",
+      "stats": {
+        "HP": 67,
+        "AC": 13,
+        "ATK": "+6",
+        "DMG": "3d6+3",
+        "CR": "5",
+        "XP": 1800
+      },
+      "image": "monsters/wraith.png"
+    },
+    {
+      "id": "monster-demogorgon",
+      "type": "monster",
+      "name": "Demogorgon",
+      "source": "Bestiary",
+      "description": "A terrifying creature from the Upside Down with a gaping flower-like maw.",
+      "stats": {
+        "HP": 68,
+        "AC": 14,
+        "ATK": "+7",
+        "DMG": "2d8+4",
+        "CR": "4",
+        "XP": 1100
+      },
+      "image": "monsters/demogorgon.png"
+    },
+    {
+      "id": "monster-mindFlayer",
+      "type": "monster",
+      "name": "Mind Flayer",
+      "source": "Bestiary",
+      "description": "An aberration with tentacles protruding from its face, wielding psionic power.",
+      "stats": {
+        "HP": 71,
+        "AC": 15,
+        "ATK": "+7",
+        "DMG": "2d10+3",
+        "CR": "7",
+        "XP": 2900
+      },
+      "image": "monsters/mind-flayer.png"
+    },
+    {
+      "id": "monster-beholder",
+      "type": "monster",
+      "name": "Beholder",
+      "source": "Bestiary",
+      "description": "A floating sphere of flesh with a central eye and many stalks, each firing a deadly ray.",
+      "stats": {
+        "HP": 180,
+        "AC": 18,
+        "ATK": "+9",
+        "DMG": "3d8+4",
+        "CR": "13",
+        "XP": 10000
+      },
+      "image": "monsters/beholder.png"
+    },
+    {
+      "id": "monster-youngDragon",
+      "type": "monster",
+      "name": "Young Dragon",
+      "source": "Bestiary",
+      "description": "A fearsome dragon not yet fully grown, but deadly with fang, claw, and fiery breath.",
+      "stats": {
+        "HP": 142,
+        "AC": 18,
+        "ATK": "+10",
+        "DMG": "2d10+5",
+        "CR": "10",
+        "XP": 5900
+      },
+      "image": "monsters/young-dragon.png"
+    },
+    {
+      "id": "monster-vecna",
+      "type": "monster",
+      "name": "Vecna",
+      "source": "Bestiary",
+      "description": "The Undying King, a lich of immense power reaching between worlds.",
+      "stats": {
+        "HP": 120,
+        "AC": 18,
+        "ATK": "+9",
+        "DMG": "3d8+5",
+        "CR": "10",
+        "XP": 5900
+      },
+      "image": "monsters/vecna.png"
+    }
+  ]
+};

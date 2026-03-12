@@ -114,6 +114,16 @@ Requires Xcode 15.0+. Open `ios/DnDTextRPG/DnDTextRPG.xcodeproj` and build for i
 
 See [ios/README.md](ios/README.md) for detailed build instructions.
 
+## DnDex (Card Dex)
+
+- Browse all generated player, monster, and location cards in the **DnDex** viewer:
+  [ios_card_images/card-dex/index.html](ios_card_images/card-dex/index.html)
+- Markdown catalogs for direct image links:
+  [ios_card_images/README.md](ios_card_images/README.md)
+- If your browser blocks local `file://` data loading, run from repo root:
+  `python3 -m http.server 8000`
+  then open `http://localhost:8000/ios_card_images/card-dex/index.html`
+
 ## Credits
 
 - **Created by** Prof. Lewis
