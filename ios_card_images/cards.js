@@ -13,7 +13,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Charm": 8
       },
-      "image": "players/001-flash-gordon.png"
+      "image": "players/001-flash-gordon.png",
+      "source_entity_page": "card-dex/entities/flash-gordon-1934.html",
+      "source_entity_card": "entities/cards/flash-gordon-1934.png",
+      "lore_page": "card-dex/lore/player-001.html"
     },
     {
       "id": "player-002",
@@ -28,7 +31,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Charm": 6
       },
-      "image": "players/002-buck-rogers.png"
+      "image": "players/002-buck-rogers.png",
+      "source_entity_page": "card-dex/entities/buck-rogers-1929.html",
+      "source_entity_card": "entities/cards/buck-rogers-1929.png",
+      "lore_page": "card-dex/lore/player-002.html"
     },
     {
       "id": "player-003",
@@ -43,7 +49,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Charm": 7
       },
-      "image": "players/003-dan-dare.png"
+      "image": "players/003-dan-dare.png",
+      "source_entity_page": "card-dex/entities/dan-dare-1950.html",
+      "source_entity_card": "entities/cards/dan-dare-1950.png",
+      "lore_page": "card-dex/lore/player-003.html"
     },
     {
       "id": "player-004",
@@ -58,7 +67,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Charm": 7
       },
-      "image": "players/004-prince-valiant.png"
+      "image": "players/004-prince-valiant.png",
+      "source_entity_page": "card-dex/entities/prince-valiant-1937.html",
+      "source_entity_card": "entities/cards/prince-valiant-1937.png",
+      "lore_page": "card-dex/lore/player-004.html"
     },
     {
       "id": "player-005",
@@ -73,7 +85,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Charm": 6
       },
-      "image": "players/005-the-phantom.png"
+      "image": "players/005-the-phantom.png",
+      "source_entity_page": "card-dex/entities/the-phantom-1936.html",
+      "source_entity_card": "entities/cards/the-phantom-1936.png",
+      "lore_page": "card-dex/lore/player-005.html"
     },
     {
       "id": "player-006",
@@ -88,7 +103,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Charm": 2
       },
-      "image": "players/006-judge-dredd.png"
+      "image": "players/006-judge-dredd.png",
+      "source_entity_page": "card-dex/entities/judge-dredd-1977.html",
+      "source_entity_card": "entities/cards/judge-dredd-1977.png",
+      "lore_page": "card-dex/lore/player-006.html"
     },
     {
       "id": "player-007",
@@ -103,7 +121,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Charm": 6
       },
-      "image": "players/007-will-the-wise.png"
+      "image": "players/007-will-the-wise.png",
+      "source_entity_page": "card-dex/entities/stranger-things.html",
+      "source_entity_card": "entities/cards/stranger-things.png",
+      "lore_page": "card-dex/lore/player-007.html"
     },
     {
       "id": "player-008",
@@ -118,7 +139,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Charm": 7
       },
-      "image": "players/008-eleven.png"
+      "image": "players/008-eleven.png",
+      "source_entity_page": "card-dex/entities/stranger-things.html",
+      "source_entity_card": "entities/cards/stranger-things.png",
+      "lore_page": "card-dex/lore/player-008.html"
     },
     {
       "id": "player-009",
@@ -133,7 +157,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Charm": 9
       },
-      "image": "players/009-eddie-munson.png"
+      "image": "players/009-eddie-munson.png",
+      "source_entity_page": "card-dex/entities/stranger-things.html",
+      "source_entity_card": "entities/cards/stranger-things.png",
+      "lore_page": "card-dex/lore/player-009.html"
     },
     {
       "id": "player-010",
@@ -148,7 +175,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Charm": 6
       },
-      "image": "players/010-hopper.png"
+      "image": "players/010-hopper.png",
+      "source_entity_page": "card-dex/entities/stranger-things.html",
+      "source_entity_card": "entities/cards/stranger-things.png",
+      "lore_page": "card-dex/lore/player-010.html"
     },
     {
       "id": "player-011",
@@ -163,7 +193,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Charm": 8
       },
-      "image": "players/011-steve.png"
+      "image": "players/011-steve.png",
+      "source_entity_page": "card-dex/entities/stranger-things.html",
+      "source_entity_card": "entities/cards/stranger-things.png",
+      "lore_page": "card-dex/lore/player-011.html"
     },
     {
       "id": "player-012",
@@ -178,7 +211,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Charm": 10
       },
-      "image": "players/012-hector-the-well-endowed.png"
+      "image": "players/012-hector-the-well-endowed.png",
+      "source_entity_page": "card-dex/entities/community.html",
+      "source_entity_card": "entities/cards/community.png",
+      "lore_page": "card-dex/lore/player-012.html"
     },
     {
       "id": "player-013",
@@ -193,7 +229,10 @@ window.CARD_DATA = {
         "Fame": 6,
         "Charm": 5
       },
-      "image": "players/013-brutalitops.png"
+      "image": "players/013-brutalitops.png",
+      "source_entity_page": "card-dex/entities/community.html",
+      "source_entity_card": "entities/cards/community.png",
+      "lore_page": "card-dex/lore/player-013.html"
     },
     {
       "id": "player-014",
@@ -208,7 +247,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Charm": 6
       },
-      "image": "players/014-titanius.png"
+      "image": "players/014-titanius.png",
+      "source_entity_page": "card-dex/entities/futurama.html",
+      "source_entity_card": "entities/cards/futurama.png",
+      "lore_page": "card-dex/lore/player-014.html"
     },
     {
       "id": "player-015",
@@ -223,7 +265,10 @@ window.CARD_DATA = {
         "Fame": 6,
         "Charm": 5
       },
-      "image": "players/015-leegola.png"
+      "image": "players/015-leegola.png",
+      "source_entity_page": "card-dex/entities/futurama.html",
+      "source_entity_card": "entities/cards/futurama.png",
+      "lore_page": "card-dex/lore/player-015.html"
     },
     {
       "id": "player-016",
@@ -238,7 +283,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Charm": 9
       },
-      "image": "players/016-edgin.png"
+      "image": "players/016-edgin.png",
+      "source_entity_page": "card-dex/entities/honour-among-thieves.html",
+      "source_entity_card": "entities/cards/honour-among-thieves.png",
+      "lore_page": "card-dex/lore/player-016.html"
     },
     {
       "id": "player-017",
@@ -253,7 +301,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Charm": 6
       },
-      "image": "players/017-holga.png"
+      "image": "players/017-holga.png",
+      "source_entity_page": "card-dex/entities/honour-among-thieves.html",
+      "source_entity_card": "entities/cards/honour-among-thieves.png",
+      "lore_page": "card-dex/lore/player-017.html"
     },
     {
       "id": "player-018",
@@ -268,7 +319,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Charm": 4
       },
-      "image": "players/018-xenk.png"
+      "image": "players/018-xenk.png",
+      "source_entity_page": "card-dex/entities/honour-among-thieves.html",
+      "source_entity_card": "entities/cards/honour-among-thieves.png",
+      "lore_page": "card-dex/lore/player-018.html"
     },
     {
       "id": "player-019",
@@ -283,7 +337,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Charm": 6
       },
-      "image": "players/019-ripley.png"
+      "image": "players/019-ripley.png",
+      "source_entity_page": "card-dex/entities/classic-sci-fi.html",
+      "source_entity_card": "entities/cards/classic-sci-fi.png",
+      "lore_page": "card-dex/lore/player-019.html"
     },
     {
       "id": "player-020",
@@ -298,7 +355,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Charm": 5
       },
-      "image": "players/020-deckard.png"
+      "image": "players/020-deckard.png",
+      "source_entity_page": "card-dex/entities/classic-sci-fi.html",
+      "source_entity_card": "entities/cards/classic-sci-fi.png",
+      "lore_page": "card-dex/lore/player-020.html"
     },
     {
       "id": "player-021",
@@ -313,7 +373,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Charm": 7
       },
-      "image": "players/021-atreides.png"
+      "image": "players/021-atreides.png",
+      "source_entity_page": "card-dex/entities/classic-sci-fi.html",
+      "source_entity_card": "entities/cards/classic-sci-fi.png",
+      "lore_page": "card-dex/lore/player-021.html"
     },
     {
       "id": "player-022",
@@ -328,7 +391,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Charm": 4
       },
-      "image": "players/022-snake-plissken.png"
+      "image": "players/022-snake-plissken.png",
+      "source_entity_page": "card-dex/entities/classic-sci-fi.html",
+      "source_entity_card": "entities/cards/classic-sci-fi.png",
+      "lore_page": "card-dex/lore/player-022.html"
     },
     {
       "id": "player-023",
@@ -343,7 +409,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Charm": 7
       },
-      "image": "players/023-daneel.png"
+      "image": "players/023-daneel.png",
+      "source_entity_page": "card-dex/entities/famous-robots.html",
+      "source_entity_card": "entities/cards/famous-robots.png",
+      "lore_page": "card-dex/lore/player-023.html"
     },
     {
       "id": "player-024",
@@ -358,7 +427,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Charm": 2
       },
-      "image": "players/024-marvin.png"
+      "image": "players/024-marvin.png",
+      "source_entity_page": "card-dex/entities/famous-robots.html",
+      "source_entity_card": "entities/cards/famous-robots.png",
+      "lore_page": "card-dex/lore/player-024.html"
     },
     {
       "id": "player-025",
@@ -373,7 +445,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Charm": 9
       },
-      "image": "players/025-k-9.png"
+      "image": "players/025-k-9.png",
+      "source_entity_page": "card-dex/entities/famous-robots.html",
+      "source_entity_card": "entities/cards/famous-robots.png",
+      "lore_page": "card-dex/lore/player-025.html"
     },
     {
       "id": "player-026",
@@ -388,7 +463,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Charm": 8
       },
-      "image": "players/026-roy-batty.png"
+      "image": "players/026-roy-batty.png",
+      "source_entity_page": "card-dex/entities/famous-robots.html",
+      "source_entity_card": "entities/cards/famous-robots.png",
+      "lore_page": "card-dex/lore/player-026.html"
     },
     {
       "id": "player-027",
@@ -403,7 +481,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Charm": 10
       },
-      "image": "players/027-madmartigan.png"
+      "image": "players/027-madmartigan.png",
+      "source_entity_page": "card-dex/entities/willow-1988.html",
+      "source_entity_card": "entities/cards/willow-1988.png",
+      "lore_page": "card-dex/lore/player-027.html"
     },
     {
       "id": "player-028",
@@ -418,7 +499,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Charm": 8
       },
-      "image": "players/028-willow.png"
+      "image": "players/028-willow.png",
+      "source_entity_page": "card-dex/entities/willow-1988.html",
+      "source_entity_card": "entities/cards/willow-1988.png",
+      "lore_page": "card-dex/lore/player-028.html"
     },
     {
       "id": "player-029",
@@ -433,7 +517,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Charm": 7
       },
-      "image": "players/029-atreyu.png"
+      "image": "players/029-atreyu.png",
+      "source_entity_page": "card-dex/entities/the-neverending-story-1984.html",
+      "source_entity_card": "entities/cards/the-neverending-story-1984.png",
+      "lore_page": "card-dex/lore/player-029.html"
     },
     {
       "id": "player-030",
@@ -448,7 +535,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Charm": 5
       },
-      "image": "players/030-conan.png"
+      "image": "players/030-conan.png",
+      "source_entity_page": "card-dex/entities/conan-the-barbarian-1982.html",
+      "source_entity_card": "entities/cards/conan-the-barbarian-1982.png",
+      "lore_page": "card-dex/lore/player-030.html"
     },
     {
       "id": "player-031",
@@ -463,7 +553,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Charm": 6
       },
-      "image": "players/031-connor-macleod.png"
+      "image": "players/031-connor-macleod.png",
+      "source_entity_page": "card-dex/entities/highlander-1986.html",
+      "source_entity_card": "entities/cards/highlander-1986.png",
+      "lore_page": "card-dex/lore/player-031.html"
     },
     {
       "id": "player-032",
@@ -478,7 +571,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Charm": 10
       },
-      "image": "players/032-jareth.png"
+      "image": "players/032-jareth.png",
+      "source_entity_page": "card-dex/entities/labyrinth-1986.html",
+      "source_entity_card": "entities/cards/labyrinth-1986.png",
+      "lore_page": "card-dex/lore/player-032.html"
     },
     {
       "id": "player-033",
@@ -493,7 +589,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Charm": 7
       },
-      "image": "players/033-darkness.png"
+      "image": "players/033-darkness.png",
+      "source_entity_page": "card-dex/entities/legend-1985.html",
+      "source_entity_card": "entities/cards/legend-1985.png",
+      "lore_page": "card-dex/lore/player-033.html"
     },
     {
       "id": "player-034",
@@ -508,7 +607,10 @@ window.CARD_DATA = {
         "Fame": 6,
         "Charm": 7
       },
-      "image": "players/034-taran.png"
+      "image": "players/034-taran.png",
+      "source_entity_page": "card-dex/entities/the-black-cauldron-1985.html",
+      "source_entity_card": "entities/cards/the-black-cauldron-1985.png",
+      "lore_page": "card-dex/lore/player-034.html"
     },
     {
       "id": "player-035",
@@ -523,7 +625,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Charm": 8
       },
-      "image": "players/035-hawk.png"
+      "image": "players/035-hawk.png",
+      "source_entity_page": "card-dex/entities/ladyhawke-1985.html",
+      "source_entity_card": "entities/cards/ladyhawke-1985.png",
+      "lore_page": "card-dex/lore/player-035.html"
     },
     {
       "id": "player-036",
@@ -538,7 +643,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Charm": 7
       },
-      "image": "players/036-red-sonja.png"
+      "image": "players/036-red-sonja.png",
+      "source_entity_page": "card-dex/entities/red-sonja-1985.html",
+      "source_entity_card": "entities/cards/red-sonja-1985.png",
+      "lore_page": "card-dex/lore/player-036.html"
     },
     {
       "id": "player-037",
@@ -553,7 +661,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Charm": 7
       },
-      "image": "players/037-beast-master.png"
+      "image": "players/037-beast-master.png",
+      "source_entity_page": "card-dex/entities/the-beastmaster-1982.html",
+      "source_entity_card": "entities/cards/the-beastmaster-1982.png",
+      "lore_page": "card-dex/lore/player-037.html"
     },
     {
       "id": "player-038",
@@ -568,7 +679,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Charm": 6
       },
-      "image": "players/038-valerian.png"
+      "image": "players/038-valerian.png",
+      "source_entity_page": "card-dex/entities/dragonslayer-1981.html",
+      "source_entity_card": "entities/cards/dragonslayer-1981.png",
+      "lore_page": "card-dex/lore/player-038.html"
     },
     {
       "id": "player-039",
@@ -583,7 +697,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Charm": 5
       },
-      "image": "players/039-elric.png"
+      "image": "players/039-elric.png",
+      "source_entity_page": "card-dex/entities/michael-moorcock.html",
+      "source_entity_card": "entities/cards/michael-moorcock.png",
+      "lore_page": "card-dex/lore/player-039.html"
     },
     {
       "id": "player-040",
@@ -598,7 +715,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Charm": 6
       },
-      "image": "players/040-ged.png"
+      "image": "players/040-ged.png",
+      "source_entity_page": "card-dex/entities/ursula-k-le-guin.html",
+      "source_entity_card": "entities/cards/ursula-k-le-guin.png",
+      "lore_page": "card-dex/lore/player-040.html"
     },
     {
       "id": "player-041",
@@ -613,7 +733,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Charm": 7
       },
-      "image": "players/041-drizzt.png"
+      "image": "players/041-drizzt.png",
+      "source_entity_page": "card-dex/entities/r-a-salvatore.html",
+      "source_entity_card": "entities/cards/r-a-salvatore.png",
+      "lore_page": "card-dex/lore/player-041.html"
     },
     {
       "id": "player-042",
@@ -628,7 +751,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Charm": 3
       },
-      "image": "players/042-raistlin.png"
+      "image": "players/042-raistlin.png",
+      "source_entity_page": "card-dex/entities/dragonlance.html",
+      "source_entity_card": "entities/cards/dragonlance.png",
+      "lore_page": "card-dex/lore/player-042.html"
     },
     {
       "id": "player-043",
@@ -643,7 +769,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Charm": 10
       },
-      "image": "players/043-tasslehoff.png"
+      "image": "players/043-tasslehoff.png",
+      "source_entity_page": "card-dex/entities/dragonlance.html",
+      "source_entity_card": "entities/cards/dragonlance.png",
+      "lore_page": "card-dex/lore/player-043.html"
     },
     {
       "id": "player-044",
@@ -658,7 +787,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Charm": 5
       },
-      "image": "players/044-rincewind.png"
+      "image": "players/044-rincewind.png",
+      "source_entity_page": "card-dex/entities/terry-pratchett.html",
+      "source_entity_card": "entities/cards/terry-pratchett.png",
+      "lore_page": "card-dex/lore/player-044.html"
     },
     {
       "id": "player-045",
@@ -673,7 +805,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Charm": 3
       },
-      "image": "players/045-granny-weatherwax.png"
+      "image": "players/045-granny-weatherwax.png",
+      "source_entity_page": "card-dex/entities/terry-pratchett.html",
+      "source_entity_card": "entities/cards/terry-pratchett.png",
+      "lore_page": "card-dex/lore/player-045.html"
     },
     {
       "id": "player-046",
@@ -688,7 +823,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Charm": 7
       },
-      "image": "players/046-belgarion.png"
+      "image": "players/046-belgarion.png",
+      "source_entity_page": "card-dex/entities/david-eddings.html",
+      "source_entity_card": "entities/cards/david-eddings.png",
+      "lore_page": "card-dex/lore/player-046.html"
     },
     {
       "id": "player-047",
@@ -703,7 +841,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Charm": 7
       },
-      "image": "players/047-fafhrd.png"
+      "image": "players/047-fafhrd.png",
+      "source_entity_page": "card-dex/entities/fritz-leiber.html",
+      "source_entity_card": "entities/cards/fritz-leiber.png",
+      "lore_page": "card-dex/lore/player-047.html"
     },
     {
       "id": "player-048",
@@ -718,7 +859,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Charm": 8
       },
-      "image": "players/048-grey-mouser.png"
+      "image": "players/048-grey-mouser.png",
+      "source_entity_page": "card-dex/entities/fritz-leiber.html",
+      "source_entity_card": "entities/cards/fritz-leiber.png",
+      "lore_page": "card-dex/lore/player-048.html"
     },
     {
       "id": "player-049",
@@ -733,7 +877,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Charm": 1
       },
-      "image": "players/049-thomas-covenant.png"
+      "image": "players/049-thomas-covenant.png",
+      "source_entity_page": "card-dex/entities/stephen-donaldson.html",
+      "source_entity_card": "entities/cards/stephen-donaldson.png",
+      "lore_page": "card-dex/lore/player-049.html"
     },
     {
       "id": "player-050",
@@ -748,7 +895,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Charm": 7
       },
-      "image": "players/050-tenar.png"
+      "image": "players/050-tenar.png",
+      "source_entity_page": "card-dex/entities/ursula-k-le-guin.html",
+      "source_entity_card": "entities/cards/ursula-k-le-guin.png",
+      "lore_page": "card-dex/lore/player-050.html"
     },
     {
       "id": "player-051",
@@ -763,7 +913,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Charm": 7
       },
-      "image": "players/051-john-carter.png"
+      "image": "players/051-john-carter.png",
+      "source_entity_page": "card-dex/entities/edgar-rice-burroughs.html",
+      "source_entity_card": "entities/cards/edgar-rice-burroughs.png",
+      "lore_page": "card-dex/lore/player-051.html"
     },
     {
       "id": "player-052",
@@ -778,7 +931,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Charm": 5
       },
-      "image": "players/052-conan-robert-e-howard.png"
+      "image": "players/052-conan-robert-e-howard.png",
+      "source_entity_page": "card-dex/entities/robert-e-howard.html",
+      "source_entity_card": "entities/cards/robert-e-howard.png",
+      "lore_page": "card-dex/lore/player-052.html"
     },
     {
       "id": "player-053",
@@ -793,7 +949,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Charm": 8
       },
-      "image": "players/053-aragorn.png"
+      "image": "players/053-aragorn.png",
+      "source_entity_page": "card-dex/entities/j-r-r-tolkien.html",
+      "source_entity_card": "entities/cards/j-r-r-tolkien.png",
+      "lore_page": "card-dex/lore/player-053.html"
     },
     {
       "id": "player-054",
@@ -808,7 +967,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Charm": 8
       },
-      "image": "players/054-death.png"
+      "image": "players/054-death.png",
+      "source_entity_page": "card-dex/entities/terry-pratchett.html",
+      "source_entity_card": "entities/cards/terry-pratchett.png",
+      "lore_page": "card-dex/lore/player-054.html"
     },
     {
       "id": "player-055",
@@ -823,7 +985,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Charm": 8
       },
-      "image": "players/055-corwin.png"
+      "image": "players/055-corwin.png",
+      "source_entity_page": "card-dex/entities/roger-zelazny.html",
+      "source_entity_card": "entities/cards/roger-zelazny.png",
+      "lore_page": "card-dex/lore/player-055.html"
     },
     {
       "id": "player-056",
@@ -838,7 +1003,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Charm": 6
       },
-      "image": "players/056-corum.png"
+      "image": "players/056-corum.png",
+      "source_entity_page": "card-dex/entities/michael-moorcock.html",
+      "source_entity_card": "entities/cards/michael-moorcock.png",
+      "lore_page": "card-dex/lore/player-056.html"
     },
     {
       "id": "player-057",
@@ -853,7 +1021,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Charm": 3
       },
-      "image": "players/057-sauron.png"
+      "image": "players/057-sauron.png",
+      "source_entity_page": "card-dex/entities/j-r-r-tolkien.html",
+      "source_entity_card": "entities/cards/j-r-r-tolkien.png",
+      "lore_page": "card-dex/lore/player-057.html"
     },
     {
       "id": "player-058",
@@ -868,7 +1039,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Charm": 4
       },
-      "image": "players/058-skeletor.png"
+      "image": "players/058-skeletor.png",
+      "source_entity_page": "card-dex/entities/he-man-1983.html",
+      "source_entity_card": "entities/cards/he-man-1983.png",
+      "lore_page": "card-dex/lore/player-058.html"
     },
     {
       "id": "player-059",
@@ -883,7 +1057,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Charm": 4
       },
-      "image": "players/059-ming-the-merciless.png"
+      "image": "players/059-ming-the-merciless.png",
+      "source_entity_page": "card-dex/entities/flash-gordon-1934.html",
+      "source_entity_card": "entities/cards/flash-gordon-1934.png",
+      "lore_page": "card-dex/lore/player-059.html"
     },
     {
       "id": "player-060",
@@ -898,7 +1075,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Charm": 7
       },
-      "image": "players/060-he-man.png"
+      "image": "players/060-he-man.png",
+      "source_entity_page": "card-dex/entities/he-man-1983.html",
+      "source_entity_card": "entities/cards/he-man-1983.png",
+      "lore_page": "card-dex/lore/player-060.html"
     },
     {
       "id": "player-061",
@@ -913,7 +1093,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Charm": 7
       },
-      "image": "players/061-lion-o.png"
+      "image": "players/061-lion-o.png",
+      "source_entity_page": "card-dex/entities/thundercats-1985.html",
+      "source_entity_card": "entities/cards/thundercats-1985.png",
+      "lore_page": "card-dex/lore/player-061.html"
     },
     {
       "id": "player-062",
@@ -928,7 +1111,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Charm": 9
       },
-      "image": "players/062-noggin.png"
+      "image": "players/062-noggin.png",
+      "source_entity_page": "card-dex/entities/noggin-the-nog-1959.html",
+      "source_entity_card": "entities/cards/noggin-the-nog-1959.png",
+      "lore_page": "card-dex/lore/player-062.html"
     },
     {
       "id": "player-063",
@@ -943,7 +1129,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Charm": 5
       },
-      "image": "players/063-nogbad-the-bad.png"
+      "image": "players/063-nogbad-the-bad.png",
+      "source_entity_page": "card-dex/entities/noggin-the-nog-1959.html",
+      "source_entity_card": "entities/cards/noggin-the-nog-1959.png",
+      "lore_page": "card-dex/lore/player-063.html"
     },
     {
       "id": "player-064",
@@ -958,7 +1147,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Charm": 9
       },
-      "image": "players/064-the-doctor.png"
+      "image": "players/064-the-doctor.png",
+      "source_entity_page": "card-dex/entities/doctor-who-1963.html",
+      "source_entity_card": "entities/cards/doctor-who-1963.png",
+      "lore_page": "card-dex/lore/player-064.html"
     },
     {
       "id": "player-065",
@@ -973,7 +1165,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Charm": 2
       },
-      "image": "players/065-davros.png"
+      "image": "players/065-davros.png",
+      "source_entity_page": "card-dex/entities/doctor-who-1963.html",
+      "source_entity_card": "entities/cards/doctor-who-1963.png",
+      "lore_page": "card-dex/lore/player-065.html"
     },
     {
       "id": "player-066",
@@ -988,7 +1183,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Charm": 5
       },
-      "image": "players/066-avon.png"
+      "image": "players/066-avon.png",
+      "source_entity_page": "card-dex/entities/blake-s-7-1978.html",
+      "source_entity_card": "entities/cards/blake-s-7-1978.png",
+      "lore_page": "card-dex/lore/player-066.html"
     },
     {
       "id": "player-067",
@@ -1003,7 +1201,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Charm": 7
       },
-      "image": "players/067-ulysses.png"
+      "image": "players/067-ulysses.png",
+      "source_entity_page": "card-dex/entities/ulysses-31-1981.html",
+      "source_entity_card": "entities/cards/ulysses-31-1981.png",
+      "lore_page": "card-dex/lore/player-067.html"
     },
     {
       "id": "player-068",
@@ -1018,7 +1219,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Charm": 8
       },
-      "image": "players/068-esteban.png"
+      "image": "players/068-esteban.png",
+      "source_entity_page": "card-dex/entities/mysterious-cities-of-gold-1982.html",
+      "source_entity_card": "entities/cards/mysterious-cities-of-gold-1982.png",
+      "lore_page": "card-dex/lore/player-068.html"
     },
     {
       "id": "player-069",
@@ -1033,7 +1237,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Charm": 8
       },
-      "image": "players/069-robin-of-loxley.png"
+      "image": "players/069-robin-of-loxley.png",
+      "source_entity_page": "card-dex/entities/robin-of-sherwood-1984.html",
+      "source_entity_card": "entities/cards/robin-of-sherwood-1984.png",
+      "lore_page": "card-dex/lore/player-069.html"
     },
     {
       "id": "player-070",
@@ -1048,7 +1255,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Charm": 9
       },
-      "image": "players/070-dogtanian.png"
+      "image": "players/070-dogtanian.png",
+      "source_entity_page": "card-dex/entities/dogtanian-1981.html",
+      "source_entity_card": "entities/cards/dogtanian-1981.png",
+      "lore_page": "card-dex/lore/player-070.html"
     }
   ],
   "locations": [
@@ -1065,7 +1275,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Dread": 3
       },
-      "image": "locations/001-moria.png"
+      "image": "locations/001-moria.png",
+      "source_entity_page": "card-dex/entities/tolkien.html",
+      "source_entity_card": "entities/cards/tolkien.png",
+      "lore_page": "card-dex/lore/location-001.html"
     },
     {
       "id": "location-002",
@@ -1080,7 +1293,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Dread": 1
       },
-      "image": "locations/002-barad-dur.png"
+      "image": "locations/002-barad-dur.png",
+      "source_entity_page": "card-dex/entities/tolkien.html",
+      "source_entity_card": "entities/cards/tolkien.png",
+      "lore_page": "card-dex/lore/location-002.html"
     },
     {
       "id": "location-003",
@@ -1095,7 +1311,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Dread": 1
       },
-      "image": "locations/003-cirith-ungol.png"
+      "image": "locations/003-cirith-ungol.png",
+      "source_entity_page": "card-dex/entities/tolkien.html",
+      "source_entity_card": "entities/cards/tolkien.png",
+      "lore_page": "card-dex/lore/location-003.html"
     },
     {
       "id": "location-004",
@@ -1110,7 +1329,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Dread": 2
       },
-      "image": "locations/004-isengard.png"
+      "image": "locations/004-isengard.png",
+      "source_entity_page": "card-dex/entities/tolkien.html",
+      "source_entity_card": "entities/cards/tolkien.png",
+      "lore_page": "card-dex/lore/location-004.html"
     },
     {
       "id": "location-005",
@@ -1125,7 +1347,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Dread": 1
       },
-      "image": "locations/005-mount-doom.png"
+      "image": "locations/005-mount-doom.png",
+      "source_entity_page": "card-dex/entities/tolkien.html",
+      "source_entity_card": "entities/cards/tolkien.png",
+      "lore_page": "card-dex/lore/location-005.html"
     },
     {
       "id": "location-006",
@@ -1140,7 +1365,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Dread": 2
       },
-      "image": "locations/006-minas-morgul.png"
+      "image": "locations/006-minas-morgul.png",
+      "source_entity_page": "card-dex/entities/tolkien.html",
+      "source_entity_card": "entities/cards/tolkien.png",
+      "lore_page": "card-dex/lore/location-006.html"
     },
     {
       "id": "location-007",
@@ -1155,7 +1383,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Dread": 1
       },
-      "image": "locations/007-dol-guldur.png"
+      "image": "locations/007-dol-guldur.png",
+      "source_entity_page": "card-dex/entities/tolkien.html",
+      "source_entity_card": "entities/cards/tolkien.png",
+      "lore_page": "card-dex/lore/location-007.html"
     },
     {
       "id": "location-008",
@@ -1170,7 +1401,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Dread": 5
       },
-      "image": "locations/008-helm-s-deep.png"
+      "image": "locations/008-helm-s-deep.png",
+      "source_entity_page": "card-dex/entities/tolkien.html",
+      "source_entity_card": "entities/cards/tolkien.png",
+      "lore_page": "card-dex/lore/location-008.html"
     },
     {
       "id": "location-009",
@@ -1185,7 +1419,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Dread": 1
       },
-      "image": "locations/009-tomb-of-horrors.png"
+      "image": "locations/009-tomb-of-horrors.png",
+      "source_entity_page": "card-dex/entities/d-d-module-1978.html",
+      "source_entity_card": "entities/cards/d-d-module-1978.png",
+      "lore_page": "card-dex/lore/location-009.html"
     },
     {
       "id": "location-010",
@@ -1200,7 +1437,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Dread": 5
       },
-      "image": "locations/010-ravenloft.png"
+      "image": "locations/010-ravenloft.png",
+      "source_entity_page": "card-dex/entities/d-d-module-1983.html",
+      "source_entity_card": "entities/cards/d-d-module-1983.png",
+      "lore_page": "card-dex/lore/location-010.html"
     },
     {
       "id": "location-011",
@@ -1215,7 +1455,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Dread": 3
       },
-      "image": "locations/011-white-plume-mountain.png"
+      "image": "locations/011-white-plume-mountain.png",
+      "source_entity_page": "card-dex/entities/d-d-module-1979.html",
+      "source_entity_card": "entities/cards/d-d-module-1979.png",
+      "lore_page": "card-dex/lore/location-011.html"
     },
     {
       "id": "location-012",
@@ -1230,7 +1473,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Dread": 4
       },
-      "image": "locations/012-caves-of-chaos.png"
+      "image": "locations/012-caves-of-chaos.png",
+      "source_entity_page": "card-dex/entities/d-d-module-1979.html",
+      "source_entity_card": "entities/cards/d-d-module-1979.png",
+      "lore_page": "card-dex/lore/location-012.html"
     },
     {
       "id": "location-013",
@@ -1245,7 +1491,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Dread": 5
       },
-      "image": "locations/013-barrier-peaks.png"
+      "image": "locations/013-barrier-peaks.png",
+      "source_entity_page": "card-dex/entities/d-d-module-1980.html",
+      "source_entity_card": "entities/cards/d-d-module-1980.png",
+      "lore_page": "card-dex/lore/location-013.html"
     },
     {
       "id": "location-014",
@@ -1260,7 +1509,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Dread": 2
       },
-      "image": "locations/014-temple-of-elemental-evil.png"
+      "image": "locations/014-temple-of-elemental-evil.png",
+      "source_entity_page": "card-dex/entities/d-d-module-1985.html",
+      "source_entity_card": "entities/cards/d-d-module-1985.png",
+      "lore_page": "card-dex/lore/location-014.html"
     },
     {
       "id": "location-015",
@@ -1275,7 +1527,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Dread": 6
       },
-      "image": "locations/015-isle-of-dread.png"
+      "image": "locations/015-isle-of-dread.png",
+      "source_entity_page": "card-dex/entities/d-d-module-1981.html",
+      "source_entity_card": "entities/cards/d-d-module-1981.png",
+      "lore_page": "card-dex/lore/location-015.html"
     },
     {
       "id": "location-016",
@@ -1290,7 +1545,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Dread": 4
       },
-      "image": "locations/016-melnibone.png"
+      "image": "locations/016-melnibone.png",
+      "source_entity_page": "card-dex/entities/michael-moorcock.html",
+      "source_entity_card": "entities/cards/michael-moorcock.png",
+      "lore_page": "card-dex/lore/location-016.html"
     },
     {
       "id": "location-017",
@@ -1305,7 +1563,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Dread": 10
       },
-      "image": "locations/017-tanelorn.png"
+      "image": "locations/017-tanelorn.png",
+      "source_entity_page": "card-dex/entities/michael-moorcock.html",
+      "source_entity_card": "entities/cards/michael-moorcock.png",
+      "lore_page": "card-dex/lore/location-017.html"
     },
     {
       "id": "location-018",
@@ -1320,7 +1581,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Dread": 3
       },
-      "image": "locations/018-tombs-of-atuan.png"
+      "image": "locations/018-tombs-of-atuan.png",
+      "source_entity_page": "card-dex/entities/ursula-k-le-guin.html",
+      "source_entity_card": "entities/cards/ursula-k-le-guin.png",
+      "lore_page": "card-dex/lore/location-018.html"
     },
     {
       "id": "location-019",
@@ -1335,7 +1599,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Dread": 7
       },
-      "image": "locations/019-roke.png"
+      "image": "locations/019-roke.png",
+      "source_entity_page": "card-dex/entities/ursula-k-le-guin.html",
+      "source_entity_card": "entities/cards/ursula-k-le-guin.png",
+      "lore_page": "card-dex/lore/location-019.html"
     },
     {
       "id": "location-020",
@@ -1350,7 +1617,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Dread": 1
       },
-      "image": "locations/020-the-dry-land.png"
+      "image": "locations/020-the-dry-land.png",
+      "source_entity_page": "card-dex/entities/ursula-k-le-guin.html",
+      "source_entity_card": "entities/cards/ursula-k-le-guin.png",
+      "lore_page": "card-dex/lore/location-020.html"
     },
     {
       "id": "location-021",
@@ -1365,7 +1635,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Dread": 4
       },
-      "image": "locations/021-selidor.png"
+      "image": "locations/021-selidor.png",
+      "source_entity_page": "card-dex/entities/ursula-k-le-guin.html",
+      "source_entity_card": "entities/cards/ursula-k-le-guin.png",
+      "lore_page": "card-dex/lore/location-021.html"
     },
     {
       "id": "location-022",
@@ -1380,7 +1653,10 @@ window.CARD_DATA = {
         "Fame": 7,
         "Dread": 8
       },
-      "image": "locations/022-havnor.png"
+      "image": "locations/022-havnor.png",
+      "source_entity_page": "card-dex/entities/ursula-k-le-guin.html",
+      "source_entity_card": "entities/cards/ursula-k-le-guin.png",
+      "lore_page": "card-dex/lore/location-022.html"
     },
     {
       "id": "location-023",
@@ -1395,7 +1671,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Dread": 6
       },
-      "image": "locations/023-lankhmar.png"
+      "image": "locations/023-lankhmar.png",
+      "source_entity_page": "card-dex/entities/fritz-leiber.html",
+      "source_entity_card": "entities/cards/fritz-leiber.png",
+      "lore_page": "card-dex/lore/location-023.html"
     },
     {
       "id": "location-024",
@@ -1410,7 +1689,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Dread": 8
       },
-      "image": "locations/024-ankh-morpork.png"
+      "image": "locations/024-ankh-morpork.png",
+      "source_entity_page": "card-dex/entities/terry-pratchett.html",
+      "source_entity_card": "entities/cards/terry-pratchett.png",
+      "lore_page": "card-dex/lore/location-024.html"
     },
     {
       "id": "location-025",
@@ -1425,7 +1707,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Dread": 7
       },
-      "image": "locations/025-gormenghast.png"
+      "image": "locations/025-gormenghast.png",
+      "source_entity_page": "card-dex/entities/mervyn-peake.html",
+      "source_entity_card": "entities/cards/mervyn-peake.png",
+      "lore_page": "card-dex/lore/location-025.html"
     },
     {
       "id": "location-026",
@@ -1440,7 +1725,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Dread": 2
       },
-      "image": "locations/026-cimmeria.png"
+      "image": "locations/026-cimmeria.png",
+      "source_entity_page": "card-dex/entities/robert-e-howard.html",
+      "source_entity_card": "entities/cards/robert-e-howard.png",
+      "lore_page": "card-dex/lore/location-026.html"
     },
     {
       "id": "location-027",
@@ -1455,7 +1743,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Dread": 6
       },
-      "image": "locations/027-barsoom.png"
+      "image": "locations/027-barsoom.png",
+      "source_entity_page": "card-dex/entities/edgar-rice-burroughs.html",
+      "source_entity_card": "entities/cards/edgar-rice-burroughs.png",
+      "lore_page": "card-dex/lore/location-027.html"
     },
     {
       "id": "location-028",
@@ -1470,7 +1761,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Dread": 2
       },
-      "image": "locations/028-nostromo.png"
+      "image": "locations/028-nostromo.png",
+      "source_entity_page": "card-dex/entities/alien-1979.html",
+      "source_entity_card": "entities/cards/alien-1979.png",
+      "lore_page": "card-dex/lore/location-028.html"
     },
     {
       "id": "location-029",
@@ -1485,7 +1779,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Dread": 4
       },
-      "image": "locations/029-trantor.png"
+      "image": "locations/029-trantor.png",
+      "source_entity_page": "card-dex/entities/isaac-asimov.html",
+      "source_entity_card": "entities/cards/isaac-asimov.png",
+      "lore_page": "card-dex/lore/location-029.html"
     },
     {
       "id": "location-030",
@@ -1500,7 +1797,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Dread": 6
       },
-      "image": "locations/030-castle-greyskull.png"
+      "image": "locations/030-castle-greyskull.png",
+      "source_entity_page": "card-dex/entities/he-man-1983.html",
+      "source_entity_card": "entities/cards/he-man-1983.png",
+      "lore_page": "card-dex/lore/location-030.html"
     },
     {
       "id": "location-031",
@@ -1515,7 +1815,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Dread": 8
       },
-      "image": "locations/031-the-labyrinth.png"
+      "image": "locations/031-the-labyrinth.png",
+      "source_entity_page": "card-dex/entities/labyrinth-1986.html",
+      "source_entity_card": "entities/cards/labyrinth-1986.png",
+      "lore_page": "card-dex/lore/location-031.html"
     },
     {
       "id": "location-032",
@@ -1530,7 +1833,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Dread": 9
       },
-      "image": "locations/032-fantasia.png"
+      "image": "locations/032-fantasia.png",
+      "source_entity_page": "card-dex/entities/the-neverending-story-1984.html",
+      "source_entity_card": "entities/cards/the-neverending-story-1984.png",
+      "lore_page": "card-dex/lore/location-032.html"
     },
     {
       "id": "location-033",
@@ -1545,7 +1851,10 @@ window.CARD_DATA = {
         "Fame": 9,
         "Dread": 3
       },
-      "image": "locations/033-snake-mountain.png"
+      "image": "locations/033-snake-mountain.png",
+      "source_entity_page": "card-dex/entities/he-man-1983.html",
+      "source_entity_card": "entities/cards/he-man-1983.png",
+      "lore_page": "card-dex/lore/location-033.html"
     },
     {
       "id": "location-034",
@@ -1560,7 +1869,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Dread": 2
       },
-      "image": "locations/034-death-star.png"
+      "image": "locations/034-death-star.png",
+      "source_entity_page": "card-dex/entities/star-wars-1977.html",
+      "source_entity_card": "entities/cards/star-wars-1977.png",
+      "lore_page": "card-dex/lore/location-034.html"
     },
     {
       "id": "location-035",
@@ -1575,7 +1887,10 @@ window.CARD_DATA = {
         "Fame": 10,
         "Dread": 5
       },
-      "image": "locations/035-skull-island.png"
+      "image": "locations/035-skull-island.png",
+      "source_entity_page": "card-dex/entities/king-kong-1933.html",
+      "source_entity_card": "entities/cards/king-kong-1933.png",
+      "lore_page": "card-dex/lore/location-035.html"
     },
     {
       "id": "location-036",
@@ -1590,7 +1905,10 @@ window.CARD_DATA = {
         "Fame": 8,
         "Dread": 3
       },
-      "image": "locations/036-krell-laboratory.png"
+      "image": "locations/036-krell-laboratory.png",
+      "source_entity_page": "card-dex/entities/forbidden-planet-1956.html",
+      "source_entity_card": "entities/cards/forbidden-planet-1956.png",
+      "lore_page": "card-dex/lore/location-036.html"
     }
   ],
   "monsters": [

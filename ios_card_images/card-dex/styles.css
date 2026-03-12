@@ -8,6 +8,8 @@
   --accent: #6bff89;
   --gold: #95d39f;
   --danger: #ff7575;
+  --detail-fr: 62fr;
+  --cards-fr: 38fr;
 }
 
 * { box-sizing: border-box; }
@@ -56,6 +58,15 @@ body {
   align-items: end;
   gap: 18px;
   padding: 18px 20px 12px;
+}
+
+.dragon-badge {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  border: 1px solid #2f6a3e;
+  object-fit: cover;
+  opacity: 0.9;
 }
 
 h1, h2 {
@@ -138,13 +149,28 @@ select, input, .btn {
   width: auto;
   padding: 6px 10px;
   background: #0b120c;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn.subtle {
+  color: #9ac6a4;
+  border-color: #255234;
+  background: #0a100b;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .layout {
   padding: 14px 16px 18px;
   display: grid;
-  grid-template-columns: minmax(420px, 1.35fr) minmax(240px, 0.85fr);
-  grid-template-areas: "detail cards";
+  grid-template-columns: minmax(320px, var(--detail-fr)) 10px minmax(220px, var(--cards-fr));
+  grid-template-areas: "detail resizer cards";
   gap: 14px;
 }
 
@@ -191,6 +217,7 @@ select, input, .btn {
   object-fit: cover;
   border-radius: 8px;
   border: 1px solid #2d5b38;
+  animation: thumbPulse 6s ease-in-out infinite;
 }
 
 .card-name { margin-top: 6px; font-size: 0.88rem; color: var(--text); }
@@ -208,6 +235,17 @@ select, input, .btn {
   grid-area: cards;
 }
 
+.panel-resizer {
+  grid-area: resizer;
+  width: 10px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #16351f, #1f5e34, #16351f);
+  border: 1px solid #2d6f42;
+  cursor: col-resize;
+  align-self: stretch;
+  min-height: 65vh;
+}
+
 .meta { margin: 0; color: var(--muted); min-height: 1.2rem; }
 
 #detailImage {
@@ -217,6 +255,32 @@ select, input, .btn {
   background: #070c08;
   max-height: 72vh;
   object-fit: contain;
+  animation: cardFloat 5s ease-in-out infinite;
+}
+
+.detail-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.card-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.card-pos {
+  color: #96b79d;
+  font-size: 0.8rem;
+  min-width: 62px;
+  text-align: center;
+}
+
+.detail-actions .btn {
+  font-size: 0.78rem;
+  padding: 5px 9px;
 }
 
 .stats {
@@ -226,6 +290,7 @@ select, input, .btn {
 }
 
 .stat-pill {
+  appearance: none;
   padding: 5px 8px;
   border: 1px solid #2f6a3e;
   border-radius: 999px;
@@ -233,14 +298,81 @@ select, input, .btn {
   font-size: 0.8rem;
   color: var(--gold);
   background: #0a120c;
+  cursor: pointer;
+}
+
+.stat-pill:hover {
+  border-color: #6bff89;
+  color: #c6ffd2;
+}
+
+.stat-pill.active {
+  border-color: #6bff89;
+  box-shadow: 0 0 0 1px rgba(107, 255, 137, 0.35) inset;
+  color: #d8ffe0;
+}
+
+.stat-help {
+  border: 1px solid #2b6b3c;
+  border-radius: 10px;
+  background: #0a120c;
+  color: #b5cfba;
+  font-size: 0.84rem;
+  line-height: 1.4;
+  padding: 8px 10px;
 }
 
 .desc { margin: 0; color: #b8d2bd; line-height: 1.4; }
+
+.about {
+  margin: 0 16px 16px;
+  padding: 12px;
+  border: 1px solid #1f5e34;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(10, 16, 10, 0.98), rgba(8, 12, 8, 1));
+}
+
+.about p {
+  margin: 8px 0;
+  color: #a8c5ad;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.about-links {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.about a {
+  color: #8ce6a1;
+  text-decoration: none;
+  border-bottom: 1px dotted #5fbf72;
+}
+
+.about .copyright {
+  color: #84a88b;
+  font-size: 0.8rem;
+}
+
+@keyframes cardFloat {
+  0% { transform: translateY(0) scale(1); filter: drop-shadow(0 0 0 rgba(110, 255, 137, 0)); }
+  50% { transform: translateY(-4px) scale(1.005); filter: drop-shadow(0 8px 10px rgba(110, 255, 137, 0.08)); }
+  100% { transform: translateY(0) scale(1); filter: drop-shadow(0 0 0 rgba(110, 255, 137, 0)); }
+}
+
+@keyframes thumbPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.012); }
+  100% { transform: scale(1); }
+}
 
 @media (max-width: 980px) {
   .controls { grid-template-columns: 1fr 1fr; }
   .music-panel { grid-template-columns: 1fr; justify-content: stretch; }
   .layout { grid-template-columns: 1fr; grid-template-areas: "detail" "cards"; }
+  .panel-resizer { display: none; }
   .card-grid { max-height: 40vh; }
   #detailImage { max-height: 56vh; }
 }
@@ -254,6 +386,7 @@ select, input, .btn {
     grid-template-columns: 1fr;
     grid-template-areas: "detail" "cards";
   }
+  .panel-resizer { display: none; }
   .card-grid {
     grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
     max-height: 33vh;

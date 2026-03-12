@@ -9,12 +9,23 @@ const els = {
   category: document.getElementById('categorySelect'),
   search: document.getElementById('searchInput'),
   sort: document.getElementById('sortSelect'),
+  panelWidthSlider: document.getElementById('panelWidthSlider'),
   count: document.getElementById('countLabel'),
+  layout: document.querySelector('.layout'),
+  panelResizer: document.getElementById('panelResizer'),
   grid: document.getElementById('cardGrid'),
   title: document.getElementById('detailTitle'),
   meta: document.getElementById('detailMeta'),
+  prevCardBtn: document.getElementById('prevCardBtn'),
+  nextCardBtn: document.getElementById('nextCardBtn'),
+  cardPosLabel: document.getElementById('cardPosLabel'),
   image: document.getElementById('detailImage'),
+  sourceBtn: document.getElementById('sourceBtn'),
+  loreBtn: document.getElementById('loreBtn'),
+  shareBtn: document.getElementById('shareBtn'),
+  downloadBtn: document.getElementById('downloadBtn'),
   stats: document.getElementById('detailStats'),
+  statHelp: document.getElementById('statHelp'),
   desc: document.getElementById('detailDesc'),
   musicToggle: document.getElementById('musicToggle'),
   musicMode: document.getElementById('musicMode'),
@@ -22,6 +33,58 @@ const els = {
   volume: document.getElementById('volumeSlider'),
   bgm: document.getElementById('bgm'),
 };
+
+const swipeState = {
+  startX: null,
+};
+
+const STAT_INFO = {
+  Power: { map: 'STR', low: 'Low combat force.', mid: 'Solid frontline strength.', high: 'Exceptional physical dominance.' },
+  Cunning: { map: 'DEX/INT', low: 'Direct approach, little trickery.', mid: 'Good tactics and problem solving.', high: 'Master-level tactics and deception.' },
+  Magic: { map: 'INT/WIS/CHA (spell power)', low: 'Little or no arcane influence.', mid: 'Reliable magical capability.', high: 'Legendary magical potential.' },
+  Fame: { map: 'Reputation', low: 'Niche recognition.', mid: 'Well known in genre circles.', high: 'Icon-level recognition.' },
+  Charm: { map: 'CHA', low: 'Blunt or difficult social style.', mid: 'Persuasive and likable.', high: 'Outstanding charisma and influence.' },
+  Danger: { map: 'Dungeon threat', low: 'Safer than average location.', mid: 'Significant risk profile.', high: 'Extremely lethal environment.' },
+  Puzzle: { map: 'Complexity', low: 'Mostly straightforward encounters.', mid: 'Meaningful puzzle/trap challenge.', high: 'Dense puzzle-heavy design.' },
+  Dread: { map: 'Atmosphere', low: 'Light tension.', mid: 'Strong ominous tone.', high: 'Severe fear/doom atmosphere.' },
+  HP: { map: 'Hit Points', low: 'Fragile enemy.', mid: 'Moderate durability.', high: 'Tank-level endurance.' },
+  AC: { map: 'Armour Class', low: 'Easy to hit.', mid: 'Average defense.', high: 'Hard target to land attacks on.' },
+  ATK: { map: 'Attack Bonus', low: 'Low hit chance.', mid: 'Reliable strike chance.', high: 'Very accurate attacker.' },
+  DMG: { map: 'Damage Dice', low: 'Light damage output.', mid: 'Steady threat.', high: 'High burst potential.' },
+  CR: { map: 'Challenge Rating', low: 'Entry-level threat.', mid: 'Skilled-party challenge.', high: 'Boss-tier challenge.' },
+  XP: { map: 'Reward Value', low: 'Small reward.', mid: 'Meaningful progression reward.', high: 'Major progression reward.' },
+};
+
+function scoreBand(v) {
+  const n = Number(v);
+  if (Number.isNaN(n)) return 'Context specific rating.';
+  if (n <= 3) return 'This is a low value.';
+  if (n <= 7) return 'This is a medium value.';
+  return 'This is a high value.';
+}
+
+function statHelpText(label, value) {
+  const info = STAT_INFO[label];
+  const band = scoreBand(value);
+  if (!info) return `${label}: ${value}. ${band}`;
+  const n = Number(value);
+  let detail = info.mid;
+  if (!Number.isNaN(n)) {
+    detail = n <= 3 ? info.low : (n <= 7 ? info.mid : info.high);
+  }
+  return `${label}: ${value}. Maps to ${info.map}. ${band} ${detail}`;
+}
+
+function applyPanelSplit(pctRaw) {
+  const pct = Math.max(35, Math.min(75, Number(pctRaw) || 62));
+  const cards = 100 - pct;
+  document.documentElement.style.setProperty('--detail-fr', `${pct}fr`);
+  document.documentElement.style.setProperty('--cards-fr', `${cards}fr`);
+  els.panelWidthSlider.value = String(pct);
+  try {
+    localStorage.setItem('dndex_panel_split', String(pct));
+  } catch (_) {}
+}
 
 const TRACKS = {
   exploration: '../../music/music_exploration.wav',
@@ -113,30 +176,112 @@ function renderDetail() {
     els.title.textContent = 'No cards in this filter';
     els.meta.textContent = '';
     els.image.removeAttribute('src');
+    els.cardPosLabel.textContent = '0/0';
+    els.sourceBtn.href = '#';
+    els.sourceBtn.style.display = 'none';
+    els.loreBtn.href = '#';
+    els.loreBtn.style.display = 'none';
+    els.downloadBtn.href = '#';
+    els.downloadBtn.download = '';
+    els.shareBtn.disabled = true;
     els.stats.innerHTML = '';
+    els.statHelp.textContent = 'Tap a stat to see what it means.';
     els.desc.textContent = '';
     return;
   }
 
   els.title.textContent = card.name;
-  els.meta.textContent = `${humanType(card.type)}${card.source ? ` • ${card.source}` : ''}`;
+  els.meta.textContent = `${humanType(card.type)}${card.source ? ` - ${card.source}` : ''}`;
   els.image.src = `../${card.image}`;
   els.image.alt = card.name;
+  const idx = state.filtered.findIndex((c) => c.id === state.selectedId);
+  els.cardPosLabel.textContent = `${idx + 1}/${state.filtered.length}`;
+  if (card.source_entity_page) {
+    els.sourceBtn.href = `../${card.source_entity_page}`;
+    els.sourceBtn.style.display = 'inline-flex';
+  } else {
+    els.sourceBtn.href = '#';
+    els.sourceBtn.style.display = 'none';
+  }
+  if (card.lore_page) {
+    els.loreBtn.href = `../${card.lore_page}`;
+    els.loreBtn.style.display = 'inline-flex';
+  } else {
+    els.loreBtn.href = '#';
+    els.loreBtn.style.display = 'none';
+  }
+  els.downloadBtn.href = `../${card.image}`;
+  els.downloadBtn.download = `${card.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.png`;
+  els.shareBtn.disabled = false;
 
   els.stats.innerHTML = '';
   for (const [k, v] of Object.entries(card.stats || {})) {
-    const p = document.createElement('span');
+    const p = document.createElement('button');
+    p.type = 'button';
     p.className = 'stat-pill';
     p.textContent = `${k}: ${v}`;
+    p.addEventListener('click', () => {
+      for (const el of els.stats.querySelectorAll('.stat-pill')) {
+        el.classList.remove('active');
+      }
+      p.classList.add('active');
+      els.statHelp.textContent = statHelpText(k, v);
+    });
     els.stats.appendChild(p);
   }
+  els.statHelp.textContent = 'Tap a stat to see what it means.';
 
   els.desc.textContent = card.description || '';
 }
 
+function selectByOffset(offset) {
+  if (!state.filtered.length) return;
+  const current = state.filtered.findIndex((c) => c.id === state.selectedId);
+  const base = current >= 0 ? current : 0;
+  const next = (base + offset + state.filtered.length) % state.filtered.length;
+  state.selectedId = state.filtered[next].id;
+  renderGrid();
+  renderDetail();
+}
+
+async function shareCurrentCard() {
+  const card = state.filtered.find((c) => c.id === state.selectedId);
+  if (!card) return;
+  const imageUrl = `../${card.image}`;
+
+  try {
+    if (navigator.share) {
+      if (navigator.canShare && window.File) {
+        const resp = await fetch(imageUrl);
+        if (resp.ok) {
+          const blob = await resp.blob();
+          const fileName = `${card.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.png`;
+          const file = new File([blob], fileName, { type: blob.type || 'image/png' });
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              title: card.name,
+              text: `${card.name} (${humanType(card.type)})`,
+              files: [file],
+            });
+            return;
+          }
+        }
+      }
+      await navigator.share({
+        title: card.name,
+        text: `${card.name} (${humanType(card.type)})`,
+        url: new URL(imageUrl, window.location.href).href,
+      });
+      return;
+    }
+  } catch (_) {}
+
+  // Fallback: trigger download
+  els.downloadBtn.click();
+}
+
 function targetTrack() {
   const mode = els.musicMode.value;
-  if (mode === 'off') return null;
   if (mode !== 'auto') return mode;
 
   const cat = els.category.value;
@@ -176,6 +321,9 @@ function bindEvents() {
   els.category.addEventListener('change', applyFilters);
   els.search.addEventListener('input', applyFilters);
   els.sort.addEventListener('change', applyFilters);
+  els.panelWidthSlider.addEventListener('input', () => {
+    applyPanelSplit(els.panelWidthSlider.value);
+  });
 
   els.volume.addEventListener('input', () => {
     els.bgm.volume = Number(els.volume.value);
@@ -184,11 +332,6 @@ function bindEvents() {
 
   els.musicMode.addEventListener('change', () => {
     syncMusicTrack();
-    if (els.musicMode.value === 'off') {
-      state.musicOn = false;
-      els.bgm.pause();
-      updateMusicUI();
-    }
   });
 
   els.musicToggle.addEventListener('click', async () => {
@@ -209,8 +352,65 @@ function bindEvents() {
       updateMusicUI();
     }
   });
+
+  els.shareBtn.addEventListener('click', async () => {
+    await shareCurrentCard();
+  });
+
+  els.prevCardBtn.addEventListener('click', () => {
+    selectByOffset(-1);
+  });
+
+  els.nextCardBtn.addEventListener('click', () => {
+    selectByOffset(1);
+  });
+
+  els.image.addEventListener('touchstart', (ev) => {
+    if (!ev.touches || !ev.touches.length) return;
+    swipeState.startX = ev.touches[0].clientX;
+  }, { passive: true });
+
+  els.image.addEventListener('touchend', (ev) => {
+    if (swipeState.startX === null || !ev.changedTouches || !ev.changedTouches.length) {
+      swipeState.startX = null;
+      return;
+    }
+    const endX = ev.changedTouches[0].clientX;
+    const dx = endX - swipeState.startX;
+    swipeState.startX = null;
+    if (Math.abs(dx) < 30) return;
+    if (dx < 0) {
+      selectByOffset(1);
+    } else {
+      selectByOffset(-1);
+    }
+  }, { passive: true });
+
+  // Drag divider for panel sizing (landscape)
+  els.panelResizer.addEventListener('pointerdown', (ev) => {
+    if (!els.layout) return;
+    ev.preventDefault();
+    const rect = els.layout.getBoundingClientRect();
+    const onMove = (mv) => {
+      const x = mv.clientX - rect.left;
+      const pct = (x / rect.width) * 100;
+      applyPanelSplit(pct);
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  });
 }
 
 bindEvents();
 updateMusicUI();
+try {
+  const saved = localStorage.getItem('dndex_panel_split');
+  applyPanelSplit(saved || 62);
+} catch (_) {
+  applyPanelSplit(62);
+}
 loadCards();

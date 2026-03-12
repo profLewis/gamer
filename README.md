@@ -120,15 +120,15 @@ See [ios/README.md](ios/README.md) for detailed build instructions.
 ## DnDex (Card Dex)
 
 - Browse all generated player, monster, and location cards in the **DnDex** viewer:
-  [ios_card_images/card-dex/index.html](ios_card_images/card-dex/index.html)
+  [https://proflewis.github.io/gamer/ios_card_images/card-dex/index.html](https://proflewis.github.io/gamer/ios_card_images/card-dex/index.html)
 - Browse the **Rogues Gallery Viewer** (rooms, races, monsters, NPCs, with voice showcase):
-  [gallery/index.html](gallery/index.html)
+  [https://proflewis.github.io/gamer/gallery/index.html](https://proflewis.github.io/gamer/gallery/index.html)
 - Deep source references (authors, films, TV, modules, worlds):
-  [ios_card_images/card-dex/entities/index.html](ios_card_images/card-dex/entities/index.html)
+  [https://proflewis.github.io/gamer/ios_card_images/card-dex/entities/index.html](https://proflewis.github.io/gamer/ios_card_images/card-dex/entities/index.html)
 - Photo provenance for downloaded reference images:
-  [ios_card_images/PHOTO_SOURCES.md](ios_card_images/PHOTO_SOURCES.md)
+  [https://proflewis.github.io/gamer/ios_card_images/PHOTO_SOURCES.md](https://proflewis.github.io/gamer/ios_card_images/PHOTO_SOURCES.md)
 - Markdown catalogs for direct image links:
-  [ios_card_images/README.md](ios_card_images/README.md)
+  [https://proflewis.github.io/gamer/ios_card_images/README.md](https://proflewis.github.io/gamer/ios_card_images/README.md)
 - If your browser blocks local `file://` data loading, run from repo root:
   `python3 -m http.server 8000`
   then open `http://localhost:8000/ios_card_images/card-dex/index.html`

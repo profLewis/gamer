@@ -16,7 +16,7 @@
       <h1>DnD Card Dex</h1>
       <p class="subtitle">Player, Monster, and Location Cards from iOS</p>
     </div>
-    <a class="md-link" href="../README.md">Markdown Catalog</a>
+    <img class="dragon-badge" src="../../images/dragon_animation.gif" alt="Animated dragon" />
   </header>
 
   <section class="controls">
@@ -40,6 +40,10 @@
       </select>
     </label>
 
+    <label>Panel Width
+      <input id="panelWidthSlider" type="range" min="35" max="75" step="1" value="62" />
+    </label>
+
     <div class="music-panel">
       <button id="musicToggle" class="btn">Play Music</button>
       <label>Track
@@ -48,7 +52,6 @@
           <option value="exploration">Exploration</option>
           <option value="combat">Combat</option>
           <option value="menu">Menu</option>
-          <option value="off">Off</option>
         </select>
       </label>
       <label id="volumeWrap" class="volume-wrap">Vol
@@ -58,6 +61,28 @@
   </section>
 
   <main class="layout">
+    <aside class="detail-panel" id="detailPanel">
+      <h2 id="detailTitle">Select a card</h2>
+      <p id="detailMeta" class="meta"></p>
+      <div class="card-nav">
+        <button id="prevCardBtn" class="btn subtle" type="button">Prev</button>
+        <span id="cardPosLabel" class="card-pos"></span>
+        <button id="nextCardBtn" class="btn subtle" type="button">Next</button>
+      </div>
+      <img id="detailImage" alt="Card art" />
+      <div class="detail-actions">
+        <a id="sourceBtn" class="btn subtle" href="#" style="display:none">Source Card</a>
+        <a id="loreBtn" class="btn subtle" href="#">(+) Info</a>
+        <button id="shareBtn" class="btn">Share</button>
+        <a id="downloadBtn" class="btn subtle" href="#" download>Download PNG</a>
+      </div>
+      <div id="detailStats" class="stats"></div>
+      <div id="statHelp" class="stat-help">Tap a stat to see what it means.</div>
+      <p id="detailDesc" class="desc"></p>
+    </aside>
+
+    <div id="panelResizer" class="panel-resizer" title="Drag to resize panels"></div>
+
     <section class="cards-panel">
       <div class="panel-head">
         <h2>Cards</h2>
@@ -65,20 +90,24 @@
       </div>
       <div id="cardGrid" class="card-grid"></div>
     </section>
-
-    <aside class="detail-panel" id="detailPanel">
-      <h2 id="detailTitle">Select a card</h2>
-      <p id="detailMeta" class="meta"></p>
-      <img id="detailImage" alt="Card art" />
-      <div id="detailStats" class="stats"></div>
-      <p id="detailDesc" class="desc"></p>
-    </aside>
   </main>
 
-  <section class="about" style="margin:0 16px 16px;padding:10px;border:1px solid #1f5e34;border-radius:10px;background:#0a120c;color:#a8c5ad;">
-    <p style="margin:0 0 6px;">About: DnDex is a visualiser for the game's default character, location, and monster cards.</p>
-    <p style="margin:0 0 6px;">In gameplay/setup you can define your own names and customised elements.</p>
-    <p style="margin:0;">Credits: Created by Prof. Lewis with assistance from Claude and Codex. (C) Timbaloo Ltd. 2026.</p>
+  <section class="about">
+    <h2>About DnDex</h2>
+    <p>
+      DnDex is a visual card browser for the default iOS game content: core character names, dungeon locations, and monsters.
+      It presents the generated cards in one place for browsing, comparison, sharing, and download.
+    </p>
+    <p>
+      In the game itself, you can define your own names for characters and other elements during setup and through gameplay choices.
+      The cards here reflect the default reference set.
+    </p>
+    <p class="about-links">
+      <a href="https://timbalooloo.com/" target="_blank" rel="noopener noreferrer">Timbaloo Page</a>
+      <a href="https://apps.apple.com/us/app/d-d-rpg/id6759059371" target="_blank" rel="noopener noreferrer">App Store</a>
+      <a href="entities/index.html">Deep Source Cards</a>
+    </p>
+    <p class="copyright">(C) Timbaloo Ltd. 2026</p>
   </section>
 
   <audio id="bgm" loop preload="none"></audio>
