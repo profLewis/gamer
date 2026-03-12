@@ -18,6 +18,7 @@ const els = {
   title: document.getElementById('detailTitle'),
   meta: document.getElementById('detailMeta'),
   prevCardBtn: document.getElementById('prevCardBtn'),
+  randomCardBtn: document.getElementById('randomCardBtn'),
   nextCardBtn: document.getElementById('nextCardBtn'),
   cardPosLabel: document.getElementById('cardPosLabel'),
   image: document.getElementById('detailImage'),
@@ -258,6 +259,36 @@ function selectByOffset(offset) {
   renderDetail();
 }
 
+function selectRandomCard() {
+  if (!state.filtered.length) return;
+  if (state.filtered.length === 1) {
+    state.selectedId = state.filtered[0].id;
+    renderGrid();
+    renderDetail();
+    return;
+  }
+  const current = state.filtered.findIndex((c) => c.id === state.selectedId);
+  let next = current;
+  while (next === current) {
+    next = Math.floor(Math.random() * state.filtered.length);
+  }
+  state.selectedId = state.filtered[next].id;
+  renderGrid();
+  renderDetail();
+}
+
+function openDeepInfo() {
+  const card = state.filtered.find((c) => c.id === state.selectedId);
+  if (!card) return;
+  if (card.lore_page) {
+    window.location.href = `../${card.lore_page}`;
+    return;
+  }
+  if (card.source_entity_page) {
+    window.location.href = `../${card.source_entity_page}`;
+  }
+}
+
 async function shareCurrentCard() {
   const card = state.filtered.find((c) => c.id === state.selectedId);
   if (!card) return;
@@ -377,6 +408,14 @@ function bindEvents() {
 
   els.nextCardBtn.addEventListener('click', () => {
     selectByOffset(1);
+  });
+
+  els.randomCardBtn.addEventListener('click', () => {
+    selectRandomCard();
+  });
+
+  els.image.addEventListener('dblclick', () => {
+    openDeepInfo();
   });
 
   els.image.addEventListener('touchstart', (ev) => {
