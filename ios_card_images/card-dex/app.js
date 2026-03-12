@@ -18,6 +18,7 @@ const els = {
   desc: document.getElementById('detailDesc'),
   musicToggle: document.getElementById('musicToggle'),
   musicMode: document.getElementById('musicMode'),
+  volumeWrap: document.getElementById('volumeWrap'),
   volume: document.getElementById('volumeSlider'),
   bgm: document.getElementById('bgm'),
 };
@@ -150,6 +151,7 @@ function syncMusicTrack() {
   const t = targetTrack();
   if (!t) {
     els.bgm.pause();
+    updateMusicUI();
     return;
   }
   const src = TRACKS[t];
@@ -161,6 +163,13 @@ function syncMusicTrack() {
       els.bgm.play().catch(() => {});
     }
   }
+  updateMusicUI();
+}
+
+function updateMusicUI() {
+  const playing = state.musicOn && !els.bgm.paused;
+  els.volumeWrap.classList.toggle('hidden', !playing);
+  els.musicToggle.textContent = playing ? 'Pause Music' : 'Play Music';
 }
 
 function bindEvents() {
@@ -177,30 +186,31 @@ function bindEvents() {
     syncMusicTrack();
     if (els.musicMode.value === 'off') {
       state.musicOn = false;
-      els.musicToggle.textContent = 'Play Music';
       els.bgm.pause();
+      updateMusicUI();
     }
   });
 
   els.musicToggle.addEventListener('click', async () => {
     if (state.musicOn) {
       state.musicOn = false;
-      els.musicToggle.textContent = 'Play Music';
       els.bgm.pause();
+      updateMusicUI();
       return;
     }
 
     state.musicOn = true;
-    els.musicToggle.textContent = 'Pause Music';
     syncMusicTrack();
     try {
       await els.bgm.play();
+      updateMusicUI();
     } catch (_) {
       state.musicOn = false;
-      els.musicToggle.textContent = 'Play Music';
+      updateMusicUI();
     }
   });
 }
 
 bindEvents();
+updateMusicUI();
 loadCards();
