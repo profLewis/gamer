@@ -49,6 +49,8 @@ The dungeon is home to 30 different creature types, from lowly rats and kobolds 
 
 Friendly NPCs appear in dungeon rooms — traders, healers, scholars, smiths, scouts, and more. Talk to them for quests, services, and lore. The Gatekeeper guards the entrance and offers gold rewards for clearing the dungeon.
 
+![NPCs](images/all_npcs.png)
+
 ### AI Dungeon Master
 
 The game has three tiers of DM intelligence:
