@@ -14,6 +14,7 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS and macOS, wit
 - **Parties** of 1-4 characters (human or AI-controlled)
 - **Long-press** any party size to auto-generate an all-AI party
 - **Name suggestions** drawn from D&D shows, films, and sci-fi classics (Stranger Things, Community, Futurama, Dune, The Matrix, and more)
+- **DnD-dex** ![showing character and location cards used as the name suggestions in the game](https://proflewis.github.io/gamer/ios_card_images/card-dex/index.html).
 
 ### Combat (D&D 5e Rules)
 - Initiative, attack rolls, saving throws, critical hits
