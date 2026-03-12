@@ -4,9 +4,12 @@ from __future__ import annotations
 import json
 import re
 import textwrap
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -45,6 +48,19 @@ class MonsterEntry:
     art: List[str]
 
 
+@dataclass
+class SourceEntity:
+    source: str
+    kind: str
+    wiki_title: str | None
+    wiki_url: str | None
+    summary: str
+    photo_remote_url: str | None
+    photo_local_path: str | None
+    entity_page: str
+    entity_card_image: str
+
+
 def decode_swift_string(s: str) -> str:
     return bytes(s, "utf-8").decode("unicode_escape")
 
@@ -55,6 +71,60 @@ def slugify(s: str) -> str:
     s = re.sub(r"-+", "-", s).strip("-")
     return s
 
+
+def source_kind(source: str) -> str:
+    s = source.lower()
+    if "d&d module" in s:
+        return "module"
+    if any(x in s for x in ["tolkien", "moorcock", "le guin", "pratchett", "howard", "asimov", "burroughs"]):
+        return "author"
+    if any(x in s for x in ["stranger things", "community", "futurama", "doctor who", "he-man", "thundercats", "dogtanian", "blake's 7", "robin of sherwood"]):
+        return "tv"
+    if any(x in s for x in ["star wars", "alien", "king kong", "forbidden planet", "honour among thieves", "willow", "labyrinth", "highlander", "legend", "dragonslayer", "neverending"]):
+        return "movie"
+    if "classic sci-fi" in s or "famous robots" in s:
+        return "franchise"
+    return "book"
+
+
+def http_json(url: str) -> dict | list | None:
+    req = Request(url, headers={"User-Agent": "DnDex/1.0 (+https://github.com/profLewis/gamer)"})
+    try:
+        with urlopen(req, timeout=20) as resp:
+            if resp.status != 200:
+                return None
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return None
+
+
+def wiki_best_match(query: str) -> tuple[str | None, dict | None]:
+    search_url = (
+        "https://en.wikipedia.org/w/api.php?action=opensearch&limit=1&namespace=0&format=json&search="
+        + quote(query)
+    )
+    data = http_json(search_url)
+    if not isinstance(data, list) or len(data) < 2 or not isinstance(data[1], list) or not data[1]:
+        return None, None
+    title = str(data[1][0])
+    sum_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote(title)}"
+    summary = http_json(sum_url)
+    if not isinstance(summary, dict):
+        return title, None
+    return title, summary
+
+
+def download_binary(url: str, dst: Path) -> bool:
+    req = Request(url, headers={"User-Agent": "DnDex/1.0 (+https://github.com/profLewis/gamer)"})
+    try:
+        with urlopen(req, timeout=30) as resp:
+            if resp.status != 200:
+                return False
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_bytes(resp.read())
+            return True
+    except Exception:
+        return False
 
 def extract_parenthesized(text: str, start_idx: int) -> str:
     depth = 0
@@ -405,9 +475,512 @@ def write_markdown_pages(players: List[dict], locations: List[dict], monsters: L
         "2. [Location Cards](locations.md)",
         "3. [Monster Cards](monsters.md)",
         "4. [Card Dex Viewer](card-dex/index.html)",
+        "5. [Deep Source Cards](card-dex/entities/index.html)",
+        "6. [Photo Sources](PHOTO_SOURCES.md)",
         "",
     ]
     index.write_text("\n".join(index_lines), encoding="utf-8")
+
+
+def write_lore_pages(players: List[dict], locations: List[dict]) -> None:
+    lore_root = OUT_ROOT / "card-dex" / "lore"
+    lore_root.mkdir(parents=True, exist_ok=True)
+
+    lore_css = """\
+:root {
+  --bg: #050805;
+  --panel: #0b120c;
+  --line: #2f8f4a;
+  --text: #d6f2d8;
+  --muted: #8baa8f;
+  --accent: #6bff89;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(circle at 20% 10%, #102114 0%, var(--bg) 45%), var(--bg);
+  color: var(--text);
+  font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+}
+.wrap {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 16px;
+}
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.back {
+  color: #9ad8a7;
+  text-decoration: none;
+  border: 1px solid #2f6a3e;
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: #0a100b;
+}
+h1 {
+  margin: 10px 0 2px;
+  color: var(--accent);
+  font-size: 1.9rem;
+  font-family: "Copperplate", "Palatino Linotype", serif;
+}
+.meta { color: var(--muted); margin: 0 0 10px; }
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.panel {
+  border: 1px solid #1f5e34;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(12, 22, 14, 0.96), rgba(9, 14, 10, 0.98));
+  padding: 12px;
+}
+.card-img {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid #2f673f;
+  background: #070c08;
+}
+.wiki-img {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid #2f673f;
+  background: #070c08;
+  max-height: 420px;
+  object-fit: contain;
+}
+.summary {
+  margin-top: 10px;
+  color: #b8d2bd;
+  line-height: 1.45;
+}
+h2 {
+  margin: 0 0 8px;
+  color: #95d39f;
+  font-size: 1.1rem;
+}
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.links a {
+  color: #8ce6a1;
+  text-decoration: none;
+  border: 1px solid #2f6a3e;
+  border-radius: 8px;
+  padding: 6px 9px;
+  background: #0a100b;
+  font-size: 0.9rem;
+}
+.small { color: #83a288; font-size: 0.8rem; margin-top: 8px; }
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+}
+"""
+
+    lore_js = """\
+const card = window.CARD;
+
+function byId(id) { return document.getElementById(id); }
+
+function q(s) { return encodeURIComponent(s); }
+
+function sourceKind(src) {
+  const s = (src || '').toLowerCase();
+  if (s.includes('module')) return 'book';
+  if (s.includes('tolkien') || s.includes('moorcock') || s.includes('le guin') || s.includes('pratchett') || s.includes('howard') || s.includes('asimov') || s.includes('burroughs')) return 'book';
+  if (s.includes('film') || s.includes('movie') || s.includes('198') || s.includes('197') || s.includes('king kong') || s.includes('star wars') || s.includes('alien')) return 'movie';
+  if (s.includes('stranger things') || s.includes('doctor who') || s.includes('community') || s.includes('futurama') || s.includes('he-man') || s.includes('thundercats') || s.includes('dogtanian')) return 'tv';
+  return 'mixed';
+}
+
+function outboundLinks(c) {
+  const query = `${c.name} ${c.source || ''}`.trim();
+  const squery = `${c.source || c.name}`.trim();
+  const kind = sourceKind(c.source);
+  const links = [
+    { label: 'Wikipedia', href: `https://en.wikipedia.org/wiki/Special:Search?search=${q(query)}` },
+    { label: 'YouTube', href: `https://www.youtube.com/results?search_query=${q(query + ' trailer clip')}` },
+    { label: 'Amazon', href: `https://www.amazon.com/s?k=${q(squery)}` },
+    { label: 'AbeBooks', href: `https://www.abebooks.com/servlet/SearchResults?kn=${q(squery)}` },
+    { label: 'World of Books', href: `https://www.worldofbooks.com/en-gb/search?q=${q(squery)}` },
+  ];
+  if (kind === 'movie' || kind === 'tv' || kind === 'mixed') {
+    links.push({ label: 'IMDb', href: `https://www.imdb.com/find/?q=${q(query)}` });
+  }
+  return links;
+}
+
+async function findWikiTitle(query) {
+  const url = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${q(query)}&limit=1&namespace=0&format=json&origin=*`;
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (Array.isArray(data) && Array.isArray(data[1]) && data[1].length > 0) {
+    return data[1][0];
+  }
+  return null;
+}
+
+async function fetchWikiSummary(title) {
+  const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${q(title)}`;
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  return await res.json();
+}
+
+async function loadWiki(c) {
+  const queries = [
+    `${c.name} ${c.source || ''}`.trim(),
+    c.name,
+    c.source || '',
+  ].filter(Boolean);
+  for (const query of queries) {
+    try {
+      const title = await findWikiTitle(query);
+      if (!title) continue;
+      const sum = await fetchWikiSummary(title);
+      if (!sum || !sum.extract) continue;
+      return { title, summary: sum };
+    } catch (_) {}
+  }
+  return null;
+}
+
+function renderStatic(c) {
+  byId('title').textContent = c.name;
+  byId('meta').textContent = `${(c.type || '').toUpperCase()} - ${c.source || 'Reference'}`;
+  byId('cardImg').src = `../../${c.image}`;
+  byId('cardImg').alt = c.name;
+  byId('summary').textContent = c.description || '';
+
+  const links = outboundLinks(c);
+  if (c.source_entity_page) {
+    links.unshift({ label: 'Source Card', href: `../${c.source_entity_page}` });
+  }
+  const linksWrap = byId('links');
+  for (const l of links) {
+    const a = document.createElement('a');
+    a.href = l.href;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = l.label;
+    linksWrap.appendChild(a);
+  }
+}
+
+async function renderWiki(c) {
+  const wiki = await loadWiki(c);
+  if (!wiki) return;
+
+  byId('summary').textContent = wiki.summary.extract;
+  if (wiki.summary.thumbnail && wiki.summary.thumbnail.source) {
+    const img = byId('wikiImg');
+    img.src = wiki.summary.thumbnail.source;
+    img.alt = `${wiki.title} reference image`;
+    img.style.display = 'block';
+  }
+  if (wiki.summary.content_urls && wiki.summary.content_urls.desktop && wiki.summary.content_urls.desktop.page) {
+    const a = document.createElement('a');
+    a.href = wiki.summary.content_urls.desktop.page;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = 'Wikipedia Article';
+    byId('links').prepend(a);
+  }
+}
+
+renderStatic(card);
+renderWiki(card);
+"""
+
+    lore_template_head = """\
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DnDex Lore</title>
+  <link rel="stylesheet" href="lore.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <a class="back" href="../index.html">Back to DnDex</a>
+    </div>
+    <h1 id="title"></h1>
+    <p id="meta" class="meta"></p>
+    <div class="layout">
+      <section class="panel">
+        <h2>Card</h2>
+        <img id="cardImg" class="card-img" alt="" />
+      </section>
+      <section class="panel">
+        <h2>Reference</h2>
+        <img id="wikiImg" class="wiki-img" alt="" style="display:none" />
+        <p id="summary" class="summary"></p>
+      </section>
+    </div>
+    <section class="panel" style="margin-top:14px">
+      <h2>Find More</h2>
+      <div id="links" class="links"></div>
+      <p class="small">External links are provided for convenience and open in a new tab.</p>
+    </section>
+  </div>
+"""
+    lore_template_tail = """\
+</body>
+</html>
+"""
+
+    (lore_root / "lore.css").write_text(lore_css, encoding="utf-8")
+    (lore_root / "lore.js").write_text(lore_js, encoding="utf-8")
+
+    def write_one(card: dict) -> str:
+        page_name = f"{card['id']}.html"
+        page_path = lore_root / page_name
+        payload = json.dumps(card, ensure_ascii=True)
+        html = (
+            lore_template_head
+            + f"<script>window.CARD = {payload};</script>\n"
+            + '<script src="lore.js"></script>\n'
+            + lore_template_tail
+        )
+        page_path.write_text(html, encoding="utf-8")
+        return f"card-dex/lore/{page_name}"
+
+    for card in players + locations:
+        card["lore_page"] = write_one(card)
+
+
+def render_source_entity_card(entity: SourceEntity, out_path: Path) -> None:
+    w, h = 1200, 1700
+    im = Image.new("RGB", (w, h), "#030703")
+    d = ImageDraw.Draw(im)
+    title_f = load_font(56, mono=False)
+    sub_f = load_font(30, mono=False)
+    body_f = load_font(30, mono=False)
+
+    d.rounded_rectangle((80, 80, w - 80, h - 80), radius=28, fill="#091209", outline="#3EAF57", width=4)
+
+    title = entity.source
+    tw = d.textbbox((0, 0), title, font=title_f)[2]
+    d.text(((w - tw) / 2, 130), title, fill="#82FF9C", font=title_f)
+
+    subtitle = f"{entity.kind.upper()} SOURCE CARD"
+    sw = d.textbbox((0, 0), subtitle, font=sub_f)[2]
+    d.text(((w - sw) / 2, 210), subtitle, fill="#A7F0B2", font=sub_f)
+    d.line((140, 270, w - 140, 270), fill="#3EAF57", width=3)
+
+    y = 300
+    if entity.photo_local_path:
+        img_path = OUT_ROOT / entity.photo_local_path
+        if img_path.exists():
+            try:
+                p = Image.open(img_path).convert("RGB")
+                p.thumbnail((w - 220, 700))
+                x = (w - p.width) // 2
+                im.paste(p, (x, y))
+                y += p.height + 20
+            except Exception:
+                pass
+
+    d.line((140, y, w - 140, y), fill="#2E6B3F", width=2)
+    y += 20
+
+    summary = entity.summary or "Reference material for this source."
+    for line in textwrap.wrap(summary, width=62):
+        d.text((170, y), line, fill="#9CCAA6", font=body_f)
+        y += 38
+        if y > h - 150:
+            break
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    im.save(out_path)
+
+
+def write_source_entities(cards: List[dict]) -> Dict[str, SourceEntity]:
+    entities_dir = OUT_ROOT / "entities"
+    photos_dir = entities_dir / "photos"
+    cards_dir = entities_dir / "cards"
+    pages_dir = OUT_ROOT / "card-dex" / "entities"
+    pages_dir.mkdir(parents=True, exist_ok=True)
+
+    unique_sources = sorted({c.get("source", "").strip() for c in cards if c.get("source")})
+    entities: Dict[str, SourceEntity] = {}
+    provenance_rows: List[dict] = []
+
+    for source in unique_sources:
+        kind = source_kind(source)
+        queries = [source, re.sub(r"\s*\(\d{4}\)\s*$", "", source)]
+        title = None
+        summary = None
+        for q in queries:
+            q = q.strip()
+            if not q:
+                continue
+            t, s = wiki_best_match(q)
+            if t:
+                title = t
+            if s:
+                summary = s
+                break
+
+        wiki_url = None
+        summary_text = f"Background reference for {source}."
+        remote_photo = None
+        local_photo = None
+        if isinstance(summary, dict):
+            summary_text = str(summary.get("extract") or summary_text)
+            desktop = summary.get("content_urls", {}).get("desktop", {})
+            if isinstance(desktop, dict):
+                wiki_url = desktop.get("page")
+            thumb = summary.get("thumbnail", {})
+            if isinstance(thumb, dict):
+                remote_photo = thumb.get("source")
+        if not wiki_url and title:
+            wiki_url = f"https://en.wikipedia.org/wiki/{quote(title.replace(' ', '_'))}"
+
+        if remote_photo:
+            ext = ".jpg"
+            if isinstance(remote_photo, str) and remote_photo.lower().endswith(".png"):
+                ext = ".png"
+            local_name = f"{slugify(source)}{ext}"
+            local_path = photos_dir / local_name
+            if download_binary(remote_photo, local_path):
+                local_photo = str(local_path.relative_to(OUT_ROOT))
+                provenance_rows.append({
+                    "source": source,
+                    "local_photo": local_photo,
+                    "wiki_title": title or "",
+                    "wiki_page": wiki_url or "",
+                    "image_url": remote_photo,
+                    "retrieved_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                })
+
+        entity_page = f"card-dex/entities/{slugify(source)}.html"
+        entity_card_image = f"entities/cards/{slugify(source)}.png"
+        entity = SourceEntity(
+            source=source,
+            kind=kind,
+            wiki_title=title,
+            wiki_url=wiki_url,
+            summary=summary_text,
+            photo_remote_url=remote_photo,
+            photo_local_path=local_photo,
+            entity_page=entity_page,
+            entity_card_image=entity_card_image,
+        )
+        entities[source] = entity
+
+        render_source_entity_card(entity, OUT_ROOT / entity_card_image)
+
+        # Per-entity page in DnDex style
+        photo_html = (
+            f'<img class="wiki-img" src="../../{local_photo}" alt="{source} image" />'
+            if local_photo else '<p class="small">No local photo available for this source yet.</p>'
+        )
+        wiki_btn = (
+            f'<a href="{wiki_url}" target="_blank" rel="noopener noreferrer">Wikipedia</a>'
+            if wiki_url else ""
+        )
+        source_links = [
+            ("YouTube", f"https://www.youtube.com/results?search_query={quote(source + ' trailer clip')}"),
+            ("Amazon", f"https://www.amazon.com/s?k={quote(source)}"),
+            ("AbeBooks", f"https://www.abebooks.com/servlet/SearchResults?kn={quote(source)}"),
+            ("World of Books", f"https://www.worldofbooks.com/en-gb/search?q={quote(source)}"),
+            ("IMDb", f"https://www.imdb.com/find/?q={quote(source)}"),
+        ]
+        links_html = "".join(
+            f'<a href="{u}" target="_blank" rel="noopener noreferrer">{label}</a>' for label, u in source_links
+        )
+        html = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{source} - DnDex Source</title>
+  <link rel="stylesheet" href="../lore/lore.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <a class="back" href="../index.html">Back to DnDex</a>
+    </div>
+    <h1>{source}</h1>
+    <p class="meta">{kind.upper()} source card</p>
+    <div class="layout">
+      <section class="panel">
+        <h2>Source Card</h2>
+        <img class="card-img" src="../../{entity_card_image}" alt="{source} source card" />
+      </section>
+      <section class="panel">
+        <h2>Photo</h2>
+        {photo_html}
+        <p class="summary">{summary_text}</p>
+      </section>
+    </div>
+    <section class="panel" style="margin-top:14px">
+      <h2>External Links</h2>
+      <div class="links">{wiki_btn}{links_html}</div>
+      <p class="small">This page aggregates references to the source material behind Name Lore entries.</p>
+    </section>
+  </div>
+</body>
+</html>
+"""
+        (pages_dir / f"{slugify(source)}.html").write_text(html, encoding="utf-8")
+
+    # Index page for all entities
+    entity_cards = []
+    for e in entities.values():
+        entity_cards.append(
+            f'<a class="entity-card" href="./{slugify(e.source)}.html"><img src="../../{e.entity_card_image}" alt="{e.source}"><span>{e.source}</span></a>'
+        )
+    index_html = """<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DnDex Sources</title>
+<style>
+body{margin:0;background:#050805;color:#d6f2d8;font-family:Arial,sans-serif}
+.wrap{padding:16px;max-width:1100px;margin:0 auto}
+a{color:#8ce6a1}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.entity-card{display:flex;flex-direction:column;gap:6px;text-decoration:none;border:1px solid #2f6a3e;border-radius:10px;padding:8px;background:#091209}
+.entity-card img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:8px;border:1px solid #2f673f}
+.entity-card span{color:#b8d2bd;font-size:0.9rem}
+</style>
+</head><body><div class="wrap">
+<p><a href="../index.html">Back to DnDex</a></p>
+<h1>Deep Source Cards</h1>
+<p>Authors, films, TV, modules, and reference worlds behind the in-game default names.</p>
+<div class="grid">""" + "".join(entity_cards) + "</div></div></body></html>"
+    (pages_dir / "index.html").write_text(index_html, encoding="utf-8")
+
+    # Provenance markdown for local photos
+    prov_md = OUT_ROOT / "PHOTO_SOURCES.md"
+    lines = [
+        "# DnDex Photo Sources",
+        "",
+        "Local copies of reference photos used in source/entity pages.",
+        "",
+        "| Source | Local File | Wiki Page | Remote Image URL | Retrieved (UTC) |",
+        "|---|---|---|---|---|",
+    ]
+    for row in provenance_rows:
+        lines.append(
+            f"| {row['source']} | `{row['local_photo']}` | {row['wiki_page']} | {row['image_url']} | {row['retrieved_at_utc']} |"
+        )
+    prov_md.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    return entities
 
 
 def main() -> None:
@@ -487,6 +1060,14 @@ def main() -> None:
             "image": str(out_path.relative_to(OUT_ROOT)),
         })
 
+    source_entities = write_source_entities(player_cards + location_cards)
+    for card in player_cards + location_cards:
+        ent = source_entities.get(card.get("source", ""))
+        if ent:
+            card["source_entity_page"] = ent.entity_page
+            card["source_entity_card"] = ent.entity_card_image
+
+    write_lore_pages(player_cards, location_cards)
     write_markdown_pages(player_cards, location_cards, monster_cards)
     cards_json = {
         "players": player_cards,
