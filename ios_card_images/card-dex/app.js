@@ -3,6 +3,7 @@ const state = {
   filtered: [],
   selectedId: null,
   musicOn: false,
+  pendingSource: null,
 };
 
 const els = {
@@ -115,6 +116,11 @@ async function loadCards() {
     return;
   }
   state.cards = [...data.players, ...data.monsters, ...data.locations];
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const source = (params.get('source') || '').trim().toLowerCase();
+    if (source) state.pendingSource = source;
+  } catch (_) {}
   applyFilters();
 }
 
@@ -141,6 +147,14 @@ function applyFilters() {
 
   state.filtered = arr;
   els.count.textContent = `${arr.length} shown`;
+
+  if (state.pendingSource) {
+    const bySource = arr.find((c) => (c.source || '').trim().toLowerCase() === state.pendingSource);
+    if (bySource) {
+      state.selectedId = bySource.id;
+      state.pendingSource = null;
+    }
+  }
 
   if (!arr.find((c) => c.id === state.selectedId)) {
     state.selectedId = arr[0]?.id || null;
