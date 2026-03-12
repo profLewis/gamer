@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rogues Gallery Viewer</title>
+  <link rel="stylesheet" href="viewer.css" />
+</head>
+<body>
+  <div class="bg bg-a"></div>
+  <div class="bg bg-b"></div>
+  <header class="top">
+    <h1>Rogues Gallery</h1>
+    <p>Browse classes, races, rooms, monsters, and NPCs with voice previews.</p>
+  </header>
+
+  <main class="layout">
+    <aside class="panel controls">
+      <h2>Gallery</h2>
+      <label>Category
+        <select id="categorySelect"></select>
+      </label>
+      <label>Page
+        <select id="pageSelect"></select>
+      </label>
+
+      <h2>Voice Showcase</h2>
+      <label>Voice
+        <select id="voiceSelect"></select>
+      </label>
+      <div class="voice-actions">
+        <button class="btn" data-sample="Welcome, traveler. The dungeon remembers every footstep.">Narrator</button>
+        <button class="btn" data-sample="State your purpose. None pass this gate without cause.">Gatekeeper</button>
+        <button class="btn" data-sample="Best steel, fair prices, no refunds after bloodstains.">Trader</button>
+        <button class="btn" data-sample="Fate is a blade. It cuts both wielder and foe.">Oracle</button>
+      </div>
+      <p class="small">Tip: click any Greeting quote in the content panel to hear it read out.</p>
+    </aside>
+
+    <section class="panel content">
+      <div id="doc"></div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" aria-live="polite"></div>
+  <script src="viewer.js"></script>
+</body>
+</html>

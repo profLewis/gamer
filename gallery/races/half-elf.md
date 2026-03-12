@@ -1,5 +1,18 @@
 # Half-Elf
 
+```
+          .-""""-.
+        .'  .--.  '.
+       /   /_  _\   \
+      |   | (o)(o)   |
+      |   |   __     |
+       \   \ `--'   /
+        '.  `----' .'
+          '-.__.-'
+        __/  /\  \__
+       /___ /  \ ___\
+```
+
 | Trait | Value |
 |-------|-------|
 | Ability Bonuses | +2 CHA, +1 to two other abilities |
@@ -12,4 +25,4 @@
 - Two extra skill proficiencies
 
 ## Recommended Classes
-- Any class — versatile bonuses and extra skills make half-elves excellent in every role.
+- Any class - versatile bonuses and extra skills make half-elves excellent in every role.

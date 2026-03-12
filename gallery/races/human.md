@@ -1,5 +1,19 @@
 # Human
 
+```
+           .-""""-.
+         .'  .--.  '.
+        /   / __ \   \
+       |   | /  \ |   |
+       |   | \__/ |   |
+       |   |  __  |   |
+        \   \____/   /
+         '._      _.'
+            '----'
+            / /\ \
+           /_/  \_\
+```
+
 | Trait | Value |
 |-------|-------|
 | Ability Bonuses | +1 to all abilities |
@@ -11,4 +25,4 @@
 - Versatile (good at everything)
 
 ## Recommended Classes
-- Any class — the +1 to all stats makes humans solid in every role.
+- Any class - the +1 to all stats makes humans solid in every role.

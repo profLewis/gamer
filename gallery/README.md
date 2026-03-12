@@ -2,6 +2,9 @@
 
 A complete catalogue of every character, creature, and place in the D&D 5e Text Adventure.
 
+Interactive viewer with voice showcase and clickable NPC greetings:
+[gallery/index.html](index.html)
+
 ## Classes
 | Class | Hit Die | Primary | Special |
 |-------|---------|---------|---------|

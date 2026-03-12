@@ -121,6 +121,8 @@ See [ios/README.md](ios/README.md) for detailed build instructions.
 
 - Browse all generated player, monster, and location cards in the **DnDex** viewer:
   [ios_card_images/card-dex/index.html](ios_card_images/card-dex/index.html)
+- Browse the **Rogues Gallery Viewer** (rooms, races, monsters, NPCs, with voice showcase):
+  [gallery/index.html](gallery/index.html)
 - Deep source references (authors, films, TV, modules, worlds):
   [ios_card_images/card-dex/entities/index.html](ios_card_images/card-dex/entities/index.html)
 - Photo provenance for downloaded reference images:
@@ -130,6 +132,7 @@ See [ios/README.md](ios/README.md) for detailed build instructions.
 - If your browser blocks local `file://` data loading, run from repo root:
   `python3 -m http.server 8000`
   then open `http://localhost:8000/ios_card_images/card-dex/index.html`
+  or `http://localhost:8000/gallery/index.html`
 
 ## Credits
 
