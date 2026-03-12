@@ -121,6 +121,10 @@ See [ios/README.md](ios/README.md) for detailed build instructions.
 
 - Browse all generated player, monster, and location cards in the **DnDex** viewer:
   [ios_card_images/card-dex/index.html](ios_card_images/card-dex/index.html)
+- Deep source references (authors, films, TV, modules, worlds):
+  [ios_card_images/card-dex/entities/index.html](ios_card_images/card-dex/entities/index.html)
+- Photo provenance for downloaded reference images:
+  [ios_card_images/PHOTO_SOURCES.md](ios_card_images/PHOTO_SOURCES.md)
 - Markdown catalogs for direct image links:
   [ios_card_images/README.md](ios_card_images/README.md)
 - If your browser blocks local `file://` data loading, run from repo root:
@@ -130,7 +134,7 @@ See [ios/README.md](ios/README.md) for detailed build instructions.
 ## Credits
 
 - **Created by** Prof. Lewis
-- **AI assistance** by Claude (Anthropic)
+- **AI assistance** by Claude (Anthropic) and Codex (OpenAI)
 - **A Timbaloo app**
 
 ## License

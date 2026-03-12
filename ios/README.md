@@ -261,6 +261,6 @@ The source code for this game is provided as-is for educational and entertainmen
 
 ## Author
 
-Created by **Prof. Lewis**, assisted by [Claude](https://claude.ai) (Anthropic).
+Created by **Prof. Lewis**, assisted by [Claude](https://claude.ai) (Anthropic) and Codex (OpenAI).
 
 Source code: [github.com/profLewis/gamer](https://github.com/profLewis/gamer)
