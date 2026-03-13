@@ -212,12 +212,12 @@ class DMEngine {
 
     var adLibLevel: DMAdLibLevel {
         get {
-            // Default to Moderate — built-in DM provides hints and story beats
+            // Default to Full — DM can grant items, modify story, create quests
             if UserDefaults.standard.object(forKey: "dm_adlib_level") == nil {
-                return .moderate
+                return .full
             }
             let raw = UserDefaults.standard.integer(forKey: "dm_adlib_level")
-            return DMAdLibLevel(rawValue: raw) ?? .moderate
+            return DMAdLibLevel(rawValue: raw) ?? .full
         }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: "dm_adlib_level")

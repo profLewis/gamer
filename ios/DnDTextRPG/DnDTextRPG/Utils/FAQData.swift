@@ -370,7 +370,7 @@ struct FAQData {
         ),
         FAQEntry(
             question: "What do the button colours mean?",
-            answer: "Bright green: action buttons. Dim green: navigation (Done, Back). Cyan: chat and multiplayer. Amber: other characters' packs. The close icon (ⓧ) exits the current screen.",
+            answer: "Bright green: action buttons. Dim green: navigation (Done, Back). Cyan: chat and multiplayer. Amber: other characters' packs. The ✕ icon exits the current screen.",
             keywords: ["button colour", "button color", "green button", "cyan button", "amber"]
         ),
     ])

@@ -116,7 +116,7 @@ class HallOfFameManager {
         listEntries().count
     }
 
-    // MARK: - Seed Data (Stranger Things D&D crew — Hellfire Club & friends)
+    // MARK: - Seed Data (diverse sources — books, films, cartoons, games)
 
     func seedIfEmpty() {
         guard listEntries().isEmpty else { return }
@@ -124,92 +124,92 @@ class HallOfFameManager {
         let calendar = Calendar.current
         let now = Date()
 
-        // Eddie's Hellfire Club campaign — the high score to beat
+        // Aragorn's Fellowship — Tolkien heroes, the high score to beat
         addEntry(HallOfFameEntry(
             id: UUID(), date: calendar.date(byAdding: .day, value: -2, to: now)!,
-            partyNames: ["Eddie Munson", "Dustin \"Nog\"", "Erica \"Lady Applejack\""],
-            partyDescription: "Eddie Munson (Rogue), Dustin \"Nog\" (Wizard), Erica \"Lady Applejack\" (Rogue)",
-            dungeonName: "The Demogorgon's Lair", dungeonLevel: 3,
+            partyNames: ["Aragorn", "Ged", "Granny Weatherwax"],
+            partyDescription: "Aragorn (Ranger), Ged (Wizard), Granny Weatherwax (Cleric)",
+            dungeonName: "Moria", dungeonLevel: 3,
             outcome: .victory, goldCollected: 420, monstersSlain: 18,
             combatsWon: 7, roomsExplored: 12, totalRooms: 14,
             gameTimeMinutes: 1400
         ))
 
-        // Mike's epic party wipe against Vecna
+        // 80s Fantasy Legends — classic film heroes
         addEntry(HallOfFameEntry(
             id: UUID(), date: calendar.date(byAdding: .day, value: -5, to: now)!,
-            partyNames: ["Mike Wheeler", "Eleven", "Will the Wise", "Dustin \"Nog\""],
-            partyDescription: "Mike Wheeler (Fighter), Eleven (Wizard), Will the Wise (Wizard), Dustin \"Nog\" (Wizard)",
-            dungeonName: "Vecna's Throne", dungeonLevel: 3,
-            outcome: .defeat, goldCollected: 280, monstersSlain: 15,
-            combatsWon: 5, roomsExplored: 9, totalRooms: 14,
+            partyNames: ["Madmartigan", "Willow", "Hawk", "Red Sonja"],
+            partyDescription: "Madmartigan (Fighter), Willow (Wizard), Hawk (Ranger), Red Sonja (Fighter)",
+            dungeonName: "Ravenloft", dungeonLevel: 3,
+            outcome: .victory, goldCollected: 380, monstersSlain: 16,
+            combatsWon: 6, roomsExplored: 11, totalRooms: 14,
+            gameTimeMinutes: 1200
+        ))
+
+        // Edgin's Heist — Honour Among Thieves
+        addEntry(HallOfFameEntry(
+            id: UUID(), date: calendar.date(byAdding: .day, value: -8, to: now)!,
+            partyNames: ["Edgin", "Holga", "Xenk"],
+            partyDescription: "Edgin (Rogue), Holga (Barbarian), Xenk (Fighter)",
+            dungeonName: "Tomb of Horrors", dungeonLevel: 3,
+            outcome: .defeat, goldCollected: 280, monstersSlain: 14,
+            combatsWon: 5, roomsExplored: 8, totalRooms: 14,
             gameTimeMinutes: 1100
         ))
 
-        // Max's legendary speed run
-        addEntry(HallOfFameEntry(
-            id: UUID(), date: calendar.date(byAdding: .day, value: -8, to: now)!,
-            partyNames: ["Zoomer", "Sundar the Bold", "Dustin \"Nog\""],
-            partyDescription: "Zoomer (Rogue), Sundar the Bold (Ranger), Dustin \"Nog\" (Wizard)",
-            dungeonName: "The Upside Down", dungeonLevel: 2,
-            outcome: .victory, goldCollected: 320, monstersSlain: 14,
-            combatsWon: 6, roomsExplored: 10, totalRooms: 12,
-            gameTimeMinutes: 900
-        ))
-
-        // Hopper & Joyce rescue mission
+        // Disc World Expedition — Pratchett
         addEntry(HallOfFameEntry(
             id: UUID(), date: calendar.date(byAdding: .day, value: -10, to: now)!,
-            partyNames: ["Jim Hopper", "Joyce Byers"],
-            partyDescription: "Jim Hopper (Barbarian), Joyce Byers (Cleric)",
-            dungeonName: "Hawkins Lab", dungeonLevel: 2,
-            outcome: .victory, goldCollected: 180, monstersSlain: 10,
-            combatsWon: 5, roomsExplored: 11, totalRooms: 12,
-            gameTimeMinutes: 840
-        ))
-
-        // Will the Wise solo
-        addEntry(HallOfFameEntry(
-            id: UUID(), date: calendar.date(byAdding: .day, value: -14, to: now)!,
-            partyNames: ["Will the Wise"],
-            partyDescription: "Will the Wise (Cleric)",
-            dungeonName: "Castle Byers", dungeonLevel: 1,
-            outcome: .victory, goldCollected: 85, monstersSlain: 5,
-            combatsWon: 3, roomsExplored: 8, totalRooms: 10,
-            gameTimeMinutes: 720
-        ))
-
-        // Steve & Robin
-        addEntry(HallOfFameEntry(
-            id: UUID(), date: calendar.date(byAdding: .day, value: -18, to: now)!,
-            partyNames: ["Steve Harrington", "Robin Buckley"],
-            partyDescription: "Steve Harrington (Fighter), Robin Buckley (Wizard)",
-            dungeonName: "Starcourt Mall", dungeonLevel: 1,
+            partyNames: ["Rincewind", "DEATH"],
+            partyDescription: "Rincewind (Wizard), DEATH (Fighter)",
+            dungeonName: "Ankh-Morpork", dungeonLevel: 1,
             outcome: .victory, goldCollected: 140, monstersSlain: 7,
             combatsWon: 4, roomsExplored: 9, totalRooms: 10,
             gameTimeMinutes: 660
         ))
 
-        // Nancy & Jonathan vs the Mind Flayer
+        // Classic Sci-Fi Survivors
+        addEntry(HallOfFameEntry(
+            id: UUID(), date: calendar.date(byAdding: .day, value: -14, to: now)!,
+            partyNames: ["Ripley", "Atreides", "Snake Plissken"],
+            partyDescription: "Ripley (Ranger), Atreides (Wizard), Snake Plissken (Rogue)",
+            dungeonName: "Trantor", dungeonLevel: 2,
+            outcome: .victory, goldCollected: 220, monstersSlain: 11,
+            combatsWon: 5, roomsExplored: 10, totalRooms: 12,
+            gameTimeMinutes: 900
+        ))
+
+        // Cartoon Caper — classic cartoons
+        addEntry(HallOfFameEntry(
+            id: UUID(), date: calendar.date(byAdding: .day, value: -18, to: now)!,
+            partyNames: ["Top Cat", "Danger Mouse", "Penelope Pitstop"],
+            partyDescription: "Top Cat (Rogue), Danger Mouse (Ranger), Penelope Pitstop (Fighter)",
+            dungeonName: "The Labyrinth", dungeonLevel: 2,
+            outcome: .victory, goldCollected: 190, monstersSlain: 9,
+            combatsWon: 4, roomsExplored: 10, totalRooms: 12,
+            gameTimeMinutes: 840
+        ))
+
+        // Robots Expedition — sci-fi robots
         addEntry(HallOfFameEntry(
             id: UUID(), date: calendar.date(byAdding: .day, value: -22, to: now)!,
-            partyNames: ["Nancy Wheeler", "Jonathan Byers"],
-            partyDescription: "Nancy Wheeler (Ranger), Jonathan Byers (Ranger)",
-            dungeonName: "Mind Flayer's Domain", dungeonLevel: 2,
+            partyNames: ["Daneel", "K-9", "Marvin"],
+            partyDescription: "Daneel (Rogue), K-9 (Wizard), Marvin (Wizard)",
+            dungeonName: "Nostromo", dungeonLevel: 2,
             outcome: .defeat, goldCollected: 95, monstersSlain: 6,
             combatsWon: 3, roomsExplored: 6, totalRooms: 12,
             gameTimeMinutes: 540
         ))
 
-        // Murray's solo quest
+        // Hellfire Club — Stranger Things tribute
         addEntry(HallOfFameEntry(
             id: UUID(), date: calendar.date(byAdding: .day, value: -28, to: now)!,
-            partyNames: ["Murray Bauman"],
-            partyDescription: "Murray Bauman (Wizard)",
-            dungeonName: "The Russian Base", dungeonLevel: 1,
-            outcome: .defeat, goldCollected: 30, monstersSlain: 2,
-            combatsWon: 1, roomsExplored: 3, totalRooms: 10,
-            gameTimeMinutes: 360
+            partyNames: ["Eddie Munson", "Will the Wise", "Eleven"],
+            partyDescription: "Eddie Munson (Rogue), Will the Wise (Cleric), Eleven (Wizard)",
+            dungeonName: "Caves of Chaos", dungeonLevel: 1,
+            outcome: .defeat, goldCollected: 65, monstersSlain: 4,
+            combatsWon: 2, roomsExplored: 5, totalRooms: 10,
+            gameTimeMinutes: 480
         ))
     }
 }

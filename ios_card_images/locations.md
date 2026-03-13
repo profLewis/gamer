@@ -38,3 +38,8 @@ Hyperlinked index of all location cards exported from iOS Name Lore dungeon entr
 34. [Death Star](locations/034-death-star.png) - Star Wars (1977)
 35. [Skull Island](locations/035-skull-island.png) - King Kong (1933)
 36. [Krell Laboratory](locations/036-krell-laboratory.png) - Forbidden Planet (1956)
+37. [Gateway](locations/037-gateway.png) - Ace Double D-053 (1954)
+38. [Isher](locations/038-isher.png) - Ace Double D-053 (1954)
+39. [Big Planet](locations/039-big-planet.png) - Ace Double D-295 (1958)
+40. [Millgate](locations/040-millgate.png) - Ace Double D-249 (1957)
+41. [The Big Time](locations/041-the-big-time.png) - Ace Double D-491 (1961)

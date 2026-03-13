@@ -1259,6 +1259,402 @@ window.CARD_DATA = {
       "source_entity_page": "card-dex/entities/dogtanian-1981.html",
       "source_entity_card": "entities/cards/dogtanian-1981.png",
       "lore_page": "card-dex/lore/player-070.html"
+    },
+    {
+      "id": "player-071",
+      "type": "player",
+      "name": "Top Cat",
+      "source": "Hanna-Barbera (1961)",
+      "description": "The most tip-top, Top Cat! T.C. runs a gang of alley cats from a dustbin in a Manhattan alley, scheming his way through life with charm, quick wits, and an impressive vocabulary. He's always one step ahead of Officer Dibble and two steps ahead of honest work. The indisputable leader of the gang.",
+      "stats": {
+        "Power": 3,
+        "Cunning": 10,
+        "Magic": 1,
+        "Fame": 8,
+        "Charm": 10
+      },
+      "image": "players/071-top-cat.png",
+      "source_entity_page": "card-dex/entities/hanna-barbera-1961.html",
+      "source_entity_card": "entities/cards/hanna-barbera-1961.png",
+      "lore_page": "card-dex/lore/player-071.html"
+    },
+    {
+      "id": "player-072",
+      "type": "player",
+      "name": "Benny the Ball",
+      "source": "Hanna-Barbera (1961)",
+      "description": "Top Cat's best pal and the shortest member of the gang. Benny is sweet, loyal, and not terribly bright \u00e2\u0080\u0094 but his heart is enormous and his courage often surprises everyone, including himself. He follows T.C. into every mad scheme without question, which is either friendship or a complete lack of self-preservation.",
+      "stats": {
+        "Power": 3,
+        "Cunning": 4,
+        "Magic": 1,
+        "Fame": 7,
+        "Charm": 8
+      },
+      "image": "players/072-benny-the-ball.png",
+      "source_entity_page": "card-dex/entities/hanna-barbera-1961.html",
+      "source_entity_card": "entities/cards/hanna-barbera-1961.png",
+      "lore_page": "card-dex/lore/player-072.html"
+    },
+    {
+      "id": "player-073",
+      "type": "player",
+      "name": "Officer Dibble",
+      "source": "Hanna-Barbera (1961)",
+      "description": "The long-suffering beat cop of Hoagy's Alley. Charlie Dibble's sole purpose in life seems to be stopping Top Cat from using the police telephone, running confidence tricks, and making a general nuisance of himself. Dibble never quite wins, but he never quite gives up either. A paladin of parking tickets.",
+      "stats": {
+        "Power": 5,
+        "Cunning": 5,
+        "Magic": 1,
+        "Fame": 7,
+        "Charm": 5
+      },
+      "image": "players/073-officer-dibble.png",
+      "source_entity_page": "card-dex/entities/hanna-barbera-1961.html",
+      "source_entity_card": "entities/cards/hanna-barbera-1961.png",
+      "lore_page": "card-dex/lore/player-073.html"
+    },
+    {
+      "id": "player-074",
+      "type": "player",
+      "name": "Choo-Choo",
+      "source": "Hanna-Barbera (1961)",
+      "description": "The pink-nosed, slightly nervous member of Top Cat's gang. Choo-Choo is the worrier of the group \u00e2\u0080\u0094 he sees problems before they happen, which would be useful if anyone ever listened to him. Despite his anxieties, he sticks with the gang through every disaster. The voice of reason that nobody heeds.",
+      "stats": {
+        "Power": 3,
+        "Cunning": 6,
+        "Magic": 1,
+        "Fame": 6,
+        "Charm": 6
+      },
+      "image": "players/074-choo-choo.png",
+      "source_entity_page": "card-dex/entities/hanna-barbera-1961.html",
+      "source_entity_card": "entities/cards/hanna-barbera-1961.png",
+      "lore_page": "card-dex/lore/player-074.html"
+    },
+    {
+      "id": "player-075",
+      "type": "player",
+      "name": "Dick Dastardly",
+      "source": "Wacky Races (1968)",
+      "description": "The moustachioed villain of Wacky Races, driving the Mean Machine with his snickering dog Muttley. Dastardly would win every race if he didn't stop to cheat \u00e2\u0080\u0094 his elaborate traps always backfire spectacularly. He's the living proof that villainy is its own punishment. Drat, drat, and double drat!",
+      "stats": {
+        "Power": 4,
+        "Cunning": 8,
+        "Magic": 2,
+        "Fame": 9,
+        "Charm": 4
+      },
+      "image": "players/075-dick-dastardly.png",
+      "source_entity_page": "card-dex/entities/wacky-races-1968.html",
+      "source_entity_card": "entities/cards/wacky-races-1968.png",
+      "lore_page": "card-dex/lore/player-075.html"
+    },
+    {
+      "id": "player-076",
+      "type": "player",
+      "name": "Muttley",
+      "source": "Wacky Races (1968)",
+      "description": "Dick Dastardly's wheezing, snickering sidekick. Muttley doesn't talk \u00e2\u0080\u0094 he mutters, grumbles, and makes that iconic snickering laugh that means he's either amused or contemptuous, usually both. He collects medals (imaginary ones, mostly) and occasionally flies by spinning his tail. A dog of many hidden talents.",
+      "stats": {
+        "Power": 4,
+        "Cunning": 6,
+        "Magic": 1,
+        "Fame": 9,
+        "Charm": 7
+      },
+      "image": "players/076-muttley.png",
+      "source_entity_page": "card-dex/entities/wacky-races-1968.html",
+      "source_entity_card": "entities/cards/wacky-races-1968.png",
+      "lore_page": "card-dex/lore/player-076.html"
+    },
+    {
+      "id": "player-077",
+      "type": "player",
+      "name": "Penelope Pitstop",
+      "source": "Wacky Races (1968)",
+      "description": "The glamorous driver of the Compact Pussycat. Penelope seems like a damsel in distress \u00e2\u0080\u0094 always getting captured by the Hooded Claw \u00e2\u0080\u0094 but she's actually a brilliant racer who wins on skill and nerve. She can fix an engine in heels and outrace villains while touching up her lipstick. Never underestimate her.",
+      "stats": {
+        "Power": 5,
+        "Cunning": 7,
+        "Magic": 1,
+        "Fame": 8,
+        "Charm": 10
+      },
+      "image": "players/077-penelope-pitstop.png",
+      "source_entity_page": "card-dex/entities/wacky-races-1968.html",
+      "source_entity_card": "entities/cards/wacky-races-1968.png",
+      "lore_page": "card-dex/lore/player-077.html"
+    },
+    {
+      "id": "player-078",
+      "type": "player",
+      "name": "Wile E. Coyote",
+      "source": "Looney Tunes (1949)",
+      "description": "Super Genius. At least, that's what his business card says. Wile E. Coyote is the eternal pursuer, ordering increasingly improbable gadgets from the ACME Corporation to catch the Road Runner. Every rocket, catapult, and painted tunnel fails. Every cliff crumbles beneath him. Yet he never, ever gives up. A cautionary tale about perseverance.",
+      "stats": {
+        "Power": 3,
+        "Cunning": 9,
+        "Magic": 1,
+        "Fame": 10,
+        "Charm": 5
+      },
+      "image": "players/078-wile-e-coyote.png",
+      "source_entity_page": "card-dex/entities/looney-tunes-1949.html",
+      "source_entity_card": "entities/cards/looney-tunes-1949.png",
+      "lore_page": "card-dex/lore/player-078.html"
+    },
+    {
+      "id": "player-079",
+      "type": "player",
+      "name": "Road Runner",
+      "source": "Looney Tunes (1949)",
+      "description": "Meep meep! The fastest bird in the desert and the bane of Wile E. Coyote's existence. Road Runner doesn't fight, doesn't scheme, and doesn't even seem to notice the elaborate traps set for him. He just runs. And somehow, the universe itself conspires to protect him. Physics bends around this bird.",
+      "stats": {
+        "Power": 2,
+        "Cunning": 3,
+        "Magic": 1,
+        "Fame": 10,
+        "Charm": 8
+      },
+      "image": "players/079-road-runner.png",
+      "source_entity_page": "card-dex/entities/looney-tunes-1949.html",
+      "source_entity_card": "entities/cards/looney-tunes-1949.png",
+      "lore_page": "card-dex/lore/player-079.html"
+    },
+    {
+      "id": "player-080",
+      "type": "player",
+      "name": "Danger Mouse",
+      "source": "Cosgrove Hall (1981)",
+      "description": "The world's greatest secret agent, operating from a pillar box on Baker Street with his faithful hamster assistant Penfold. DM wears an eyepatch (purely for style \u00e2\u0080\u0094 both eyes work fine) and tackles the schemes of Baron Greenback with British pluck and questionable competence. Good grief, DM!",
+      "stats": {
+        "Power": 7,
+        "Cunning": 8,
+        "Magic": 2,
+        "Fame": 9,
+        "Charm": 8
+      },
+      "image": "players/080-danger-mouse.png",
+      "source_entity_page": "card-dex/entities/cosgrove-hall-1981.html",
+      "source_entity_card": "entities/cards/cosgrove-hall-1981.png",
+      "lore_page": "card-dex/lore/player-080.html"
+    },
+    {
+      "id": "player-081",
+      "type": "player",
+      "name": "Penfold",
+      "source": "Cosgrove Hall (1981)",
+      "description": "Danger Mouse's sidekick \u00e2\u0080\u0094 a timid, bespectacled hamster whose catchphrase is 'Crumbs, DM!' Ernest Penfold is terrified of absolutely everything, yet somehow always ends up in the thick of danger. His cowardice is matched only by his loyalty. Occasionally saves the day entirely by accident.",
+      "stats": {
+        "Power": 2,
+        "Cunning": 4,
+        "Magic": 1,
+        "Fame": 8,
+        "Charm": 9
+      },
+      "image": "players/081-penfold.png",
+      "source_entity_page": "card-dex/entities/cosgrove-hall-1981.html",
+      "source_entity_card": "entities/cards/cosgrove-hall-1981.png",
+      "lore_page": "card-dex/lore/player-081.html"
+    },
+    {
+      "id": "player-082",
+      "type": "player",
+      "name": "Pinky",
+      "source": "Pinky and the Brain (1995)",
+      "description": "Narf! Pinky is a genetically modified lab mouse who is, by all accounts, utterly insane. He's Brain's perpetual lab partner and the unwitting saboteur of every world domination scheme. Pinky is joyful, nonsensical, and surprisingly wise in ways that Brain can never appreciate. 'Are you pondering what I'm pondering?'",
+      "stats": {
+        "Power": 2,
+        "Cunning": 2,
+        "Magic": 1,
+        "Fame": 8,
+        "Charm": 9
+      },
+      "image": "players/082-pinky.png",
+      "source_entity_page": "card-dex/entities/pinky-and-the-brain-1995.html",
+      "source_entity_card": "entities/cards/pinky-and-the-brain-1995.png",
+      "lore_page": "card-dex/lore/player-082.html"
+    },
+    {
+      "id": "player-083",
+      "type": "player",
+      "name": "The Brain",
+      "source": "Pinky and the Brain (1995)",
+      "description": "A genetically enhanced lab mouse with an enormous cranium and an even bigger ambition: to take over the world. Every single night. Brain's plans are ingenious, meticulous, and invariably doomed \u00e2\u0080\u0094 usually because of Pinky, the universe, or his own hubris. 'The same thing we do every night, Pinky...'",
+      "stats": {
+        "Power": 3,
+        "Cunning": 10,
+        "Magic": 2,
+        "Fame": 8,
+        "Charm": 4
+      },
+      "image": "players/083-the-brain.png",
+      "source_entity_page": "card-dex/entities/pinky-and-the-brain-1995.html",
+      "source_entity_card": "entities/cards/pinky-and-the-brain-1995.png",
+      "lore_page": "card-dex/lore/player-083.html"
+    },
+    {
+      "id": "player-084",
+      "type": "player",
+      "name": "Peter Perfect",
+      "source": "Wacky Races (1968)",
+      "description": "The handsome, square-jawed driver of the Turbo Terrific. Peter is charming, brave, and utterly devoted to Penelope Pitstop \u00e2\u0080\u0094 though his car has an alarming tendency to fall apart at crucial moments and then reassemble itself even faster. The perfect gentleman racer, even when covered in soot.",
+      "stats": {
+        "Power": 6,
+        "Cunning": 5,
+        "Magic": 1,
+        "Fame": 7,
+        "Charm": 9
+      },
+      "image": "players/084-peter-perfect.png",
+      "source_entity_page": "card-dex/entities/wacky-races-1968.html",
+      "source_entity_card": "entities/cards/wacky-races-1968.png",
+      "lore_page": "card-dex/lore/player-084.html"
+    },
+    {
+      "id": "player-085",
+      "type": "player",
+      "name": "Professor Pat P.",
+      "source": "Wacky Races (1968)",
+      "description": "Professor Pat Pending, inventor and driver of the Convert-a-Car \u00e2\u0080\u0094 a vehicle that transforms into anything he needs: a boat, a plane, a submarine, or a tank. The Professor is the smartest racer on the track, using gadgets and ingenuity rather than dirty tricks. His car is basically a Swiss Army knife on wheels.",
+      "stats": {
+        "Power": 5,
+        "Cunning": 9,
+        "Magic": 3,
+        "Fame": 7,
+        "Charm": 6
+      },
+      "image": "players/085-professor-pat-p.png",
+      "source_entity_page": "card-dex/entities/wacky-races-1968.html",
+      "source_entity_card": "entities/cards/wacky-races-1968.png",
+      "lore_page": "card-dex/lore/player-085.html"
+    },
+    {
+      "id": "player-086",
+      "type": "player",
+      "name": "Gosseyn",
+      "source": "Ace Double D-031 (1953)",
+      "description": "Gilbert Gosseyn from A. E. van Vogt's The World of Null-A. He discovers his memories are false, his identity manufactured, and his mind operates on non-Aristotelian logic \u00e2\u0080\u0094 General Semantics made flesh. He can teleport by memorising locations, dies and wakes in cloned bodies, and slowly uncovers a galactic conspiracy. A wizard who fights with pure reason.",
+      "stats": {
+        "Power": 6,
+        "Cunning": 10,
+        "Magic": 8,
+        "Fame": 7,
+        "Charm": 5
+      },
+      "image": "players/086-gosseyn.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-031-1953.html",
+      "source_entity_card": "entities/cards/ace-double-d-031-1953.png",
+      "lore_page": "card-dex/lore/player-086.html"
+    },
+    {
+      "id": "player-087",
+      "type": "player",
+      "name": "Ted Benteley",
+      "source": "Ace Double D-103 (1955)",
+      "description": "From Philip K. Dick's Solar Lottery \u00e2\u0080\u0094 in a future where the world leader is chosen by a random lottery and assassination is legalised via telepaths, Ted Benteley finds himself drawn into the deadliest game. Dick's first published novel is a paranoid masterpiece where nobody can be trusted, reality shifts, and power is both random and rigged.",
+      "stats": {
+        "Power": 4,
+        "Cunning": 8,
+        "Magic": 3,
+        "Fame": 7,
+        "Charm": 5
+      },
+      "image": "players/087-ted-benteley.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-103-1955.html",
+      "source_entity_card": "entities/cards/ace-double-d-103-1955.png",
+      "lore_page": "card-dex/lore/player-087.html"
+    },
+    {
+      "id": "player-088",
+      "type": "player",
+      "name": "Floyd Jones",
+      "source": "Ace Double D-150 (1956)",
+      "description": "From Philip K. Dick's The World Jones Made \u00e2\u0080\u0094 Floyd Jones can see one year into the future, which makes him the most miserable man alive. Knowing what comes next doesn't mean you can change it. Jones becomes a demagogue, a prophet, a dictator \u00e2\u0080\u0094 and every step was already foretold. A warlock cursed with foresight.",
+      "stats": {
+        "Power": 5,
+        "Cunning": 9,
+        "Magic": 7,
+        "Fame": 8,
+        "Charm": 6
+      },
+      "image": "players/088-floyd-jones.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-150-1956.html",
+      "source_entity_card": "entities/cards/ace-double-d-150-1956.png",
+      "lore_page": "card-dex/lore/player-088.html"
+    },
+    {
+      "id": "player-089",
+      "type": "player",
+      "name": "Dr Parsons",
+      "source": "Ace Double D-421 (1960)",
+      "description": "Dr Parsons from Philip K. Dick's Dr. Futurity \u00e2\u0080\u0094 a physician hurled to a time where death is celebrated and life is expendable. He must navigate a civilisation that considers healing a crime. Every instinct tells him to save lives; every law says he mustn't. A cleric in a world that hates clerics.",
+      "stats": {
+        "Power": 4,
+        "Cunning": 7,
+        "Magic": 6,
+        "Fame": 6,
+        "Charm": 7
+      },
+      "image": "players/089-dr-parsons.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-421-1960.html",
+      "source_entity_card": "entities/cards/ace-double-d-421-1960.png",
+      "lore_page": "card-dex/lore/player-089.html"
+    },
+    {
+      "id": "player-090",
+      "type": "player",
+      "name": "Nine Lives",
+      "source": "Ace Double D-413 (1959)",
+      "description": "From Harlan Ellison's The Man With Nine Lives \u00e2\u0080\u0094 a hardboiled investigator discovers that certain people have been 'dying' and returning with completely different personalities. Nine lives, nine identities, and someone is pulling the strings. Ellison's razor-sharp prose cuts through a mystery that goes deeper than murder.",
+      "stats": {
+        "Power": 6,
+        "Cunning": 9,
+        "Magic": 3,
+        "Fame": 8,
+        "Charm": 6
+      },
+      "image": "players/090-nine-lives.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-413-1959.html",
+      "source_entity_card": "entities/cards/ace-double-d-413-1959.png",
+      "lore_page": "card-dex/lore/player-090.html"
+    },
+    {
+      "id": "player-091",
+      "type": "player",
+      "name": "Donal Graeme",
+      "source": "Ace Double D-449 (1960)",
+      "description": "From Gordon R. Dickson's The Genetic General (later Dorsai!) \u00e2\u0080\u0094 the ultimate military genius, born on the soldier world of Dorsai. In a far future where humanity has splintered into specialist cultures, Donal sees patterns no one else can. He fights not for territory but for human evolution itself. The perfect warlord.",
+      "stats": {
+        "Power": 10,
+        "Cunning": 10,
+        "Magic": 2,
+        "Fame": 9,
+        "Charm": 7
+      },
+      "image": "players/091-donal-graeme.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-449-1960.html",
+      "source_entity_card": "entities/cards/ace-double-d-449-1960.png",
+      "lore_page": "card-dex/lore/player-091.html"
+    },
+    {
+      "id": "player-092",
+      "type": "player",
+      "name": "Dosvard Rhyn",
+      "source": "Ace Double D-096 (1955)",
+      "description": "Kartr Rhyn from Andre Norton's The Last Planet (later Star Rangers) \u00e2\u0080\u0094 the Galactic Patrol is dissolving, the empire is crumbling, and a patrol ship crash-lands on an uncharted world. The crew must survive on a planet that doesn't want them, build a new civilisation from nothing, and face what lurks in the ruins. Norton at her best.",
+      "stats": {
+        "Power": 7,
+        "Cunning": 7,
+        "Magic": 4,
+        "Fame": 7,
+        "Charm": 6
+      },
+      "image": "players/092-dosvard-rhyn.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-096-1955.html",
+      "source_entity_card": "entities/cards/ace-double-d-096-1955.png",
+      "lore_page": "card-dex/lore/player-092.html"
     }
   ],
   "locations": [
@@ -1909,6 +2305,96 @@ window.CARD_DATA = {
       "source_entity_page": "card-dex/entities/forbidden-planet-1956.html",
       "source_entity_card": "entities/cards/forbidden-planet-1956.png",
       "lore_page": "card-dex/lore/location-036.html"
+    },
+    {
+      "id": "location-037",
+      "type": "location",
+      "name": "Gateway",
+      "source": "Ace Double D-053 (1954)",
+      "description": "From Murray Leinster's Gateway to Elsewhere \u00e2\u0080\u0094 a portal into a parallel world where magic works and science doesn't. Beyond the gateway lies a feudal realm of sorcerers and sword-fighters. The classic dimensional doorway: step through and everything you know becomes useless. Your PhD won't help when the dragons come.",
+      "stats": {
+        "Danger": 5,
+        "Puzzle": 8,
+        "Magic": 7,
+        "Fame": 6,
+        "Dread": 5
+      },
+      "image": "locations/037-gateway.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-053-1954.html",
+      "source_entity_card": "entities/cards/ace-double-d-053-1954.png",
+      "lore_page": "card-dex/lore/location-037.html"
+    },
+    {
+      "id": "location-038",
+      "type": "location",
+      "name": "Isher",
+      "source": "Ace Double D-053 (1954)",
+      "description": "The Weapon Shops of Isher from A. E. van Vogt. An underground network selling indestructible guns to citizens \u00e2\u0080\u0094 'The Right to Buy Weapons Is the Right to Be Free.' The shops appear and vanish, the weapons only fire in self-defence, and the Isher Empire has spent centuries trying to destroy them. A rogue's paradise.",
+      "stats": {
+        "Danger": 8,
+        "Puzzle": 9,
+        "Magic": 5,
+        "Fame": 8,
+        "Dread": 6
+      },
+      "image": "locations/038-isher.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-053-1954.html",
+      "source_entity_card": "entities/cards/ace-double-d-053-1954.png",
+      "lore_page": "card-dex/lore/location-038.html"
+    },
+    {
+      "id": "location-039",
+      "type": "location",
+      "name": "Big Planet",
+      "source": "Ace Double D-295 (1958)",
+      "description": "Jack Vance's impossibly vast world \u00e2\u0080\u0094 a planet so enormous that technology cannot function, metals are scarce, and civilisation has fragmented into thousands of bizarre micro-cultures. Castaways must walk ten thousand miles across kingdoms of madmen, charlatans, and visionaries. Every valley hides a different society. The ultimate sandbox.",
+      "stats": {
+        "Danger": 7,
+        "Puzzle": 8,
+        "Magic": 3,
+        "Fame": 9,
+        "Dread": 7
+      },
+      "image": "locations/039-big-planet.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-295-1958.html",
+      "source_entity_card": "entities/cards/ace-double-d-295-1958.png",
+      "lore_page": "card-dex/lore/location-039.html"
+    },
+    {
+      "id": "location-040",
+      "type": "location",
+      "name": "Millgate",
+      "source": "Ace Double D-249 (1957)",
+      "description": "The town from Philip K. Dick's The Cosmic Puppets \u00e2\u0080\u0094 a man returns to his hometown to find it replaced by an alien reality. Two cosmic entities battle for control, reshaping matter and memory. The locals don't remember anything different. The perfect horror-dungeon: a place that looks familiar but is fundamentally wrong.",
+      "stats": {
+        "Danger": 7,
+        "Puzzle": 6,
+        "Magic": 9,
+        "Fame": 7,
+        "Dread": 4
+      },
+      "image": "locations/040-millgate.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-249-1957.html",
+      "source_entity_card": "entities/cards/ace-double-d-249-1957.png",
+      "lore_page": "card-dex/lore/location-040.html"
+    },
+    {
+      "id": "location-041",
+      "type": "location",
+      "name": "The Big Time",
+      "source": "Ace Double D-491 (1961)",
+      "description": "Fritz Leiber's Hugo-winning novella about the Change War \u00e2\u0080\u0094 two factions (Spiders and Snakes) fighting across all of time, editing history back and forth. The Big Time is a rest station outside of time where soldiers recover between missions. When a bomb threatens to erase the station from existence, the entertainers must become heroes. Time itself is a dungeon.",
+      "stats": {
+        "Danger": 7,
+        "Puzzle": 9,
+        "Magic": 8,
+        "Fame": 9,
+        "Dread": 7
+      },
+      "image": "locations/041-the-big-time.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-491-1961.html",
+      "source_entity_card": "entities/cards/ace-double-d-491-1961.png",
+      "lore_page": "card-dex/lore/location-041.html"
     }
   ],
   "monsters": [

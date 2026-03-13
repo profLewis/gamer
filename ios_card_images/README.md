@@ -2,8 +2,6 @@
 
 Generated card image catalogs from the iOS codebase.
 
-Credits: Created by Prof. Lewis with assistance from Claude and Codex.
-
 ## Browse
 
 1. [Player Cards](players.md)

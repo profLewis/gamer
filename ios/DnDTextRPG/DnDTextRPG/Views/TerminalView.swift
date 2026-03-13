@@ -211,7 +211,9 @@ struct TerminalView: View {
                                         gameEngine.handleMenuLongPress(choice)
                                     },
                                     pressedIndex: gameEngine.pressedMenuIndex,
-                                    longPressDuration: gameEngine.longPressDuration
+                                    longPressDuration: gameEngine.longPressDuration,
+                                    onUndo: gameEngine.undoHandler,
+                                    onRedo: gameEngine.redoHandler
                                 )
                             }
 
@@ -336,21 +338,7 @@ struct TerminalView: View {
                             }
                         }
 
-                        // Undo/redo icons (edit screens)
-                        if gameEngine.undoHandler != nil {
-                            Button(action: { gameEngine.undoHandler?() }) {
-                                Image(systemName: "arrow.uturn.backward")
-                                    .font(.system(size: 18 * scale * gameEngine.iconScale))
-                                    .foregroundColor(Color(red: 0.0, green: 0.7, blue: 0.35))
-                            }
-                        }
-                        if gameEngine.redoHandler != nil {
-                            Button(action: { gameEngine.redoHandler?() }) {
-                                Image(systemName: "arrow.uturn.forward")
-                                    .font(.system(size: 18 * scale * gameEngine.iconScale))
-                                    .foregroundColor(Color(red: 0.0, green: 0.7, blue: 0.35))
-                            }
-                        }
+                        // Undo/redo now shown in compact nav cell at bottom
 
                         #if os(iOS)
                         // Read aloud icon — tap to toggle, long-press to pause this page
@@ -518,6 +506,12 @@ struct TerminalView: View {
             }
         }
         #endif
+        .onChange(of: gameEngine.prefillInputText) { newVal in
+            if let text = newVal {
+                inputText = text
+                gameEngine.prefillInputText = nil
+            }
+        }
     }
 
     // MARK: - Shortcut Positions (for button underlines)
@@ -731,6 +725,9 @@ struct TerminalLineView: View {
         if line.isBold {
             result.font = .system(size: scaledSize, design: .monospaced).bold()
         }
+        if line.isUnderlined {
+            result.underlineStyle = .single
+        }
         return result
     }
 }
@@ -745,6 +742,9 @@ struct MenuButtonsView: View {
     var pressedIndex: Int? = nil
     /// Long-press duration in seconds (configurable in Gameplay settings)
     var longPressDuration: Double = 0.5
+    /// Undo/redo handlers — shown as ↩/↪ segments in the compact nav cell
+    var onUndo: (() -> Void)? = nil
+    var onRedo: (() -> Void)? = nil
 
     let terminalGreen = Color(red: 0.0, green: 0.9, blue: 0.3)
     let terminalDarkGreen = Color(red: 0.0, green: 0.4, blue: 0.15)
@@ -780,59 +780,39 @@ struct MenuButtonsView: View {
         return last.tint == .danger
     }
 
+    /// Indices of compact-nav buttons (⏮, ⏭, ?)
+    private var compactIndices: [Int] {
+        options.indices.filter { options[$0].isCompactNav }
+    }
+
+    /// Regular (non-compact) button indices
+    private var regularIndices: [Int] {
+        options.indices.filter { !options[$0].isCompactNav }
+    }
+
     var body: some View {
+        let compact = compactIndices
+        let regular = regularIndices
         let spacerIndex = needsTrailingSpacer ? options.count - 1 : -1
 
         LazyVGrid(columns: gridColumns, spacing: isCompact ? 4 : 6) {
-            ForEach(Array(options.enumerated()), id: \.offset) { index, option in
+            // Regular buttons
+            ForEach(regular, id: \.self) { index in
+                let option = options[index]
                 if index == spacerIndex {
-                    // Empty cell to push last button to right column
                     Color.clear
                         .frame(minHeight: buttonMinHeight)
                 }
-                Button(action: {
-                    if !option.isDisabled {
-                        onSelect(index + 1)
-                    }
-                }) {
-                    HStack(spacing: 4) {
-                        Text("\(index + 1).")
-                            .font(.system(size: 11 * scale, design: .monospaced))
-                            .foregroundColor(buttonNumberColor(option))
+                regularButton(option: option, index: index)
+            }
 
-                        styledOptionText(option, index: index)
-                            .font(.system(size: 13 * scale, design: .monospaced))
-                            .fontWeight(option.isDefault || option.isAlert ? .semibold : .regular)
-                            .foregroundColor(buttonTextColor(option))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.6)
-
-                        Spacer()
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, buttonVerticalPadding)
-                    .frame(minHeight: buttonMinHeight)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(buttonStrokeColor(option), lineWidth: option.isDefault || option.isAlert ? 2 : 1)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(buttonFillColor(option))
-                            )
-                    )
+            // Compact nav cell (↩ ⏮ ? ⏭ ↪) — single cell, bottom right
+            if !compact.isEmpty || onUndo != nil || onRedo != nil {
+                // Push to right column if regular count is even
+                if regular.count % 2 == 0 {
+                    Color.clear.frame(minHeight: buttonMinHeight)
                 }
-                .buttonStyle(.plain)
-                .scaleEffect(pressedIndex == index + 1 ? 0.92 : 1.0)
-                .brightness(pressedIndex == index + 1 ? 0.3 : 0.0)
-                .animation(.easeInOut(duration: 0.15), value: pressedIndex)
-                .simultaneousGesture(
-                    LongPressGesture(minimumDuration: longPressDuration)
-                        .onEnded { _ in
-                            if let longPress = onLongPress {
-                                longPress(index + 1)
-                            }
-                        }
-                )
+                compactNavCell(indices: compact)
             }
         }
         .onAppear {
@@ -842,6 +822,131 @@ struct MenuButtonsView: View {
                 }
             }
         }
+    }
+
+    /// A standard full-width button
+    @ViewBuilder
+    private func regularButton(option: MenuOption, index: Int) -> some View {
+        Button(action: {
+            if !option.isDisabled {
+                onSelect(index + 1)
+            }
+        }) {
+            HStack(spacing: 4) {
+                Text("\(index + 1).")
+                    .font(.system(size: 11 * scale, design: .monospaced))
+                    .foregroundColor(buttonNumberColor(option))
+
+                styledOptionText(option, index: index)
+                    .font(.system(size: 13 * scale, design: .monospaced))
+                    .fontWeight(option.isDefault || option.isAlert ? .semibold : .regular)
+                    .foregroundColor(buttonTextColor(option))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, buttonVerticalPadding)
+            .frame(minHeight: buttonMinHeight)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(buttonStrokeColor(option), lineWidth: option.isDefault || option.isAlert ? 2 : 1)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(buttonFillColor(option))
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(pressedIndex == index + 1 ? 0.92 : 1.0)
+        .brightness(pressedIndex == index + 1 ? 0.3 : 0.0)
+        .animation(.easeInOut(duration: 0.15), value: pressedIndex)
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: longPressDuration)
+                .onEnded { _ in
+                    if let longPress = onLongPress {
+                        longPress(index + 1)
+                    }
+                }
+        )
+    }
+
+    /// Segment descriptor for the compact nav cell
+    private enum CompactSegment: Hashable {
+        case menuItem(Int) // index into options
+        case undo
+        case redo
+    }
+
+    /// Compact navigation cell: ↩ ⏮ ? ⏭ ↪ rendered as tappable segments inside one normal-sized button
+    @ViewBuilder
+    private func compactNavCell(indices: [Int]) -> some View {
+        let segments: [CompactSegment] = {
+            var s: [CompactSegment] = []
+            if onUndo != nil { s.append(.undo) }
+            for i in indices { s.append(.menuItem(i)) }
+            if onRedo != nil { s.append(.redo) }
+            return s
+        }()
+
+        HStack(spacing: 0) {
+            ForEach(Array(segments.enumerated()), id: \.offset) { segIdx, segment in
+                switch segment {
+                case .menuItem(let index):
+                    let option = options[index]
+                    Button(action: { onSelect(index + 1) }) {
+                        Text(option.text)
+                            .font(.system(size: 13 * scale, design: .monospaced))
+                            .fontWeight(.medium)
+                            .foregroundColor(terminalDimGreen)
+                            .frame(maxWidth: .infinity, minHeight: buttonMinHeight)
+                    }
+                    .buttonStyle(.plain)
+                    .scaleEffect(pressedIndex == index + 1 ? 0.92 : 1.0)
+                    .brightness(pressedIndex == index + 1 ? 0.3 : 0.0)
+                    .animation(.easeInOut(duration: 0.15), value: pressedIndex)
+                    .simultaneousGesture(
+                        LongPressGesture(minimumDuration: longPressDuration)
+                            .onEnded { _ in onLongPress?(index + 1) }
+                    )
+                case .undo:
+                    Button(action: { onUndo?() }) {
+                        Text("↩")
+                            .font(.system(size: 13 * scale, design: .monospaced))
+                            .fontWeight(.medium)
+                            .foregroundColor(terminalDimGreen)
+                            .frame(maxWidth: .infinity, minHeight: buttonMinHeight)
+                    }
+                    .buttonStyle(.plain)
+                case .redo:
+                    Button(action: { onRedo?() }) {
+                        Text("↪")
+                            .font(.system(size: 13 * scale, design: .monospaced))
+                            .fontWeight(.medium)
+                            .foregroundColor(terminalDimGreen)
+                            .frame(maxWidth: .infinity, minHeight: buttonMinHeight)
+                    }
+                    .buttonStyle(.plain)
+                }
+                // Divider between segments
+                if segIdx < segments.count - 1 {
+                    Rectangle()
+                        .fill(terminalDimGreen.opacity(0.3))
+                        .frame(width: 1)
+                        .padding(.vertical, 6)
+                }
+            }
+        }
+        .frame(minHeight: buttonMinHeight)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(terminalDimGreen.opacity(0.4), lineWidth: 1)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(terminalDarkDimGreen.opacity(0.15))
+                )
+        )
     }
 
     private func baseColor(_ option: MenuOption) -> Color {

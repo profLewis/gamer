@@ -12,15 +12,17 @@ import SwiftUI
 struct TerminalLine: Identifiable {
     let id = UUID()
     var text: String
-    let color: TerminalColor
+    var color: TerminalColor
     let isBold: Bool
+    let isUnderlined: Bool
     let fontSize: CGFloat
     let isCentered: Bool
 
-    init(_ text: String, color: TerminalColor = .green, bold: Bool = false, size: CGFloat = 14, centered: Bool = false) {
+    init(_ text: String, color: TerminalColor = .green, bold: Bool = false, underlined: Bool = false, size: CGFloat = 14, centered: Bool = false) {
         self.text = text
         self.color = color
         self.isBold = bold
+        self.isUnderlined = underlined
         self.fontSize = size
         self.isCentered = centered
     }
@@ -81,15 +83,17 @@ struct MenuOption: Identifiable {
     let isDisabled: Bool
     let isAlert: Bool  // Flashing red button for urgent actions (e.g. multiplayer invite)
     let tint: MenuTint
+    let isCompactNav: Bool  // Compact navigation symbol (⏮, ⏭, ?) — grouped into one cell
 
     static let maxButtonLength = 20
 
-    init(_ text: String, isDefault: Bool = false, isDisabled: Bool = false, isAlert: Bool = false, tint: MenuTint = .normal) {
+    init(_ text: String, isDefault: Bool = false, isDisabled: Bool = false, isAlert: Bool = false, tint: MenuTint = .normal, compact: Bool = false) {
         self.text = text.count > Self.maxButtonLength ? String(text.prefix(Self.maxButtonLength - 1)) + "…" : text
         self.isDefault = isDefault
         self.isDisabled = isDisabled
         self.isAlert = isAlert
         self.tint = tint
+        self.isCompactNav = compact
     }
 }
 

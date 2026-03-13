@@ -59,7 +59,7 @@ struct SplashView: View {
 
                 // Animated dragon
                 VStack(spacing: 4) {
-                    AnimatedGIFView(gifName: "dragon_castle")
+                    AnimatedGIFView(gifName: "dragon_animation")
                         .frame(width: 280, height: 186)
 
                     Text("\u{00A9} Timbaloo Ltd. 2026")
@@ -113,8 +113,9 @@ struct SplashView: View {
             }
             .padding()
         }
+        .contentShape(Rectangle())
         .onTapGesture {
-            if animationPhase >= 4 {
+            if animationPhase >= 1 {
                 onDismiss()
             }
         }
