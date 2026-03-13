@@ -253,7 +253,8 @@ select, input, .btn {
   border-radius: 12px;
   border: 1px solid #2f673f;
   background: #070c08;
-  max-height: 72vh;
+  max-height: none;
+  aspect-ratio: 3 / 4;
   object-fit: contain;
   animation: cardFloat 5s ease-in-out infinite;
 }
