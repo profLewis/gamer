@@ -6,6 +6,7 @@ Main entry point for the game.
 
 import sys
 import argparse
+from datetime import datetime
 from typing import List, Optional
 
 from .game.engine import GameEngine, GameState
@@ -47,7 +48,15 @@ _config = {
     'timeout': 120,         # Seconds before DM takes over (0 to disable)
     'auto_save': True,      # Auto-save periodically
     'ai_backend': 'local',  # AI DM backend: 'local', 'anthropic', 'openai'
+    'verbose': False,       # Verbose runtime logging to stderr
 }
+
+def vlog(message: str) -> None:
+    """Emit verbose runtime logs when --verbose is enabled."""
+    if not _config.get('verbose'):
+        return
+    ts = datetime.now().strftime("%H:%M:%S")
+    print(f"[gamer {ts}] {message}", file=sys.stderr, flush=True)
 
 
 def parse_args():
@@ -112,6 +121,11 @@ Examples:
         default='local',
         help='AI backend for DM narration (default: local). Set ANTHROPIC_API_KEY or OPENAI_API_KEY env var.'
     )
+    parser.add_argument(
+        '--verbose', '-v',
+        action='store_true',
+        help='Enable verbose runtime logging to stderr'
+    )
 
     return parser.parse_args()
 
@@ -130,10 +144,14 @@ def main():
     _config['timeout'] = 0 if args.no_timeout else args.timeout
     _config['auto_save'] = not args.no_autosave
     _config['ai_backend'] = args.ai
+    _config['verbose'] = args.verbose
+    vlog(f"Config loaded: ai={_config['ai_backend']}, timeout={_config['timeout']}, "
+         f"theme={_config['use_theme']}, splash={_config['show_splash']}, defaults={_config['use_defaults']}")
 
     # Initialize AI DM
     from .game.ai_dm import get_ai_dm
     ai_dm = get_ai_dm(_config['ai_backend'])
+    vlog(f"AI DM initialized (backend={_config['ai_backend']})")
 
     # Configure session manager
     if _config['timeout'] > 0:
@@ -161,18 +179,27 @@ def main():
         print()
 
         engine = GameEngine()
+        vlog("GameEngine created")
+        last_state = None
 
         while True:
+            if engine.state != last_state:
+                vlog(f"State transition: {last_state} -> {engine.state}")
+                last_state = engine.state
             if engine.state == GameState.MAIN_MENU:
+                vlog("Entering main menu handler")
                 handle_main_menu(engine)
 
             elif engine.state == GameState.PARTY_SETUP:
+                vlog("Entering party setup handler")
                 handle_party_setup(engine)
 
             elif engine.state == GameState.EXPLORING:
+                vlog("Entering exploration handler")
                 handle_exploration(engine)
 
             elif engine.state == GameState.IN_COMBAT:
+                vlog("Entering combat handler")
                 handle_combat(engine)
 
             elif engine.state == GameState.GAME_OVER:
@@ -205,7 +232,9 @@ def handle_main_menu(engine: GameEngine) -> None:
     global _multiplayer
 
     options = ["New Game", "Load Game", "Multiplayer", "Quit"]
+    vlog("Awaiting main menu choice")
     choice = get_menu_choice(options, "Main Menu")
+    vlog(f"Main menu choice={choice}")
 
     if choice == 1:  # New Game
         session_name = get_input("Enter a name for your adventure: ", default="Adventure")
@@ -492,6 +521,7 @@ def wait_as_player(engine: GameEngine, mp) -> None:
 def handle_party_setup(engine: GameEngine) -> None:
     """Handle party creation."""
     print_title("Party Setup")
+    vlog("Party setup started")
 
     # Get number of party members
     print("How many adventurers in your party? (1-4)")
@@ -809,10 +839,12 @@ def show_game_menu(directions_available: List[str], can_collect: bool) -> str:
 
     # Check if we can use interactive mode
     if _is_tty():
+        vlog(f"Game menu interactive mode: directions={directions_available}, can_collect={can_collect}")
         return _game_menu_interactive(options, actions, directions_available, auto_action)
     else:
         # Fallback to regular menu with timeout
         timeout = _config.get('timeout', 0)
+        vlog(f"Game menu fallback mode: timeout={timeout}, auto_action={auto_action}")
         if timeout > 0:
             choice = get_menu_choice(options, "What do you do?", timeout=float(timeout))
             if choice == 0:  # Timeout
