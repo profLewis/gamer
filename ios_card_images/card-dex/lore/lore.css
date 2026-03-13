@@ -68,8 +68,12 @@ h2 {
 
 .layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 14px;
+}
+
+.layout > section {
+  min-width: 0;
 }
 
 .panel {
@@ -101,16 +105,17 @@ h2 {
   text-align: justify;
   text-justify: inter-word;
   overflow-wrap: anywhere;
+  word-wrap: break-word;
   word-break: normal;
   hyphens: auto;
-  max-width: 70ch;
+  max-width: 100%;
 }
 
 .summary {
   margin-top: 10px;
   color: #b8d2bd;
   line-height: 1.52;
-  font-size: 0.98rem;
+  font-size: clamp(0.86rem, 1.2vw, 0.98rem);
 }
 
 .small {
