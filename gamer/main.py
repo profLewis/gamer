@@ -3,42 +3,66 @@
 D&D 5e Text-Based RPG
 Main entry point for the game.
 """
+from __future__ import annotations
 
 import sys
 import argparse
 from datetime import datetime
 from typing import List, Optional
 
-from .game.engine import GameEngine, GameState
-from .game.session import list_sessions, load_session, session_exists
-from .characters.character import Character
-from .characters.races import get_all_races, get_race
-from .characters.classes import get_all_classes, get_class
-from .characters.abilities import Ability
-from .players.human_player import HumanPlayer
-from .players.ai_player import AIPlayer, AIPersonality
-from .world.dungeon import Direction
-from .utils.display import (
-    print_title, print_subtitle, print_menu, get_input, get_menu_choice,
-    confirm, print_separator, Colors, clear_screen,
-    set_terminal_theme, reset_terminal, show_splash_screen,
-    setup_status_panel, status_message, teardown_status_panel
-)
-from .utils.dice import roll_ability_scores, standard_array
-from .utils.ascii_art import (
-    render_character, render_party, render_dungeon_map, render_combat_scene,
-    render_monster, render_encounter
-)
-from .game.multiplayer import (
-    SharedFileMultiplayer, SocketMultiplayer, get_local_ip, PlayerRole
-)
-from .game.scoreboard import Scoreboard, SessionManager, TimeoutManager
+# Runtime imports are bootstrapped in main() to avoid slow/hanging eager imports.
+# Names are populated by _bootstrap_runtime_imports().
+GameEngine = None
+GameState = None
+list_sessions = None
+load_session = None
+session_exists = None
+Character = None
+get_all_races = None
+get_race = None
+get_all_classes = None
+get_class = None
+Ability = None
+HumanPlayer = None
+AIPlayer = None
+AIPersonality = None
+Direction = None
+print_title = None
+print_subtitle = None
+print_menu = None
+get_input = None
+get_menu_choice = None
+confirm = None
+print_separator = None
+Colors = None
+clear_screen = None
+set_terminal_theme = None
+reset_terminal = None
+show_splash_screen = None
+setup_status_panel = None
+status_message = None
+teardown_status_panel = None
+roll_ability_scores = None
+standard_array = None
+render_character = None
+render_party = None
+render_dungeon_map = None
+render_combat_scene = None
+render_monster = None
+render_encounter = None
+SharedFileMultiplayer = None
+SocketMultiplayer = None
+get_local_ip = None
+PlayerRole = None
+Scoreboard = None
+SessionManager = None
+TimeoutManager = None
 
 # Global multiplayer instance
 _multiplayer = None
 
-# Global session manager
-_session = SessionManager()
+# Global session manager (initialized during runtime bootstrap)
+_session = None
 
 # Global config for defaults
 _config = {
@@ -57,6 +81,72 @@ def vlog(message: str) -> None:
         return
     ts = datetime.now().strftime("%H:%M:%S")
     print(f"[gamer {ts}] {message}", file=sys.stderr, flush=True)
+
+
+def _bootstrap_runtime_imports() -> None:
+    """Load heavyweight imports lazily at runtime."""
+    global GameEngine, GameState
+    global list_sessions, load_session, session_exists
+    global Character, get_all_races, get_race, get_all_classes, get_class, Ability
+    global HumanPlayer, AIPlayer, AIPersonality, Direction
+    global print_title, print_subtitle, print_menu, get_input, get_menu_choice
+    global confirm, print_separator, Colors, clear_screen
+    global set_terminal_theme, reset_terminal, show_splash_screen
+    global setup_status_panel, status_message, teardown_status_panel
+    global roll_ability_scores, standard_array
+    global render_character, render_party, render_dungeon_map, render_combat_scene
+    global render_monster, render_encounter
+    global SharedFileMultiplayer, SocketMultiplayer, get_local_ip, PlayerRole
+    global Scoreboard, SessionManager, TimeoutManager, _session
+
+    from .game.engine import GameEngine as _GameEngine, GameState as _GameState
+    from .game.session import list_sessions as _list_sessions, load_session as _load_session, session_exists as _session_exists
+    from .characters.character import Character as _Character
+    from .characters.races import get_all_races as _get_all_races, get_race as _get_race
+    from .characters.classes import get_all_classes as _get_all_classes, get_class as _get_class
+    from .characters.abilities import Ability as _Ability
+    from .players.human_player import HumanPlayer as _HumanPlayer
+    from .players.ai_player import AIPlayer as _AIPlayer, AIPersonality as _AIPersonality
+    from .world.dungeon import Direction as _Direction
+    from .utils.display import (
+        print_title as _print_title, print_subtitle as _print_subtitle, print_menu as _print_menu,
+        get_input as _get_input, get_menu_choice as _get_menu_choice, confirm as _confirm,
+        print_separator as _print_separator, Colors as _Colors, clear_screen as _clear_screen,
+        set_terminal_theme as _set_terminal_theme, reset_terminal as _reset_terminal,
+        show_splash_screen as _show_splash_screen, setup_status_panel as _setup_status_panel,
+        status_message as _status_message, teardown_status_panel as _teardown_status_panel,
+    )
+    from .utils.dice import roll_ability_scores as _roll_ability_scores, standard_array as _standard_array
+    from .utils.ascii_art import (
+        render_character as _render_character, render_party as _render_party,
+        render_dungeon_map as _render_dungeon_map, render_combat_scene as _render_combat_scene,
+        render_monster as _render_monster, render_encounter as _render_encounter,
+    )
+    from .game.multiplayer import (
+        SharedFileMultiplayer as _SharedFileMultiplayer, SocketMultiplayer as _SocketMultiplayer,
+        get_local_ip as _get_local_ip, PlayerRole as _PlayerRole,
+    )
+    from .game.scoreboard import Scoreboard as _Scoreboard, SessionManager as _SessionManager, TimeoutManager as _TimeoutManager
+
+    GameEngine, GameState = _GameEngine, _GameState
+    list_sessions, load_session, session_exists = _list_sessions, _load_session, _session_exists
+    Character, get_all_races, get_race = _Character, _get_all_races, _get_race
+    get_all_classes, get_class, Ability = _get_all_classes, _get_class, _Ability
+    HumanPlayer, AIPlayer, AIPersonality = _HumanPlayer, _AIPlayer, _AIPersonality
+    Direction = _Direction
+    print_title, print_subtitle, print_menu = _print_title, _print_subtitle, _print_menu
+    get_input, get_menu_choice, confirm = _get_input, _get_menu_choice, _confirm
+    print_separator, Colors, clear_screen = _print_separator, _Colors, _clear_screen
+    set_terminal_theme, reset_terminal, show_splash_screen = _set_terminal_theme, _reset_terminal, _show_splash_screen
+    setup_status_panel, status_message, teardown_status_panel = _setup_status_panel, _status_message, _teardown_status_panel
+    roll_ability_scores, standard_array = _roll_ability_scores, _standard_array
+    render_character, render_party = _render_character, _render_party
+    render_dungeon_map, render_combat_scene = _render_dungeon_map, _render_combat_scene
+    render_monster, render_encounter = _render_monster, _render_encounter
+    SharedFileMultiplayer, SocketMultiplayer = _SharedFileMultiplayer, _SocketMultiplayer
+    get_local_ip, PlayerRole = _get_local_ip, _PlayerRole
+    Scoreboard, SessionManager, TimeoutManager = _Scoreboard, _SessionManager, _TimeoutManager
+    _session = SessionManager()
 
 
 def parse_args():
@@ -136,6 +226,9 @@ def main():
 
     # Parse command line arguments
     args = parse_args()
+
+    _bootstrap_runtime_imports()
+    vlog("Runtime imports bootstrapped")
 
     # Apply config from args
     _config['use_defaults'] = not args.no_defaults
