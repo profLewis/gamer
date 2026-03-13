@@ -44,7 +44,11 @@ h1, h2 {
 h1 {
   margin-top: 10px;
   color: var(--accent);
-  font-size: 1.95rem;
+  font-size: clamp(1.35rem, 2.8vw, 1.95rem);
+  line-height: 1.2;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  hyphens: auto;
 }
 
 h2 {
@@ -57,6 +61,9 @@ h2 {
   color: var(--muted);
   margin: 6px 0 14px;
   letter-spacing: 0.03em;
+  line-height: 1.35;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .layout {
@@ -69,7 +76,8 @@ h2 {
   border: 1px solid #1f5e34;
   border-radius: 12px;
   background: linear-gradient(180deg, rgba(12, 22, 14, 0.96), rgba(9, 14, 10, 0.98));
-  padding: 12px;
+  padding: 14px;
+  overflow: hidden;
 }
 
 .panel-spaced { margin-top: 14px; }
@@ -92,12 +100,17 @@ h2 {
 .feature-list li {
   text-align: justify;
   text-justify: inter-word;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  hyphens: auto;
+  max-width: 70ch;
 }
 
 .summary {
   margin-top: 10px;
   color: #b8d2bd;
   line-height: 1.52;
+  font-size: 0.98rem;
 }
 
 .small {
@@ -139,6 +152,7 @@ h2 {
 .feature-list a {
   color: #9deab0;
   text-decoration: none;
+  overflow-wrap: anywhere;
 }
 
 .tag {
