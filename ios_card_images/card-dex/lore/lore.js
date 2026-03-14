@@ -53,7 +53,7 @@ function renderStatic(c) {
   byId('meta').textContent = `${(c.type || '').toUpperCase()} - ${c.source || 'Reference'}`;
   byId('cardImg').src = `../../${c.image}`;
   byId('cardImg').alt = c.name;
-  byId('summary').textContent = c.description || '';
+  byId('summary').textContent = 'This lore panel uses project-written text only. For external facts, use the attributed references.';
 
   const links = outboundLinks(c);
   if (c.source_entity_page) {
