@@ -247,6 +247,40 @@ select, input, .btn {
 }
 
 .meta { margin: 0; color: var(--muted); min-height: 1.2rem; }
+.meta-link {
+  color: #aef5ba;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.meta-link:hover {
+  color: #d6ffe0;
+}
+
+.meta-text {
+  color: #9db9a3;
+}
+
+.meta-sep {
+  color: #7ea788;
+}
+
+.meta-chip {
+  appearance: none;
+  border: 1px solid #2b6b3c;
+  border-radius: 999px;
+  background: #0a120c;
+  color: #a9d5b3;
+  font-size: 0.74rem;
+  line-height: 1.2;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.meta-chip:hover {
+  border-color: #6bff89;
+  color: #d7ffe1;
+}
 
 #detailImage {
   width: 100%;

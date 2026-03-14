@@ -591,28 +591,10 @@ function byId(id) { return document.getElementById(id); }
 
 function q(s) { return encodeURIComponent(s); }
 
-function sourceKind(src) {
-  const s = (src || '').toLowerCase();
-  if (s.includes('module')) return 'book';
-  if (s.includes('tolkien') || s.includes('moorcock') || s.includes('le guin') || s.includes('pratchett') || s.includes('howard') || s.includes('asimov') || s.includes('burroughs')) return 'book';
-  if (s.includes('film') || s.includes('movie') || s.includes('198') || s.includes('197') || s.includes('king kong') || s.includes('star wars') || s.includes('alien')) return 'movie';
-  if (s.includes('stranger things') || s.includes('doctor who') || s.includes('community') || s.includes('futurama') || s.includes('he-man') || s.includes('thundercats') || s.includes('dogtanian')) return 'tv';
-  return 'mixed';
-}
-
 function outboundLinks(c) {
-  const query = `${c.name} ${c.source || ''}`.trim();
-  const squery = `${c.source || c.name}`.trim();
-  const kind = sourceKind(c.source);
-  const links = [
-    { label: 'Wikipedia', href: `https://en.wikipedia.org/wiki/Special:Search?search=${q(query)}` },
-    { label: 'YouTube', href: `https://www.youtube.com/results?search_query=${q(query + ' trailer clip')}` },
-    { label: 'Amazon', href: `https://www.amazon.com/s?k=${q(squery)}` },
-    { label: 'AbeBooks', href: `https://www.abebooks.com/servlet/SearchResults?kn=${q(squery)}` },
-    { label: 'World of Books', href: `https://www.worldofbooks.com/en-gb/search?q=${q(squery)}` },
-  ];
-  if (kind === 'movie' || kind === 'tv' || kind === 'mixed') {
-    links.push({ label: 'IMDb', href: `https://www.imdb.com/find/?q=${q(query)}` });
+  const links = [];
+  if (c.source_entity_page) {
+    links.push({ label: 'Source Card', href: `../${c.source_entity_page}` });
   }
   return links;
 }
@@ -679,7 +661,6 @@ async function renderWiki(c) {
   const wiki = await loadWiki(c);
   if (!wiki) return;
 
-  byId('summary').textContent = wiki.summary.extract;
   if (wiki.summary.thumbnail && wiki.summary.thumbnail.source) {
     const img = byId('wikiImg');
     img.src = wiki.summary.thumbnail.source;
@@ -890,13 +871,7 @@ def write_source_entities(cards: List[dict]) -> Dict[str, SourceEntity]:
             f'<a href="{wiki_url}" target="_blank" rel="noopener noreferrer">Wikipedia</a>'
             if wiki_url else ""
         )
-        source_links = [
-            ("YouTube", f"https://www.youtube.com/results?search_query={quote(source + ' trailer clip')}"),
-            ("Amazon", f"https://www.amazon.com/s?k={quote(source)}"),
-            ("AbeBooks", f"https://www.abebooks.com/servlet/SearchResults?kn={quote(source)}"),
-            ("World of Books", f"https://www.worldofbooks.com/en-gb/search?q={quote(source)}"),
-            ("IMDb", f"https://www.imdb.com/find/?q={quote(source)}"),
-        ]
+        source_links = []
         links_html = "".join(
             f'<a href="{u}" target="_blank" rel="noopener noreferrer">{label}</a>' for label, u in source_links
         )

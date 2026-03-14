@@ -4,6 +4,7 @@ const state = {
   selectedId: null,
   musicOn: false,
   pendingSource: null,
+  lastRandomAt: 0,
 };
 
 const els = {
@@ -168,9 +169,11 @@ function applyFilters() {
 
 function renderGrid() {
   els.grid.innerHTML = '';
+  let activeEl = null;
   for (const card of state.filtered) {
     const item = document.createElement('button');
     item.className = `card-item${card.id === state.selectedId ? ' active' : ''}`;
+    item.dataset.cardId = card.id;
     item.innerHTML = `
       <img class="thumb" src="../${card.image}" alt="${card.name}" loading="lazy" />
       <div class="card-name">${card.name}</div>
@@ -182,11 +185,18 @@ function renderGrid() {
       renderDetail();
     });
     els.grid.appendChild(item);
+    if (card.id === state.selectedId) {
+      activeEl = item;
+    }
+  }
+  if (activeEl) {
+    activeEl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 }
 
 function renderDetail() {
-  const card = state.filtered.find((c) => c.id === state.selectedId);
+  const idx = state.filtered.findIndex((c) => c.id === state.selectedId);
+  const card = idx >= 0 ? state.filtered[idx] : null;
   if (!card) {
     els.title.textContent = 'No cards in this filter';
     els.meta.textContent = '';
@@ -206,10 +216,25 @@ function renderDetail() {
   }
 
   els.title.textContent = card.name;
-  els.meta.textContent = `${humanType(card.type)}${card.source ? ` - ${card.source}` : ''}`;
+  const typeLabel = humanType(card.type);
+  const sourceLabel = (card.source || '').trim();
+  const typePart = `<button type="button" class="meta-chip" data-meta-filter="${card.type}">${typeLabel}</button>`;
+  const sourcePart = sourceLabel
+    ? (card.source_entity_page
+      ? `<a class="meta-link" href="../${card.source_entity_page}" target="_blank" rel="noopener noreferrer">${sourceLabel}</a>`
+      : `<span class="meta-text">${sourceLabel}</span>`)
+    : '';
+  els.meta.innerHTML = sourcePart ? `${typePart} <span class="meta-sep">-</span> ${sourcePart}` : typePart;
+  const metaFilterBtn = els.meta.querySelector('[data-meta-filter]');
+  if (metaFilterBtn) {
+    metaFilterBtn.addEventListener('click', () => {
+      els.category.value = card.type;
+      applyFilters();
+    });
+  }
+  els.image.removeAttribute('src');
   els.image.src = `../${card.image}`;
   els.image.alt = card.name;
-  const idx = state.filtered.findIndex((c) => c.id === state.selectedId);
   els.cardPosLabel.textContent = `${idx + 1}/${state.filtered.length}`;
   if (card.source_entity_page) {
     els.sourceBtn.href = `../${card.source_entity_page}`;
@@ -261,6 +286,9 @@ function selectByOffset(offset) {
 
 function selectRandomCard() {
   if (!state.filtered.length) return;
+  const now = Date.now();
+  if (now - state.lastRandomAt < 120) return;
+  state.lastRandomAt = now;
   if (state.filtered.length === 1) {
     state.selectedId = state.filtered[0].id;
     renderGrid();

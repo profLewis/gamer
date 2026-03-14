@@ -42,3 +42,14 @@ Local copies of reference photos used in source/entity pages.
 | Roger Zelazny | `entities/photos/roger-zelazny.jpg` | https://en.wikipedia.org/wiki/Roger_Zelazny | https://upload.wikimedia.org/wikipedia/en/f/fe/Rogerzelazny.JPG | 2026-03-13T23:01:32+00:00 |
 | Star Wars (1977) | `entities/photos/star-wars-1977.jpg` | https://en.wikipedia.org/wiki/Star_Wars_(film) | https://upload.wikimedia.org/wikipedia/en/thumb/8/87/StarWarsMoviePoster1977.jpg/250px-StarWarsMoviePoster1977.jpg | 2026-03-13T23:01:33+00:00 |
 | Stranger Things | `entities/photos/stranger-things.png` | https://en.wikipedia.org/wiki/Stranger_Things | https://upload.wikimedia.org/wikipedia/commons/thumb/3/38/Stranger_Things_logo.png/330px-Stranger_Things_logo.png | 2026-03-13T23:01:33+00:00 |
+
+## Additional External Images Used In Entity Pages
+
+These are currently hotlinked in the HTML and not yet mirrored as local files.
+
+| Source | Entity Page | Remote Image URL | Reference Page |
+|---|---|---|---|
+| Ace Double D-031 (1953) A-side cover | `card-dex/entities/ace-double-d-031-1953.html` | https://people.uncw.edu/smithms/D-series/D-031a.jpg | https://people.uncw.edu/smithms/D-series.html |
+| Ace Double D-031 (1953) B-side cover | `card-dex/entities/ace-double-d-031-1953.html` | https://people.uncw.edu/smithms/D-series/D-031b.jpg | https://people.uncw.edu/smithms/D-series.html |
+| The Hour of the Dragon cover | `card-dex/entities/ace-double-d-031-1953.html` | https://upload.wikimedia.org/wikipedia/en/8/8b/The_Hour_of_the_Dragon.jpg | https://en.wikipedia.org/wiki/The_Hour_of_the_Dragon |
+| The Man Who Mastered Time cover | `card-dex/entities/ace-double-d-031-1953.html` | https://upload.wikimedia.org/wikipedia/en/thumb/6/63/Universemaker.jpg/250px-Universemaker.jpg | https://en.wikipedia.org/wiki/The_Man_Who_Mastered_Time |
