@@ -797,6 +797,48 @@ def write_source_entities(cards: List[dict]) -> Dict[str, SourceEntity]:
     entities: Dict[str, SourceEntity] = {}
     provenance_rows: List[dict] = []
 
+    def compose_source_summary(source: str, kind: str) -> str:
+        if source.startswith("Ace Double D-"):
+            m = re.search(r"(D-\\d+)\\s*\\((\\d{4})\\)", source)
+            code = m.group(1) if m else "D-series"
+            year = m.group(2) if m else "the period"
+            return (
+                f"Ace Double {code} ({year}) reflects the two-in-one paperback format that paired works "
+                "for contrast, discovery, and collector appeal. It is used here as a compact inspiration "
+                "source for mixed-genre tone in default DnDex naming."
+            )
+
+        if kind == "movie":
+            return (
+                f"This film entry describes how {source} contributes atmosphere, archetypes, and pacing cues "
+                "to the default DnDex source set. The wording is project-authored and intentionally avoids "
+                "verbatim source prose."
+            )
+        if kind == "tv":
+            return (
+                f"This television source card outlines how {source} informs recurring character types and "
+                "world texture used by default game names. It is written as original DnDex commentary."
+            )
+        if kind == "author":
+            return (
+                f"This author page frames {source} as a creative root for style, setting motifs, and naming "
+                "patterns in the default DnDex references. The summary is original writing for this project."
+            )
+        if kind == "module":
+            return (
+                f"This module entry highlights how {source} shapes dungeon logic, encounter rhythm, and place "
+                "naming in the default DnDex corpus. The text is project-written and non-verbatim."
+            )
+        if kind == "book":
+            return (
+                f"This book source card maps {source} to the fantasy and science-fantasy flavor used by default "
+                "DnDex entities. It is an original editorial summary, with references provided for verification."
+            )
+        return (
+            f"This source card positions {source} as part of the inspiration layer behind default DnDex content. "
+            "It is written in original wording, with direct references linked below for factual checks."
+        )
+
     for source in unique_sources:
         kind = source_kind(source)
         queries = [source, re.sub(r"\s*\(\d{4}\)\s*$", "", source)]
@@ -814,11 +856,7 @@ def write_source_entities(cards: List[dict]) -> Dict[str, SourceEntity]:
                 break
 
         wiki_url = None
-        summary_text = (
-            f"This page provides a project-written overview of {source} as a "
-            f"{kind} inspiration source for the default DnDex set. "
-            "For factual detail, use the attributed references below."
-        )
+        summary_text = compose_source_summary(source, kind)
         remote_photo = None
         local_photo = None
         if isinstance(summary, dict):
