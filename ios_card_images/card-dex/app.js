@@ -284,6 +284,27 @@ function selectByOffset(offset) {
   renderDetail();
 }
 
+function visibleGridColumns() {
+  const first = els.grid.querySelector('.card-item');
+  if (!first) return 1;
+  const itemWidth = first.getBoundingClientRect().width || 1;
+  const styles = window.getComputedStyle(els.grid);
+  const gap = parseFloat(styles.columnGap || styles.gap || '0') || 0;
+  const usable = els.grid.clientWidth || itemWidth;
+  const cols = Math.floor((usable + gap) / (itemWidth + gap));
+  return Math.max(1, cols || 1);
+}
+
+function selectByGridStep(step) {
+  if (!state.filtered.length) return;
+  const current = state.filtered.findIndex((c) => c.id === state.selectedId);
+  const base = current >= 0 ? current : 0;
+  const next = (base + step + state.filtered.length) % state.filtered.length;
+  state.selectedId = state.filtered[next].id;
+  renderGrid();
+  renderDetail();
+}
+
 function selectRandomCard() {
   if (!state.filtered.length) return;
   const now = Date.now();
@@ -466,6 +487,35 @@ function bindEvents() {
       selectByOffset(-1);
     }
   }, { passive: true });
+
+  window.addEventListener('keydown', (ev) => {
+    const target = ev.target;
+    const tag = target && target.tagName ? target.tagName.toLowerCase() : '';
+    const isEditable = Boolean(
+      target && (target.isContentEditable || tag === 'input' || tag === 'textarea' || tag === 'select')
+    );
+    if (isEditable) return;
+
+    if (ev.key === 'ArrowLeft') {
+      ev.preventDefault();
+      selectByGridStep(-1);
+      return;
+    }
+    if (ev.key === 'ArrowRight') {
+      ev.preventDefault();
+      selectByGridStep(1);
+      return;
+    }
+    if (ev.key === 'ArrowUp') {
+      ev.preventDefault();
+      selectByGridStep(-visibleGridColumns());
+      return;
+    }
+    if (ev.key === 'ArrowDown') {
+      ev.preventDefault();
+      selectByGridStep(visibleGridColumns());
+    }
+  });
 
   // Drag divider for panel sizing (landscape)
   els.panelResizer.addEventListener('pointerdown', (ev) => {
