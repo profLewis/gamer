@@ -44,11 +44,11 @@ class GameEngine: ObservableObject {
     /// Accessibility: show mic icon in menu icon bars for voice menu selection
     @Published var voiceMenuEnabled: Bool = UserDefaults.standard.bool(forKey: "voiceMenuEnabled")
 
-    /// Card navigation style: true = arrow buttons, false = swipe gesture only
+    /// Card navigation style: true = <</>> buttons, false = swipe gesture only
     @Published var useArrowNavigation: Bool = UserDefaults.standard.object(forKey: "useArrowNavigation") == nil ? false : UserDefaults.standard.bool(forKey: "useArrowNavigation")
 
     /// Suppress auto-scroll-to-bottom (for help/card views where top content matters)
-    @Published var suppressAutoScroll: Bool = false
+    @Published var suppressAutoScroll: Bool = true
     /// Lock scrolling entirely (for card views with swipe navigation)
     @Published var scrollLocked: Bool = false
 
@@ -104,12 +104,31 @@ class GameEngine: ObservableObject {
     /// When set, shows a dice icon next to the return button in text input for re-rolling suggestions
     var rerollHandler: (() -> Void)?
 
-    /// Undo/redo handlers — shown as icons in the input bar on edit screens
+    /// Undo/redo handlers — shown as labelled buttons in the input bar
     var undoHandler: (() -> Void)?
     var redoHandler: (() -> Void)?
 
+    /// Preview labels shown on undo/redo buttons (e.g. "Undo:STR", "Redo:Name")
+    @Published var undoLabel: String?
+    @Published var redoLabel: String?
+
+    /// 1-based index of the menu button that undo/redo would affect (highlighted in UI)
+    @Published var undoTargetButtonIndex: Int?
+    @Published var redoTargetButtonIndex: Int?
+
+    /// Feedback shown after undo/redo — persists until next action
+    @Published var undoRedoFeedback: String?
+
     /// Current paginated menu page (for staying on the same page after toggles)
     private var paginatedPage: Int = 0
+
+    /// Saved state for inline help toggle — press ? to show help, ? again to restore
+    private var savedHelpState: (lines: [TerminalLine], menu: [MenuOption],
+                                  menuHandler: ((Int) -> Void)?, closeHandler: (() -> Void)?,
+                                  menuLongPressHandler: ((Int) -> Void)?,
+                                  textLongPressHandler: ((Int) -> Void)?,
+                                  undoHandler: (() -> Void)?, redoHandler: (() -> Void)?,
+                                  undoLabel: String?, redoLabel: String?)?
 
     /// Whether undo/redo buttons are enabled in settings screens
     var undoRedoEnabled: Bool {
@@ -208,6 +227,10 @@ class GameEngine: ObservableObject {
     private var shownTipIndices: Set<Int> = []
     private var tipCooldown: Int = 0
 
+    // Log roller hold-to-repeat
+    private var logRollerTimer: Timer?
+    private var logRollerTickCount: Int = 0
+
     static let gameplayTips: [String] = {
         // Core tips not in FAQ
         var tips = [
@@ -216,14 +239,14 @@ class GameEngine: ObservableObject {
             "Long-press a direction to barricade or unblock a door. Barricade the doors and douse the light before resting!",
             "Try long-pressing buttons — many have hidden shortcuts! Barricades, dark actions, quick starts, and more.",
             "Long-press Search Room in the dark to attempt it blindly — risky but sometimes rewarding!",
-            "Use View Card in Party Review to see detailed character stats. Swipe left/right to browse.",
+            "Use View Card in Party Review to see detailed character stats. Swipe or use <</>> to browse.",
             "Settings are available from Party Status — adjust sound, DM, display, and more during your adventure.",
             "Set up a free Google Gemini API key in Settings for a smarter Dungeon Master.",
             "Save your game before boss fights — they can be deadly!",
             "Douse your torch to sneak past monsters — 30% chance they won't spot you in the dark.",
             "Each character can carry up to 12 items. Sell unwanted gear at the Merchant to free space.",
             "You can type button names or numbers at the prompt instead of tapping — try typing 'help' or '1'.",
-            "Swipe left on any screen to go back or close it.",
+            "Swipe left to go back, swipe right to continue. Works on every screen.",
         ]
         // Pull concise answers from FAQ entries
         for entry in FAQData.allEntries {
@@ -328,12 +351,26 @@ class GameEngine: ObservableObject {
             return (char, name)
         }
 
-        // Phase 2: if still too long, abbreviate multi-word names to "First L"
+        // Phase 2: if still too long, abbreviate — keep as much as fits
         candidates = candidates.map { (char, name) in
             if name.count <= maxLen { return (char, name) }
             let words = name.split(separator: " ")
             if words.count >= 2 {
-                let short = "\(words[0]) \(words[1].prefix(1))"
+                // Build up "Word1 Word2..." until we exceed maxLen
+                var short = String(words[0])
+                for w in words.dropFirst() {
+                    let candidate = "\(short) \(w)"
+                    if candidate.count <= maxLen {
+                        short = candidate
+                    } else {
+                        // Add as much of this word as fits (at least 3 chars)
+                        let remaining = maxLen - short.count - 1
+                        if remaining >= 3 {
+                            short = "\(short) \(w.prefix(remaining))"
+                        }
+                        break
+                    }
+                }
                 return (char, short)
             }
             return (char, String(name.prefix(maxLen)))
@@ -414,6 +451,7 @@ class GameEngine: ObservableObject {
     /// Print combat status with the local player's human-controlled characters underlined
     func printCombatStatus() {
         guard let combat = currentCombat else { return }
+        suppressAutoScroll = false
         let lines = combat.displayStatus()
         let maxLen = lines.map { $0.count }.max() ?? 0
 
@@ -519,7 +557,7 @@ class GameEngine: ObservableObject {
         textLongPressHandler = nil
         closeHandler = nil
         rerollHandler = nil
-        suppressAutoScroll = false
+        suppressAutoScroll = true
         scrollLocked = false
         swipeLeftHandler = nil
         swipeRightHandler = nil
@@ -564,6 +602,11 @@ class GameEngine: ObservableObject {
         currentUndoScreen = nil
         undoHandler = nil
         redoHandler = nil
+        undoLabel = nil
+        redoLabel = nil
+        undoTargetButtonIndex = nil
+        redoTargetButtonIndex = nil
+        undoRedoFeedback = nil
     }
 
     private func screenHasUndo(_ screen: String) -> Bool {
@@ -572,6 +615,221 @@ class GameEngine: ObservableObject {
 
     private func screenHasRedo(_ screen: String) -> Bool {
         !(screenRedoStacks[screen]?.isEmpty ?? true)
+    }
+
+    // MARK: - Undo/Redo Feedback
+
+    /// Show undo feedback — persists until next action replaces it
+    private func showUndoFeedback(_ message: String) {
+        undoRedoFeedback = "↩ \(message)"
+    }
+
+    /// Show redo feedback — persists until next action replaces it
+    private func showRedoFeedback(_ message: String) {
+        undoRedoFeedback = "↪ \(message)"
+    }
+
+    // MARK: - Undo/Redo Preview Labels
+
+    /// Peek at the undo stack and describe what undoing would revert
+    private func peekUndoLabel() -> String? {
+        guard let screen = currentUndoScreen else { return nil }
+        guard let data = screenUndoStacks[screen]?.last else { return nil }
+
+        if screen.hasPrefix("editChar:") {
+            guard let index = editingCharacterIndex, index < party.count else { return "Undo" }
+            if let saved = try? JSONDecoder().decode(Character.self, from: data) {
+                // Show what we'd revert TO (the saved value)
+                let diff = describeCharDiff(before: charSnapshot(party[index]), after: charSnapshot(saved))
+                let value = diff.components(separatedBy: " → ").last ?? diff
+                return "Undo:\(value)"
+            }
+        } else if screen == settingsScreenKey {
+            if let saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                let current = exportSettings()
+                // Show what we'd revert TO (the saved value)
+                let diff = describeSettingsDiff(before: current, after: saved)
+                let value = diff.components(separatedBy: " → ").last ?? diff
+                return "Undo:\(value)"
+            }
+        } else if screen == "partyReview" {
+            return "Undo:Party"
+        } else if screen == skillsScreenKey {
+            if let rawValues = try? JSONDecoder().decode([String].self, from: data) {
+                let count = rawValues.count
+                let current = selectedSkills.count
+                if count < current {
+                    let removed = selectedSkills.filter { !rawValues.contains($0.rawValue) }
+                    if let skill = removed.first { return "Undo:\(skill.rawValue)" }
+                }
+                return "Undo:Skill"
+            }
+        }
+        return "Undo"
+    }
+
+    /// Peek at the redo stack and describe what redoing would restore
+    private func peekRedoLabel() -> String? {
+        guard let screen = currentUndoScreen else { return nil }
+        guard let data = screenRedoStacks[screen]?.last else { return nil }
+
+        if screen.hasPrefix("editChar:") {
+            if let saved = try? JSONDecoder().decode(Character.self, from: data) {
+                guard let index = editingCharacterIndex, index < party.count else { return "Redo" }
+                // Show what we'd redo TO (the saved value)
+                let diff = describeCharDiff(before: charSnapshot(party[index]), after: charSnapshot(saved))
+                let value = diff.components(separatedBy: " → ").last ?? diff
+                return "Redo:\(value)"
+            }
+        } else if screen == settingsScreenKey {
+            if let saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                let current = exportSettings()
+                // Show what we'd redo TO (the saved value)
+                let diff = describeSettingsDiff(before: current, after: saved)
+                let value = diff.components(separatedBy: " → ").last ?? diff
+                return "Redo:\(value)"
+            }
+        } else if screen == "partyReview" {
+            return "Redo:Party"
+        } else if screen == skillsScreenKey {
+            return "Redo:Skill"
+        }
+        return "Redo"
+    }
+
+    /// Update the preview labels and target button indices based on current stack state
+    private func refreshUndoRedoLabels() {
+        undoLabel = undoHandler != nil ? peekUndoLabel() : nil
+        redoLabel = redoHandler != nil ? peekRedoLabel() : nil
+        undoTargetButtonIndex = undoLabel != nil ? targetButtonIndex(for: undoLabel!) : nil
+        redoTargetButtonIndex = redoLabel != nil ? targetButtonIndex(for: redoLabel!) : nil
+    }
+
+    /// Map a diff label (e.g. "Undo:Music") to the 1-based menu button index on the current screen
+    private func targetButtonIndex(for label: String) -> Int? {
+        guard let screen = currentUndoScreen else { return nil }
+        let short = label.replacingOccurrences(of: "Undo:", with: "")
+                         .replacingOccurrences(of: "Redo:", with: "")
+
+        if screen == settingsScreenKey {
+            // Settings buttons: 1=DM Settings, 2=Accessibility, 3=Mood, 4=Gameplay, 5=Saving
+            let dmKeys = ["DM Provider", "DM Creativity", "DM Log Context"]
+            let accessKeys = ["Display Size", "DM Voice", "Companion Voices", "Voice Menus", "Hit Animations"]
+            let moodKeys = ["Music", "Sound FX", "Menu Tune", "Explore Tune", "Combat Tune", "Chat Tune"]
+            let gameKeys = ["Button Limit", "Card Navigation", "Map Radius", "NPCs", "Multiplayer",
+                           "Long Press", "Info Timeout", "Time Limit", "Log Limit", "Undo/Redo",
+                           "Keyboard", "Idle"]
+            let saveKeys = ["Autosave"]
+
+            // Return 0-based index matching the options array
+            if dmKeys.contains(short) { return 0 }
+            if accessKeys.contains(short) { return 1 }
+            if moodKeys.contains(short) { return 2 }
+            if gameKeys.contains(short) { return 3 }
+            if saveKeys.contains(short) { return 4 }
+            return nil
+        }
+
+        // Character edit and other screens: no button highlighting for now
+        return nil
+    }
+
+    /// Describe a character diff for undo/redo feedback
+    private func describeCharDiff(before: (name: String, cls: String, race: String, scores: AbilityScores, hp: Int, maxHP: Int),
+                                  after: (name: String, cls: String, race: String, scores: AbilityScores, hp: Int, maxHP: Int)) -> String {
+        if before.name != after.name { return "Name → \(after.name)" }
+        if before.cls != after.cls { return "Class → \(after.cls)" }
+        if before.race != after.race { return "Race → \(after.race)" }
+        let bs = before.scores; let as_ = after.scores
+        if bs.strength != as_.strength { return "STR \(bs.strength) → \(as_.strength)" }
+        if bs.dexterity != as_.dexterity { return "DEX \(bs.dexterity) → \(as_.dexterity)" }
+        if bs.constitution != as_.constitution { return "CON \(bs.constitution) → \(as_.constitution)" }
+        if bs.intelligence != as_.intelligence { return "INT \(bs.intelligence) → \(as_.intelligence)" }
+        if bs.wisdom != as_.wisdom { return "WIS \(bs.wisdom) → \(as_.wisdom)" }
+        if bs.charisma != as_.charisma { return "CHA \(bs.charisma) → \(as_.charisma)" }
+        if before.hp != after.hp || before.maxHP != after.maxHP {
+            return "HP → \(after.hp)/\(after.maxHP)"
+        }
+        return after.name
+    }
+
+    private func charSnapshot(_ c: Character) -> (name: String, cls: String, race: String, scores: AbilityScores, hp: Int, maxHP: Int) {
+        (c.name, c.characterClass.rawValue, c.race.rawValue, c.abilityScores, c.currentHP, c.maxHP)
+    }
+
+    /// Describe a settings diff for undo/redo feedback
+    private func describeSettingsDiff(before: [String: Any], after: [String: Any]) -> String {
+        let labels: [(String, String, ((Any) -> String)?)] = [
+            ("musicEnabled", "Music", { ($0 as? Bool) == true ? "On" : "Off" }),
+            ("music_enabled", "Music", { ($0 as? Bool) == true ? "On" : "Off" }),
+            ("battle_sounds_enabled", "Sound FX", { ($0 as? Bool) == true ? "On" : "Off" }),
+            ("hit_animations", "Hit Animations", { ($0 as? Bool) == true ? "On" : "Off" }),
+            ("voiceMenuEnabled", "Voice Menus", { ($0 as? Bool) == true ? "On" : "Off" }),
+            ("speechEnabled", "DM Voice", { ($0 as? Bool) == true ? "On" : "Off" }),
+            ("fontSizeSetting", "Display Size", { v in
+                switch v as? String ?? "" {
+                case "small": return "Small"
+                case "large": return "Large"
+                default: return "Medium"
+                }
+            }),
+            ("maxButtonsPerScreen", "Button Limit", { "\($0)" }),
+            ("npcs_enabled", "NPCs", { ($0 as? Bool) == true ? "On" : "Off" }),
+            ("multiplayer_enabled", "Multiplayer", { ($0 as? Bool) == true ? "On" : "Off" }),
+            ("useArrowNavigation", "Card Navigation", { ($0 as? Bool) == true ? "Buttons" : "Swipe" }),
+            ("useCustomKeyboard", "Keyboard", { ($0 as? Bool) == true ? "Custom" : "System" }),
+            ("undoRedoEnabled", "Undo/Redo", { ($0 as? Bool) == true ? "On" : "Off" }),
+            ("autosave_interval", "Autosave", { "\($0)s" }),
+            ("map_radius", "Map Radius", { "\($0)" }),
+            ("dmProvider", "DM Provider", nil),
+            ("dmAdLibLevel", "DM Creativity", { "\($0)" }),
+            ("dmLogContextSize", "DM Log Context", { "\($0)" }),
+            ("infoTimeout", "Info Timeout", { v in
+                let d = v as? Double ?? 0
+                return d == 0 ? "Off" : String(format: "%.1fs", d)
+            }),
+            ("longPressDuration", "Long Press", { v in
+                let d = v as? Double ?? 0.5
+                return String(format: "%.1fs", d)
+            }),
+            ("menu_melody", "Menu Tune", nil),
+            ("exploration_melody", "Explore Tune", nil),
+            ("combat_melody", "Combat Tune", nil),
+            ("chat_melody", "Chat Tune", nil),
+            ("gameTimeLimit", "Time Limit", { v in
+                let i = v as? Int ?? 0
+                return i == 0 ? "Off" : "\(i) min"
+            }),
+            ("adventureLogLimit", "Log Limit", { v in
+                let i = v as? Int ?? 0
+                return i == 0 ? "All" : "\(i)"
+            }),
+            ("companionVoiceMode", "Companion Voices", nil),
+        ]
+        for (key, label, formatter) in labels {
+            let oldVal = before[key]
+            let newVal = after[key]
+            if !settingsValuesEqual(oldVal, newVal) {
+                if let fmt = formatter, let v = newVal {
+                    return "\(label) → \(fmt(v))"
+                } else if let v = newVal {
+                    return "\(label) → \(v)"
+                } else {
+                    return label
+                }
+            }
+        }
+        return "Settings"
+    }
+
+    private func settingsValuesEqual(_ a: Any?, _ b: Any?) -> Bool {
+        if a == nil && b == nil { return true }
+        guard let a = a, let b = b else { return false }
+        if let a = a as? Bool, let b = b as? Bool { return a == b }
+        if let a = a as? Int, let b = b as? Int { return a == b }
+        if let a = a as? Double, let b = b as? Double { return a == b }
+        if let a = a as? String, let b = b as? String { return a == b }
+        return "\(a)" == "\(b)"
     }
 
     // MARK: - Edit Undo/Redo
@@ -597,6 +855,11 @@ class GameEngine: ObservableObject {
         currentUndoScreen = nil
         undoHandler = nil
         redoHandler = nil
+        undoLabel = nil
+        redoLabel = nil
+        undoTargetButtonIndex = nil
+        redoTargetButtonIndex = nil
+        undoRedoFeedback = nil
     }
 
     /// Push a snapshot before making changes
@@ -613,11 +876,13 @@ class GameEngine: ObservableObject {
         guard let index = editingCharacterIndex, index < party.count else { return }
         let key = editScreenKey(for: index)
         guard let data = popScreenUndo(screen: key) else { return }
-        if let currentData = try? JSONEncoder().encode(party[index]) {
+        let before = party[index]
+        if let currentData = try? JSONEncoder().encode(before) {
             pushScreenRedo(screen: key, data: currentData)
         }
         if let restored = try? JSONDecoder().decode(Character.self, from: data) {
             party[index] = restored
+            showUndoFeedback(describeCharDiff(before: charSnapshot(before), after: charSnapshot(restored)))
         }
         updateUndoRedoHandlers(index: index)
         if editScreenIsInGame {
@@ -631,11 +896,13 @@ class GameEngine: ObservableObject {
         guard let index = editingCharacterIndex, index < party.count else { return }
         let key = editScreenKey(for: index)
         guard let data = popScreenRedo(screen: key) else { return }
-        if let currentData = try? JSONEncoder().encode(party[index]) {
+        let before = party[index]
+        if let currentData = try? JSONEncoder().encode(before) {
             pushScreenUndo(screen: key, data: currentData)
         }
         if let restored = try? JSONDecoder().decode(Character.self, from: data) {
             party[index] = restored
+            showRedoFeedback(describeCharDiff(before: charSnapshot(before), after: charSnapshot(restored)))
         }
         updateUndoRedoHandlers(index: index)
         if editScreenIsInGame {
@@ -649,11 +916,14 @@ class GameEngine: ObservableObject {
         guard undoRedoEnabled else {
             undoHandler = nil
             redoHandler = nil
+            undoLabel = nil
+            redoLabel = nil
             return
         }
         let key = editScreenKey(for: index)
         undoHandler = screenHasUndo(key) ? { [weak self] in self?.undoEdit() } : nil
         redoHandler = screenHasRedo(key) ? { [weak self] in self?.redoEdit() } : nil
+        refreshUndoRedoLabels()
     }
 
     // MARK: - Settings Undo/Redo
@@ -669,24 +939,28 @@ class GameEngine: ObservableObject {
 
     private func undoSettings(refreshScreen: @escaping () -> Void) {
         guard let data = popScreenUndo(screen: settingsScreenKey) else { return }
-        if let currentData = try? JSONSerialization.data(withJSONObject: exportSettings()) {
+        let beforeSettings = exportSettings()
+        if let currentData = try? JSONSerialization.data(withJSONObject: beforeSettings) {
             pushScreenRedo(screen: settingsScreenKey, data: currentData)
         }
         if let snapshot = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             importSettings(snapshot)
             syncSettingsAfterRestore()
+            showUndoFeedback(describeSettingsDiff(before: beforeSettings, after: snapshot))
         }
         refreshScreen()
     }
 
     private func redoSettings(refreshScreen: @escaping () -> Void) {
         guard let data = popScreenRedo(screen: settingsScreenKey) else { return }
-        if let currentData = try? JSONSerialization.data(withJSONObject: exportSettings()) {
+        let beforeSettings = exportSettings()
+        if let currentData = try? JSONSerialization.data(withJSONObject: beforeSettings) {
             pushScreenUndo(screen: settingsScreenKey, data: currentData)
         }
         if let snapshot = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             importSettings(snapshot)
             syncSettingsAfterRestore()
+            showRedoFeedback(describeSettingsDiff(before: beforeSettings, after: snapshot))
         }
         refreshScreen()
     }
@@ -706,6 +980,8 @@ class GameEngine: ObservableObject {
         guard undoRedoEnabled else {
             undoHandler = nil
             redoHandler = nil
+            undoLabel = nil
+            redoLabel = nil
             return
         }
         undoHandler = screenHasUndo(settingsScreenKey) ? { [weak self] in
@@ -714,6 +990,7 @@ class GameEngine: ObservableObject {
         redoHandler = screenHasRedo(settingsScreenKey) ? { [weak self] in
             self?.redoSettings(refreshScreen: refreshScreen)
         } : nil
+        refreshUndoRedoLabels()
     }
 
     private func beginSettingsTracking() {
@@ -726,6 +1003,11 @@ class GameEngine: ObservableObject {
         currentUndoScreen = nil
         undoHandler = nil
         redoHandler = nil
+        undoLabel = nil
+        redoLabel = nil
+        undoTargetButtonIndex = nil
+        redoTargetButtonIndex = nil
+        undoRedoFeedback = nil
     }
 
     // MARK: - Input Handling
@@ -742,7 +1024,7 @@ class GameEngine: ObservableObject {
             self.dpadNPCHandler = nil
             self.currentMenuOptions = options.enumerated().map { index, text in
                 let tint = Self.autoTint(text)
-                let compact = text == "?" || text == "⏮" || text == "⏭"
+                let compact = text == "?" || text == "?\u{0338}" || text == "<<" || text == ">>"
                 return MenuOption(text, isDefault: index == defaultIndex, tint: tint, compact: compact)
             }
             self.awaitingTextInput = false
@@ -762,7 +1044,7 @@ class GameEngine: ObservableObject {
             self.dpadNPCLabel = nil
             self.dpadNPCHandler = nil
             self.currentMenuOptions = options.map { opt in
-                if !opt.isCompactNav && (opt.text == "?" || opt.text == "⏮" || opt.text == "⏭") {
+                if !opt.isCompactNav && (opt.text == "?" || opt.text == "?\u{0338}" || opt.text == "<<" || opt.text == ">>") {
                     return MenuOption(opt.text, isDefault: opt.isDefault, isDisabled: opt.isDisabled, isAlert: opt.isAlert, tint: opt.tint, compact: true)
                 }
                 return opt
@@ -821,11 +1103,11 @@ class GameEngine: ObservableObject {
         // Page 0: might need ▸ only. Middle pages: ◂ + ▸. Last page: ◂ only.
         let hasBack = page > 0
 
-        // Compact nav items (⏮/⏭/pinned) share a single button-sized cell visually
-        // but still occupy array slots. Since they share 1 cell, treat as 1 visual slot.
-        let firstNavItems = 1 + pinnedCount // ⏭ + pinned (e.g. ?)
-        let middleNavItems = 2 + pinnedCount // ⏮ + ⏭ + pinned
-        let lastNavItems = 1 + pinnedCount // ⏮ + pinned
+        // Compact nav items (<</>>/pinned) share a single button-sized cell visually.
+        // Reserve just 1 visual slot for the compact nav cell, regardless of item count.
+        let firstNavItems = 1   // compact cell: [>> + pinned]
+        let middleNavItems = 1  // compact cell: [<< + >> + pinned]
+        let lastNavItems = 1    // compact cell: [<< + pinned]
         let firstPageSlots = max(1, limit - firstNavItems)
         let middlePageSlots = max(1, limit - middleNavItems)
         let lastPageSlots = max(1, limit - lastNavItems)
@@ -874,7 +1156,7 @@ class GameEngine: ObservableObject {
         var mapping: [Int] = [] // maps visible index to action
 
         if hasBack {
-            visibleOptions.append("⏮")
+            visibleOptions.append("<<")
             mapping.append(-1) // sentinel for back
         }
 
@@ -883,13 +1165,13 @@ class GameEngine: ObservableObject {
             mapping.append(i) // index into allOptions
         }
 
-        // Add pinned (Help) before ⏭ so Help is bottom-left, ⏭ bottom-right
+        // Add pinned (Help) before >> so Help is bottom-left, >> bottom-right
         if hasMore {
             for p in pinned {
                 visibleOptions.append(p)
                 mapping.append(-3) // sentinel for pinned
             }
-            visibleOptions.append("⏭")
+            visibleOptions.append(">>")
             mapping.append(-2) // sentinel for more
         } else {
             for p in pinned {
@@ -902,7 +1184,7 @@ class GameEngine: ObservableObject {
         let menuOpts = visibleOptions.enumerated().map { idx, text -> MenuOption in
             let m = mapping[idx]
             if m == -1 || m == -2 || m == -3 {
-                // Navigation (⏮/⏭) and pinned (?) — compact
+                // Navigation (<</>>) and pinned (?) — compact
                 return MenuOption(text, tint: .navigation, compact: true)
             }
             let isDefault: Bool
@@ -920,10 +1202,10 @@ class GameEngine: ObservableObject {
             guard idx >= 0 && idx < mapping.count else { return }
             let m = mapping[idx]
             if m == -1 {
-                // ⏮ — go to previous page
+                // << — go to previous page
                 self?.showPaginatedMenu(allOptions, page: safePage - 1, pinned: pinned, defaultIndex: defaultIndex, handler: handler)
             } else if m == -2 {
-                // ⏭ — go to next page
+                // >> — go to next page
                 self?.showPaginatedMenu(allOptions, page: safePage + 1, pinned: pinned, defaultIndex: defaultIndex, handler: handler)
             } else if m >= 0 {
                 handler(m)
@@ -1012,7 +1294,7 @@ class GameEngine: ObservableObject {
             || lower == "back" || lower == "quit" || lower == "save & quit"
             || lower.hasPrefix("delete") || lower.hasPrefix("clear all")
             || lower.hasPrefix("yes, delete") || lower.hasPrefix("quit")
-            || text == "?" || text == "⏮" || text == "⏭" { return .navigation }
+            || text == "?" || text == "?\u{0338}" || text == "<<" || text == ">>" { return .navigation }
         // Chat
         if lower == "chat" { return .cyan }
         return .normal
@@ -1023,7 +1305,7 @@ class GameEngine: ObservableObject {
         DispatchQueue.main.async {
             self.directionExits = exits
             self.currentMenuOptions = options.map { opt in
-                if !opt.isCompactNav && (opt.text == "?" || opt.text == "⏮" || opt.text == "⏭") {
+                if !opt.isCompactNav && (opt.text == "?" || opt.text == "?\u{0338}" || opt.text == "<<" || opt.text == ">>") {
                     return MenuOption(opt.text, isDefault: opt.isDefault, isDisabled: opt.isDisabled, isAlert: opt.isAlert, tint: opt.tint, compact: true)
                 }
                 return opt
@@ -1053,7 +1335,7 @@ class GameEngine: ObservableObject {
             self.directionExits = [:]
             self.securedExits = []
             self.currentMenuOptions = options.enumerated().map { index, text in
-                let compact = text == "?" || text == "⏮" || text == "⏭"
+                let compact = text == "?" || text == "?\u{0338}" || text == "<<" || text == ">>"
                 return MenuOption(text, isDefault: index == 0, tint: Self.autoTint(text), compact: compact)
             }
             self.awaitingTextInput = true
@@ -1308,8 +1590,8 @@ class GameEngine: ObservableObject {
             }
         }
 
-        // Symbol aliases: voice "help" → "?", "more"/"next" → "⏭", "back"/"previous" → "⏮"
-        let symbolAliases: [String: String] = ["help": "?", "more": "⏭", "next page": "⏭", "previous": "⏮", "previous page": "⏮"]
+        // Symbol aliases: voice "help" → "?", "more"/"next" → ">>", "back"/"previous" → "<<"
+        let symbolAliases: [String: String] = ["help": "?", "more": ">>", "next page": ">>", "previous": "<<", "previous page": "<<"]
         if let symbol = symbolAliases[lower] {
             if let idx = options.firstIndex(where: { $0.text == symbol && !$0.isDisabled }) {
                 selectButton(idx + 1)
@@ -1731,11 +2013,37 @@ class GameEngine: ObservableObject {
         // Shortcut commands — intercept before handlers
         let lower = trimmed.lowercased()
         if !chatInputMode && inputHandler == nil {
+            // Easter egg: about:dndRPG — instant victory with fabricated stats
+            if lower == "about:dndrpg" {
+                setupEasterEggVictory()
+                return
+            }
+
             if lower == "settings" || lower == "options" || lower == "config" {
                 showSettings()
                 return
             }
-            if lower == "chat" || lower == "talk" {
+            if lower == "about" {
+                showAbout()
+                return
+            }
+            if lower == "hall of fame" || lower == "fame" || lower == "hof" {
+                showHallOfFame()
+                return
+            }
+            if lower == "how to play" || lower == "how" || lower == "tutorial" {
+                showHowToPlay()
+                return
+            }
+            if lower == "bestiary" || lower == "monsters" {
+                showBestiary()
+                return
+            }
+            if lower == "gallery" || lower == "lore" || lower == "names" {
+                showGalleryAndLore()
+                return
+            }
+            if lower == "chat" || lower == "talk" || lower == "dm" || lower == "dungeon master" {
                 if dungeon != nil {
                     showPartyChat()
                 } else {
@@ -1750,9 +2058,43 @@ class GameEngine: ObservableObject {
                     return
                 }
             }
-            if lower == "inventory" || lower == "i" || lower == "pack" {
+            if lower == "save" || lower == "save game" {
+                if dungeon != nil {
+                    quickSave()
+                    return
+                }
+            }
+            if lower == "load" || lower == "load game" {
+                showLoadGameMenu(returnTo: .exploration)
+                return
+            }
+            if lower == "inventory" || lower == "i" || lower == "pack" || lower == "items" {
                 if dungeon != nil {
                     showInventory()
+                    return
+                }
+            }
+            if lower == "party" || lower == "party status" || lower == "status" {
+                if dungeon != nil {
+                    showPartyStatus()
+                    return
+                }
+            }
+            if lower == "map" {
+                if dungeon != nil, gameState == .exploring {
+                    printExplorationMap()
+                    return
+                }
+            }
+            if lower == "quit" || lower == "exit" || lower == "main menu" || lower == "menu" {
+                if let close = closeHandler {
+                    close()
+                    return
+                }
+            }
+            if lower == "new game" || lower == "new adventure" || lower == "new" {
+                if gameState == .mainMenu {
+                    startNewGame()
                     return
                 }
             }
@@ -1964,9 +2306,9 @@ class GameEngine: ObservableObject {
         print("A text-based role-playing game", color: .dimGreen, centered: true)
         print("")
 
-        // Dragon mascot — animated GIF (positioned ~1/3 down screen)
+        // Dragon & castle art on the opening screen
         DispatchQueue.main.async {
-            self.dragonGifName = "dragon_castle"
+            self.menuImageName = "DragonCastle"
         }
         print("")
 
@@ -2218,21 +2560,29 @@ class GameEngine: ObservableObject {
     }
 
     private func showPlayHelp() {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Play Menu Help")
-        print("")
-        print("  NEW ADVENTURE", color: .cyan, bold: true)
-        printWrapped("Start a fresh adventure. Create your party, choose a dungeon, and begin exploring. Long-press for a quick start with a random party.", indent: 2, color: .dimGreen)
-        print("")
-        print("  LOAD SAVES", color: .cyan, bold: true)
-        printWrapped("Browse your saved adventures with full details — party members, dungeon level, game time, and save dates. Tap to load, or long-press a save to load the latest instantly.", indent: 2, color: .dimGreen)
-        print("")
-        print("  MANAGE SAVES", color: .cyan, bold: true)
-        printWrapped("Delete old saves or manage cloud saves. Each adventure can have multiple save points (breakpoints) that you can return to.", indent: 2, color: .dimGreen)
-        print("")
-
-        closeHandler = { [weak self] in self?.showPlayMenu() }
+        let hasSaves = SaveGameManager.shared.listSlots().count > 0
+        showInlineHelp {
+            self.printTitle("Play Menu Help")
+            self.print("")
+            self.print("  NEW ADVENTURE", color: .cyan, bold: true)
+            self.printWrapped("Start a fresh adventure. Create your party, choose a dungeon, and begin exploring. Long-press for a quick start with a random party.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  CONTINUE QUEST", color: .cyan, bold: true)
+            if hasSaves {
+                self.printWrapped("Resume a saved adventure. Browse your saves with full details — party members, dungeon level, game time, and save dates. Tap to load.", indent: 2, color: .dimGreen)
+            } else {
+                self.printWrapped("Appears when you have saved adventures. Save during a quest to create a save point you can return to later.", indent: 2, color: .dimGreen)
+            }
+            self.print("")
+            self.print("  MANAGE SAVES", color: .cyan, bold: true)
+            self.printWrapped("Delete old saves or manage cloud saves. Each adventure can have multiple save points that you can return to.", indent: 2, color: .dimGreen)
+            self.print("")
+            if self.multiplayerEnabled {
+                self.print("  MULTIPLAYER MATCHES", color: .cyan, bold: true)
+                self.printWrapped("Active Game Centre matches appear as cyan buttons. Flashing buttons indicate incoming invites.", indent: 2, color: .dimGreen)
+                self.print("")
+            }
+        }
     }
 
     private func confirmDeleteSlot(_ slot: SaveSlot) {
@@ -2374,23 +2724,45 @@ class GameEngine: ObservableObject {
         inHelpContext = true
         currentHelpTopic = -1
         printTitle("How to Play")
-        printWrapped("Navigate with buttons, type commands at the > prompt, or tap the mic to speak. Swipe left to go back from any screen.", indent: 2, color: .dimGreen)
+        print("")
+        print("  • Explore", color: .brightGreen, bold: true)
+        printWrapped("    the dungeon on an adventure with your companions", color: .green)
+        print("")
+        print("  • Meet", color: .brightGreen, bold: true)
+        printWrapped("    interesting creatures in a dark, damp dungeon", color: .green)
+        print("")
+        print("  • Enjoy", color: .brightGreen, bold: true)
+        printWrapped("    yourself fighting and running from scary monsters and super creeps", color: .green)
+        print("")
+        print("  • Beat", color: .brightGreen, bold: true)
+        printWrapped("    the Boss on each level to go deeper", color: .green)
+        print("")
+        print("  • Level Up", color: .brightGreen, bold: true)
+        printWrapped("    your abilities with experience", color: .green)
+        print("")
+        printWrapped("  Make it to the Hall of Fame — if you're good enough.", color: .brightGreen, bold: true)
+        print("")
+        if voiceMenuEnabled {
+            printWrapped("Navigate with buttons, type commands at the > prompt, or tap the mic to speak. Swipe left to go back, swipe right to continue.", indent: 2, color: .dimGreen)
+        } else {
+            printWrapped("Navigate with buttons or type commands at the > prompt. Swipe left to go back, swipe right to continue.", indent: 2, color: .dimGreen)
+        }
         print("")
 
         let helpTopics = ["Getting Started", "Exploration", "Combat",
                           "Character & Party", "Recovery",
                           "Dungeon Master", "Multiplayer", "Tips & Tricks",
-                          "Bestiary", "Rogues Gallery", "Name Lore"]
+                          "Bestiary", "Gallery & Lore"]
         let helpActions: [(GameEngine) -> Void] = [
             { $0.showHelpGettingStarted() }, { $0.showHelpExploration() },
             { $0.showHelpCombat() }, { $0.showHelpCharacter() },
             { $0.showHelpRecovery() }, { $0.showHelpDM() },
             { $0.showHelpMultiplayer() }, { $0.showHelpTips() },
             { $0.showBestiary() },
-            { $0.showNPCBestiary() }, { $0.showNameLore() },
+            { $0.showGalleryAndLore() },
         ]
 
-        showPaginatedMenu(helpTopics, defaultIndex: currentHelpTopic >= 0 ? currentHelpTopic : nil) { [weak self] idx in
+        showPaginatedMenu(helpTopics, pinned: ["?"], defaultIndex: currentHelpTopic >= 0 ? currentHelpTopic : nil) { [weak self] idx in
             guard let self = self, idx >= 0 && idx < helpActions.count else { return }
             if idx == self.currentHelpTopic {
                 // Same topic re-pressed — flash the text as feedback
@@ -2401,11 +2773,65 @@ class GameEngine: ObservableObject {
             helpActions[idx](self)
         }
 
+        // Wrap menuHandler to intercept pinned ? button
+        let originalHandler = menuHandler
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            // Check if the tapped option is "?"
+            let idx = choice - 1
+            if idx >= 0 && idx < self.currentMenuOptions.count && self.currentMenuOptions[idx].text == "?" {
+                self.showHowToPlayHelp()
+                return
+            }
+            originalHandler?(choice)
+        }
+
         closeHandler = { [weak self] in
             self?.closeHandler = nil
             self?.currentHelpTopic = -1
             self?.inHelpContext = false
             self?.showMainMenu()
+        }
+    }
+
+    private func showHowToPlayHelp() {
+        showInlineHelp {
+            self.printTitle("How to Play — Help")
+            self.print("")
+
+            self.print("  THE GAME", color: .cyan, bold: true)
+            self.printWrapped("This is a dungeon-crawling adventure inspired by classic D&D 5th Edition rules. Create a party of up to four heroes — choosing their race, class, and abilities — then plunge into a randomly generated dungeon filled with treasure, traps, and terrible creatures.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("Explore rooms, light your torch, search for hidden loot, and fight monsters using turn-based combat with dice rolls, spells, and special abilities. Meet interesting characters along the way — some friendly, some decidedly not — and enjoy yourself running scared from scary monsters and super creeps.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("Each dungeon level has a Boss guarding the way deeper. Defeat the Boss to descend, gaining experience and levelling up your party as you go. The deeper you venture, the tougher the challenges — but the greater the rewards.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("If you're skilled enough (and lucky enough) to conquer the final level, your heroes earn a place in the Hall of Fame — a permanent record of your greatest adventures.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  TOPICS", color: .cyan, bold: true)
+            self.printWrapped("Each button opens a different help topic. Tap a topic to read about it — the text appears above the buttons. Tap the same topic again to flash the text as a reminder.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  GETTING STARTED", color: .cyan, bold: true)
+            self.printWrapped("Overview of the game: creating a party, controls, movement, and button colours.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  EXPLORATION & COMBAT", color: .cyan, bold: true)
+            self.printWrapped("How to navigate the dungeon, search rooms, manage your torch, and fight monsters.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  CHARACTER & RECOVERY", color: .cyan, bold: true)
+            self.printWrapped("Character types, races, classes, ability scores, resting, healing, and levelling up.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  DM, MULTIPLAYER & TIPS", color: .cyan, bold: true)
+            self.printWrapped("Configure the AI Dungeon Master, play with friends, and learn advanced strategies.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  BESTIARY & GALLERY", color: .cyan, bold: true)
+            self.printWrapped("Browse all monsters, NPCs you've met, and the name lore behind the characters.", indent: 2, color: .dimGreen)
+            self.print("")
         }
     }
 
@@ -2441,10 +2867,21 @@ class GameEngine: ObservableObject {
         print("  - Type text when prompted", color: .dimGreen)
         print("  - Tap ✕ to go back", color: .dimGreen)
         print("  - Swipe left to go back", color: .dimGreen)
-        print("  - Long-press 'Done' to jump", color: .dimGreen)
-        print("    back to the game view", color: .dimGreen)
-        print("  - Tap speaker icon to toggle", color: .dimGreen)
-        print("    narration mode on/off", color: .dimGreen)
+        print("  - Swipe right to continue", color: .dimGreen)
+        if voiceMenuEnabled {
+            print("  - Tap mic icon to speak commands", color: .dimGreen)
+            print("  - Tap speaker icon to toggle", color: .dimGreen)
+            print("    narration mode on/off", color: .dimGreen)
+            print("  Voice Menus: ON", color: .brightGreen)
+        } else {
+            print("  Voice Menus: OFF", color: .red)
+            printWrapped("Enable in Settings > Accessibility to use voice input and narration.", indent: 4, color: .dimGreen)
+        }
+        print("")
+        printWrapped("When there are more buttons than fit on one screen, a compact navigation bar appears in the bottom-right: [<< | ? | >>]. Tap << for the previous page, >> for the next page, and ? for help.", indent: 2, color: .dimGreen)
+        print("")
+        print("UNDO / REDO", color: .cyan, bold: true)
+        printWrapped("On edit screens, labelled Undo/Redo buttons appear showing exactly what they will revert (e.g. 'Undo:STR'). Undo/Redo must be enabled in Settings > Gameplay (long-press this text to go there).", indent: 2, color: .dimGreen)
         print("")
         print("MOVEMENT", color: .cyan, bold: true)
         printWrapped("You can move by typing a direction at any prompt: N, S, E, W, or north, south, east, west, or 'go north', 'move south', etc.", indent: 2, color: .dimGreen)
@@ -2458,12 +2895,12 @@ class GameEngine: ObservableObject {
         print("  Dim green — navigation (Done,", color: .dimGreen)
         print("    Save, Continue)", color: .dimGreen)
         print("  Cyan — chat, NPCs & multiplayer", color: .cyan)
-        print("  Amber — room actions, NPCs,", color: .yellow)
+        print("  Amber — NPC actions, room actions,", color: .yellow)
         print("    companions & special actions", color: .yellow)
         print("  Red — destructive (delete, drop)", color: .red)
         print("")
 
-        showMenu(["DM Settings", "Accessibility", "Gameplay"])
+        showMenu(["DM Settings", "Accessibility", "Gameplay", "?"])
         closeHandler = { [weak self] in self?.showHowToPlay() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
@@ -2477,8 +2914,65 @@ class GameEngine: ObservableObject {
             case 3:
                 self.showGameplaySettings()
                 self.closeHandler = { [weak self] in self?.showHelpGettingStarted() }
+            case 4:
+                self.showGettingStartedHelp()
             default: break
             }
+        }
+
+        // Tappable text links
+        setupHelpLinks([
+            (text: "Voice Menus: ON", action: { [weak self] in
+                self?.showAccessibilityMenu()
+                self?.closeHandler = { [weak self] in self?.showHelpGettingStarted() }
+            }),
+            (text: "Voice Menus: OFF", action: { [weak self] in
+                self?.showAccessibilityMenu()
+                self?.closeHandler = { [weak self] in self?.showHelpGettingStarted() }
+            }),
+            (text: "Settings > Accessibility", action: { [weak self] in
+                self?.showAccessibilityMenu()
+                self?.closeHandler = { [weak self] in self?.showHelpGettingStarted() }
+            }),
+            (text: "Undo/Redo must be enabled", action: { [weak self] in
+                self?.showGameplaySettings()
+                self?.closeHandler = { [weak self] in self?.showHelpGettingStarted() }
+            }),
+        ])
+    }
+
+    private func showGettingStartedHelp() {
+        showInlineHelp {
+            self.printTitle("Getting Started — Help")
+            self.print("")
+
+            self.print("  THE ADVENTURE", color: .cyan, bold: true)
+            self.printWrapped("Create a party of heroes and explore a randomly generated dungeon. Fight monsters, collect treasure, and level up. Defeat the Boss on each level to descend deeper. If you survive to the end, your party earns a place in the Hall of Fame.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  THIS PAGE", color: .cyan, bold: true)
+            self.printWrapped("This is a quick-reference guide covering how to play the game. Read through it before your first adventure, or come back any time from How to Play on the main menu.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  CONTROLS", color: .cyan, bold: true)
+            self.printWrapped("Tap buttons to choose actions. Type text at the > prompt when asked (e.g. naming a character). Swipe left to go back from any screen. Swipe right to continue when there is a single option.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  CARD NAVIGATION", color: .cyan, bold: true)
+            self.printWrapped("On character cards, bestiary entries, and Hall of Fame tales, use the <</>> buttons to browse between entries. A dice button picks a random entry.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  BUTTON PAGING", color: .cyan, bold: true)
+            self.printWrapped("When there are more buttons than fit on screen, << and >> appear to page through them. Long-press << or >> to skip 3 pages at once.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  UNDO & REDO", color: .cyan, bold: true)
+            self.printWrapped("During character creation and settings, labelled Undo/Redo buttons appear (e.g. 'Undo:STR', 'Redo:Name'). These show exactly what will change before you tap. After tapping, a message confirms what was reverted. Undo/Redo must be enabled in Settings > Gameplay.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  SHORTCUTS", color: .cyan, bold: true)
+            self.printWrapped("DM Settings, Accessibility, and Gameplay buttons below take you straight to those settings pages. You can also reach settings during a game from Party Status.", indent: 2, color: .dimGreen)
+            self.print("")
         }
     }
 
@@ -3353,11 +3847,13 @@ class GameEngine: ObservableObject {
         let allMonsters = MonsterType.allCases
         if let idx = allMonsters.firstIndex(of: monster) {
             cardPositionLabel = cardLabel(idx + 1, of: allMonsters.count)
-            swipeLeftHandler = idx + 1 < allMonsters.count ? { [weak self] in
-                self?.showMonsterDetail(allMonsters[idx + 1])
+            swipeLeftHandler = allMonsters.count > 1 ? { [weak self] in
+                let next = (idx + 1) % allMonsters.count
+                self?.showMonsterDetail(allMonsters[next])
             } : nil
-            swipeRightHandler = idx > 0 ? { [weak self] in
-                self?.showMonsterDetail(allMonsters[idx - 1])
+            swipeRightHandler = allMonsters.count > 1 ? { [weak self] in
+                let prev = (idx - 1 + allMonsters.count) % allMonsters.count
+                self?.showMonsterDetail(allMonsters[prev])
             } : nil
             swipeRandomHandler = { [weak self] in
                 let r = Int.random(in: 0..<allMonsters.count)
@@ -3412,6 +3908,22 @@ class GameEngine: ObservableObject {
     }
 
     // MARK: - NPC Bestiary
+
+    func showGalleryAndLore() {
+        clearTerminal()
+        printTitle("Gallery & Lore")
+        print("")
+        printWrapped("Browse NPCs you've met in the dungeon, or explore the name lists used to generate characters.", indent: 2, color: .dimGreen)
+        print("")
+
+        showMenu(["Rogues Gallery", "Name Lore"])
+        closeHandler = { [weak self] in self?.showHowToPlay() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 { self.showNPCBestiary() }
+            else if choice == 2 { self.showNameLore() }
+        }
+    }
 
     func showNPCBestiary() {
         clearTerminal()
@@ -3584,11 +4096,13 @@ class GameEngine: ObservableObject {
         let allNPCs = NPCType.allCases
         if let idx = allNPCs.firstIndex(of: npc) {
             cardPositionLabel = cardLabel(idx + 1, of: allNPCs.count)
-            swipeLeftHandler = idx + 1 < allNPCs.count ? { [weak self] in
-                self?.showNPCDetail(allNPCs[idx + 1])
+            swipeLeftHandler = allNPCs.count > 1 ? { [weak self] in
+                let next = (idx + 1) % allNPCs.count
+                self?.showNPCDetail(allNPCs[next])
             } : nil
-            swipeRightHandler = idx > 0 ? { [weak self] in
-                self?.showNPCDetail(allNPCs[idx - 1])
+            swipeRightHandler = allNPCs.count > 1 ? { [weak self] in
+                let prev = (idx - 1 + allNPCs.count) % allNPCs.count
+                self?.showNPCDetail(allNPCs[prev])
             } : nil
             swipeRandomHandler = { [weak self] in
                 let r = Int.random(in: 0..<allNPCs.count)
@@ -3877,6 +4391,16 @@ class GameEngine: ObservableObject {
             NameEntry(name: "Nine Lives", source: "Ace Double D-413 (1959)", description: "From Harlan Ellison's The Man With Nine Lives — a hardboiled investigator discovers that certain people have been 'dying' and returning with completely different personalities. Nine lives, nine identities, and someone is pulling the strings. Ellison's razor-sharp prose cuts through a mystery that goes deeper than murder.", category: "hero", art: [" (9x) ", " /|\\ ", " LIVE ", " DIES"], power: 6, cunning: 9, magic: 3, fame: 8, charm: 6, year: 1959),
             NameEntry(name: "Donal Graeme", source: "Ace Double D-449 (1960)", description: "From Gordon R. Dickson's The Genetic General (later Dorsai!) — the ultimate military genius, born on the soldier world of Dorsai. In a far future where humanity has splintered into specialist cultures, Donal sees patterns no one else can. He fights not for territory but for human evolution itself. The perfect warlord.", category: "hero", art: [" \\V/ ", " /|\\ ", " DORS ", " !!!!"], power: 10, cunning: 10, magic: 2, fame: 9, charm: 7, year: 1960),
             NameEntry(name: "Dosvard Rhyn", source: "Ace Double D-096 (1955)", description: "Kartr Rhyn from Andre Norton's The Last Planet (later Star Rangers) — the Galactic Patrol is dissolving, the empire is crumbling, and a patrol ship crash-lands on an uncharted world. The crew must survive on a planet that doesn't want them, build a new civilisation from nothing, and face what lurks in the ruins. Norton at her best.", category: "hero", art: [" *>*  ", " /|\\ ", " STAR ", " RANG"], power: 7, cunning: 7, magic: 4, fame: 7, charm: 6, year: 1955),
+            NameEntry(name: "Kartr Rhyn", source: "Ace Double D-096 (1955)", description: "The lead officer in Andre Norton's The Last Planet, Kartr Rhyn is forced to turn stranded patrol survivors into a functioning frontier force. He combines military training with diplomacy, because on Astra every alliance matters. A practical captain built for long campaigns.", category: "hero", art: [" *>*  ", " /|\\ ", " ASTRA", " CAPT"], power: 7, cunning: 8, magic: 3, fame: 7, charm: 6, year: 1955),
+            NameEntry(name: "Robert Hedrock", source: "Ace Double D-053 (1954)", description: "From A. E. van Vogt's The Weapon Shops of Isher. Hedrock moves between identities and centuries to defend civilian freedom against imperial overreach. He is strategist, infiltrator, and political wildcard in one. Think rogue-scholar with a very long game.", category: "hero", art: [" [H] ", " /|\\ ", " ISHR ", " PLAN"], power: 6, cunning: 10, magic: 4, fame: 7, charm: 6, year: 1954),
+            NameEntry(name: "Leon Cartwright", source: "Ace Double D-103 (1955)", description: "Philip K. Dick's Solar Lottery follows Leon Cartwright as he is pulled into a lethal political system where rulers are chosen by chance and challenged by ritual violence. He survives by reading motives quickly and adapting faster than the rules can shift.", category: "hero", art: [" [L] ", " /|\\ ", " LOTTO", " RUN!"], power: 5, cunning: 8, magic: 2, fame: 7, charm: 6, year: 1955),
+            NameEntry(name: "Ted Barton", source: "Ace Double D-249 (1957)", description: "In Philip K. Dick's The Cosmic Puppets, Ted Barton returns to his hometown and discovers reality has been rewritten around him. He acts as witness and investigator while mythic powers fight for control. He is less warrior, more truth-seeker in a hostile illusion.", category: "hero", art: [" [T] ", " /|\\ ", " REAL ", " ??? "], power: 4, cunning: 8, magic: 5, fame: 6, charm: 6, year: 1957),
+            NameEntry(name: "Claude Glystra", source: "Ace Double D-295 (1958)", description: "Jack Vance's Big Planet stars Claude Glystra, a castaway crossing an immense world where technology often fails and culture changes valley by valley. Glystra survives through social intelligence, nerve, and improvisation instead of brute force.", category: "hero", art: [" [C] ", " /|\\ ", " VANCE", " WALK "], power: 6, cunning: 9, magic: 2, fame: 7, charm: 7, year: 1958),
+            NameEntry(name: "Greta Forzane", source: "Ace Double D-491 (1961)", description: "Narrator of Fritz Leiber's The Big Time. Greta is an entertainer stationed in a neutral rest zone outside normal time while the Change War rages. Her sharp observational voice turns cosmic conflict into intimate drama. Bard energy with veteran nerves.", category: "hero", art: [" [G] ", " /|\\ ", " TIME ", " VOX "], power: 4, cunning: 9, magic: 6, fame: 8, charm: 8, year: 1961),
+            NameEntry(name: "Null-A City", source: "Ace Double D-031 (1953)", description: "A key setting in The World of Null-A: a logic-driven society centered on semantic discipline, tests of identity, and hidden manipulation. Players entering this city face mental puzzles and political traps before any physical fight starts.", category: "dungeon", art: [" /--\\ ", " NULL ", " CITY ", " \\--/"], power: 6, cunning: 10, magic: 6, fame: 7, charm: 4, year: 1953),
+            NameEntry(name: "Astra Ruins", source: "Ace Double D-096 (1955)", description: "The crash world in The Last Planet is full of old structures and environmental hazards that make every expedition risky. Astra is ideal as a dungeon name: unknown history, unstable alliances, and danger beyond line-of-sight.", category: "dungeon", art: [" /--\\ ", " ASTRA", " RUIN ", " \\--/"], power: 7, cunning: 7, magic: 5, fame: 7, charm: 4, year: 1955),
+            NameEntry(name: "Dorsai", source: "Ace Double D-449 (1960)", description: "The soldier world from Gordon R. Dickson's future history. Dorsai exports elite contract troops and military doctrine to the rest of settled space. As a dungeon label, it signals disciplined combat, strategic objectives, and no easy victories.", category: "dungeon", art: [" /--\\ ", " DORS ", " WAR! ", " \\--/"], power: 9, cunning: 9, magic: 2, fame: 9, charm: 5, year: 1960),
+            NameEntry(name: "Change War Station", source: "Ace Double D-491 (1961)", description: "The neutral staging post in The Big Time, positioned outside ordinary chronology. Agents from different centuries recover, argue, and plan their next timeline strike there. Perfect for high-stakes encounters where history itself is mutable terrain.", category: "dungeon", art: [" /--\\ ", " CHNG ", " WARP ", " \\--/"], power: 8, cunning: 9, magic: 8, fame: 8, charm: 6, year: 1961),
         ]
     }
     // swiftlint:enable function_body_length
@@ -4010,68 +4534,66 @@ class GameEngine: ObservableObject {
     private func showNameLoreHelp(category: String) {
         nameLoreAnimTimer?.invalidate()
         nameLoreAnimTimer = nil
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Name Lore Help")
-        print("")
+        showInlineHelp {
+            self.printTitle("Name Lore Help")
+            self.print("")
 
-        print("BROWSING CARDS", color: .cyan, bold: true)
-        printWrapped("Tap a name to see its character card. Swipe left/right or use the arrow buttons to flip through cards. The dice button shows a random card.", indent: 2)
-        print("")
-        printWrapped("Names are grouped by source — books, films, TV, comics, and games. Tap a cluster to see names from that world, or 'Browse Selection' to see them all.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("BROWSING CARDS", color: .cyan, bold: true)
+            self.printWrapped("Tap a name to see its character card. Swipe left/right or use the <</>> buttons to flip through cards. The dice button shows a random card.", indent: 2)
+            self.print("")
+            self.printWrapped("Names are grouped by source — books, films, TV, comics, and games. Tap a cluster to see names from that world, or 'Browse Selection' to see them all.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("USING NAMES IN THE GAME", color: .cyan, bold: true)
-        printWrapped("When creating characters, you can pick a suggested name or type your own. Name Lore is here for inspiration — these are the heroes, villains, and dungeons that inspired D&D and fantasy gaming.", indent: 2)
-        print("")
-        printWrapped("Long-press 'New Adventure' from the main menu for a quick start with random characters. Their names are drawn from Name Lore!", indent: 2, color: .yellow)
-        print("")
+            self.print("USING NAMES IN THE GAME", color: .cyan, bold: true)
+            self.printWrapped("When creating characters, you can pick a suggested name or type your own. Name Lore is here for inspiration — these are the heroes, villains, and dungeons that inspired D&D and fantasy gaming.", indent: 2)
+            self.print("")
+            self.printWrapped("Long-press 'New Adventure' from the main menu for a quick start with random characters. Their names are drawn from Name Lore!", indent: 2, color: .yellow)
+            self.print("")
 
-        if category == "hero" {
-            print("HERO STATS", color: .cyan, bold: true)
-            printWrapped("Each hero card rates five qualities on a 1–10 scale, mapping roughly to D&D ability scores:", indent: 2)
-            print("")
-            print("  Power", color: .yellow, bold: true)
-            printWrapped("Raw fighting strength (→ STR). Power 10 = Conan. Power 1 = Rincewind — relying on legs, not arms.", indent: 4, color: .dimGreen)
-            print("")
-            print("  Cunning", color: .yellow, bold: true)
-            printWrapped("Wits and trickery (→ DEX/INT). Cunning 10 = Granny Weatherwax — she outthinks every problem.", indent: 4, color: .dimGreen)
-            print("")
-            print("  Magic", color: .yellow, bold: true)
-            printWrapped("Arcane or divine power (→ spell slots). Magic 10 = Raistlin. Magic 0 = pure martial fighter.", indent: 4, color: .dimGreen)
-            print("")
-            print("  Fame", color: .yellow, bold: true)
-            printWrapped("How well-known in our world. Fame 10 = Conan, Drizzt. An obscure but powerful character might score low.", indent: 4, color: .dimGreen)
-            print("")
-            print("  Charm", color: .yellow, bold: true)
-            printWrapped("Personality (→ CHA). Charm 10 = Madmartigan, Jareth. Charm 1 = Thomas Covenant.", indent: 4, color: .dimGreen)
-        } else {
-            print("DUNGEON STATS", color: .cyan, bold: true)
-            printWrapped("Each dungeon card rates five qualities on a 1–10 scale:", indent: 2)
-            print("")
-            print("  Danger", color: .yellow, bold: true)
-            printWrapped("Lethality. Danger 10 = Tomb of Horrors — most parties die. Save-or-die traps, no safe resting.", indent: 4, color: .dimGreen)
-            print("")
-            print("  Puzzle", color: .yellow, bold: true)
-            printWrapped("Traps, riddles, and navigation. Puzzle 10 = The Labyrinth. Low Puzzle = straightforward combat.", indent: 4, color: .dimGreen)
-            print("")
-            print("  Magic", color: .yellow, bold: true)
-            printWrapped("Magical energy. Magic 10 = Barad-dur — powerful enchantments and spell-resistant foes.", indent: 4, color: .dimGreen)
-            print("")
-            print("  Fame", color: .yellow, bold: true)
-            printWrapped("Cultural recognition. Fame 10 = Moria. Discover classic locations from fantasy literature.", indent: 4, color: .dimGreen)
-            print("")
-            print("  Dread", color: .yellow, bold: true)
-            printWrapped("Atmosphere and fear. Dread 10 = Mount Doom. Low Dread (Tanelorn) = a place of peace.", indent: 4, color: .dimGreen)
+            if category == "hero" {
+                self.print("HERO STATS", color: .cyan, bold: true)
+                self.printWrapped("Each hero card rates five qualities on a 1–10 scale, mapping roughly to D&D ability scores:", indent: 2)
+                self.print("")
+                self.print("  Power", color: .yellow, bold: true)
+                self.printWrapped("Raw fighting strength (→ STR). Power 10 = Conan. Power 1 = Rincewind — relying on legs, not arms.", indent: 4, color: .dimGreen)
+                self.print("")
+                self.print("  Cunning", color: .yellow, bold: true)
+                self.printWrapped("Wits and trickery (→ DEX/INT). Cunning 10 = Granny Weatherwax — she outthinks every problem.", indent: 4, color: .dimGreen)
+                self.print("")
+                self.print("  Magic", color: .yellow, bold: true)
+                self.printWrapped("Arcane or divine power (→ spell slots). Magic 10 = Raistlin. Magic 0 = pure martial fighter.", indent: 4, color: .dimGreen)
+                self.print("")
+                self.print("  Fame", color: .yellow, bold: true)
+                self.printWrapped("How well-known in our world. Fame 10 = Conan, Drizzt. An obscure but powerful character might score low.", indent: 4, color: .dimGreen)
+                self.print("")
+                self.print("  Charm", color: .yellow, bold: true)
+                self.printWrapped("Personality (→ CHA). Charm 10 = Madmartigan, Jareth. Charm 1 = Thomas Covenant.", indent: 4, color: .dimGreen)
+            } else {
+                self.print("DUNGEON STATS", color: .cyan, bold: true)
+                self.printWrapped("Each dungeon card rates five qualities on a 1–10 scale:", indent: 2)
+                self.print("")
+                self.print("  Danger", color: .yellow, bold: true)
+                self.printWrapped("Lethality. Danger 10 = Tomb of Horrors — most parties die. Save-or-die traps, no safe resting.", indent: 4, color: .dimGreen)
+                self.print("")
+                self.print("  Puzzle", color: .yellow, bold: true)
+                self.printWrapped("Traps, riddles, and navigation. Puzzle 10 = The Labyrinth. Low Puzzle = straightforward combat.", indent: 4, color: .dimGreen)
+                self.print("")
+                self.print("  Magic", color: .yellow, bold: true)
+                self.printWrapped("Magical energy. Magic 10 = Barad-dur — powerful enchantments and spell-resistant foes.", indent: 4, color: .dimGreen)
+                self.print("")
+                self.print("  Fame", color: .yellow, bold: true)
+                self.printWrapped("Cultural recognition. Fame 10 = Moria. Discover classic locations from fantasy literature.", indent: 4, color: .dimGreen)
+                self.print("")
+                self.print("  Dread", color: .yellow, bold: true)
+                self.printWrapped("Atmosphere and fear. Dread 10 = Mount Doom. Low Dread (Tanelorn) = a place of peace.", indent: 4, color: .dimGreen)
+            }
+
+            self.print("")
+
+            self.print("COMPARING CARDS", color: .cyan, bold: true)
+            self.printWrapped("No single card wins on every stat — that's the fun. A Magic 10 hero might have Power 1. A Fame 10 dungeon might have low Danger. Compare favourites and argue with friends!", indent: 2, color: .dimGreen)
+            self.print("")
         }
-
-        print("")
-
-        print("COMPARING CARDS", color: .cyan, bold: true)
-        printWrapped("No single card wins on every stat — that's the fun. A Magic 10 hero might have Power 1. A Fame 10 dungeon might have low Danger. Compare favourites and argue with friends!", indent: 2, color: .dimGreen)
-        print("")
-
-        closeHandler = { [weak self] in self?.showNameLoreList(category: category) }
     }
 
     /// Wrap text to fit inside a card of given width, returning 1 or 2 lines.
@@ -4174,11 +4696,13 @@ class GameEngine: ObservableObject {
 
         // Swipe navigation
         cardPositionLabel = cardLabel(index + 1, of: entries.count)
-        swipeLeftHandler = index + 1 < entries.count ? { [weak self] in
-            self?.showNameCard(entries, index: index + 1, onBack: onBack)
+        swipeLeftHandler = entries.count > 1 ? { [weak self] in
+            let next = (index + 1) % entries.count
+            self?.showNameCard(entries, index: next, onBack: onBack)
         } : nil
-        swipeRightHandler = index > 0 ? { [weak self] in
-            self?.showNameCard(entries, index: index - 1, onBack: onBack)
+        swipeRightHandler = entries.count > 1 ? { [weak self] in
+            let prev = (index - 1 + entries.count) % entries.count
+            self?.showNameCard(entries, index: prev, onBack: onBack)
         } : nil
         swipeRandomHandler = entries.count > 1 ? { [weak self] in
             let r = Int.random(in: 0..<entries.count)
@@ -4564,9 +5088,8 @@ class GameEngine: ObservableObject {
         print("")
 
         print("ACCESSIBILITY:", color: .cyan, bold: true)
-        let iconLabel = iconScaleSetting == 0 ? "Normal" : (iconScaleSetting == 1 ? "Large" : "XL")
         let modeLabel = speech.companionVoiceMode == .characterAppropriate ? "Character" : "Random"
-        print("  Font: \(fontSizeSetting.displayName)  Icons: \(iconLabel)  Hits: \(hitAnimationsEnabled ? "On" : "Off")", color: .dimGreen)
+        print("  Size: \(fontSizeSetting.displayName)  Hits: \(hitAnimationsEnabled ? "On" : "Off")", color: .dimGreen)
         print("  DM Voice: \(speech.isEnabled ? "On" : "Off")  Companions: \(modeLabel)  Menus: \(voiceMenuEnabled ? "On" : "Off")", color: .dimGreen)
         print("")
 
@@ -4580,7 +5103,7 @@ class GameEngine: ObservableObject {
         let timeLimitText = gameTimeLimit == 0 ? "Off" : formatTimeLimitValue(gameTimeLimit)
         print("  NPCs: \(npcsEnabled ? "On" : "Off")  Poison: \(poisonEnabled ? "On" : "Off")  Time: \(timeLimitText)", color: .dimGreen)
         let logText = adventureLogLimit == 0 ? "Off" : "\(adventureLogLimit)"
-        print("  Nav: \(useArrowNavigation ? "Arrows" : "Swipe")  Info: \(String(format: "%.1f", infoTimeout))s  Hold: \(String(format: "%.1f", longPressDuration))s", color: .dimGreen)
+        print("  Nav: \(useArrowNavigation ? "Buttons" : "Swipe")  Info: \(String(format: "%.1f", infoTimeout))s  Hold: \(String(format: "%.1f", longPressDuration))s", color: .dimGreen)
         print("  Log: \(logText)  Idle: \(idlePromptsEnabled ? "On" : "Off")  Keyboard: \(useCustomKeyboard ? "Custom" : "System")", color: .dimGreen)
         print("  Undo/Redo: \(undoRedoEnabled ? "On" : "Off")", color: .dimGreen)
         print("")
@@ -4589,9 +5112,10 @@ class GameEngine: ObservableObject {
         print("  Autosave: \(autosaveInterval.displayName)", color: .dimGreen)
         print("")
 
-        var options = ["DM Settings", "Accessibility", "Mood", "Gameplay", "Saving", "?"]
-
-        showMenu(options)
+        var menuOpts = ["DM Settings", "Accessibility", "Mood", "Gameplay", "Saving"].map { MenuOption($0) }
+        menuOpts.append(MenuOption("Reset", tint: .danger))
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        showMenuOptions(menuOpts)
 
         updateSettingsUndoRedo { [weak self] in self?.showSettings() }
 
@@ -4602,13 +5126,14 @@ class GameEngine: ObservableObject {
         }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
-            let selected = options[choice - 1]
-            switch selected {
+            let text = menuOpts[choice - 1].text
+            switch text {
             case "DM Settings": self.showDMSettingsSubMenu()
             case "Accessibility": self.showAccessibilityMenu()
             case "Mood": self.showMusicSettings()
             case "Gameplay": self.showGameplaySettings()
             case "Saving": self.showSaveSettings()
+            case "Reset": self.confirmResetToDefaults()
             case "?": self.showSettingsHelp()
             default: break
             }
@@ -4685,6 +5210,10 @@ class GameEngine: ObservableObject {
         print("LICENSE", color: .cyan, bold: true)
         printWrapped("D&D 5e SRD under the Open Gaming License (OGL) v1.0a by Wizards of the Coast LLC.", indent: 2, color: .dimGreen)
         print("")
+        print("")
+        print("")
+        print("")
+        print("  about:dndRPG", color: .dimGreen)
 
         closeHandler = onBack ?? { [weak self] in self?.showHowToPlay() }
     }
@@ -4697,87 +5226,86 @@ class GameEngine: ObservableObject {
 
         let speech = SpeechEngine.shared
 
-        print("FONT SIZE:", color: .cyan, bold: true)
-        print("  \(fontSizeSetting.displayName)", color: .brightGreen)
-        printWrapped("Increase text size if you find the default hard to read.", indent: 2, color: .dimGreen)
-        print("")
-
-        print("ICON SIZE:", color: .cyan, bold: true)
-        let iconLabel = iconScaleSetting == 0 ? "Normal" : (iconScaleSetting == 1 ? "Large" : "Extra Large")
-        print("  \(iconLabel)", color: .brightGreen)
-        printWrapped("Scale up the close, return, and microphone icons for easier tapping.", indent: 2, color: .dimGreen)
+        // Combined display size: Small/Medium/Large controls both font and icons
+        let displaySizeName = fontSizeSetting.displayName
+        print("DISPLAY SIZE:", color: .cyan, bold: true)
+        print("  \(displaySizeName)", color: .brightGreen)
+        printWrapped("Controls text size and icon size together.", indent: 2, color: .dimGreen)
         print("")
 
         print("HIT ANIMATIONS:", color: .cyan, bold: true)
         print("  \(hitAnimationsEnabled ? "On" : "Off")", color: hitAnimationsEnabled ? .brightGreen : .red)
-        printWrapped("Small screen flashes when attacks land in combat. Draws attention to the action and adds visual feedback.", indent: 2, color: .dimGreen)
+        printWrapped("Screen flashes in combat. Turn off if sensitive to flashing.", indent: 2, color: .dimGreen)
         print("")
 
         print("DM VOICE:", color: .cyan, bold: true)
         print("  \(speech.isEnabled ? "On" : "Off")", color: speech.isEnabled ? .brightGreen : .red)
-        printWrapped("Text-to-speech narration. Reduces the need to read — helpful for vision difficulties or a hands-free experience.", indent: 2, color: .dimGreen)
+        printWrapped("Text-to-speech narration. Long-press to configure. Adjust speed and pitch from the voice preview.", indent: 2, color: .dimGreen)
         print("")
 
         print("COMPANION VOICES:", color: .cyan, bold: true)
         let modeLabel = speech.companionVoiceMode == .characterAppropriate ? "Character" : "Random"
         print("  Mode: \(modeLabel)", color: .dimGreen)
-        printWrapped("Give party members spoken voices in chat. Configure in Voice Settings.", indent: 2, color: .dimGreen)
+        printWrapped("Give party members spoken voices in chat.", indent: 2, color: .dimGreen)
         print("")
 
         print("VOICE MENUS:", color: .cyan, bold: true)
         print("  \(voiceMenuEnabled ? "On" : "Off")", color: voiceMenuEnabled ? .brightGreen : .red)
-        printWrapped("When on, two icons appear on each screen:", indent: 2, color: .dimGreen)
-        print("")
-        print("  speaker icon — reads the screen aloud", color: .dimGreen)
-        print("  mic icon — speak a menu choice", color: .dimGreen)
-        print("")
-        printWrapped("Voice commands:", indent: 2, color: .dimGreen)
-        print("  Say button text (e.g. 'Save')", color: .dimGreen)
-        print("  Say a number ('one', 'button two')", color: .dimGreen)
-        print("  Say 'back' or 'done' to close", color: .dimGreen)
-        print("  Say 'continue' or 'ok' to proceed", color: .dimGreen)
+        printWrapped("Speaker and microphone icons for voice control.", indent: 2, color: .dimGreen)
         print("")
 
+        let displaySizeLabel = "Size \(displaySizeName)"
+        let hitsLabel = hitAnimationsEnabled ? "Hits Off" : "Hits On"
         let dmVoiceLabel = speech.isEnabled ? "DM Voice On" : "DM Voice Off"
         let voiceMenuLabel = voiceMenuEnabled ? "Voice Menus On" : "Voice Menus Off"
-        let options = ["Font Size", "Icon Size", hitAnimationsEnabled ? "Hits Off" : "Hits On", dmVoiceLabel, "Companion Voices", voiceMenuLabel]
+        let options = [displaySizeLabel, hitsLabel, dmVoiceLabel, "Companion Voices", voiceMenuLabel]
 
         var menuOpts = options.map { MenuOption($0) }
-        menuOpts.append(MenuOption("?", tint: .navigation))
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         showMenuOptions(menuOpts)
         closeHandler = { [weak self] in self?.showSettings() }
         updateSettingsUndoRedo { [weak self] in self?.showAccessibilityMenu() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
-            if choice == menuOpts.count {
+            let text = menuOpts[choice - 1].text
+            if text == "?" {
                 self.showAccessibilityHelp()
                 return
             }
             self.pushSettingsSnapshot()
-            let selected = options[choice - 1]
-            if selected == "Font Size" {
-                self.showFontSizeMenu()
-            } else if selected == "Icon Size" {
-                self.iconScaleSetting = (self.iconScaleSetting + 1) % 3
+            switch text {
+            case displaySizeLabel:
+                // Cycle: Small → Medium → Large → Small
+                switch self.fontSizeSetting {
+                case .small:
+                    self.fontSizeSetting = .medium
+                    self.iconScaleSetting = 0
+                case .medium:
+                    self.fontSizeSetting = .large
+                    self.iconScaleSetting = 1
+                case .large:
+                    self.fontSizeSetting = .small
+                    self.iconScaleSetting = 0
+                }
                 UserDefaults.standard.set(self.iconScaleSetting, forKey: "iconScaleSetting")
                 self.showAccessibilityMenu()
-            } else if selected.hasPrefix("Hits") {
+            case hitsLabel:
                 self.hitAnimationsEnabled.toggle()
                 self.showAccessibilityMenu()
-            } else if selected == dmVoiceLabel {
-                // Tap toggles; long-press opens voice settings
+            case dmVoiceLabel:
                 speech.isEnabled.toggle()
                 self.showAccessibilityMenu()
-            } else if selected == "Companion Voices" {
+            case "Companion Voices":
                 self.showAdventurerVoiceSettings()
                 self.closeHandler = { [weak self] in self?.showAccessibilityMenu() }
-            } else if selected == voiceMenuLabel {
+            case voiceMenuLabel:
                 self.voiceMenuEnabled.toggle()
                 UserDefaults.standard.set(self.voiceMenuEnabled, forKey: "voiceMenuEnabled")
                 self.showAccessibilityMenu()
+            default: break
             }
         }
-        // Long-press DM Voice opens voice settings menu
+        // Long-press DM Voice opens voice settings
         menuLongPressHandler = { [weak self] choice in
             guard let self = self else { return }
             let selected = options[choice - 1]
@@ -4788,42 +5316,30 @@ class GameEngine: ObservableObject {
     }
 
     private func showAccessibilityHelp() {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Accessibility Help")
-        print("")
+        showInlineHelp {
+            self.printTitle("Accessibility Help")
+            self.print("")
 
-        print("  FONT SIZE", color: .cyan, bold: true)
-        printWrapped("Increase or decrease the text size throughout the game. Helpful if the default font is too small to read comfortably.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  DISPLAY SIZE", color: .cyan, bold: true)
+            self.printWrapped("Cycles through Small, Medium, and Large. This adjusts both text size and icon size together for a consistent look.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  ICON SIZE", color: .cyan, bold: true)
-        printWrapped("Scale up the close (✕), return, and microphone icons. Cycles through Normal, Large, and Extra Large for easier tapping.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  HIT ANIMATIONS", color: .cyan, bold: true)
+            self.printWrapped("Small screen flashes when attacks land in combat. Turn off if you find the flashing distracting or if you are sensitive to screen flashes.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  HIT ANIMATIONS", color: .cyan, bold: true)
-        printWrapped("Small screen flashes when attacks land in combat. Turn off if you find the flashing distracting or if you are sensitive to screen flashes.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  DM VOICE", color: .cyan, bold: true)
+            self.printWrapped("Enables text-to-speech narration by the Dungeon Master. Reduces the need to read the screen — helpful for vision difficulties or a hands-free experience. Long-press to open voice configuration. Adjust speed and pitch from the voice preview screen.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  DM VOICE", color: .cyan, bold: true)
-        printWrapped("Enables text-to-speech narration by the Dungeon Master. Reduces the need to read the screen — helpful for vision difficulties or a hands-free experience.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  COMPANION VOICES", color: .cyan, bold: true)
+            self.printWrapped("Give each party member a unique spoken voice in chat. Choose 'Character' for voices matched to each character or 'Random' for variety.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  DM VOICE MENU", color: .cyan, bold: true)
-        printWrapped("Opens the voice configuration screen where you can choose the DM's speaking voice, speed, and pitch.", indent: 2, color: .dimGreen)
-        print("")
-
-        print("  COMPANION VOICES", color: .cyan, bold: true)
-        printWrapped("Give each party member a unique spoken voice in chat. Choose 'Character' for voices matched to each character or 'Random' for variety.", indent: 2, color: .dimGreen)
-        print("")
-
-        print("  VOICE MENUS", color: .cyan, bold: true)
-        printWrapped("When on, a speaker icon and microphone icon appear on each screen. The speaker reads the screen aloud; the microphone lets you speak menu choices instead of tapping.", indent: 2, color: .dimGreen)
-        print("")
-
-        showMenu(["Continue"])
-        closeHandler = { [weak self] in self?.showAccessibilityMenu() }
-        menuHandler = { [weak self] _ in self?.showAccessibilityMenu() }
+            self.print("  VOICE MENUS", color: .cyan, bold: true)
+            self.printWrapped("When on, a speaker icon and microphone icon appear on each screen. The speaker reads the screen aloud; the microphone lets you speak menu choices instead of tapping.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
     }
 
     private func showGameplaySettings(page: Int = 0) {
@@ -4840,8 +5356,8 @@ class GameEngine: ObservableObject {
         print("")
 
         print("CARD NAVIGATION:", color: .cyan, bold: true)
-        print("  \(useArrowNavigation ? "Use Arrows" : "Use Swipe")", color: .brightGreen)
-        printWrapped("Use Arrows shows < > arrow buttons and a dice for random on character cards. Use Swipe lets you swipe left/right across the screen to browse cards. Both modes support the random dice.", indent: 2, color: .dimGreen)
+        print("  \(useArrowNavigation ? "Use Buttons" : "Use Swipe")", color: .brightGreen)
+        printWrapped("Use Buttons shows <</>> buttons and a dice for random on character cards. Use Swipe lets you swipe left/right across the screen to browse cards. Both modes support the random dice.", indent: 2, color: .dimGreen)
         print("")
 
         print("INFO TIMEOUT:", color: .cyan, bold: true)
@@ -4851,7 +5367,7 @@ class GameEngine: ObservableObject {
 
         print("BUTTON LIMIT:", color: .cyan, bold: true)
         print("  \(maxButtonsPerScreen) per screen", color: .brightGreen)
-        printWrapped("Maximum buttons shown at once. When a screen has more options, ⏭ and ⏮ buttons let you page through them. Long-press to skip 3 pages.", indent: 2, color: .dimGreen)
+        printWrapped("Maximum buttons shown at once. When a screen has more options, << and >> buttons let you page through them. Long-press to skip 3 pages.", indent: 2, color: .dimGreen)
         print("")
 
         print("LONG PRESS:", color: .cyan, bold: true)
@@ -4900,21 +5416,28 @@ class GameEngine: ObservableObject {
 
         print("UNDO/REDO:", color: .cyan, bold: true)
         print("  \(undoRedoEnabled ? "On" : "Off")", color: undoRedoEnabled ? .brightGreen : .red)
-        printWrapped("Show ↩ undo and ↪ redo arrows when you change settings or edit characters.", indent: 2, color: .dimGreen)
+        printWrapped("Show labelled Undo/Redo buttons when you change settings or edit characters. The label shows what will be reverted.", indent: 2, color: .dimGreen)
         print("")
 
-        var options = ["Map Radius", useArrowNavigation ? "Use Swipe" : "Use Arrows", "Info Timeout", "Button Limit", "Long Press", npcsEnabled ? "NPCs Off" : "NPCs On", poisonEnabled ? "Poison Off" : "Poison On", multiplayerEnabled ? "Multi Off" : "Multi On", "Log Limit", "Time Limit", idlePromptsEnabled ? "Idle Off" : "Idle On"]
+        // Grouped: Interface (5) → Features (5) → System (3)
+        var options = [
+            // Page 1 — Interface
+            "Map Radius", useArrowNavigation ? "Use Swipe" : "Use Buttons",
+            "Info Timeout", "Button Limit", "Long Press",
+            // Page 2 — Features
+            npcsEnabled ? "NPCs Off" : "NPCs On", poisonEnabled ? "Poison Off" : "Poison On",
+            multiplayerEnabled ? "Multi Off" : "Multi On", "Time Limit",
+            idlePromptsEnabled ? "Idle Off" : "Idle On",
+            // Page 3 — System
+            "Log Limit",
+        ]
         #if os(iOS)
-        options.append(useCustomKeyboard ? "System Keys" : "Keyboard")
+        options.append(useCustomKeyboard ? "iOS Keyboard" : "Game Keyboard")
         #endif
         options.append(undoRedoEnabled ? "Undo/Redo Off" : "Undo/Redo On")
 
         showPaginatedMenu(options, page: page, pinned: ["?"]) { [weak self] idx in
             guard let self = self else { return }
-            if idx == -3 {
-                self.showGameplaySettingsHelp()
-                return
-            }
             guard idx >= 0 && idx < options.count else { return }
             let currentPage = self.paginatedPage
             self.pushSettingsSnapshot()
@@ -4953,82 +5476,89 @@ class GameEngine: ObservableObject {
                     self.cancelSaveMenuIdleTimer()
                 }
                 self.showGameplaySettings(page: currentPage)
-            } else if selected == "Keyboard" || selected == "System Keys" {
+            } else if selected == "Game Keyboard" || selected == "iOS Keyboard" {
                 self.useCustomKeyboard.toggle()
                 UserDefaults.standard.set(self.useCustomKeyboard, forKey: "useCustomKeyboard")
                 self.showGameplaySettings(page: currentPage)
             } else if selected.hasPrefix("Undo/Redo") {
                 self.undoRedoEnabled.toggle()
+                if !self.undoRedoEnabled {
+                    // Clear all undo/redo state when switching off
+                    self.clearAllUndoRedo()
+                }
                 self.showGameplaySettings(page: currentPage)
             }
+        }
+        // Wrap menuHandler to intercept pinned ? button
+        let originalHandler = menuHandler
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            let idx = choice - 1
+            if idx >= 0 && idx < self.currentMenuOptions.count && self.currentMenuOptions[idx].text == "?" {
+                self.showGameplaySettingsHelp()
+                return
+            }
+            originalHandler?(choice)
         }
         closeHandler = { [weak self] in self?.showSettings() }
         updateSettingsUndoRedo { [weak self] in self?.showGameplaySettings(page: self?.paginatedPage ?? 0) }
     }
 
     private func showGameplaySettingsHelp() {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Gameplay Help")
-        print("")
+        showInlineHelp {
+            self.printTitle("Gameplay Help")
+            self.print("")
 
-        print("  MAP RADIUS", color: .cyan, bold: true)
-        printWrapped("How far you can see on the dungeon map. A larger radius reveals more rooms but may spoil surprises. Illuminate your torch to see further!", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  MAP RADIUS", color: .cyan, bold: true)
+            self.printWrapped("How far you can see on the dungeon map. A larger radius reveals more rooms but may spoil surprises. Illuminate your torch to see further!", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  CARD NAVIGATION", color: .cyan, bold: true)
-        printWrapped("Choose how to browse character cards. 'Use Arrows' shows < > buttons and a dice for random. 'Use Swipe' lets you swipe left and right across the screen.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  CARD NAVIGATION", color: .cyan, bold: true)
+            self.printWrapped("Choose how to browse character cards. 'Use Buttons' shows <</>> buttons and a dice for random. 'Use Swipe' lets you swipe left and right across the screen.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  INFO TIMEOUT", color: .cyan, bold: true)
-        printWrapped("How long information screens (search results, listen, examine) stay before auto-dismissing. Shorter means faster gameplay; longer gives you more time to read. Tap the ✕ icon to dismiss sooner.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  INFO TIMEOUT", color: .cyan, bold: true)
+            self.printWrapped("How long information screens (search results, listen, examine) stay before auto-dismissing. Shorter means faster gameplay; longer gives you more time to read. Tap the ✕ icon to dismiss sooner.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  BUTTON LIMIT", color: .cyan, bold: true)
-        printWrapped("Maximum buttons shown on screen at once. When there are more options than this limit, ⏭ and ⏮ buttons let you page through them. Long-press to skip 3 pages.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  BUTTON LIMIT", color: .cyan, bold: true)
+            self.printWrapped("Maximum buttons shown on screen at once. When there are more options than this limit, << and >> buttons let you page through them. Long-press to skip 3 pages.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  LONG PRESS", color: .cyan, bold: true)
-        printWrapped("How long you must hold a button for a long-press action (e.g. long rest, page jump, quick-start). Lower values make long-press faster to trigger.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  LONG PRESS", color: .cyan, bold: true)
+            self.printWrapped("How long you must hold a button for a long-press action (e.g. long rest, page jump, quick-start). Lower values make long-press faster to trigger.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  NPCs", color: .cyan, bold: true)
-        printWrapped("Non-player characters that spawn in dungeons. They can trade items, heal your party, teach skills, and give information. Not all NPCs are truthful!", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  NPCs", color: .cyan, bold: true)
+            self.printWrapped("Non-player characters that spawn in dungeons. They can trade items, heal your party, teach skills, and give information. Not all NPCs are truthful!", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  MULTIPLAYER", color: .cyan, bold: true)
-        printWrapped("When enabled, you can invite remote players to control party members via Game Centre. Each player takes turns controlling their character.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  MULTIPLAYER", color: .cyan, bold: true)
+            self.printWrapped("When enabled, you can invite remote players to control party members via Game Centre. Each player takes turns controlling their character.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  ADVENTURE LOG", color: .cyan, bold: true)
-        printWrapped("How many log entries to display. 'Show All' displays every event but can be slow for very long adventures. Limit it to keep things snappy.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  ADVENTURE LOG", color: .cyan, bold: true)
+            self.printWrapped("How many log entries to display. 'Show All' displays every event but can be slow for very long adventures. Limit it to keep things snappy.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  TIME LIMIT", color: .cyan, bold: true)
-        printWrapped("Optional time limit for your adventure. When in-game time exceeds the limit, the game ends in defeat. The remaining time is shown during exploration.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  TIME LIMIT", color: .cyan, bold: true)
+            self.printWrapped("Optional time limit for your adventure. When in-game time exceeds the limit, the game ends in defeat. The remaining time is shown during exploration.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  IDLE PROMPTS", color: .cyan, bold: true)
-        printWrapped("When on, the DM reacts if you take too long. Effects include eye blinks on ASCII art, combat hesitation penalties, and save menu nudges.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  IDLE PROMPTS", color: .cyan, bold: true)
+            self.printWrapped("When on, the DM reacts if you take too long. Effects include eye blinks on ASCII art, combat hesitation penalties, and save menu nudges.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  POISON", color: .cyan, bold: true)
-        printWrapped("When enabled, venomous creatures can poison your party. Cure with antidotes, potions, or rest at a shrine.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  POISON", color: .cyan, bold: true)
+            self.printWrapped("When enabled, venomous creatures can poison your party. Cure with antidotes, potions, or rest at a shrine.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  UNDO/REDO", color: .cyan, bold: true)
-        printWrapped("Show ↩ undo and ↪ redo arrows when you change settings or edit characters. Step back through changes you've made on the current screen.", indent: 2, color: .dimGreen)
-        print("")
-
-        #if os(iOS)
-        print("  KEYBOARD", color: .cyan, bold: true)
-        printWrapped("Choose between the In-App keyboard (no globe or microphone buttons) and the standard iOS System keyboard.", indent: 2, color: .dimGreen)
-        print("")
-        #endif
-
-        showMenu(["Continue"])
-        closeHandler = { [weak self] in self?.showGameplaySettings() }
-        menuHandler = { [weak self] _ in self?.showGameplaySettings() }
+            #if os(iOS)
+            self.print("  KEYBOARD", color: .cyan, bold: true)
+            self.printWrapped("Choose between the Game Keyboard (no globe or microphone buttons) and the standard iOS Keyboard.", indent: 2, color: .dimGreen)
+            self.print("")
+            #endif
+        }
     }
 
     private func showTimeLimitMenu() {
@@ -5148,7 +5678,7 @@ class GameEngine: ObservableObject {
     private func showButtonLimitMenu() {
         clearTerminal()
         printTitle("Button Limit")
-        printWrapped("Maximum buttons shown on a single screen. Screens with more options will paginate with ⏭ and ⏮ buttons.", indent: 2, color: .dimGreen)
+        printWrapped("Maximum buttons shown on a single screen. Screens with more options will paginate with << and >> buttons.", indent: 2, color: .dimGreen)
         print("")
         print("  Current: \(maxButtonsPerScreen)", color: .brightGreen)
         print("")
@@ -5428,6 +5958,48 @@ class GameEngine: ObservableObject {
 
     private let keychainServicePrefix = "com.dndtextrpg.apikey."
 
+    private func loadAPIKeyFromKeychain(for provider: AIProvider) -> String? {
+        let key = provider.userDefaultsKey
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainServicePrefix + key,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecSuccess, let data = item as? Data, let value = String(data: data, encoding: .utf8) {
+            return value
+        }
+        return nil
+    }
+
+    private func deleteSingleAPIKeyFromKeychain(for provider: AIProvider) {
+        let key = provider.userDefaultsKey
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainServicePrefix + key,
+            kSecAttrAccount as String: key
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+
+    private func backupSingleAPIKeyToKeychain(for provider: AIProvider) {
+        let key = provider.userDefaultsKey
+        guard let value = UserDefaults.standard.string(forKey: key), !value.isEmpty,
+              let data = value.data(using: .utf8) else { return }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainServicePrefix + key,
+            kSecAttrAccount as String: key
+        ]
+        SecItemDelete(query as CFDictionary)
+        var addQuery = query
+        addQuery[kSecValueData as String] = data
+        SecItemAdd(addQuery as CFDictionary, nil)
+    }
+
     private func loadAPIKeysFromKeychain() -> [String: String]? {
         var result: [String: String] = [:]
         for provider in AIProvider.allCases {
@@ -5563,34 +6135,30 @@ class GameEngine: ObservableObject {
     }
 
     private func showSaveSettingsHelp() {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Save & Backup Help")
-        print("")
+        showInlineHelp {
+            self.printTitle("Saving — Help")
+            self.print("")
 
-        print("  AUTOSAVE", color: .cyan, bold: true)
-        printWrapped("Automatically saves your game at regular intervals. Choose how often autosave triggers. Saves appear in the Play menu under your adventure name.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  AUTOSAVE", color: .cyan, bold: true)
+            self.printWrapped("Automatically saves your game at regular intervals. Choose how often autosave triggers — every room, every 3 rooms, or every 5 rooms. Saves appear in the Play menu under your adventure name.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  MANAGE SAVES", color: .cyan, bold: true)
-        printWrapped("Browse and delete individual save files. Each adventure can have multiple save points (breakpoints) that you can return to.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  MANAGE SAVES", color: .cyan, bold: true)
+            self.printWrapped("Browse and delete individual save files. Each adventure can have multiple save points (breakpoints) that you can return to. Useful for clearing old saves you no longer need.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  CLEAR ALL SAVES", color: .cyan, bold: true)
-        printWrapped("Permanently deletes every save file on the device. Use with caution — this cannot be undone.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  CLEAR ALL SAVES", color: .cyan, bold: true)
+            self.printWrapped("Permanently deletes every save file on the device. Use with caution — this cannot be undone.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  SETTINGS BACKUP", color: .cyan, bold: true)
-        printWrapped("Create and restore backups of your settings. Useful before experimenting with configuration changes or when moving to a new device.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  SETTINGS BACKUP", color: .cyan, bold: true)
+            self.printWrapped("Create and restore backups of all your settings (display size, gameplay options, DM config, etc.). Useful before experimenting with changes or when moving to a new device.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  API KEY BACKUP / RESTORE", color: .cyan, bold: true)
-        printWrapped("Saves your AI provider API keys to the device Keychain for safe keeping. Restore retrieves them if they are cleared. The Keychain is encrypted and persists across app reinstalls.", indent: 2, color: .dimGreen)
-        print("")
-
-        showMenu(["Continue"])
-        closeHandler = { [weak self] in self?.showSaveSettings() }
-        menuHandler = { [weak self] _ in self?.showSaveSettings() }
+            self.print("  API KEY BACKUP / RESTORE", color: .cyan, bold: true)
+            self.printWrapped("Saves your AI provider API keys to the device Keychain for safe keeping. Restore retrieves them if they are cleared. The Keychain is encrypted and persists across app reinstalls.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
     }
 
     private func showDMSettingsSubMenu() {
@@ -5614,14 +6182,10 @@ class GameEngine: ObservableObject {
             print("")
         }
 
-        var options = ["Provider", "API Key", "Ad-lib Level", "Log Context"]
-        if dm.isConfigured {
-            options.append("Clear API Key")
-        }
-        options.append("DM Voice")
+        let options = ["Provider", "API Key", "Ad-lib Level", "Log Context", "DM Voice"]
 
         var menuOpts = options.map { MenuOption($0) }
-        menuOpts.append(MenuOption("?", tint: .navigation))
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         showMenuOptions(menuOpts)
         closeHandler = { [weak self] in self?.showSettings() }
         menuHandler = { [weak self] choice in
@@ -5640,15 +6204,6 @@ class GameEngine: ObservableObject {
                 self.showAdLibLevelMenu()
             case "Log Context":
                 self.showDMLogContextMenu()
-            case "Clear API Key":
-                DMEngine.shared.apiKey = nil
-                self.print("")
-                self.print("API key cleared.", color: .yellow)
-                self.print("")
-                self.waitForContinue()
-                self.inputHandler = { [weak self] _ in
-                    self?.showDMSettingsSubMenu()
-                }
             case "DM Voice":
                 self.showVoiceSettings()
             default: break
@@ -5657,38 +6212,30 @@ class GameEngine: ObservableObject {
     }
 
     private func showDMSettingsHelp() {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("DM Settings Help")
-        print("")
+        showInlineHelp {
+            self.printTitle("DM Settings Help")
+            self.print("")
 
-        print("  PROVIDER", color: .cyan, bold: true)
-        printWrapped("Choose which AI service powers the Dungeon Master. Options include OpenAI, Anthropic, Google, and Apple on-device AI. Cloud providers need an API key and offer more creative narration.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  PROVIDER", color: .cyan, bold: true)
+            self.printWrapped("Choose which AI service powers the Dungeon Master. Options include OpenAI, Anthropic, Google, and Apple on-device AI. Cloud providers need an API key and offer more creative narration.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  API KEY", color: .cyan, bold: true)
-        printWrapped("Enter the API key for your chosen cloud provider. The key is stored locally on your device and never shared. Without a key, the DM falls back to basic or on-device AI.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  API KEY", color: .cyan, bold: true)
+            self.printWrapped("Enter, paste, or clear the API key for your chosen cloud provider. You can also copy your key as a backup. Keys are stored locally on your device and never shared.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  AD-LIB LEVEL", color: .cyan, bold: true)
-        printWrapped("Controls how creative and verbose the robot Dungeon Master is. Higher levels produce richer descriptions and more flavourful narration but use more tokens (and cost more for cloud providers).", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  AD-LIB LEVEL", color: .cyan, bold: true)
+            self.printWrapped("Controls how creative and verbose the robot Dungeon Master is. Higher levels produce richer descriptions and more flavourful narration but use more tokens (and cost more for cloud providers).", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  LOG CONTEXT", color: .cyan, bold: true)
-        printWrapped("How many lines of adventure log the DM reads for context when generating responses. More context means better continuity but slower and more expensive requests. 'Unlimited' sends everything.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  LOG CONTEXT", color: .cyan, bold: true)
+            self.printWrapped("How many lines of adventure log the DM reads for context when generating responses. More context means better continuity but slower and more expensive requests. 'Unlimited' sends everything. Hold ▲/▼ to scroll continuously.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  CLEAR API KEY", color: .cyan, bold: true)
-        printWrapped("Removes your stored API key. The DM will revert to basic or on-device AI until a new key is entered.", indent: 2, color: .dimGreen)
-        print("")
-
-        print("  DM VOICE", color: .cyan, bold: true)
-        printWrapped("Configure the text-to-speech voice used for DM narration. Choose from different voice styles, speeds, and pitches.", indent: 2, color: .dimGreen)
-        print("")
-
-        showMenu(["Continue"])
-        closeHandler = { [weak self] in self?.showDMSettingsSubMenu() }
-        menuHandler = { [weak self] _ in self?.showDMSettingsSubMenu() }
+            self.print("  DM VOICE", color: .cyan, bold: true)
+            self.printWrapped("Configure the text-to-speech voice used for DM narration. Choose a voice, then adjust speed and pitch from the preview screen.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
     }
 
     private func confirmClearAllSaves() {
@@ -5718,37 +6265,35 @@ class GameEngine: ObservableObject {
     }
 
     private func showSettingsHelp() {
-        clearTerminal()
-        undoHandler = nil; redoHandler = nil
-        suppressAutoScroll = true
-        printTitle("Settings — Help")
-        print("")
-
-        print("  INFORMATION", color: .cyan, bold: true)
-        printWrapped("Settings lets you customise your game experience. Changes are saved automatically.", indent: 2, color: .dimGreen)
-        print("")
-
-        print("  UNDO / REDO", color: .cyan, bold: true)
-        printWrapped("When you change a setting, ↩ (undo) and ↪ (redo) arrows appear in the input bar. Use them to step back through changes you've made on the current settings page.", indent: 2, color: .dimGreen)
-        printWrapped("Example: if you change Font Size from Medium to Large, tap ↩ to go back to Medium.", indent: 2, color: .yellow)
-        print("")
-
-        print("  BUTTONS", color: .cyan, bold: true)
-        printWrapped("DM Settings — configure the robot Dungeon Master: provider, API key, ad-lib level, context memory.", indent: 2, color: .dimGreen)
-        printWrapped("Accessibility — font size, icon size, hit animations, DM voice, companion voices, voice menus.", indent: 2, color: .dimGreen)
-        printWrapped("Mood — music and sound effects for menu, exploration, combat, and chat.", indent: 2, color: .dimGreen)
-        printWrapped("Gameplay — map radius, card navigation style, info timeout, multiplayer.", indent: 2, color: .dimGreen)
-        printWrapped("Saving — autosave frequency and managing saved games.", indent: 2, color: .dimGreen)
-        print("")
-
-        print("  RED = OFF", color: .red, bold: true)
-        printWrapped("When a switch shows red, that feature is turned off. Green means on.", indent: 2, color: .dimGreen)
-        print("")
-
-        showMenu(["Reset to Defaults"])
-        closeHandler = { [weak self] in self?.showSettings() }
-        menuHandler = { [weak self] choice in
-            if choice == 1 { self?.confirmResetToDefaults() }
+        showInlineHelp {
+            self.printTitle("Settings — Help")
+            self.print("")
+            self.print("  INFORMATION", color: .cyan, bold: true)
+            self.printWrapped("Settings lets you customise your game experience. Changes are saved automatically.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  UNDO / REDO", color: .cyan, bold: true)
+            self.printWrapped("When you change a setting, labelled Undo/Redo buttons appear in the input bar showing what they will revert. Tap to step back or forward through changes. Undo/Redo must be enabled in Settings > Gameplay.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  NAVIGATION BAR", color: .cyan, bold: true)
+            self.printWrapped("The compact bar [<< | ? | >>] appears when options span multiple pages. << = previous page, >> = next page. Long-press to skip 3 pages.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  BUTTONS", color: .cyan, bold: true)
+            self.printWrapped("DM Settings — configure the AI Dungeon Master provider, API key, creativity level, and log context.", indent: 2, color: .dimGreen)
+            self.printWrapped("Accessibility — display size, hit animations, DM voice, companion voices, and voice menus.", indent: 2, color: .dimGreen)
+            self.printWrapped("Mood — background music tunes for each game phase, plus music and sound effect switches.", indent: 2, color: .dimGreen)
+            self.printWrapped("Gameplay — map radius, card navigation, info timeout, button limit, NPCs, multiplayer, timers, and keyboard.", indent: 2, color: .dimGreen)
+            self.printWrapped("Saving — autosave frequency, manage and delete saves, settings backup/restore, and API key backup.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  RESET", color: .cyan, bold: true)
+            self.printWrapped("Opens the Reset screen where you can:", indent: 2, color: .dimGreen)
+            self.printWrapped("• Review Changes — see every setting's current value alongside its default, and choose which ones to reset.", indent: 4, color: .dimGreen)
+            self.printWrapped("• Save Settings First — back up your current settings before resetting.", indent: 4, color: .dimGreen)
+            self.printWrapped("• Reset Now — reset all settings at once.", indent: 4, color: .dimGreen)
+            self.printWrapped("API keys and saved games are never affected by reset.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  RED = OFF", color: .red, bold: true)
+            self.printWrapped("Red = feature off. Green = on.", indent: 2, color: .dimGreen)
+            self.print("")
         }
     }
 
@@ -5756,29 +6301,240 @@ class GameEngine: ObservableObject {
         clearTerminal()
         printTitle("Reset to Defaults")
         print("")
-        printWrapped("This will restore all settings to their original values.", indent: 2)
+        printWrapped("This will restore settings to their original values.", indent: 2)
         print("")
         printWrapped("Your saved games and API keys will NOT be affected.", indent: 2, color: .yellow)
         print("")
-        printWrapped("Would you like to save your current settings first? You can restore them later from Settings → Saving.", indent: 2, color: .dimGreen)
-        print("")
 
-        showMenu(["Save Settings First", "Reset Now", "Cancel"])
-        closeHandler = { [weak self] in self?.showSettingsHelp() }
+        var menuOpts = [MenuOption("Review Changes"), MenuOption("Save Settings First"),
+                        MenuOption("Reset All Now", tint: .danger)]
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        showMenuOptions(menuOpts)
+        closeHandler = { [weak self] in self?.showSettings() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
-            switch choice {
-            case 1:
-                // Save current settings, then reset
+            let text = menuOpts[choice - 1].text
+            switch text {
+            case "Review Changes":
+                self.showResetReview()
+            case "Save Settings First":
                 self.saveSettingsBackup(name: "Before Reset") {
                     self.resetSettingsToDefaults()
                 }
-            case 2:
+            case "Reset All Now":
                 self.resetSettingsToDefaults()
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("Reset Help")
+                    self.print("")
+                    self.print("  REVIEW CHANGES", color: .cyan, bold: true)
+                    self.printWrapped("Shows every setting that differs from its default. You can toggle each one on or off, then apply only the ones you want to reset.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  SAVE SETTINGS FIRST", color: .cyan, bold: true)
+                    self.printWrapped("Backs up your current settings before resetting. You can restore them later from Settings → Saving.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  RESET ALL NOW", color: .cyan, bold: true)
+                    self.printWrapped("Resets every setting to its default value immediately. API keys and saved games are preserved.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
             default:
-                self.showSettingsHelp()
+                self.showSettings()
             }
         }
+    }
+
+    // MARK: - Selective Reset Review
+
+    /// Describes a single setting for the reset review screen
+    private struct ResetSettingInfo {
+        let key: String
+        let name: String
+        let currentDisplay: String
+        let defaultDisplay: String
+    }
+
+    /// Build a list of all settings that differ from their defaults
+    private func changedSettings() -> [ResetSettingInfo] {
+        var result: [ResetSettingInfo] = []
+
+        func add(_ key: String, _ name: String, current: String, dflt: String) {
+            if current != dflt { result.append(ResetSettingInfo(key: key, name: name, currentDisplay: current, defaultDisplay: dflt)) }
+        }
+
+        add("music_enabled", "Music", current: musicEnabled ? "On" : "Off", dflt: "On")
+        add("battle_sounds_enabled", "Sound FX", current: battleSoundsEnabled ? "On" : "Off", dflt: "On")
+        add("hit_animations", "Hit Animations", current: hitAnimationsEnabled ? "On" : "Off", dflt: "On")
+        add("speechEnabled", "DM Voice", current: SpeechEngine.shared.isEnabled ? "On" : "Off", dflt: "Off")
+        add("voiceMenuEnabled", "Voice Menus", current: voiceMenuEnabled ? "On" : "Off", dflt: "Off")
+        add("fontSizeSetting", "Display Size", current: fontSizeSetting.displayName, dflt: FontSizeSetting.defaultSetting.displayName)
+        add("maxButtonsPerScreen", "Button Limit", current: "\(maxButtonsPerScreen)", dflt: "6")
+        add("useArrowNavigation", "Card Navigation", current: useArrowNavigation ? "Buttons" : "Swipe", dflt: "Swipe")
+        add("map_radius", "Map Radius", current: "\(mapRadius)", dflt: "1")
+        add("npcs_enabled", "NPCs", current: npcsEnabled ? "On" : "Off", dflt: "Off")
+        add("multiplayer_enabled", "Multiplayer", current: multiplayerEnabled ? "On" : "Off", dflt: "Off")
+        add("undoRedoEnabled", "Undo/Redo", current: undoRedoEnabled ? "On" : "Off", dflt: "On")
+
+        let infoStr = infoTimeout == 0 ? "Off" : String(format: "%.1fs", infoTimeout)
+        add("infoTimeout", "Info Timeout", current: infoStr, dflt: "2.0s")
+
+        let lpStr = String(format: "%.1fs", longPressDuration)
+        add("longPressDuration", "Long Press", current: lpStr, dflt: "0.5s")
+
+        let gtStr = gameTimeLimit == 0 ? "Off" : "\(gameTimeLimit) min"
+        add("gameTimeLimit", "Time Limit", current: gtStr, dflt: "Off")
+
+        let logStr = adventureLogLimit == 0 ? "All" : "\(adventureLogLimit)"
+        add("adventureLogLimit", "Log Limit", current: logStr, dflt: "50")
+
+        #if os(iOS)
+        add("useCustomKeyboard", "Keyboard", current: useCustomKeyboard ? "Custom" : "System", dflt: "Custom")
+        #endif
+        add("idlePromptsEnabled", "Idle Prompts", current: idlePromptsEnabled ? "On" : "Off", dflt: "Off")
+
+        add("autosave_interval", "Autosave", current: autosaveInterval.displayName, dflt: AutosaveInterval.off.displayName)
+
+        // Tunes
+        add("menu_melody", "Menu Tune", current: melodyName(type: "menu", choice: menuMelodyChoice), dflt: melodyName(type: "menu", choice: 0))
+        add("exploration_melody", "Explore Tune", current: melodyName(type: "exploration", choice: explorationMelodyChoice), dflt: melodyName(type: "exploration", choice: 0))
+        add("combat_melody", "Combat Tune", current: melodyName(type: "combat", choice: combatMelodyChoice), dflt: melodyName(type: "combat", choice: 0))
+        add("chat_melody", "Chat Tune", current: melodyName(type: "chat", choice: chatMelodyChoice), dflt: melodyName(type: "chat", choice: 0))
+
+        // DM settings (not API key)
+        let dmLevel = DMEngine.shared.adLibLevel
+        add("dmAdLibLevel", "DM Ad-lib", current: dmLevel.displayName, dflt: DMAdLibLevel.full.displayName)
+        let logCtx = dmLogContextSize == Int.max ? "Unlimited" : "\(dmLogContextSize)"
+        add("dmLogContextSize", "DM Log Context", current: logCtx, dflt: "Unlimited")
+
+        return result
+    }
+
+    /// Show the selective reset review — each changed setting with a toggle
+    private func showResetReview(selected: Set<String>? = nil, page: Int = 0) {
+        let changed = changedSettings()
+
+        if changed.isEmpty {
+            clearTerminal()
+            printTitle("Review Changes")
+            print("")
+            printWrapped("All settings are already at their default values. Nothing to reset.", indent: 2, color: .brightGreen)
+            print("")
+            showMenu(["Done"])
+            closeHandler = { [weak self] in self?.confirmResetToDefaults() }
+            menuHandler = { [weak self] _ in self?.confirmResetToDefaults() }
+            return
+        }
+
+        // Default: all selected for reset
+        let sel = selected ?? Set(changed.map { $0.key })
+
+        clearTerminal()
+        printTitle("Review Changes")
+        print("")
+        printWrapped("Settings that differ from defaults. Tap to toggle. Selected items (✓) will be reset.", indent: 2, color: .dimGreen)
+        print("")
+
+        for item in changed {
+            let isSelected = sel.contains(item.key)
+            let check = isSelected ? "✓" : "✗"
+            let checkColor: TerminalColor = isSelected ? .brightGreen : .red
+            print("  \(check) \(item.name)", color: checkColor, bold: isSelected)
+            print("    now: \(item.currentDisplay)  default: \(item.defaultDisplay)", color: .dimGreen)
+        }
+        print("")
+
+        // Build menu: one button per setting to toggle, then Apply + Select All/None + help
+        let settingNames = changed.map { item -> String in
+            let check = sel.contains(item.key) ? "✓" : "✗"
+            return "\(check) \(item.name)"
+        }
+
+        var allOptions = settingNames
+        let selectedCount = sel.count
+        allOptions.append(selectedCount == changed.count ? "Deselect All" : "Select All")
+        allOptions.append("Apply Reset")
+
+        showPaginatedMenu(allOptions, page: page, pinned: ["?"]) { [weak self] idx in
+            guard let self = self else { return }
+            guard idx >= 0 && idx < allOptions.count else { return }
+            let currentPage = self.paginatedPage
+
+            if idx < changed.count {
+                // Toggle this setting
+                var newSel = sel
+                let key = changed[idx].key
+                if newSel.contains(key) { newSel.remove(key) } else { newSel.insert(key) }
+                self.showResetReview(selected: newSel, page: currentPage)
+            } else if allOptions[idx] == "Select All" || allOptions[idx] == "Deselect All" {
+                let newSel: Set<String> = selectedCount == changed.count ? [] : Set(changed.map { $0.key })
+                self.showResetReview(selected: newSel, page: currentPage)
+            } else if allOptions[idx] == "Apply Reset" {
+                self.applySelectiveReset(keys: sel)
+            }
+        }
+
+        // Intercept ? for help
+        let originalHandler = menuHandler
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            let idx = choice - 1
+            if idx >= 0 && idx < self.currentMenuOptions.count && self.currentMenuOptions[idx].text == "?" {
+                self.showInlineHelp {
+                    self.printTitle("Review Changes Help")
+                    self.print("")
+                    self.print("  TOGGLE SETTINGS", color: .cyan, bold: true)
+                    self.printWrapped("Tap any setting to toggle it on (✓) or off (✗). Only settings marked ✓ will be reset to their default values.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  SELECT ALL / DESELECT ALL", color: .cyan, bold: true)
+                    self.printWrapped("Quickly select or deselect every setting.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  APPLY RESET", color: .cyan, bold: true)
+                    self.printWrapped("Resets the selected settings to their defaults. Unselected settings keep their current values. API keys and saved games are never affected.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+                return
+            }
+            originalHandler?(choice)
+        }
+        closeHandler = { [weak self] in self?.confirmResetToDefaults() }
+    }
+
+    /// Reset only the specified setting keys
+    private func applySelectiveReset(keys: Set<String>) {
+        guard !keys.isEmpty else {
+            showSettings()
+            return
+        }
+
+        pushSettingsSnapshot()
+
+        let preserveKeys: Set<String> = ["dmApiKey"]
+        for key in keys where !preserveKeys.contains(key) {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+
+        // Re-sync cached properties
+        if keys.contains("voiceMenuEnabled") { voiceMenuEnabled = false }
+        if keys.contains("useArrowNavigation") { useArrowNavigation = false }
+        if keys.contains("infoTimeout") { infoTimeout = 2.0 }
+        if keys.contains("iconScaleSetting") { iconScaleSetting = 0 }
+        if keys.contains("useCustomKeyboard") { useCustomKeyboard = true }
+        if keys.contains("idlePromptsEnabled") { idlePromptsEnabled = false }
+        if keys.contains("fontSizeSetting") { fontScale = FontSizeSetting.defaultSetting.scale }
+        if keys.contains("undoRedoEnabled") && !undoRedoEnabled { clearAllUndoRedo() }
+
+        syncSettingsAfterRestore()
+
+        clearTerminal()
+        printTitle("Settings Reset")
+        print("")
+        printWrapped("\(keys.count) setting\(keys.count == 1 ? "" : "s") restored to defaults.", indent: 2, color: .brightGreen)
+        print("")
+        printWrapped("API keys and saved games are unchanged.", indent: 2, color: .dimGreen)
+        print("")
+
+        showMenu(["Done"])
+        closeHandler = { [weak self] in self?.showSettings() }
+        menuHandler = { [weak self] _ in self?.showSettings() }
     }
 
     private func saveSettingsBackup(name: String, then completion: @escaping () -> Void) {
@@ -5888,16 +6644,12 @@ class GameEngine: ObservableObject {
         print("  \(battleSoundsEnabled ? "On" : "Off")", color: battleSoundsEnabled ? .brightGreen : .red)
         print("")
 
-        var options = [musicEnabled ? "Music Off" : "Music On"]
+        var options: [String] = ["Switches"]
         if musicEnabled {
-            options.append("Menu Tune")
-            options.append("Explore Tune")
-            options.append("Combat Tune")
-            options.append("Chat Tune")
+            options.append(contentsOf: ["Menu Tune", "Explore Tune", "Combat Tune", "Chat Tune"])
         }
-        options.append(battleSoundsEnabled ? "Sounds Off" : "Sounds On")
         var menuOpts = options.map { MenuOption($0) }
-        menuOpts.append(MenuOption("?", tint: .navigation))
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         showMenuOptions(menuOpts)
 
         closeHandler = { [weak self] in
@@ -5910,78 +6662,102 @@ class GameEngine: ObservableObject {
 
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
-            if choice == menuOpts.count {
+            let text = menuOpts[choice - 1].text
+            if text == "?" {
                 self.showMusicSettingsHelp()
                 return
             }
             self.pushSettingsSnapshot()
-            let selected = options[choice - 1]
-            if selected.hasPrefix("Music O") {
-                self.musicEnabled.toggle()
-                if self.musicEnabled {
-                    self.playCurrentMusic()
-                }
-                self.showMusicSettings()
-            } else if selected == "Menu Tune" {
+            switch text {
+            case "Switches":
+                self.showMoodSwitches()
+            case "Menu Tune":
                 self.menuMelodyChoice = (self.menuMelodyChoice + 1) % 4
                 SoundManager.shared.stopMusic()
                 SoundManager.shared.startMusic(.menu, preference: self.menuMelodyChoice)
                 self.showMusicSettings()
-            } else if selected == "Explore Tune" {
+            case "Explore Tune":
                 self.explorationMelodyChoice = (self.explorationMelodyChoice + 1) % 5
                 SoundManager.shared.stopMusic()
                 SoundManager.shared.startMusic(.exploration, preference: self.explorationMelodyChoice)
                 self.showMusicSettings()
-            } else if selected == "Combat Tune" {
+            case "Combat Tune":
                 self.combatMelodyChoice = (self.combatMelodyChoice + 1) % 4
                 SoundManager.shared.stopMusic()
                 SoundManager.shared.startMusic(.combat, preference: self.combatMelodyChoice)
                 self.showMusicSettings()
-            } else if selected == "Chat Tune" {
+            case "Chat Tune":
                 self.chatMelodyChoice = (self.chatMelodyChoice + 1) % 4
                 SoundManager.shared.stopMusic()
                 SoundManager.shared.startMusic(.chat, preference: self.chatMelodyChoice)
                 self.showMusicSettings()
-            } else if selected.hasPrefix("Sounds O") {
-                self.battleSoundsEnabled.toggle()
-                self.showMusicSettings()
+            default: break
             }
         }
     }
 
-    private func showMusicSettingsHelp() {
+    private func showMoodSwitches() {
         clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Mood Help")
+        printTitle("Mood — Switches")
         print("")
 
-        print("  MUSIC", color: .cyan, bold: true)
-        printWrapped("Toggle background music on or off. When on, different tunes play during menus, exploration, combat, and chat.", indent: 2, color: .dimGreen)
+        print("  MUSIC:", color: .cyan, bold: true)
+        print("  \(musicEnabled ? "On" : "Off")", color: musicEnabled ? .brightGreen : .red)
+        print("")
+        print("  BATTLE SOUNDS:", color: .cyan, bold: true)
+        print("  \(battleSoundsEnabled ? "On" : "Off")", color: battleSoundsEnabled ? .brightGreen : .red)
         print("")
 
-        print("  MENU TUNE", color: .cyan, bold: true)
-        printWrapped("The melody that plays on the main menu and setup screens. Tap to cycle through available tunes.", indent: 2, color: .dimGreen)
-        print("")
-
-        print("  EXPLORATION TUNE", color: .cyan, bold: true)
-        printWrapped("The melody that plays while exploring the dungeon. Sets the mood as you navigate corridors and discover rooms.", indent: 2, color: .dimGreen)
-        print("")
-
-        print("  COMBAT TUNE", color: .cyan, bold: true)
-        printWrapped("The melody that plays during combat encounters. Tap to cycle through available battle themes.", indent: 2, color: .dimGreen)
-        print("")
-
-        print("  CHAT TUNE", color: .cyan, bold: true)
-        printWrapped("The melody that plays during chat and conversation screens. A calmer tune for when you are talking to your party or the DM.", indent: 2, color: .dimGreen)
-        print("")
-
-        print("  BATTLE SOUNDS", color: .cyan, bold: true)
-        printWrapped("Sound effects during combat — sword clashes, spell impacts, and hit sounds. Turn off for a quieter experience.", indent: 2, color: .dimGreen)
-        print("")
-
-        showMenu(["Continue"])
+        let options = [musicEnabled ? "Music Off" : "Music On",
+                       battleSoundsEnabled ? "Sounds Off" : "Sounds On"]
+        showMenu(options)
         closeHandler = { [weak self] in self?.showMusicSettings() }
-        menuHandler = { [weak self] _ in self?.showMusicSettings() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            self.pushSettingsSnapshot()
+            switch choice {
+            case 1:
+                self.musicEnabled.toggle()
+                if self.musicEnabled { self.playCurrentMusic() }
+                self.showMoodSwitches()
+            case 2:
+                self.battleSoundsEnabled.toggle()
+                self.showMoodSwitches()
+            default: break
+            }
+        }
+        updateSettingsUndoRedo { [weak self] in self?.showMoodSwitches() }
+    }
+
+    private func showMusicSettingsHelp() {
+        showInlineHelp {
+            self.printTitle("Mood Help")
+            self.print("")
+
+            self.print("  MUSIC", color: .cyan, bold: true)
+            self.printWrapped("Toggle background music on or off. When on, different tunes play during menus, exploration, combat, and chat.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  MENU TUNE", color: .cyan, bold: true)
+            self.printWrapped("The melody that plays on the main menu and setup screens. Tap to cycle through available tunes.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  EXPLORATION TUNE", color: .cyan, bold: true)
+            self.printWrapped("The melody that plays while exploring the dungeon. Sets the mood as you navigate corridors and discover rooms.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  COMBAT TUNE", color: .cyan, bold: true)
+            self.printWrapped("The melody that plays during combat encounters. Tap to cycle through available battle themes.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  CHAT TUNE", color: .cyan, bold: true)
+            self.printWrapped("The melody that plays during chat and conversation screens. A calmer tune for when you are talking to your party or the DM.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  SWITCHES", color: .cyan, bold: true)
+            self.printWrapped("Toggle music and battle sounds individually. Music On/Off controls background tunes; Sounds On/Off controls combat sound effects.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
     }
 
     /// Start music appropriate for current game state, respecting preferences
@@ -6037,12 +6813,13 @@ class GameEngine: ObservableObject {
 
         let current = dm.provider
         for provider in AIProvider.allCases {
-            let marker = provider == current && dm.isConfigured ? " <--" : ""
+            let isCurrent = provider == current && dm.isConfigured
+            let marker = isCurrent ? " <--" : ""
             let hasKey = dm.apiKey(for: provider) != nil
             let keyStatus = hasKey ? " [key set]" : ""
             let freeTag = provider == .google && !hasKey ? " (FREE!)" : ""
             print("  \(provider.displayName)\(keyStatus)\(freeTag)\(marker)",
-                  color: hasKey ? .brightGreen : .green)
+                  color: isCurrent ? .brightGreen : .dimGreen, bold: isCurrent)
             print("     \(provider.keyURL)", color: .dimGreen)
             print("")
         }
@@ -6052,19 +6829,42 @@ class GameEngine: ObservableObject {
         let isAppleSelected = !dm.isConfigured && dm.isAppleModelAvailable
         if dm.isAppleModelAvailable {
             let label = isAppleSelected ? "Apple On-Device AI <--" : "Apple On-Device AI"
-            options.append(MenuOption(label))
+            options.append(MenuOption(label, isDefault: isAppleSelected))
         }
         for provider in AIProvider.allCases {
             let isSelected = provider == current && dm.isConfigured
             let label = isSelected ? "\(provider.displayName) <--" : provider.displayName
-            options.append(MenuOption(label))
+            options.append(MenuOption(label, isDefault: isSelected))
         }
+        options.append(MenuOption("?", tint: .navigation, compact: true))
         showMenuOptions(options)
 
         let appleOffset = dm.isAppleModelAvailable ? 1 : 0
+        let helpIndex = options.count  // 1-based choice for ?
 
         closeHandler = { [weak self] in self?.showDMSettingsSubMenu() }
         menuHandler = { [weak self] choice in
+            if choice == helpIndex {
+                self?.showInlineHelp {
+                    self?.printTitle("AI Provider Help")
+                    self?.print("")
+                    self?.print("  APPLE ON-DEVICE AI", color: .cyan, bold: true)
+                    self?.printWrapped("Runs locally on your device. Free, works offline, no account needed. Requires iOS 26+ on iPhone 16 or newer. May refuse some queries.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                    self?.print("  GOOGLE GEMINI", color: .cyan, bold: true)
+                    self?.printWrapped("Free tier available (ages 18+). Good creative narration. Requires a Google account and API key from AI Studio.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                    self?.print("  ANTHROPIC CLAUDE", color: .cyan, bold: true)
+                    self?.printWrapped("Excellent narrative quality. Pay-as-you-go — a typical session costs a few pence. Requires an Anthropic account with credit.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                    self?.print("  OPENAI CHATGPT", color: .cyan, bold: true)
+                    self?.printWrapped("Strong narrative quality. Pay-as-you-go pricing. Requires an OpenAI account with credit.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                    self?.printWrapped("After selecting a cloud provider, you'll be prompted to enter your API key. Keys are stored locally on your device.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                }
+                return
+            }
             if dm.isAppleModelAvailable && choice == 1 {
                 dm.apiKey = nil
                 dm.clearHistory()
@@ -6116,23 +6916,49 @@ class GameEngine: ObservableObject {
         clearTerminal()
         printTitle("DM Ad-lib Level")
 
+        let currentLevel = DMEngine.shared.adLibLevel
         for level in DMAdLibLevel.allCases {
-            let marker = level == DMEngine.shared.adLibLevel ? " <--" : ""
-            print("  \(level.rawValue): \(level.displayName)\(marker)", color: level == DMEngine.shared.adLibLevel ? .brightGreen : .green)
-            print("     \(level.description)", color: .dimGreen)
+            let marker = level == currentLevel ? "  <--" : ""
+            print("  \(level.displayName)\(marker)", color: level == currentLevel ? .brightGreen : .dimGreen, bold: level == currentLevel)
+            printWrapped(level.description, indent: 4, color: .dimGreen)
             print("")
         }
 
-        let options = DMAdLibLevel.allCases.map { $0.displayName }
-        showMenu(options)
+        var menuOpts = DMAdLibLevel.allCases.map { level in
+            MenuOption(level.displayName, isDefault: level == currentLevel)
+        }
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        showMenuOptions(menuOpts)
 
         closeHandler = { [weak self] in self?.showDMSettingsSubMenu() }
         menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == menuOpts.count {
+                self.showInlineHelp {
+                    self.printTitle("Ad-lib Level Help")
+                    self.print("")
+                    self.print("  OFF", color: .cyan, bold: true)
+                    self.printWrapped("The DM stays silent. Good for fast play without narration.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  FLAVOUR ONLY", color: .cyan, bold: true)
+                    self.printWrapped("Short atmospheric descriptions. The DM sets the scene but doesn't interfere with gameplay.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  MODERATE", color: .cyan, bold: true)
+                    self.printWrapped("Hints, story beats, and hidden details. The DM adds narrative depth and may reveal secrets.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  FULL", color: .cyan, bold: true)
+                    self.printWrapped("Full creative freedom. The DM can grant items, modify the story, create quests, and surprise you. The richest experience but uses the most AI tokens.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+                return
+            }
             if choice <= DMAdLibLevel.allCases.count {
+                self.pushSettingsSnapshot()
                 DMEngine.shared.adLibLevel = DMAdLibLevel(rawValue: choice - 1) ?? .flavorOnly
-                self?.showAdLibLevelMenu()
+                self.showAdLibLevelMenu()
             }
         }
+        updateSettingsUndoRedo { [weak self] in self?.showAdLibLevelMenu() }
     }
 
     func showVoiceSettings() {
@@ -6201,8 +7027,6 @@ class GameEngine: ObservableObject {
         options.append(speech.isEnabled ? "Turn Off" : "Turn On")
         if speech.isEnabled {
             options.append("Choose DM Voice")
-            options.append("Speed")
-            options.append("Pitch")
             options.append(speech.accessibilityHelpEnabled ? "Help Narration Off" : "Help Narration On")
         }
         options.append("Preview")
@@ -6218,10 +7042,6 @@ class GameEngine: ObservableObject {
                 self?.showVoiceSettings()
             } else if selected == "Choose DM Voice" {
                 self?.showVoiceChoiceMenu()
-            } else if selected == "Speed" {
-                self?.showVoiceSpeedMenu()
-            } else if selected == "Pitch" {
-                self?.showVoicePitchMenu()
             } else if selected.hasPrefix("Help Narration") {
                 speech.accessibilityHelpEnabled.toggle()
                 self?.showVoiceSettings()
@@ -6282,9 +7102,9 @@ class GameEngine: ObservableObject {
             menuOpts.append("\(icon) \(shortName)")
         }
 
-        // Toggle: show Reset All Off when all are on, Reset All On otherwise
+        // Toggle: show All Off when all are on, All On otherwise
         let allOn = currentPool.count >= allVoices.count
-        menuOpts.append(allOn ? "Reset All Off" : "Reset All On")
+        menuOpts.append(allOn ? "All Off" : "All On")
 
         menuOpts.append("?")
 
@@ -6298,13 +7118,13 @@ class GameEngine: ObservableObject {
                 self.previewPartyVoices()
             } else if selected == "?" {
                 self.showCompanionVoiceHelp()
-            } else if selected == "Reset All On" {
+            } else if selected == "All On" {
                 speech.adventurerVoicePool = speech.defaultAdventurerPool()
                 self.showAdventurerVoiceSettings()
-            } else if selected == "Reset All Off" {
-                // Keep just one voice (first in pool) — pool must have at least one
-                if let first = allVoices.first {
-                    speech.adventurerVoicePool = [first.identifier]
+            } else if selected == "All Off" {
+                // Keep just one random voice — pool must have at least one
+                if let random = allVoices.randomElement() {
+                    speech.adventurerVoicePool = [random.identifier]
                 }
                 self.showAdventurerVoiceSettings()
             } else if let charIdx = charButtonNames.firstIndex(of: selected) {
@@ -6382,24 +7202,28 @@ class GameEngine: ObservableObject {
     }
 
     private func showCompanionVoiceHelp() {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Companion Voices — Help")
-        print("")
-        printWrapped("HOW IT WORKS", indent: 2, color: .cyan, bold: true)
-        printWrapped("Each party member is assigned a unique voice based on their race, class, and name. The DM picks voices that fit each character — deep voices for dwarves and orcs, lighter voices for elves and halflings.", indent: 2, color: .dimGreen)
-        print("")
-        printWrapped("VOICE POOL", indent: 2, color: .cyan, bold: true)
-        printWrapped("Toggle voices on or off in the pool. The more voices available, the better the DM can match characters. Include both male and female voices for variety.", indent: 2, color: .dimGreen)
-        print("")
-        printWrapped("MANUAL OVERRIDE", indent: 2, color: .cyan, bold: true)
-        printWrapped("Tap a character's ♪ button to pick a specific voice for them, or go to Party Status > Change Voice. Use 'Reset to Auto' to let the DM choose again.", indent: 2, color: .dimGreen)
-        print("")
-        printWrapped("PREVIEW", indent: 2, color: .cyan, bold: true)
-        printWrapped("'Preview Party' speaks a line for each party member in their assigned voice so you can hear how they sound.", indent: 2, color: .dimGreen)
-        print("")
-
-        closeHandler = { [weak self] in self?.showAdventurerVoiceSettings() }
+        showInlineHelp {
+            self.printTitle("Companion Voices — Help")
+            self.print("")
+            self.printWrapped("HOW IT WORKS", indent: 2, color: .cyan, bold: true)
+            self.printWrapped("Each party member is assigned a unique voice based on their race, class, and name. The DM picks voices that fit each character — deep voices for dwarves and orcs, lighter voices for elves and halflings.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("BUTTON SYMBOLS", indent: 2, color: .cyan, bold: true)
+            self.printWrapped("♪ — tap to choose a specific voice for that character.", indent: 2, color: .dimGreen)
+            self.printWrapped("+ — voice is enabled in the pool (available for matching).", indent: 2, color: .dimGreen)
+            self.printWrapped("- — voice is disabled (won't be used for matching).", indent: 2, color: .dimGreen)
+            self.printWrapped("All On — enables every voice in the pool (toggles to All Off when all are already on).", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("VOICE POOL", indent: 2, color: .cyan, bold: true)
+            self.printWrapped("Tap a voice to toggle it on (+) or off (-) and hear a preview. The more voices available, the better the DM can match characters. Include both male and female voices for variety.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("MANUAL OVERRIDE", indent: 2, color: .cyan, bold: true)
+            self.printWrapped("Tap a character's ♪ button to pick a specific voice for them, or go to Party Status > Change Voice. Use 'Reset to Auto' to let the DM choose again.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("PREVIEW", indent: 2, color: .cyan, bold: true)
+            self.printWrapped("'Preview Party' speaks a line for each party member in their assigned voice so you can hear how they sound.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
     }
 
     private func previewPartyVoices() {
@@ -6588,7 +7412,7 @@ class GameEngine: ObservableObject {
         closeHandler = { [weak self] in self?.showCharacterVoiceEdit(index: index) }
     }
 
-    private func showVoicePreview() {
+    private func showVoicePreview(previousVoice: String? = nil) {
         let speech = SpeechEngine.shared
         clearTerminal()
         printTitle("DM Voice Preview")
@@ -6597,7 +7421,16 @@ class GameEngine: ObservableObject {
         print("")
         speech.preview()
 
-        showMenu(["Sounds Good", "Change Voice", "Change Speed", "Change Pitch"])
+        let canRevert = previousVoice != nil && previousVoice != speech.voiceIdentifier
+        var opts = ["Sounds Good", "Change Voice", "Change Speed", "Change Pitch"]
+        if canRevert {
+            opts.append("Revert")
+        }
+        var menuOpts = opts.map { MenuOption($0) }
+        if canRevert {
+            menuOpts[menuOpts.count - 1] = MenuOption("Revert", tint: .danger)
+        }
+        showMenuOptions(menuOpts)
 
         closeHandler = { [weak self] in
             speech.stop()
@@ -6605,14 +7438,26 @@ class GameEngine: ObservableObject {
         }
         menuHandler = { [weak self] choice in
             speech.stop()
-            if choice == 1 {
+            let selected = opts[choice - 1]
+            switch selected {
+            case "Sounds Good":
                 self?.showVoiceSettings()
-            } else if choice == 2 {
+            case "Change Voice":
                 self?.showVoiceChoiceMenu()
-            } else if choice == 3 {
+            case "Change Speed":
                 self?.showVoiceSpeedMenu()
-            } else if choice == 4 {
+            case "Change Pitch":
                 self?.showVoicePitchMenu()
+            case "Revert":
+                speech.voiceIdentifier = previousVoice!
+                self?.print("")
+                self?.print("  Voice reverted.", color: .yellow)
+                self?.print("")
+                self?.waitForContinue()
+                self?.inputHandler = { [weak self] _ in
+                    self?.showVoiceChoiceMenu()
+                }
+            default: break
             }
         }
     }
@@ -6660,19 +7505,20 @@ class GameEngine: ObservableObject {
         }
 
         for v in pageVoices {
-            let marker = v.identifier == currentId ? " <--" : ""
+            let isCurrent = v.identifier == currentId
+            let marker = isCurrent ? " <--" : ""
             print("  \(v.label)\(marker)",
-                  color: v.identifier == currentId ? .brightGreen : .green)
+                  color: isCurrent ? .brightGreen : .dimGreen, bold: isCurrent)
         }
         print("")
 
         var options: [String] = []
         if page > 0 {
-            options.append("⏮")
+            options.append("<<")
         }
         options.append(contentsOf: pageVoices.map { $0.name })
         if page < totalPages - 1 {
-            options.append("⏭")
+            options.append(">>")
         }
         options.append("?")
         showMenu(options)
@@ -6680,9 +7526,9 @@ class GameEngine: ObservableObject {
         closeHandler = { [weak self] in self?.showVoiceSettings() }
         menuHandler = { [weak self] choice in
             let selected = options[choice - 1]
-            if selected == "⏮" {
+            if selected == "<<" {
                 self?.showVoiceChoiceMenu(page: page - 1)
-            } else if selected == "⏭" {
+            } else if selected == ">>" {
                 self?.showVoiceChoiceMenu(page: page + 1)
             } else if selected == "?" {
                 self?.showVoiceChoiceHelp(page: page)
@@ -6692,32 +7538,27 @@ class GameEngine: ObservableObject {
                 let voiceIdx = choice - 1 - voiceButtonStart
                 if voiceIdx >= 0 && voiceIdx < pageVoices.count {
                     let v = pageVoices[voiceIdx]
+                    let previousVoice = speech.voiceIdentifier
                     speech.voiceIdentifier = v.identifier
-                    self?.showVoicePreview()
+                    self?.showVoicePreview(previousVoice: previousVoice)
                 }
             }
         }
     }
 
     private func showVoiceChoiceHelp(page: Int) {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Choose Voice — Help")
-        print("")
-        printWrapped("Select a voice for the DM's narration. Tap a voice name to hear a preview, then confirm or try another.", indent: 2, color: .green)
-        print("")
-        print("  NAVIGATION", color: .cyan, bold: true)
-        printWrapped("Use ⏭ and ⏮ to browse pages. The current voice is marked with <-- in the list above.", indent: 2, color: .dimGreen)
-        print("")
-        print("  BETTER VOICES", color: .cyan, bold: true)
-        printWrapped("For higher quality voices, go to iOS Settings > Accessibility > Spoken Content > Voices > English and download Enhanced or Premium voices.", indent: 2, color: .dimGreen)
-        print("")
-        printWrapped("Tap ✕ to return to Voice Settings.", indent: 2, color: .dimGreen)
-        print("")
-
-        showMenu(["Continue"])
-        closeHandler = { [weak self] in self?.showVoiceChoiceMenu(page: page) }
-        menuHandler = { [weak self] _ in self?.showVoiceChoiceMenu(page: page) }
+        showInlineHelp {
+            self.printTitle("Choose Voice — Help")
+            self.print("")
+            self.printWrapped("Select a voice for the DM's narration. Tap a voice name to hear a preview, then confirm, revert, or adjust speed and pitch.", indent: 2, color: .green)
+            self.print("")
+            self.print("  NAVIGATION", color: .cyan, bold: true)
+            self.printWrapped("Use >> and << to browse pages. The current voice is marked with <-- in the list above.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  BETTER VOICES", color: .cyan, bold: true)
+            self.printWrapped("For higher quality voices, go to iOS Settings > Accessibility > Spoken Content > Voices > English and download Enhanced or Premium voices.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
     }
 
     private func showVoiceSpeedMenu() {
@@ -6733,8 +7574,9 @@ class GameEngine: ObservableObject {
         ]
 
         for s in speeds {
-            let marker = abs(speech.rate - s.value) < 0.05 ? " <--" : ""
-            print("  \(s.name)\(marker)", color: abs(speech.rate - s.value) < 0.05 ? .brightGreen : .green)
+            let isCurrent = abs(speech.rate - s.value) < 0.05
+            let marker = isCurrent ? " <--" : ""
+            print("  \(s.name)\(marker)", color: isCurrent ? .brightGreen : .dimGreen, bold: isCurrent)
         }
         print("")
 
@@ -6781,8 +7623,9 @@ class GameEngine: ObservableObject {
         ]
 
         for p in pitches {
-            let marker = abs(speech.pitch - p.value) < 0.08 ? " <--" : ""
-            print("  \(p.name)\(marker)", color: abs(speech.pitch - p.value) < 0.08 ? .brightGreen : .green)
+            let isCurrent = abs(speech.pitch - p.value) < 0.08
+            let marker = isCurrent ? " <--" : ""
+            print("  \(p.name)\(marker)", color: isCurrent ? .brightGreen : .dimGreen, bold: isCurrent)
         }
         print("")
 
@@ -6825,8 +7668,9 @@ class GameEngine: ObservableObject {
 
         let current = autosaveInterval
         for interval in AutosaveInterval.allCases {
-            let marker = interval == current ? " <--" : ""
-            print("  \(interval.displayName)\(marker)", color: interval == current ? .brightGreen : .green)
+            let isCurrent = interval == current
+            let marker = isCurrent ? " <--" : ""
+            print("  \(interval.displayName)\(marker)", color: isCurrent ? .brightGreen : .dimGreen, bold: isCurrent)
         }
         print("")
 
@@ -6874,6 +7718,65 @@ class GameEngine: ObservableObject {
         showDMLogRoller(steps: steps, selectedIndex: selectedIndex)
     }
 
+    private func stopLogRollerTimer() {
+        logRollerTimer?.invalidate()
+        logRollerTimer = nil
+        logRollerTickCount = 0
+    }
+
+    private func startLogRollerRepeat(steps: [Int], selectedIndex: Int, direction: Int) {
+        stopLogRollerTimer()
+        logRollerTickCount = 0
+
+        // Initial jump of 10 on the long-press itself
+        let firstTarget: Int
+        if direction < 0 {
+            firstTarget = max(0, selectedIndex - 10)
+        } else {
+            firstTarget = min(steps.count - 1, selectedIndex + 10)
+        }
+        if firstTarget != selectedIndex {
+            pushSettingsSnapshot()
+            showDMLogRoller(steps: steps, selectedIndex: firstTarget)
+        }
+
+        // Start repeating timer that accelerates
+        scheduleLogRollerTick(steps: steps, currentIndex: firstTarget, direction: direction)
+    }
+
+    private func scheduleLogRollerTick(steps: [Int], currentIndex: Int, direction: Int) {
+        logRollerTickCount += 1
+
+        // Accelerate: interval decreases, step size increases
+        let interval: TimeInterval
+        let stepSize: Int
+        switch logRollerTickCount {
+        case 1...3:    interval = 0.25; stepSize = 1
+        case 4...8:    interval = 0.15; stepSize = 2
+        case 9...15:   interval = 0.10; stepSize = 5
+        default:       interval = 0.06; stepSize = 10
+        }
+
+        logRollerTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
+            let nextIndex: Int
+            if direction < 0 {
+                nextIndex = max(0, currentIndex - stepSize)
+            } else {
+                nextIndex = min(steps.count - 1, currentIndex + stepSize)
+            }
+            if nextIndex == currentIndex {
+                // Hit boundary — stop
+                self.stopLogRollerTimer()
+                return
+            }
+            DispatchQueue.main.async {
+                self.showDMLogRoller(steps: steps, selectedIndex: nextIndex)
+                self.scheduleLogRollerTick(steps: steps, currentIndex: nextIndex, direction: direction)
+            }
+        }
+    }
+
     private func showDMLogRoller(steps: [Int], selectedIndex: Int) {
         clearTerminal()
         printTitle("DM Log Context")
@@ -6881,6 +7784,7 @@ class GameEngine: ObservableObject {
         print("  sent to the AI DM for context.", color: .dimGreen)
         print("  More = better narrative continuity", color: .dimGreen)
         print("  but uses more AI tokens.", color: .dimGreen)
+        print("  Hold ▲/▼ to scroll continuously.", color: .dimGreen)
         print("")
 
         // Show scroll wheel: 2 above, current, 2 below
@@ -6904,29 +7808,60 @@ class GameEngine: ObservableObject {
         options.append(MenuOption("▲", isDisabled: selectedIndex <= 0))
         options.append(MenuOption("▼", isDisabled: selectedIndex >= steps.count - 1))
         options.append(MenuOption("Set", tint: .navigation))
+        options.append(MenuOption("?", tint: .navigation, compact: true))
 
         showMenuOptions(options)
         closeHandler = { [weak self] in
+            self?.stopLogRollerTimer()
             self?.showDMSettingsSubMenu()
         }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
+            self.stopLogRollerTimer()
             switch choice {
             case 1: // Up
                 if selectedIndex > 0 {
+                    self.pushSettingsSnapshot()
                     self.showDMLogRoller(steps: steps, selectedIndex: selectedIndex - 1)
                 }
             case 2: // Down
                 if selectedIndex < steps.count - 1 {
+                    self.pushSettingsSnapshot()
                     self.showDMLogRoller(steps: steps, selectedIndex: selectedIndex + 1)
                 }
             case 3: // Set
+                self.pushSettingsSnapshot()
                 let val = steps[selectedIndex]
                 self.dmLogContextSize = (val == 0 || val >= 2048) ? Int.max : val
                 self.showDMSettingsSubMenu()
+            case 4: // Help
+                self.showInlineHelp {
+                    self.printTitle("Log Context Help")
+                    self.print("")
+                    self.printWrapped("Controls how many lines of your adventure log the AI DM reads when generating responses.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("More context means the DM remembers more of your story and gives better continuity, but requests are slower and use more tokens (costing more for cloud providers).", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("'Unlimited' sends the entire adventure log. For most sessions, 200-400 lines is a good balance.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("Use ▲/▼ to adjust. Hold ▲/▼ to scroll continuously — it gets faster the longer you hold.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
             default: break
             }
         }
+        // Long-press ▲/▼ — continuous scrolling with acceleration
+        menuLongPressHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1: // Long-press Up — hold to scroll up
+                self.startLogRollerRepeat(steps: steps, selectedIndex: selectedIndex, direction: -1)
+            case 2: // Long-press Down — hold to scroll down
+                self.startLogRollerRepeat(steps: steps, selectedIndex: selectedIndex, direction: 1)
+            default: break
+            }
+        }
+        updateSettingsUndoRedo { [weak self] in self?.showDMLogRoller(steps: steps, selectedIndex: selectedIndex) }
     }
 
     private var mapPreviewTorchOn: Bool = true
@@ -6961,8 +7896,6 @@ class GameEngine: ObservableObject {
         if dungeon != nil {
             menuOpts.append(mapPreviewTorchOn ? "Torch Off" : "Torch On")
         }
-        menuOpts.append("Done")
-
         showMenu(menuOpts)
 
         closeHandler = { [weak self] in self?.showGameplaySettings() }
@@ -6975,8 +7908,45 @@ class GameEngine: ObservableObject {
             } else if dungeon != nil && choice == 4 {
                 self.mapPreviewTorchOn.toggle()
                 self.showMapRadiusMenu()
-            } else {
-                self.showGameplaySettings()
+            }
+        }
+    }
+
+    private func showFontAndIconsMenu() {
+        clearTerminal()
+        printTitle("Font & Icons")
+        print("")
+
+        print("FONT SIZE:", color: .cyan, bold: true)
+        print("  \(fontSizeSetting.displayName)", color: .brightGreen)
+        print("")
+
+        print("ICON SIZE:", color: .cyan, bold: true)
+        let iconLabel = iconScaleSetting == 0 ? "Normal" : (iconScaleSetting == 1 ? "Large" : "Extra Large")
+        print("  \(iconLabel)", color: .brightGreen)
+        print("")
+
+        print("HIT ANIMATIONS:", color: .cyan, bold: true)
+        print("  \(hitAnimationsEnabled ? "On" : "Off")", color: hitAnimationsEnabled ? .brightGreen : .red)
+        print("")
+
+        let options = ["Font Size", "Icon Size", hitAnimationsEnabled ? "Hits Off" : "Hits On"]
+        showMenu(options)
+        closeHandler = { [weak self] in self?.showAccessibilityMenu() }
+        updateSettingsUndoRedo { [weak self] in self?.showFontAndIconsMenu() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            self.pushSettingsSnapshot()
+            switch choice {
+            case 1: self.showFontSizeMenu()
+            case 2:
+                self.iconScaleSetting = (self.iconScaleSetting + 1) % 3
+                UserDefaults.standard.set(self.iconScaleSetting, forKey: "iconScaleSetting")
+                self.showFontAndIconsMenu()
+            case 3:
+                self.hitAnimationsEnabled.toggle()
+                self.showFontAndIconsMenu()
+            default: break
             }
         }
     }
@@ -6988,17 +7958,19 @@ class GameEngine: ObservableObject {
 
         let current = fontSizeSetting
         for size in FontSizeSetting.allCases {
-            let marker = size == current ? " <--" : ""
-            print("  \(size.displayName)\(marker)", color: size == current ? .brightGreen : .green)
+            let isCurrent = size == current
+            let marker = isCurrent ? " <--" : ""
+            print("  \(size.displayName)\(marker)", color: isCurrent ? .brightGreen : .dimGreen, bold: isCurrent)
         }
         print("")
 
         let options = FontSizeSetting.allCases.map { $0.displayName }
         showMenu(options)
 
-        closeHandler = { [weak self] in self?.showAccessibilityMenu() }
+        closeHandler = { [weak self] in self?.showFontAndIconsMenu() }
         menuHandler = { [weak self] choice in
             let selected = FontSizeSetting.allCases[choice - 1]
+            self?.pushSettingsSnapshot()
             self?.fontSizeSetting = selected
             self?.print("")
             self?.print("Font size set to: \(selected.displayName)", color: .brightGreen)
@@ -7009,7 +7981,7 @@ class GameEngine: ObservableObject {
         }
     }
 
-    private func promptAPIKey() {
+    private func promptAPIKey(showClearConfirm: Bool = false) {
         let provider = DMEngine.shared.provider
         clearTerminal()
         printTitle("Set API Key")
@@ -7104,6 +8076,54 @@ class GameEngine: ObservableObject {
         }
         print("")
 
+        // Handle clear confirmation overlay
+        if showClearConfirm {
+            print("  Are you sure you want to clear", color: .red)
+            print("  this API key?", color: .red)
+            print("")
+            print("  Tip: Copy the key first using", color: .dimGreen)
+            print("  'Copy Key' to back it up.", color: .dimGreen)
+            print("")
+            var confirmOpts = [MenuOption("Clear Key", tint: .danger), MenuOption("Copy Key First")]
+            confirmOpts.append(MenuOption("Cancel", tint: .navigation))
+            showMenuOptions(confirmOpts)
+            closeHandler = { [weak self] in self?.promptAPIKey() }
+            menuHandler = { [weak self] choice in
+                guard let self = self else { return }
+                switch choice {
+                case 1: // Clear
+                    self.backupSingleAPIKeyToKeychain(for: provider)
+                    DMEngine.shared.apiKey = nil
+                    self.print("")
+                    self.print("  API key cleared.", color: .yellow)
+                    self.print("  (Backed up to Keychain — use", color: .dimGreen)
+                    self.print("  'Load Key' to restore it.)", color: .dimGreen)
+                    self.print("")
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in
+                        self?.promptAPIKey()
+                    }
+                case 2: // Copy key first
+                    #if os(iOS)
+                    if let key = DMEngine.shared.apiKey {
+                        UIPasteboard.general.string = key
+                        self.print("")
+                        self.print("  Key copied to clipboard.", color: .brightGreen)
+                        self.print("  Now you can clear it safely.", color: .dimGreen)
+                        self.print("")
+                        self.waitForContinue()
+                        self.inputHandler = { [weak self] _ in
+                            self?.promptAPIKey(showClearConfirm: true)
+                        }
+                    }
+                    #endif
+                default: // Cancel
+                    self.promptAPIKey()
+                }
+            }
+            return
+        }
+
         var options = [String]()
         if provider == .google {
             options.append("Get Free Key")
@@ -7112,15 +8132,64 @@ class GameEngine: ObservableObject {
         }
         options.append("Paste Key")
         options.append("Type Key")
+        let hasKey = DMEngine.shared.apiKey != nil && !(DMEngine.shared.apiKey ?? "").isEmpty
+        // Auto-backup current key to Keychain whenever we visit this screen
+        if hasKey {
+            backupSingleAPIKeyToKeychain(for: provider)
+        }
+        let hasKeychainBackup = loadAPIKeyFromKeychain(for: provider) != nil
+        if hasKey {
+            options.append("Copy Key")
+            options.append("Clear Key")
+        }
+        options.append("Load Key")
 
         closeHandler = { [weak self] in
             self?.closeHandler = nil
-            self?.showSettings()
+            self?.showDMSettingsSubMenu()
         }
-        showMenu(options)
+        var menuOpts = options.map { text -> MenuOption in
+            if text == "Clear Key" { return MenuOption(text, tint: .danger) }
+            if text == "Load Key" { return MenuOption(text, isDisabled: !hasKeychainBackup) }
+            return MenuOption(text)
+        }
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        showMenuOptions(menuOpts)
 
         menuHandler = { [weak self] choice in
-            if choice == 1 {
+            guard let self = self else { return }
+            if choice == menuOpts.count {
+                // Help
+                self.showInlineHelp {
+                    self.printTitle("API Key Help")
+                    self.print("")
+                    self.print("  GET KEY", color: .cyan, bold: true)
+                    self.printWrapped("Opens your provider's website where you can create an API key. Copy it there, then come back and paste it.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  PASTE KEY", color: .cyan, bold: true)
+                    self.printWrapped("Pastes a key from your clipboard. The quickest way to enter a key you've just copied.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  TYPE KEY", color: .cyan, bold: true)
+                    self.printWrapped("Manually type or paste your API key into a text field. Use this if clipboard paste doesn't work.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    if hasKey {
+                        self.print("  COPY KEY", color: .cyan, bold: true)
+                        self.printWrapped("Copies your current key to the clipboard — useful as a backup before clearing.", indent: 2, color: .dimGreen)
+                        self.print("")
+                        self.print("  CLEAR KEY", color: .cyan, bold: true)
+                        self.printWrapped("Removes your stored API key. The key is automatically backed up to Keychain first, so you can restore it with Load Key. Long-press Clear Key to permanently delete the key and its backup.", indent: 2, color: .dimGreen)
+                        self.print("")
+                    }
+                    self.print("  LOAD KEY", color: .cyan, bold: true)
+                    self.printWrapped("Restores a previously backed-up key from the device Keychain. Keys are backed up automatically when cleared, or manually via Save & Backup.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("Your API key is stored locally on this device and never shared. Each provider has its own key — switching providers preserves other keys.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+                return
+            }
+            let selected = options[choice - 1]
+            if selected == "Get Free Key" || selected == "Get Key" {
                 // Open the provider's key URL in Safari
                 let urlString: String
                 switch provider {
@@ -7139,33 +8208,33 @@ class GameEngine: ObservableObject {
                 }
                 // When they come back, show the same menu again
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    self?.promptAPIKey()
+                    self.promptAPIKey()
                 }
-            } else if choice == 2 {
+            } else if selected == "Paste Key" {
                 // Paste from clipboard
                 #if os(iOS)
                 if let clipText = UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines),
                    !clipText.isEmpty {
                     DMEngine.shared.apiKey = clipText
-                    self?.print("")
-                    self?.print("  Testing API key...", color: .dimGreen)
-                    self?.validateAndConfirmKey(provider: provider)
+                    self.print("")
+                    self.print("  Testing API key...", color: .dimGreen)
+                    self.validateAndConfirmKey(provider: provider)
                 } else {
-                    self?.print("")
-                    self?.print("Clipboard is empty.", color: .yellow)
-                    self?.print("Copy your API key first.", color: .dimGreen)
-                    self?.print("")
-                    self?.waitForContinue()
-                    self?.inputHandler = { [weak self] _ in
+                    self.print("")
+                    self.print("Clipboard is empty.", color: .yellow)
+                    self.print("Copy your API key first.", color: .dimGreen)
+                    self.print("")
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in
                         self?.promptAPIKey()
                     }
                 }
                 #endif
-            } else if choice == 3 {
+            } else if selected == "Type Key" {
                 // Manual text entry
-                self?.print("")
-                self?.promptText("Paste your API key:")
-                self?.inputHandler = { [weak self] key in
+                self.print("")
+                self.promptText("Paste your API key:")
+                self.inputHandler = { [weak self] key in
                     let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
                     if trimmed.isEmpty {
                         self?.promptAPIKey()
@@ -7176,6 +8245,91 @@ class GameEngine: ObservableObject {
                     self?.print("  Testing API key...", color: .dimGreen)
                     self?.validateAndConfirmKey(provider: provider)
                 }
+            } else if selected == "Copy Key" {
+                #if os(iOS)
+                if let key = DMEngine.shared.apiKey {
+                    UIPasteboard.general.string = key
+                    self.print("")
+                    self.print("  Key copied to clipboard.", color: .brightGreen)
+                    self.print("")
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in
+                        self?.promptAPIKey()
+                    }
+                }
+                #endif
+            } else if selected == "Clear Key" {
+                self.promptAPIKey(showClearConfirm: true)
+            } else if selected == "Load Key" {
+                if let restored = self.loadAPIKeyFromKeychain(for: provider) {
+                    DMEngine.shared.apiKey = restored
+                    self.print("")
+                    self.print("  Key restored from Keychain!", color: .brightGreen)
+                    let preview = String(restored.suffix(6))
+                    self.print("  Key: ...\(preview)", color: .dimGreen)
+                    self.print("")
+                    self.print("  Testing API key...", color: .dimGreen)
+                    self.validateAndConfirmKey(provider: provider)
+                } else {
+                    self.print("")
+                    self.print("  No backup found in Keychain.", color: .yellow)
+                    self.print("")
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in
+                        self?.promptAPIKey()
+                    }
+                }
+            }
+        }
+        // Long-press Clear Key → permanent delete (removes from Keychain too)
+        menuLongPressHandler = { [weak self] choice in
+            guard let self = self else { return }
+            let idx = choice - 1
+            guard idx >= 0 && idx < options.count && options[idx] == "Clear Key" else { return }
+            self.promptPermanentKeyDelete(provider: provider)
+        }
+    }
+
+    private func promptPermanentKeyDelete(provider: AIProvider) {
+        clearTerminal()
+        printTitle("Permanently Delete Key")
+        print("")
+        print("  This will permanently remove your", color: .red)
+        print("  \(provider.displayName) API key from this", color: .red)
+        print("  device — including the Keychain backup.", color: .red)
+        print("")
+        print("  You will not be able to recover it.", color: .yellow)
+        print("  Make sure you have it saved elsewhere", color: .yellow)
+        print("  or can create a new one.", color: .yellow)
+        print("")
+
+        if let key = DMEngine.shared.apiKey {
+            let preview = String(key.suffix(6))
+            print("  Key: ...\(preview)", color: .dimGreen)
+            print("")
+        }
+
+        let opts = [
+            MenuOption("Delete Permanently", tint: .danger),
+            MenuOption("Cancel", tint: .navigation)
+        ]
+        showMenuOptions(opts)
+        closeHandler = { [weak self] in self?.promptAPIKey() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                DMEngine.shared.apiKey = nil
+                self.deleteSingleAPIKeyFromKeychain(for: provider)
+                self.print("")
+                self.print("  Key permanently deleted.", color: .yellow)
+                self.print("  Removed from Keychain backup too.", color: .dimGreen)
+                self.print("")
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.promptAPIKey()
+                }
+            } else {
+                self.promptAPIKey()
             }
         }
     }
@@ -7192,7 +8346,7 @@ class GameEngine: ObservableObject {
                     self?.print("")
                     self?.waitForContinue()
                     self?.inputHandler = { [weak self] _ in
-                        self?.showSettings()
+                        self?.showAIProviderMenu()
                     }
                 } else {
                     self?.print("")
@@ -7264,6 +8418,7 @@ class GameEngine: ObservableObject {
 
     func showHallOfFame() {
         clearTerminal()
+        menuImageName = "DragonGuard"
 
         printLines(asciiTrophy, color: .yellow)
         print("")
@@ -7287,12 +8442,19 @@ class GameEngine: ObservableObject {
             print("  Complete a dungeon to earn your place!", color: .dimGreen)
             print("")
 
+            showMenu(["?"])
             closeHandler = { [weak self] in
                 self?.showMainMenu()
+            }
+            menuHandler = { [weak self] choice in
+                if choice == 1 { self?.showHallOfFameHelp() }
             }
         } else {
             let dateFormatter = DateFormatter()
             dateFormatter.dateStyle = .medium
+
+            // Track line ranges for each entry (for tap-to-read)
+            var entryStartLines: [(entry: HallOfFameEntry, nameText: String)] = []
 
             for (index, entry) in entries.enumerated() {
                 let outcomeTag = entry.outcome == .victory ? "W" : "L"
@@ -7300,7 +8462,9 @@ class GameEngine: ObservableObject {
 
                 let num = "\(index + 1)."
                 let name = String(entry.dungeonName.prefix(20))
-                print("\(num) \(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts", color: outcomeColor)
+                let headerText = "\(num) \(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts"
+                print(headerText, color: outcomeColor)
+                entryStartLines.append((entry, headerText))
 
                 let day = entry.gameTimeMinutes / 1440 + 1
                 printWrapped(entry.partyDescription, indent: 3, color: .dimGreen)
@@ -7309,15 +8473,96 @@ class GameEngine: ObservableObject {
                 print("")
             }
 
-            showMenu(["Tell a Tale"])
+            printWrapped("Tap an entry to read its tale.", indent: 2, color: .dimGreen)
+            print("")
+
+            var menuOpts = [MenuOption("?", tint: .navigation, compact: true)]
+            if entries.count > 1 {
+                menuOpts.append(MenuOption("🎲", tint: .navigation, compact: true))
+            }
+            showMenuOptions(menuOpts)
             closeHandler = { [weak self] in
                 self?.showMainMenu()
             }
             menuHandler = { [weak self] choice in
-                if choice == 1 {
-                    self?.showTaleSelector(entries: entries)
+                guard let self = self else { return }
+                let text = menuOpts[choice - 1].text
+                if text == "?" { self.showHallOfFameHelp() }
+                else if text == "🎲" {
+                    let r = Int.random(in: 0..<entries.count)
+                    self.showHallOfFameDetail(entries[r], entries: entries, index: r)
                 }
             }
+
+            // Swipe into the tales — left for next, right for previous
+            if entries.count > 1 {
+                cardPositionLabel = " \(entries.count)"
+                swipeLeftHandler = { [weak self] in
+                    self?.showHallOfFameDetail(entries[0], entries: entries, index: 0)
+                }
+                swipeRightHandler = { [weak self] in
+                    self?.showHallOfFameDetail(entries[entries.count - 1], entries: entries, index: entries.count - 1)
+                }
+            } else if entries.count == 1 {
+                swipeLeftHandler = { [weak self] in
+                    self?.showHallOfFameDetail(entries[0], entries: entries, index: 0)
+                }
+            }
+
+            // Set up tap handler — map line taps to entries
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                // Find each entry's header line in terminalLines
+                var blockRanges: [(entry: HallOfFameEntry, startLine: Int)] = []
+                let claimedLines = NSMutableIndexSet()
+                for item in entryStartLines {
+                    for (i, line) in self.terminalLines.enumerated() {
+                        if line.text == item.nameText && !claimedLines.contains(i) {
+                            blockRanges.append((item.entry, i))
+                            claimedLines.add(i)
+                            break
+                        }
+                    }
+                }
+
+                let allEntries = entries
+                self.textLongPressHandler = { [weak self] lineIndex in
+                    for (i, block) in blockRanges.enumerated() {
+                        let endLine = (i + 1 < blockRanges.count) ? blockRanges[i + 1].startLine : (self?.terminalLines.count ?? 0)
+                        if lineIndex >= block.startLine && lineIndex < endLine {
+                            self?.showHallOfFameDetail(block.entry, entries: allEntries, index: i)
+                            return
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func showHallOfFameHelp() {
+        showInlineHelp {
+            self.printTitle("Hall of Fame — Help")
+            self.print("")
+
+            self.print("  HALL OF FAME", color: .cyan, bold: true)
+            self.printWrapped("Records the top 10 adventures — victories and defeats. Each entry shows the dungeon name, level, outcome, and a composite score.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  SCORE", color: .cyan, bold: true)
+            self.printWrapped("Score is calculated from: victory bonus (+500), gold collected, monsters slain (×20), combats won (×50), exploration percentage, and dungeon level multiplier.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  TAP AN ENTRY", color: .cyan, bold: true)
+            self.printWrapped("Tap any entry in the list to read a dramatic tale of that adventure, generated by the Dungeon Master. The tale includes party composition, key battles, and the final outcome.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  STATS", color: .cyan, bold: true)
+            self.printWrapped("The summary at the top shows total victories, defeats, best gold haul, and most monsters slain across all recorded runs.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  SWIPE & DICE", color: .cyan, bold: true)
+            self.printWrapped("Swipe left or right on the list to jump into a tale. On the tale page, swipe or use the <</>> buttons to move between entries (cycles round at the end). 🎲 picks a random tale.", indent: 2, color: .dimGreen)
+            self.print("")
         }
     }
 
@@ -7390,9 +8635,9 @@ class GameEngine: ObservableObject {
                 self?.showTaleSelector(entries: entries, selectedIndex: next)
             case "Surprise Me":
                 let rand = Int.random(in: 0..<count)
-                self?.showHallOfFameDetail(entries[rand])
+                self?.showHallOfFameDetail(entries[rand], entries: entries, index: rand)
             case "Read Tale":
-                self?.showHallOfFameDetail(entries[selectedIndex])
+                self?.showHallOfFameDetail(entries[selectedIndex], entries: entries, index: selectedIndex)
             default:
                 self?.showHallOfFame()
             }
@@ -7420,7 +8665,8 @@ class GameEngine: ObservableObject {
     }
 
     /// Generate an exciting narrative summary of a Hall of Fame entry
-    private func showHallOfFameDetail(_ entry: HallOfFameEntry) {
+    /// When entries/index provided, enables swipe navigation between tales
+    private func showHallOfFameDetail(_ entry: HallOfFameEntry, entries: [HallOfFameEntry] = [], index: Int = 0) {
         clearTerminal()
 
         let isVictory = entry.outcome == .victory
@@ -7564,9 +8810,34 @@ class GameEngine: ObservableObject {
         print("")
         print("")
 
+        // No menu buttons for this read-only story view (navigation via swipe / X)
+        currentMenuOptions = []
+        menuHandler = nil
+
         closeHandler = { [weak self] in
             SpeechEngine.shared.stop()
             self?.showHallOfFame()
+        }
+
+        // Swipe navigation between tales
+        let count = entries.count
+        if count > 1 {
+            cardPositionLabel = cardLabel(index + 1, of: count)
+            swipeLeftHandler = { [weak self] in
+                SpeechEngine.shared.stop()
+                let next = (index + 1) % count
+                self?.showHallOfFameDetail(entries[next], entries: entries, index: next)
+            }
+            swipeRightHandler = { [weak self] in
+                SpeechEngine.shared.stop()
+                let prev = (index - 1 + count) % count
+                self?.showHallOfFameDetail(entries[prev], entries: entries, index: prev)
+            }
+            swipeRandomHandler = { [weak self] in
+                SpeechEngine.shared.stop()
+                let r = Int.random(in: 0..<count)
+                self?.showHallOfFameDetail(entries[r], entries: entries, index: r)
+            }
         }
 
         // If DM voice is on, narrate the tale
@@ -7760,7 +9031,7 @@ class GameEngine: ObservableObject {
         actions.append { [weak self] in self?.showPartyReviewHelp() }
 
         // Bottom row: Start
-        opts.append(hasRemote ? "Start Matchmaker" : "Enter the Dungeon")
+        opts.append(hasRemote ? "Start Matchmaker" : "Begin Adventure")
         actions.append { [weak self] in
             guard let self = self else { return }
             if hasRemote { self.createMultiplayerMatch() } else { self.startAdventure() }
@@ -7814,7 +9085,9 @@ class GameEngine: ObservableObject {
             }
             if let prev = self.popScreenUndo(screen: partyKey),
                let restored = try? JSONDecoder().decode([Character].self, from: prev) {
+                let names = restored.map { $0.name }.joined(separator: ", ")
                 self.party = restored
+                self.showUndoFeedback(names)
                 self.showPartyReview()
             }
         } : nil
@@ -7827,13 +9100,24 @@ class GameEngine: ObservableObject {
             }
             if let next = self.popScreenRedo(screen: partyKey),
                let restored = try? JSONDecoder().decode([Character].self, from: next) {
+                let names = restored.map { $0.name }.joined(separator: ", ")
                 self.party = restored
+                self.showRedoFeedback(names)
                 self.showPartyReview()
             }
         } : nil
+
+        refreshUndoRedoLabels()
     }
 
     /// Show character card with edit options — dulled if game in progress
+    /// Print a card row: "  ║ Label     Value         ║"
+    private func printCardRow(_ label: String, _ value: String, width: Int, color: TerminalColor) {
+        let inner = " \(label)  \(value)"
+        let padCount = max(0, width - inner.count)
+        print("  ║\(inner)\(String(repeating: " ", count: padCount))║", color: color)
+    }
+
     private func showCharacterReviewCard(index: Int) {
         guard index < party.count else { showPartyReview(); return }
         let char = party[index]
@@ -7841,16 +9125,28 @@ class GameEngine: ObservableObject {
 
         clearTerminal()
 
-        // Show character card art — centred with padding
+        // ── Card border top ──
+        let cardWidth = 33
+        let border = String(repeating: "═", count: cardWidth)
+        print("  ╔\(border)╗", color: .cyan)
+
+        // Show character card art — centred within card
         let artLines = char.characterClass.asciiArt
         let artMax = artLines.map { $0.count }.max() ?? 0
-        let artPadCount = max(0, (31 - artMax) / 2)
-        let artPad = String(repeating: " ", count: artPadCount)
-        printLines(artLines.map { artPad + $0 }, color: .cyan)
-        print("")
+        for line in artLines {
+            let pad = max(0, (cardWidth - line.count) / 2)
+            let padded = String(repeating: " ", count: pad) + line
+            let trailing = max(0, cardWidth - padded.count)
+            print("  ║\(padded)\(String(repeating: " ", count: trailing))║", color: .cyan)
+        }
 
-        // Name and identity
-        print("  \(char.name)", color: .brightGreen, bold: true)
+        // ── Name bar ──
+        let nameLine = " \(char.name) "
+        let nameLeft = max(0, (cardWidth - nameLine.count) / 2)
+        let nameRight = max(0, cardWidth - nameLine.count - nameLeft)
+        print("  ╠\(String(repeating: "─", count: nameLeft))\(nameLine)\(String(repeating: "─", count: nameRight))╣", color: .brightGreen)
+
+        // ── Key identity (highlighted — editable) ──
         let typeStr: String
         if pendingRemoteSlots.contains(index) {
             typeStr = "Remote"
@@ -7859,34 +9155,66 @@ class GameEngine: ObservableObject {
         } else {
             typeStr = "Local (You)"
         }
-        print("  Lv\(char.level) \(char.race.rawValue) \(char.characterClass.rawValue) · \(typeStr)", color: .dimGreen)
-        print("")
+        printCardRow("Type", typeStr, width: cardWidth, color: .yellow)
+        printCardRow("Race", char.race.rawValue, width: cardWidth, color: .yellow)
+        printCardRow("Class", "\(char.characterClass.rawValue) Lv\(char.level)", width: cardWidth, color: .yellow)
 
-        // Core stats
+        // ── Stats ──
         let fm: (Int) -> String = { $0 >= 0 ? "+\($0)" : "\($0)" }
         let s = char.abilityScores
-        print("  HP: \(char.currentHP)/\(char.maxHP)   AC: \(char.armorClass)", color: .cyan)
-        print("  Gold: \(char.gold)   XP: \(char.experiencePoints)", color: .dimGreen)
-        print("")
+        print("  ╟\(String(repeating: "─", count: cardWidth))╢", color: .cyan)
+        printCardRow("HP", "\(char.currentHP)/\(char.maxHP)", width: cardWidth, color: .brightGreen)
+        printCardRow("AC", "\(char.armorClass)", width: cardWidth, color: .brightGreen)
+        printCardRow("Gold", "\(char.gold)", width: cardWidth, color: .dimGreen)
+        printCardRow("XP", "\(char.experiencePoints)", width: cardWidth, color: .dimGreen)
 
-        // Ability scores
-        print("  STR \(s.strength)(\(fm(s.modifier(for: .strength))))  INT \(s.intelligence)(\(fm(s.modifier(for: .intelligence))))", color: .dimGreen)
-        print("  DEX \(s.dexterity)(\(fm(s.modifier(for: .dexterity))))  WIS \(s.wisdom)(\(fm(s.modifier(for: .wisdom))))", color: .dimGreen)
-        print("  CON \(s.constitution)(\(fm(s.modifier(for: .constitution))))  CHA \(s.charisma)(\(fm(s.modifier(for: .charisma))))", color: .dimGreen)
-        print("")
+        // ── Ability scores (highlighted — editable) ──
+        print("  ╟\(String(repeating: "─", count: cardWidth))╢", color: .cyan)
+        printCardRow("STR", "\(s.strength) (\(fm(s.modifier(for: .strength))))", width: cardWidth, color: .yellow)
+        printCardRow("DEX", "\(s.dexterity) (\(fm(s.modifier(for: .dexterity))))", width: cardWidth, color: .yellow)
+        printCardRow("CON", "\(s.constitution) (\(fm(s.modifier(for: .constitution))))", width: cardWidth, color: .yellow)
+        printCardRow("INT", "\(s.intelligence) (\(fm(s.modifier(for: .intelligence))))", width: cardWidth, color: .yellow)
+        printCardRow("WIS", "\(s.wisdom) (\(fm(s.modifier(for: .wisdom))))", width: cardWidth, color: .yellow)
+        printCardRow("CHA", "\(s.charisma) (\(fm(s.modifier(for: .charisma))))", width: cardWidth, color: .yellow)
 
-        // Equipment
-        if let w = char.equippedWeapon { print("  Weapon: \(w.name)", color: .cyan) }
-        if let a = char.equippedArmor { print("  Armour: \(a.name)", color: .cyan) }
-        if let sh = char.equippedShield { print("  Shield: \(sh.name)", color: .cyan) }
-        print("")
+        // ── Equipment ──
+        print("  ╟\(String(repeating: "─", count: cardWidth))╢", color: .cyan)
+        if let w = char.equippedWeapon { printCardRow("Weapon", w.name, width: cardWidth, color: .cyan) }
+        else { printCardRow("Weapon", "—", width: cardWidth, color: .gray) }
+        if let a = char.equippedArmor { printCardRow("Armour", a.name, width: cardWidth, color: .cyan) }
+        else { printCardRow("Armour", "—", width: cardWidth, color: .gray) }
+        if let sh = char.equippedShield { printCardRow("Shield", sh.name, width: cardWidth, color: .cyan) }
 
-        // Skills
+        // ── Skills (highlighted — editable) ──
         if !char.skillProficiencies.isEmpty {
-            let skillList = char.skillProficiencies.map { $0.rawValue }.sorted().joined(separator: ", ")
-            print("  Skills: \(skillList)", color: .dimGreen)
-            print("")
+            print("  ╟\(String(repeating: "─", count: cardWidth))╢", color: .cyan)
+            let skills = char.skillProficiencies.map { $0.rawValue }.sorted()
+            for skill in skills {
+                printCardRow("✓", skill, width: cardWidth, color: .yellow)
+            }
         }
+
+        // ── Spells ──
+        if !char.knownSpells.isEmpty {
+            print("  ╟\(String(repeating: "─", count: cardWidth))╢", color: .cyan)
+            let spellNames = char.knownSpells.prefix(4).map { $0.name }
+            for spell in spellNames {
+                printCardRow("✦", spell, width: cardWidth, color: .magenta)
+            }
+            if char.knownSpells.count > 4 {
+                printCardRow("", "+\(char.knownSpells.count - 4) more", width: cardWidth, color: .gray)
+            }
+        }
+
+        // ── Pack ──
+        if !char.inventory.isEmpty {
+            print("  ╟\(String(repeating: "─", count: cardWidth))╢", color: .cyan)
+            printCardRow("Pack", "\(char.inventory.count)/\(Character.maxInventorySlots) items", width: cardWidth, color: .dimGreen)
+        }
+
+        // ── Card border bottom ──
+        print("  ╚\(border)╝", color: .cyan)
+        print("")
 
         // Mid-adventure warning
         if inGame {
@@ -7947,27 +9275,23 @@ class GameEngine: ObservableObject {
     }
 
     private func showCharacterReviewCardHelp(index: Int, inGame: Bool) {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Character Review Help")
-        print("")
-        printWrapped("Tap a character's name to view their card and edit options.", indent: 2, color: .green)
-        print("")
-        if inGame {
-            printWrapped("Your adventure is underway! Edit buttons are greyed out to prevent accidental changes. If you really need to make a change, long-press the button to override.", indent: 2, color: .yellow)
-            print("")
+        showInlineHelp {
+            self.printTitle("Character Review Help")
+            self.print("")
+            self.printWrapped("Tap a character's name to view their card and edit options.", indent: 2, color: .green)
+            self.print("")
+            if inGame {
+                self.printWrapped("Your adventure is underway! Edit buttons are greyed out to prevent accidental changes. If you really need to make a change, long-press the button to override.", indent: 2, color: .yellow)
+                self.print("")
+            }
+            self.printWrapped("Change Type: Switch between Local (you control), Auto (robot), or Remote (multiplayer) control.", indent: 2, color: .dimGreen)
+            self.printWrapped("Change Race: Change the character's race (Elf, Dwarf, etc.).", indent: 2, color: .dimGreen)
+            self.printWrapped("Change Class: Change the character's class (Fighter, Wizard, etc.).", indent: 2, color: .dimGreen)
+            self.printWrapped("Change Scores: Reassign ability scores (STR, DEX, CON, INT, WIS, CHA) using the standard array.", indent: 2, color: .dimGreen)
+            self.printWrapped("Change Skills: Choose new skill proficiencies from your class list.", indent: 2, color: .dimGreen)
+            self.printWrapped("Change Voice: Customise the character's speech voice.", indent: 2, color: .dimGreen)
+            self.print("")
         }
-        printWrapped("Change Type: Switch between Local (you control), Auto (robot), or Remote (multiplayer) control.", indent: 2, color: .dimGreen)
-        printWrapped("Change Race: Change the character's race (Elf, Dwarf, etc.).", indent: 2, color: .dimGreen)
-        printWrapped("Change Class: Change the character's class (Fighter, Wizard, etc.).", indent: 2, color: .dimGreen)
-        printWrapped("Change Scores: Reassign ability scores (STR, DEX, CON, INT, WIS, CHA) using the standard array.", indent: 2, color: .dimGreen)
-        printWrapped("Change Skills: Choose new skill proficiencies from your class list.", indent: 2, color: .dimGreen)
-        printWrapped("Change Voice: Customise the character's speech voice.", indent: 2, color: .dimGreen)
-        print("")
-
-        showMenu(["Continue"])
-        closeHandler = { [weak self] in self?.showCharacterReviewCard(index: index) }
-        menuHandler = { [weak self] _ in self?.showCharacterReviewCard(index: index) }
     }
 
     // MARK: - Edit Ability Scores (Party Review)
@@ -8271,46 +9595,41 @@ class GameEngine: ObservableObject {
     }
 
     private func showEditCharacterHelp(index: Int) {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Edit Character — Help")
-        print("")
+        showInlineHelp {
+            self.printTitle("Edit Character — Help")
+            self.print("")
 
-        print("  OVERVIEW", color: .cyan, bold: true)
-        printWrapped("Customise this character before entering the dungeon. Each change takes effect immediately — no need to confirm.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  OVERVIEW", color: .cyan, bold: true)
+            self.printWrapped("Customise this character before entering the dungeon. Each change takes effect immediately — no need to confirm.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  CHANGE TYPE", color: .cyan, bold: true)
-        printWrapped("Local (You) — you control this character in combat and exploration.", indent: 2, color: .dimGreen)
-        printWrapped("Auto (Robot) — the robot controls this character. Names prefixed with \"R.\" indicate robot companions.", indent: 2, color: .dimGreen)
-        printWrapped("Remote — reserved for a multiplayer partner via Game Centre (requires Multiplayer enabled in Settings).", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  CHANGE TYPE", color: .cyan, bold: true)
+            self.printWrapped("Local (You) — you control this character in combat and exploration.", indent: 2, color: .dimGreen)
+            self.printWrapped("Auto (Robot) — the robot controls this character. Names prefixed with \"R.\" indicate robot companions.", indent: 2, color: .dimGreen)
+            self.printWrapped("Remote — reserved for a multiplayer partner via Game Centre (requires Multiplayer enabled in Settings).", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  CHANGE RACE", color: .cyan, bold: true)
-        printWrapped("Each race has unique ability score bonuses and traits. For example, Dwarves gain +2 Constitution and poison resistance, while Elves get +2 Dexterity and darkvision.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  CHANGE RACE", color: .cyan, bold: true)
+            self.printWrapped("Each race has unique ability score bonuses and traits. For example, Dwarves gain +2 Constitution and poison resistance, while Elves get +2 Dexterity and darkvision.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  CHANGE CLASS", color: .cyan, bold: true)
-        printWrapped("Class determines HP, armour, weapons, and abilities. Fighters are tough and straightforward; Wizards are fragile but powerful. Changing class re-rolls HP and starting equipment.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  CHANGE CLASS", color: .cyan, bold: true)
+            self.printWrapped("Class determines HP, armour, weapons, and abilities. Fighters are tough and straightforward; Wizards are fragile but powerful. Changing class re-rolls HP and starting equipment.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  CHANGE VOICE", color: .cyan, bold: true)
-        printWrapped("Configure text-to-speech for this companion. You can toggle voices on or off, preview how they sound, and switch between automatic character-matched voices or random assignment.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  CHANGE VOICE", color: .cyan, bold: true)
+            self.printWrapped("Configure text-to-speech for this companion. You can toggle voices on or off, preview how they sound, and switch between automatic character-matched voices or random assignment.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  VIEW CARD", color: .cyan, bold: true)
-        printWrapped("See the character's full stat card with ability scores, HP, equipment, and more. Swipe left/right to browse other party members' cards.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  VIEW CARD", color: .cyan, bold: true)
+            self.printWrapped("See the character's full stat card with ability scores, HP, equipment, and more. Swipe left/right to browse other party members' cards.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  THINGS TO KNOW", color: .cyan, bold: true)
-        printWrapped("Changing race or class re-generates the character's stats. The name stays the same. You can undo/redo changes with swipe gestures if available.", indent: 2, color: .dimGreen)
-        printWrapped("At least one character must be Local (You) — you need someone to control!", indent: 2, color: .yellow)
-        printWrapped("Tap ✕ to return to Party Review when you're done editing.", indent: 2, color: .dimGreen)
-        print("")
-
-        printInputHelp()
-
-        closeHandler = { [weak self] in self?.showEditCharacter(index: index) }
+            self.print("  THINGS TO KNOW", color: .cyan, bold: true)
+            self.printWrapped("Changing race or class re-generates the character's stats. The name stays the same. You can undo/redo changes if enabled in Settings > Gameplay.", indent: 2, color: .dimGreen)
+            self.printWrapped("At least one character must be Local (You) — you need someone to control!", indent: 2, color: .yellow)
+            self.print("")
+        }
     }
 
     private func showChangePlayerType(index: Int) {
@@ -8602,58 +9921,42 @@ class GameEngine: ObservableObject {
     }
 
     private func showPartyReviewHelp() {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Party Review — Help")
-        print("")
+        showInlineHelp {
+            self.printTitle("Party Review — Help")
+            self.print("")
 
-        print("  INFORMATION", color: .cyan, bold: true)
-        printWrapped("Shows your adventuring party. Each character has a race, class, HP, armour class, and ability scores. Names with \"R.\" (like R. Daneel) are robot companions — they act on their own in combat.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  INFORMATION", color: .cyan, bold: true)
+            self.printWrapped("Shows your adventuring party. Each character has a race, class, HP, armour class, and ability scores. Names with \"R.\" (like R. Daneel) are robot companions — they act on their own in combat.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  BUTTONS", color: .cyan, bold: true)
-        printWrapped("Character Names — tap a character to view their full card and edit options (type, race, class, ability scores, skills, voice).", indent: 2, color: .dimGreen)
-        printWrapped("Rest — short rest to recover HP. Long-press for a long rest (restores more HP and resources).", indent: 2, color: .dimGreen)
-        printWrapped("Random Party — re-roll the entire party with random characters (dice icon).", indent: 2, color: .dimGreen)
-        printWrapped("Enter the Dungeon / Start Matchmaker — proceed to name your dungeon and begin.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  BUTTONS", color: .cyan, bold: true)
+            self.printWrapped("Character Names — tap a character to view their full card and edit options (type, race, class, ability scores, skills, voice).", indent: 2, color: .dimGreen)
+            self.printWrapped("Rest — short rest to recover HP. Long-press for a long rest (restores more HP and resources).", indent: 2, color: .dimGreen)
+            self.printWrapped("Random Party — re-roll the entire party with random characters (dice icon).", indent: 2, color: .dimGreen)
+            self.printWrapped("Begin Adventure / Start Matchmaker — proceed to name your dungeon, choose difficulty, and begin exploring.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  WHAT NEXT", color: .cyan, bold: true)
-        printWrapped("Edit your party until you're happy, then tap Enter the Dungeon to name your dungeon, choose difficulty, and start exploring!", indent: 2, color: .dimGreen)
-        print("")
-
-        printInputHelp()
-
-        closeHandler = { [weak self] in self?.showPartyReview() }
+            self.print("  WHAT NEXT", color: .cyan, bold: true)
+            self.printWrapped("Edit your party until you're happy, then tap Begin Adventure to name your dungeon, choose difficulty, and start exploring!", indent: 2, color: .dimGreen)
+            self.print("")
+        }
     }
 
     private func showRemotePlayerHelp() {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Multiplayer — Help")
-        print("")
+        showInlineHelp {
+            self.printTitle("Multiplayer — Help")
+            self.print("")
 
-        print("  INFORMATION", color: .cyan, bold: true)
-        printWrapped("Multiplayer uses Apple Game Centre. Each player controls one or more characters. Turns are asynchronous — you don't need to be online at the same time.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  INFORMATION", color: .cyan, bold: true)
+            self.printWrapped("Multiplayer uses Apple Game Centre. Each player controls one or more characters. Turns are asynchronous — you don't need to be online at the same time.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  SETUP", color: .cyan, bold: true)
-        printWrapped("1. Enable Multiplayer in Settings > Gameplay.", indent: 2, color: .dimGreen)
-        printWrapped("2. In Party Review, set a character to 'Remote'.", indent: 2, color: .dimGreen)
-        printWrapped("3. Tap Start Matchmaker to invite via Game Centre.", indent: 2, color: .dimGreen)
-        print("")
-
-        print("  DURING PLAY", color: .cyan, bold: true)
-        printWrapped("Remote players make their own combat choices and can chat. The game auto-saves between turns. Convert slots back to Robot from Party Status.", indent: 2, color: .dimGreen)
-        print("")
-
-        print("  WHAT NEXT", color: .cyan, bold: true)
-        printWrapped("Close (X) to return to Party Review.", indent: 2, color: .dimGreen)
-        print("")
-
-        printInputHelp()
-
-        closeHandler = { [weak self] in self?.showPartyReview() }
+            self.print("  SETUP", color: .cyan, bold: true)
+            self.printWrapped("1. Enable Multiplayer in Settings > Gameplay.", indent: 2, color: .dimGreen)
+            self.printWrapped("2. In Party Review, set a character to 'Remote'.", indent: 2, color: .dimGreen)
+            self.printWrapped("3. Tap Start Matchmaker to invite via Game Centre.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
     }
 
     /// Tracks whether the current character being created is AI
@@ -9039,35 +10342,21 @@ class GameEngine: ObservableObject {
 
     /// Show detailed multiplayer help screen
     private func showMultiplayerHelp() {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Multiplayer — Help")
-        print("")
+        showInlineHelp {
+            self.printTitle("Multiplayer — Help")
+            self.print("")
 
-        print("  INFORMATION", color: .cyan, bold: true)
-        printWrapped("Multiplayer lets friends control party members via Game Centre. The host controls exploration; each player takes their own combat turns.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  INFORMATION", color: .cyan, bold: true)
+            self.printWrapped("Multiplayer lets friends control party members via Game Centre. The host controls exploration; each player takes their own combat turns.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  SETUP", color: .cyan, bold: true)
-        printWrapped("On the Party Review screen, swap any robot slot to 'Remote', then tap 'Start Matchmaker' to invite a friend. They need this app and Game Centre sign-in.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  SETUP", color: .cyan, bold: true)
+            self.printWrapped("On the Party Review screen, swap any robot slot to 'Remote', then tap 'Start Matchmaker' to invite a friend. They need this app and Game Centre sign-in.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  DURING PLAY", color: .cyan, bold: true)
-        printWrapped("You don't need to be online at the same time — Game Centre sends notifications when it's your turn. If a player leaves, their character becomes robot-controlled.", indent: 2, color: .dimGreen)
-        print("")
-
-        print("  WHAT NEXT", color: .cyan, bold: true)
-        printWrapped("Close (X) to return.", indent: 2, color: .dimGreen)
-        print("")
-
-        printInputHelp()
-
-        closeHandler = { [weak self] in
-            if self?.multiplayerState != nil {
-                self?.showMultiplayerLobby()
-            } else {
-                self?.showPlayMenu()
-            }
+            self.print("  DURING PLAY", color: .cyan, bold: true)
+            self.printWrapped("You don't need to be online at the same time — Game Centre sends notifications when it's your turn. If a player leaves, their character becomes robot-controlled.", indent: 2, color: .dimGreen)
+            self.print("")
         }
     }
 
@@ -9589,11 +10878,21 @@ class GameEngine: ObservableObject {
     private func undoSkill(from available: [Skill], total: Int) {
         let key = skillsScreenKey
         guard let data = popScreenUndo(screen: key) else { return }
+        let beforeSkills = selectedSkills
         if let currentData = try? JSONEncoder().encode(selectedSkills.map { $0.rawValue }) {
             pushScreenRedo(screen: key, data: currentData)
         }
         if let restored = restoreSkillsFromData(data) {
             selectedSkills = restored
+            let removed = beforeSkills.filter { !restored.contains($0) }
+            let added = restored.filter { !beforeSkills.contains($0) }
+            if let skill = removed.first {
+                showUndoFeedback("Removed \(skill.rawValue)")
+            } else if let skill = added.first {
+                showUndoFeedback("Added \(skill.rawValue)")
+            } else {
+                showUndoFeedback("Skills → \(restored.count)/\(total)")
+            }
         }
         let remaining = total - selectedSkills.count
         clearTerminal()
@@ -9606,11 +10905,21 @@ class GameEngine: ObservableObject {
     private func redoSkill(from available: [Skill], total: Int) {
         let key = skillsScreenKey
         guard let data = popScreenRedo(screen: key) else { return }
+        let beforeSkills = selectedSkills
         if let currentData = try? JSONEncoder().encode(selectedSkills.map { $0.rawValue }) {
             pushScreenUndo(screen: key, data: currentData)
         }
         if let restored = restoreSkillsFromData(data) {
             selectedSkills = restored
+            let added = restored.filter { !beforeSkills.contains($0) }
+            let removed = beforeSkills.filter { !restored.contains($0) }
+            if let skill = added.first {
+                showRedoFeedback("Added \(skill.rawValue)")
+            } else if let skill = removed.first {
+                showRedoFeedback("Removed \(skill.rawValue)")
+            } else {
+                showRedoFeedback("Skills → \(restored.count)/\(total)")
+            }
         }
         let remaining = total - selectedSkills.count
         clearTerminal()
@@ -9623,6 +10932,7 @@ class GameEngine: ObservableObject {
     private func updateSkillUndoRedoHandlers(from available: [Skill], total: Int) {
         undoHandler = screenHasUndo(skillsScreenKey) ? { [weak self] in self?.undoSkill(from: available, total: total) } : nil
         redoHandler = screenHasRedo(skillsScreenKey) ? { [weak self] in self?.redoSkill(from: available, total: total) } : nil
+        refreshUndoRedoLabels()
     }
 
     func selectNextSkill(from available: [Skill], remaining: Int) {
@@ -9778,29 +11088,25 @@ class GameEngine: ObservableObject {
 
     private func showSkillsHelp() {
         guard let charClass = tempClass else { return }
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Skills Help")
+        showInlineHelp {
+            self.printTitle("Skills Help")
 
-        print("WHAT ARE SKILLS?", color: .cyan, bold: true)
-        printWrapped("Skills represent your character's training. When you make an ability check, having proficiency in the relevant skill adds your proficiency bonus (+2 at level 1).", indent: 2)
-        print("")
-        print("YOUR CLASS", color: .cyan, bold: true)
-        printWrapped("\(charClass.rawValue) can choose \(charClass.numSkillChoices) skills from:", indent: 2)
-        for skill in charClass.skillChoices {
-            print("  • \(skill.rawValue) (\(skill.ability.rawValue))", color: .dimGreen)
+            self.print("WHAT ARE SKILLS?", color: .cyan, bold: true)
+            self.printWrapped("Skills represent your character's training. When you make an ability check, having proficiency in the relevant skill adds your proficiency bonus (+2 at level 1).", indent: 2)
+            self.print("")
+            self.print("YOUR CLASS", color: .cyan, bold: true)
+            self.printWrapped("\(charClass.rawValue) can choose \(charClass.numSkillChoices) skills from:", indent: 2)
+            for skill in charClass.skillChoices {
+                self.print("  • \(skill.rawValue) (\(skill.ability.rawValue))", color: .dimGreen)
+            }
+            self.print("")
+            self.print("SHORTCUTS", color: .cyan, bold: true)
+            self.printWrapped("• Tap Auto to randomly select all remaining skills.", indent: 2)
+            self.printWrapped("• Long-press any skill to pick it and auto-fill the rest.", indent: 2)
+            self.printWrapped("• Use undo/redo to change your picks (must be enabled in Settings > Gameplay).", indent: 2)
+            self.printWrapped("• X icon goes back to ability scores.", indent: 2)
+            self.print("")
         }
-        print("")
-        print("SHORTCUTS", color: .cyan, bold: true)
-        printWrapped("• Tap Auto to randomly select all remaining skills.", indent: 2)
-        printWrapped("• Long-press any skill to pick it and auto-fill the rest.", indent: 2)
-        printWrapped("• Use undo/redo to change your picks.", indent: 2)
-        printWrapped("• X icon goes back to ability scores.", indent: 2)
-        print("")
-
-        showMenu(["< Back"])
-        closeHandler = { [weak self] in self?.chooseSkills() }
-        menuHandler = { [weak self] _ in self?.chooseSkills() }
     }
 
     func finishCharacterCreation() {
@@ -10085,153 +11391,133 @@ class GameEngine: ObservableObject {
 
     /// Context-sensitive help for the New Adventure (party size) screen
     private func showNewGameHelp() {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Party Help")
+        showInlineHelp {
+            self.printTitle("Party Help")
 
-        print("PARTY SIZE", color: .cyan, bold: true)
-        printWrapped("Choose 1-4 adventurers. You control the first character; the rest are robot companions that fight alongside you.", indent: 2)
-        print("")
-        print("SHORTCUTS", color: .cyan, bold: true)
-        printWrapped("• Long-press a party size to auto-create the entire party instantly.", indent: 2)
-        printWrapped("• 'Random Party' creates a fully random group.", indent: 2)
-        print("")
-        print("PARTY TIPS", color: .cyan, bold: true)
-        printWrapped("• A balanced party (fighter + healer + ranged) survives longer.", indent: 2)
-        printWrapped("• Solo runs are possible but challenging — consider a Cleric or Ranger.", indent: 2)
-        printWrapped("• Larger parties face tougher encounters but share the load.", indent: 2)
-        print("")
-
-        showMenu(["< Back"])
-        closeHandler = { [weak self] in self?.startNewGame() }
-        menuHandler = { [weak self] _ in self?.startNewGame() }
+            self.print("PARTY SIZE", color: .cyan, bold: true)
+            self.printWrapped("Choose 1-4 adventurers. You control the first character; the rest are robot companions that fight alongside you.", indent: 2)
+            self.print("")
+            self.print("SHORTCUTS", color: .cyan, bold: true)
+            self.printWrapped("• Long-press a party size to auto-create the entire party instantly.", indent: 2)
+            self.printWrapped("• 'Random Party' creates a fully random group.", indent: 2)
+            self.print("")
+            self.print("PARTY TIPS", color: .cyan, bold: true)
+            self.printWrapped("• A balanced party (fighter + healer + ranged) survives longer.", indent: 2)
+            self.printWrapped("• Solo runs are possible but challenging — consider a Cleric or Ranger.", indent: 2)
+            self.printWrapped("• Larger parties face tougher encounters but share the load.", indent: 2)
+            self.print("")
+        }
     }
 
     /// Context-sensitive help for character naming screen
     private func showCharacterHelp() {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Character Help")
+        showInlineHelp {
+            self.printTitle("Character Help")
 
-        print("NAMING", color: .cyan, bold: true)
-        printWrapped("Type a name, pick a suggestion, or tap Random. Tap the dice icon for new suggestions.", indent: 2)
-        print("")
-        print("CREATION FLOW", color: .cyan, bold: true)
-        printWrapped("After naming: choose Race, Class, ability scores, and skills. Each step builds your character.", indent: 2)
-        print("")
-        print("SHORTCUTS", color: .cyan, bold: true)
-        printWrapped("• Type 'a' or 'auto' to auto-create this character.", indent: 2)
-        printWrapped("• Long-press any race or class to auto-fill the rest.", indent: 2)
-        printWrapped("• Use the ✕ icon to go back a step.", indent: 2)
-        print("")
-        print("RACE & CLASS TIPS", color: .cyan, bold: true)
-        printWrapped("• Each class has a primary ability — scores are assigned to maximise it when using Auto.", indent: 2)
-        printWrapped("• Fighters and Barbarians are tough melee combatants.", indent: 2)
-        printWrapped("• Clerics heal and support. Rangers fight at range.", indent: 2)
-        printWrapped("• Wizards and Rogues bring versatility.", indent: 2)
-        print("")
-
-        showMenu(["< Back"])
-        closeHandler = { [weak self] in self?.startCharacterCreation() }
-        menuHandler = { [weak self] _ in self?.startCharacterCreation() }
+            self.print("NAMING", color: .cyan, bold: true)
+            self.printWrapped("Type a name, pick a suggestion, or tap Random. Tap the dice icon for new suggestions.", indent: 2)
+            self.print("")
+            self.print("CREATION FLOW", color: .cyan, bold: true)
+            self.printWrapped("After naming: choose Race, Class, ability scores, and skills. Each step builds your character.", indent: 2)
+            self.print("")
+            self.print("SHORTCUTS", color: .cyan, bold: true)
+            self.printWrapped("• Type 'a' or 'auto' to auto-create this character.", indent: 2)
+            self.printWrapped("• Long-press any race or class to auto-fill the rest.", indent: 2)
+            self.printWrapped("• Use the ✕ icon to go back a step.", indent: 2)
+            self.print("")
+            self.print("RACE & CLASS TIPS", color: .cyan, bold: true)
+            self.printWrapped("• Each class has a primary ability — scores are assigned to maximise it when using Auto.", indent: 2)
+            self.printWrapped("• Fighters and Barbarians are tough melee combatants.", indent: 2)
+            self.printWrapped("• Clerics heal and support. Rangers fight at range.", indent: 2)
+            self.printWrapped("• Wizards and Rogues bring versatility.", indent: 2)
+            self.print("")
+        }
     }
 
     /// Context-sensitive help for ability score methods
     private func showAbilityScoreHelp() {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Ability Scores Help")
+        showInlineHelp {
+            self.printTitle("Ability Scores Help")
 
-        print("THE SIX ABILITIES", color: .cyan, bold: true)
-        printWrapped("Every character has six ability scores that define their capabilities:", indent: 2)
-        print("  STR  Strength — melee attacks, carrying, athletics", color: .dimGreen)
-        print("  DEX  Dexterity — ranged attacks, AC, stealth, reflexes", color: .dimGreen)
-        print("  CON  Constitution — hit points, endurance, resilience", color: .dimGreen)
-        print("  INT  Intelligence — arcana, history, investigation", color: .dimGreen)
-        print("  WIS  Wisdom — perception, insight, healing magic", color: .dimGreen)
-        print("  CHA  Charisma — persuasion, deception, sorcery", color: .dimGreen)
-        print("")
-        print("SCORE METHODS", color: .cyan, bold: true)
-        printWrapped("• Auto — Uses the standard array (15, 14, 13, 12, 10, 8) and assigns scores optimally for your class. Quickest option.", indent: 2)
-        printWrapped("• Standard Array — You assign 15, 14, 13, 12, 10, 8 to abilities yourself. Good control, balanced.", indent: 2)
-        printWrapped("• Roll 4d6 — Rolls four dice and drops the lowest for each score. Random but can give very high (or low) scores.", indent: 2)
-        print("")
-        print("ASSIGNING SCORES", color: .cyan, bold: true)
-        printWrapped("After choosing Standard Array or Roll 4d6, you'll assign each score to an ability one at a time. Put your highest score in your class's primary ability.", indent: 2)
-        if let charClass = tempClass {
-            print("")
-            printWrapped("Your \(charClass.rawValue)'s primary ability is \(charClass.primaryAbility.rawValue).", indent: 2, color: .brightGreen)
+            self.print("THE SIX ABILITIES", color: .cyan, bold: true)
+            self.printWrapped("Every character has six ability scores that define their capabilities:", indent: 2)
+            self.print("  STR  Strength — melee attacks, carrying, athletics", color: .dimGreen)
+            self.print("  DEX  Dexterity — ranged attacks, AC, stealth, reflexes", color: .dimGreen)
+            self.print("  CON  Constitution — hit points, endurance, resilience", color: .dimGreen)
+            self.print("  INT  Intelligence — arcana, history, investigation", color: .dimGreen)
+            self.print("  WIS  Wisdom — perception, insight, healing magic", color: .dimGreen)
+            self.print("  CHA  Charisma — persuasion, deception, sorcery", color: .dimGreen)
+            self.print("")
+            self.print("SCORE METHODS", color: .cyan, bold: true)
+            self.printWrapped("• Auto — Uses the standard array (15, 14, 13, 12, 10, 8) and assigns scores optimally for your class. Quickest option.", indent: 2)
+            self.printWrapped("• Standard Array — You assign 15, 14, 13, 12, 10, 8 to abilities yourself. Good control, balanced.", indent: 2)
+            self.printWrapped("• Roll 4d6 — Rolls four dice and drops the lowest for each score. Random but can give very high (or low) scores.", indent: 2)
+            self.print("")
+            self.print("ASSIGNING SCORES", color: .cyan, bold: true)
+            self.printWrapped("After choosing Standard Array or Roll 4d6, you'll assign each score to an ability one at a time. Put your highest score in your class's primary ability.", indent: 2)
+            if let charClass = self.tempClass {
+                self.print("")
+                self.printWrapped("Your \(charClass.rawValue)'s primary ability is \(charClass.primaryAbility.rawValue).", indent: 2, color: .brightGreen)
+            }
+            self.print("")
+            self.print("SHORTCUTS", color: .cyan, bold: true)
+            self.printWrapped("• Long-press any option to auto-assign scores and finish character creation immediately.", indent: 2)
+            self.printWrapped("• Use the ✕ icon to go back to class selection.", indent: 2)
+            self.print("")
         }
-        print("")
-        print("SHORTCUTS", color: .cyan, bold: true)
-        printWrapped("• Long-press any option to auto-assign scores and finish character creation immediately.", indent: 2)
-        printWrapped("• Use the ✕ icon to go back to class selection.", indent: 2)
-        print("")
-
-        showMenu(["< Back"])
-        closeHandler = { [weak self] in self?.chooseAbilityMethod() }
-        menuHandler = { [weak self] _ in self?.chooseAbilityMethod() }
     }
 
     /// Context-sensitive help for the dungeon naming / Adventure Awaits screen
     private func showDungeonHelp() {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Dungeon Help")
+        showInlineHelp {
+            self.printTitle("Dungeon Help")
 
-        print("DUNGEON NAME", color: .cyan, bold: true)
-        printWrapped("Type a custom name, pick a suggestion, or tap the dice icon for new options.", indent: 2)
-        print("")
-        print("DIFFICULTY", color: .cyan, bold: true)
-        printWrapped("After naming, you'll choose difficulty:", indent: 2)
-        printWrapped("• Easy (1) — great for beginners.", indent: 2)
-        printWrapped("• Medium (2) — balanced challenge.", indent: 2)
-        printWrapped("• Hard (3+) — for experienced parties.", indent: 2)
-        print("")
-        print("ONCE INSIDE", color: .cyan, bold: true)
-        printWrapped("• Illuminate your torch to see exits, treasure, and NPCs.", indent: 2)
-        printWrapped("• Talk to NPCs — they give useful info and quests.", indent: 2)
-        printWrapped("• Rest after combat. Long-press Rest for a full long rest.", indent: 2)
-        printWrapped("• Ask the DM anything by typing a question.", indent: 2)
-        print("")
-
-        showMenu(["< Back"])
-        closeHandler = { [weak self] in self?.startAdventure() }
-        menuHandler = { [weak self] _ in self?.startAdventure() }
+            self.print("DUNGEON NAME", color: .cyan, bold: true)
+            self.printWrapped("Type a custom name, pick a suggestion, or tap the dice icon for new options.", indent: 2)
+            self.print("")
+            self.print("DIFFICULTY", color: .cyan, bold: true)
+            self.printWrapped("After naming, you'll choose difficulty:", indent: 2)
+            self.printWrapped("• Easy (1) — great for beginners.", indent: 2)
+            self.printWrapped("• Medium (2) — balanced challenge.", indent: 2)
+            self.printWrapped("• Hard (3+) — for experienced parties.", indent: 2)
+            self.print("")
+            self.print("ONCE INSIDE", color: .cyan, bold: true)
+            self.printWrapped("• Illuminate your torch to see exits, treasure, and NPCs.", indent: 2)
+            self.printWrapped("• Talk to NPCs — they give useful info and quests.", indent: 2)
+            self.printWrapped("• Rest after combat. Long-press Rest for a full long rest.", indent: 2)
+            self.printWrapped("• Ask the DM anything by typing a question.", indent: 2)
+            self.print("")
+        }
     }
 
     /// Context-sensitive help for the difficulty selection screen
     private func showDifficultyHelp(dungeonName: String) {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Difficulty Help")
+        showInlineHelp {
+            self.printTitle("Difficulty Help")
 
-        print("DIFFICULTY LEVELS", color: .cyan, bold: true)
-        printWrapped("Difficulty affects monster strength, encounter frequency, and treasure rarity.", indent: 2)
-        print("")
-        print("  0  Trivial — Very weak monsters, great for", color: .dimGreen)
-        print("     learning the game.", color: .dimGreen)
-        print("  1  Easy — Suitable for new players or small", color: .dimGreen)
-        print("     parties. Forgiving combat.", color: .dimGreen)
-        print("  2  Medium — Balanced challenge. The standard", color: .dimGreen)
-        print("     D&D experience.", color: .dimGreen)
-        print("  3  Hard — Tough encounters. Rest often and", color: .dimGreen)
-        print("     manage resources carefully.", color: .dimGreen)
-        print(" 4+  Brutal — Scaled-up monster HP and damage.", color: .dimGreen)
-        print("     For experienced parties only.", color: .dimGreen)
-        print("")
-        print("CUSTOM LEVELS", color: .cyan, bold: true)
-        printWrapped("You can type any number, including decimals (e.g. 1.5, 2.5). Values between whole numbers blend difficulty smoothly.", indent: 2)
-        print("")
-        print("TIPS", color: .cyan, bold: true)
-        printWrapped("• A party of 1-2 characters should start on Easy.", indent: 2)
-        printWrapped("• A full party of 4 can handle Medium comfortably.", indent: 2)
-        printWrapped("• Long-press a difficulty to skip the confirmation screen.", indent: 2)
-        print("")
-
-        showMenu(["< Back"])
-        closeHandler = { [weak self] in self?.selectDifficulty(dungeonName: dungeonName) }
-        menuHandler = { [weak self] _ in self?.selectDifficulty(dungeonName: dungeonName) }
+            self.print("DIFFICULTY LEVELS", color: .cyan, bold: true)
+            self.printWrapped("Difficulty affects monster strength, encounter frequency, and treasure rarity.", indent: 2)
+            self.print("")
+            self.print("  0  Trivial — Very weak monsters, great for", color: .dimGreen)
+            self.print("     learning the game.", color: .dimGreen)
+            self.print("  1  Easy — Suitable for new players or small", color: .dimGreen)
+            self.print("     parties. Forgiving combat.", color: .dimGreen)
+            self.print("  2  Medium — Balanced challenge. The standard", color: .dimGreen)
+            self.print("     D&D experience.", color: .dimGreen)
+            self.print("  3  Hard — Tough encounters. Rest often and", color: .dimGreen)
+            self.print("     manage resources carefully.", color: .dimGreen)
+            self.print(" 4+  Brutal — Scaled-up monster HP and damage.", color: .dimGreen)
+            self.print("     For experienced parties only.", color: .dimGreen)
+            self.print("")
+            self.print("CUSTOM LEVELS", color: .cyan, bold: true)
+            self.printWrapped("You can type any number, including decimals (e.g. 1.5, 2.5). Values between whole numbers blend difficulty smoothly.", indent: 2)
+            self.print("")
+            self.print("TIPS", color: .cyan, bold: true)
+            self.printWrapped("• A party of 1-2 characters should start on Easy.", indent: 2)
+            self.printWrapped("• A full party of 4 can handle Medium comfortably.", indent: 2)
+            self.printWrapped("• Long-press a difficulty to skip the confirmation screen.", indent: 2)
+            self.print("")
+        }
     }
 
     /// Convert a custom difficulty Double to a display name
@@ -10395,11 +11681,19 @@ class GameEngine: ObservableObject {
             case "Undo":
                 if let prev = self.adventureUndoStack.popLast() {
                     self.adventureRedoStack.append((dungeonName, level))
+                    var changes: [String] = []
+                    if prev.0 != dungeonName { changes.append(prev.0) }
+                    if prev.1 != level { changes.append("Lv.\(prev.1.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(prev.1))" : String(format: "%.1f", prev.1))") }
+                    self.showUndoFeedback(changes.isEmpty ? "Dungeon" : changes.joined(separator: ", "))
                     self.confirmAdventure(dungeonName: prev.0, level: prev.1)
                 }
             case "Redo":
                 if let next = self.adventureRedoStack.popLast() {
                     self.adventureUndoStack.append((dungeonName, level))
+                    var changes: [String] = []
+                    if next.0 != dungeonName { changes.append(next.0) }
+                    if next.1 != level { changes.append("Lv.\(next.1.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(next.1))" : String(format: "%.1f", next.1))") }
+                    self.showRedoFeedback(changes.isEmpty ? "Dungeon" : changes.joined(separator: ", "))
                     self.confirmAdventure(dungeonName: next.0, level: next.1)
                 }
             case "?":
@@ -10410,26 +11704,22 @@ class GameEngine: ObservableObject {
     }
 
     private func showReadyToBeginHelp(dungeonName: String, level: Double) {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Ready to Begin — Help")
-        print("")
-        print("  ENTER THE DUNGEON", color: .cyan, bold: true)
-        printWrapped("Begin your adventure with the current dungeon and difficulty. Your party will enter the first room and the quest begins!", indent: 2, color: .dimGreen)
-        print("")
-        print("  DIFFICULTY", color: .cyan, bold: true)
-        printWrapped("Change the difficulty level. Easy (1) suits small parties, Medium (2) is balanced for four, and Hard (3+) is for veterans. You can also enter custom values like 1.5 for fine-tuning.", indent: 2, color: .dimGreen)
-        print("")
-        print("  RENAME", color: .cyan, bold: true)
-        printWrapped("Give your dungeon a custom name. Type anything you like, or leave it to get a randomly generated name.", indent: 2, color: .dimGreen)
-        print("")
-        print("  UNDO / REDO", color: .cyan, bold: true)
-        printWrapped("Step back or forward through changes you've made to the dungeon name or difficulty on this screen.", indent: 2, color: .dimGreen)
-        print("")
-
-        showMenu(["< Back"])
-        closeHandler = { [weak self] in self?.confirmAdventure(dungeonName: dungeonName, level: level) }
-        menuHandler = { [weak self] _ in self?.confirmAdventure(dungeonName: dungeonName, level: level) }
+        showInlineHelp {
+            self.printTitle("Ready to Begin — Help")
+            self.print("")
+            self.print("  ENTER THE DUNGEON", color: .cyan, bold: true)
+            self.printWrapped("Begin your adventure with the current dungeon and difficulty. Your party will enter the first room and the quest begins!", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  DIFFICULTY", color: .cyan, bold: true)
+            self.printWrapped("Change the difficulty level. Easy (1) suits small parties, Medium (2) is balanced for four, and Hard (3+) is for veterans. You can also enter custom values like 1.5 for fine-tuning.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  RENAME", color: .cyan, bold: true)
+            self.printWrapped("Give your dungeon a custom name. Type anything you like, or leave it to get a randomly generated name.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  UNDO / REDO", color: .cyan, bold: true)
+            self.printWrapped("Step back or forward through changes you've made to the dungeon name or difficulty on this screen. Undo/Redo must be enabled in Settings > Gameplay.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
     }
 
     private func changeDifficultyInline(currentName: String, currentLevel: Double) {
@@ -10609,33 +11899,113 @@ class GameEngine: ObservableObject {
 
     /// Help screen for exploration — explains the map, buttons, and gameplay
     private func showExplorationHelp() {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Exploration Help")
-        print("")
-        print("  THE MAP", color: .cyan, bold: true)
-        printWrapped("@ is your party. Rooms show their type ($ = Loot, ! = Danger, S = Shop, + = Shrine). Corridors connect rooms with -- (horizontal) or | (vertical). XX means a secured door.", indent: 2, color: .green)
-        print("")
-        print("  DIRECTIONS", color: .cyan, bold: true)
-        printWrapped("Tap a direction (N/S/E/W) to move. Long-press a direction to secure or unsecure that door — barricading it blocks movement and reduces ambush risk when resting.", indent: 2, color: .dimGreen)
-        print("")
-        print("  BUTTONS", color: .cyan, bold: true)
-        printWrapped("Search Room looks for hidden items and scavenges for supplies. Listen reveals what lurks beyond each exit. Rest (centre button) heals the party — hold for a long rest.", indent: 2, color: .dimGreen)
-        print("")
-        print("  CHAT & INPUT", color: .cyan, bold: true)
-        printWrapped("Type in the text prompt to chat with your party and the DM. You can ask questions, make plans, or give commands. Say 'done' or tap ✕ to leave chat.", indent: 2, color: .dimGreen)
-        print("")
-        print("  NPCs", color: .cyan, bold: true)
-        printWrapped("NPCs appear throughout the dungeon. Talk to them for information, healing, trading, and quests. The Gatekeeper at the entrance knows about the boss and offers quests — but not all NPCs are truthful! Some are evasive, and some outright lie.", indent: 2, color: .dimGreen)
-        print("")
-        print("  SAVE & QUIT", color: .cyan, bold: true)
-        printWrapped("Save button quick-saves your game. The ✕ close icon opens the Save/Quit menu for manual saves or returning to the main menu.", indent: 2, color: .dimGreen)
-        print("")
-        printInputHelp()
+        showInlineHelp {
+            self.printTitle("Exploration Help")
+            self.print("")
+            self.print("  THE MAP", color: .cyan, bold: true)
+            self.printWrapped("@ is your party. Rooms: $ Loot, ! Danger, S Shop, + Shrine. XX = secured door.", indent: 2, color: .green)
+            self.print("")
+            self.print("  DIRECTIONS", color: .cyan, bold: true)
+            self.printWrapped("Tap N/S/E/W to move. Long-press a direction to secure/unsecure that door.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  BUTTONS", color: .cyan, bold: true)
+            self.printWrapped("Search looks for hidden items. Listen reveals what's beyond exits. Rest (centre) heals — hold for long rest.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  CHAT", color: .cyan, bold: true)
+            self.printWrapped("Type at the > prompt to chat with the DM. Tap ✕ to leave chat.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  SAVE", color: .cyan, bold: true)
+            self.printWrapped("Save button quick-saves. ✕ close icon opens Save/Quit menu.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
+    }
 
-        showMenu(["Continue"])
-        closeHandler = { [weak self] in self?.showExplorationView() }
-        menuHandler = { [weak self] _ in self?.showExplorationView() }
+    private func showActionsHelp() {
+        showInlineHelp {
+            self.printTitle("Actions — Help")
+            self.print("")
+            self.print("  SEARCH ROOM", color: .cyan, bold: true)
+            self.printWrapped("Look for hidden items. Uses Perception. Scavenges if nothing hidden.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  LISTEN", color: .cyan, bold: true)
+            self.printWrapped("Reveals monsters in adjacent rooms. Uses Perception.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  PICK UP / TAKE TREASURE", color: .cyan, bold: true)
+            self.printWrapped("Appears when loot or gold is on the floor.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  SECURE DOORS", color: .yellow, bold: true)
+            self.printWrapped("Long-press Listen to barricade doors — reduces ambush risk. Long-press a direction on the D-pad to secure individual doors.", indent: 2, color: .yellow)
+            self.print("")
+            self.print("  TORCH", color: .cyan, bold: true)
+            self.printWrapped("Light/douse torch. Lit = better map + search. Douse before resting.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  INVENTORY", color: .cyan, bold: true)
+            self.printWrapped("Open pack to equip, use, or drop items.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
+    }
+
+    private func showRestHelp() {
+        showInlineHelp {
+            self.printTitle("Rest — Help")
+            self.print("")
+            self.print("  SHORT REST", color: .cyan, bold: true)
+            self.printWrapped("1 hour. Roll Hit Dice to recover HP. Fighters regain Second Wind.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  LONG REST", color: .cyan, bold: true)
+            self.printWrapped("8 hours. Full HP, spell slots, abilities. Risks ambush.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  AMBUSH RISK", color: .cyan, bold: true)
+            self.printWrapped("Monsters may attack! Barricade doors first (long-press Listen).", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  TIPS", color: .cyan, bold: true)
+            self.printWrapped("Long-press a rest button for fast rest (skips animation).", indent: 2, color: .dimGreen)
+            self.print("")
+        }
+    }
+
+    private func showCombatHelp(characterId: UUID) {
+        showInlineHelp {
+            self.printTitle("Combat — Help")
+            self.print("")
+            self.print("  ATTACK", color: .cyan, bold: true)
+            self.printWrapped("d20 + mods vs AC. Damage depends on weapon.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  SPELL", color: .cyan, bold: true)
+            self.printWrapped("Cantrips free; levelled spells use slots (recharge on long rest).", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  DODGE", color: .cyan, bold: true)
+            self.printWrapped("Enemies have disadvantage attacking you until your next turn.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  PLAY DEAD / RUN AWAY", color: .cyan, bold: true)
+            self.printWrapped("Play Dead: Deception check. Run Away: whole party flees.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  HESITATION", color: .cyan, bold: true)
+            self.printWrapped("Take too long = attack with disadvantage!", indent: 2, color: .yellow)
+            self.print("")
+            self.print("  SPECIAL", color: .cyan, bold: true)
+            self.printWrapped("Second Wind (Fighter), Rage (Barbarian) — extra buttons when available.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
+    }
+
+    private func showNPCHelp() {
+        showInlineHelp {
+            self.printTitle("NPC — Help")
+            self.print("")
+            self.print("  ASK TOPICS", color: .cyan, bold: true)
+            self.printWrapped("Tap 'Ask: [Topic]' to learn what they know. Not all NPCs are truthful!", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  TRADE / HEAL / REPAIR", color: .cyan, bold: true)
+            self.printWrapped("Buy items, get healed, or fix gear. Some services are free.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  LEARN", color: .cyan, bold: true)
+            self.printWrapped("Some NPCs teach new skills or spells. Each teaches once.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  TRUSTWORTHINESS", color: .cyan, bold: true)
+            self.printWrapped("Gatekeeper offers quests. Others vary — watch their wording for clues.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
     }
 
     func showExplorationView() {
@@ -10643,6 +12013,7 @@ class GameEngine: ObservableObject {
 
         SpeechEngine.shared.stop()
         clearTerminal()
+        suppressAutoScroll = false
 
         // Dynamically size the map to fill screen without scrolling
         let (radius, verticalRadius, compact) = bestMapRadius()
@@ -11613,10 +12984,6 @@ class GameEngine: ObservableObject {
             }
         }
 
-        // Secure (barricade doors)
-        menuOpts.append(MenuOption("Secure"))
-        actions.append { [weak self] in returnToActions(); self?.secureRoom() }
-
         // Open Pack
         let consciousParty = party.filter { $0.isConscious }
         let hasPackItems = consciousParty.contains { !$0.inventory.isEmpty }
@@ -11634,6 +13001,10 @@ class GameEngine: ObservableObject {
         // Save (quick save)
         menuOpts.append(MenuOption("Save", tint: .navigation))
         actions.append { [weak self] in self?.quickSave() }
+
+        // Help
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        actions.append { [weak self] in self?.showActionsHelp() }
 
         showMenuWithDirections(menuOpts, exits: exits)
 
@@ -11655,12 +13026,15 @@ class GameEngine: ObservableObject {
                 actions[choice - 1]()
             }
         }
-        // Long-press on disabled buttons for dark actions
+        // Long-press actions: Listen → Secure, dark buttons for torch-out actions
         menuLongPressHandler = { [weak self] choice in
             guard let self = self else { return }
             guard choice >= 1 && choice <= menuOpts.count else { return }
             let opt = menuOpts[choice - 1]
-            if opt.isDisabled && !self.torchLit {
+            if opt.text == "Listen" {
+                returnToActions()
+                self.secureRoom()
+            } else if opt.isDisabled && !self.torchLit {
                 if opt.text == "Search Room" { self.darkSearch() }
                 else if opt.text == "Take Treasure" { self.collectTreasureInDark() }
             }
@@ -12246,23 +13620,19 @@ class GameEngine: ObservableObject {
     }
 
     private func showSecureHelp() {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Secure Help")
-        print("")
-        print("  SECURING EXITS", color: .cyan, bold: true)
-        printWrapped("Barricade a door with debris to prevent monsters from entering through it. Secured exits show XX on the map.", indent: 2, color: .green)
-        print("")
-        print("  WHY SECURE?", color: .cyan, bold: true)
-        printWrapped("Securing a door before resting reduces the chance of a random encounter. It also prevents monsters in adjacent rooms from surprising you.", indent: 2, color: .dimGreen)
-        print("")
-        print("  REOPENING", color: .cyan, bold: true)
-        printWrapped("You can reopen a secured door at any time. You'll need to unsecure it before you can travel through it.", indent: 2, color: .dimGreen)
-        print("")
-        printInputHelp()
-
-        waitForContinue()
-        inputHandler = { [weak self] _ in self?.secureRoom() }
+        showInlineHelp {
+            self.printTitle("Secure Help")
+            self.print("")
+            self.print("  SECURING EXITS", color: .cyan, bold: true)
+            self.printWrapped("Barricade a door with debris to prevent monsters from entering through it. Secured exits show XX on the map.", indent: 2, color: .green)
+            self.print("")
+            self.print("  WHY SECURE?", color: .cyan, bold: true)
+            self.printWrapped("Securing a door before resting reduces the chance of a random encounter. It also prevents monsters in adjacent rooms from surprising you.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  REOPENING", color: .cyan, bold: true)
+            self.printWrapped("You can reopen a secured door at any time. You'll need to unsecure it before you can travel through it.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
     }
 
     // MARK: - Forage Supplies
@@ -12472,6 +13842,10 @@ class GameEngine: ObservableObject {
                 actions.append { [weak self] in self?.requestNPCCurePoison() }
             }
         }
+
+        // Help
+        options.append(MenuOption("?", tint: .navigation, compact: true))
+        actions.append { [weak self] in self?.showNPCHelp() }
 
         showMenuOptions(options)
         closeHandler = { [weak self] in
@@ -13323,7 +14697,9 @@ class GameEngine: ObservableObject {
 
         let playerCharId = isMultiplayer ? localCharacterId : party.first(where: { !$0.isComputerControlled })?.id
         let isOwnInventory = character.id == playerCharId
-        let invName = character.isComputerControlled && !character.name.hasPrefix("R.") ? "R. \(character.name)" : character.name
+        let charPartyIndex = party.firstIndex(where: { $0.id == character.id })
+        let isRemoteChar = charPartyIndex != nil && pendingRemoteSlots.contains(charPartyIndex!)
+        let invName = character.isComputerControlled && !isRemoteChar && !character.name.hasPrefix("R.") ? "R. \(character.name)" : character.name
         printTitle("Inventory — \(invName)", color: .orange)
 
         print("  Carry Weight: \(String(format: "%.0f", character.currentWeight)) / \(String(format: "%.0f", character.carryCapacity)) lb", color: character.isEncumbered ? .red : .cyan)
@@ -13403,8 +14779,9 @@ class GameEngine: ObservableObject {
 
         // Other party member packs (amber)
         if party.count > 1 {
-            for other in party where other.id != character.id {
-                let prefix = (other.isComputerControlled && !other.name.hasPrefix("R.")) ? "R." : ""
+            for (otherIdx, other) in party.enumerated() where other.id != character.id {
+                let otherIsRemote = pendingRemoteSlots.contains(otherIdx)
+                let prefix = (other.isComputerControlled && !otherIsRemote && !other.name.hasPrefix("R.")) ? "R." : ""
                 menuOpts.append(MenuOption("\(prefix)\(shortName(for: other))'s Pack", tint: .amber))
                 actions.append { [weak self] in
                     self?.showInventoryFor(other, onBack: onBack, fromDM: fromDM)
@@ -13441,42 +14818,38 @@ class GameEngine: ObservableObject {
     }
 
     private func showInventoryHelp(character: Character, onBack: (() -> Void)? = nil, fromDM: Bool = false) {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Inventory — Help")
-        print("")
+        showInlineHelp {
+            self.printTitle("Inventory — Help")
+            self.print("")
 
-        print("  OVERVIEW", color: .cyan, bold: true)
-        printWrapped("Your inventory shows everything you're carrying: equipped gear, items in your pack, and your gold. Each character carries their own equipment.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  OVERVIEW", color: .cyan, bold: true)
+            self.printWrapped("Your inventory shows everything you're carrying: equipped gear, items in your pack, and your gold. Each character carries their own equipment.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  EQUIPPED GEAR", color: .cyan, bold: true)
-        printWrapped("Weapon, Armour, and Shield slots show what you have equipped. Tap Equipment to change what's equipped from your pack. Equipping a new item swaps the old one back into your bag.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  EQUIPPED GEAR", color: .cyan, bold: true)
+            self.printWrapped("Weapon, Armour, and Shield slots show what you have equipped. Tap Equipment to change what's equipped from your pack. Equipping a new item swaps the old one back into your bag.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  BAG (PACK)", color: .cyan, bold: true)
-        printWrapped("Your bag holds up to \(Character.maxInventorySlots) items. Item tags show type: [W] weapon, [A] armour, [S] shield, [P] potion, [?] scroll, [$] gem, [.] misc. Weight and gold value are shown for each item.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  BAG (PACK)", color: .cyan, bold: true)
+            self.printWrapped("Your bag holds up to \(Character.maxInventorySlots) items. Item tags show type: [W] weapon, [A] armour, [S] shield, [P] potion, [?] scroll, [$] gem, [.] misc. Weight and gold value are shown for each item.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  OPEN PACK", color: .cyan, bold: true)
-        printWrapped("Opens your bag to use potions, drop items, give items to party members, or inspect individual items in detail.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  OPEN PACK", color: .cyan, bold: true)
+            self.printWrapped("Opens your bag to use potions, drop items, give items to party members, or inspect individual items in detail.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  CARRY WEIGHT", color: .cyan, bold: true)
-        printWrapped("Each character can carry a limited weight based on their Strength score. If encumbered (over limit), movement and combat may be affected. Drop or give away items to lighten your load.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  CARRY WEIGHT", color: .cyan, bold: true)
+            self.printWrapped("Each character can carry a limited weight based on their Strength score. If encumbered (over limit), movement and combat may be affected. Drop or give away items to lighten your load.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  PARTY PACKS", color: .cyan, bold: true)
-        printWrapped("Tap a companion's pack to view their inventory. You can give items between party members using the Give option in Open Pack.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  PARTY PACKS", color: .cyan, bold: true)
+            self.printWrapped("Tap a companion's pack to view their inventory. You can give items between party members using the Give option in Open Pack.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  TORCHES", color: .cyan, bold: true)
-        printWrapped("Torches are vital for exploring. The inventory shows who holds the lit torch and how much burn time remains. Without a torch, searching and scavenging are much harder.", indent: 2, color: .dimGreen)
-        print("")
-
-        printInputHelp()
-
-        closeHandler = { [weak self] in self?.renderInventory(character, onBack: onBack, fromDM: fromDM) }
+            self.print("  TORCHES", color: .cyan, bold: true)
+            self.printWrapped("Torches are vital for exploring. The inventory shows who holds the lit torch and how much burn time remains. Without a torch, searching and scavenging are much harder.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
     }
 
     private func showEquipMenu(character: Character, type: ItemType, label: String, onBack: (() -> Void)? = nil, fromDM: Bool = false) {
@@ -13784,27 +15157,21 @@ class GameEngine: ObservableObject {
     }
 
     private func showPackHelp(character: Character, onBack: (() -> Void)? = nil, fromDM: Bool = false) {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Pack Help")
-        print("")
-        printWrapped("Your pack holds items you're carrying but not wearing — potions, torches, scrolls, gems, and spare gear.", indent: 2, color: .green)
-        print("")
-        print("  USE ITEM", color: .cyan, bold: true)
-        printWrapped("Drink a potion to heal or gain temporary effects. Only consumable items can be used.", indent: 2, color: .dimGreen)
-        print("")
-        print("  DROP ITEM", color: .cyan, bold: true)
-        printWrapped("Drop an item on the ground in the current room. You can pick it up again later if you return.", indent: 2, color: .dimGreen)
-        print("")
-        print("  GIVE ITEM", color: .cyan, bold: true)
-        printWrapped("Transfer an item to another party member. They must have room in their pack to accept it.", indent: 2, color: .dimGreen)
-        print("")
-        printWrapped("Tap ✕ to return to Inventory.", indent: 2, color: .dimGreen)
-        print("")
-
-        showMenu(["Continue"])
-        closeHandler = { [weak self] in self?.showPackMenu(character: character, onBack: onBack, fromDM: fromDM) }
-        menuHandler = { [weak self] _ in self?.showPackMenu(character: character, onBack: onBack, fromDM: fromDM) }
+        showInlineHelp {
+            self.printTitle("Pack Help")
+            self.print("")
+            self.printWrapped("Your pack holds items you're carrying but not wearing — potions, torches, scrolls, gems, and spare gear.", indent: 2, color: .green)
+            self.print("")
+            self.print("  USE ITEM", color: .cyan, bold: true)
+            self.printWrapped("Drink a potion to heal or gain temporary effects. Only consumable items can be used.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  DROP ITEM", color: .cyan, bold: true)
+            self.printWrapped("Drop an item on the ground in the current room. You can pick it up again later if you return.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  GIVE ITEM", color: .cyan, bold: true)
+            self.printWrapped("Transfer an item to another party member. They must have room in their pack to accept it.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
     }
 
     private func showEquipmentMenu(character: Character, onBack: (() -> Void)? = nil, fromDM: Bool = false) {
@@ -13936,26 +15303,20 @@ class GameEngine: ObservableObject {
     }
 
     private func showEquipmentHelp(character: Character, onBack: (() -> Void)? = nil, fromDM: Bool = false) {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Equipment Help")
-        print("")
-        printWrapped("Equipment is what your character wears or wields in combat. You have three slots: Weapon, Armour, and Shield.", indent: 2, color: .green)
-        print("")
-        print("  SLOTS", color: .cyan, bold: true)
-        printWrapped("Equip/Remove Weapon: Swap your wielded weapon. Damage and hit bonuses change with your weapon.", indent: 2, color: .dimGreen)
-        printWrapped("Equip/Remove Armour: Change your body armour. This affects your Armour Class (AC).", indent: 2, color: .dimGreen)
-        printWrapped("Equip/Remove Shield: Equip or remove a shield for +2 AC.", indent: 2, color: .dimGreen)
-        print("")
-        print("  TORCH", color: .cyan, bold: true)
-        printWrapped("If your character holds the party torch, you can pass it to another party member from this menu.", indent: 2, color: .dimGreen)
-        print("")
-        printWrapped("Unequipped items stay in your pack. Tap ✕ to return to Inventory.", indent: 2, color: .dimGreen)
-        print("")
-
-        showMenu(["Continue"])
-        closeHandler = { [weak self] in self?.showEquipmentMenu(character: character, onBack: onBack, fromDM: fromDM) }
-        menuHandler = { [weak self] _ in self?.showEquipmentMenu(character: character, onBack: onBack, fromDM: fromDM) }
+        showInlineHelp {
+            self.printTitle("Equipment Help")
+            self.print("")
+            self.printWrapped("Equipment is what your character wears or wields in combat. You have three slots: Weapon, Armour, and Shield.", indent: 2, color: .green)
+            self.print("")
+            self.print("  SLOTS", color: .cyan, bold: true)
+            self.printWrapped("Equip/Remove Weapon: Swap your wielded weapon. Damage and hit bonuses change with your weapon.", indent: 2, color: .dimGreen)
+            self.printWrapped("Equip/Remove Armour: Change your body armour. This affects your Armour Class (AC).", indent: 2, color: .dimGreen)
+            self.printWrapped("Equip/Remove Shield: Equip or remove a shield for +2 AC.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  TORCH", color: .cyan, bold: true)
+            self.printWrapped("If your character holds the party torch, you can pass it to another party member from this menu.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
     }
 
     private func showGiveItemMenu(character: Character, onBack: (() -> Void)? = nil, fromDM: Bool = false) {
@@ -14091,14 +15452,23 @@ class GameEngine: ObservableObject {
         print("")
 
         // Character summary
-        for char in party {
-            let prefix = (char.isComputerControlled && !char.name.hasPrefix("R.")) ? "R. " : ""
+        for (partyIdx, char) in party.enumerated() {
+            let charIsRemote = pendingRemoteSlots.contains(partyIdx)
+            let typeTag: String
+            if charIsRemote {
+                typeTag = "[Remote] "
+            } else if char.isComputerControlled {
+                typeTag = "[Robot] "
+            } else {
+                typeTag = "[Local] "
+            }
             let hpFraction = Double(char.currentHP) / Double(char.maxHP)
             let hpColor: TerminalColor = hpFraction > 0.5 ? .brightGreen : (hpFraction > 0.25 ? .yellow : .red)
 
-            // Line 1: Name + Race/Class
+            // Line 1: Name + Race/Class + type tag
             let shortClass = String(char.characterClass.rawValue.prefix(3))
-            print("  \(prefix)\(shortName(for: char))  \(char.race.rawValue) \(shortClass) L\(char.level)", color: .brightGreen, bold: true)
+            let namePrefix = (char.isComputerControlled && !charIsRemote && !char.name.hasPrefix("R.")) ? "R. " : ""
+            print("  \(namePrefix)\(shortName(for: char))  \(char.race.rawValue) \(shortClass) L\(char.level)  \(typeTag)", color: .brightGreen, bold: true)
 
             // Line 2: HP bar + AC + Gold + XP
             let barLen = 8
@@ -14143,25 +15513,16 @@ class GameEngine: ObservableObject {
     }
 
     private func showPartyStatusHelp() {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Party Status — Help")
-        print("")
-
-        print("  INFORMATION", color: .cyan, bold: true)
-        printWrapped("Shows your dungeon map, then each character's class, race, HP bar, gold, and XP. Green HP = healthy (>50%), yellow = wounded (25-50%), red = critical (<25%). Characters at 0 HP are unconscious.", indent: 2, color: .dimGreen)
-        print("")
-
-        print("  BUTTONS", color: .cyan, bold: true)
-        printWrapped("Party Review — edit characters (name, race, class, voice) and view their full stat cards. Select a character then use View Card to see detailed stats and equipment.", indent: 2, color: .dimGreen)
-        printWrapped("Adventure Log — timeline of events in your adventure.", indent: 2, color: .dimGreen)
-        printWrapped("Settings — access game settings (sound, DM, display, etc.).", indent: 2, color: .dimGreen)
-        printWrapped("Cure Poison — appears when a party member is poisoned.", indent: 2, color: .dimGreen)
-        print("")
-
-        printInputHelp()
-
-        closeHandler = { [weak self] in self?.showPartyStatus() }
+        showInlineHelp {
+            self.printTitle("Party Status — Help")
+            self.print("")
+            self.print("  INFORMATION", color: .cyan, bold: true)
+            self.printWrapped("Map + each character's HP, gold, XP. Green HP = healthy, yellow = wounded, red = critical.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  BUTTONS", color: .cyan, bold: true)
+            self.printWrapped("Party Review — edit characters and view stat cards. Adventure Log — event timeline. Settings — game settings. Cure Poison — when poisoned.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
     }
 
     /// Shared helper — appends voice/text input explanation to any help screen
@@ -14173,6 +15534,151 @@ class GameEngine: ObservableObject {
             printWrapped("Tap the text prompt (>) to type commands. Enable Voice Menus in Settings > Accessibility to use voice input and screen reading.", indent: 2, color: .dimGreen)
         }
         print("")
+
+        print("  NAVIGATION BAR", color: .cyan, bold: true)
+        printWrapped("When a menu spans multiple pages, a compact bar appears at the bottom right: [<< | ? | >>]. Tap <</>> to page through options, or ? for context help.", indent: 2, color: .dimGreen)
+        print("")
+        print("  UNDO / REDO", color: .cyan, bold: true)
+        printWrapped("When you make changes (settings, character edits), labelled Undo/Redo buttons appear in the input bar showing what they will revert. Tap to step back or forward through changes. Undo/Redo must be enabled in Settings > Gameplay.", indent: 2, color: .dimGreen)
+        print("")
+    }
+
+    /// Set up tappable text links in help pages.
+    /// `links` maps a substring to an action. When the user taps a terminal line
+    /// containing that substring, the action is executed.
+    /// Toggle inline help: prepends help text above existing content, swaps ? for ?̸.
+    /// Pressing ?̸ restores the original screen. Menu buttons are preserved.
+    /// - helpBuilder: closure that prints help text (should NOT call clearTerminal)
+    func showInlineHelp(_ helpBuilder: () -> Void) {
+        if let saved = savedHelpState {
+            // Restore previous state — remove help text, restore original lines and menu
+            DispatchQueue.main.async {
+                self.terminalLines = saved.lines
+                self.currentMenuOptions = saved.menu
+            }
+            self.menuHandler = saved.menuHandler
+            self.closeHandler = saved.closeHandler
+            self.menuLongPressHandler = saved.menuLongPressHandler
+            self.textLongPressHandler = saved.textLongPressHandler
+            self.undoHandler = saved.undoHandler
+            self.redoHandler = saved.redoHandler
+            self.undoLabel = saved.undoLabel
+            self.redoLabel = saved.redoLabel
+            self.savedHelpState = nil
+        } else {
+            // Save current state
+            let savedLines = terminalLines
+            let savedMenu = currentMenuOptions
+            let savedMenuHandler = menuHandler
+            let savedCloseHandler = closeHandler
+            let savedMenuLongPress = menuLongPressHandler
+            let savedTextLongPress = textLongPressHandler
+            let savedUndo = undoHandler
+            let savedRedo = redoHandler
+            let savedUndoLabel = undoLabel
+            let savedRedoLabel = redoLabel
+
+            savedHelpState = (
+                savedLines, savedMenu,
+                savedMenuHandler, savedCloseHandler,
+                savedMenuLongPress, savedTextLongPress,
+                savedUndo, savedRedo,
+                savedUndoLabel, savedRedoLabel
+            )
+
+            // Build help text into a fresh line array
+            terminalLines.removeAll()
+            suppressAutoScroll = true
+            helpBuilder()
+            printInputHelp()
+            let helpLines = terminalLines
+
+            // Replace screen content with help text only (original saved for restore)
+            // Match help section titles to menu buttons — make them tappable
+            var helpLineActions: [Int: Int] = [:]  // helpLine index → menu choice (1-based)
+            for (lineIdx, line) in helpLines.enumerated() {
+                guard line.isBold else { continue }
+                let title = line.text.trimmingCharacters(in: .whitespaces).lowercased()
+                guard !title.isEmpty else { continue }
+                for (optIdx, opt) in savedMenu.enumerated() {
+                    let optText = opt.text.lowercased()
+                    guard !optText.isEmpty && optText != "?" && optText != "?\u{0338}" else { continue }
+                    if title == optText || title.contains(optText) || optText.contains(title) {
+                        helpLineActions[lineIdx] = optIdx + 1  // 1-based choice
+                        break
+                    }
+                }
+            }
+
+            // Underline tappable help titles
+            var linkedHelpLines = helpLines
+            for lineIdx in helpLineActions.keys {
+                var line = linkedHelpLines[lineIdx]
+                line = TerminalLine(line.text, color: line.color, bold: line.isBold, underlined: true, size: line.fontSize, centered: line.isCentered)
+                linkedHelpLines[lineIdx] = line
+            }
+            terminalLines = linkedHelpLines
+
+            // Swap ? for ?̸ in the existing menu, keep all other buttons
+            let updatedMenu = savedMenu.map { opt -> MenuOption in
+                if opt.text == "?" {
+                    return MenuOption("?\u{0338}", isDefault: opt.isDefault, tint: opt.tint, compact: opt.isCompactNav)
+                }
+                return opt
+            }
+            currentMenuOptions = updatedMenu
+
+            // Wire ?̸ to toggle back, pass through all other choices
+            menuHandler = { [weak self] choice in
+                guard let self = self else { return }
+                let idx = choice - 1
+                if idx >= 0 && idx < updatedMenu.count && updatedMenu[idx].text == "?\u{0338}" {
+                    self.showInlineHelp({})
+                } else {
+                    savedMenuHandler?(choice)
+                }
+            }
+            closeHandler = savedCloseHandler
+            menuLongPressHandler = savedMenuLongPress
+            // Wire tappable help titles — tap dismisses help and triggers the button
+            if !helpLineActions.isEmpty {
+                textLongPressHandler = { [weak self] lineIndex in
+                    guard let self = self else { return }
+                    if let menuChoice = helpLineActions[lineIndex] {
+                        // Dismiss help first, then trigger the button
+                        self.showInlineHelp({})
+                        savedMenuHandler?(menuChoice)
+                    }
+                }
+            } else {
+                textLongPressHandler = savedTextLongPress
+            }
+            undoHandler = savedUndo
+            redoHandler = savedRedo
+            undoLabel = savedUndoLabel
+            redoLabel = savedRedoLabel
+        }
+    }
+
+    private func setupHelpLinks(_ links: [(text: String, action: () -> Void)]) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            let lines = self.terminalLines
+            // Build a map: line index → action (first matching link wins)
+            var lineActions: [Int: () -> Void] = [:]
+            for (i, line) in lines.enumerated() {
+                for link in links {
+                    if line.text.contains(link.text) {
+                        lineActions[i] = link.action
+                        break
+                    }
+                }
+            }
+            guard !lineActions.isEmpty else { return }
+            self.textLongPressHandler = { lineIndex in
+                lineActions[lineIndex]?()
+            }
+        }
     }
 
     /// Show a character card, browseable via swipe L/R
@@ -14544,31 +16050,27 @@ class GameEngine: ObservableObject {
     }
 
     private func showInGameEditHelp(index: Int) {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Edit Character — Help")
-        print("")
-        printWrapped("Make changes to this character mid-adventure. Some changes (like class) will re-roll stats and equipment.", indent: 2, color: .green)
-        print("")
-        print("  CHANGE NAME", color: .cyan, bold: true)
-        printWrapped("Rename the character. The DM might comment on it.", indent: 2, color: .dimGreen)
-        print("")
-        print("  CHANGE TYPE", color: .cyan, bold: true)
-        printWrapped("Switch between Local (you) and Auto (robot). At least one character must be Local.", indent: 2, color: .dimGreen)
-        print("")
-        print("  CHANGE CLASS", color: .cyan, bold: true)
-        printWrapped("Retrain to a different class. This re-rolls HP, equipment, and skills. Higher social-tier classes may require persuasion.", indent: 2, color: .dimGreen)
-        print("")
-        print("  CHANGE VOICE", color: .cyan, bold: true)
-        printWrapped("Configure the character's text-to-speech voice for chat.", indent: 2, color: .dimGreen)
-        print("")
-        print("  VIEW CARD", color: .cyan, bold: true)
-        printWrapped("See the full stat card. Swipe left/right to browse party members.", indent: 2, color: .dimGreen)
-        print("")
-
-        showMenu(["Continue"])
-        closeHandler = { [weak self] in self?.showInGameEditCharacter(index: index) }
-        menuHandler = { [weak self] _ in self?.showInGameEditCharacter(index: index) }
+        showInlineHelp {
+            self.printTitle("Edit Character — Help")
+            self.print("")
+            self.printWrapped("Make changes to this character mid-adventure. Some changes (like class) will re-roll stats and equipment.", indent: 2, color: .green)
+            self.print("")
+            self.print("  CHANGE NAME", color: .cyan, bold: true)
+            self.printWrapped("Rename the character. The DM might comment on it.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  CHANGE TYPE", color: .cyan, bold: true)
+            self.printWrapped("Switch between Local (you) and Auto (robot). At least one character must be Local.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  CHANGE CLASS", color: .cyan, bold: true)
+            self.printWrapped("Retrain to a different class. This re-rolls HP, equipment, and skills. Higher social-tier classes may require persuasion.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  CHANGE VOICE", color: .cyan, bold: true)
+            self.printWrapped("Configure the character's text-to-speech voice for chat.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  VIEW CARD", color: .cyan, bold: true)
+            self.printWrapped("See the full stat card. Swipe left/right to browse party members.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
     }
 
     // MARK: - Social Mobility (Class Change)
@@ -14824,32 +16326,26 @@ class GameEngine: ObservableObject {
     }
 
     private func showRetrainHelp(index: Int) {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Class Change Help")
-        print("")
-        print("  SOCIAL MOBILITY", color: .cyan, bold: true)
-        printWrapped("Change your class mid-adventure. Social standing affects the transition: dropping down the social ladder (e.g. Wizard to Fighter) means your worldly experience gives you an edge — you may gain levels. Climbing up (e.g. Barbarian to Wizard) means stretching what you know over unfamiliar ground — you may lose levels.", indent: 2, color: .green)
-        print("")
-        print("  CLASS HIERARCHY", color: .cyan, bold: true)
-        printWrapped("From humble to elite: Barbarian → Fighter → Ranger → Rogue → Cleric → Wizard", indent: 2, color: .green)
-        print("")
-        print("  LEVEL CALCULATION", color: .cyan, bold: true)
-        printWrapped("Your new level is based on:", indent: 2, color: .green)
-        printWrapped("• Social direction (down = bonus, up = penalty)", indent: 4, color: .dimGreen)
-        printWrapped("• Shared skills between old and new class", indent: 4, color: .dimGreen)
-        printWrapped("• Your current level (higher = more carries over)", indent: 4, color: .dimGreen)
-        printWrapped("• A touch of luck (small random bonus)", indent: 4, color: .dimGreen)
-        printWrapped("Tap a class to change; long-press to preview first.", indent: 2, color: .dimGreen)
-        print("")
-        print("  WHAT CHANGES", color: .cyan, bold: true)
-        printWrapped("Abilities are re-prioritised for your new class. You get new starting equipment, skills, and spells. Your old gear is lost — visit a shop to re-equip.", indent: 2, color: .dimGreen)
-        print("")
-        printInputHelp()
-
-        waitForContinue()
-        inputHandler = { [weak self] _ in
-            self?.showRetrainClass(index: index)
+        showInlineHelp {
+            self.printTitle("Class Change Help")
+            self.print("")
+            self.print("  SOCIAL MOBILITY", color: .cyan, bold: true)
+            self.printWrapped("Change your class mid-adventure. Social standing affects the transition: dropping down the social ladder (e.g. Wizard to Fighter) means your worldly experience gives you an edge — you may gain levels. Climbing up (e.g. Barbarian to Wizard) means stretching what you know over unfamiliar ground — you may lose levels.", indent: 2, color: .green)
+            self.print("")
+            self.print("  CLASS HIERARCHY", color: .cyan, bold: true)
+            self.printWrapped("From humble to elite: Barbarian → Fighter → Ranger → Rogue → Cleric → Wizard", indent: 2, color: .green)
+            self.print("")
+            self.print("  LEVEL CALCULATION", color: .cyan, bold: true)
+            self.printWrapped("Your new level is based on:", indent: 2, color: .green)
+            self.printWrapped("• Social direction (down = bonus, up = penalty)", indent: 4, color: .dimGreen)
+            self.printWrapped("• Shared skills between old and new class", indent: 4, color: .dimGreen)
+            self.printWrapped("• Your current level (higher = more carries over)", indent: 4, color: .dimGreen)
+            self.printWrapped("• A touch of luck (small random bonus)", indent: 4, color: .dimGreen)
+            self.printWrapped("Tap a class to change; long-press to preview first.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  WHAT CHANGES", color: .cyan, bold: true)
+            self.printWrapped("Abilities are re-prioritised for your new class. You get new starting equipment, skills, and spells. Your old gear is lost — visit a shop to re-equip.", indent: 2, color: .dimGreen)
+            self.print("")
         }
     }
 
@@ -14932,26 +16428,22 @@ class GameEngine: ObservableObject {
     }
 
     private func showChangeNameHelp(index: Int) {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Change Name — Help")
-        print("")
+        showInlineHelp {
+            self.printTitle("Change Name — Help")
+            self.print("")
 
-        print("  INFORMATION", color: .cyan, bold: true)
-        printWrapped("Shows the current character name and random suggestions from the name pool.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  INFORMATION", color: .cyan, bold: true)
+            self.printWrapped("Shows the current character name and random suggestions from the name pool.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  HOW TO USE", color: .cyan, bold: true)
-        printWrapped("Type a new name and press return to apply it. Tap the 🎲 icon above the keyboard for fresh suggestions. Names matching heroes from Name Lore will have character cards!", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  HOW TO USE", color: .cyan, bold: true)
+            self.printWrapped("Type a new name and press return to apply it. Tap the 🎲 icon above the keyboard for fresh suggestions. Names matching heroes from Name Lore will have character cards!", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  UNDO / CANCEL", color: .cyan, bold: true)
-        printWrapped("Tap close (✕) to cancel without changing the name.", indent: 2, color: .dimGreen)
-        print("")
-
-        printInputHelp()
-
-        closeHandler = { [weak self] in self?.showInGameChangeName(index: index) }
+            self.print("  UNDO / CANCEL", color: .cyan, bold: true)
+            self.printWrapped("Tap close (✕) to cancel without changing the name.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
     }
 
     /// Change player type mid-game (human/AI)
@@ -15049,28 +16541,20 @@ class GameEngine: ObservableObject {
     }
 
     private func showChangeTypeHelp(index: Int) {
-        clearTerminal()
-        suppressAutoScroll = true
-        printTitle("Player Type — Help")
-        print("")
+        showInlineHelp {
+            self.printTitle("Player Type — Help")
+            self.print("")
 
-        print("  INFORMATION", color: .cyan, bold: true)
-        printWrapped("Shows the current controller for this character.", indent: 2, color: .dimGreen)
-        print("")
+            self.print("  INFORMATION", color: .cyan, bold: true)
+            self.printWrapped("Shows the current controller for this character.", indent: 2, color: .dimGreen)
+            self.print("")
 
-        print("  OPTIONS", color: .cyan, bold: true)
-        printWrapped("Local (You) — you control this character's actions in combat and exploration.", indent: 2, color: .dimGreen)
-        printWrapped("Auto (Robot) — the robot controls this character. They act on their own in combat and their name gets an \"R.\" prefix.", indent: 2, color: .dimGreen)
-        printWrapped("Remote Player — invite a friend via Game Centre to control this character (requires 2+ party members and Game Centre sign-in).", indent: 2, color: .dimGreen)
-        print("")
-
-        print("  CANCEL", color: .cyan, bold: true)
-        printWrapped("Tap close (✕) to go back without changing the type.", indent: 2, color: .dimGreen)
-        print("")
-
-        printInputHelp()
-
-        closeHandler = { [weak self] in self?.showInGameChangeType(index: index) }
+            self.print("  OPTIONS", color: .cyan, bold: true)
+            self.printWrapped("Local (You) — you control this character's actions in combat and exploration.", indent: 2, color: .dimGreen)
+            self.printWrapped("Auto (Robot) — the robot controls this character. They act on their own in combat and their name gets an \"R.\" prefix.", indent: 2, color: .dimGreen)
+            self.printWrapped("Remote Player — invite a friend via Game Centre to control this character (requires 2+ party members and Game Centre sign-in).", indent: 2, color: .dimGreen)
+            self.print("")
+        }
     }
 
     private func startPartyStatusAnim(artLineRanges: [(charClass: CharacterClass, startIndex: Int, count: Int)]) {
@@ -15249,9 +16733,7 @@ class GameEngine: ObservableObject {
         } else if partyHasTorch() {
             options.append("Illuminate")
         }
-        if options.count % 2 == 0 {
-            options.append("Hint")
-        }
+        options.append("?")
 
         showMenu(options)
         closeHandler = { [weak self] in self?.showExplorationView() }
@@ -15288,8 +16770,8 @@ class GameEngine: ObservableObject {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                     self.rest()
                 }
-            case "Hint":
-                self.showRandomHint(onBack: { self.rest() }, context: "rest")
+            case "?":
+                self.showRestHelp()
             default:
                 self.showExplorationView()
             }
@@ -15741,11 +17223,164 @@ class GameEngine: ObservableObject {
             let lower = trimmed.lowercased()
 
             // Inventory shortcut — opens inventory, Back returns to DM mode
-            if lower == "i" || lower == "inventory" {
+            if lower == "i" || lower == "inventory" || lower == "pack" || lower == "items" {
                 let back: () -> Void = { [weak self] in self?.askTheDM() }
                 let humans = self.party.filter { !$0.isComputerControlled }
                 let defaultChar = humans.randomElement() ?? self.party.first!
                 self.showInventoryFor(defaultChar, onBack: back, fromDM: true)
+                return
+            }
+
+            // Party status shortcut
+            if lower == "party" || lower == "party status" || lower == "status" || lower == "hp" || lower == "health" {
+                self.print("")
+                let partySnapshot = self.party
+                for idx in 0..<partySnapshot.count {
+                    let hp = "\(partySnapshot[idx].currentHP)/\(partySnapshot[idx].maxHP)"
+                    let name = partySnapshot[idx].name
+                    let low = partySnapshot[idx].currentHP <= partySnapshot[idx].maxHP / 4
+                    self.print("  \(name): \(hp) HP", color: low ? .red : .brightGreen)
+                }
+                self.print("")
+                self.dmPromptForQuestion()
+                return
+            }
+
+            // Torch shortcuts
+            if lower == "douse" || lower == "douse torch" || lower == "dark" || lower == "torch off"
+                || lower == "turn off" || lower == "extinguish" || lower == "put out" || lower == "snuff" {
+                if self.torchLit {
+                    self.torchLit = false
+                    self.print("")
+                    self.print("  You douse the torch. Darkness.", color: .dimGreen)
+                    self.print("")
+                } else {
+                    self.print("")
+                    self.print("  The torch is already out.", color: .yellow)
+                    self.print("")
+                }
+                self.dmPromptForQuestion()
+                return
+            }
+            if lower == "illuminate" || lower == "light" || lower == "light torch" || lower == "torch on"
+                || lower == "torch" || lower == "turn on" || lower == "ignite"
+                || lower == "light up" || lower == "fire up" || lower == "kindle" || lower == "spark" {
+                if !self.torchLit {
+                    self.torchLit = true
+                    self.print("")
+                    self.print("  The torch flickers to life, casting dancing shadows.", color: .yellow)
+                    self.print("")
+                } else {
+                    self.print("")
+                    self.print("  The torch is already lit.", color: .yellow)
+                    self.print("")
+                }
+                self.dmPromptForQuestion()
+                return
+            }
+
+            // Listen shortcut
+            if lower == "listen" || lower == "listen at door" || lower == "listen at the door" || lower == "hear" {
+                self.print("")
+                if let room = self.dungeon?.currentRoom {
+                    let exits = room.exits.keys.sorted { $0.rawValue < $1.rawValue }
+                    if exits.isEmpty {
+                        self.print("  You press your ear to the walls... nothing.", color: .dimGreen)
+                    } else {
+                        for dir in exits {
+                            if let nextId = room.exits[dir], let nextRoom = self.dungeon?.rooms[nextId] {
+                                if !nextRoom.cleared, nextRoom.encounter != nil {
+                                    self.print("  \(dir.rawValue): You hear something moving...", color: .yellow)
+                                } else {
+                                    self.print("  \(dir.rawValue): Silence.", color: .dimGreen)
+                                }
+                            }
+                        }
+                    }
+                }
+                self.print("")
+                self.dmPromptForQuestion()
+                return
+            }
+
+            // Search shortcut
+            if lower == "search" || lower == "search room" || lower == "look" || lower == "look around" || lower == "examine" {
+                self.print("")
+                if self.torchLit {
+                    if let room = self.dungeon?.currentRoom {
+                        self.print("  \(room.name)", color: .brightGreen, bold: true)
+                        self.print("  \(room.roomDescription)", color: .dimGreen)
+                    }
+                } else {
+                    self.print("  It's too dark to see much. Light a torch!", color: .yellow)
+                }
+                self.print("")
+                self.dmPromptForQuestion()
+                return
+            }
+
+            // Rest shortcut
+            if lower == "rest" || lower == "short rest" || lower == "heal" {
+                self.print("")
+                var anyHealed = false
+                for idx in 0..<self.party.count {
+                    let c = self.party[idx]
+                    guard c.currentHP < c.maxHP else { continue }
+                    let heal = max(1, c.maxHP / 4)
+                    c.currentHP = min(c.maxHP, c.currentHP + heal)
+                    self.print("  \(c.name) rests and recovers \(heal) HP.", color: .brightGreen)
+                    anyHealed = true
+                }
+                if !anyHealed {
+                    self.print("  Everyone is already at full health.", color: .dimGreen)
+                }
+                self.advanceTime(30)
+                self.print("")
+                self.dmPromptForQuestion()
+                return
+            }
+
+            // Save shortcut
+            if lower == "save" || lower == "save game" {
+                self.quickSave()
+                self.print("")
+                self.print("  Game saved.", color: .brightGreen)
+                self.print("")
+                self.dmPromptForQuestion()
+                return
+            }
+
+            // About screen shortcut
+            if lower == "about" {
+                self.showAbout(onBack: { [weak self] in self?.askTheDM() })
+                return
+            }
+
+            // Actions / help shortcut
+            if lower == "help" || lower == "?" || lower == "actions" || lower == "what can i do" || lower == "commands" {
+                // Show contextual help page, then return to DM prompt
+                self.clearTerminal()
+                self.printTitle("Exploration Help")
+                self.print("")
+                self.print("  THE MAP", color: .cyan, bold: true)
+                self.printWrapped("@ is your party. Rooms: $ Loot, ! Danger, S Shop, + Shrine. XX = secured door.", indent: 2, color: .green)
+                self.print("")
+                self.print("  DIRECTIONS", color: .cyan, bold: true)
+                self.printWrapped("Tap N/S/E/W to move. Long-press a direction to secure/unsecure that door.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.print("  BUTTONS", color: .cyan, bold: true)
+                self.printWrapped("Search looks for hidden items. Listen reveals what's beyond exits. Rest (centre) heals — hold for long rest.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.print("  DM COMMANDS", color: .cyan, bold: true)
+                self.printWrapped("inventory, party, map, listen, search, light/douse, rest, save, N/S/E/W, exit", indent: 2, color: .dimGreen)
+                self.print("")
+                self.print("  TIPS", color: .cyan, bold: true)
+                self.printWrapped("Ask the DM anything — describe actions, ask about lore, or request creative solutions. The DM can grant items, heal, or modify the story depending on the ad-lib level.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.askTheDM()
+                }
                 return
             }
 
@@ -15757,6 +17392,14 @@ class GameEngine: ObservableObject {
                 }
                 self.print("")
                 self.dmPromptForQuestion()
+                return
+            }
+
+            // Exit shortcut — leave DM chat mode
+            if lower == "exit" || lower == "quit" || lower == "leave"
+                || lower == "close" || lower == "back" || lower == "done"
+                || lower == "bye" || lower == "goodbye" || lower == "stop" {
+                self.handleChatExit()
                 return
             }
 
@@ -16007,6 +17650,30 @@ class GameEngine: ObservableObject {
 
             if self.isReservedWord(input) || input.isEmpty {
                 self.showPlayerCombatMenu(characterId: characterId)
+                return
+            }
+
+            let lower = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if lower == "help" || lower == "?" {
+                self.clearTerminal()
+                self.printTitle("Combat — Help")
+                self.print("")
+                self.print("  ATTACK", color: .cyan, bold: true)
+                self.printWrapped("d20 + mods vs AC. Damage depends on weapon.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.print("  SPELL", color: .cyan, bold: true)
+                self.printWrapped("Cantrips free; levelled spells use slots (recharge on long rest).", indent: 2, color: .dimGreen)
+                self.print("")
+                self.print("  DODGE", color: .cyan, bold: true)
+                self.printWrapped("Enemies have disadvantage attacking you until your next turn.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.print("  DM IN COMBAT", color: .cyan, bold: true)
+                self.printWrapped("Describe creative actions — throw oil, flip a table, taunt an enemy. The DM will interpret and apply results.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.askTheDMInCombat(characterId: characterId)
+                }
                 return
             }
 
@@ -16634,6 +18301,7 @@ class GameEngine: ObservableObject {
         logMultiplayerAction("Encountered \(monsterNames)!")
 
         clearTerminal()
+        suppressAutoScroll = false
         printLines(asciiSwords, color: .red)
         print("")
         printTitle("COMBAT!")
@@ -17025,6 +18693,13 @@ class GameEngine: ObservableObject {
         options.append("Run Away!")
         actions.append { [weak self] in
             self?.attemptRunAway()
+        }
+
+        // Help
+        options.append("?")
+        actions.append { [weak self] in
+            self?.cancelCombatIdleTimer()
+            self?.showCombatHelp(characterId: characterId)
         }
 
         showPaginatedMenu(options) { [weak self] idx in
@@ -18055,6 +19730,7 @@ class GameEngine: ObservableObject {
         SoundManager.shared.stopMusic()
         SoundManager.shared.playDefeat()
         clearTerminal()
+        suppressAutoScroll = false
         gameState = .gameOver
         logEvent("The party has fallen...", category: "COMBAT")
 
@@ -18083,6 +19759,7 @@ class GameEngine: ObservableObject {
         SoundManager.shared.stopMusic()
         SoundManager.shared.playDefeat()
         clearTerminal()
+        suppressAutoScroll = false
         gameState = .gameOver
 
         let limitText = formatTimeLimitValue(gameTimeLimit)
@@ -18132,11 +19809,40 @@ class GameEngine: ObservableObject {
         return "\(m)m left"
     }
 
+    /// Easter egg victory — creates fake party/dungeon and triggers victory screen
+    private func setupEasterEggVictory() {
+        if party.isEmpty {
+            let scores = AbilityScores(strength: 20, dexterity: 20, constitution: 20, intelligence: 20, wisdom: 20, charisma: 20)
+            createEasterEggParty(scores: scores)
+        }
+        if dungeon == nil {
+            dungeon = Dungeon(name: "The Hidden Debug Chamber", level: 42)
+        }
+        monstersSlain = 99
+        combatsWon = 42
+        handleGameVictory()
+    }
+
+    /// Creates a fake party of four legendary heroes for the easter egg victory
+    private func createEasterEggParty(scores: AbilityScores) {
+        let hero1 = Character(name: "Sir Debugalot", race: .human, characterClass: .fighter, abilityScores: scores)
+        hero1.currentHP = hero1.maxHP
+        let hero2 = Character(name: "Gandcode the Grey", race: .highElf, characterClass: .wizard, abilityScores: scores)
+        hero2.currentHP = hero2.maxHP
+        let hero3 = Character(name: "Stealthy McPatchfix", race: .lightfootHalfling, characterClass: .rogue, abilityScores: scores)
+        hero3.currentHP = hero3.maxHP
+        let hero4 = Character(name: "Brother Breakpoint", race: .hillDwarf, characterClass: .cleric, abilityScores: scores)
+        hero4.currentHP = hero4.maxHP
+        self.party = [hero1, hero2, hero3, hero4]
+    }
+
     func handleGameVictory() {
         clearAllUndoRedo()
         SoundManager.shared.stopMusic()
         SoundManager.shared.playVictory()
         clearTerminal()
+        suppressAutoScroll = false
+        menuImageName = "VictoryScene"
         gameState = .victory
 
         let currentLevel = dungeon?.level ?? 1
@@ -18317,11 +20023,11 @@ class GameEngine: ObservableObject {
                 options.append("Save+NewName")   // 3
                 options.append("Quit-Save")     // 4
                 options.append("Main Menu")     // 5
-                options.append("Info")          // 6
             } else {
                 options.append("Quit-Save")     // 3
                 options.append("Main Menu")     // 4
             }
+            options.append("?")
 
             showMenu(options)
             closeHandler = { [weak self] in
@@ -18346,6 +20052,8 @@ class GameEngine: ObservableObject {
                     self.confirmExitToMainMenu()
                 case "Info":
                     self.showSaveInfo()
+                case "?":
+                    self.showSaveHelp()
                 default:
                     self.showExplorationView()
                 }
@@ -18541,6 +20249,37 @@ class GameEngine: ObservableObject {
 
         closeHandler = { [weak self] in
             self?.showSaveMenu()
+        }
+    }
+
+    private func showSaveHelp() {
+        showInlineHelp {
+            self.printTitle("Save/Quit — Help")
+            self.print("")
+
+            self.print("  SAVE", color: .cyan, bold: true)
+            self.printWrapped("Save and continue playing. Your progress is saved to the current slot. You can also quick-save from the Actions menu.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  QUIT+SAVE", color: .cyan, bold: true)
+            self.printWrapped("Save your game and exit to the main menu. Your adventure is preserved — pick it up later from Load Game.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  SAVE+NEWNAME", color: .cyan, bold: true)
+            self.printWrapped("Save to a new slot with a different name. Useful for keeping multiple save points of the same adventure.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  QUIT-SAVE", color: .cyan, bold: true)
+            self.printWrapped("Exit without saving. Any progress since your last save is lost! Be careful.", indent: 2, color: .red)
+            self.print("")
+
+            self.print("  AUTOSAVE", color: .cyan, bold: true)
+            self.printWrapped("The game autosaves periodically. Change the frequency in Settings > Saving. Autosaves create breakpoints you can reload from.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  BREAKPOINTS", color: .cyan, bold: true)
+            self.printWrapped("Each save slot can hold multiple breakpoints (snapshots). Long-press Load to quick-load the latest breakpoint.", indent: 2, color: .dimGreen)
+            self.print("")
         }
     }
 
@@ -19567,15 +21306,51 @@ class GameEngine: ObservableObject {
         print("Return to Main Menu?", color: .yellow, bold: true)
         print("")
         print("Unsaved progress will be lost.", color: .red)
+        printWrapped("Save & Return saves your game first so you can continue later.", indent: 2, color: .dimGreen)
         print("")
 
-        showMenu(["Yes, Main Menu", "No, Stay"])
+        var menuOpts = [
+            MenuOption("Save & Return"),
+            MenuOption("Quit", tint: .danger),
+            MenuOption("Cancel", tint: .navigation),
+        ]
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        showMenuOptions(menuOpts)
+        closeHandler = { [weak self] in self?.showExplorationView() }
         menuHandler = { [weak self] choice in
-            if choice == 1 {
-                self?.resetGame()
-            } else {
-                self?.showExplorationView()
+            guard let self = self else { return }
+            let text = menuOpts[choice - 1].text
+            switch text {
+            case "Save & Return":
+                self.performQuickSave()
+                self.resetGame()
+            case "Quit":
+                self.resetGame()
+            case "Cancel":
+                self.showExplorationView()
+            case "?":
+                self.showReturnToMenuHelp()
+            default: break
             }
+        }
+    }
+
+    private func showReturnToMenuHelp() {
+        showInlineHelp {
+            self.printTitle("Return to Menu — Help")
+            self.print("")
+
+            self.print("  SAVE & RETURN", color: .cyan, bold: true)
+            self.printWrapped("Saves your game to the current slot, then returns to the main menu. You can continue this adventure later from the main menu.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  QUIT", color: .cyan, bold: true)
+            self.printWrapped("Returns to the main menu without saving. Any unsaved progress since your last save will be lost.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  CANCEL", color: .cyan, bold: true)
+            self.printWrapped("Go back to exploring the dungeon.", indent: 2, color: .dimGreen)
+            self.print("")
         }
     }
 
@@ -21575,6 +23350,7 @@ class GameEngine: ObservableObject {
         DispatchQueue.main.async { self.chatInputMode = true }
 
         clearTerminal()
+        suppressAutoScroll = false
         printTitle("Chat")
         print("")
 
@@ -21671,6 +23447,27 @@ class GameEngine: ObservableObject {
             let exitWords = ["done", "exit", "quit", "leave", "back", "return", "d", "x", "q", "b"]
             if exitWords.contains(lower) {
                 self.handleChatExit()
+                return
+            }
+
+            // Help shortcut — show exploration help
+            if lower == "help" || lower == "?" {
+                self.clearTerminal()
+                self.printTitle("Chat Help")
+                self.print("")
+                self.print("  TALKING", color: .cyan, bold: true)
+                self.printWrapped("Type a message to talk to the DM or companions. Use @name to address a specific companion (e.g. @ari). Use @dm to talk to the Dungeon Master.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.print("  COMMANDS", color: .cyan, bold: true)
+                self.printWrapped("inventory, map, light/douse, rest, save, done/exit", indent: 2, color: .dimGreen)
+                self.print("")
+                self.print("  TIPS", color: .cyan, bold: true)
+                self.printWrapped("Companions respond in character. The DM can grant items, reveal secrets, or advance the story. Ask anything!", indent: 2, color: .dimGreen)
+                self.print("")
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.showPartyChat()
+                }
                 return
             }
 

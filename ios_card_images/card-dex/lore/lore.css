@@ -69,6 +69,8 @@ h1 {
   margin-top: 10px;
   color: #b8d2bd;
   line-height: 1.45;
+  text-align: justify;
+  overflow-wrap: anywhere;
 }
 h2 {
   margin: 0 0 8px;
@@ -79,6 +81,7 @@ h2 {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: flex-start;
 }
 .links a {
   color: #8ce6a1;
@@ -88,7 +91,10 @@ h2 {
   padding: 6px 9px;
   background: #0a100b;
   font-size: 0.9rem;
+  line-height: 1.25;
+  white-space: normal;
 }
+.origin-panel .summary strong { color: #95d39f; }
 .small { color: #83a288; font-size: 0.8rem; margin-top: 8px; }
 @media (max-width: 900px) {
   .layout { grid-template-columns: 1fr; }
