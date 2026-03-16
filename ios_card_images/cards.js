@@ -2979,7 +2979,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Giant Rat",
       "source": "Bestiary",
-      "description": "An oversized rat with beady red eyes and yellow teeth.",
+      "description": "An oversized dungeon rat with diseased fangs and twitching red eyes. It fights in packs, swarms weak targets, and turns cramped tunnels into panic traps.",
       "stats": {
         "HP": 4,
         "AC": 10,
@@ -2995,7 +2995,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Kobold",
       "source": "Bestiary",
-      "description": "A small, scaly reptilian creature clutching a tiny spear.",
+      "description": "A wiry reptilian tunnel-fighter with a spear, sling, and too much confidence. Kobolds rely on numbers, ambushes, and dirty tricks rather than fair combat.",
       "stats": {
         "HP": 5,
         "AC": 12,
@@ -3011,7 +3011,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Stirge",
       "source": "Bestiary",
-      "description": "A mosquito-like creature the size of a cat, buzzing hungrily.",
+      "description": "A bat-sized blood-feeder with a needle beak and frantic wings. Once attached, it drains life quickly and forces the party to react under pressure.",
       "stats": {
         "HP": 2,
         "AC": 13,
@@ -3027,7 +3027,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Giant Bat",
       "source": "Bestiary",
-      "description": "A bat with a wingspan wider than your arms, swooping silently.",
+      "description": "A cavern predator with leathery wings and erratic dive attacks. It harasses from above, breaks formation, and strikes when vision is poor.",
       "stats": {
         "HP": 4,
         "AC": 11,
@@ -3043,7 +3043,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Crawling Claw",
       "source": "Bestiary",
-      "description": "A severed hand skittering across the floor on its fingertips.",
+      "description": "A severed hand animated by spiteful necromancy. Small but relentless, it crawls through cracks and throttles the unwary in the dark.",
       "stats": {
         "HP": 3,
         "AC": 12,
@@ -3059,7 +3059,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Goblin",
       "source": "Bestiary",
-      "description": "A small, vicious humanoid with sharp teeth.",
+      "description": "A vicious raider with sharp teeth, quick hands, and cruel humor. Goblins use cover, hit-and-run attacks, and cowardly teamwork to wear heroes down.",
       "stats": {
         "HP": 7,
         "AC": 13,
@@ -3075,7 +3075,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Skeleton",
       "source": "Bestiary",
-      "description": "Animated bones wielding rusty weapons.",
+      "description": "A rattling warrior of animated bone carrying old weapons and older grudges. It feels no fear, ignores pain, and advances until shattered.",
       "stats": {
         "HP": 10,
         "AC": 12,
@@ -3091,7 +3091,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Zombie",
       "source": "Bestiary",
-      "description": "A shambling corpse with rotting flesh.",
+      "description": "A rotting corpse driven by blunt hunger and necrotic will. Slow but stubborn, it keeps coming after wounds that would drop a living foe.",
       "stats": {
         "HP": 15,
         "AC": 8,
@@ -3107,7 +3107,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Wolf",
       "source": "Bestiary",
-      "description": "A fierce predator with gleaming eyes.",
+      "description": "A lean pack hunter with bright eyes and sudden speed. Wolves circle, isolate stragglers, and drag targets down through coordinated pressure.",
       "stats": {
         "HP": 8,
         "AC": 12,
@@ -3123,7 +3123,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Orc",
       "source": "Bestiary",
-      "description": "A brutish warrior with green skin and tusks.",
+      "description": "A brutal frontline warrior with tusks, scars, and a heavy weapon. Orcs fight hard, rush fast, and try to end battles before tactics can settle.",
       "stats": {
         "HP": 15,
         "AC": 13,
@@ -3139,7 +3139,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Hobgoblin",
       "source": "Bestiary",
-      "description": "A disciplined goblinoid soldier in armour.",
+      "description": "An armored goblinoid soldier drilled for war. Hobgoblins hold lines, punish mistakes, and turn discipline into a weapon.",
       "stats": {
         "HP": 11,
         "AC": 16,
@@ -3155,7 +3155,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Gnoll",
       "source": "Bestiary",
-      "description": "A hyena-headed humanoid savage.",
+      "description": "A hyena-headed marauder driven by bloodlust and cruel laughter. Gnolls press the attack relentlessly and revel in chaos.",
       "stats": {
         "HP": 18,
         "AC": 14,
@@ -3171,7 +3171,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Rust Monster",
       "source": "Bestiary",
-      "description": "An insectoid creature whose antennae corrode metal on contact.",
+      "description": "A chitinous scavenger with twitching antennae that corrode metal on contact. It can strip gear, ruin armor plans, and change a fight in seconds.",
       "stats": {
         "HP": 27,
         "AC": 14,
@@ -3187,7 +3187,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Bugbear",
       "source": "Bestiary",
-      "description": "A large, hairy goblinoid ambusher.",
+      "description": "A hulking goblinoid ambusher wrapped in fur, stink, and brute force. Bugbears hit from shadows with surprising reach and savage bursts of damage.",
       "stats": {
         "HP": 27,
         "AC": 16,
@@ -3203,7 +3203,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Giant Spider",
       "source": "Bestiary",
-      "description": "A massive arachnid with dripping fangs.",
+      "description": "A huge web-spinner with venom-dripping fangs and patient instincts. It ambushes from ceilings, restrains prey, and strikes when escape routes vanish.",
       "stats": {
         "HP": 26,
         "AC": 14,
@@ -3219,7 +3219,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Ogre",
       "source": "Bestiary",
-      "description": "A towering brute of immense strength.",
+      "description": "A towering giant brute with a club the size of a tree trunk. Ogres are clumsy but devastating, turning one clean hit into a battlefield crisis.",
       "stats": {
         "HP": 59,
         "AC": 11,
@@ -3235,7 +3235,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Gargoyle",
       "source": "Bestiary",
-      "description": "A winged stone creature that lurks motionless until it strikes.",
+      "description": "A winged stone predator that masquerades as architecture until the moment it kills. Resistant and patient, it thrives in ruined towers and cursed halls.",
       "stats": {
         "HP": 52,
         "AC": 15,
@@ -3251,7 +3251,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Mimic",
       "source": "Bestiary",
-      "description": "A shapeshifter disguised as a treasure chest, waiting to devour the greedy.",
+      "description": "A shapechanger that imitates furniture, doors, and treasure chests with unsettling accuracy. It traps the greedy, grapples the curious, and feeds at arm's reach.",
       "stats": {
         "HP": 58,
         "AC": 12,
@@ -3267,7 +3267,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Gelatinous Cube",
       "source": "Bestiary",
-      "description": "A nearly transparent cube of acidic jelly that fills the corridor.",
+      "description": "A near-invisible wall of acidic jelly that glides silently through corridors. It engulfs, dissolves, and turns narrow dungeon geometry into lethal terrain.",
       "stats": {
         "HP": 84,
         "AC": 6,
@@ -3283,7 +3283,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Owlbear",
       "source": "Bestiary",
-      "description": "A fearsome hybrid of owl and bear.",
+      "description": "A monstrous hybrid of owl and bear - all talons, beak, and rage. Its hunting cry freezes nerves, and once it commits to a charge, very little stops it.",
       "stats": {
         "HP": 59,
         "AC": 13,
@@ -3299,7 +3299,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Troll",
       "source": "Bestiary",
-      "description": "A lanky giant with regenerating flesh.",
+      "description": "A long-limbed horror with tearing claws and flesh that knits back together. Unless burned or blasted with acid, a troll can rise from wounds that looked fatal.",
       "stats": {
         "HP": 84,
         "AC": 15,
@@ -3315,7 +3315,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Minotaur",
       "source": "Bestiary",
-      "description": "A hulking bull-headed humanoid that charges through the labyrinth.",
+      "description": "A bull-headed juggernaut bred for slaughter in twisting halls. It uses charge lanes, brutal momentum, and labyrinth instincts to corner prey.",
       "stats": {
         "HP": 76,
         "AC": 14,
@@ -3331,7 +3331,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Basilisk",
       "source": "Bestiary",
-      "description": "An eight-legged reptile whose gaze turns flesh to stone.",
+      "description": "A heavy-scaled reptile with a petrifying gaze and predatory patience. One wrong glance can end the fight before steel is even drawn.",
       "stats": {
         "HP": 52,
         "AC": 15,
@@ -3347,7 +3347,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Displacer Beast",
       "source": "Bestiary",
-      "description": "A six-legged panther with barbed tentacles, its image always shifting.",
+      "description": "A sleek six-legged hunter with barbed tentacles and a shifting silhouette. Its warped image makes aim unreliable and confidence dangerous.",
       "stats": {
         "HP": 85,
         "AC": 13,
@@ -3363,7 +3363,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Wraith",
       "source": "Bestiary",
-      "description": "A spectral undead wreathed in shadow, draining the life from all it touches.",
+      "description": "A shadow-wrapped undead spirit that drains warmth, strength, and hope. Wraiths glide through darkness and leave survivors feeling less alive than before.",
       "stats": {
         "HP": 67,
         "AC": 13,
@@ -3379,7 +3379,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Demogorgon",
       "source": "Bestiary",
-      "description": "A terrifying creature from the Upside Down with a gaping flower-like maw.",
+      "description": "A nightmare predator from the Upside Down with a flower-like maw and relentless aggression. It hunts by instinct, closes distance fast, and overwhelms isolated targets.",
       "stats": {
         "HP": 68,
         "AC": 14,
@@ -3395,7 +3395,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Mind Flayer",
       "source": "Bestiary",
-      "description": "An aberration with tentacles protruding from its face, wielding psionic power.",
+      "description": "A psionic aberration with face-tentacles and cold alien intellect. It dominates weak minds, disables strong ones, and treats battle as a neurological experiment.",
       "stats": {
         "HP": 71,
         "AC": 15,
@@ -3411,7 +3411,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Beholder",
       "source": "Bestiary",
-      "description": "A floating sphere of flesh with a central eye and many stalks, each firing a deadly ray.",
+      "description": "A floating tyrant of eyes and paranoia whose stalks unleash lethal rays. Every angle is a threat, and every round can rewrite the rules of the fight.",
       "stats": {
         "HP": 180,
         "AC": 18,
@@ -3427,7 +3427,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Young Dragon",
       "source": "Bestiary",
-      "description": "A fearsome dragon not yet fully grown, but deadly with fang, claw, and fiery breath.",
+      "description": "A juvenile dragon already large enough to break shields with claw and breath. Proud, territorial, and cunning, it tests heroes before it respects them.",
       "stats": {
         "HP": 142,
         "AC": 18,
@@ -3443,7 +3443,7 @@ window.CARD_DATA = {
       "type": "monster",
       "name": "Vecna",
       "source": "Bestiary",
-      "description": "The Undying King, a lich of immense power reaching between worlds.",
+      "description": "The Undying King, a lich of vast cunning and forbidden knowledge. Vecna bends death, memory, and fate itself to keep his dominion alive.",
       "stats": {
         "HP": 120,
         "AC": 18,
