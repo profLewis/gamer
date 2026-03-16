@@ -185,7 +185,52 @@ function renderBase(card) {
   byId('meta').textContent = `${(card.type || '').toUpperCase()} - ${card.source || 'Reference'}`;
   byId('cardImg').src = `../../${card.image}`;
   byId('cardImg').alt = card.name;
-  byId('summary').textContent = (card.description || '').trim() || `Reference notes for ${card.name}.`;
+  byId('summary').textContent = `Reference notes for ${card.name}.`;
+}
+
+function firstSentence(text) {
+  const t = (text || '').trim();
+  if (!t) return '';
+  const m = t.match(/.+?[.!?](?:\s|$)/);
+  return (m ? m[0] : t).trim();
+}
+
+function wordSet(text) {
+  return new Set(
+    (text || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 3)
+  );
+}
+
+function overlapRatio(a, b) {
+  const aa = wordSet(a);
+  const bb = wordSet(b);
+  if (!aa.size || !bb.size) return 0;
+  let common = 0;
+  for (const w of aa) if (bb.has(w)) common += 1;
+  return common / Math.min(aa.size, bb.size);
+}
+
+function gameplayFocus(card) {
+  const stats = card.stats || {};
+  const pairs = Object.entries(stats).filter(([, v]) => typeof v === 'number');
+  if (!pairs.length) return `${card.name} is included as part of the default DnDex roster.`;
+  pairs.sort((a, b) => b[1] - a[1]);
+  const top = pairs.slice(0, 2).map(([k, v]) => `${k} ${v}`);
+  return `${card.name} is tuned as a ${card.type} card with emphasis on ${top.join(' and ')}.`;
+}
+
+function referenceFocus(card, entitySummary, wiki) {
+  const desc = (card.description || '').trim();
+  const e = (entitySummary || '').trim();
+  if (e && overlapRatio(desc, e) < 0.55) return e;
+  if (wiki?.title) {
+    return `${card.name} comes from ${card.source || 'a referenced source'}; see the linked ${wiki.title} material for production and character-history context.`;
+  }
+  return `${card.name} is sourced from ${card.source || 'the default game references'} and linked below with stable external references.`;
 }
 
 function renderRelatedCards(card, allCards) {
@@ -228,11 +273,14 @@ async function render(card, allCards) {
     img.style.display = 'block';
   }
 
-  if (entity?.summary && (card.description || '').trim()) {
-    byId('summary').textContent = `${card.description.trim()} ${entity.summary}`;
-  } else if (entity?.summary) {
-    byId('summary').textContent = entity.summary;
-  }
+  const cardBlurb = firstSentence(card.description || '');
+  const sourceContext = referenceFocus(card, entity?.summary || '', wiki);
+  const playNote = gameplayFocus(card);
+  byId('summary').innerHTML = [
+    cardBlurb ? `<strong>Card Blurb:</strong> ${cardBlurb}` : '',
+    `<strong>Reference Focus:</strong> ${sourceContext}`,
+    `<strong>Gameplay Note:</strong> ${playNote}`,
+  ].filter(Boolean).join('<br><br>');
 
   const added = new Set();
   const addUnique = (label, href) => {
