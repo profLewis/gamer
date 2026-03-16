@@ -163,36 +163,36 @@ enum MonsterType: String, CaseIterable, Codable {
 
     var description: String {
         switch self {
-        case .giantRat: return "An oversized dungeon rat with diseased fangs and twitching red eyes. It fights in packs, swarms weak targets, and turns cramped tunnels into panic traps."
-        case .kobold: return "A wiry reptilian tunnel-fighter with a spear, sling, and too much confidence. Kobolds rely on numbers, ambushes, and dirty tricks rather than fair combat."
-        case .stirge: return "A bat-sized blood-feeder with a needle beak and frantic wings. Once attached, it drains life quickly and forces the party to react under pressure."
-        case .giantBat: return "A cavern predator with leathery wings and erratic dive attacks. It harasses from above, breaks formation, and strikes when vision is poor."
-        case .crawlingClaw: return "A severed hand animated by spiteful necromancy. Small but relentless, it crawls through cracks and throttles the unwary in the dark."
-        case .goblin: return "A vicious raider with sharp teeth, quick hands, and cruel humor. Goblins use cover, hit-and-run attacks, and cowardly teamwork to wear heroes down."
-        case .skeleton: return "A rattling warrior of animated bone carrying old weapons and older grudges. It feels no fear, ignores pain, and advances until shattered."
-        case .zombie: return "A rotting corpse driven by blunt hunger and necrotic will. Slow but stubborn, it keeps coming after wounds that would drop a living foe."
-        case .wolf: return "A lean pack hunter with bright eyes and sudden speed. Wolves circle, isolate stragglers, and drag targets down through coordinated pressure."
-        case .orc: return "A brutal frontline warrior with tusks, scars, and a heavy weapon. Orcs fight hard, rush fast, and try to end battles before tactics can settle."
-        case .hobgoblin: return "An armored goblinoid soldier drilled for war. Hobgoblins hold lines, punish mistakes, and turn discipline into a weapon."
-        case .giantSpider: return "A huge web-spinner with venom-dripping fangs and patient instincts. It ambushes from ceilings, restrains prey, and strikes when escape routes vanish."
-        case .gnoll: return "A hyena-headed marauder driven by bloodlust and cruel laughter. Gnolls press the attack relentlessly and revel in chaos."
-        case .rustMonster: return "A chitinous scavenger with twitching antennae that corrode metal on contact. It can strip gear, ruin armor plans, and change a fight in seconds."
-        case .bugbear: return "A hulking goblinoid ambusher wrapped in fur, stink, and brute force. Bugbears hit from shadows with surprising reach and savage bursts of damage."
-        case .ogre: return "A towering giant brute with a club the size of a tree trunk. Ogres are clumsy but devastating, turning one clean hit into a battlefield crisis."
-        case .gargoyle: return "A winged stone predator that masquerades as architecture until the moment it kills. Resistant and patient, it thrives in ruined towers and cursed halls."
-        case .mimic: return "A shapechanger that imitates furniture, doors, and treasure chests with unsettling accuracy. It traps the greedy, grapples the curious, and feeds at arm's reach."
-        case .gelatinousCube: return "A near-invisible wall of acidic jelly that glides silently through corridors. It engulfs, dissolves, and turns narrow dungeon geometry into lethal terrain."
-        case .owlbear: return "A monstrous hybrid of owl and bear - all talons, beak, and rage. Its hunting cry freezes nerves, and once it commits to a charge, very little stops it."
-        case .troll: return "A long-limbed horror with tearing claws and flesh that knits back together. Unless burned or blasted with acid, a troll can rise from wounds that looked fatal."
-        case .minotaur: return "A bull-headed juggernaut bred for slaughter in twisting halls. It uses charge lanes, brutal momentum, and labyrinth instincts to corner prey."
-        case .basilisk: return "A heavy-scaled reptile with a petrifying gaze and predatory patience. One wrong glance can end the fight before steel is even drawn."
-        case .displacerBeast: return "A sleek six-legged hunter with barbed tentacles and a shifting silhouette. Its warped image makes aim unreliable and confidence dangerous."
-        case .wraith: return "A shadow-wrapped undead spirit that drains warmth, strength, and hope. Wraiths glide through darkness and leave survivors feeling less alive than before."
-        case .demogorgon: return "A nightmare predator from the Upside Down with a flower-like maw and relentless aggression. It hunts by instinct, closes distance fast, and overwhelms isolated targets."
-        case .mindFlayer: return "A psionic aberration with face-tentacles and cold alien intellect. It dominates weak minds, disables strong ones, and treats battle as a neurological experiment."
-        case .beholder: return "A floating tyrant of eyes and paranoia whose stalks unleash lethal rays. Every angle is a threat, and every round can rewrite the rules of the fight."
-        case .youngDragon: return "A juvenile dragon already large enough to break shields with claw and breath. Proud, territorial, and cunning, it tests heroes before it respects them."
-        case .vecna: return "The Undying King, a lich of vast cunning and forbidden knowledge. Vecna bends death, memory, and fate itself to keep his dominion alive."
+        case .giantRat: return "An oversized dungeon rat with diseased fangs, twitching whiskers, and eyes that shine red in torchlight. It lives in filth, feeds on scraps, and attacks in hungry packs. In close tunnels, giant rats overwhelm isolated adventurers by sheer relentless numbers."
+        case .kobold: return "A wiry reptilian tunnel-fighter clutching crude weapons and a bag of traps. Kobolds avoid fair fights, preferring ambushes, falling rubble, and narrow kill corridors. Individually weak but collectively dangerous, they excel at turning terrain into a weapon."
+        case .stirge: return "A bat-sized blood-feeder with a needle beak and frantic membrane wings. It darts unpredictably, latches onto exposed flesh, and drinks until forced away. A stirge attack creates panic because every second attached drains life and action economy."
+        case .giantBat: return "A cavern predator with a broad wingspan, hooked claws, and a sudden diving bite. It hunts by echo and darkness, harassing from overhead where melee fighters struggle to respond. Giant bats are most dangerous in swarms and broken vertical terrain."
+        case .crawlingClaw: return "A severed hand animated by spiteful necromancy, skittering across stone on finger joints. It hides in cracks, reaches through bars, and strikes at throats or lantern hands. Small and eerie, it is less a brute threat and more a fear multiplier."
+        case .goblin: return "A vicious raider with sharp teeth, quick reflexes, and a cruel survival instinct. Goblins pepper enemies from cover, retreat when challenged, and re-engage when advantage returns. Their threat comes from dirty coordination, not honorable dueling."
+        case .skeleton: return "A rattling warrior of animated bone carrying rusted steel and no memory of mercy. It does not tire, fear, or negotiate, and it keeps advancing until shattered apart. Skeletons punish parties that rely on intimidation or morale-breaking tactics."
+        case .zombie: return "A shambling corpse bound to necrotic hunger and stubborn dark magic. It moves slowly but absorbs punishment that would drop living enemies instantly. Zombies are terrifying in attrition fights where space is tight and retreat routes are blocked."
+        case .wolf: return "A lean pack hunter with bright eyes, powerful jaws, and relentless pursuit instincts. Wolves circle to isolate weaker prey, then strike in coordinated bursts. Their true danger appears when terrain or weather favors ambush and mobility."
+        case .orc: return "A brutal frontline warrior marked by scars, tusks, and battlefield aggression. Orcs favor decisive charges and heavy weapon blows meant to break lines quickly. They are most effective when led by a dominant commander and given room to rush."
+        case .hobgoblin: return "An armored goblinoid soldier drilled for war, formation discipline, and tactical punishment. Hobgoblins exploit openings immediately and maintain pressure without losing structure. Against careless parties, they feel less like monsters and more like a veteran military unit."
+        case .giantSpider: return "A massive web-spinner with venomous fangs and patient predatory intelligence. It hunts from ceilings, shadows, and web-choked chokepoints that restrict movement. Once prey is restrained, the spider shifts from skirmish threat to executioner."
+        case .gnoll: return "A hyena-headed marauder driven by bloodlust, carrion hunger, and feral glee. Gnolls fight noisily and aggressively, feeding off chaos and fear in equal measure. They thrive in raids, where broken lines and panic become part of their strategy."
+        case .rustMonster: return "A chitinous scavenger with twitching antennae that oxidize and consume metal at touch range. It is dreaded not for raw damage, but for how fast it destroys equipment and confidence. A rust monster encounter can rewrite a party's plan in one round."
+        case .bugbear: return "A hulking goblinoid ambusher wrapped in matted fur, stealth, and sudden violence. Bugbears strike from concealment with surprising reach and crushing first hits. They are ideal shock troops for lairs that rely on darkness and deception."
+        case .ogre: return "A towering giant brute with immense muscles, thick hide, and a club like a felled tree. Ogres are simple but catastrophically strong, capable of ending fragile heroes with one impact. Their weakness is poor finesse, not lack of threat."
+        case .gargoyle: return "A winged stone predator that can pose as carved architecture for hours without moving. When battle begins, it dives with claws and fangs while shrugging off lesser blows. Gargoyles dominate ruined keeps, belfries, and cursed rooftops."
+        case .mimic: return "A shapechanger that imitates chests, doors, and dungeon furnishings with alarming accuracy. It waits for greed or curiosity, then traps prey with adhesive flesh and crushing jaws. Mimics turn safe assumptions into lethal mistakes."
+        case .gelatinousCube: return "A near-invisible wall of acidic jelly sliding silently through corridors and crypt aisles. It engulfs creatures whole, dissolves gear, and weaponizes narrow architecture. Parties lose to cubes when they stop checking line-of-sight and floor depth."
+        case .owlbear: return "A monstrous hybrid of owl and bear - all talons, beak, fur, and unfiltered rage. Its hunting cry can rattle nerves before the first strike even lands. Once an owlbear commits to a charge, it mauls through armor with terrifying momentum."
+        case .troll: return "A long-limbed horror with tearing claws, rancid breath, and flesh that knits itself back together. Trolls keep fighting through wounds that would kill almost anything else. Without fire or acid, victory can collapse into a brutal stalemate."
+        case .minotaur: return "A bull-headed juggernaut bred for slaughter in corridors, arenas, and labyrinth halls. It reads terrain instinctively, using corners and lanes to set devastating charges. Minotaurs are not subtle, but they are brutally efficient predators."
+        case .basilisk: return "A thick-scaled reptile with cold eyes and a gaze that petrifies flesh into stone. It advances with predatory patience, forcing heroes to choose between looking and dying. Basilisk encounters are won through discipline, mirrors, and nerves."
+        case .displacerBeast: return "A sleek six-legged hunter with barbed tentacles and a magically distorted outline. Its true body never seems to be where it appears, causing attacks to miss by inches. The displacer beast thrives on confusion and overconfidence."
+        case .wraith: return "A shadow-wrapped undead spirit that glides soundlessly and drains life at a touch. It carries an aura of dread that weakens resolve before blades even meet. Wraiths turn victory sour by leaving survivors exhausted, chilled, and hollow."
+        case .demogorgon: return "A nightmare predator from the Upside Down with a flower-like maw and relentless hunting drive. It closes distance fast, tears through isolated targets, and pressures the backline without hesitation. Demogorgon fights feel like survival horror, not standard skirmishes."
+        case .mindFlayer: return "A psionic aberration with facial tentacles, alien calm, and frightening mental precision. Mind flayers attack cognition first, disrupting choices before physical damage arrives. In close range, they become executioners with terrifying brain-harvest methods."
+        case .beholder: return "A floating tyrant of paranoid intellect, ringed with eyestalks that project distinct killing rays. It controls vertical space, line-of-sight, and battlefield tempo all at once. A beholder encounter punishes predictable movement and poor positioning."
+        case .youngDragon: return "A juvenile dragon already large enough to shatter shields with claw, fang, and breath weapon. Proud and territorial, it probes enemies before committing to lethal aggression. Underestimating a young dragon is usually a one-fight lesson."
+        case .vecna: return "The Undying King, a lich of vast cunning, forbidden scholarship, and godlike ambition. Vecna bends death, memory, and fate into tools for domination across worlds. Facing him is not just a battle - it is a contest against ancient strategy itself."
         }
     }
 
@@ -1525,7 +1525,7 @@ final class Combat: ObservableObject {
         return result
     }
 
-    func displayStatus() -> [String] {
+    func displayStatus(localCharacterIds: Set<UUID> = []) -> [String] {
         var lines: [String] = []
 
         lines.append("───── COMBAT ─────")
@@ -1544,7 +1544,8 @@ final class Combat: ObservableObject {
             let n = String(char.name.prefix(16)).padding(toLength: maxPartyName, withPad: " ", startingAt: 0)
             let statusTag = char.hasFledCombat ? " [fled]" : (char.isPlayingDead ? " [playing dead]" : "")
             let hp = String("\(char.currentHP)/\(char.maxHP)").padding(toLength: 7, withPad: " ", startingAt: 0)
-            lines.append(" \(s) \(n)  \(hp)\(statusTag)")
+            let youTag = localCharacterIds.contains(char.id) ? " ◀" : ""
+            lines.append(" \(s) \(n)  \(hp)\(statusTag)\(youTag)")
         }
 
         lines.append("")

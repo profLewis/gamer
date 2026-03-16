@@ -253,6 +253,79 @@
     },
   };
 
+  const authorDossiers = {
+    "terry-pratchett": {
+      intro: "Terry Pratchett turned comic fantasy into a precise social lens: funny on the surface, rigorous underneath.",
+      works: "Core works for this game set include Discworld novels connected to Rincewind, Granny Weatherwax, and DEATH.",
+      links: [
+        ["Discworld series", "https://en.wikipedia.org/wiki/Discworld"],
+        ["Official books site", "https://www.terrypratchettbooks.com/"],
+      ],
+    },
+    "j-r-r-tolkien": {
+      intro: "Tolkien established the modern epic-fantasy template: deep history, travel arcs, and mythic-scale stakes.",
+      works: "This card family draws from The Hobbit and The Lord of the Rings, especially for leadership, evil-power, and location tone.",
+      links: [
+        ["LOTR films", "https://en.wikipedia.org/wiki/The_Lord_of_the_Rings_(film_series)"],
+        ["Tolkien Estate", "https://www.tolkienestate.com/"],
+      ],
+    },
+    "michael-moorcock": {
+      intro: "Moorcock's Eternal Champion cycle introduced morally ambiguous heroes and multiverse-scale fantasy logic.",
+      works: "Elric and Corum links in this game reflect cursed-power play and anti-hero strategy over pure heroic certainty.",
+      links: [["Elric of Melnibone", "https://en.wikipedia.org/wiki/Elric_of_Melnibon%C3%A9"]],
+    },
+    "ursula-k-le-guin": {
+      intro: "Le Guin's fantasy and SF foreground language, culture, and ethical balance over spectacle-first conflict.",
+      works: "Ged and Tenar links come from Earthsea, where naming, restraint, and consequence are central mechanics.",
+      links: [["Earthsea", "https://en.wikipedia.org/wiki/Earthsea"]],
+    },
+    "isaac-asimov": {
+      intro: "Asimov's work defines systems-driven SF: institutions, logic constraints, and long-horizon strategy.",
+      works: "Robot and Foundation-adjacent references support high-Cunning, investigation-heavy play styles in this set.",
+      links: [
+        ["Foundation (TV)", "https://en.wikipedia.org/wiki/Foundation_(TV_series)"],
+        ["ISFDB Asimov", "https://www.isfdb.org/cgi-bin/ea.cgi?Isaac_Asimov"],
+      ],
+    },
+    "robert-e-howard": {
+      intro: "Howard's Conan fiction is a cornerstone of sword-and-sorcery pacing: fast action, hard survival, and brutal momentum.",
+      works: "Conan-linked cards here use that style for high-Power archetypes and direct-violence quest framing.",
+      links: [["Conan the Barbarian", "https://en.wikipedia.org/wiki/Conan_the_Barbarian"]],
+    },
+    "edgar-rice-burroughs": {
+      intro: "Burroughs pioneered serialized planetary adventure with strong duel culture and exploration momentum.",
+      works: "John Carter and related source flavor feed high-adventure campaign rhythm in this card set.",
+      links: [["Barsoom", "https://en.wikipedia.org/wiki/Barsoom"]],
+    },
+  };
+
+  function injectAuthorDossier() {
+    const isAuthor = (kind || "").toUpperCase() === "AUTHOR";
+    const data = authorDossiers[pageSlug];
+    if (!isAuthor && !data) return;
+    const d = data || {
+      intro: `${pageTitle} is treated as a major literary influence for default DnDex naming and campaign style.`,
+      works: "Linked cards show which characters and locations in this game draw directly from this author stream.",
+      links: [],
+    };
+    const linksHtml = d.links.map((x) => `<a class="inline-link" href="${x[1]}" target="_blank" rel="noopener noreferrer">${x[0]}</a>`).join(" | ");
+    const panel = document.createElement("section");
+    panel.className = "panel";
+    panel.style.marginTop = "14px";
+    panel.innerHTML = [
+      "<h2>Author Dossier</h2>",
+      `<p class="summary">${d.intro}</p>`,
+      `<p class="summary">${d.works}</p>`,
+      `<p class="summary"><a class="inline-link" href="../index.html?search=${encodeURIComponent(pageTitle)}" target="_blank" rel="noopener noreferrer">Open related cards in DnDex</a>${linksHtml ? ` | ${linksHtml}` : ""}</p>`,
+    ].join("");
+    const ext = Array.from(document.querySelectorAll("section.panel")).find((p) => {
+      const h2 = p.querySelector("h2");
+      return h2 && h2.textContent.trim() === "External Links";
+    });
+    if (ext && ext.parentElement) ext.parentElement.insertBefore(panel, ext);
+  }
+
   if (placeholderSummary) {
     const rich = richSynopsis[pageSlug];
     if (rich) {
@@ -271,6 +344,14 @@
       }
     }
   }
+  const authorPlaceholder = Array.from(document.querySelectorAll(".summary")).find((el) =>
+    (el.textContent || "").includes("This author page frames")
+  );
+  if (authorPlaceholder && ((kind || "").toUpperCase() === "AUTHOR" || authorDossiers[pageSlug])) {
+    authorPlaceholder.textContent =
+      `${pageTitle} is a core literary influence in this game set. Use the dossier and linked cards below to explore specific characters, places, and cross-media adaptations tied to this source.`;
+  }
+  injectAuthorDossier();
 
   const norm = (s) => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
   const sourceMatch = norm(pageTitle);
@@ -286,12 +367,59 @@
     insertAfterLayout.parentElement.insertBefore(connectPanel, insertAfterLayout.nextSibling);
   }
 
+  const bookFocusMap = {
+    "dragonlance": "Dragonlance begins with the Chronicles arc, where old companions reunite in a war-torn world shaped by gods, dragons, and lost magic. The setting combines quest momentum with faction politics and mythic artifacts, which is why it feeds both hero and location naming in this game.",
+    "david-eddings": "The Belgariad sequence follows Belgarion from rural obscurity into prophecy, court intrigue, and continent-scale conflict. The appeal for gameplay is clear class identity, party-role contrast, and a quest structure that escalates naturally from local to world-level stakes.",
+    "fritz-leiber": "Leiber's sword-and-sorcery work, especially Fafhrd and the Gray Mouser stories, blends urban danger with fast improvisational adventure. These books are useful for campaigns that need city-crawl texture, thief-guild tension, and morally mixed protagonists.",
+    "r-a-salvatore": "Salvatore's Forgotten Realms novels, particularly the Drizzt line, are central to modern DnD-flavored character fantasy. They emphasize movement tactics, faction conflict, and identity themes, which map directly to party play and long-run campaign arcs.",
+    "roger-zelazny": "The Chronicles of Amber uses dynastic conflict, multidimensional travel, and unstable alliances as core engines. It is strong source material for campaigns built on political maneuvering and shifting realities rather than single-map dungeon progression.",
+    "stephen-donaldson": "The Thomas Covenant books push epic fantasy toward moral ambiguity and psychological consequence. For gameplay inspiration, they support darker campaign tone, contested heroism, and worlds where victory does not erase damage.",
+    "mervyn-peake": "Peake's Gormenghast novels are architecture-heavy gothic fantasy where institutions and ritual shape every decision. The connection to game design is atmospheric location play: space, hierarchy, and social pressure function like encounter mechanics.",
+  };
+
+  function injectBookFocus(linkedCards) {
+    if ((kind || "").toUpperCase() !== "BOOK") return;
+    const chars = linkedCards.filter((c) => c.type === "player").map((c) => c.name);
+    const places = linkedCards.filter((c) => c.type === "location").map((c) => c.name);
+    const monsters = linkedCards.filter((c) => c.type === "monster").map((c) => c.name);
+    const pick = (arr, n) => arr.slice(0, n).join(", ");
+
+    const base = bookFocusMap[pageSlug] ||
+      "This book source contributes setting tone and character archetypes to the default DnDex roster. It is used as a reference anchor for naming, style, and campaign flavor in this project.";
+
+    const lines = [base];
+    if (chars.length) lines.push(`Characters used in this game from this source include: ${pick(chars, 8)}.`);
+    if (places.length) lines.push(`Places used in this game include: ${pick(places, 8)}.`);
+    if (monsters.length) lines.push(`Creature links from this source include: ${pick(monsters, 6)}.`);
+    if (!chars.length && !places.length && !monsters.length) {
+      lines.push("No direct card links were detected on this page yet, but this source remains part of the reference set.");
+    }
+
+    const bookPanel = document.createElement("section");
+    bookPanel.className = "panel";
+    bookPanel.style.marginTop = "14px";
+    bookPanel.innerHTML = [
+      "<h2>Book Focus</h2>",
+      ...lines.map((line) => `<p class=\"summary\">${line}</p>`),
+      `<p class=\"summary\"><a class=\"inline-link\" href=\"../index.html?search=${encodeURIComponent(pageTitle)}\" target=\"_blank\" rel=\"noopener noreferrer\">Open matching cards in DnDex</a></p>`,
+    ].join("");
+
+    const ext = Array.from(document.querySelectorAll("section.panel")).find((panel) => {
+      const h2 = panel.querySelector("h2");
+      return h2 && h2.textContent.trim() === "External Links";
+    });
+    if (ext && ext.parentElement) {
+      ext.parentElement.insertBefore(bookPanel, ext);
+    }
+  }
+
   fetch("../../cards.json")
     .then((res) => (res.ok ? res.json() : null))
     .then((data) => {
       if (!data) throw new Error("cards data unavailable");
       const cards = [...(data.players || []), ...(data.monsters || []), ...(data.locations || [])];
       const linked = cards.filter((c) => norm(c.source) === sourceMatch);
+      injectBookFocus(linked);
       if (!linked.length) {
         connectPanel.innerHTML = [
           "<h2>Connected DnDex Cards</h2>",

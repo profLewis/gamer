@@ -81,6 +81,30 @@ async function fetchWikiSummaryByTitle(title) {
   return await res.json();
 }
 
+async function fetchWikidataEntity(itemId) {
+  try {
+    const res = await fetch(`https://www.wikidata.org/wiki/Special:EntityData/${q(itemId)}.json`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.entities?.[itemId] || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function firstClaimValue(entity, pid) {
+  const claim = entity?.claims?.[pid]?.[0];
+  const val = claim?.mainsnak?.datavalue?.value;
+  if (val == null) return null;
+  if (typeof val === 'string') return val;
+  if (typeof val === 'object') {
+    if (typeof val.id === 'string') return val.id;
+    if (typeof val.numeric-id === 'number') return `Q${val['numeric-id']}`;
+    if (typeof val.amount === 'string') return val.amount;
+  }
+  return null;
+}
+
 async function searchWiki(query) {
   const res = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${q(query)}&srlimit=6&format=json&origin=*`);
   if (!res.ok) return [];
@@ -178,6 +202,38 @@ function makeLink(label, href) {
   a.rel = 'noopener noreferrer';
   a.textContent = label;
   return a;
+}
+
+async function buildSupplementalLinks(wiki) {
+  const out = [];
+  const qid = wiki?.summary?.wikibase_item;
+  if (!qid) return out;
+  out.push({ label: 'Wikidata', href: `https://www.wikidata.org/wiki/${qid}` });
+
+  const entity = await fetchWikidataEntity(qid);
+  if (!entity) return out;
+
+  const imdb = firstClaimValue(entity, 'P345');
+  if (imdb) {
+    const id = imdb.startsWith('tt') ? imdb : `tt${imdb}`;
+    out.push({ label: 'IMDb', href: `https://www.imdb.com/title/${id}/` });
+  }
+
+  const isbn13 = firstClaimValue(entity, 'P212');
+  if (isbn13) out.push({ label: 'OpenLibrary ISBN', href: `https://openlibrary.org/isbn/${encodeURIComponent(isbn13)}` });
+  const isbn10 = firstClaimValue(entity, 'P957');
+  if (isbn10) out.push({ label: 'OpenLibrary ISBN-10', href: `https://openlibrary.org/isbn/${encodeURIComponent(isbn10)}` });
+
+  const ia = firstClaimValue(entity, 'P724');
+  if (ia) out.push({ label: 'Internet Archive', href: `https://archive.org/details/${encodeURIComponent(ia)}` });
+
+  const viaf = firstClaimValue(entity, 'P214');
+  if (viaf) out.push({ label: 'VIAF', href: `https://viaf.org/viaf/${encodeURIComponent(viaf)}` });
+
+  const official = firstClaimValue(entity, 'P856');
+  if (official && /^https?:\/\//i.test(official)) out.push({ label: 'Official Site', href: official });
+
+  return out;
 }
 
 function renderBase(card) {
@@ -292,6 +348,9 @@ async function render(card, allCards) {
   };
 
   if (wiki?.url) addUnique('Wikipedia', wiki.url);
+
+  const supplemental = await buildSupplementalLinks(wiki);
+  for (const l of supplemental) addUnique(l.label, l.href);
 
   if (entity?.links?.length) {
     for (const l of entity.links) {

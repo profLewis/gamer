@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 import textwrap
+import unicodedata
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
@@ -67,6 +68,38 @@ def decode_swift_string(s: str) -> str:
     if "\\" not in s:
         return s
     return bytes(s, "utf-8").decode("unicode_escape")
+
+
+def sanitize_ascii_text(s: str) -> str:
+    if not s:
+        return s
+    # Normalize common punctuation and frequent mojibake artifacts.
+    replacements = {
+        "—": "-",
+        "–": "-",
+        "−": "-",
+        "“": '"',
+        "”": '"',
+        "’": "'",
+        "‘": "'",
+        "…": "...",
+        "•": "-",
+        "♥": "H",
+        "ø": "o",
+        "Ø": "O",
+        "â€”": "-",
+        "â€“": "-",
+        "â€˜": "'",
+        "â€™": "'",
+        "â€œ": '"',
+        "â€\x9d": '"',
+        "â€¦": "...",
+    }
+    for a, b in replacements.items():
+        s = s.replace(a, b)
+    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
 
 
 def slugify(s: str) -> str:
@@ -177,7 +210,7 @@ def parse_name_entries(swift: str) -> List[NameEntry]:
             fm = re.search(rf"{name}:\s*\"((?:\\.|[^\"\\])*)\"", call, flags=re.DOTALL)
             if not fm:
                 raise RuntimeError(f"Missing field {name} in NameEntry")
-            return decode_swift_string(fm.group(1)).strip()
+            return sanitize_ascii_text(decode_swift_string(fm.group(1)).strip())
 
         def int_field(name: str, default: int = 0) -> int:
             fm = re.search(rf"{name}:\s*(\d+)", call)
@@ -189,7 +222,7 @@ def parse_name_entries(swift: str) -> List[NameEntry]:
         if not art_match:
             raise RuntimeError("Missing art in NameEntry")
         art_inner = art_match.group(1)
-        art = [decode_swift_string(x) for x in re.findall(r'\"((?:\\.|[^\"\\])*)\"', art_inner)]
+        art = [sanitize_ascii_text(decode_swift_string(x)) for x in re.findall(r'\"((?:\\.|[^\"\\])*)\"', art_inner)]
 
         entries.append(
             NameEntry(
@@ -237,7 +270,7 @@ def parse_monsters(swift: str) -> List[MonsterEntry]:
     if not desc_block:
         raise RuntimeError("Could not parse monster descriptions")
     desc_map = {
-        m.group(1): decode_swift_string(m.group(2))
+        m.group(1): sanitize_ascii_text(decode_swift_string(m.group(2)))
         for m in re.finditer(r'case\s+\.(\w+):\s*return\s+\"((?:\\.|[^\"\\])*)\"', desc_block.group(1))
     }
 
@@ -247,7 +280,7 @@ def parse_monsters(swift: str) -> List[MonsterEntry]:
     art_map: Dict[str, List[str]] = {}
     for m in re.finditer(r"case\s+\.(\w+):\s*\n\s*return\s*\[(.*?)\n\s*\]", art_block.group(1), flags=re.DOTALL):
         key = m.group(1)
-        lines = [decode_swift_string(s) for s in re.findall(r'\"((?:\\.|[^\"\\])*)\"', m.group(2))]
+        lines = [sanitize_ascii_text(decode_swift_string(s)) for s in re.findall(r'\"((?:\\.|[^\"\\])*)\"', m.group(2))]
         art_map[key] = lines
 
     monsters: List[MonsterEntry] = []
@@ -562,6 +595,8 @@ h1 {
   margin-top: 10px;
   color: #b8d2bd;
   line-height: 1.45;
+  text-align: justify;
+  overflow-wrap: anywhere;
 }
 h2 {
   margin: 0 0 8px;
@@ -583,6 +618,54 @@ h2 {
   font-size: 0.9rem;
 }
 .small { color: #83a288; font-size: 0.8rem; margin-top: 8px; }
+.source-profile {
+  margin-top: 12px;
+  border: 1px solid #215f36;
+  border-radius: 10px;
+  background: #08110b;
+  padding: 10px;
+}
+.source-profile .label {
+  color: #7ecf90;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.source-profile .value {
+  color: #d9f6de;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-bottom: 8px;
+}
+.profile-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.profile-chip {
+  font-size: 0.75rem;
+  color: #b9e5c2;
+  border: 1px solid #2c6d40;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #0b160d;
+}
+.source-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.source-links a {
+  font-size: 0.8rem;
+  color: #93ecaa;
+  text-decoration: none;
+  border: 1px solid #2a6a3d;
+  border-radius: 8px;
+  padding: 5px 8px;
+  background: #0a130c;
+}
 @media (max-width: 900px) {
   .layout { grid-template-columns: 1fr; }
 }
@@ -936,6 +1019,12 @@ def write_source_entities(cards: List[dict]) -> Dict[str, SourceEntity]:
     <div class="topbar">
       <a class="back" href="../index.html">Back to DnDex</a>
     </div>
+    <nav id="entityNav" class="entity-nav" aria-label="Source card navigation">
+  <button id="entityBackBtn" class="btn" type="button">Back</button>
+  <button id="entityPrevBtn" class="btn" type="button">Prev</button>
+  <button id="entityDiceBtn" class="btn" type="button">Dice</button>
+  <button id="entityNextBtn" class="btn" type="button">Next</button>
+</nav>
     <h1>{source}</h1>
     <p class="meta">{kind.upper()} source card</p>
     <div class="layout">
@@ -955,6 +1044,9 @@ def write_source_entities(cards: List[dict]) -> Dict[str, SourceEntity]:
       <p class="small">This page aggregates references to the source material behind Name Lore entries.</p>
     </section>
   </div>
+  <script src="./entity-nav.js"></script>
+  <script src="./entity-enhance.js"></script>
+  <script src="./entity-references.js"></script>
 </body>
 </html>
 """
