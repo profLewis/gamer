@@ -358,6 +358,21 @@ function firstTwoSentences(text) {
   return parts.slice(0, 2).map((s) => s.trim()).join(' ');
 }
 
+function sourceInsight(card, wiki, entitySummary, relatedCards) {
+  const w = firstTwoSentences(wiki?.summary?.extract || '');
+  const e = firstTwoSentences(entitySummary || '');
+  const desc = (card.description || '').trim();
+  const src = card.source || 'the source material';
+  const names = (relatedCards || []).slice(0, 4).map((c) => c.name);
+
+  if (w && overlapRatio(desc, w) < 0.65) return w;
+  if (e && overlapRatio(desc, e) < 0.65) return e;
+  if (names.length) {
+    return `Within ${src}, this card sits alongside ${names.join(', ')}. Use those linked cards to explore adjacent character and place threads from the same story world.`;
+  }
+  return `This entry is anchored to ${src}; use the references below for deeper plot, author, and character context beyond the in-game card summary.`;
+}
+
 function publicationHint(card, wikiExtract) {
   const src = card.source || '';
   const yearMatch = src.match(/\((\d{4})\)/);
@@ -470,13 +485,13 @@ async function render(card, allCards) {
     addUnique('Wikipedia', fallback);
   }
 
-  const cardBlurb = firstSentence(card.description || '');
+  const storyNotes = sourceInsight(card, wiki, entity?.summary || '', relatedCards);
   const sourceContext = referenceFocus(card, entity?.summary || '', wiki, relatedCards);
   const playNote = gameplayFocus(card);
   const strongRefs = added.size >= 3 && ((wiki?.summary?.extract || '').length > 140 || (entity?.summary || '').length > 140);
   const history = strongRefs ? sourceHistory(card, entity?.summary || '', wiki?.summary?.extract || '') : '';
   byId('summary').innerHTML = [
-    cardBlurb ? `<strong>Card Blurb:</strong> ${cardBlurb}` : '',
+    `<strong>Story Notes:</strong> ${storyNotes}`,
     `<strong>Reference Focus:</strong> ${sourceContext}`,
     `<strong>Gameplay Note:</strong> ${playNote}`,
     history ? `<strong>Source History:</strong> ${history}` : '',
