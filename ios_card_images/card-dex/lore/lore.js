@@ -294,19 +294,19 @@ function ensureImageSourceLink(imgEl, href) {
   a.appendChild(imgEl);
 }
 
-function renderAceCoverGallery(entity) {
+function renderImageGallery(entity, titleText, className) {
   if (!entity?.images || entity.images.length < 2) return;
-  const existing = document.querySelector('.ace-cover-gallery');
+  const existing = document.querySelector(`.${className}`);
   if (existing) existing.remove();
 
   const images = entity.images.slice(0, 4);
   const panel = document.createElement('div');
-  panel.className = 'ace-cover-gallery';
+  panel.className = className;
   panel.innerHTML = [
-    '<div class="small" style="margin-top:10px">Ace Cover Gallery</div>',
+    `<div class="small" style="margin-top:10px">${titleText}</div>`,
     `<div class="ace-cover-grid">${images.map((im, i) => (
       `<a href="${im.href || im.src}" target="_blank" rel="noopener noreferrer">` +
-      `<img src="${im.src}" alt="Ace cover ${i + 1}" loading="lazy" />` +
+      `<img src="${im.src}" alt="${titleText} image ${i + 1}" loading="lazy" />` +
       '</a>'
     )).join('')}</div>`,
   ].join('');
@@ -396,19 +396,47 @@ function firstTwoSentences(text) {
   return parts.slice(0, 2).map((s) => s.trim()).join(' ');
 }
 
-function sourceInsight(card, wiki, entitySummary, relatedCards) {
-  const w = firstTwoSentences(wiki?.summary?.extract || '');
-  const e = firstTwoSentences(entitySummary || '');
-  const desc = (card.description || '').trim();
-  const src = card.source || 'the source material';
-  const names = (relatedCards || []).slice(0, 4).map((c) => c.name);
+const SOURCE_CONTEXT = {
+  'terry pratchett': 'Discworld source material emphasizes civic satire, institutional absurdity, and character ethics beneath the humor.',
+  'j.r.r. tolkien': 'Tolkien source material emphasizes deep-history worldbuilding, travel arcs, and faction conflict at mythic scale.',
+  'j-r-r-tolkien': 'Tolkien source material emphasizes deep-history worldbuilding, travel arcs, and faction conflict at mythic scale.',
+  'ursula k. le guin': 'Earthsea-linked source material emphasizes naming, balance, restraint, and responsibility over spectacle-first magic.',
+  'dragonlance': 'Dragonlance source material emphasizes party chemistry, dragon-war escalation, and prophecy-driven campaign momentum.',
+  'fritz leiber': 'Leiber source material emphasizes urban sword-and-sorcery texture, rogue improvisation, and high-pressure city encounters.',
+  'michael moorcock': 'Moorcock source material emphasizes anti-hero framing, cursed power, and multiversal stakes with moral ambiguity.',
+  'isaac asimov': 'Asimov-linked source material emphasizes systems-level conflict, logic constraints, and institution-driven plot progression.',
+};
 
-  if (w && overlapRatio(desc, w) < 0.65) return w;
-  if (e && overlapRatio(desc, e) < 0.65) return e;
-  if (names.length) {
-    return `Within ${src}, this card sits alongside ${names.join(', ')}. Use those linked cards to explore adjacent character and place threads from the same story world.`;
-  }
-  return `This entry is anchored to ${src}; use the references below for deeper plot, author, and character context beyond the in-game card summary.`;
+function mediaLabel(source) {
+  const s = (source || '').toLowerCase();
+  if (isAceSource(source)) return 'book double';
+  if (/\(\d{4}\)/.test(source || '')) return 'screen/book source';
+  if (s.includes('module')) return 'adventure module';
+  if (s.includes('author') || SOURCE_CONTEXT[s]) return 'author source';
+  return 'reference source';
+}
+
+function sourceInsight(card, wiki, entitySummary, relatedCards) {
+  const src = card.source || 'the source material';
+  const srcNorm = norm(src);
+  const related = (relatedCards || []).slice(0, 5).map((c) => c.name);
+  const sourceContext = SOURCE_CONTEXT[srcNorm] || SOURCE_CONTEXT[srcNorm.replace(/\s*\(\d{4}\)\s*$/, '')];
+  const cardKind = card.type === 'location'
+    ? 'location anchor'
+    : (card.type === 'monster' ? 'threat profile' : 'character profile');
+  const desc = (card.description || '').trim();
+  const e = firstTwoSentences(entitySummary || '');
+  const w = firstTwoSentences(wiki?.summary?.extract || '');
+
+  const parts = [];
+  if (sourceContext) parts.push(sourceContext);
+  else parts.push(`This ${cardKind} is mapped from a ${mediaLabel(src)} used in the default DnDex lore set.`);
+
+  if (related.length) parts.push(`In this game set, it connects with ${related.join(', ')} from the same source stream.`);
+  if (e && overlapRatio(desc, e) < 0.55) parts.push(e);
+  else if (w && overlapRatio(desc, w) < 0.55) parts.push(w);
+
+  return parts.join(' ');
 }
 
 function publicationHint(card, wikiExtract) {
@@ -428,14 +456,19 @@ function referenceFocus(card, entitySummary, wiki, relatedCards) {
   const desc = (card.description || '').trim();
   const e = firstTwoSentences(entitySummary || '');
   const w = firstTwoSentences(wiki?.summary?.extract || '');
+  const src = card.source || '';
+  const year = (src.match(/\((\d{4})\)/) || [])[1];
 
   // Prefer source-specific prose that differs from card text.
   if (e && overlapRatio(desc, e) < 0.6) return e;
   if (w && overlapRatio(desc, w) < 0.6) return w;
 
   const rel = (relatedCards || []).slice(0, 3).map((c) => c.name);
-  const relText = rel.length ? ` Related cards from this same source include ${rel.join(', ')}.` : '';
-  return `${publicationHint(card, wiki?.summary?.extract || '')}${relText}`;
+  const relText = rel.length ? ` Linked cards: ${rel.join(', ')}.` : '';
+  const pubText = year
+    ? `Reference baseline: ${src} (${year}) with cross-links to source documentation and adaptation records.`
+    : `Reference baseline: ${src || 'default source'} with cross-links to source documentation and adaptation records.`;
+  return `${pubText}${relText}`;
 }
 
 function sourceHistory(card, entitySummary, wikiExtract) {
@@ -497,9 +530,8 @@ async function render(card, allCards) {
   if (img.style.display === 'block' && imageSourceHref) {
     ensureImageSourceLink(img, imageSourceHref);
   }
-  if (isAceSource(card.source)) {
-    renderAceCoverGallery(entity);
-  }
+  if (isAceSource(card.source)) renderImageGallery(entity, 'Ace Cover Gallery', 'ace-cover-gallery');
+  else renderImageGallery(entity, 'Reference Gallery', 'ref-image-gallery');
 
   const added = new Set();
   const addUnique = (label, href) => {
