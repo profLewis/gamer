@@ -945,32 +945,35 @@ def write_source_entities(cards: List[dict]) -> Dict[str, SourceEntity]:
         if kind == "movie":
             return (
                 f"This film entry describes how {source} contributes atmosphere, archetypes, and pacing cues "
-                "to the default DnDex source set. The wording is project-authored and intentionally avoids "
-                "verbatim source prose."
+                "to the default DnDex source set. It is written from information in the referenced sources "
+                "listed on this page."
             )
         if kind == "tv":
             return (
                 f"This television source card outlines how {source} informs recurring character types and "
-                "world texture used by default game names. It is written as original DnDex commentary."
+                "world texture used by default game names. It is written from information in the referenced "
+                "sources listed on this page."
             )
         if kind == "author":
             return (
                 f"This author page frames {source} as a creative root for style, setting motifs, and naming "
-                "patterns in the default DnDex references. The summary is original writing for this project."
+                "patterns in the default DnDex references. It is written from information in the referenced "
+                "sources listed on this page."
             )
         if kind == "module":
             return (
                 f"This module entry highlights how {source} shapes dungeon logic, encounter rhythm, and place "
-                "naming in the default DnDex corpus. The text is project-written and non-verbatim."
+                "naming in the default DnDex corpus. It is written from information in the referenced sources "
+                "listed on this page."
             )
         if kind == "book":
             return (
                 f"This book source card maps {source} to the fantasy and science-fantasy flavor used by default "
-                "DnDex entities. It is an original editorial summary, with references provided for verification."
+                "DnDex entities. It is written from information in the referenced sources listed on this page."
             )
         return (
             f"This source card positions {source} as part of the inspiration layer behind default DnDex content. "
-            "It is written in original wording, with direct references linked below for factual checks."
+            "It is written from information in the referenced sources listed on this page."
         )
 
     for source in unique_sources:
