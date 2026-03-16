@@ -178,6 +178,15 @@ async function loadEntityData(card) {
     const doc = new DOMParser().parseFromString(html, 'text/html');
 
     const img = doc.querySelector('.wiki-img');
+    const images = Array.from(doc.querySelectorAll('.wiki-img')).map((im) => {
+      const src = im.getAttribute('src');
+      const anchor = im.closest('a[href]');
+      const href = anchor ? anchor.getAttribute('href') : null;
+      return {
+        src: src ? new URL(src, entityUrl.href).href : null,
+        href: href ? new URL(href, entityUrl.href).href : null,
+      };
+    }).filter((x) => Boolean(x.src));
     const summaries = Array.from(doc.querySelectorAll('.summary')).map((x) => (x.textContent || '').trim()).filter(Boolean);
     const links = Array.from(doc.querySelectorAll('.links a[href]')).map((a) => ({
       label: (a.textContent || '').trim() || 'Reference',
@@ -186,6 +195,7 @@ async function loadEntityData(card) {
 
     return {
       image: img ? new URL(img.getAttribute('src'), entityUrl.href).href : null,
+      images,
       summary: summaries[0] || '',
       links,
     };
@@ -282,6 +292,26 @@ function ensureImageSourceLink(imgEl, href) {
   a.rel = 'noopener noreferrer';
   imgEl.parentElement.insertBefore(a, imgEl);
   a.appendChild(imgEl);
+}
+
+function renderAceCoverGallery(entity) {
+  if (!entity?.images || entity.images.length < 2) return;
+  const existing = document.querySelector('.ace-cover-gallery');
+  if (existing) existing.remove();
+
+  const images = entity.images.slice(0, 4);
+  const panel = document.createElement('div');
+  panel.className = 'ace-cover-gallery';
+  panel.innerHTML = [
+    '<div class="small" style="margin-top:10px">Ace Cover Gallery</div>',
+    `<div class="ace-cover-grid">${images.map((im, i) => (
+      `<a href="${im.href || im.src}" target="_blank" rel="noopener noreferrer">` +
+      `<img src="${im.src}" alt="Ace cover ${i + 1}" loading="lazy" />` +
+      '</a>'
+    )).join('')}</div>`,
+  ].join('');
+  const refPanel = byId('summary')?.closest('.panel');
+  if (refPanel) refPanel.appendChild(panel);
 }
 
 async function buildSupplementalLinks(wiki) {
@@ -466,6 +496,9 @@ async function render(card, allCards) {
   }
   if (img.style.display === 'block' && imageSourceHref) {
     ensureImageSourceLink(img, imageSourceHref);
+  }
+  if (isAceSource(card.source)) {
+    renderAceCoverGallery(entity);
   }
 
   const added = new Set();

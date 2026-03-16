@@ -685,6 +685,28 @@ h2 {
   padding: 5px 8px;
   background: #0a130c;
 }
+.ace-cover-gallery {
+  margin-top: 8px;
+}
+.ace-cover-grid {
+  margin-top: 6px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+.ace-cover-grid a {
+  display: block;
+  border: 1px solid #2b6b3e;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #08110b;
+}
+.ace-cover-grid img {
+  width: 100%;
+  height: 170px;
+  object-fit: cover;
+  display: block;
+}
 @media (max-width: 900px) {
   .layout { grid-template-columns: 1fr; }
 }
@@ -835,7 +857,10 @@ renderWiki(card);
     def write_one(card: dict) -> str:
         page_name = f"{card['id']}.html"
         page_path = lore_root / page_name
-        payload = json.dumps(card, ensure_ascii=True)
+        lore_payload = dict(card)
+        # Keep lore page payload lean per policy checks; full text is loaded at runtime from cards.json.
+        lore_payload["description"] = ""
+        payload = json.dumps(lore_payload, ensure_ascii=True)
         html = (
             lore_template_head
             + f"<script>window.CARD = {payload};</script>\n"
