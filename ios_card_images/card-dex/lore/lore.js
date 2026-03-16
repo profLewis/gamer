@@ -204,6 +204,51 @@ function makeLink(label, href) {
   return a;
 }
 
+function lorePageHref(c) {
+  if (!c || !c.lore_page) return null;
+  const file = c.lore_page.split('/').pop();
+  return file ? `./${file}` : null;
+}
+
+function renderLoreNav(card, allCards) {
+  const pool = allCards.filter((c) => c.type === card.type && c.lore_page);
+  if (!pool.length) return;
+  const idx = pool.findIndex((c) => c.id === card.id);
+  if (idx < 0) return;
+
+  const topbar = document.querySelector('.topbar');
+  if (!topbar || !topbar.parentElement) return;
+
+  const nav = document.createElement('nav');
+  nav.className = 'lore-nav';
+  nav.setAttribute('aria-label', 'Card navigation');
+  nav.innerHTML = [
+    '<button id="lorePrevBtn" class="btn" type="button">Prev</button>',
+    '<button id="loreDiceBtn" class="btn" type="button">Dice</button>',
+    '<button id="loreNextBtn" class="btn" type="button">Next</button>',
+    `<span class="lore-pos">${idx + 1}/${pool.length}</span>`,
+  ].join('');
+  topbar.parentElement.insertBefore(nav, topbar.nextSibling);
+
+  const go = (target) => {
+    const href = lorePageHref(target);
+    if (!href) return;
+    window.location.href = href;
+  };
+  const prev = () => go(pool[(idx - 1 + pool.length) % pool.length]);
+  const next = () => go(pool[(idx + 1) % pool.length]);
+  const dice = () => {
+    if (pool.length < 2) return;
+    let r = idx;
+    while (r === idx) r = Math.floor(Math.random() * pool.length);
+    go(pool[r]);
+  };
+
+  nav.querySelector('#lorePrevBtn')?.addEventListener('click', prev);
+  nav.querySelector('#loreNextBtn')?.addEventListener('click', next);
+  nav.querySelector('#loreDiceBtn')?.addEventListener('click', dice);
+}
+
 function ensureImageSourceLink(imgEl, href) {
   if (!imgEl || !href) return;
   const currentParent = imgEl.parentElement;
@@ -335,6 +380,7 @@ function renderRelatedCards(card, allCards) {
 
 async function render(card, allCards) {
   renderBase(card);
+  renderLoreNav(card, allCards);
   const linksWrap = byId('links');
   linksWrap.innerHTML = '';
 

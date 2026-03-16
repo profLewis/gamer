@@ -33,6 +33,25 @@ body {
   padding: 6px 10px;
   background: #0a100b;
 }
+.lore-nav {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn {
+  color: #9ad8a7;
+  border: 1px solid #2f6a3e;
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: #0a100b;
+  cursor: pointer;
+}
+.lore-pos {
+  margin-left: auto;
+  color: #8baa8f;
+  font-size: 0.85rem;
+}
 h1 {
   margin: 10px 0 2px;
   color: var(--accent);
