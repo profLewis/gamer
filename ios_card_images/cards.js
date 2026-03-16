@@ -41,7 +41,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Dan Dare",
       "source": "Dan Dare (1950)",
-      "description": "Pilot of the Future! Colonel Dan Dare of the Interplanet Space Fleet battled the Mekon - a green, dome-headed Venusian genius - across the pages of Eagle comic. Frank Hampson's beautifully painted strip was thoughtful, optimistic sci-fi. Dan was a gentleman hero: brave, decent, and unfailingly polite.",
+      "description": "Pilot of the Future! Colonel Dan Dare of the Interplanet Space Fleet battled the Mekon \u2014 a green, dome-headed Venusian genius \u2014 across the pages of Eagle comic. Frank Hampson's beautifully painted strip was thoughtful, optimistic sci-fi. Dan was a gentleman hero: brave, decent, and unfailingly polite.",
       "stats": {
         "Power": 7,
         "Cunning": 7,
@@ -59,7 +59,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Prince Valiant",
       "source": "Prince Valiant (1937)",
-      "description": "Prince of Thule, Knight of the Round Table, star of Hal Foster's magnificent comic strip. Valiant's adventures span decades of Arthurian glory - questing, jousting, and romancing Princess Aleta. The strip is painted, not drawn, and its visual splendour set a standard no other comic has matched.",
+      "description": "Prince of Thule, Knight of the Round Table, star of Hal Foster's magnificent comic strip. Valiant's adventures span decades of Arthurian glory \u2014 questing, jousting, and romancing Princess Aleta. The strip is painted, not drawn, and its visual splendour set a standard no other comic has matched.",
       "stats": {
         "Power": 8,
         "Cunning": 6,
@@ -95,7 +95,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Judge Dredd",
       "source": "Judge Dredd (1977)",
-      "description": "I am the Law! In the irradiated wasteland of Mega-City One, Judge Dredd is judge, jury, and executioner. He never removes his helmet, never smiles, and never bends the rules. 2000 AD's greatest creation is a fascist lawman played straight in a satirical world - and somehow, you root for him anyway.",
+      "description": "I am the Law! In the irradiated wasteland of Mega-City One, Judge Dredd is judge, jury, and executioner. He never removes his helmet, never smiles, and never bends the rules. 2000 AD's greatest creation is a fascist lawman played straight in a satirical world \u2014 and somehow, you root for him anyway.",
       "stats": {
         "Power": 9,
         "Cunning": 7,
@@ -113,7 +113,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Will the Wise",
       "source": "Stranger Things",
-      "description": "A boy who survived the Upside Down and emerged wiser for it. His D&D character became his truest self - a divination wizard who sees what others cannot. Will proved that the bravest heroes are not the strongest, but the ones who endure.",
+      "description": "A boy who survived the Upside Down and emerged wiser for it. His D&D character became his truest self \u2014 a divination wizard who sees what others cannot. Will proved that the bravest heroes are not the strongest, but the ones who endure.",
       "stats": {
         "Power": 3,
         "Cunning": 7,
@@ -131,7 +131,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Eleven",
       "source": "Stranger Things",
-      "description": "She has powers no wizard could match - telekinesis, remote viewing, and the ability to close rifts between dimensions. Raised in a laboratory, she escaped and found a family. Her favourite spell component? Eggo waffles.",
+      "description": "She has powers no wizard could match \u2014 telekinesis, remote viewing, and the ability to close rifts between dimensions. Raised in a laboratory, she escaped and found a family. Her favourite spell component? Eggo waffles.",
       "stats": {
         "Power": 9,
         "Cunning": 5,
@@ -149,7 +149,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Eddie Munson",
       "source": "Stranger Things",
-      "description": "Dungeon Master of the Hellfire Club and metalhead bard extraordinaire. Eddie played guitar on a trailer roof to draw demobats away from his friends. He never ran from a fight - not even his last one. The campaign continues without him, but the seat at the head of the table stays empty.",
+      "description": "Dungeon Master of the Hellfire Club and metalhead bard extraordinaire. Eddie played guitar on a trailer roof to draw demobats away from his friends. He never ran from a fight \u2014 not even his last one. The campaign continues without him, but the seat at the head of the table stays empty.",
       "stats": {
         "Power": 5,
         "Cunning": 6,
@@ -167,7 +167,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Hopper",
       "source": "Stranger Things",
-      "description": "Chief of Hawkins police and reluctant father figure. Tough as chain mail on the outside, soft as a healing potion when it counts. Survived a Russian gulag and punched a demogorgon. His character class would be Paladin - sworn to protect, no matter the cost.",
+      "description": "Chief of Hawkins police and reluctant father figure. Tough as chain mail on the outside, soft as a healing potion when it counts. Survived a Russian gulag and punched a demogorgon. His character class would be Paladin \u2014 sworn to protect, no matter the cost.",
       "stats": {
         "Power": 8,
         "Cunning": 6,
@@ -239,7 +239,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Titanius",
       "source": "Futurama",
-      "description": "Titanius Anglesmith, Fancy Man of Cornwood! Bender's fantasy alter-ego from Bender's Game, wielding a sword and an ego of legendary proportions. A warrior who fights with more style than skill and more mouth than either. His armour is polished to a mirror shine - naturally.",
+      "description": "Titanius Anglesmith, Fancy Man of Cornwood! Bender's fantasy alter-ego from Bender's Game, wielding a sword and an ego of legendary proportions. A warrior who fights with more style than skill and more mouth than either. His armour is polished to a mirror shine \u2014 naturally.",
       "stats": {
         "Power": 7,
         "Cunning": 4,
@@ -257,7 +257,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Leegola",
       "source": "Futurama",
-      "description": "Leela's fantasy form - a fearsome elf centaur with a bow and a legendary temper. Half horse, all warrior, and absolutely not taking any nonsense from Titanius. The deadliest archer in Cornwood, with depth perception issues that somehow never affect her aim.",
+      "description": "Leela's fantasy form \u2014 a fearsome elf centaur with a bow and a legendary temper. Half horse, all warrior, and absolutely not taking any nonsense from Titanius. The deadliest archer in Cornwood, with depth perception issues that somehow never affect her aim.",
       "stats": {
         "Power": 8,
         "Cunning": 6,
@@ -311,7 +311,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Xenk",
       "source": "Honour Among Thieves",
-      "description": "A paladin of unwavering virtue and absolutely no sense of humour. Xenk Yendar walks through every scene like a walking cathedral. He is annoyingly perfect at everything - fighting, diplomacy, moral integrity - and completely unaware of how irritating this makes him to rogues and bards.",
+      "description": "A paladin of unwavering virtue and absolutely no sense of humour. Xenk Yendar walks through every scene like a walking cathedral. He is annoyingly perfect at everything \u2014 fighting, diplomacy, moral integrity \u2014 and completely unaware of how irritating this makes him to rogues and bards.",
       "stats": {
         "Power": 9,
         "Cunning": 5,
@@ -329,7 +329,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Ripley",
       "source": "Classic Sci-Fi",
-      "description": "Ellen Ripley, warrant officer of the Nostromo and the ultimate survivor. She faced xenomorphs, corporate betrayal, and an android with milk for blood - and she won every time. If transported to a dungeon, she'd be a Ranger with a flamethrower and zero patience for NPCs who say 'let's split up'.",
+      "description": "Ellen Ripley, warrant officer of the Nostromo and the ultimate survivor. She faced xenomorphs, corporate betrayal, and an android with milk for blood \u2014 and she won every time. If transported to a dungeon, she'd be a Ranger with a flamethrower and zero patience for NPCs who say 'let's split up'.",
       "stats": {
         "Power": 8,
         "Cunning": 9,
@@ -347,7 +347,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Deckard",
       "source": "Classic Sci-Fi",
-      "description": "Rick Deckard, blade runner, hunter of replicants in the neon rain of 2019 Los Angeles. He asks the questions that make androids dream of electric sheep. Is he human? Even he doesn't know. In a dungeon, he'd be an Investigator - always asking questions, never quite trusting the answers.",
+      "description": "Rick Deckard, blade runner, hunter of replicants in the neon rain of 2019 Los Angeles. He asks the questions that make androids dream of electric sheep. Is he human? Even he doesn't know. In a dungeon, he'd be an Investigator \u2014 always asking questions, never quite trusting the answers.",
       "stats": {
         "Power": 6,
         "Cunning": 8,
@@ -365,7 +365,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Atreides",
       "source": "Classic Sci-Fi",
-      "description": "House Atreides rules through honour in a universe of treachery. Paul Atreides walked the desert of Arrakis, drank the Water of Life, and became Muad'Dib - the Kwisatz Haderach. He could see the future but couldn't prevent the jihad his name would inspire. The most reluctant messiah in fiction.",
+      "description": "House Atreides rules through honour in a universe of treachery. Paul Atreides walked the desert of Arrakis, drank the Water of Life, and became Muad'Dib \u2014 the Kwisatz Haderach. He could see the future but couldn't prevent the jihad his name would inspire. The most reluctant messiah in fiction.",
       "stats": {
         "Power": 7,
         "Cunning": 9,
@@ -401,7 +401,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Daneel",
       "source": "Famous Robots",
-      "description": "R. Daneel Olivaw - Asimov's positronic detective who served humanity for twenty thousand years. He began as a robot detective on Earth and ended as the secret guardian of the entire galaxy. He followed the Three Laws of Robotics so well that he invented a Zeroth Law. The most loyal companion imaginable.",
+      "description": "R. Daneel Olivaw \u2014 Asimov's positronic detective who served humanity for twenty thousand years. He began as a robot detective on Earth and ended as the secret guardian of the entire galaxy. He followed the Three Laws of Robotics so well that he invented a Zeroth Law. The most loyal companion imaginable.",
       "stats": {
         "Power": 6,
         "Cunning": 9,
@@ -437,7 +437,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "K-9",
       "source": "Famous Robots",
-      "description": "The Doctor's faithful robot dog. Affirmative, Master. K-9 Mark III defended Sarah Jane Smith with a nose laser and an unshakeable sense of duty. He plays chess, solves equations, and occasionally saves the universe - all while rolling on tiny wheels and calling everyone 'Master' or 'Mistress'.",
+      "description": "The Doctor's faithful robot dog. Affirmative, Master. K-9 Mark III defended Sarah Jane Smith with a nose laser and an unshakeable sense of duty. He plays chess, solves equations, and occasionally saves the universe \u2014 all while rolling on tiny wheels and calling everyone 'Master' or 'Mistress'.",
       "stats": {
         "Power": 5,
         "Cunning": 8,
@@ -473,7 +473,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Madmartigan",
       "source": "Willow (1988)",
-      "description": "The greatest swordsman who ever lived - just ask him. Val Kilmer's rogue warrior in Willow was charming, reckless, and surprisingly heroic when it counted. Locked in a cage when we meet him, he talks his way out with nothing but charisma. His romance with Sorsha involved a love potion, a snowball fight, and a stolen kiss on a battlefield.",
+      "description": "The greatest swordsman who ever lived \u2014 just ask him. Val Kilmer's rogue warrior in Willow was charming, reckless, and surprisingly heroic when it counted. Locked in a cage when we meet him, he talks his way out with nothing but charisma. His romance with Sorsha involved a love potion, a snowball fight, and a stolen kiss on a battlefield.",
       "stats": {
         "Power": 8,
         "Cunning": 7,
@@ -491,7 +491,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Willow",
       "source": "Willow (1988)",
-      "description": "Willow Ufgood, a Nelwyn farmer who dreamed of being a sorcerer. When he found an abandoned baby destined to overthrow an evil queen, he could have walked away. Instead, this small farmer became the bravest member of the party. He proved that heroes come in all sizes - especially the ones nobody expected.",
+      "description": "Willow Ufgood, a Nelwyn farmer who dreamed of being a sorcerer. When he found an abandoned baby destined to overthrow an evil queen, he could have walked away. Instead, this small farmer became the bravest member of the party. He proved that heroes come in all sizes \u2014 especially the ones nobody expected.",
       "stats": {
         "Power": 3,
         "Cunning": 6,
@@ -563,7 +563,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Jareth",
       "source": "Labyrinth (1986)",
-      "description": "The Goblin King, played by David Bowie with otherworldly charisma. Jareth stole baby Toby and offered Sarah her dreams in exchange. He juggles crystal balls, sings haunting songs, and rules a labyrinth of impossible geometry. Part villain, part tragic figure - a fey lord who fell in love with a mortal girl.",
+      "description": "The Goblin King, played by David Bowie with otherworldly charisma. Jareth stole baby Toby and offered Sarah her dreams in exchange. He juggles crystal balls, sings haunting songs, and rules a labyrinth of impossible geometry. Part villain, part tragic figure \u2014 a fey lord who fell in love with a mortal girl.",
       "stats": {
         "Power": 7,
         "Cunning": 8,
@@ -599,7 +599,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Taran",
       "source": "The Black Cauldron (1985)",
-      "description": "An assistant pig-keeper in the land of Prydain who dreamed of being a great warrior. Based on Lloyd Alexander's beloved Chronicles of Prydain, Taran proved that heroism isn't about swords and glory - it's about protecting a magical pig called Hen Wen and stopping the Horned King from raising an army of the dead.",
+      "description": "An assistant pig-keeper in the land of Prydain who dreamed of being a great warrior. Based on Lloyd Alexander's beloved Chronicles of Prydain, Taran proved that heroism isn't about swords and glory \u2014 it's about protecting a magical pig called Hen Wen and stopping the Horned King from raising an army of the dead.",
       "stats": {
         "Power": 5,
         "Cunning": 5,
@@ -671,7 +671,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Valerian",
       "source": "Dragonslayer (1981)",
-      "description": "Galen Bradwarden, a sorcerer's apprentice who inherited his master's quest to slay the dragon Vermithrax Pejorative. Armed with a magic amulet and more courage than skill, he faced the last and greatest dragon. Dragonslayer featured the most realistic dragon in cinema until CGI arrived - and some say still does.",
+      "description": "Galen Bradwarden, a sorcerer's apprentice who inherited his master's quest to slay the dragon Vermithrax Pejorative. Armed with a magic amulet and more courage than skill, he faced the last and greatest dragon. Dragonslayer featured the most realistic dragon in cinema until CGI arrived \u2014 and some say still does.",
       "stats": {
         "Power": 5,
         "Cunning": 6,
@@ -689,7 +689,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Elric",
       "source": "Michael Moorcock",
-      "description": "The albino emperor of Melnibone, last of an ancient decadent race, wielder of the black runesword Stormbringer that drinks the souls of those it slays - including, inevitably, everyone Elric loves. Moorcock's eternal champion is the anti-Conan: frail, philosophical, drug-dependent, and cursed by his own weapon.",
+      "description": "The albino emperor of Melnibone, last of an ancient decadent race, wielder of the black runesword Stormbringer that drinks the souls of those it slays \u2014 including, inevitably, everyone Elric loves. Moorcock's eternal champion is the anti-Conan: frail, philosophical, drug-dependent, and cursed by his own weapon.",
       "stats": {
         "Power": 8,
         "Cunning": 7,
@@ -707,7 +707,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Ged",
       "source": "Ursula K. Le Guin",
-      "description": "Sparrowhawk, the greatest mage of Earthsea, who learned that true power is knowing your own shadow - literally. As a young student, he recklessly summoned a shadow creature and spent years hunting it across the archipelago, only to discover it was himself. Le Guin's wizard is about wisdom, not fireballs.",
+      "description": "Sparrowhawk, the greatest mage of Earthsea, who learned that true power is knowing your own shadow \u2014 literally. As a young student, he recklessly summoned a shadow creature and spent years hunting it across the archipelago, only to discover it was himself. Le Guin's wizard is about wisdom, not fireballs.",
       "stats": {
         "Power": 5,
         "Cunning": 8,
@@ -743,7 +743,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Raistlin",
       "source": "Dragonlance",
-      "description": "Raistlin Majere, the sickly mage with golden skin and hourglass eyes that see all things as dying. He is brilliant, ambitious, and ruthlessly pragmatic. He chose the Black Robes of evil magic, challenged the gods themselves, and nearly won. The most compelling villain-hero in fantasy - you never stop wanting him to be redeemed.",
+      "description": "Raistlin Majere, the sickly mage with golden skin and hourglass eyes that see all things as dying. He is brilliant, ambitious, and ruthlessly pragmatic. He chose the Black Robes of evil magic, challenged the gods themselves, and nearly won. The most compelling villain-hero in fantasy \u2014 you never stop wanting him to be redeemed.",
       "stats": {
         "Power": 4,
         "Cunning": 10,
@@ -761,7 +761,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Tasslehoff",
       "source": "Dragonlance",
-      "description": "Tasslehoff Burrfoot, kender extraordinaire. He is NOT a thief - he just finds things. In your pockets. On your belt. In your locked safe. Fearless to the point of foolishness, endlessly curious, and the most annoying companion in fantasy literature. Also, somehow, the bravest. He faced a god and didn't flinch.",
+      "description": "Tasslehoff Burrfoot, kender extraordinaire. He is NOT a thief \u2014 he just finds things. In your pockets. On your belt. In your locked safe. Fearless to the point of foolishness, endlessly curious, and the most annoying companion in fantasy literature. Also, somehow, the bravest. He faced a god and didn't flinch.",
       "stats": {
         "Power": 2,
         "Cunning": 9,
@@ -797,7 +797,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Granny Weatherwax",
       "source": "Terry Pratchett",
-      "description": "Esmerelda Weatherwax, the most powerful witch on the Discworld. She doesn't do magic - she does headology, which is much more effective. She can Borrow the minds of animals, stare down vampires, and make you do what she wants by simply raising an eyebrow. She is not nice. She is good. There's a difference.",
+      "description": "Esmerelda Weatherwax, the most powerful witch on the Discworld. She doesn't do magic \u2014 she does headology, which is much more effective. She can Borrow the minds of animals, stare down vampires, and make you do what she wants by simply raising an eyebrow. She is not nice. She is good. There's a difference.",
       "stats": {
         "Power": 5,
         "Cunning": 10,
@@ -833,7 +833,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Fafhrd",
       "source": "Fritz Leiber",
-      "description": "A seven-foot northern barbarian with a poet's soul and a thief's instincts, from the frozen Waste of Nehwon. With his partner the Grey Mouser, he defined the sword-and-sorcery buddy adventure. Leiber created the original mismatched duo - the big dreamy fighter and the small cunning rogue.",
+      "description": "A seven-foot northern barbarian with a poet's soul and a thief's instincts, from the frozen Waste of Nehwon. With his partner the Grey Mouser, he defined the sword-and-sorcery buddy adventure. Leiber created the original mismatched duo \u2014 the big dreamy fighter and the small cunning rogue.",
       "stats": {
         "Power": 8,
         "Cunning": 6,
@@ -851,7 +851,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Grey Mouser",
       "source": "Fritz Leiber",
-      "description": "A small, quick swordsman and former wizard's apprentice from the city of Lankhmar. The original rogue archetype - before D&D codified the class, the Grey Mouser was picking locks, backstabbing villains, and spending his loot on wine and questionable romantic choices. He and Fafhrd are the eternal adventuring party.",
+      "description": "A small, quick swordsman and former wizard's apprentice from the city of Lankhmar. The original rogue archetype \u2014 before D&D codified the class, the Grey Mouser was picking locks, backstabbing villains, and spending his loot on wine and questionable romantic choices. He and Fafhrd are the eternal adventuring party.",
       "stats": {
         "Power": 6,
         "Cunning": 10,
@@ -869,7 +869,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Thomas Covenant",
       "source": "Stephen Donaldson",
-      "description": "A leper transported to a land of magic he refuses to believe in. Donaldson's anti-hero is deliberately unlikeable - he commits a terrible act upon arrival and spends three trilogies wrestling with guilt, disbelief, and wild magic he can't control. The most morally complex protagonist in fantasy. Not for the faint-hearted.",
+      "description": "A leper transported to a land of magic he refuses to believe in. Donaldson's anti-hero is deliberately unlikeable \u2014 he commits a terrible act upon arrival and spends three trilogies wrestling with guilt, disbelief, and wild magic he can't control. The most morally complex protagonist in fantasy. Not for the faint-hearted.",
       "stats": {
         "Power": 7,
         "Cunning": 4,
@@ -887,7 +887,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Tenar",
       "source": "Ursula K. Le Guin",
-      "description": "Born Arha, the Eaten One, priestess of the Nameless Ones in the Tombs of Atuan. She lived in darkness, serving ancient powers, until the wizard Ged came seeking the Ring of Erreth-Akbe. She chose light over duty, freedom over ritual, and became Tenar - a woman who defined herself rather than being defined by gods.",
+      "description": "Born Arha, the Eaten One, priestess of the Nameless Ones in the Tombs of Atuan. She lived in darkness, serving ancient powers, until the wizard Ged came seeking the Ring of Erreth-Akbe. She chose light over duty, freedom over ritual, and became Tenar \u2014 a woman who defined herself rather than being defined by gods.",
       "stats": {
         "Power": 4,
         "Cunning": 7,
@@ -905,7 +905,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "John Carter",
       "source": "Edgar Rice Burroughs",
-      "description": "A Confederate cavalry officer mysteriously transported to Mars - Barsoom, where the lower gravity gave him superhuman strength. He fought four-armed Tharks, won the love of Princess Dejah Thoris, and became Warlord of Mars. Burroughs invented planetary romance in 1912 and every space hero since carries a piece of John Carter.",
+      "description": "A Confederate cavalry officer mysteriously transported to Mars \u2014 Barsoom, where the lower gravity gave him superhuman strength. He fought four-armed Tharks, won the love of Princess Dejah Thoris, and became Warlord of Mars. Burroughs invented planetary romance in 1912 and every space hero since carries a piece of John Carter.",
       "stats": {
         "Power": 9,
         "Cunning": 6,
@@ -923,7 +923,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Conan",
       "source": "Robert E. Howard",
-      "description": "The original Cimmerian, created by Robert E. Howard in 1932. Before the films, before the comics, Conan was a literary barbarian - not just a brute but a thief, a pirate, a mercenary, and eventually a king. Howard's Conan is smarter and more nuanced than his imitators. He defined sword and sorcery.",
+      "description": "The original Cimmerian, created by Robert E. Howard in 1932. Before the films, before the comics, Conan was a literary barbarian \u2014 not just a brute but a thief, a pirate, a mercenary, and eventually a king. Howard's Conan is smarter and more nuanced than his imitators. He defined sword and sorcery.",
       "stats": {
         "Power": 10,
         "Cunning": 6,
@@ -977,7 +977,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Corwin",
       "source": "Roger Zelazny",
-      "description": "Prince of Amber, the one true city of which all other worlds - including Earth - are mere shadows. Corwin woke in a hospital bed with amnesia, discovered he was an immortal prince, and walked the Pattern to reclaim his birthright. Zelazny's Chronicles of Amber blend swashbuckling with cosmology. Everything is a reflection.",
+      "description": "Prince of Amber, the one true city of which all other worlds \u2014 including Earth \u2014 are mere shadows. Corwin woke in a hospital bed with amnesia, discovered he was an immortal prince, and walked the Pattern to reclaim his birthright. Zelazny's Chronicles of Amber blend swashbuckling with cosmology. Everything is a reflection.",
       "stats": {
         "Power": 8,
         "Cunning": 9,
@@ -995,7 +995,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Corum",
       "source": "Michael Moorcock",
-      "description": "Prince Corum Jhaelen Irsei, the Prince in the Scarlet Robe. Last of the Vadhagh, he lost his hand and eye and replaced them with the Hand of Kwll and the Eye of Rhynn - grafts from dead gods that let him summon the dead to fight. Another face of Moorcock's Eternal Champion, elegant where Elric is tormented.",
+      "description": "Prince Corum Jhaelen Irsei, the Prince in the Scarlet Robe. Last of the Vadhagh, he lost his hand and eye and replaced them with the Hand of Kwll and the Eye of Rhynn \u2014 grafts from dead gods that let him summon the dead to fight. Another face of Moorcock's Eternal Champion, elegant where Elric is tormented.",
       "stats": {
         "Power": 7,
         "Cunning": 7,
@@ -1031,7 +1031,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Skeletor",
       "source": "He-Man (1983)",
-      "description": "Lord of Snake Mountain, skull-faced nemesis of He-Man. His plans to conquer Castle Greyskull are endlessly thwarted, but he never stops trying. Beneath the buffoonery of the cartoon, Skeletor is a genuinely menacing villain - a sorcerer of immense power trapped in an endless cycle of failure. NYEH HEH HEH!",
+      "description": "Lord of Snake Mountain, skull-faced nemesis of He-Man. His plans to conquer Castle Greyskull are endlessly thwarted, but he never stops trying. Beneath the buffoonery of the cartoon, Skeletor is a genuinely menacing villain \u2014 a sorcerer of immense power trapped in an endless cycle of failure. NYEH HEH HEH!",
       "stats": {
         "Power": 8,
         "Cunning": 7,
@@ -1049,7 +1049,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Ming the Merciless",
       "source": "Flash Gordon (1934)",
-      "description": "Emperor of Mongo, tyrant of a thousand worlds. Ming rules through fear, technology, and a magnificent wardrobe. He is Flash Gordon's eternal nemesis - cruel, intelligent, and utterly without mercy. Every space villain since owes something to Ming: the pointed beard, the flowing robes, the casual cruelty of absolute power.",
+      "description": "Emperor of Mongo, tyrant of a thousand worlds. Ming rules through fear, technology, and a magnificent wardrobe. He is Flash Gordon's eternal nemesis \u2014 cruel, intelligent, and utterly without mercy. Every space villain since owes something to Ming: the pointed beard, the flowing robes, the casual cruelty of absolute power.",
       "stats": {
         "Power": 9,
         "Cunning": 8,
@@ -1085,7 +1085,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Lion-O",
       "source": "ThunderCats (1985)",
-      "description": "Lord of the ThunderCats, wielder of the Sword of Omens. 'Thunder, Thunder, ThunderCats, HO!' Lion-O was a boy in a man's body - his suspension capsule aged him during the flight from Thundera. He must learn to lead while wielding Sight Beyond Sight. A young king with an ancient blade and everything to prove.",
+      "description": "Lord of the ThunderCats, wielder of the Sword of Omens. 'Thunder, Thunder, ThunderCats, HO!' Lion-O was a boy in a man's body \u2014 his suspension capsule aged him during the flight from Thundera. He must learn to lead while wielding Sight Beyond Sight. A young king with an ancient blade and everything to prove.",
       "stats": {
         "Power": 9,
         "Cunning": 5,
@@ -1103,7 +1103,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Noggin",
       "source": "Noggin the Nog (1959)",
-      "description": "Noggin was the gentle prince of the Nogs, kind-hearted ruler of the icy fjords. Never violent, Noggin solved every problem with wisdom, friendship, and hot soup. His nemesis Nogbad the Bad schemed endlessly, but good always prevailed in Oliver Postgate's Norse saga. A cleric by temperament - he'd rather heal than harm.",
+      "description": "Noggin was the gentle prince of the Nogs, kind-hearted ruler of the icy fjords. Never violent, Noggin solved every problem with wisdom, friendship, and hot soup. His nemesis Nogbad the Bad schemed endlessly, but good always prevailed in Oliver Postgate's Norse saga. A cleric by temperament \u2014 he'd rather heal than harm.",
       "stats": {
         "Power": 3,
         "Cunning": 5,
@@ -1121,7 +1121,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Nogbad the Bad",
       "source": "Noggin the Nog (1959)",
-      "description": "The scheming uncle of Prince Noggin, forever plotting to steal the crown of the Nogs. Nogbad's plans are elaborate, his machines are improbable, and his defeat is inevitable. He is the perfect villain for a gentle saga - menacing enough to create tension, foolish enough to always lose. Oliver Postgate's finest scoundrel.",
+      "description": "The scheming uncle of Prince Noggin, forever plotting to steal the crown of the Nogs. Nogbad's plans are elaborate, his machines are improbable, and his defeat is inevitable. He is the perfect villain for a gentle saga \u2014 menacing enough to create tension, foolish enough to always lose. Oliver Postgate's finest scoundrel.",
       "stats": {
         "Power": 4,
         "Cunning": 7,
@@ -1157,7 +1157,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Davros",
       "source": "Doctor Who (1963)",
-      "description": "Creator of the Daleks. A crippled Kaled scientist who saw the future of his race and decided it was extermination. Davros built the ultimate weapon - mutants inside armoured shells - and lost control of his own creation. He is the dark mirror of the Doctor: both geniuses, but one chose compassion and the other chose power.",
+      "description": "Creator of the Daleks. A crippled Kaled scientist who saw the future of his race and decided it was extermination. Davros built the ultimate weapon \u2014 mutants inside armoured shells \u2014 and lost control of his own creation. He is the dark mirror of the Doctor: both geniuses, but one chose compassion and the other chose power.",
       "stats": {
         "Power": 8,
         "Cunning": 10,
@@ -1175,7 +1175,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Avon",
       "source": "Blake's 7 (1978)",
-      "description": "Kerr Avon, computer genius and reluctant rebel. He joined Blake's revolution not out of idealism but because the alternative was prison. Cold, sarcastic, and brilliant, Avon trusted machines more than people - and was usually right to do so. Paul Darrow played him with ice-cold charisma. The anti-hero before it was fashionable.",
+      "description": "Kerr Avon, computer genius and reluctant rebel. He joined Blake's revolution not out of idealism but because the alternative was prison. Cold, sarcastic, and brilliant, Avon trusted machines more than people \u2014 and was usually right to do so. Paul Darrow played him with ice-cold charisma. The anti-hero before it was fashionable.",
       "stats": {
         "Power": 6,
         "Cunning": 10,
@@ -1211,7 +1211,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Esteban",
       "source": "Mysterious Cities of Gold (1982)",
-      "description": "Child of the Sun, orphan of Barcelona, seeker of the lost Cities of Gold in the New World. Esteban can summon sunlight through sheer willpower. With Zia and Tao, he discovered the golden condor - a solar-powered flying machine left by a lost civilisation. One of the greatest animated adventures ever made.",
+      "description": "Child of the Sun, orphan of Barcelona, seeker of the lost Cities of Gold in the New World. Esteban can summon sunlight through sheer willpower. With Zia and Tao, he discovered the golden condor \u2014 a solar-powered flying machine left by a lost civilisation. One of the greatest animated adventures ever made.",
       "stats": {
         "Power": 4,
         "Cunning": 6,
@@ -1229,7 +1229,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Robin of Loxley",
       "source": "Robin of Sherwood (1984)",
-      "description": "Herne's Son, the hooded man of Sherwood Forest. This Robin Hood was touched by pagan magic - chosen by Herne the Hunter to protect the poor of England. Michael Praed and later Jason Connery played a Robin who was part outlaw, part mystic. Clannad's haunting soundtrack made every arrow fly in slow motion.",
+      "description": "Herne's Son, the hooded man of Sherwood Forest. This Robin Hood was touched by pagan magic \u2014 chosen by Herne the Hunter to protect the poor of England. Michael Praed and later Jason Connery played a Robin who was part outlaw, part mystic. Clannad's haunting soundtrack made every arrow fly in slow motion.",
       "stats": {
         "Power": 7,
         "Cunning": 7,
@@ -1283,7 +1283,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Benny the Ball",
       "source": "Hanna-Barbera (1961)",
-      "description": "Top Cat's best pal and the shortest member of the gang. Benny is sweet, loyal, and not terribly bright - but his heart is enormous and his courage often surprises everyone, including himself. He follows T.C. into every mad scheme without question, which is either friendship or a complete lack of self-preservation.",
+      "description": "Top Cat's best pal and the shortest member of the gang. Benny is sweet, loyal, and not terribly bright \u2014 but his heart is enormous and his courage often surprises everyone, including himself. He follows T.C. into every mad scheme without question, which is either friendship or a complete lack of self-preservation.",
       "stats": {
         "Power": 3,
         "Cunning": 4,
@@ -1319,7 +1319,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Choo-Choo",
       "source": "Hanna-Barbera (1961)",
-      "description": "The pink-nosed, slightly nervous member of Top Cat's gang. Choo-Choo is the worrier of the group - he sees problems before they happen, which would be useful if anyone ever listened to him. Despite his anxieties, he sticks with the gang through every disaster. The voice of reason that nobody heeds.",
+      "description": "The pink-nosed, slightly nervous member of Top Cat's gang. Choo-Choo is the worrier of the group \u2014 he sees problems before they happen, which would be useful if anyone ever listened to him. Despite his anxieties, he sticks with the gang through every disaster. The voice of reason that nobody heeds.",
       "stats": {
         "Power": 3,
         "Cunning": 6,
@@ -1337,7 +1337,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Dick Dastardly",
       "source": "Wacky Races (1968)",
-      "description": "The moustachioed villain of Wacky Races, driving the Mean Machine with his snickering dog Muttley. Dastardly would win every race if he didn't stop to cheat - his elaborate traps always backfire spectacularly. He's the living proof that villainy is its own punishment. Drat, drat, and double drat!",
+      "description": "The moustachioed villain of Wacky Races, driving the Mean Machine with his snickering dog Muttley. Dastardly would win every race if he didn't stop to cheat \u2014 his elaborate traps always backfire spectacularly. He's the living proof that villainy is its own punishment. Drat, drat, and double drat!",
       "stats": {
         "Power": 4,
         "Cunning": 8,
@@ -1355,7 +1355,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Muttley",
       "source": "Wacky Races (1968)",
-      "description": "Dick Dastardly's wheezing, snickering sidekick. Muttley doesn't talk - he mutters, grumbles, and makes that iconic snickering laugh that means he's either amused or contemptuous, usually both. He collects medals (imaginary ones, mostly) and occasionally flies by spinning his tail. A dog of many hidden talents.",
+      "description": "Dick Dastardly's wheezing, snickering sidekick. Muttley doesn't talk \u2014 he mutters, grumbles, and makes that iconic snickering laugh that means he's either amused or contemptuous, usually both. He collects medals (imaginary ones, mostly) and occasionally flies by spinning his tail. A dog of many hidden talents.",
       "stats": {
         "Power": 4,
         "Cunning": 6,
@@ -1373,7 +1373,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Penelope Pitstop",
       "source": "Wacky Races (1968)",
-      "description": "The glamorous driver of the Compact Pussycat. Penelope seems like a damsel in distress - always getting captured by the Hooded Claw - but she's actually a brilliant racer who wins on skill and nerve. She can fix an engine in heels and outrace villains while touching up her lipstick. Never underestimate her.",
+      "description": "The glamorous driver of the Compact Pussycat. Penelope seems like a damsel in distress - always getting captured by the Hooded Claw - but she is actually a brilliant racer who wins on skill and nerve. She can fix an engine in heels and outrace villains while touching up her lipstick. Never underestimate her.",
       "stats": {
         "Power": 5,
         "Cunning": 7,
@@ -1427,7 +1427,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Danger Mouse",
       "source": "Cosgrove Hall (1981)",
-      "description": "The world's greatest secret agent, operating from a pillar box on Baker Street with his faithful hamster assistant Penfold. DM wears an eyepatch (purely for style - both eyes work fine) and tackles the schemes of Baron Greenback with British pluck and questionable competence. Good grief, DM!",
+      "description": "The world's greatest secret agent, operating from a pillar box on Baker Street with his faithful hamster assistant Penfold. DM wears an eyepatch (purely for style \u2014 both eyes work fine) and tackles the schemes of Baron Greenback with British pluck and questionable competence. Good grief, DM!",
       "stats": {
         "Power": 7,
         "Cunning": 8,
@@ -1445,7 +1445,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Penfold",
       "source": "Cosgrove Hall (1981)",
-      "description": "Danger Mouse's sidekick - a timid, bespectacled hamster whose catchphrase is 'Crumbs, DM!' Ernest Penfold is terrified of absolutely everything, yet somehow always ends up in the thick of danger. His cowardice is matched only by his loyalty. Occasionally saves the day entirely by accident.",
+      "description": "Danger Mouse's sidekick \u2014 a timid, bespectacled hamster whose catchphrase is 'Crumbs, DM!' Ernest Penfold is terrified of absolutely everything, yet somehow always ends up in the thick of danger. His cowardice is matched only by his loyalty. Occasionally saves the day entirely by accident.",
       "stats": {
         "Power": 2,
         "Cunning": 4,
@@ -1481,7 +1481,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "The Brain",
       "source": "Pinky and the Brain (1995)",
-      "description": "A genetically enhanced lab mouse with an enormous cranium and an even bigger ambition: to take over the world. Every single night. Brain's plans are ingenious, meticulous, and invariably doomed - usually because of Pinky, the universe, or his own hubris. 'The same thing we do every night, Pinky...'",
+      "description": "A genetically enhanced lab mouse with an enormous cranium and an even bigger ambition: to take over the world. Every single night. Brain's plans are ingenious, meticulous, and invariably doomed \u2014 usually because of Pinky, the universe, or his own hubris. 'The same thing we do every night, Pinky...'",
       "stats": {
         "Power": 3,
         "Cunning": 10,
@@ -1499,7 +1499,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Peter Perfect",
       "source": "Wacky Races (1968)",
-      "description": "The handsome, square-jawed driver of the Turbo Terrific. Peter is charming, brave, and utterly devoted to Penelope Pitstop - though his car has an alarming tendency to fall apart at crucial moments and then reassemble itself even faster. The perfect gentleman racer, even when covered in soot.",
+      "description": "The handsome, square-jawed driver of the Turbo Terrific. Peter is charming, brave, and utterly devoted to Penelope Pitstop \u2014 though his car has an alarming tendency to fall apart at crucial moments and then reassemble itself even faster. The perfect gentleman racer, even when covered in soot.",
       "stats": {
         "Power": 6,
         "Cunning": 5,
@@ -1517,7 +1517,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Professor Pat P.",
       "source": "Wacky Races (1968)",
-      "description": "Professor Pat Pending, inventor and driver of the Convert-a-Car - a vehicle that transforms into anything he needs: a boat, a plane, a submarine, or a tank. The Professor is the smartest racer on the track, using gadgets and ingenuity rather than dirty tricks. His car is basically a Swiss Army knife on wheels.",
+      "description": "Professor Pat Pending, inventor and driver of the Convert-a-Car \u2014 a vehicle that transforms into anything he needs: a boat, a plane, a submarine, or a tank. The Professor is the smartest racer on the track, using gadgets and ingenuity rather than dirty tricks. His car is basically a Swiss Army knife on wheels.",
       "stats": {
         "Power": 5,
         "Cunning": 9,
@@ -1535,7 +1535,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Gosseyn",
       "source": "Ace Double D-031 (1953)",
-      "description": "Gilbert Gosseyn from A. E. van Vogt's The World of Null-A. He discovers his memories are false, his identity manufactured, and his mind operates on non-Aristotelian logic - General Semantics made flesh. He can teleport by memorising locations, dies and wakes in cloned bodies, and slowly uncovers a galactic conspiracy. A wizard who fights with pure reason.",
+      "description": "Gilbert Gosseyn from A. E. van Vogt's The World of Null-A. He discovers his memories are false, his identity manufactured, and his mind operates on non-Aristotelian logic \u2014 General Semantics made flesh. He can teleport by memorising locations, dies and wakes in cloned bodies, and slowly uncovers a galactic conspiracy. A wizard who fights with pure reason.",
       "stats": {
         "Power": 6,
         "Cunning": 10,
@@ -1553,7 +1553,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Ted Benteley",
       "source": "Ace Double D-103 (1955)",
-      "description": "From Philip K. Dick's Solar Lottery - in a future where the world leader is chosen by a random lottery and assassination is legalised via telepaths, Ted Benteley finds himself drawn into the deadliest game. Dick's first published novel is a paranoid masterpiece where nobody can be trusted, reality shifts, and power is both random and rigged.",
+      "description": "From Philip K. Dick's Solar Lottery \u2014 in a future where the world leader is chosen by a random lottery and assassination is legalised via telepaths, Ted Benteley finds himself drawn into the deadliest game. Dick's first published novel is a paranoid masterpiece where nobody can be trusted, reality shifts, and power is both random and rigged.",
       "stats": {
         "Power": 4,
         "Cunning": 8,
@@ -1571,7 +1571,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Floyd Jones",
       "source": "Ace Double D-150 (1956)",
-      "description": "From Philip K. Dick's The World Jones Made - Floyd Jones can see one year into the future, which makes him the most miserable man alive. Knowing what comes next doesn't mean you can change it. Jones becomes a demagogue, a prophet, a dictator - and every step was already foretold. A warlock cursed with foresight.",
+      "description": "From Philip K. Dick's The World Jones Made \u2014 Floyd Jones can see one year into the future, which makes him the most miserable man alive. Knowing what comes next doesn't mean you can change it. Jones becomes a demagogue, a prophet, a dictator \u2014 and every step was already foretold. A warlock cursed with foresight.",
       "stats": {
         "Power": 5,
         "Cunning": 9,
@@ -1589,7 +1589,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Dr Parsons",
       "source": "Ace Double D-421 (1960)",
-      "description": "Dr Parsons from Philip K. Dick's Dr. Futurity - a physician hurled to a time where death is celebrated and life is expendable. He must navigate a civilisation that considers healing a crime. Every instinct tells him to save lives; every law says he mustn't. A cleric in a world that hates clerics.",
+      "description": "Dr Parsons from Philip K. Dick's Dr. Futurity \u2014 a physician hurled to a time where death is celebrated and life is expendable. He must navigate a civilisation that considers healing a crime. Every instinct tells him to save lives; every law says he mustn't. A cleric in a world that hates clerics.",
       "stats": {
         "Power": 4,
         "Cunning": 7,
@@ -1607,7 +1607,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Nine Lives",
       "source": "Ace Double D-413 (1959)",
-      "description": "From Harlan Ellison's The Man With Nine Lives - a hardboiled investigator discovers that certain people have been 'dying' and returning with completely different personalities. Nine lives, nine identities, and someone is pulling the strings. Ellison's razor-sharp prose cuts through a mystery that goes deeper than murder.",
+      "description": "From Harlan Ellison's The Man With Nine Lives \u2014 a hardboiled investigator discovers that certain people have been 'dying' and returning with completely different personalities. Nine lives, nine identities, and someone is pulling the strings. Ellison's razor-sharp prose cuts through a mystery that goes deeper than murder.",
       "stats": {
         "Power": 6,
         "Cunning": 9,
@@ -1625,7 +1625,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Donal Graeme",
       "source": "Ace Double D-449 (1960)",
-      "description": "From Gordon R. Dickson's The Genetic General (later Dorsai!) - the ultimate military genius, born on the soldier world of Dorsai. In a far future where humanity has splintered into specialist cultures, Donal sees patterns no one else can. He fights not for territory but for human evolution itself. The perfect warlord.",
+      "description": "From Gordon R. Dickson's The Genetic General (later Dorsai!) \u2014 the ultimate military genius, born on the soldier world of Dorsai. In a far future where humanity has splintered into specialist cultures, Donal sees patterns no one else can. He fights not for territory but for human evolution itself. The perfect warlord.",
       "stats": {
         "Power": 10,
         "Cunning": 10,
@@ -1643,7 +1643,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Dosvard Rhyn",
       "source": "Ace Double D-096 (1955)",
-      "description": "Kartr Rhyn from Andre Norton's The Last Planet (later Star Rangers) - the Galactic Patrol is dissolving, the empire is crumbling, and a patrol ship crash-lands on an uncharted world. The crew must survive on a planet that doesn't want them, build a new civilisation from nothing, and face what lurks in the ruins. Norton at her best.",
+      "description": "Kartr Rhyn from Andre Norton's The Last Planet (later Star Rangers) \u2014 the Galactic Patrol is dissolving, the empire is crumbling, and a patrol ship crash-lands on an uncharted world. The crew must survive on a planet that doesn't want them, build a new civilisation from nothing, and face what lurks in the ruins. Norton at her best.",
       "stats": {
         "Power": 7,
         "Cunning": 7,
@@ -1655,6 +1655,276 @@ window.CARD_DATA = {
       "source_entity_page": "card-dex/entities/ace-double-d-096-1955.html",
       "source_entity_card": "entities/cards/ace-double-d-096-1955.png",
       "lore_page": "card-dex/lore/player-092.html"
+    },
+    {
+      "id": "player-093",
+      "type": "player",
+      "name": "Kartr Rhyn",
+      "source": "Ace Double D-096 (1955)",
+      "description": "The lead officer in Andre Norton's The Last Planet, Kartr Rhyn is forced to turn stranded patrol survivors into a functioning frontier force. He combines military training with diplomacy, because on Astra every alliance matters. A practical captain built for long campaigns.",
+      "stats": {
+        "Power": 7,
+        "Cunning": 8,
+        "Magic": 3,
+        "Fame": 7,
+        "Charm": 6
+      },
+      "image": "players/093-kartr-rhyn.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-096-1955.html",
+      "source_entity_card": "entities/cards/ace-double-d-096-1955.png",
+      "lore_page": "card-dex/lore/player-093.html"
+    },
+    {
+      "id": "player-094",
+      "type": "player",
+      "name": "Robert Hedrock",
+      "source": "Ace Double D-053 (1954)",
+      "description": "From A. E. van Vogt's The Weapon Shops of Isher. Hedrock moves between identities and centuries to defend civilian freedom against imperial overreach. He is strategist, infiltrator, and political wildcard in one. Think rogue-scholar with a very long game.",
+      "stats": {
+        "Power": 6,
+        "Cunning": 10,
+        "Magic": 4,
+        "Fame": 7,
+        "Charm": 6
+      },
+      "image": "players/094-robert-hedrock.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-053-1954.html",
+      "source_entity_card": "entities/cards/ace-double-d-053-1954.png",
+      "lore_page": "card-dex/lore/player-094.html"
+    },
+    {
+      "id": "player-095",
+      "type": "player",
+      "name": "Leon Cartwright",
+      "source": "Ace Double D-103 (1955)",
+      "description": "Philip K. Dick's Solar Lottery follows Leon Cartwright as he is pulled into a lethal political system where rulers are chosen by chance and challenged by ritual violence. He survives by reading motives quickly and adapting faster than the rules can shift.",
+      "stats": {
+        "Power": 5,
+        "Cunning": 8,
+        "Magic": 2,
+        "Fame": 7,
+        "Charm": 6
+      },
+      "image": "players/095-leon-cartwright.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-103-1955.html",
+      "source_entity_card": "entities/cards/ace-double-d-103-1955.png",
+      "lore_page": "card-dex/lore/player-095.html"
+    },
+    {
+      "id": "player-096",
+      "type": "player",
+      "name": "Ted Barton",
+      "source": "Ace Double D-249 (1957)",
+      "description": "In Philip K. Dick's The Cosmic Puppets, Ted Barton returns to his hometown and discovers reality has been rewritten around him. He acts as witness and investigator while mythic powers fight for control. He is less warrior, more truth-seeker in a hostile illusion.",
+      "stats": {
+        "Power": 4,
+        "Cunning": 8,
+        "Magic": 5,
+        "Fame": 6,
+        "Charm": 6
+      },
+      "image": "players/096-ted-barton.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-249-1957.html",
+      "source_entity_card": "entities/cards/ace-double-d-249-1957.png",
+      "lore_page": "card-dex/lore/player-096.html"
+    },
+    {
+      "id": "player-097",
+      "type": "player",
+      "name": "Claude Glystra",
+      "source": "Ace Double D-295 (1958)",
+      "description": "Jack Vance's Big Planet stars Claude Glystra, a castaway crossing an immense world where technology often fails and culture changes valley by valley. Glystra survives through social intelligence, nerve, and improvisation instead of brute force.",
+      "stats": {
+        "Power": 6,
+        "Cunning": 9,
+        "Magic": 2,
+        "Fame": 7,
+        "Charm": 7
+      },
+      "image": "players/097-claude-glystra.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-295-1958.html",
+      "source_entity_card": "entities/cards/ace-double-d-295-1958.png",
+      "lore_page": "card-dex/lore/player-097.html"
+    },
+    {
+      "id": "player-098",
+      "type": "player",
+      "name": "Greta Forzane",
+      "source": "Ace Double D-491 (1961)",
+      "description": "Narrator of Fritz Leiber's The Big Time. Greta is an entertainer stationed in a neutral rest zone outside normal time while the Change War rages. Her sharp observational voice turns cosmic conflict into intimate drama. Bard energy with veteran nerves.",
+      "stats": {
+        "Power": 4,
+        "Cunning": 9,
+        "Magic": 6,
+        "Fame": 8,
+        "Charm": 8
+      },
+      "image": "players/098-greta-forzane.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-491-1961.html",
+      "source_entity_card": "entities/cards/ace-double-d-491-1961.png",
+      "lore_page": "card-dex/lore/player-098.html"
+    },
+    {
+      "id": "player-099",
+      "type": "player",
+      "name": "Patricia Hardie",
+      "source": "Ace Double D-031 (1953)",
+      "description": "A supporting figure tied to Gosseyn's shifting identity arc in The World of Null-A. She is drawn into the same maze of false memories, tests, and political traps, making her a useful social-intelligence style hero choice.",
+      "stats": {
+        "Power": 4,
+        "Cunning": 8,
+        "Magic": 4,
+        "Fame": 5,
+        "Charm": 7
+      },
+      "image": "players/099-patricia-hardie.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-031-1953.html",
+      "source_entity_card": "entities/cards/ace-double-d-031-1953.png",
+      "lore_page": "card-dex/lore/player-099.html"
+    },
+    {
+      "id": "player-100",
+      "type": "player",
+      "name": "Innelda Isher",
+      "source": "Ace Double D-053 (1954)",
+      "description": "The empress at the center of Isher politics in van Vogt's future empire. Her courtly power struggles frame the conflict between imperial authority and the Weapon Shops' liberty doctrine.",
+      "stats": {
+        "Power": 5,
+        "Cunning": 8,
+        "Magic": 3,
+        "Fame": 8,
+        "Charm": 8
+      },
+      "image": "players/100-innelda-isher.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-053-1954.html",
+      "source_entity_card": "entities/cards/ace-double-d-053-1954.png",
+      "lore_page": "card-dex/lore/player-100.html"
+    },
+    {
+      "id": "player-101",
+      "type": "player",
+      "name": "Reese Verrick",
+      "source": "Ace Double D-103 (1955)",
+      "description": "A dominant political operator in Solar Lottery. Verrick thrives inside the lottery system by manipulating power networks, making him a high-cunning rival archetype for intrigue-heavy campaigns.",
+      "stats": {
+        "Power": 5,
+        "Cunning": 10,
+        "Magic": 2,
+        "Fame": 8,
+        "Charm": 6
+      },
+      "image": "players/101-reese-verrick.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-103-1955.html",
+      "source_entity_card": "entities/cards/ace-double-d-103-1955.png",
+      "lore_page": "card-dex/lore/player-101.html"
+    },
+    {
+      "id": "player-102",
+      "type": "player",
+      "name": "Cussick",
+      "source": "Ace Double D-150 (1956)",
+      "description": "A resistance-facing viewpoint in The World Jones Made, positioned against Jones's prophetic populism. Cussick suits players who prefer intelligence gathering, alliances, and late-turn pivots over brute force.",
+      "stats": {
+        "Power": 4,
+        "Cunning": 8,
+        "Magic": 2,
+        "Fame": 6,
+        "Charm": 6
+      },
+      "image": "players/102-cussick.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-150-1956.html",
+      "source_entity_card": "entities/cards/ace-double-d-150-1956.png",
+      "lore_page": "card-dex/lore/player-102.html"
+    },
+    {
+      "id": "player-103",
+      "type": "player",
+      "name": "Mary Barton",
+      "source": "Ace Double D-249 (1957)",
+      "description": "Part of Ted Barton's close personal anchor in The Cosmic Puppets as reality starts to distort around Millgate. She represents the human cost of cosmic-scale conflict and memory fracture.",
+      "stats": {
+        "Power": 3,
+        "Cunning": 7,
+        "Magic": 2,
+        "Fame": 5,
+        "Charm": 7
+      },
+      "image": "players/103-mary-barton.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-249-1957.html",
+      "source_entity_card": "entities/cards/ace-double-d-249-1957.png",
+      "lore_page": "card-dex/lore/player-103.html"
+    },
+    {
+      "id": "player-104",
+      "type": "player",
+      "name": "Woudiver",
+      "source": "Ace Double D-295 (1958)",
+      "description": "A major figure from Big Planet, remembered as a dangerous rival in Claude Glystra's long planetary crossing. Woudiver fits as a commander-class antagonist with strong tactical pressure.",
+      "stats": {
+        "Power": 8,
+        "Cunning": 8,
+        "Magic": 2,
+        "Fame": 7,
+        "Charm": 4
+      },
+      "image": "players/104-woudiver.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-295-1958.html",
+      "source_entity_card": "entities/cards/ace-double-d-295-1958.png",
+      "lore_page": "card-dex/lore/player-104.html"
+    },
+    {
+      "id": "player-105",
+      "type": "player",
+      "name": "Krantz",
+      "source": "Ace Double D-413 (1959)",
+      "description": "A noir-investigator archetype drawn from The Man with Nine Lives framing. Krantz works as a skeptical problem-solver hero who tracks identity fraud and hidden recurrence patterns.",
+      "stats": {
+        "Power": 4,
+        "Cunning": 9,
+        "Magic": 2,
+        "Fame": 6,
+        "Charm": 6
+      },
+      "image": "players/105-krantz.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-413-1959.html",
+      "source_entity_card": "entities/cards/ace-double-d-413-1959.png",
+      "lore_page": "card-dex/lore/player-105.html"
+    },
+    {
+      "id": "player-106",
+      "type": "player",
+      "name": "Cletus Grahame",
+      "source": "Ace Double D-449 (1960)",
+      "description": "A strategist figure from the Dorsai future-history line, often contrasted with Donal Graeme's battlefield genius. Cletus fits as a cerebral commander archetype for long-form campaigns.",
+      "stats": {
+        "Power": 6,
+        "Cunning": 10,
+        "Magic": 1,
+        "Fame": 7,
+        "Charm": 6
+      },
+      "image": "players/106-cletus-grahame.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-449-1960.html",
+      "source_entity_card": "entities/cards/ace-double-d-449-1960.png",
+      "lore_page": "card-dex/lore/player-106.html"
+    },
+    {
+      "id": "player-107",
+      "type": "player",
+      "name": "Bruce Marchant",
+      "source": "Ace Double D-491 (1961)",
+      "description": "A Change War participant in The Big Time cast, representing front-line timeline conflict rather than policy debate. This hero card suits direct-action players operating under paradox pressure.",
+      "stats": {
+        "Power": 7,
+        "Cunning": 7,
+        "Magic": 5,
+        "Fame": 7,
+        "Charm": 6
+      },
+      "image": "players/107-bruce-marchant.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-491-1961.html",
+      "source_entity_card": "entities/cards/ace-double-d-491-1961.png",
+      "lore_page": "card-dex/lore/player-107.html"
     }
   ],
   "locations": [
@@ -1663,7 +1933,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Moria",
       "source": "Tolkien",
-      "description": "Khazad-dum, the greatest mansion of the dwarves, delved deep beneath the Misty Mountains. Its halls once blazed with mithril light. Then the dwarves dug too deep and woke a Balrog - a demon of the ancient world wreathed in shadow and flame. Now its endless corridors echo with goblin drums and the fellowship's most desperate battle.",
+      "description": "Khazad-dum, the greatest mansion of the dwarves, delved deep beneath the Misty Mountains. Its halls once blazed with mithril light. Then the dwarves dug too deep and woke a Balrog \u2014 a demon of the ancient world wreathed in shadow and flame. Now its endless corridors echo with goblin drums and the fellowship's most desperate battle.",
       "stats": {
         "Danger": 10,
         "Puzzle": 5,
@@ -1681,7 +1951,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Barad-dur",
       "source": "Tolkien",
-      "description": "The Dark Tower of Sauron, raised with the power of the One Ring. A fortress of iron and obsidian so vast it cast a shadow across Mordor. At its summit, the Eye of Sauron - lidless, wreathed in flame - searched endlessly for the Ring. Its foundations could not be destroyed while the Ring survived.",
+      "description": "The Dark Tower of Sauron, raised with the power of the One Ring. A fortress of iron and obsidian so vast it cast a shadow across Mordor. At its summit, the Eye of Sauron \u2014 lidless, wreathed in flame \u2014 searched endlessly for the Ring. Its foundations could not be destroyed while the Ring survived.",
       "stats": {
         "Danger": 10,
         "Puzzle": 7,
@@ -1699,7 +1969,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Cirith Ungol",
       "source": "Tolkien",
-      "description": "The Pass of the Spider, the secret way into Mordor above Minas Morgul. Gollum led Frodo and Sam through Shelob's lair - a darkness so total that even elven light barely pierced it. The tower of Cirith Ungol held Frodo prisoner and Sam had to fight through an entire orc garrison alone to rescue him.",
+      "description": "The Pass of the Spider, the secret way into Mordor above Minas Morgul. Gollum led Frodo and Sam through Shelob's lair \u2014 a darkness so total that even elven light barely pierced it. The tower of Cirith Ungol held Frodo prisoner and Sam had to fight through an entire orc garrison alone to rescue him.",
       "stats": {
         "Danger": 8,
         "Puzzle": 8,
@@ -1717,7 +1987,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Isengard",
       "source": "Tolkien",
-      "description": "Saruman's fortress at the southern end of the Misty Mountains. The tower of Orthanc rose from its centre - an unbreakable spire of ancient stone. Saruman turned the surrounding gardens into a war factory, breeding Uruk-hai in pits beneath the earth. The Ents marched on Isengard and tore it apart with roots and rage.",
+      "description": "Saruman's fortress at the southern end of the Misty Mountains. The tower of Orthanc rose from its centre \u2014 an unbreakable spire of ancient stone. Saruman turned the surrounding gardens into a war factory, breeding Uruk-hai in pits beneath the earth. The Ents marched on Isengard and tore it apart with roots and rage.",
       "stats": {
         "Danger": 9,
         "Puzzle": 8,
@@ -1735,7 +2005,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Mount Doom",
       "source": "Tolkien",
-      "description": "Orodruin, the Fire-mountain - where Sauron forged the One Ring and where Frodo carried it to be destroyed. The Crack of Doom, a chasm of liquid fire inside the volcano, is the only place hot enough to unmake the Ring. In the end, it was Gollum's obsession, not Frodo's will, that cast the Ring into the flames.",
+      "description": "Orodruin, the Fire-mountain \u2014 where Sauron forged the One Ring and where Frodo carried it to be destroyed. The Crack of Doom, a chasm of liquid fire inside the volcano, is the only place hot enough to unmake the Ring. In the end, it was Gollum's obsession, not Frodo's will, that cast the Ring into the flames.",
       "stats": {
         "Danger": 10,
         "Puzzle": 3,
@@ -1753,7 +2023,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Minas Morgul",
       "source": "Tolkien",
-      "description": "Once Minas Ithil, the Tower of the Moon, a beautiful fortress of Gondor. Taken by the Nazgul, it became Minas Morgul - the Tower of Sorcery. Its walls glow with a corpse-light that makes the living sick. The Witch-king rules from its summit, and the road to Cirith Ungol begins at its cursed gate.",
+      "description": "Once Minas Ithil, the Tower of the Moon, a beautiful fortress of Gondor. Taken by the Nazgul, it became Minas Morgul \u2014 the Tower of Sorcery. Its walls glow with a corpse-light that makes the living sick. The Witch-king rules from its summit, and the road to Cirith Ungol begins at its cursed gate.",
       "stats": {
         "Danger": 9,
         "Puzzle": 7,
@@ -1789,7 +2059,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Helm's Deep",
       "source": "Tolkien",
-      "description": "The fortress of Rohan, carved into the White Mountains behind the Deeping Wall. Ten thousand Uruk-hai marched against it and nearly won. The battle of Helm's Deep is the definitive siege in fantasy - ladders, a culvert bomb, and a dawn charge led by Gandalf. The Glittering Caves behind it are said to be breathtaking.",
+      "description": "The fortress of Rohan, carved into the White Mountains behind the Deeping Wall. Ten thousand Uruk-hai marched against it and nearly won. The battle of Helm's Deep is the definitive siege in fantasy \u2014 ladders, a culvert bomb, and a dawn charge led by Gandalf. The Glittering Caves behind it are said to be breathtaking.",
       "stats": {
         "Danger": 9,
         "Puzzle": 6,
@@ -1807,7 +2077,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Tomb of Horrors",
       "source": "D&D Module (1978)",
-      "description": "Acererak's tomb, written by Gary Gygax himself. The deadliest dungeon ever published. Thousands of characters have died here - crushed, disintegrated, soul-trapped, or simply erased from existence. Every room is a death trap. Every treasure is bait. The demilich at the end can kill with a glance. Approach with multiple backup characters.",
+      "description": "Acererak's tomb, written by Gary Gygax himself. The deadliest dungeon ever published. Thousands of characters have died here \u2014 crushed, disintegrated, soul-trapped, or simply erased from existence. Every room is a death trap. Every treasure is bait. The demilich at the end can kill with a glance. Approach with multiple backup characters.",
       "stats": {
         "Danger": 10,
         "Puzzle": 10,
@@ -1825,7 +2095,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Ravenloft",
       "source": "D&D Module (1983)",
-      "description": "Castle Ravenloft, domain of Count Strahd von Zarovich, the first vampire in D&D. Gothic horror meets dungeon crawling in a castle perched on a cliff above the village of Barovia. Strahd is a tragic villain - a warrior who made a pact with dark powers for love and lost his humanity. The castle changes with each play.",
+      "description": "Castle Ravenloft, domain of Count Strahd von Zarovich, the first vampire in D&D. Gothic horror meets dungeon crawling in a castle perched on a cliff above the village of Barovia. Strahd is a tragic villain \u2014 a warrior who made a pact with dark powers for love and lost his humanity. The castle changes with each play.",
       "stats": {
         "Danger": 9,
         "Puzzle": 8,
@@ -1843,7 +2113,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "White Plume Mountain",
       "source": "D&D Module (1979)",
-      "description": "A volcanic dungeon hiding three legendary weapons: Wave (a trident), Whelm (a hammer), and Blackrazor (a soul-drinking sword). Created by the wizard Keraptis, every room is an ingenious puzzle or deadly trap. The dungeon is inside a volcanic mountain that perpetually vents steam - hence the white plume.",
+      "description": "A volcanic dungeon hiding three legendary weapons: Wave (a trident), Whelm (a hammer), and Blackrazor (a soul-drinking sword). Created by the wizard Keraptis, every room is an ingenious puzzle or deadly trap. The dungeon is inside a volcanic mountain that perpetually vents steam \u2014 hence the white plume.",
       "stats": {
         "Danger": 8,
         "Puzzle": 9,
@@ -1861,7 +2131,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Caves of Chaos",
       "source": "D&D Module (1979)",
-      "description": "A ravine filled with monster-infested caves - the first dungeon for millions of D&D players. The Keep on the Borderlands module introduced an entire generation to tabletop gaming. Multiple caves hold different monster tribes: kobolds, goblins, orcs, gnolls, and worse. At the very end, a temple of chaos awaits the brave.",
+      "description": "A ravine filled with monster-infested caves \u2014 the first dungeon for millions of D&D players. The Keep on the Borderlands module introduced an entire generation to tabletop gaming. Multiple caves hold different monster tribes: kobolds, goblins, orcs, gnolls, and worse. At the very end, a temple of chaos awaits the brave.",
       "stats": {
         "Danger": 6,
         "Puzzle": 5,
@@ -1915,7 +2185,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Isle of Dread",
       "source": "D&D Module (1981)",
-      "description": "A tropical island of dinosaurs, pirates, and lost civilisations. The Isle of Dread was D&D's first wilderness adventure - a hex-crawl across jungles and mountains to find a ruined temple and its treasure. There are actual dinosaurs. And kopru. And a volcano. It is basically D&D does King Kong meets Jurassic Park.",
+      "description": "A tropical island of dinosaurs, pirates, and lost civilisations. The Isle of Dread was D&D's first wilderness adventure \u2014 a hex-crawl across jungles and mountains to find a ruined temple and its treasure. There are actual dinosaurs. And kopru. And a volcano. It is basically D&D does King Kong meets Jurassic Park.",
       "stats": {
         "Danger": 7,
         "Puzzle": 5,
@@ -1951,7 +2221,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Tanelorn",
       "source": "Michael Moorcock",
-      "description": "The eternal city of peace that exists in every version of the multiverse. Every wanderer seeks it; few ever find it. It is the one place where the Eternal Champion can rest between incarnations. Tanelorn offers no excitement, no glory, no adventure - only peace. For weary heroes, that is the greatest treasure of all.",
+      "description": "The eternal city of peace that exists in every version of the multiverse. Every wanderer seeks it; few ever find it. It is the one place where the Eternal Champion can rest between incarnations. Tanelorn offers no excitement, no glory, no adventure \u2014 only peace. For weary heroes, that is the greatest treasure of all.",
       "stats": {
         "Danger": 1,
         "Puzzle": 5,
@@ -1987,7 +2257,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Roke",
       "source": "Ursula K. Le Guin",
-      "description": "The island of the wise, home of the great school of wizardry in Earthsea. On Roke, young mages learn the true names of things - for to know a thing's true name is to have power over it. The Immanent Grove stands at its heart, and the Master Patterner walks among the trees. Hogwarts wishes it were Roke.",
+      "description": "The island of the wise, home of the great school of wizardry in Earthsea. On Roke, young mages learn the true names of things \u2014 for to know a thing's true name is to have power over it. The Immanent Grove stands at its heart, and the Master Patterner walks among the trees. Hogwarts wishes it were Roke.",
       "stats": {
         "Danger": 5,
         "Puzzle": 8,
@@ -2005,7 +2275,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "The Dry Land",
       "source": "Ursula K. Le Guin",
-      "description": "The land of the dead in Earthsea - not a hell but an endless twilight of dust and silence where the dead walk without purpose. There is no sun, no wind, no water. The wall between life and death was broken, and Ged spent his last magic to mend it. The most haunting afterlife in fantasy.",
+      "description": "The land of the dead in Earthsea \u2014 not a hell but an endless twilight of dust and silence where the dead walk without purpose. There is no sun, no wind, no water. The wall between life and death was broken, and Ged spent his last magic to mend it. The most haunting afterlife in fantasy.",
       "stats": {
         "Danger": 6,
         "Puzzle": 4,
@@ -2023,7 +2293,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Selidor",
       "source": "Ursula K. Le Guin",
-      "description": "The westernmost island of Earthsea, where the dragon Orm Embar lived and where Ged faced the broken wall between life and death. Beyond Selidor there is only the Open Sea and the edge of the world. It is the end of all maps, the last shore - where heroes go when there is nowhere else left.",
+      "description": "The westernmost island of Earthsea, where the dragon Orm Embar lived and where Ged faced the broken wall between life and death. Beyond Selidor there is only the Open Sea and the edge of the world. It is the end of all maps, the last shore \u2014 where heroes go when there is nowhere else left.",
       "stats": {
         "Danger": 8,
         "Puzzle": 5,
@@ -2041,7 +2311,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Havnor",
       "source": "Ursula K. Le Guin",
-      "description": "The great city of the Archipelago, once the seat of kings in Earthsea. Its tower rises above a harbour that has seen ten thousand ships. When the kings ceased, Havnor fell into squabbling and piracy. Ged restored the king - a young man named Lebannen - and the city shone again. The heart of a world of islands.",
+      "description": "The great city of the Archipelago, once the seat of kings in Earthsea. Its tower rises above a harbour that has seen ten thousand ships. When the kings ceased, Havnor fell into squabbling and piracy. Ged restored the king \u2014 a young man named Lebannen \u2014 and the city shone again. The heart of a world of islands.",
       "stats": {
         "Danger": 5,
         "Puzzle": 7,
@@ -2077,7 +2347,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Ankh-Morpork",
       "source": "Terry Pratchett",
-      "description": "The greatest city on the Discworld - which is to say, the most interesting in the way that a compost heap is interesting. Built on the River Ankh (a body of water you can walk across if you are brave enough), ruled by the Patrician, and policed by Sam Vimes. It smells. It works. It is magnificent.",
+      "description": "The greatest city on the Discworld \u2014 which is to say, the most interesting in the way that a compost heap is interesting. Built on the River Ankh (a body of water you can walk across if you are brave enough), ruled by the Patrician, and policed by Sam Vimes. It smells. It works. It is magnificent.",
       "stats": {
         "Danger": 6,
         "Puzzle": 9,
@@ -2113,7 +2383,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Cimmeria",
       "source": "Robert E. Howard",
-      "description": "A bleak, grey land of hills and forests, birthplace of Conan. The Cimmerians are a fierce, dark-haired people who worship Crom - a god who gives you nothing but the strength to fight. Howard described it as perpetually overcast, perpetually dangerous, and perpetually producing the hardest warriors in the Hyborian Age.",
+      "description": "A bleak, grey land of hills and forests, birthplace of Conan. The Cimmerians are a fierce, dark-haired people who worship Crom \u2014 a god who gives you nothing but the strength to fight. Howard described it as perpetually overcast, perpetually dangerous, and perpetually producing the hardest warriors in the Hyborian Age.",
       "stats": {
         "Danger": 9,
         "Puzzle": 4,
@@ -2149,7 +2419,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Nostromo",
       "source": "Alien (1979)",
-      "description": "USCSS Nostromo, a commercial towing vessel. Crew of seven. Dark corridors, dripping condensation, chains hanging from ceilings, and something hunting the crew. Ridley Scott's spaceship is the ultimate dungeon - claustrophobic, industrial, and inescapable. The air ducts are just big enough for a xenomorph.",
+      "description": "USCSS Nostromo, a commercial towing vessel. Crew of seven. Dark corridors, dripping condensation, chains hanging from ceilings, and something hunting the crew. Ridley Scott's spaceship is the ultimate dungeon \u2014 claustrophobic, industrial, and inescapable. The air ducts are just big enough for a xenomorph.",
       "stats": {
         "Danger": 8,
         "Puzzle": 7,
@@ -2167,7 +2437,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Trantor",
       "source": "Isaac Asimov",
-      "description": "The city-planet at the heart of the Galactic Empire. An entire world covered in metal, housing forty billion people in interconnected domes. When the Empire fell, Trantor's surface crumbled and its inhabitants returned to farming between the ruins. The ultimate megadungeon - a planet-sized ruin of a fallen civilisation.",
+      "description": "The city-planet at the heart of the Galactic Empire. An entire world covered in metal, housing forty billion people in interconnected domes. When the Empire fell, Trantor's surface crumbled and its inhabitants returned to farming between the ruins. The ultimate megadungeon \u2014 a planet-sized ruin of a fallen civilisation.",
       "stats": {
         "Danger": 7,
         "Puzzle": 9,
@@ -2203,7 +2473,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "The Labyrinth",
       "source": "Labyrinth (1986)",
-      "description": "Thirteen hours to solve it, or the baby becomes a goblin forever. Jim Henson's Labyrinth is a maze of impossible geometry, trick doors, and unhelpful creatures. The rules change whenever the Goblin King feels like it. It's not fair - but as Sarah learned, that's exactly the point. The journey matters more than the destination.",
+      "description": "Thirteen hours to solve it, or the baby becomes a goblin forever. Jim Henson's Labyrinth is a maze of impossible geometry, trick doors, and unhelpful creatures. The rules change whenever the Goblin King feels like it. It's not fair \u2014 but as Sarah learned, that's exactly the point. The journey matters more than the destination.",
       "stats": {
         "Danger": 6,
         "Puzzle": 10,
@@ -2221,7 +2491,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Fantasia",
       "source": "The NeverEnding Story (1984)",
-      "description": "A world being consumed by the Nothing - the void left when humans stop dreaming. Fantasia is not a dungeon in the traditional sense but a dying realm that contains every story ever imagined. The Ivory Tower crumbles, the Swamps of Sadness claim the brave, and only a human child's imagination can restore what was lost.",
+      "description": "A world being consumed by the Nothing \u2014 the void left when humans stop dreaming. Fantasia is not a dungeon in the traditional sense but a dying realm that contains every story ever imagined. The Ivory Tower crumbles, the Swamps of Sadness claim the brave, and only a human child's imagination can restore what was lost.",
       "stats": {
         "Danger": 5,
         "Puzzle": 4,
@@ -2239,7 +2509,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Snake Mountain",
       "source": "He-Man (1983)",
-      "description": "Skeletor's lair on Eternia - a mountain shaped like a coiled serpent with a gaping mouth for an entrance. Inside, Skeletor plots his endless schemes to conquer Castle Greyskull, surrounded by his bumbling henchmen Evil-Lyn, Beast Man, and Trap Jaw. The ultimate villain's headquarters, designed by someone who really loved snakes.",
+      "description": "Skeletor's lair on Eternia \u2014 a mountain shaped like a coiled serpent with a gaping mouth for an entrance. Inside, Skeletor plots his endless schemes to conquer Castle Greyskull, surrounded by his bumbling henchmen Evil-Lyn, Beast Man, and Trap Jaw. The ultimate villain's headquarters, designed by someone who really loved snakes.",
       "stats": {
         "Danger": 8,
         "Puzzle": 7,
@@ -2257,7 +2527,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Death Star",
       "source": "Star Wars (1977)",
-      "description": "That is no moon. The Galactic Empire's ultimate weapon - a space station the size of a small moon with a superlaser capable of destroying a planet. Its one weakness: a thermal exhaust port, two metres wide, leading directly to the main reactor. The biggest dungeon crawl in cinema. Watch out for the trash compactor.",
+      "description": "That is no moon. The Galactic Empire's ultimate weapon \u2014 a space station the size of a small moon with a superlaser capable of destroying a planet. Its one weakness: a thermal exhaust port, two metres wide, leading directly to the main reactor. The biggest dungeon crawl in cinema. Watch out for the trash compactor.",
       "stats": {
         "Danger": 10,
         "Puzzle": 6,
@@ -2275,7 +2545,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Skull Island",
       "source": "King Kong (1933)",
-      "description": "A fog-shrouded island where dinosaurs still roam and a giant ape rules from a mountaintop. Beyond the great wall, the jungle is lethal - every vine might be a snake, every shadow might be a predator. Kong is king here, and the natives know enough to stay behind the wall. The original monster island.",
+      "description": "A fog-shrouded island where dinosaurs still roam and a giant ape rules from a mountaintop. Beyond the great wall, the jungle is lethal \u2014 every vine might be a snake, every shadow might be a predator. Kong is king here, and the natives know enough to stay behind the wall. The original monster island.",
       "stats": {
         "Danger": 9,
         "Puzzle": 4,
@@ -2293,7 +2563,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Krell Laboratory",
       "source": "Forbidden Planet (1956)",
-      "description": "Buried beneath the surface of Altair IV, the Krell - an ancient civilisation - built a machine twenty miles across. It could materialise thought into reality. The Krell forgot one thing: the monsters of the id. Dr Morbius found their laboratory and their power. The machine still works. The monsters still come at night.",
+      "description": "Buried beneath the surface of Altair IV, the Krell \u2014 an ancient civilisation \u2014 built a machine twenty miles across. It could materialise thought into reality. The Krell forgot one thing: the monsters of the id. Dr Morbius found their laboratory and their power. The machine still works. The monsters still come at night.",
       "stats": {
         "Danger": 9,
         "Puzzle": 9,
@@ -2311,7 +2581,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Gateway",
       "source": "Ace Double D-053 (1954)",
-      "description": "From Murray Leinster's Gateway to Elsewhere - a portal into a parallel world where magic works and science doesn't. Beyond the gateway lies a feudal realm of sorcerers and sword-fighters. The classic dimensional doorway: step through and everything you know becomes useless. Your PhD won't help when the dragons come.",
+      "description": "From Murray Leinster's Gateway to Elsewhere \u2014 a portal into a parallel world where magic works and science doesn't. Beyond the gateway lies a feudal realm of sorcerers and sword-fighters. The classic dimensional doorway: step through and everything you know becomes useless. Your PhD won't help when the dragons come.",
       "stats": {
         "Danger": 5,
         "Puzzle": 8,
@@ -2329,7 +2599,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Isher",
       "source": "Ace Double D-053 (1954)",
-      "description": "The Weapon Shops of Isher from A. E. van Vogt. An underground network selling indestructible guns to citizens - 'The Right to Buy Weapons Is the Right to Be Free.' The shops appear and vanish, the weapons only fire in self-defence, and the Isher Empire has spent centuries trying to destroy them. A rogue's paradise.",
+      "description": "The Weapon Shops of Isher from A. E. van Vogt. An underground network selling indestructible guns to citizens \u2014 'The Right to Buy Weapons Is the Right to Be Free.' The shops appear and vanish, the weapons only fire in self-defence, and the Isher Empire has spent centuries trying to destroy them. A rogue's paradise.",
       "stats": {
         "Danger": 8,
         "Puzzle": 9,
@@ -2347,7 +2617,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Big Planet",
       "source": "Ace Double D-295 (1958)",
-      "description": "Jack Vance's impossibly vast world - a planet so enormous that technology cannot function, metals are scarce, and civilisation has fragmented into thousands of bizarre micro-cultures. Castaways must walk ten thousand miles across kingdoms of madmen, charlatans, and visionaries. Every valley hides a different society. The ultimate sandbox.",
+      "description": "Jack Vance's impossibly vast world \u2014 a planet so enormous that technology cannot function, metals are scarce, and civilisation has fragmented into thousands of bizarre micro-cultures. Castaways must walk ten thousand miles across kingdoms of madmen, charlatans, and visionaries. Every valley hides a different society. The ultimate sandbox.",
       "stats": {
         "Danger": 7,
         "Puzzle": 8,
@@ -2365,7 +2635,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "Millgate",
       "source": "Ace Double D-249 (1957)",
-      "description": "The town from Philip K. Dick's The Cosmic Puppets - a man returns to his hometown to find it replaced by an alien reality. Two cosmic entities battle for control, reshaping matter and memory. The locals don't remember anything different. The perfect horror-dungeon: a place that looks familiar but is fundamentally wrong.",
+      "description": "The town from Philip K. Dick's The Cosmic Puppets \u2014 a man returns to his hometown to find it replaced by an alien reality. Two cosmic entities battle for control, reshaping matter and memory. The locals don't remember anything different. The perfect horror-dungeon: a place that looks familiar but is fundamentally wrong.",
       "stats": {
         "Danger": 7,
         "Puzzle": 6,
@@ -2383,7 +2653,7 @@ window.CARD_DATA = {
       "type": "location",
       "name": "The Big Time",
       "source": "Ace Double D-491 (1961)",
-      "description": "Fritz Leiber's Hugo-winning novella about the Change War - two factions (Spiders and Snakes) fighting across all of time, editing history back and forth. The Big Time is a rest station outside of time where soldiers recover between missions. When a bomb threatens to erase the station from existence, the entertainers must become heroes. Time itself is a dungeon.",
+      "description": "Fritz Leiber's Hugo-winning novella about the Change War \u2014 two factions (Spiders and Snakes) fighting across all of time, editing history back and forth. The Big Time is a rest station outside of time where soldiers recover between missions. When a bomb threatens to erase the station from existence, the entertainers must become heroes. Time itself is a dungeon.",
       "stats": {
         "Danger": 7,
         "Puzzle": 9,
@@ -2395,6 +2665,312 @@ window.CARD_DATA = {
       "source_entity_page": "card-dex/entities/ace-double-d-491-1961.html",
       "source_entity_card": "entities/cards/ace-double-d-491-1961.png",
       "lore_page": "card-dex/lore/location-041.html"
+    },
+    {
+      "id": "location-042",
+      "type": "location",
+      "name": "Null-A City",
+      "source": "Ace Double D-031 (1953)",
+      "description": "A key setting in The World of Null-A: a logic-driven society centered on semantic discipline, tests of identity, and hidden manipulation. Players entering this city face mental puzzles and political traps before any physical fight starts.",
+      "stats": {
+        "Danger": 6,
+        "Puzzle": 10,
+        "Magic": 6,
+        "Fame": 7,
+        "Dread": 4
+      },
+      "image": "locations/042-null-a-city.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-031-1953.html",
+      "source_entity_card": "entities/cards/ace-double-d-031-1953.png",
+      "lore_page": "card-dex/lore/location-042.html"
+    },
+    {
+      "id": "location-043",
+      "type": "location",
+      "name": "Astra Ruins",
+      "source": "Ace Double D-096 (1955)",
+      "description": "The crash world in The Last Planet is full of old structures and environmental hazards that make every expedition risky. Astra is ideal as a dungeon name: unknown history, unstable alliances, and danger beyond line-of-sight.",
+      "stats": {
+        "Danger": 7,
+        "Puzzle": 7,
+        "Magic": 5,
+        "Fame": 7,
+        "Dread": 4
+      },
+      "image": "locations/043-astra-ruins.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-096-1955.html",
+      "source_entity_card": "entities/cards/ace-double-d-096-1955.png",
+      "lore_page": "card-dex/lore/location-043.html"
+    },
+    {
+      "id": "location-044",
+      "type": "location",
+      "name": "Dorsai",
+      "source": "Ace Double D-449 (1960)",
+      "description": "The soldier world from Gordon R. Dickson's future history. Dorsai exports elite contract troops and military doctrine to the rest of settled space. As a dungeon label, it signals disciplined combat, strategic objectives, and no easy victories.",
+      "stats": {
+        "Danger": 9,
+        "Puzzle": 9,
+        "Magic": 2,
+        "Fame": 9,
+        "Dread": 5
+      },
+      "image": "locations/044-dorsai.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-449-1960.html",
+      "source_entity_card": "entities/cards/ace-double-d-449-1960.png",
+      "lore_page": "card-dex/lore/location-044.html"
+    },
+    {
+      "id": "location-045",
+      "type": "location",
+      "name": "Change War Station",
+      "source": "Ace Double D-491 (1961)",
+      "description": "The neutral staging post in The Big Time, positioned outside ordinary chronology. Agents from different centuries recover, argue, and plan their next timeline strike there. Perfect for high-stakes encounters where history itself is mutable terrain.",
+      "stats": {
+        "Danger": 8,
+        "Puzzle": 9,
+        "Magic": 8,
+        "Fame": 8,
+        "Dread": 6
+      },
+      "image": "locations/045-change-war-station.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-491-1961.html",
+      "source_entity_card": "entities/cards/ace-double-d-491-1961.png",
+      "lore_page": "card-dex/lore/location-045.html"
+    },
+    {
+      "id": "location-046",
+      "type": "location",
+      "name": "Games Machine",
+      "source": "Ace Double D-031 (1953)",
+      "description": "The giant selection and ranking mechanism behind Null-A society. In game terms it works like a trial chamber where logic, composure, and hidden agendas matter more than raw damage output.",
+      "stats": {
+        "Danger": 6,
+        "Puzzle": 10,
+        "Magic": 5,
+        "Fame": 6,
+        "Dread": 3
+      },
+      "image": "locations/046-games-machine.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-031-1953.html",
+      "source_entity_card": "entities/cards/ace-double-d-031-1953.png",
+      "lore_page": "card-dex/lore/location-046.html"
+    },
+    {
+      "id": "location-047",
+      "type": "location",
+      "name": "Patrol Crash Site",
+      "source": "Ace Double D-096 (1955)",
+      "description": "The initial survival zone from The Last Planet where stranded patrol crew regroup under pressure. Hostile terrain and uncertain local forces make it a strong early-campaign dungeon template.",
+      "stats": {
+        "Danger": 7,
+        "Puzzle": 6,
+        "Magic": 4,
+        "Fame": 6,
+        "Dread": 3
+      },
+      "image": "locations/047-patrol-crash-site.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-096-1955.html",
+      "source_entity_card": "entities/cards/ace-double-d-096-1955.png",
+      "lore_page": "card-dex/lore/location-047.html"
+    },
+    {
+      "id": "location-048",
+      "type": "location",
+      "name": "Lottery Hall",
+      "source": "Ace Double D-103 (1955)",
+      "description": "Symbolic center of Solar Lottery's random-rule system, where authority can turn in a moment. As a dungeon label it signals unstable leadership, ritual challenge, and deadly uncertainty.",
+      "stats": {
+        "Danger": 7,
+        "Puzzle": 8,
+        "Magic": 2,
+        "Fame": 7,
+        "Dread": 4
+      },
+      "image": "locations/048-lottery-hall.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-103-1955.html",
+      "source_entity_card": "entities/cards/ace-double-d-103-1955.png",
+      "lore_page": "card-dex/lore/location-048.html"
+    },
+    {
+      "id": "location-049",
+      "type": "location",
+      "name": "Telepath Court",
+      "source": "Ace Double D-103 (1955)",
+      "description": "Solar Lottery includes telepathic surveillance and tactical mind-reading in elite politics. This dungeon tag fits scenes where secrecy, bluffing, and mental defense are the real combat stats.",
+      "stats": {
+        "Danger": 6,
+        "Puzzle": 9,
+        "Magic": 4,
+        "Fame": 6,
+        "Dread": 4
+      },
+      "image": "locations/049-telepath-court.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-103-1955.html",
+      "source_entity_card": "entities/cards/ace-double-d-103-1955.png",
+      "lore_page": "card-dex/lore/location-049.html"
+    },
+    {
+      "id": "location-050",
+      "type": "location",
+      "name": "Jonesville",
+      "source": "Ace Double D-150 (1956)",
+      "description": "A cult-like urban power center shaped by Floyd Jones's one-year foresight and political momentum. This place works as a social dungeon where certainty and fear are both weaponized.",
+      "stats": {
+        "Danger": 7,
+        "Puzzle": 8,
+        "Magic": 6,
+        "Fame": 7,
+        "Dread": 5
+      },
+      "image": "locations/050-jonesville.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-150-1956.html",
+      "source_entity_card": "entities/cards/ace-double-d-150-1956.png",
+      "lore_page": "card-dex/lore/location-050.html"
+    },
+    {
+      "id": "location-051",
+      "type": "location",
+      "name": "Vega Port",
+      "source": "Ace Double D-150 (1956)",
+      "description": "A frontier transit zone inspired by the paired Agent of Vega setting. This name fits missions involving intelligence handoffs, rapid travel, and sudden diplomatic reversals.",
+      "stats": {
+        "Danger": 5,
+        "Puzzle": 7,
+        "Magic": 3,
+        "Fame": 6,
+        "Dread": 5
+      },
+      "image": "locations/051-vega-port.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-150-1956.html",
+      "source_entity_card": "entities/cards/ace-double-d-150-1956.png",
+      "lore_page": "card-dex/lore/location-051.html"
+    },
+    {
+      "id": "location-052",
+      "type": "location",
+      "name": "Blinding Alley",
+      "source": "Ace Double D-249 (1957)",
+      "description": "A symbolic location style from The Cosmic Puppets where familiar streets hide altered rules. Use it for encounter spaces where pathfinding and perception checks are central.",
+      "stats": {
+        "Danger": 6,
+        "Puzzle": 8,
+        "Magic": 7,
+        "Fame": 6,
+        "Dread": 3
+      },
+      "image": "locations/052-blinding-alley.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-249-1957.html",
+      "source_entity_card": "entities/cards/ace-double-d-249-1957.png",
+      "lore_page": "card-dex/lore/location-052.html"
+    },
+    {
+      "id": "location-053",
+      "type": "location",
+      "name": "Glinster Marsh",
+      "source": "Ace Double D-295 (1958)",
+      "description": "A Big Planet-style region name for swamps and strange micro-culture territory. This dungeon title implies long overland travel, unstable local norms, and layered environmental hazards.",
+      "stats": {
+        "Danger": 6,
+        "Puzzle": 7,
+        "Magic": 3,
+        "Fame": 6,
+        "Dread": 3
+      },
+      "image": "locations/053-glinster-marsh.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-295-1958.html",
+      "source_entity_card": "entities/cards/ace-double-d-295-1958.png",
+      "lore_page": "card-dex/lore/location-053.html"
+    },
+    {
+      "id": "location-054",
+      "type": "location",
+      "name": "Nine Lives Safehouse",
+      "source": "Ace Double D-413 (1959)",
+      "description": "A defensive hideout concept for characters cycling through repeated identities and threats. Good for tight urban scenarios with ambush routes, false exits, and misinformation.",
+      "stats": {
+        "Danger": 6,
+        "Puzzle": 8,
+        "Magic": 3,
+        "Fame": 6,
+        "Dread": 4
+      },
+      "image": "locations/054-nine-lives-safehouse.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-413-1959.html",
+      "source_entity_card": "entities/cards/ace-double-d-413-1959.png",
+      "lore_page": "card-dex/lore/location-054.html"
+    },
+    {
+      "id": "location-055",
+      "type": "location",
+      "name": "Destiny Branchpoint",
+      "source": "Ace Double D-413 (1959)",
+      "description": "A timeline-decision hub inspired by the paired Destiny Times Three concept. This dungeon label signals branching outcomes, replay pressure, and consequence-heavy choices.",
+      "stats": {
+        "Danger": 7,
+        "Puzzle": 9,
+        "Magic": 6,
+        "Fame": 6,
+        "Dread": 4
+      },
+      "image": "locations/055-destiny-branchpoint.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-413-1959.html",
+      "source_entity_card": "entities/cards/ace-double-d-413-1959.png",
+      "lore_page": "card-dex/lore/location-055.html"
+    },
+    {
+      "id": "location-056",
+      "type": "location",
+      "name": "Future Ward",
+      "source": "Ace Double D-421 (1960)",
+      "description": "A Dr. Futurity style med-zone where medical ethics and social law collide. Ideal for quests where healing, triage, and legal risk are all part of the encounter design.",
+      "stats": {
+        "Danger": 5,
+        "Puzzle": 7,
+        "Magic": 5,
+        "Fame": 5,
+        "Dread": 5
+      },
+      "image": "locations/056-future-ward.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-421-1960.html",
+      "source_entity_card": "entities/cards/ace-double-d-421-1960.png",
+      "lore_page": "card-dex/lore/location-056.html"
+    },
+    {
+      "id": "location-057",
+      "type": "location",
+      "name": "Exile Quarter",
+      "source": "Ace Double D-421 (1960)",
+      "description": "A social frontier district inspired by the paired No World of Their Own theme. Works as a dungeon for outsider politics, fragile truces, and resource bargaining.",
+      "stats": {
+        "Danger": 5,
+        "Puzzle": 7,
+        "Magic": 3,
+        "Fame": 5,
+        "Dread": 5
+      },
+      "image": "locations/057-exile-quarter.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-421-1960.html",
+      "source_entity_card": "entities/cards/ace-double-d-421-1960.png",
+      "lore_page": "card-dex/lore/location-057.html"
+    },
+    {
+      "id": "location-058",
+      "type": "location",
+      "name": "Friendly Worlds Council",
+      "source": "Ace Double D-449 (1960)",
+      "description": "A political command space from Dickson's specialist-culture future. Use it for diplomacy-heavy sessions where contracts, doctrine, and military leverage all intersect.",
+      "stats": {
+        "Danger": 6,
+        "Puzzle": 9,
+        "Magic": 2,
+        "Fame": 7,
+        "Dread": 6
+      },
+      "image": "locations/058-friendly-worlds-council.png",
+      "source_entity_page": "card-dex/entities/ace-double-d-449-1960.html",
+      "source_entity_card": "entities/cards/ace-double-d-449-1960.png",
+      "lore_page": "card-dex/lore/location-058.html"
     }
   ],
   "monsters": [

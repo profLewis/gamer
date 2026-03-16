@@ -62,6 +62,10 @@ class SourceEntity:
 
 
 def decode_swift_string(s: str) -> str:
+    # Avoid mojibake: only decode escape sequences when present.
+    # Literal Unicode in source (for example em dash or symbols) should remain unchanged.
+    if "\\" not in s:
+        return s
     return bytes(s, "utf-8").decode("unicode_escape")
 
 
@@ -721,7 +725,10 @@ renderWiki(card);
 """
 
     (lore_root / "lore.css").write_text(lore_css, encoding="utf-8")
-    (lore_root / "lore.js").write_text(lore_js, encoding="utf-8")
+    lore_js_path = lore_root / "lore.js"
+    # Keep curated lore.js behavior if it already exists.
+    if not lore_js_path.exists():
+        lore_js_path.write_text(lore_js, encoding="utf-8")
 
     def write_one(card: dict) -> str:
         page_name = f"{card['id']}.html"

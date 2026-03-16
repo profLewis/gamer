@@ -599,6 +599,8 @@ class GameEngine: ObservableObject {
     private func clearAllUndoRedo() {
         screenUndoStacks.removeAll()
         screenRedoStacks.removeAll()
+        settingUndoStacks.removeAll()
+        settingRedoStacks.removeAll()
         currentUndoScreen = nil
         undoHandler = nil
         redoHandler = nil
@@ -639,18 +641,8 @@ class GameEngine: ObservableObject {
         if screen.hasPrefix("editChar:") {
             guard let index = editingCharacterIndex, index < party.count else { return "Undo" }
             if let saved = try? JSONDecoder().decode(Character.self, from: data) {
-                // Show what we'd revert TO (the saved value)
                 let diff = describeCharDiff(before: charSnapshot(party[index]), after: charSnapshot(saved))
-                let value = diff.components(separatedBy: " → ").last ?? diff
-                return "Undo:\(value)"
-            }
-        } else if screen == settingsScreenKey {
-            if let saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                let current = exportSettings()
-                // Show what we'd revert TO (the saved value)
-                let diff = describeSettingsDiff(before: current, after: saved)
-                let value = diff.components(separatedBy: " → ").last ?? diff
-                return "Undo:\(value)"
+                return "Undo:\(diff.name)"
             }
         } else if screen == "partyReview" {
             return "Undo:Party"
@@ -676,18 +668,8 @@ class GameEngine: ObservableObject {
         if screen.hasPrefix("editChar:") {
             if let saved = try? JSONDecoder().decode(Character.self, from: data) {
                 guard let index = editingCharacterIndex, index < party.count else { return "Redo" }
-                // Show what we'd redo TO (the saved value)
                 let diff = describeCharDiff(before: charSnapshot(party[index]), after: charSnapshot(saved))
-                let value = diff.components(separatedBy: " → ").last ?? diff
-                return "Redo:\(value)"
-            }
-        } else if screen == settingsScreenKey {
-            if let saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                let current = exportSettings()
-                // Show what we'd redo TO (the saved value)
-                let diff = describeSettingsDiff(before: current, after: saved)
-                let value = diff.components(separatedBy: " → ").last ?? diff
-                return "Redo:\(value)"
+                return "Redo:\(diff.name)"
             }
         } else if screen == "partyReview" {
             return "Redo:Party"
@@ -711,7 +693,7 @@ class GameEngine: ObservableObject {
         let short = label.replacingOccurrences(of: "Undo:", with: "")
                          .replacingOccurrences(of: "Redo:", with: "")
 
-        if screen == settingsScreenKey {
+        if screen == "s:main" {
             // Settings buttons: 1=DM Settings, 2=Accessibility, 3=Mood, 4=Gameplay, 5=Saving
             let dmKeys = ["DM Provider", "DM Creativity", "DM Log Context"]
             let accessKeys = ["Display Size", "DM Voice", "Companion Voices", "Voice Menus", "Hit Animations"]
@@ -734,23 +716,33 @@ class GameEngine: ObservableObject {
         return nil
     }
 
+    /// Structured diff result for undo/redo display
+    private struct DiffInfo {
+        let name: String   // Short name for button label (e.g. "Hits", "STR")
+        let from: String   // Value before (e.g. "On", "14")
+        let to: String     // Value after (e.g. "Off", "16")
+
+        /// For feedback text: "Hits: On → Off"
+        var feedback: String { "\(name): \(from) → \(to)" }
+    }
+
     /// Describe a character diff for undo/redo feedback
     private func describeCharDiff(before: (name: String, cls: String, race: String, scores: AbilityScores, hp: Int, maxHP: Int),
-                                  after: (name: String, cls: String, race: String, scores: AbilityScores, hp: Int, maxHP: Int)) -> String {
-        if before.name != after.name { return "Name → \(after.name)" }
-        if before.cls != after.cls { return "Class → \(after.cls)" }
-        if before.race != after.race { return "Race → \(after.race)" }
+                                  after: (name: String, cls: String, race: String, scores: AbilityScores, hp: Int, maxHP: Int)) -> DiffInfo {
+        if before.name != after.name { return DiffInfo(name: "Name", from: before.name, to: after.name) }
+        if before.cls != after.cls { return DiffInfo(name: "Class", from: before.cls, to: after.cls) }
+        if before.race != after.race { return DiffInfo(name: "Race", from: before.race, to: after.race) }
         let bs = before.scores; let as_ = after.scores
-        if bs.strength != as_.strength { return "STR \(bs.strength) → \(as_.strength)" }
-        if bs.dexterity != as_.dexterity { return "DEX \(bs.dexterity) → \(as_.dexterity)" }
-        if bs.constitution != as_.constitution { return "CON \(bs.constitution) → \(as_.constitution)" }
-        if bs.intelligence != as_.intelligence { return "INT \(bs.intelligence) → \(as_.intelligence)" }
-        if bs.wisdom != as_.wisdom { return "WIS \(bs.wisdom) → \(as_.wisdom)" }
-        if bs.charisma != as_.charisma { return "CHA \(bs.charisma) → \(as_.charisma)" }
+        if bs.strength != as_.strength { return DiffInfo(name: "STR", from: "\(bs.strength)", to: "\(as_.strength)") }
+        if bs.dexterity != as_.dexterity { return DiffInfo(name: "DEX", from: "\(bs.dexterity)", to: "\(as_.dexterity)") }
+        if bs.constitution != as_.constitution { return DiffInfo(name: "CON", from: "\(bs.constitution)", to: "\(as_.constitution)") }
+        if bs.intelligence != as_.intelligence { return DiffInfo(name: "INT", from: "\(bs.intelligence)", to: "\(as_.intelligence)") }
+        if bs.wisdom != as_.wisdom { return DiffInfo(name: "WIS", from: "\(bs.wisdom)", to: "\(as_.wisdom)") }
+        if bs.charisma != as_.charisma { return DiffInfo(name: "CHA", from: "\(bs.charisma)", to: "\(as_.charisma)") }
         if before.hp != after.hp || before.maxHP != after.maxHP {
-            return "HP → \(after.hp)/\(after.maxHP)"
+            return DiffInfo(name: "HP", from: "\(before.hp)/\(before.maxHP)", to: "\(after.hp)/\(after.maxHP)")
         }
-        return after.name
+        return DiffInfo(name: after.name, from: "", to: "")
     }
 
     private func charSnapshot(_ c: Character) -> (name: String, cls: String, race: String, scores: AbilityScores, hp: Int, maxHP: Int) {
@@ -758,37 +750,37 @@ class GameEngine: ObservableObject {
     }
 
     /// Describe a settings diff for undo/redo feedback
-    private func describeSettingsDiff(before: [String: Any], after: [String: Any]) -> String {
+    private func describeSettingsDiff(before: [String: Any], after: [String: Any]) -> DiffInfo {
         let labels: [(String, String, ((Any) -> String)?)] = [
             ("musicEnabled", "Music", { ($0 as? Bool) == true ? "On" : "Off" }),
             ("music_enabled", "Music", { ($0 as? Bool) == true ? "On" : "Off" }),
             ("battle_sounds_enabled", "Sound FX", { ($0 as? Bool) == true ? "On" : "Off" }),
-            ("hit_animations", "Hit Animations", { ($0 as? Bool) == true ? "On" : "Off" }),
+            ("hit_animations", "Hits", { ($0 as? Bool) == true ? "On" : "Off" }),
             ("voiceMenuEnabled", "Voice Menus", { ($0 as? Bool) == true ? "On" : "Off" }),
             ("speechEnabled", "DM Voice", { ($0 as? Bool) == true ? "On" : "Off" }),
-            ("fontSizeSetting", "Display Size", { v in
+            ("fontSizeSetting", "Size", { v in
                 switch v as? String ?? "" {
                 case "small": return "Small"
                 case "large": return "Large"
                 default: return "Medium"
                 }
             }),
-            ("maxButtonsPerScreen", "Button Limit", { "\($0)" }),
+            ("maxButtonsPerScreen", "Buttons", { "\($0)" }),
             ("npcs_enabled", "NPCs", { ($0 as? Bool) == true ? "On" : "Off" }),
-            ("multiplayer_enabled", "Multiplayer", { ($0 as? Bool) == true ? "On" : "Off" }),
-            ("useArrowNavigation", "Card Navigation", { ($0 as? Bool) == true ? "Buttons" : "Swipe" }),
+            ("multiplayer_enabled", "Multi", { ($0 as? Bool) == true ? "On" : "Off" }),
+            ("useArrowNavigation", "Cards", { ($0 as? Bool) == true ? "Buttons" : "Swipe" }),
             ("useCustomKeyboard", "Keyboard", { ($0 as? Bool) == true ? "Custom" : "System" }),
             ("undoRedoEnabled", "Undo/Redo", { ($0 as? Bool) == true ? "On" : "Off" }),
             ("autosave_interval", "Autosave", { "\($0)s" }),
-            ("map_radius", "Map Radius", { "\($0)" }),
-            ("dmProvider", "DM Provider", nil),
-            ("dmAdLibLevel", "DM Creativity", { "\($0)" }),
-            ("dmLogContextSize", "DM Log Context", { "\($0)" }),
-            ("infoTimeout", "Info Timeout", { v in
+            ("map_radius", "Map", { "\($0)" }),
+            ("dmProvider", "Provider", nil),
+            ("dmAdLibLevel", "Ad-lib", { "\($0)" }),
+            ("dmLogContextSize", "Log", { "\($0)" }),
+            ("infoTimeout", "Timeout", { v in
                 let d = v as? Double ?? 0
                 return d == 0 ? "Off" : String(format: "%.1fs", d)
             }),
-            ("longPressDuration", "Long Press", { v in
+            ("longPressDuration", "LongPress", { v in
                 let d = v as? Double ?? 0.5
                 return String(format: "%.1fs", d)
             }),
@@ -796,7 +788,7 @@ class GameEngine: ObservableObject {
             ("exploration_melody", "Explore Tune", nil),
             ("combat_melody", "Combat Tune", nil),
             ("chat_melody", "Chat Tune", nil),
-            ("gameTimeLimit", "Time Limit", { v in
+            ("gameTimeLimit", "Timer", { v in
                 let i = v as? Int ?? 0
                 return i == 0 ? "Off" : "\(i) min"
             }),
@@ -804,22 +796,19 @@ class GameEngine: ObservableObject {
                 let i = v as? Int ?? 0
                 return i == 0 ? "All" : "\(i)"
             }),
-            ("companionVoiceMode", "Companion Voices", nil),
+            ("companionVoiceMode", "Voices", nil),
         ]
         for (key, label, formatter) in labels {
             let oldVal = before[key]
             let newVal = after[key]
             if !settingsValuesEqual(oldVal, newVal) {
-                if let fmt = formatter, let v = newVal {
-                    return "\(label) → \(fmt(v))"
-                } else if let v = newVal {
-                    return "\(label) → \(v)"
-                } else {
-                    return label
-                }
+                let fmt = formatter ?? { "\($0)" }
+                let fromStr = oldVal.map { fmt($0) } ?? "—"
+                let toStr = newVal.map { fmt($0) } ?? "—"
+                return DiffInfo(name: label, from: fromStr, to: toStr)
             }
         }
-        return "Settings"
+        return DiffInfo(name: "Settings", from: "", to: "")
     }
 
     private func settingsValuesEqual(_ a: Any?, _ b: Any?) -> Bool {
@@ -882,7 +871,7 @@ class GameEngine: ObservableObject {
         }
         if let restored = try? JSONDecoder().decode(Character.self, from: data) {
             party[index] = restored
-            showUndoFeedback(describeCharDiff(before: charSnapshot(before), after: charSnapshot(restored)))
+            showUndoFeedback(describeCharDiff(before: charSnapshot(before), after: charSnapshot(restored)).feedback)
         }
         updateUndoRedoHandlers(index: index)
         if editScreenIsInGame {
@@ -902,7 +891,7 @@ class GameEngine: ObservableObject {
         }
         if let restored = try? JSONDecoder().decode(Character.self, from: data) {
             party[index] = restored
-            showRedoFeedback(describeCharDiff(before: charSnapshot(before), after: charSnapshot(restored)))
+            showRedoFeedback(describeCharDiff(before: charSnapshot(before), after: charSnapshot(restored)).feedback)
         }
         updateUndoRedoHandlers(index: index)
         if editScreenIsInGame {
@@ -926,46 +915,183 @@ class GameEngine: ObservableObject {
         refreshUndoRedoLabels()
     }
 
-    // MARK: - Settings Undo/Redo
+    // MARK: - Per-Setting Undo/Redo
 
-    private let settingsScreenKey = "settings"
+    /// A single setting change for per-screen undo/redo
+    private struct SettingUndoEntry {
+        let key: String      // UserDefaults key or special identifier
+        let name: String     // Short display name (e.g. "Hits")
+        let oldValue: Any?   // Value before the change
+    }
 
-    /// Call before making any settings change to snapshot current state
-    private func pushSettingsSnapshot() {
-        if let data = try? JSONSerialization.data(withJSONObject: exportSettings()) {
-            pushScreenUndo(screen: settingsScreenKey, data: data)
+    /// Per-screen undo/redo stacks for individual setting changes
+    private var settingUndoStacks: [String: [SettingUndoEntry]] = [:]
+    private var settingRedoStacks: [String: [SettingUndoEntry]] = [:]
+
+    /// Record a setting's current value before changing it
+    private func recordSettingChange(screen: String, key: String, name: String) {
+        let oldValue = readSettingRaw(key: key)
+        settingUndoStacks[screen, default: []].append(
+            SettingUndoEntry(key: key, name: name, oldValue: oldValue)
+        )
+        settingRedoStacks[screen] = []  // New action clears redo
+    }
+
+    /// Read the raw value of a setting (handles special keys)
+    private func readSettingRaw(key: String) -> Any? {
+        switch key {
+        case "dmAdLibLevel": return DMEngine.shared.adLibLevel.rawValue
+        case "speechEnabled": return SpeechEngine.shared.isEnabled
+        default: return UserDefaults.standard.object(forKey: key)
         }
     }
 
-    private func undoSettings(refreshScreen: @escaping () -> Void) {
-        guard let data = popScreenUndo(screen: settingsScreenKey) else { return }
-        let beforeSettings = exportSettings()
-        if let currentData = try? JSONSerialization.data(withJSONObject: beforeSettings) {
-            pushScreenRedo(screen: settingsScreenKey, data: currentData)
+    /// Write a setting value and sync runtime state
+    private func writeSettingRaw(key: String, value: Any?) {
+        switch key {
+        case "dmAdLibLevel":
+            if let raw = value as? Int {
+                DMEngine.shared.adLibLevel = DMAdLibLevel(rawValue: raw) ?? .full
+            }
+        case "speechEnabled":
+            if let on = value as? Bool { SpeechEngine.shared.isEnabled = on }
+        default:
+            if let v = value { UserDefaults.standard.set(v, forKey: key) }
+            else { UserDefaults.standard.removeObject(forKey: key) }
         }
-        if let snapshot = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            importSettings(snapshot)
-            syncSettingsAfterRestore()
-            showUndoFeedback(describeSettingsDiff(before: beforeSettings, after: snapshot))
+        syncSingleSetting(key: key)
+    }
+
+    /// Sync @Published / runtime state for one setting key
+    private func syncSingleSetting(key: String) {
+        switch key {
+        case "voiceMenuEnabled":
+            voiceMenuEnabled = UserDefaults.standard.bool(forKey: key)
+        case "useArrowNavigation":
+            useArrowNavigation = UserDefaults.standard.bool(forKey: key)
+        case "infoTimeout":
+            infoTimeout = UserDefaults.standard.double(forKey: key)
+        case "iconScaleSetting":
+            iconScaleSetting = UserDefaults.standard.integer(forKey: key)
+        case "useCustomKeyboard":
+            useCustomKeyboard = UserDefaults.standard.bool(forKey: key)
+        case "idlePromptsEnabled":
+            idlePromptsEnabled = UserDefaults.standard.bool(forKey: key)
+            if !idlePromptsEnabled { stopIdleAnimations(); cancelCombatIdleTimer(); cancelSaveMenuIdleTimer() }
+        case "fontSizeSetting":
+            fontScale = fontSizeSetting.scale
+        case "undoRedoEnabled":
+            if !undoRedoEnabled { clearAllUndoRedo() }
+        case "music_enabled":
+            if musicEnabled { playCurrentMusic() } else { SoundManager.shared.stopMusic() }
+        case "battle_sounds_enabled":
+            SoundManager.shared.battleSoundsEnabled = battleSoundsEnabled
+        default: break
         }
+    }
+
+    /// Format the current display value for a setting key
+    private func settingDisplayValue(key: String) -> String {
+        switch key {
+        case "hit_animations": return hitAnimationsEnabled ? "On" : "Off"
+        case "voiceMenuEnabled": return voiceMenuEnabled ? "On" : "Off"
+        case "speechEnabled": return SpeechEngine.shared.isEnabled ? "On" : "Off"
+        case "music_enabled": return musicEnabled ? "On" : "Off"
+        case "battle_sounds_enabled": return battleSoundsEnabled ? "On" : "Off"
+        case "fontSizeSetting": return fontSizeSetting.displayName
+        case "iconScaleSetting":
+            return iconScaleSetting == 0 ? "Normal" : (iconScaleSetting == 1 ? "Large" : "XL")
+        case "useArrowNavigation": return useArrowNavigation ? "Buttons" : "Swipe"
+        case "npcs_enabled": return npcsEnabled ? "On" : "Off"
+        case "poison_enabled": return poisonEnabled ? "On" : "Off"
+        case "multiplayer_enabled": return multiplayerEnabled ? "On" : "Off"
+        case "undoRedoEnabled": return undoRedoEnabled ? "On" : "Off"
+        case "useCustomKeyboard": return useCustomKeyboard ? "Custom" : "System"
+        case "idlePromptsEnabled": return idlePromptsEnabled ? "On" : "Off"
+        case "map_radius": return "\(mapRadius)"
+        case "maxButtonsPerScreen": return "\(maxButtonsPerScreen)"
+        case "autosave_interval": return autosaveInterval.displayName
+        case "dmAdLibLevel": return DMEngine.shared.adLibLevel.displayName
+        case "dm_log_context_size":
+            return dmLogContextSize == Int.max ? "Unlimited" : "\(dmLogContextSize)"
+        case "menu_melody": return melodyName(type: "menu", choice: menuMelodyChoice)
+        case "exploration_melody": return melodyName(type: "exploration", choice: explorationMelodyChoice)
+        case "combat_melody": return melodyName(type: "combat", choice: combatMelodyChoice)
+        case "chat_melody": return melodyName(type: "chat", choice: chatMelodyChoice)
+        case "longPressDuration": return String(format: "%.1fs", longPressDuration)
+        case "infoTimeout":
+            return infoTimeout == 0 ? "Off" : String(format: "%.1fs", infoTimeout)
+        case "gameTimeLimit":
+            return gameTimeLimit == 0 ? "Off" : "\(gameTimeLimit) min"
+        case "adventureLogLimit":
+            return adventureLogLimit == 0 ? "All" : "\(adventureLogLimit)"
+        default: return UserDefaults.standard.object(forKey: key).map { "\($0)" } ?? "—"
+        }
+    }
+
+    /// Undo the last setting change on a screen
+    private func undoSettingOnScreen(screen: String, refreshScreen: @escaping () -> Void) {
+        guard var stack = settingUndoStacks[screen], let entry = stack.popLast() else { return }
+        settingUndoStacks[screen] = stack
+
+        let currentValue = readSettingRaw(key: entry.key)
+        let beforeDisplay = settingDisplayValue(key: entry.key)
+        settingRedoStacks[screen, default: []].append(
+            SettingUndoEntry(key: entry.key, name: entry.name, oldValue: currentValue)
+        )
+
+        writeSettingRaw(key: entry.key, value: entry.oldValue)
+        let afterDisplay = settingDisplayValue(key: entry.key)
+        showUndoFeedback("\(entry.name): \(beforeDisplay) → \(afterDisplay)")
         refreshScreen()
     }
 
-    private func redoSettings(refreshScreen: @escaping () -> Void) {
-        guard let data = popScreenRedo(screen: settingsScreenKey) else { return }
-        let beforeSettings = exportSettings()
-        if let currentData = try? JSONSerialization.data(withJSONObject: beforeSettings) {
-            pushScreenUndo(screen: settingsScreenKey, data: currentData)
-        }
-        if let snapshot = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            importSettings(snapshot)
-            syncSettingsAfterRestore()
-            showRedoFeedback(describeSettingsDiff(before: beforeSettings, after: snapshot))
-        }
+    /// Redo the last setting change on a screen
+    private func redoSettingOnScreen(screen: String, refreshScreen: @escaping () -> Void) {
+        guard var stack = settingRedoStacks[screen], let entry = stack.popLast() else { return }
+        settingRedoStacks[screen] = stack
+
+        let currentValue = readSettingRaw(key: entry.key)
+        let beforeDisplay = settingDisplayValue(key: entry.key)
+        settingUndoStacks[screen, default: []].append(
+            SettingUndoEntry(key: entry.key, name: entry.name, oldValue: currentValue)
+        )
+
+        writeSettingRaw(key: entry.key, value: entry.oldValue)
+        let afterDisplay = settingDisplayValue(key: entry.key)
+        showRedoFeedback("\(entry.name): \(beforeDisplay) → \(afterDisplay)")
         refreshScreen()
     }
 
-    /// Sync runtime state after restoring settings from a snapshot
+    /// Install undo/redo handlers for a specific settings screen
+    private func installSettingUndoRedo(screen: String, refreshScreen: @escaping () -> Void) {
+        guard undoRedoEnabled else {
+            undoHandler = nil; redoHandler = nil
+            undoLabel = nil; redoLabel = nil
+            return
+        }
+        currentUndoScreen = screen
+        let hasUndo = !(settingUndoStacks[screen]?.isEmpty ?? true)
+        let hasRedo = !(settingRedoStacks[screen]?.isEmpty ?? true)
+
+        undoHandler = hasUndo ? { [weak self] in
+            self?.undoSettingOnScreen(screen: screen, refreshScreen: refreshScreen)
+        } : nil
+        redoHandler = hasRedo ? { [weak self] in
+            self?.redoSettingOnScreen(screen: screen, refreshScreen: refreshScreen)
+        } : nil
+
+        undoLabel = settingUndoStacks[screen]?.last.map { "Undo:\($0.name)" }
+        redoLabel = settingRedoStacks[screen]?.last.map { "Redo:\($0.name)" }
+    }
+
+    /// Clear all setting change stacks (called when leaving Settings entirely)
+    private func clearAllSettingStacks() {
+        settingUndoStacks.removeAll()
+        settingRedoStacks.removeAll()
+    }
+
+    /// Sync runtime state after restoring settings from a snapshot (used by reset)
     private func syncSettingsAfterRestore() {
         SoundManager.shared.battleSoundsEnabled = battleSoundsEnabled
         if musicEnabled {
@@ -973,41 +1099,6 @@ class GameEngine: ObservableObject {
         } else {
             SoundManager.shared.stopMusic()
         }
-    }
-
-    /// Install undo/redo handlers for settings screens
-    private func updateSettingsUndoRedo(refreshScreen: @escaping () -> Void) {
-        guard undoRedoEnabled else {
-            undoHandler = nil
-            redoHandler = nil
-            undoLabel = nil
-            redoLabel = nil
-            return
-        }
-        undoHandler = screenHasUndo(settingsScreenKey) ? { [weak self] in
-            self?.undoSettings(refreshScreen: refreshScreen)
-        } : nil
-        redoHandler = screenHasRedo(settingsScreenKey) ? { [weak self] in
-            self?.redoSettings(refreshScreen: refreshScreen)
-        } : nil
-        refreshUndoRedoLabels()
-    }
-
-    private func beginSettingsTracking() {
-        currentUndoScreen = settingsScreenKey
-        clearUndoRedo(for: settingsScreenKey)
-    }
-
-    private func endSettingsTracking() {
-        clearUndoRedo(for: settingsScreenKey)
-        currentUndoScreen = nil
-        undoHandler = nil
-        redoHandler = nil
-        undoLabel = nil
-        redoLabel = nil
-        undoTargetButtonIndex = nil
-        redoTargetButtonIndex = nil
-        undoRedoFeedback = nil
     }
 
     // MARK: - Input Handling
@@ -2336,8 +2427,6 @@ class GameEngine: ObservableObject {
             }
         }
 
-        menuOptions.append(MenuOption("Hall of Fame"))
-        actions.append { [weak self] in self?.showHallOfFame() }
         menuOptions.append(MenuOption("How to Play"))
         actions.append { [weak self] in self?.showHowToPlay() }
         menuOptions.append(MenuOption("Settings"))
@@ -2535,6 +2624,9 @@ class GameEngine: ObservableObject {
             menuOpts.append(MenuOption("Manage Saves"))
             actions.append { [weak self] in self?.showManageSavesMenu(returnTo: .mainMenu) }
         }
+
+        menuOpts.append(MenuOption("Hall of Fame", tint: .navigation))
+        actions.append { [weak self] in self?.showHallOfFame() }
 
         menuOpts.append(MenuOption("?", tint: .navigation))
         actions.append { [weak self] in self?.showPlayHelp() }
@@ -4368,7 +4460,7 @@ class GameEngine: ObservableObject {
             NameEntry(name: "Choo-Choo", source: "Hanna-Barbera (1961)", description: "The pink-nosed, slightly nervous member of Top Cat's gang. Choo-Choo is the worrier of the group — he sees problems before they happen, which would be useful if anyone ever listened to him. Despite his anxieties, he sticks with the gang through every disaster. The voice of reason that nobody heeds.", category: "hero", art: [" /\\_/\\", " (°.°)", "  CC  ", " ~??~"], power: 3, cunning: 6, magic: 1, fame: 6, charm: 6, year: 1961),
             NameEntry(name: "Dick Dastardly", source: "Wacky Races (1968)", description: "The moustachioed villain of Wacky Races, driving the Mean Machine with his snickering dog Muttley. Dastardly would win every race if he didn't stop to cheat — his elaborate traps always backfire spectacularly. He's the living proof that villainy is its own punishment. Drat, drat, and double drat!", category: "hero", art: [" \\mm/", " (>.<)", " |DD| ", " MEAN"], power: 4, cunning: 8, magic: 2, fame: 9, charm: 4, year: 1968),
             NameEntry(name: "Muttley", source: "Wacky Races (1968)", description: "Dick Dastardly's wheezing, snickering sidekick. Muttley doesn't talk — he mutters, grumbles, and makes that iconic snickering laugh that means he's either amused or contemptuous, usually both. He collects medals (imaginary ones, mostly) and occasionally flies by spinning his tail. A dog of many hidden talents.", category: "hero", art: [" /\\_/\\", " (^.^)", " HEHE ", " woof"], power: 4, cunning: 6, magic: 1, fame: 9, charm: 7, year: 1968),
-            NameEntry(name: "Penelope Pitstop", source: "Wacky Races (1968)", description: "The glamorous driver of the Compact Pussycat. Penelope seems like a damsel in distress — always getting captured by the Hooded Claw — but she's actually a brilliant racer who wins on skill and nerve. She can fix an engine in heels and outrace villains while touching up her lipstick. Never underestimate her.", category: "hero", art: [" \\♥/ ", " (o o)", " PINK ", " ZOOM"], power: 5, cunning: 7, magic: 1, fame: 8, charm: 10, year: 1968),
+            NameEntry(name: "Penelope Pitstop", source: "Wacky Races (1968)", description: "The glamorous driver of the Compact Pussycat. Penelope seems like a damsel in distress - always getting captured by the Hooded Claw - but she is actually a brilliant racer who wins on skill and nerve. She can fix an engine in heels and outrace villains while touching up her lipstick. Never underestimate her.", category: "hero", art: [" \\P/  ", " (o o)", " PINK ", " ZOOM"], power: 5, cunning: 7, magic: 1, fame: 8, charm: 10, year: 1968),
             NameEntry(name: "Wile E. Coyote", source: "Looney Tunes (1949)", description: "Super Genius. At least, that's what his business card says. Wile E. Coyote is the eternal pursuer, ordering increasingly improbable gadgets from the ACME Corporation to catch the Road Runner. Every rocket, catapult, and painted tunnel fails. Every cliff crumbles beneath him. Yet he never, ever gives up. A cautionary tale about perseverance.", category: "hero", art: [" /\\V/\\", " (x.x)", " ACME ", " BOOM"], power: 3, cunning: 9, magic: 1, fame: 10, charm: 5, year: 1949),
             NameEntry(name: "Road Runner", source: "Looney Tunes (1949)", description: "Meep meep! The fastest bird in the desert and the bane of Wile E. Coyote's existence. Road Runner doesn't fight, doesn't scheme, and doesn't even seem to notice the elaborate traps set for him. He just runs. And somehow, the universe itself conspires to protect him. Physics bends around this bird.", category: "hero", art: [" >>-- ", " (o o)", " MEEP ", " ZOOM"], power: 2, cunning: 3, magic: 1, fame: 10, charm: 8, year: 1949),
             NameEntry(name: "Danger Mouse", source: "Cosgrove Hall (1981)", description: "The world's greatest secret agent, operating from a pillar box on Baker Street with his faithful hamster assistant Penfold. DM wears an eyepatch (purely for style — both eyes work fine) and tackles the schemes of Baron Greenback with British pluck and questionable competence. Good grief, DM!", category: "hero", art: [" /DM\\ ", " (o )", " |  | ", " 007?"], power: 7, cunning: 8, magic: 2, fame: 9, charm: 8, year: 1981),
@@ -4864,8 +4956,9 @@ class GameEngine: ObservableObject {
 
     var autosaveInterval: AutosaveInterval {
         get {
+            if UserDefaults.standard.object(forKey: "autosave_interval") == nil { return .everyRoom }
             let raw = UserDefaults.standard.integer(forKey: "autosave_interval")
-            return AutosaveInterval(rawValue: raw) ?? .off
+            return AutosaveInterval(rawValue: raw) ?? .everyRoom
         }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: "autosave_interval")
@@ -5089,9 +5182,6 @@ class GameEngine: ObservableObject {
     // MARK: - Settings
 
     func showSettings() {
-        if currentUndoScreen != settingsScreenKey {
-            beginSettingsTracking()
-        }
         clearTerminal()
         printTitle("Settings")
 
@@ -5139,10 +5229,10 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         showMenuOptions(menuOpts)
 
-        updateSettingsUndoRedo { [weak self] in self?.showSettings() }
+        installSettingUndoRedo(screen: "s:main") { [weak self] in self?.showSettings() }
 
         closeHandler = { [weak self] in
-            self?.endSettingsTracking()
+            self?.clearAllSettingStacks()
             self?.clearTerminal()
             self?.showMainMenu()
         }
@@ -5286,7 +5376,7 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         showMenuOptions(menuOpts)
         closeHandler = { [weak self] in self?.showSettings() }
-        updateSettingsUndoRedo { [weak self] in self?.showAccessibilityMenu() }
+        installSettingUndoRedo(screen: "s:access") { [weak self] in self?.showAccessibilityMenu() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             let text = menuOpts[choice - 1].text
@@ -5294,9 +5384,10 @@ class GameEngine: ObservableObject {
                 self.showAccessibilityHelp()
                 return
             }
-            self.pushSettingsSnapshot()
             switch text {
             case displaySizeLabel:
+                self.recordSettingChange(screen: "s:access", key: "fontSizeSetting", name: "Size")
+                self.recordSettingChange(screen: "s:access", key: "iconScaleSetting", name: "Icons")
                 // Cycle: Small → Medium → Large → Small
                 switch self.fontSizeSetting {
                 case .small:
@@ -5312,15 +5403,18 @@ class GameEngine: ObservableObject {
                 UserDefaults.standard.set(self.iconScaleSetting, forKey: "iconScaleSetting")
                 self.showAccessibilityMenu()
             case hitsLabel:
+                self.recordSettingChange(screen: "s:access", key: "hit_animations", name: "Hits")
                 self.hitAnimationsEnabled.toggle()
                 self.showAccessibilityMenu()
             case dmVoiceLabel:
+                self.recordSettingChange(screen: "s:access", key: "speechEnabled", name: "DM Voice")
                 speech.isEnabled.toggle()
                 self.showAccessibilityMenu()
             case "Companion Voices":
                 self.showAdventurerVoiceSettings()
                 self.closeHandler = { [weak self] in self?.showAccessibilityMenu() }
             case voiceMenuLabel:
+                self.recordSettingChange(screen: "s:access", key: "voiceMenuEnabled", name: "Voice Menus")
                 self.voiceMenuEnabled.toggle()
                 UserDefaults.standard.set(self.voiceMenuEnabled, forKey: "voiceMenuEnabled")
                 self.showAccessibilityMenu()
@@ -5462,11 +5556,11 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             guard idx >= 0 && idx < options.count else { return }
             let currentPage = self.paginatedPage
-            self.pushSettingsSnapshot()
             let selected = options[idx]
             if selected == "Map Radius" {
                 self.showMapRadiusMenu()
             } else if selected.hasPrefix("Use") {
+                self.recordSettingChange(screen: "s:gameplay", key: "useArrowNavigation", name: "Nav")
                 self.useArrowNavigation.toggle()
                 UserDefaults.standard.set(self.useArrowNavigation, forKey: "useArrowNavigation")
                 self.showGameplaySettings(page: currentPage)
@@ -5477,12 +5571,15 @@ class GameEngine: ObservableObject {
             } else if selected == "Long Press" {
                 self.showLongPressMenu()
             } else if selected.hasPrefix("NPCs") {
+                self.recordSettingChange(screen: "s:gameplay", key: "npcs_enabled", name: "NPCs")
                 self.npcsEnabled.toggle()
                 self.showGameplaySettings(page: currentPage)
             } else if selected.hasPrefix("Poison") {
+                self.recordSettingChange(screen: "s:gameplay", key: "poison_enabled", name: "Poison")
                 self.poisonEnabled.toggle()
                 self.showGameplaySettings(page: currentPage)
             } else if selected.hasPrefix("Multi") {
+                self.recordSettingChange(screen: "s:gameplay", key: "multiplayer_enabled", name: "Multi")
                 self.multiplayerEnabled.toggle()
                 self.showGameplaySettings(page: currentPage)
             } else if selected == "Log Limit" {
@@ -5490,6 +5587,7 @@ class GameEngine: ObservableObject {
             } else if selected == "Time Limit" {
                 self.showTimeLimitMenu()
             } else if selected.hasPrefix("Idle") {
+                self.recordSettingChange(screen: "s:gameplay", key: "idlePromptsEnabled", name: "Idle")
                 self.idlePromptsEnabled.toggle()
                 UserDefaults.standard.set(self.idlePromptsEnabled, forKey: "idlePromptsEnabled")
                 if !self.idlePromptsEnabled {
@@ -5499,13 +5597,14 @@ class GameEngine: ObservableObject {
                 }
                 self.showGameplaySettings(page: currentPage)
             } else if selected == "Game Keyboard" || selected == "iOS Keyboard" {
+                self.recordSettingChange(screen: "s:gameplay", key: "useCustomKeyboard", name: "Keyboard")
                 self.useCustomKeyboard.toggle()
                 UserDefaults.standard.set(self.useCustomKeyboard, forKey: "useCustomKeyboard")
                 self.showGameplaySettings(page: currentPage)
             } else if selected.hasPrefix("Undo/Redo") {
+                self.recordSettingChange(screen: "s:gameplay", key: "undoRedoEnabled", name: "Undo/Redo")
                 self.undoRedoEnabled.toggle()
                 if !self.undoRedoEnabled {
-                    // Clear all undo/redo state when switching off
                     self.clearAllUndoRedo()
                 }
                 self.showGameplaySettings(page: currentPage)
@@ -5523,7 +5622,7 @@ class GameEngine: ObservableObject {
             originalHandler?(choice)
         }
         closeHandler = { [weak self] in self?.showSettings() }
-        updateSettingsUndoRedo { [weak self] in self?.showGameplaySettings(page: self?.paginatedPage ?? 0) }
+        installSettingUndoRedo(screen: "s:gameplay") { [weak self] in self?.showGameplaySettings(page: self?.paginatedPage ?? 0) }
     }
 
     private func showGameplaySettingsHelp() {
@@ -6131,14 +6230,13 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("?", tint: .navigation))
         showMenuOptions(menuOpts)
         closeHandler = { [weak self] in self?.showSettings() }
-        updateSettingsUndoRedo { [weak self] in self?.showSaveSettings() }
+        installSettingUndoRedo(screen: "s:save") { [weak self] in self?.showSaveSettings() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == menuOpts.count {
                 self.showSaveSettingsHelp()
                 return
             }
-            self.pushSettingsSnapshot()
             let selected = options[choice - 1]
             if selected == "Autosave" {
                 self.showAutosaveMenu()
@@ -6482,7 +6580,7 @@ class GameEngine: ObservableObject {
         #endif
         add("idlePromptsEnabled", "Idle Prompts", current: idlePromptsEnabled ? "On" : "Off", dflt: "Off")
 
-        add("autosave_interval", "Autosave", current: autosaveInterval.displayName, dflt: AutosaveInterval.off.displayName)
+        add("autosave_interval", "Autosave", current: autosaveInterval.displayName, dflt: AutosaveInterval.everyRoom.displayName)
 
         // Tunes
         add("menu_melody", "Menu Tune", current: melodyName(type: "menu", choice: menuMelodyChoice), dflt: melodyName(type: "menu", choice: 0))
@@ -6598,8 +6696,6 @@ class GameEngine: ObservableObject {
             showSettings()
             return
         }
-
-        pushSettingsSnapshot()
 
         let preserveKeys: Set<String> = ["dmApiKey"]
         for key in keys where !preserveKeys.contains(key) {
@@ -6784,7 +6880,7 @@ class GameEngine: ObservableObject {
             self.playCurrentMusic()
             self.showSettings()
         }
-        updateSettingsUndoRedo { [weak self] in self?.showMusicSettings() }
+        installSettingUndoRedo(screen: "s:mood") { [weak self] in self?.showMusicSettings() }
 
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
@@ -6793,26 +6889,29 @@ class GameEngine: ObservableObject {
                 self.showMusicSettingsHelp()
                 return
             }
-            self.pushSettingsSnapshot()
             switch text {
             case "Switches":
                 self.showMoodSwitches()
             case "Menu Tune":
+                self.recordSettingChange(screen: "s:mood", key: "menu_melody", name: "Menu Tune")
                 self.menuMelodyChoice = (self.menuMelodyChoice + 1) % 4
                 SoundManager.shared.stopMusic()
                 SoundManager.shared.startMusic(.menu, preference: self.menuMelodyChoice)
                 self.showMusicSettings()
             case "Explore Tune":
+                self.recordSettingChange(screen: "s:mood", key: "exploration_melody", name: "Explore")
                 self.explorationMelodyChoice = (self.explorationMelodyChoice + 1) % 5
                 SoundManager.shared.stopMusic()
                 SoundManager.shared.startMusic(.exploration, preference: self.explorationMelodyChoice)
                 self.showMusicSettings()
             case "Combat Tune":
+                self.recordSettingChange(screen: "s:mood", key: "combat_melody", name: "Combat")
                 self.combatMelodyChoice = (self.combatMelodyChoice + 1) % 4
                 SoundManager.shared.stopMusic()
                 SoundManager.shared.startMusic(.combat, preference: self.combatMelodyChoice)
                 self.showMusicSettings()
             case "Chat Tune":
+                self.recordSettingChange(screen: "s:mood", key: "chat_melody", name: "Chat")
                 self.chatMelodyChoice = (self.chatMelodyChoice + 1) % 4
                 SoundManager.shared.stopMusic()
                 SoundManager.shared.startMusic(.chat, preference: self.chatMelodyChoice)
@@ -6840,19 +6939,20 @@ class GameEngine: ObservableObject {
         closeHandler = { [weak self] in self?.showMusicSettings() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
-            self.pushSettingsSnapshot()
             switch choice {
             case 1:
+                self.recordSettingChange(screen: "s:mood:switches", key: "music_enabled", name: "Music")
                 self.musicEnabled.toggle()
                 if self.musicEnabled { self.playCurrentMusic() }
                 self.showMoodSwitches()
             case 2:
+                self.recordSettingChange(screen: "s:mood:switches", key: "battle_sounds_enabled", name: "Sounds")
                 self.battleSoundsEnabled.toggle()
                 self.showMoodSwitches()
             default: break
             }
         }
-        updateSettingsUndoRedo { [weak self] in self?.showMoodSwitches() }
+        installSettingUndoRedo(screen: "s:mood:switches") { [weak self] in self?.showMoodSwitches() }
     }
 
     private func showMusicSettingsHelp() {
@@ -7079,12 +7179,12 @@ class GameEngine: ObservableObject {
                 return
             }
             if choice <= DMAdLibLevel.allCases.count {
-                self.pushSettingsSnapshot()
+                self.recordSettingChange(screen: "s:dm:adlib", key: "dmAdLibLevel", name: "Ad-lib")
                 DMEngine.shared.adLibLevel = DMAdLibLevel(rawValue: choice - 1) ?? .flavorOnly
                 self.showAdLibLevelMenu()
             }
         }
-        updateSettingsUndoRedo { [weak self] in self?.showAdLibLevelMenu() }
+        installSettingUndoRedo(screen: "s:dm:adlib") { [weak self] in self?.showAdLibLevelMenu() }
     }
 
     func showVoiceSettings() {
@@ -7862,7 +7962,6 @@ class GameEngine: ObservableObject {
             firstTarget = min(steps.count - 1, selectedIndex + 10)
         }
         if firstTarget != selectedIndex {
-            pushSettingsSnapshot()
             showDMLogRoller(steps: steps, selectedIndex: firstTarget)
         }
 
@@ -7947,16 +8046,14 @@ class GameEngine: ObservableObject {
             switch choice {
             case 1: // Up
                 if selectedIndex > 0 {
-                    self.pushSettingsSnapshot()
                     self.showDMLogRoller(steps: steps, selectedIndex: selectedIndex - 1)
                 }
             case 2: // Down
                 if selectedIndex < steps.count - 1 {
-                    self.pushSettingsSnapshot()
                     self.showDMLogRoller(steps: steps, selectedIndex: selectedIndex + 1)
                 }
             case 3: // Set
-                self.pushSettingsSnapshot()
+                self.recordSettingChange(screen: "s:dm:log", key: "dm_log_context_size", name: "Log Context")
                 let val = steps[selectedIndex]
                 self.dmLogContextSize = (val == 0 || val >= 2048) ? Int.max : val
                 self.showDMSettingsSubMenu()
@@ -7987,7 +8084,7 @@ class GameEngine: ObservableObject {
             default: break
             }
         }
-        updateSettingsUndoRedo { [weak self] in self?.showDMLogRoller(steps: steps, selectedIndex: selectedIndex) }
+        installSettingUndoRedo(screen: "s:dm:log") { [weak self] in self?.showDMLogRoller(steps: steps, selectedIndex: selectedIndex) }
     }
 
     private var mapPreviewTorchOn: Bool = true
@@ -8018,7 +8115,11 @@ class GameEngine: ObservableObject {
             print("")
         }
 
-        var menuOpts = ["1 (Compact)", "2 (Normal)", "3 (Wide)"]
+        let current = mapRadius
+        let opts = [("1 Compact", 1), ("2 Normal", 2), ("3 Wide", 3)]
+        var menuOpts = opts.map { (label, val) -> String in
+            val == current ? "\(label) <--" : label
+        }
         if dungeon != nil {
             menuOpts.append(mapPreviewTorchOn ? "Torch Off" : "Torch On")
         }
@@ -8028,7 +8129,7 @@ class GameEngine: ObservableObject {
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice >= 1 && choice <= 3 {
-                self.pushSettingsSnapshot()
+                self.recordSettingChange(screen: "s:gameplay", key: "map_radius", name: "Map")
                 self.mapRadius = choice
                 self.showMapRadiusMenu()
             } else if dungeon != nil && choice == 4 {
@@ -8059,17 +8160,18 @@ class GameEngine: ObservableObject {
         let options = ["Font Size", "Icon Size", hitAnimationsEnabled ? "Hits Off" : "Hits On"]
         showMenu(options)
         closeHandler = { [weak self] in self?.showAccessibilityMenu() }
-        updateSettingsUndoRedo { [weak self] in self?.showFontAndIconsMenu() }
+        installSettingUndoRedo(screen: "s:font") { [weak self] in self?.showFontAndIconsMenu() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
-            self.pushSettingsSnapshot()
             switch choice {
             case 1: self.showFontSizeMenu()
             case 2:
+                self.recordSettingChange(screen: "s:font", key: "iconScaleSetting", name: "Icons")
                 self.iconScaleSetting = (self.iconScaleSetting + 1) % 3
                 UserDefaults.standard.set(self.iconScaleSetting, forKey: "iconScaleSetting")
                 self.showFontAndIconsMenu()
             case 3:
+                self.recordSettingChange(screen: "s:font", key: "hit_animations", name: "Hits")
                 self.hitAnimationsEnabled.toggle()
                 self.showFontAndIconsMenu()
             default: break
@@ -8096,7 +8198,7 @@ class GameEngine: ObservableObject {
         closeHandler = { [weak self] in self?.showFontAndIconsMenu() }
         menuHandler = { [weak self] choice in
             let selected = FontSizeSetting.allCases[choice - 1]
-            self?.pushSettingsSnapshot()
+            self?.recordSettingChange(screen: "s:font", key: "fontSizeSetting", name: "Font")
             self?.fontSizeSetting = selected
             self?.print("")
             self?.print("Font size set to: \(selected.displayName)", color: .brightGreen)
@@ -8828,26 +8930,32 @@ class GameEngine: ObservableObject {
             }
         }
 
-        // Show party art side-by-side
+        // Show party art side-by-side (split into rows of 2-3 to fit screen)
         if !partyClasses.isEmpty {
-            let arts = partyClasses.map { $0.asciiArt }
-            let maxLines = arts.map { $0.count }.max() ?? 0
             let colWidth = 12
-            for row in 0..<maxLines {
-                var line = "   "
-                for art in arts {
-                    let artLine = row < art.count ? art[row] : ""
-                    line += artLine.padding(toLength: colWidth, withPad: " ", startingAt: 0)
+            let rowSize = partyClasses.count >= 4 ? 2 : partyClasses.count
+            for chunk in stride(from: 0, to: partyClasses.count, by: rowSize) {
+                let end = min(chunk + rowSize, partyClasses.count)
+                let chunkClasses = Array(partyClasses[chunk..<end])
+                let chunkMembers = Array(members[chunk..<end])
+                let arts = chunkClasses.map { $0.asciiArt }
+                let maxLines = arts.map { $0.count }.max() ?? 0
+                for row in 0..<maxLines {
+                    var line = "   "
+                    for art in arts {
+                        let artLine = row < art.count ? art[row] : ""
+                        line += artLine.padding(toLength: colWidth, withPad: " ", startingAt: 0)
+                    }
+                    print(line, color: .cyan)
                 }
-                print(line, color: .cyan)
+                var labelLine = "   "
+                for member in chunkMembers {
+                    let name = member.components(separatedBy: " (").first ?? member
+                    labelLine += String(name.prefix(colWidth - 1)).padding(toLength: colWidth, withPad: " ", startingAt: 0)
+                }
+                print(labelLine, color: .brightGreen)
+                if end < partyClasses.count { print("") }
             }
-            // Labels
-            var labelLine = "   "
-            for member in members {
-                let name = member.components(separatedBy: " (").first ?? member
-                labelLine += String(name.prefix(colWidth - 1)).padding(toLength: colWidth, withPad: " ", startingAt: 0)
-            }
-            print(labelLine, color: .brightGreen)
         }
         print("")
 
