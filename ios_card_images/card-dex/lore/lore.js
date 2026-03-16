@@ -3,6 +3,7 @@ const inlineCard = window.CARD;
 function byId(id) { return document.getElementById(id); }
 function q(s) { return encodeURIComponent(s); }
 function norm(s) { return (s || '').trim().toLowerCase(); }
+function isAceSource(source) { return /^Ace Double D-\d{3} \(\d{4}\)$/.test((source || '').trim()); }
 
 function loreRelativeEntityPath(sourceEntityPage) {
   const raw = (sourceEntityPage || '').trim();
@@ -121,6 +122,9 @@ async function searchWiki(query) {
 }
 
 async function loadWikiBest(card) {
+  // Ace-derived cards should use curated source-card references/covers, not open-ended search.
+  if (isAceSource(card.source)) return null;
+
   if (WIKI_OVERRIDES[card.id]) {
     const url = WIKI_OVERRIDES[card.id];
     try {
@@ -149,6 +153,10 @@ async function loadWikiBest(card) {
         const sum = await fetchWikiSummaryByTitle(m.title);
         if (!sum || !sum.extract) continue;
         if (sum.type === 'disambiguation') continue;
+        const qTokens = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((t) => t.length > 3);
+        const hay = `${m.title} ${sum.extract}`.toLowerCase();
+        const overlap = qTokens.filter((t) => hay.includes(t)).length;
+        if (qTokens.length >= 2 && overlap < 2) continue;
         const url = sum?.content_urls?.desktop?.page;
         if (!url) continue;
         return { url, summary: sum, title: m.title };
@@ -450,7 +458,7 @@ async function render(card, allCards) {
     img.style.display = 'block';
     imageSourceHref = entity?.links?.[0]?.href || sourceCardHref;
   }
-  if (wiki?.summary?.thumbnail?.source) {
+  if (!isAceSource(card.source) && wiki?.summary?.thumbnail?.source) {
     img.src = wiki.summary.thumbnail.source;
     img.alt = `${wiki.title || card.name} reference image`;
     img.style.display = 'block';
@@ -469,7 +477,7 @@ async function render(card, allCards) {
 
   if (wiki?.url) addUnique('Wikipedia', wiki.url);
 
-  const supplemental = await buildSupplementalLinks(wiki);
+  const supplemental = isAceSource(card.source) ? [] : await buildSupplementalLinks(wiki);
   for (const l of supplemental) addUnique(l.label, l.href);
 
   if (entity?.links?.length) {
