@@ -59,6 +59,16 @@ const STAT_INFO = {
   XP: { map: 'Reward Value', low: 'Small reward.', mid: 'Meaningful progression reward.', high: 'Major progression reward.' },
 };
 
+const SOURCE_CONTEXT = {
+  'terry pratchett': 'Discworld entries are useful for urban satire campaigns where guild politics, civic institutions, and oddball NPC logic matter as much as combat.',
+  'j.r.r. tolkien': 'Tolkien-linked cards fit long-journey campaigns with faction pressure, artifact stakes, and leadership decisions under moral strain.',
+  'j-r-r-tolkien': 'Tolkien-linked cards fit long-journey campaigns with faction pressure, artifact stakes, and leadership decisions under moral strain.',
+  'dragonlance': 'Dragonlance-linked cards support party-bond storytelling: old allies, prophecy pressure, and war-scale escalation.',
+  'ursula k. le guin': 'Earthsea-linked cards suit campaigns where naming, balance, and consequence are central mechanics rather than background lore.',
+  'fritz leiber': 'Leiber-linked cards are strong for city-crawl play: thieves, rival crews, and fast tactical pivots in tight environments.',
+  'ace double d-096 (1955)': 'This Ace Double stream works well for frontier-survival scenarios and command decisions after a crash-landing or regime collapse.',
+};
+
 function scoreBand(v) {
   const n = Number(v);
   if (Number.isNaN(n)) return 'Context specific rating.';
@@ -101,6 +111,45 @@ function humanType(t) {
   if (t === 'monster') return 'Monster';
   if (t === 'location') return 'Location';
   return t;
+}
+
+function statPairs(card) {
+  return Object.entries(card.stats || {}).filter(([, v]) => typeof v === 'number');
+}
+
+function topStats(card, n = 2) {
+  const pairs = statPairs(card).sort((a, b) => b[1] - a[1]).slice(0, n);
+  return pairs.map(([k, v]) => `${k} ${v}`);
+}
+
+function dndContext(card) {
+  const src = (card.source || '').trim();
+  const srcKey = src.toLowerCase();
+  const sourceNote = SOURCE_CONTEXT[srcKey] || 'This source can be used as campaign inspiration rather than just name flavor.';
+  const related = state.cards.filter((c) => c.id !== card.id && (c.source || '').trim().toLowerCase() === srcKey).slice(0, 4);
+  const relatedNames = related.map((c) => c.name);
+  const peaks = topStats(card, 2);
+  let roleLine = '';
+
+  if (card.type === 'player') {
+    roleLine = peaks.length
+      ? `${card.name} plays best as a specialist hero leaning on ${peaks.join(' and ')}.`
+      : `${card.name} is best treated as a specialist hero with situational strengths.`;
+  } else if (card.type === 'location') {
+    roleLine = peaks.length
+      ? `${card.name} works as a scenario anchor with emphasis on ${peaks.join(' and ')}.`
+      : `${card.name} works as a scenario anchor for exploration, traps, or social complications.`;
+  } else {
+    roleLine = peaks.length
+      ? `${card.name} is most threatening when encounters stress ${peaks.join(' and ')}.`
+      : `${card.name} should be staged with layered pressure rather than as a simple damage race.`;
+  }
+
+  const relatedLine = relatedNames.length
+    ? `From the same source stream: ${relatedNames.join(', ')}.`
+    : 'No other cards currently share this exact source tag.';
+
+  return `DnD Context: ${roleLine} ${sourceNote} ${relatedLine}`;
 }
 
 async function loadCards() {
@@ -287,7 +336,7 @@ function renderDetail() {
   }
   els.statHelp.textContent = 'Tap a stat to see what it means.';
 
-  els.desc.textContent = card.description || '';
+  els.desc.textContent = dndContext(card);
 }
 
 function selectByOffset(offset) {
