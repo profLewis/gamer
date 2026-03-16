@@ -407,6 +407,69 @@ const SOURCE_CONTEXT = {
   'isaac asimov': 'Asimov-linked source material emphasizes systems-level conflict, logic constraints, and institution-driven plot progression.',
 };
 
+const SOURCE_DOSSIER = {
+  'terry pratchett': {
+    plot: 'Ankh-Morpork-centered stories blend crime, guild politics, and absurd bureaucracy, then resolve through sharp social observation rather than simple hero-villain binaries.',
+    people: 'Key figures in this set include Rincewind, Granny Weatherwax, and DEATH, each representing a different Discworld mode: survival comedy, moral authority, and metaphysical satire.',
+    dnd: 'Use this source for urban campaigns where law, religion, and commerce are all active encounter systems, not just background flavor.',
+  },
+  'dragonlance': {
+    plot: 'Dragonlance arcs often start with old companions reuniting, then escalate into war-scale conflicts involving gods, dragons, and world-shaping artifacts.',
+    people: 'Raistlin and Tasslehoff are useful contrasts: ruthless long-game wizard ambition versus curiosity-driven chaos and loyalty.',
+    dnd: 'Excellent for party-bond campaigns where interpersonal trust is as important as stat optimization.',
+  },
+  'ursula k. le guin': {
+    plot: 'Earthsea stories focus on naming, responsibility, and balance; conflicts are frequently resolved through understanding and restraint, not maximum-force spellcasting.',
+    people: 'Ged and Tenar in this set model growth-through-accountability rather than power fantasy.',
+    dnd: 'Best used in campaigns where magic has ethical cost and social consequences.',
+  },
+  'fritz leiber': {
+    plot: 'Leiber city stories run on theft, rivalry, and sudden reversals, with danger shifting block by block.',
+    people: 'Fafhrd and the Gray Mouser define the mismatched duo pattern that still shapes rogue-fighter party dynamics.',
+    dnd: 'Strong fit for city-crawl sessions with heists, guild pressure, and improvisational combat.',
+  },
+  'j.r.r. tolkien': {
+    plot: 'Tolkien plots combine long travel routes, faction conflict, and artifact-driven stakes where tactical success still depends on moral decisions.',
+    people: 'Aragorn and Sauron in this set represent opposite command models: restorative leadership versus total domination.',
+    dnd: 'Use for high-commitment campaigns with map progression, alliance management, and legacy consequences.',
+  },
+  'j-r-r-tolkien': {
+    plot: 'Tolkien plots combine long travel routes, faction conflict, and artifact-driven stakes where tactical success still depends on moral decisions.',
+    people: 'Aragorn and Sauron in this set represent opposite command models: restorative leadership versus total domination.',
+    dnd: 'Use for high-commitment campaigns with map progression, alliance management, and legacy consequences.',
+  },
+  'stranger things': {
+    plot: 'The source mixes coming-of-age group dynamics with escalating dimension-horror stakes and government secrecy.',
+    people: 'Will, Eleven, Hopper, and Eddie map cleanly onto wizard, psion, guardian, and bard-style campaign roles.',
+    dnd: 'Useful for campaigns that alternate between social downtime and high-threat planar incursions.',
+  },
+  'honour among thieves': {
+    plot: 'The story is structured like a tabletop campaign: botched plans, role-based recoveries, and a heist objective that keeps mutating.',
+    people: 'Edgin, Holga, and Xenk provide strong contrasts in persuasion, frontline force, and rigid moral code.',
+    dnd: 'Great source for party banter and encounter chains where creativity outperforms brute-force sequencing.',
+  },
+  'wacky races (1968)': {
+    plot: 'Episodes are race-framework comedies driven by sabotage loops, personality clashes, and repeated tactical gimmicks.',
+    people: 'Penelope, Dastardly, Muttley, and Professor Pat Pending map to charm build, trickster antagonist, wildcard ally, and gadget specialist.',
+    dnd: 'Useful inspiration for light, fast, objective-based sessions where positioning and improvisation matter.',
+  },
+  'ace double d-096 (1955)': {
+    plot: 'The Last Planet thread is a stranded-command survival story: patrol collapse, unknown terrain, and reorganization under pressure.',
+    people: 'Kartr Rhyn and Dosvard Rhyn support commander and field-officer archetypes in resource-limited campaigns.',
+    dnd: 'Use for crash-site openings and frontier governance scenarios where logistics and diplomacy decide survival.',
+  },
+  'ace double d-053 (1954)': {
+    plot: 'This pairing combines political liberty conflict (Weapon Shops/Isher) with portal transition into an unfamiliar rule set.',
+    people: 'Robert Hedrock and Innelda Isher anchor the power-versus-freedom axis used in several linked cards.',
+    dnd: 'Works well for campaigns that pivot between court intrigue and unknown-world exploration.',
+  },
+  'ace double d-491 (1961)': {
+    plot: 'The Big Time strand frames conflict as timeline warfare, with characters operating from a neutral station outside standard chronology.',
+    people: 'Greta Forzane and Bruce Marchant provide observer and frontline perspectives on paradox-era operations.',
+    dnd: 'Strong base for time-fracture campaigns where mission order and causal stability are part of encounter design.',
+  },
+};
+
 function mediaLabel(source) {
   const s = (source || '').toLowerCase();
   if (isAceSource(source)) return 'book double';
@@ -420,7 +483,9 @@ function sourceInsight(card, wiki, entitySummary, relatedCards) {
   const src = card.source || 'the source material';
   const srcNorm = norm(src);
   const related = (relatedCards || []).slice(0, 5).map((c) => c.name);
-  const sourceContext = SOURCE_CONTEXT[srcNorm] || SOURCE_CONTEXT[srcNorm.replace(/\s*\(\d{4}\)\s*$/, '')];
+  const srcBase = srcNorm.replace(/\s*\(\d{4}\)\s*$/, '');
+  const sourceContext = SOURCE_CONTEXT[srcNorm] || SOURCE_CONTEXT[srcBase];
+  const dossier = SOURCE_DOSSIER[srcNorm] || SOURCE_DOSSIER[srcBase];
   const cardKind = card.type === 'location'
     ? 'location anchor'
     : (card.type === 'monster' ? 'threat profile' : 'character profile');
@@ -432,7 +497,10 @@ function sourceInsight(card, wiki, entitySummary, relatedCards) {
   if (sourceContext) parts.push(sourceContext);
   else parts.push(`This ${cardKind} is mapped from a ${mediaLabel(src)} used in the default DnDex lore set.`);
 
+  if (dossier?.plot) parts.push(dossier.plot);
+  if (dossier?.people) parts.push(dossier.people);
   if (related.length) parts.push(`In this game set, it connects with ${related.join(', ')} from the same source stream.`);
+  if (dossier?.dnd) parts.push(dossier.dnd);
   if (e && overlapRatio(desc, e) < 0.55) parts.push(e);
   else if (w && overlapRatio(desc, w) < 0.55) parts.push(w);
 
@@ -457,6 +525,9 @@ function referenceFocus(card, entitySummary, wiki, relatedCards) {
   const e = firstTwoSentences(entitySummary || '');
   const w = firstTwoSentences(wiki?.summary?.extract || '');
   const src = card.source || '';
+  const srcNorm = norm(src);
+  const srcBase = srcNorm.replace(/\s*\(\d{4}\)\s*$/, '');
+  const dossier = SOURCE_DOSSIER[srcNorm] || SOURCE_DOSSIER[srcBase];
   const year = (src.match(/\((\d{4})\)/) || [])[1];
 
   // Prefer source-specific prose that differs from card text.
@@ -468,7 +539,8 @@ function referenceFocus(card, entitySummary, wiki, relatedCards) {
   const pubText = year
     ? `Reference baseline: ${src} (${year}) with cross-links to source documentation and adaptation records.`
     : `Reference baseline: ${src || 'default source'} with cross-links to source documentation and adaptation records.`;
-  return `${pubText}${relText}`;
+  const add = dossier?.dnd ? ` ${dossier.dnd}` : '';
+  return `${pubText}${relText}${add}`;
 }
 
 function sourceHistory(card, entitySummary, wikiExtract) {
