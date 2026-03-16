@@ -4,6 +4,14 @@ function byId(id) { return document.getElementById(id); }
 function q(s) { return encodeURIComponent(s); }
 function norm(s) { return (s || '').trim().toLowerCase(); }
 
+function loreRelativeEntityPath(sourceEntityPage) {
+  const raw = (sourceEntityPage || '').trim();
+  if (!raw) return null;
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+  const stripped = raw.startsWith('card-dex/') ? raw.slice('card-dex/'.length) : raw;
+  return `../${stripped}`;
+}
+
 const WIKI_OVERRIDES = {
   "player-008": "https://en.wikipedia.org/wiki/Eleven_(Stranger_Things)",
   "player-010": "https://en.wikipedia.org/wiki/Jim_Hopper_(Stranger_Things)",
@@ -153,7 +161,9 @@ async function loadWikiBest(card) {
 async function loadEntityData(card) {
   if (!card.source_entity_page) return null;
   try {
-    const entityUrl = new URL(`../${card.source_entity_page}`, window.location.href);
+    const rel = loreRelativeEntityPath(card.source_entity_page);
+    if (!rel) return null;
+    const entityUrl = new URL(rel, window.location.href);
     const res = await fetch(entityUrl.href);
     if (!res.ok) return null;
     const html = await res.text();
@@ -385,7 +395,8 @@ async function render(card, allCards) {
   linksWrap.innerHTML = '';
 
   // Always include local deep links first.
-  if (card.source_entity_page) linksWrap.appendChild(makeLink('Source Card', `../${card.source_entity_page}`));
+  const sourceCardHref = loreRelativeEntityPath(card.source_entity_page);
+  if (sourceCardHref) linksWrap.appendChild(makeLink('Source Card', sourceCardHref));
   linksWrap.appendChild(makeLink('Open in DnDex', `../index.html?card=${q(card.name)}&search=${q(card.source || '')}`));
 
   const entity = await loadEntityData(card);
@@ -397,7 +408,7 @@ async function render(card, allCards) {
     img.src = entity.image;
     img.alt = `${card.source || card.name} reference image`;
     img.style.display = 'block';
-    imageSourceHref = entity?.links?.[0]?.href || (card.source_entity_page ? `../${card.source_entity_page}` : null);
+    imageSourceHref = entity?.links?.[0]?.href || sourceCardHref;
   }
   if (wiki?.summary?.thumbnail?.source) {
     img.src = wiki.summary.thumbnail.source;
