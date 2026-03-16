@@ -5,7 +5,63 @@ function q(s) { return encodeURIComponent(s); }
 function norm(s) { return (s || '').trim().toLowerCase(); }
 
 const WIKI_OVERRIDES = {
+  "player-008": "https://en.wikipedia.org/wiki/Eleven_(Stranger_Things)",
+  "player-010": "https://en.wikipedia.org/wiki/Jim_Hopper_(Stranger_Things)",
+  "player-011": "https://en.wikipedia.org/wiki/Steve_Harrington",
+  "player-019": "https://en.wikipedia.org/wiki/Ellen_Ripley",
+  "player-020": "https://en.wikipedia.org/wiki/Rick_Deckard",
+  "player-021": "https://en.wikipedia.org/wiki/Paul_Atreides",
+  "player-023": "https://en.wikipedia.org/wiki/R._Daneel_Olivaw",
+  "player-024": "https://en.wikipedia.org/wiki/Marvin_the_Paranoid_Android",
+  "player-025": "https://en.wikipedia.org/wiki/K9_(Doctor_Who)",
+  "player-026": "https://en.wikipedia.org/wiki/Roy_Batty",
+  "player-028": "https://en.wikipedia.org/wiki/Willow_Ufgood",
+  "player-030": "https://en.wikipedia.org/wiki/Conan_the_Barbarian",
+  "player-031": "https://en.wikipedia.org/wiki/Connor_MacLeod",
+  "player-032": "https://en.wikipedia.org/wiki/Jareth",
+  "player-033": "https://en.wikipedia.org/wiki/Lord_of_Darkness_(Legend)",
+  "player-039": "https://en.wikipedia.org/wiki/Elric_of_Melnibon%C3%A9",
+  "player-041": "https://en.wikipedia.org/wiki/Drizzt_Do%27Urden",
+  "player-042": "https://en.wikipedia.org/wiki/Raistlin_Majere",
+  "player-043": "https://en.wikipedia.org/wiki/Tasslehoff_Burrfoot",
+  "player-044": "https://en.wikipedia.org/wiki/Rincewind",
+  "player-045": "https://en.wikipedia.org/wiki/Granny_Weatherwax",
+  "player-046": "https://en.wikipedia.org/wiki/Belgarion",
+  "player-048": "https://en.wikipedia.org/wiki/Gray_Mouser",
+  "player-049": "https://en.wikipedia.org/wiki/Thomas_Covenant",
+  "player-050": "https://en.wikipedia.org/wiki/Tenar",
+  "player-054": "https://en.wikipedia.org/wiki/Death_(Discworld)",
+  "player-055": "https://en.wikipedia.org/wiki/The_Chronicles_of_Amber#Corwin",
+  "player-056": "https://en.wikipedia.org/wiki/Corum_Jhaelen_Irsei",
+  "player-058": "https://en.wikipedia.org/wiki/Skeletor",
+  "player-060": "https://en.wikipedia.org/wiki/He-Man",
+  "player-061": "https://en.wikipedia.org/wiki/Lion-O",
+  "player-062": "https://en.wikipedia.org/wiki/Noggin_the_Nog",
+  "player-064": "https://en.wikipedia.org/wiki/Doctor_Who_(character)",
+  "player-065": "https://en.wikipedia.org/wiki/Davros",
   "player-066": "https://en.wikipedia.org/wiki/List_of_Blake%27s_7_characters#Kerr_Avon",
+  "player-067": "https://en.wikipedia.org/wiki/Ulysses_31",
+  "player-068": "https://en.wikipedia.org/wiki/The_Mysterious_Cities_of_Gold",
+  "player-070": "https://en.wikipedia.org/wiki/Dogtanian_and_the_Three_Muskehounds",
+  "player-071": "https://en.wikipedia.org/wiki/Top_Cat",
+  "player-073": "https://en.wikipedia.org/wiki/Top_Cat",
+  "player-074": "https://en.wikipedia.org/wiki/Top_Cat",
+  "player-075": "https://en.wikipedia.org/wiki/Dick_Dastardly",
+  "player-076": "https://en.wikipedia.org/wiki/Muttley",
+  "player-077": "https://en.wikipedia.org/wiki/Penelope_Pitstop",
+  "player-079": "https://en.wikipedia.org/wiki/Road_Runner",
+  "player-080": "https://en.wikipedia.org/wiki/Danger_Mouse_(1981_TV_series)",
+  "player-081": "https://en.wikipedia.org/wiki/Danger_Mouse_(1981_TV_series)",
+  "player-082": "https://en.wikipedia.org/wiki/Pinky_and_the_Brain#Characters",
+  "player-083": "https://en.wikipedia.org/wiki/Pinky_and_the_Brain#Characters",
+  "player-084": "https://en.wikipedia.org/wiki/Wacky_Races#Original_series",
+  "player-086": "https://en.wikipedia.org/wiki/The_World_of_Null-A",
+  "player-087": "https://en.wikipedia.org/wiki/Solar_Lottery",
+  "player-088": "https://en.wikipedia.org/wiki/The_World_Jones_Made",
+  "player-089": "https://en.wikipedia.org/wiki/Dr._Futurity",
+  "player-090": "https://en.wikipedia.org/wiki/Harlan_Ellison_bibliography",
+  "player-091": "https://en.wikipedia.org/wiki/Dorsai!",
+  "player-092": "https://en.wikipedia.org/wiki/Andre_Norton_bibliography",
 };
 
 async function loadAllCards() {
@@ -34,7 +90,19 @@ async function searchWiki(query) {
 
 async function loadWikiBest(card) {
   if (WIKI_OVERRIDES[card.id]) {
-    return { url: WIKI_OVERRIDES[card.id], summary: null, title: null };
+    const url = WIKI_OVERRIDES[card.id];
+    try {
+      const u = new URL(url);
+      const m = u.pathname.match(/^\/wiki\/([^#?]+)/);
+      if (m) {
+        const title = decodeURIComponent(m[1]).replace(/_/g, ' ');
+        const sum = await fetchWikiSummaryByTitle(title);
+        if (sum && sum.type !== 'disambiguation') {
+          return { url, summary: sum, title };
+        }
+      }
+    } catch (_) {}
+    return { url, summary: null, title: null };
   }
   const srcNoYear = (card.source || '').replace(/\(\d{4}\)/g, '').trim();
   const queries = [
