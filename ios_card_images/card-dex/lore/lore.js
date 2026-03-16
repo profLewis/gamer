@@ -204,6 +204,23 @@ function makeLink(label, href) {
   return a;
 }
 
+function ensureImageSourceLink(imgEl, href) {
+  if (!imgEl || !href) return;
+  const currentParent = imgEl.parentElement;
+  if (currentParent && currentParent.tagName.toLowerCase() === 'a') {
+    currentParent.href = href;
+    currentParent.target = '_blank';
+    currentParent.rel = 'noopener noreferrer';
+    return;
+  }
+  const a = document.createElement('a');
+  a.href = href;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  imgEl.parentElement.insertBefore(a, imgEl);
+  a.appendChild(imgEl);
+}
+
 async function buildSupplementalLinks(wiki) {
   const out = [];
   const qid = wiki?.summary?.wikibase_item;
@@ -329,15 +346,21 @@ async function render(card, allCards) {
   const wiki = await loadWikiBest(card);
 
   const img = byId('wikiImg');
+  let imageSourceHref = null;
   if (entity?.image) {
     img.src = entity.image;
     img.alt = `${card.source || card.name} reference image`;
     img.style.display = 'block';
+    imageSourceHref = entity?.links?.[0]?.href || (card.source_entity_page ? `../${card.source_entity_page}` : null);
   }
   if (wiki?.summary?.thumbnail?.source) {
     img.src = wiki.summary.thumbnail.source;
     img.alt = `${wiki.title || card.name} reference image`;
     img.style.display = 'block';
+    imageSourceHref = wiki?.url || imageSourceHref;
+  }
+  if (img.style.display === 'block' && imageSourceHref) {
+    ensureImageSourceLink(img, imageSourceHref);
   }
 
   const added = new Set();

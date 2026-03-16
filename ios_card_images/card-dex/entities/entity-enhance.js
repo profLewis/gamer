@@ -1,4 +1,22 @@
 (function () {
+  function wrapImageWithSourceLink(img, href) {
+    if (!img || !href) return;
+    const parent = img.parentElement;
+    if (parent && parent.tagName.toLowerCase() === "a") {
+      parent.href = href;
+      parent.target = "_blank";
+      parent.rel = "noopener noreferrer";
+      return;
+    }
+    if (!parent) return;
+    const a = document.createElement("a");
+    a.href = href;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    parent.insertBefore(a, img);
+    a.appendChild(img);
+  }
+
   const layout = document.querySelector(".layout");
   if (!layout) return;
 
@@ -55,6 +73,13 @@
     link.rel = "noopener noreferrer";
     link.textContent = a.textContent || "Reference";
     sourceLinks.appendChild(link);
+  });
+
+  // Make visible reference images clickable to their source page.
+  const wikiImgs = Array.from(document.querySelectorAll(".wiki-img"));
+  const primarySourceHref = links[0] ? links[0].href : null;
+  wikiImgs.forEach((img) => {
+    wrapImageWithSourceLink(img, primarySourceHref);
   });
 
   sourcePanel.appendChild(profile);
