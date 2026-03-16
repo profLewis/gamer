@@ -701,15 +701,133 @@ function referenceFocus(card, entitySummary, wiki, relatedCards) {
   return `${pubText}${relText}${add}`;
 }
 
-function sourceHistory(card, entitySummary, wikiExtract) {
-  const e = (entitySummary || '').trim();
-  const w = (wikiExtract || '').trim();
-  if (e && w && overlapRatio(e, w) < 0.6) {
-    return `${e} ${firstSentence(w)}`;
+const SOURCE_TRIVIA_BANK = {
+  'alien (1979)': [
+    'The production design style of worn industrial hardware became a template for later space-horror worldbuilding.',
+    'The ship and crew setup popularized the blue-collar-in-space tone now common in sci-fi RPG campaigns.',
+    'Its tension arc is built on shrinking safe zones, a pattern that maps directly to dungeon pressure design.',
+  ],
+  "blake's 7 (1978)": [
+    'The show often stages missions as asymmetric raids, with intelligence and timing more important than raw firepower.',
+    'Its small-cell team structure is close to stealth-heavy DnD parties running against a dominant regime faction.',
+    'Moral ambiguity is central: outcomes can be successful and still costly, which fits consequence-driven campaign play.',
+  ],
+  'doctor who (1963)': [
+    'Many episodes begin with an unexplained anomaly, then resolve through investigation rather than direct combat.',
+    'The companion model mirrors tabletop pacing by rotating viewpoint characters through unfamiliar settings.',
+    'It is a strong source for puzzle-first encounters where social decoding matters as much as stats.',
+  ],
+  'dragonlance': [
+    'Dragonlance began as a direct DnD setting line, so many card archetypes already map cleanly to party roles.',
+    'Its dramatic beats emphasize party bonds, betrayals, and prophecy pressure over isolated duel-style scenes.',
+    'This source is useful for campaigns that want epic stakes without losing character-level relationships.',
+  ],
+  'famous robots': [
+    'Robot lore often turns on command wording and edge cases, making language itself an encounter mechanic.',
+    'Construct-centered stories are useful for ethical puzzles where the party must decide personhood and duty.',
+    'These references support non-obvious NPC design: machine allies can be lawful, conflicted, or quietly rebellious.',
+  ],
+  'isaac asimov': [
+    'Asimov stories are frequently structured like logic mysteries, which translates well into clue-chain adventures.',
+    'His robot-law framing is a practical model for designing high-intelligence NPC constraints in game systems.',
+    'Institutional-scale plotting in this source is useful for long campaigns with political and scientific factions.',
+  ],
+  'j.r.r. tolkien': [
+    'Early DnD borrowed heavily from Tolkien-era fantasy vocabulary, then evolved those ideas into game-first systems.',
+    'Tolkien travel arcs are useful templates for map-based campaigns where terrain and alliances matter every session.',
+    'The long-history approach can enrich lore drops by tying current quests to older world events.',
+  ],
+  'j-r-r-tolkien': [
+    'Early DnD borrowed heavily from Tolkien-era fantasy vocabulary, then evolved those ideas into game-first systems.',
+    'Tolkien travel arcs are useful templates for map-based campaigns where terrain and alliances matter every session.',
+    'The long-history approach can enrich lore drops by tying current quests to older world events.',
+  ],
+  'fritz leiber': [
+    'Fafhrd and the Gray Mouser helped define the rogue duo pattern still common in city-crawl campaign design.',
+    'Leiber urban stories are good references for faction-dense neighborhoods and rapid tactical reversals.',
+    'This source supports encounter writing where improvisation outruns strict plan execution.',
+  ],
+  'michael moorcock': [
+    'Moorcock anti-hero framing influenced many dark-fantasy campaign tones, especially cursed-power tradeoffs.',
+    'Law-versus-Chaos themes in this source echo alignment-era worldbuilding ideas in tabletop fantasy.',
+    'This material helps build campaigns where power has narrative cost and identity strain.',
+  ],
+};
+
+const SOURCE_DND_LINKS = {
+  'alien (1979)': 'Hidden DnD link: the film\'s hunt-through-tight-corridors structure maps well to horror dungeon design and initiative pressure.',
+  "blake's 7 (1978)": 'Hidden DnD link: this source is a strong blueprint for rebellion campaigns where objectives matter more than body count.',
+  'doctor who (1963)': 'Hidden DnD link: anomaly-driven episodes are useful models for one-shot hooks, planar oddities, and puzzle-led arcs.',
+  'dragonlance': 'Hidden DnD link: Dragonlance is itself an official DnD setting lineage, so party role mapping is unusually direct.',
+  'famous robots': 'Hidden DnD link: robot-law and protocol conflicts are practical templates for construct NPC behavior trees.',
+  'isaac asimov': 'Hidden DnD link: constrained-intelligence design from robot fiction helps balance powerful helper NPCs.',
+  'j.r.r. tolkien': 'Hidden DnD link: race tropes, quest patterns, and map-led fellowship travel all fed early tabletop fantasy play.',
+  'j-r-r-tolkien': 'Hidden DnD link: race tropes, quest patterns, and map-led fellowship travel all fed early tabletop fantasy play.',
+  'fritz leiber': 'Hidden DnD link: Leiber\'s city sword-and-sorcery texture aligns with thief-guild campaigns and urban faction play.',
+  'michael moorcock': 'Hidden DnD link: Law-versus-Chaos framing influenced many tabletop cosmology and alignment discussions.',
+  'honour among thieves': 'Hidden DnD link: this source is literally a DnD story scaffold, useful for heist-plus-party-banters pacing.',
+  'ace double': 'Hidden DnD link: Ace pulp pairings are excellent seeds for two-thread adventures that cross over mid-campaign.',
+};
+
+function stablePick(list, seedText) {
+  if (!list || !list.length) return '';
+  let h = 0;
+  const s = seedText || '';
+  for (let i = 0; i < s.length; i += 1) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  const idx = Math.abs(h) % list.length;
+  return list[idx];
+}
+
+function sourceLineage(card, relatedCards) {
+  const src = card.source || 'default source';
+  const srcNorm = norm(src);
+  const srcBase = srcNorm.replace(/\s*\(\d{4}\)\s*$/, '');
+  const year = (src.match(/\((\d{4})\)/) || [])[1];
+  if (isAceSource(src)) {
+    return `Source lineage: ${src} comes from the Ace Double format, where two short novels were published back-to-back in a single volume. This card draws from that paired-story pulp tradition.`;
   }
-  if (w) return firstSentence(w);
-  if (e) return firstSentence(e);
-  return `${card.name} has stable source references linked below for deeper reading.`;
+  if (srcNorm.includes('module')) {
+    return `Source lineage: ${src} is from tabletop module-era material, so this card inherits encounter-first design assumptions rather than purely cinematic pacing.`;
+  }
+  if (year) {
+    const rel = (relatedCards || []).slice(0, 3).map((c) => c.name);
+    const relText = rel.length ? ` Nearby cards from the same source include ${rel.join(', ')}.` : '';
+    return `Source lineage: ${src} (${year}) is part of the external canon feeding this DnDex set.${relText}`;
+  }
+  return `Source lineage: ${src} is used as a recurring inspiration stream for default DnDex entities and naming motifs.`;
+}
+
+function sourceTrivia(card, wikiExtract, relatedCards) {
+  const srcNorm = norm(card.source || '');
+  const srcBase = srcNorm.replace(/\s*\(\d{4}\)\s*$/, '');
+  const key = isAceSource(card.source) ? 'ace double' : (srcNorm || srcBase);
+  const trivia = SOURCE_TRIVIA_BANK[srcNorm] || SOURCE_TRIVIA_BANK[srcBase];
+  if (trivia?.length) return stablePick(trivia, `${card.id}:${card.name}:${card.source}`);
+
+  const rel = (relatedCards || []).slice(0, 2).map((c) => c.name);
+  if (rel.length) {
+    return `Trivia: this source has multiple linked DnDex entries; ${card.name} is one node in a shared reference cluster with ${rel.join(' and ')}.`;
+  }
+  const w = firstSentence(wikiExtract || '');
+  if (w) return `Trivia: ${w}`;
+  if (card.type === 'monster') return 'Trivia: monster cards in this source stream are tuned to be narrative pressure tools, not only damage outputs.';
+  if (card.type === 'location') return 'Trivia: location cards from this source are intended as campaign anchors that can reshape encounter style across sessions.';
+  return `Trivia: ${card.name} is used here as a gameplay-facing interpretation of its source lineage, with references linked below for deep reading.`;
+}
+
+function dndConnectionNote(card) {
+  const src = card.source || '';
+  const srcNorm = norm(src);
+  const srcBase = srcNorm.replace(/\s*\(\d{4}\)\s*$/, '');
+  if (isAceSource(src)) return SOURCE_DND_LINKS['ace double'];
+  return SOURCE_DND_LINKS[srcNorm] || SOURCE_DND_LINKS[srcBase] || 'Hidden DnD link: this entry can be read as a class-archetype or encounter-archetype seed when building custom campaigns.';
+}
+
+function sourceHistory(card, wikiExtract, relatedCards) {
+  const lineage = sourceLineage(card, relatedCards);
+  const trivia = sourceTrivia(card, wikiExtract, relatedCards);
+  const dndLink = dndConnectionNote(card);
+  return `${lineage} ${trivia} ${dndLink}`;
 }
 
 function renderRelatedCards(card, allCards) {
@@ -795,13 +913,12 @@ async function render(card, allCards) {
   const storyNotes = sourceInsight(card, wiki, entity?.summary || '', relatedCards);
   const sourceContext = referenceFocus(card, entity?.summary || '', wiki, relatedCards);
   const playNote = gameplayFocus(card);
-  const strongRefs = added.size >= 3 && ((wiki?.summary?.extract || '').length > 140 || (entity?.summary || '').length > 140);
-  const history = strongRefs ? sourceHistory(card, entity?.summary || '', wiki?.summary?.extract || '') : '';
+  const history = sourceHistory(card, wiki?.summary?.extract || '', relatedCards);
   byId('summary').innerHTML = [
     `<strong>Story Notes:</strong> ${storyNotes}`,
     `<strong>Reference Focus:</strong> ${sourceContext}`,
     `<strong>Gameplay Note:</strong> ${playNote}`,
-    history ? `<strong>Source History:</strong> ${history}` : '',
+    `<strong>Source Lineage and Trivia:</strong> ${history}`,
   ].filter(Boolean).join('<br><br>');
 
   renderRelatedCards(card, allCards);
