@@ -233,6 +233,17 @@ function referenceFocus(card, entitySummary, wiki) {
   return `${card.name} is sourced from ${card.source || 'the default game references'} and linked below with stable external references.`;
 }
 
+function sourceHistory(card, entitySummary, wikiExtract) {
+  const e = (entitySummary || '').trim();
+  const w = (wikiExtract || '').trim();
+  if (e && w && overlapRatio(e, w) < 0.6) {
+    return `${e} ${firstSentence(w)}`;
+  }
+  if (w) return firstSentence(w);
+  if (e) return firstSentence(e);
+  return `${card.name} has stable source references linked below for deeper reading.`;
+}
+
 function renderRelatedCards(card, allCards) {
   const linksWrap = byId('links');
   const related = allCards.filter((c) => c.id !== card.id && norm(c.source) === norm(card.source)).slice(0, 8);
@@ -273,15 +284,6 @@ async function render(card, allCards) {
     img.style.display = 'block';
   }
 
-  const cardBlurb = firstSentence(card.description || '');
-  const sourceContext = referenceFocus(card, entity?.summary || '', wiki);
-  const playNote = gameplayFocus(card);
-  byId('summary').innerHTML = [
-    cardBlurb ? `<strong>Card Blurb:</strong> ${cardBlurb}` : '',
-    `<strong>Reference Focus:</strong> ${sourceContext}`,
-    `<strong>Gameplay Note:</strong> ${playNote}`,
-  ].filter(Boolean).join('<br><br>');
-
   const added = new Set();
   const addUnique = (label, href) => {
     if (!href || added.has(href)) return;
@@ -303,6 +305,18 @@ async function render(card, allCards) {
     const fallback = `https://en.wikipedia.org/wiki/${q((card.source || card.name).replace(/\s+/g, '_'))}`;
     addUnique('Wikipedia', fallback);
   }
+
+  const cardBlurb = firstSentence(card.description || '');
+  const sourceContext = referenceFocus(card, entity?.summary || '', wiki);
+  const playNote = gameplayFocus(card);
+  const strongRefs = added.size >= 3 && ((wiki?.summary?.extract || '').length > 140 || (entity?.summary || '').length > 140);
+  const history = strongRefs ? sourceHistory(card, entity?.summary || '', wiki?.summary?.extract || '') : '';
+  byId('summary').innerHTML = [
+    cardBlurb ? `<strong>Card Blurb:</strong> ${cardBlurb}` : '',
+    `<strong>Reference Focus:</strong> ${sourceContext}`,
+    `<strong>Gameplay Note:</strong> ${playNote}`,
+    history ? `<strong>Source History:</strong> ${history}` : '',
+  ].filter(Boolean).join('<br><br>');
 
   renderRelatedCards(card, allCards);
 }
