@@ -357,8 +357,10 @@ function renderBase(card) {
 function firstSentence(text) {
   const t = (text || '').trim();
   if (!t) return '';
-  const m = t.match(/.+?[.!?](?:\s|$)/);
-  return (m ? m[0] : t).trim();
+  const protectedText = t.replace(/\b(?:[A-Za-z]\.\s*){2,}/g, (m) => m.replace(/\./g, ''));
+  const m = protectedText.match(/.+?[.!?](?:\s|$)/);
+  const out = (m ? m[0] : protectedText).trim();
+  return out;
 }
 
 function wordSet(text) {
@@ -392,8 +394,11 @@ function gameplayFocus(card) {
 function firstTwoSentences(text) {
   const t = (text || '').trim();
   if (!t) return '';
-  const parts = t.match(/[^.!?]+[.!?]/g) || [t];
-  return parts.slice(0, 2).map((s) => s.trim()).join(' ');
+  const protectedText = t.replace(/\b(?:[A-Za-z]\.\s*){2,}/g, (m) => m.replace(/\./g, ''));
+  const parts = protectedText.match(/[^.!?]+[.!?]/g) || [protectedText];
+  const out = parts.slice(0, 2).map((s) => s.trim()).join(' ').trim();
+  if (/(?:\b[A-Za-z]\.\s*){1,3}$/.test(out)) return protectedText;
+  return out;
 }
 
 const SOURCE_CONTEXT = {
