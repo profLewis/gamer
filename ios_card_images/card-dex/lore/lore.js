@@ -351,14 +351,38 @@ function gameplayFocus(card) {
   return `${card.name} is tuned as a ${card.type} card with emphasis on ${top.join(' and ')}.`;
 }
 
-function referenceFocus(card, entitySummary, wiki) {
-  const desc = (card.description || '').trim();
-  const e = (entitySummary || '').trim();
-  if (e && overlapRatio(desc, e) < 0.55) return e;
-  if (wiki?.title) {
-    return `${card.name} comes from ${card.source || 'a referenced source'}; see the linked ${wiki.title} material for production and character-history context.`;
+function firstTwoSentences(text) {
+  const t = (text || '').trim();
+  if (!t) return '';
+  const parts = t.match(/[^.!?]+[.!?]/g) || [t];
+  return parts.slice(0, 2).map((s) => s.trim()).join(' ');
+}
+
+function publicationHint(card, wikiExtract) {
+  const src = card.source || '';
+  const yearMatch = src.match(/\((\d{4})\)/);
+  const yearPart = yearMatch ? ` around ${yearMatch[1]}` : '';
+  const sourceType = card.type === 'location' ? 'setting material' : (card.type === 'monster' ? 'creature lore' : 'character material');
+  if (!src) return `This card is tied to ${sourceType} in the default game reference set.`;
+  const brief = firstSentence(wikiExtract || '');
+  if (brief) {
+    return `Source context: ${src}${yearPart}. ${brief}`;
   }
-  return `${card.name} is sourced from ${card.source || 'the default game references'} and linked below with stable external references.`;
+  return `Source context: ${src}${yearPart}. This entry is linked to ${sourceType} used in the default game set.`;
+}
+
+function referenceFocus(card, entitySummary, wiki, relatedCards) {
+  const desc = (card.description || '').trim();
+  const e = firstTwoSentences(entitySummary || '');
+  const w = firstTwoSentences(wiki?.summary?.extract || '');
+
+  // Prefer source-specific prose that differs from card text.
+  if (e && overlapRatio(desc, e) < 0.6) return e;
+  if (w && overlapRatio(desc, w) < 0.6) return w;
+
+  const rel = (relatedCards || []).slice(0, 3).map((c) => c.name);
+  const relText = rel.length ? ` Related cards from this same source include ${rel.join(', ')}.` : '';
+  return `${publicationHint(card, wiki?.summary?.extract || '')}${relText}`;
 }
 
 function sourceHistory(card, entitySummary, wikiExtract) {
@@ -401,6 +425,7 @@ async function render(card, allCards) {
 
   const entity = await loadEntityData(card);
   const wiki = await loadWikiBest(card);
+  const relatedCards = allCards.filter((c) => c.id !== card.id && norm(c.source) === norm(card.source));
 
   const img = byId('wikiImg');
   let imageSourceHref = null;
@@ -446,7 +471,7 @@ async function render(card, allCards) {
   }
 
   const cardBlurb = firstSentence(card.description || '');
-  const sourceContext = referenceFocus(card, entity?.summary || '', wiki);
+  const sourceContext = referenceFocus(card, entity?.summary || '', wiki, relatedCards);
   const playNote = gameplayFocus(card);
   const strongRefs = added.size >= 3 && ((wiki?.summary?.extract || '').length > 140 || (entity?.summary || '').length > 140);
   const history = strongRefs ? sourceHistory(card, entity?.summary || '', wiki?.summary?.extract || '') : '';
