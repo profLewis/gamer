@@ -252,7 +252,7 @@ function renderLoreNav(card, allCards) {
   nav.setAttribute('aria-label', 'Card navigation');
   nav.innerHTML = [
     '<button id="lorePrevBtn" class="btn" type="button">Prev</button>',
-    '<button id="loreDiceBtn" class="btn" type="button">Dice</button>',
+    '<button id="loreDiceBtn" class="btn" type="button">d20</button>',
     '<button id="loreNextBtn" class="btn" type="button">Next</button>',
     `<span class="lore-pos">${idx + 1}/${pool.length}</span>`,
   ].join('');
