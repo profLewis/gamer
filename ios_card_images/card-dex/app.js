@@ -4,6 +4,7 @@ const state = {
   selectedId: null,
   musicOn: false,
   pendingSource: null,
+  pendingCard: null,
   lastRandomAt: 0,
 };
 
@@ -122,6 +123,12 @@ async function loadCards() {
     const params = new URLSearchParams(window.location.search);
     const source = (params.get('source') || '').trim().toLowerCase();
     if (source) state.pendingSource = source;
+    const card = (params.get('card') || '').trim().toLowerCase();
+    if (card) state.pendingCard = card;
+    const search = (params.get('search') || '').trim();
+    if (search) {
+      els.search.value = search;
+    }
   } catch (_) {}
   applyFilters();
 }
@@ -155,6 +162,15 @@ function applyFilters() {
     if (bySource) {
       state.selectedId = bySource.id;
       state.pendingSource = null;
+    }
+  }
+  if (state.pendingCard) {
+    const byCard =
+      arr.find((c) => c.name.trim().toLowerCase() === state.pendingCard) ||
+      arr.find((c) => c.name.trim().toLowerCase().includes(state.pendingCard));
+    if (byCard) {
+      state.selectedId = byCard.id;
+      state.pendingCard = null;
     }
   }
 

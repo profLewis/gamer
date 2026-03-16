@@ -4401,6 +4401,28 @@ class GameEngine: ObservableObject {
             NameEntry(name: "Astra Ruins", source: "Ace Double D-096 (1955)", description: "The crash world in The Last Planet is full of old structures and environmental hazards that make every expedition risky. Astra is ideal as a dungeon name: unknown history, unstable alliances, and danger beyond line-of-sight.", category: "dungeon", art: [" /--\\ ", " ASTRA", " RUIN ", " \\--/"], power: 7, cunning: 7, magic: 5, fame: 7, charm: 4, year: 1955),
             NameEntry(name: "Dorsai", source: "Ace Double D-449 (1960)", description: "The soldier world from Gordon R. Dickson's future history. Dorsai exports elite contract troops and military doctrine to the rest of settled space. As a dungeon label, it signals disciplined combat, strategic objectives, and no easy victories.", category: "dungeon", art: [" /--\\ ", " DORS ", " WAR! ", " \\--/"], power: 9, cunning: 9, magic: 2, fame: 9, charm: 5, year: 1960),
             NameEntry(name: "Change War Station", source: "Ace Double D-491 (1961)", description: "The neutral staging post in The Big Time, positioned outside ordinary chronology. Agents from different centuries recover, argue, and plan their next timeline strike there. Perfect for high-stakes encounters where history itself is mutable terrain.", category: "dungeon", art: [" /--\\ ", " CHNG ", " WARP ", " \\--/"], power: 8, cunning: 9, magic: 8, fame: 8, charm: 6, year: 1961),
+            NameEntry(name: "Patricia Hardie", source: "Ace Double D-031 (1953)", description: "A supporting figure tied to Gosseyn's shifting identity arc in The World of Null-A. She is drawn into the same maze of false memories, tests, and political traps, making her a useful social-intelligence style hero choice.", category: "hero", art: [" [P] ", " /|\\ ", " NULL ", " MIND "], power: 4, cunning: 8, magic: 4, fame: 5, charm: 7, year: 1953),
+            NameEntry(name: "Games Machine", source: "Ace Double D-031 (1953)", description: "The giant selection and ranking mechanism behind Null-A society. In game terms it works like a trial chamber where logic, composure, and hidden agendas matter more than raw damage output.", category: "dungeon", art: [" /--\\ ", " GAME ", " MCHN ", " \\--/"], power: 6, cunning: 10, magic: 5, fame: 6, charm: 3, year: 1953),
+            NameEntry(name: "Innelda Isher", source: "Ace Double D-053 (1954)", description: "The empress at the center of Isher politics in van Vogt's future empire. Her courtly power struggles frame the conflict between imperial authority and the Weapon Shops' liberty doctrine.", category: "hero", art: [" [I] ", " /|\\ ", " ISHR ", " CRWN "], power: 5, cunning: 8, magic: 3, fame: 8, charm: 8, year: 1954),
+            NameEntry(name: "Patrol Crash Site", source: "Ace Double D-096 (1955)", description: "The initial survival zone from The Last Planet where stranded patrol crew regroup under pressure. Hostile terrain and uncertain local forces make it a strong early-campaign dungeon template.", category: "dungeon", art: [" /--\\ ", " CRSH ", " ASTRA", " \\--/"], power: 7, cunning: 6, magic: 4, fame: 6, charm: 3, year: 1955),
+            NameEntry(name: "Reese Verrick", source: "Ace Double D-103 (1955)", description: "A dominant political operator in Solar Lottery. Verrick thrives inside the lottery system by manipulating power networks, making him a high-cunning rival archetype for intrigue-heavy campaigns.", category: "hero", art: [" [R] ", " /|\\ ", " LOTTO", " RULE "], power: 5, cunning: 10, magic: 2, fame: 8, charm: 6, year: 1955),
+            NameEntry(name: "Lottery Hall", source: "Ace Double D-103 (1955)", description: "Symbolic center of Solar Lottery's random-rule system, where authority can turn in a moment. As a dungeon label it signals unstable leadership, ritual challenge, and deadly uncertainty.", category: "dungeon", art: [" /--\\ ", " HALL ", " DICE ", " \\--/"], power: 7, cunning: 8, magic: 2, fame: 7, charm: 4, year: 1955),
+            NameEntry(name: "Telepath Court", source: "Ace Double D-103 (1955)", description: "Solar Lottery includes telepathic surveillance and tactical mind-reading in elite politics. This dungeon tag fits scenes where secrecy, bluffing, and mental defense are the real combat stats.", category: "dungeon", art: [" /--\\ ", " MIND ", " CRT  ", " \\--/"], power: 6, cunning: 9, magic: 4, fame: 6, charm: 4, year: 1955),
+            NameEntry(name: "Cussick", source: "Ace Double D-150 (1956)", description: "A resistance-facing viewpoint in The World Jones Made, positioned against Jones's prophetic populism. Cussick suits players who prefer intelligence gathering, alliances, and late-turn pivots over brute force.", category: "hero", art: [" [C] ", " /|\\ ", " JONES", " OPPS "], power: 4, cunning: 8, magic: 2, fame: 6, charm: 6, year: 1956),
+            NameEntry(name: "Jonesville", source: "Ace Double D-150 (1956)", description: "A cult-like urban power center shaped by Floyd Jones's one-year foresight and political momentum. This place works as a social dungeon where certainty and fear are both weaponized.", category: "dungeon", art: [" /--\\ ", " JONE ", " CITY ", " \\--/"], power: 7, cunning: 8, magic: 6, fame: 7, charm: 5, year: 1956),
+            NameEntry(name: "Vega Port", source: "Ace Double D-150 (1956)", description: "A frontier transit zone inspired by the paired Agent of Vega setting. This name fits missions involving intelligence handoffs, rapid travel, and sudden diplomatic reversals.", category: "dungeon", art: [" /--\\ ", " VEGA ", " PORT ", " \\--/"], power: 5, cunning: 7, magic: 3, fame: 6, charm: 5, year: 1956),
+            NameEntry(name: "Mary Barton", source: "Ace Double D-249 (1957)", description: "Part of Ted Barton's close personal anchor in The Cosmic Puppets as reality starts to distort around Millgate. She represents the human cost of cosmic-scale conflict and memory fracture.", category: "hero", art: [" [M] ", " /|\\ ", " HOME ", " TRTH "], power: 3, cunning: 7, magic: 2, fame: 5, charm: 7, year: 1957),
+            NameEntry(name: "Blinding Alley", source: "Ace Double D-249 (1957)", description: "A symbolic location style from The Cosmic Puppets where familiar streets hide altered rules. Use it for encounter spaces where pathfinding and perception checks are central.", category: "dungeon", art: [" /--\\ ", " ALLY ", " BLND ", " \\--/"], power: 6, cunning: 8, magic: 7, fame: 6, charm: 3, year: 1957),
+            NameEntry(name: "Woudiver", source: "Ace Double D-295 (1958)", description: "A major figure from Big Planet, remembered as a dangerous rival in Claude Glystra's long planetary crossing. Woudiver fits as a commander-class antagonist with strong tactical pressure.", category: "hero", art: [" [W] ", " /|\\ ", " BIGP ", " DUEL "], power: 8, cunning: 8, magic: 2, fame: 7, charm: 4, year: 1958),
+            NameEntry(name: "Glinster Marsh", source: "Ace Double D-295 (1958)", description: "A Big Planet-style region name for swamps and strange micro-culture territory. This dungeon title implies long overland travel, unstable local norms, and layered environmental hazards.", category: "dungeon", art: [" /--\\ ", " MARS ", " GLIN ", " \\--/"], power: 6, cunning: 7, magic: 3, fame: 6, charm: 3, year: 1958),
+            NameEntry(name: "Krantz", source: "Ace Double D-413 (1959)", description: "A noir-investigator archetype drawn from The Man with Nine Lives framing. Krantz works as a skeptical problem-solver hero who tracks identity fraud and hidden recurrence patterns.", category: "hero", art: [" [K] ", " /|\\ ", " NOIR ", " CLUE "], power: 4, cunning: 9, magic: 2, fame: 6, charm: 6, year: 1959),
+            NameEntry(name: "Nine Lives Safehouse", source: "Ace Double D-413 (1959)", description: "A defensive hideout concept for characters cycling through repeated identities and threats. Good for tight urban scenarios with ambush routes, false exits, and misinformation.", category: "dungeon", art: [" /--\\ ", " NINE ", " SAFE ", " \\--/"], power: 6, cunning: 8, magic: 3, fame: 6, charm: 4, year: 1959),
+            NameEntry(name: "Destiny Branchpoint", source: "Ace Double D-413 (1959)", description: "A timeline-decision hub inspired by the paired Destiny Times Three concept. This dungeon label signals branching outcomes, replay pressure, and consequence-heavy choices.", category: "dungeon", art: [" /--\\ ", " DEST ", " BRCH ", " \\--/"], power: 7, cunning: 9, magic: 6, fame: 6, charm: 4, year: 1959),
+            NameEntry(name: "Future Ward", source: "Ace Double D-421 (1960)", description: "A Dr. Futurity style med-zone where medical ethics and social law collide. Ideal for quests where healing, triage, and legal risk are all part of the encounter design.", category: "dungeon", art: [" /--\\ ", " WARD ", " MED  ", " \\--/"], power: 5, cunning: 7, magic: 5, fame: 5, charm: 5, year: 1960),
+            NameEntry(name: "Exile Quarter", source: "Ace Double D-421 (1960)", description: "A social frontier district inspired by the paired No World of Their Own theme. Works as a dungeon for outsider politics, fragile truces, and resource bargaining.", category: "dungeon", art: [" /--\\ ", " EXIL ", " QTR  ", " \\--/"], power: 5, cunning: 7, magic: 3, fame: 5, charm: 5, year: 1960),
+            NameEntry(name: "Cletus Grahame", source: "Ace Double D-449 (1960)", description: "A strategist figure from the Dorsai future-history line, often contrasted with Donal Graeme's battlefield genius. Cletus fits as a cerebral commander archetype for long-form campaigns.", category: "hero", art: [" [C] ", " /|\\ ", " DORS ", " MIND "], power: 6, cunning: 10, magic: 1, fame: 7, charm: 6, year: 1960),
+            NameEntry(name: "Friendly Worlds Council", source: "Ace Double D-449 (1960)", description: "A political command space from Dickson's specialist-culture future. Use it for diplomacy-heavy sessions where contracts, doctrine, and military leverage all intersect.", category: "dungeon", art: [" /--\\ ", " CNCL ", " WRLD ", " \\--/"], power: 6, cunning: 9, magic: 2, fame: 7, charm: 6, year: 1960),
+            NameEntry(name: "Bruce Marchant", source: "Ace Double D-491 (1961)", description: "A Change War participant in The Big Time cast, representing front-line timeline conflict rather than policy debate. This hero card suits direct-action players operating under paradox pressure.", category: "hero", art: [" [B] ", " /|\\ ", " TIME ", " WAR  "], power: 7, cunning: 7, magic: 5, fame: 7, charm: 6, year: 1961),
         ]
     }
     // swiftlint:enable function_body_length
@@ -6307,7 +6329,8 @@ class GameEngine: ObservableObject {
         print("")
 
         var menuOpts = [MenuOption("Review Changes"), MenuOption("Save Settings First"),
-                        MenuOption("Reset All Now", tint: .danger)]
+                        MenuOption("Reset Now", tint: .danger),
+                        MenuOption("No Reset", tint: .navigation)]
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         showMenuOptions(menuOpts)
         closeHandler = { [weak self] in self?.showSettings() }
@@ -6319,10 +6342,16 @@ class GameEngine: ObservableObject {
                 self.showResetReview()
             case "Save Settings First":
                 self.saveSettingsBackup(name: "Before Reset") {
+                    self.showResetConfirmation(action: "Reset All Settings", changes: self.changedSettings()) {
+                        self.resetSettingsToDefaults()
+                    }
+                }
+            case "Reset Now":
+                self.showResetConfirmation(action: "Reset All Settings", changes: self.changedSettings()) {
                     self.resetSettingsToDefaults()
                 }
-            case "Reset All Now":
-                self.resetSettingsToDefaults()
+            case "No Reset":
+                self.showSettings()
             case "?":
                 self.showInlineHelp {
                     self.printTitle("Reset Help")
@@ -6333,12 +6362,74 @@ class GameEngine: ObservableObject {
                     self.print("  SAVE SETTINGS FIRST", color: .cyan, bold: true)
                     self.printWrapped("Backs up your current settings before resetting. You can restore them later from Settings → Saving.", indent: 2, color: .dimGreen)
                     self.print("")
-                    self.print("  RESET ALL NOW", color: .cyan, bold: true)
-                    self.printWrapped("Resets every setting to its default value immediately. API keys and saved games are preserved.", indent: 2, color: .dimGreen)
+                    self.print("  RESET NOW", color: .cyan, bold: true)
+                    self.printWrapped("Resets every setting to its default value immediately. Shows a confirmation with all changes before proceeding. API keys and saved games are preserved.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  NO RESET", color: .cyan, bold: true)
+                    self.printWrapped("Return to Settings without changing anything.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             default:
                 self.showSettings()
+            }
+        }
+    }
+
+    /// Confirmation screen showing exactly what will change before any reset action
+    private func showResetConfirmation(action: String, changes: [ResetSettingInfo], onConfirm: @escaping () -> Void) {
+        if changes.isEmpty {
+            clearTerminal()
+            printTitle("Nothing to Reset")
+            print("")
+            printWrapped("All settings are already at their default values.", indent: 2, color: .brightGreen)
+            print("")
+            showMenu(["Done"])
+            closeHandler = { [weak self] in self?.confirmResetToDefaults() }
+            menuHandler = { [weak self] _ in self?.confirmResetToDefaults() }
+            return
+        }
+
+        clearTerminal()
+        printTitle("Confirm: \(action)")
+        print("")
+        printWrapped("The following \(changes.count) setting\(changes.count == 1 ? "" : "s") will be changed:", indent: 2, color: .yellow)
+        print("")
+
+        for item in changes {
+            print("  \(item.name)", color: .brightGreen, bold: true)
+            print("    \(item.currentDisplay) → \(item.defaultDisplay)", color: .dimGreen)
+        }
+        print("")
+        printWrapped("API keys and saved games will NOT be affected.", indent: 2, color: .dimGreen)
+        print("")
+
+        let menuOpts = [MenuOption("Reset", tint: .danger),
+                        MenuOption("Cancel", tint: .navigation),
+                        MenuOption("?", tint: .navigation, compact: true)]
+        showMenuOptions(menuOpts)
+        closeHandler = { [weak self] in self?.confirmResetToDefaults() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            let text = menuOpts[choice - 1].text
+            switch text {
+            case "Reset":
+                onConfirm()
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("Reset Confirmation — Help")
+                    self.print("")
+                    self.print("  WHAT HAPPENS", color: .cyan, bold: true)
+                    self.printWrapped("The settings listed above will be changed from their current values to the defaults shown. No other settings are affected.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  RESET", color: .cyan, bold: true)
+                    self.printWrapped("Applies the changes shown. API keys and saved games are never affected by a reset.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  CANCEL", color: .cyan, bold: true)
+                    self.printWrapped("Returns to the previous screen without changing anything.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default:
+                self.confirmResetToDefaults()
             }
         }
     }
@@ -6403,7 +6494,7 @@ class GameEngine: ObservableObject {
         let dmLevel = DMEngine.shared.adLibLevel
         add("dmAdLibLevel", "DM Ad-lib", current: dmLevel.displayName, dflt: DMAdLibLevel.full.displayName)
         let logCtx = dmLogContextSize == Int.max ? "Unlimited" : "\(dmLogContextSize)"
-        add("dmLogContextSize", "DM Log Context", current: logCtx, dflt: "Unlimited")
+        add("dmLogContextSize", "DM Log Context", current: logCtx, dflt: "0 (Unlimited)")
 
         return result
     }
@@ -6468,7 +6559,10 @@ class GameEngine: ObservableObject {
                 let newSel: Set<String> = selectedCount == changed.count ? [] : Set(changed.map { $0.key })
                 self.showResetReview(selected: newSel, page: currentPage)
             } else if allOptions[idx] == "Apply Reset" {
-                self.applySelectiveReset(keys: sel)
+                let selectedChanges = changed.filter { sel.contains($0.key) }
+                self.showResetConfirmation(action: "Reset \(selectedChanges.count) Setting\(selectedChanges.count == 1 ? "" : "s")", changes: selectedChanges) {
+                    self.applySelectiveReset(keys: sel)
+                }
             }
         }
 
@@ -6596,19 +6690,51 @@ class GameEngine: ObservableObject {
         printWrapped("To change API keys: Settings → DM Settings.", indent: 2, color: .dimGreen)
         print("")
 
-        showMenu(["Also Clear API Keys", "Also Delete Saves", "Done"])
+        let menuOpts = [MenuOption("Also Clear API Keys", tint: .danger),
+                        MenuOption("Also Delete Saves", tint: .danger),
+                        MenuOption("Done", tint: .navigation)]
+        showMenuOptions(menuOpts)
         closeHandler = { [weak self] in self?.showSettings() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             switch choice {
             case 1:
-                UserDefaults.standard.removeObject(forKey: "dmApiKey")
-                DMEngine.shared.apiKey = nil
-                self.print("  API keys cleared.", color: .red)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.showSettings() }
+                self.confirmClearAPIKeysAfterReset()
             case 2:
                 self.confirmClearAllSaves()
             default:
+                self.showSettings()
+            }
+        }
+    }
+
+    private func confirmClearAPIKeysAfterReset() {
+        clearTerminal()
+        printTitle("Confirm: Clear API Keys")
+        print("")
+        printWrapped("This will permanently remove all stored API keys.", indent: 2, color: .red)
+        print("")
+        printWrapped("You will need to re-enter your API key to use the AI Dungeon Master.", indent: 2, color: .yellow)
+        print("")
+
+        let menuOpts = [MenuOption("Yes, Clear Keys", tint: .danger),
+                        MenuOption("Cancel", tint: .navigation)]
+        showMenuOptions(menuOpts)
+        closeHandler = { [weak self] in self?.showSettings() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                UserDefaults.standard.removeObject(forKey: "dmApiKey")
+                DMEngine.shared.apiKey = nil
+                self.clearTerminal()
+                self.printTitle("API Keys Cleared")
+                self.print("")
+                self.printWrapped("All API keys have been removed.", indent: 2, color: .red)
+                self.print("")
+                self.showMenu(["Done"])
+                self.closeHandler = { [weak self] in self?.showSettings() }
+                self.menuHandler = { [weak self] _ in self?.showSettings() }
+            } else {
                 self.showSettings()
             }
         }

@@ -77,6 +77,77 @@ h2 {
   color: #95d39f;
   font-size: 1.1rem;
 }
+.subhead {
+  margin: 10px 0 6px;
+  color: #8fcf9a;
+  font-size: 0.98rem;
+}
+.summary-list {
+  margin: 0;
+  padding-left: 20px;
+  color: #b8d2bd;
+  line-height: 1.45;
+}
+.summary-list li {
+  margin: 5px 0;
+}
+.inline-link {
+  color: #9ef4b3;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.spoiler-box {
+  margin-top: 10px;
+  border: 1px solid #2b6a3e;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #09100b;
+}
+.spoiler-box summary {
+  cursor: pointer;
+  color: #9ee7ae;
+}
+.connect-panel {
+  margin-top: 14px;
+}
+.connect-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+}
+.connect-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  border: 1px solid #2d7542;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #08110b;
+  transition: transform 120ms ease, border-color 120ms ease;
+}
+.connect-card:hover {
+  transform: translateY(-2px);
+  border-color: #5fbf7a;
+}
+.connect-card img {
+  width: 100%;
+  height: 170px;
+  object-fit: cover;
+  background: #040904;
+  border-bottom: 1px solid #245d36;
+}
+.connect-name {
+  padding: 7px 8px 2px;
+  color: #d6f2d8;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.connect-meta {
+  padding: 0 8px 8px;
+  color: #8fb596;
+  font-size: 0.78rem;
+}
 .links {
   display: flex;
   flex-wrap: wrap;
