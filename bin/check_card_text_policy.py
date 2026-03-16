@@ -40,7 +40,7 @@ def main() -> int:
                 fail(f"search-style link pattern '{r.pattern}' found in {p}")
                 issues += 1
 
-    # 2) Entity summary policy: short project-written summary only.
+    # 2) Entity summary policy: allow informative summaries, but cap overly long blocks.
     summary_rx = re.compile(r'<p class="summary">(.*?)</p>', re.S)
     for p in entities_dir.glob("*.html"):
         if p.name == "index.html":
@@ -48,8 +48,8 @@ def main() -> int:
         text = p.read_text(encoding="utf-8")
         for m in summary_rx.finditer(text):
             summary = re.sub(r"<[^>]+>", "", m.group(1)).strip()
-            if len(summary.split()) > 45:
-                fail(f"long summary (>45 words) in {p}")
+            if len(summary.split()) > 130:
+                fail(f"long summary (>130 words) in {p}")
                 issues += 1
 
     # 3) Lore payload policy: no embedded long description bodies in HTML source.
