@@ -357,10 +357,10 @@ function renderBase(card) {
 function firstSentence(text) {
   const t = (text || '').trim();
   if (!t) return '';
-  const protectedText = t.replace(/\b(?:[A-Za-z]\.\s*){2,}/g, (m) => m.replace(/\./g, ''));
+  const protectedText = protectAbbreviations(t);
   const m = protectedText.match(/.+?[.!?](?:\s|$)/);
-  const out = (m ? m[0] : protectedText).trim();
-  return out;
+  const out = restoreAbbreviations((m ? m[0] : protectedText).trim());
+  return cleanDanglingSnippet(out) || cleanDanglingSnippet(restoreAbbreviations(protectedText)) || '';
 }
 
 function wordSet(text) {
@@ -394,11 +394,36 @@ function gameplayFocus(card) {
 function firstTwoSentences(text) {
   const t = (text || '').trim();
   if (!t) return '';
-  const protectedText = t.replace(/\b(?:[A-Za-z]\.\s*){2,}/g, (m) => m.replace(/\./g, ''));
+  const protectedText = protectAbbreviations(t);
   const parts = protectedText.match(/[^.!?]+[.!?]/g) || [protectedText];
-  const out = parts.slice(0, 2).map((s) => s.trim()).join(' ').trim();
-  if (/(?:\b[A-Za-z]\.\s*){1,3}$/.test(out)) return protectedText;
-  return out;
+  const out = restoreAbbreviations(parts.slice(0, 2).map((s) => s.trim()).join(' ').trim());
+  const cleaned = cleanDanglingSnippet(out);
+  if (cleaned) return cleaned;
+  return cleanDanglingSnippet(restoreAbbreviations(protectedText)) || '';
+}
+
+function protectAbbreviations(text) {
+  let t = (text || '').replace(/\b(?:[A-Za-z]\.\s*){2,}/g, (m) => m.replace(/\./g, '__DOT__'));
+  const fixed = ['Mr.', 'Mrs.', 'Ms.', 'Dr.', 'Prof.', 'Sr.', 'Jr.', 'St.', 'Mt.', 'No.', 'etc.', 'vs.', 'e.g.', 'i.e.', 'U.S.', 'U.K.'];
+  for (const token of fixed) {
+    const safe = token.replace(/\./g, '__DOT__');
+    t = t.split(token).join(safe);
+  }
+  return t;
+}
+
+function restoreAbbreviations(text) {
+  return (text || '').split('__DOT__').join('.');
+}
+
+function cleanDanglingSnippet(text) {
+  let t = (text || '').replace(/\s+/g, ' ').trim();
+  if (!t) return '';
+  t = t.replace(/[,:;-\s]+$/g, '').trim();
+  t = t.replace(/\s+(and|or|with|from|to|for|in|on|at|by|of)$/i, '').trim();
+  if (/\b(?:[A-Z]\.\s*){1,3}$/.test(t)) return '';
+  if (!/[.!?]$/.test(t)) t += '.';
+  return t;
 }
 
 const SOURCE_CONTEXT = {
@@ -915,10 +940,10 @@ async function render(card, allCards) {
     addUnique('Wikipedia', fallback);
   }
 
-  const storyNotes = sourceInsight(card, wiki, entity?.summary || '', relatedCards);
-  const sourceContext = referenceFocus(card, entity?.summary || '', wiki, relatedCards);
+  const storyNotes = cleanDanglingSnippet(sourceInsight(card, wiki, entity?.summary || '', relatedCards));
+  const sourceContext = cleanDanglingSnippet(referenceFocus(card, entity?.summary || '', wiki, relatedCards));
   const playNote = gameplayFocus(card);
-  const history = sourceHistory(card, wiki?.summary?.extract || '', relatedCards);
+  const history = cleanDanglingSnippet(sourceHistory(card, wiki?.summary?.extract || '', relatedCards));
   byId('summary').innerHTML = [
     `<strong>Story Notes:</strong> ${storyNotes}`,
     `<strong>Reference Focus:</strong> ${sourceContext}`,
