@@ -405,6 +405,12 @@ const SOURCE_CONTEXT = {
   'fritz leiber': 'Leiber source material emphasizes urban sword-and-sorcery texture, rogue improvisation, and high-pressure city encounters.',
   'michael moorcock': 'Moorcock source material emphasizes anti-hero framing, cursed power, and multiversal stakes with moral ambiguity.',
   'isaac asimov': 'Asimov-linked source material emphasizes systems-level conflict, logic constraints, and institution-driven plot progression.',
+  'classic sci-fi': 'Classic sci-fi references in this set emphasize first-contact anxiety, frontier survival, and technology-as-social-pressure.',
+  'famous robots': 'Robot-focused material in this set emphasizes identity, agency, and duty-versus-programming conflict.',
+  'alien (1979)': 'Alien-derived material emphasizes industrial-space realism, creature-horror pacing, and survival decisions under uncertainty.',
+  "blake's 7 (1978)": 'Blake\'s 7 source material emphasizes anti-authoritarian cells, moral ambiguity, and tactical improvisation against larger state power.',
+  'doctor who (1963)': 'Doctor Who material emphasizes exploration, problem-solving under time pressure, and non-linear campaign hooks.',
+  'forbidden planet (1956)': 'Forbidden Planet source material emphasizes ancient technology risk, subconscious threat projection, and isolated outpost tension.',
 };
 
 const SOURCE_DOSSIER = {
@@ -468,6 +474,158 @@ const SOURCE_DOSSIER = {
     people: 'Greta Forzane and Bruce Marchant provide observer and frontline perspectives on paradox-era operations.',
     dnd: 'Strong base for time-fracture campaigns where mission order and causal stability are part of encounter design.',
   },
+  'classic sci-fi': {
+    plot: 'These entries draw from mid-century and late-20th-century SF where threat design is tied to setting logic: closed ships, hostile planets, unstable institutions, and technology with side effects.',
+    people: 'The character mix usually pairs specialists (pilot, analyst, scientist, enforcer) with conflicting priorities, creating encounter hooks that feel strategic rather than purely heroic.',
+    dnd: 'Use this source stream when you want dungeon loops to feel like mission-planning loops, with reconnaissance, risk tolerance, and extraction choices.',
+  },
+  'famous robots': {
+    plot: 'Robot-centered stories in this roster frequently pivot on command hierarchy, ethics protocols, and the gap between literal instruction and contextual judgment.',
+    people: 'Cards linked to this source map onto protector constructs, bureaucratic machine minds, and emergent-personality companions, each with different negotiation profiles.',
+    dnd: 'Ideal for campaigns where constructs are not only enemies but also allies, witnesses, and moral stress-tests for party decisions.',
+  },
+  'isaac asimov': {
+    plot: 'Asimov-adjacent entries in this game lean on institutional science fiction: detective structures, systems analysis, and long-range political engineering.',
+    people: 'Recurring archetypes include the rational investigator, the protocol-bound robot, and the planner whose strategy is measured in decades rather than scenes.',
+    dnd: 'Strong fit for campaigns where clues, governance, and prediction matter as much as direct combat throughput.',
+  },
+  'alien (1979)': {
+    plot: 'The core scenario is a commercial crew diverted to a hostile signal, then trapped in a shrinking-safe-space loop as an unknown organism matures aboard ship.',
+    people: 'Ripley functions as the practical chain-of-command survivor, Ash as a concealed corporate vector, and Dallas/Lambert/Parker/Brett as role-specialists under escalating stress.',
+    dnd: 'Use this source for survival-horror modules where map control, resource scarcity, and trust fractures are primary mechanics.',
+  },
+  "blake's 7 (1978)": {
+    plot: 'Story structure favors asymmetric resistance operations, with small-team raids and intelligence moves against a much larger authoritarian system.',
+    people: 'Blake and Avon frame the campaign polarity between idealist rebellion and hard-edged pragmatism, while Vila, Cally, and Jenna support infiltration, discipline, and mobility roles.',
+    dnd: 'Excellent for party play where objective success and moral cost are intentionally in tension.',
+  },
+  'doctor who (1963)': {
+    plot: 'Episodes repeatedly open with a place-time anomaly, then progress through investigation, social decoding, and escalating choice pressure before resolution.',
+    people: 'The Doctor archetype is a high-intellect, low-ego-force problem solver; companions anchor human stakes and provide alternate social access in hostile settings.',
+    dnd: 'Useful when campaigns need varied locations and puzzle-heavy pacing without relying on a single static faction map.',
+  },
+  'forbidden planet (1956)': {
+    plot: 'The narrative begins as a rescue and status check mission, then transitions into a confrontation with hidden legacy technology that externalizes buried psychological threat.',
+    people: 'Commander Adams, Dr Morbius, and Altaira provide command, knowledge-keeper, and social-bridge roles, while Robby models service-intelligence with explicit operational limits.',
+    dnd: 'Strong inspiration for ruin-exploration campaigns where lore, restraint, and epistemic risk are as dangerous as monsters.',
+  },
+};
+
+const SCI_FI_REFERENCE_LINKS = {
+  'classic sci-fi': [
+    ['The Encyclopedia of Science Fiction', 'https://sf-encyclopedia.com/'],
+    ['ISFDB (Internet Speculative Fiction Database)', 'https://www.isfdb.org/'],
+    ['Science Fiction (Encyclopedia Britannica)', 'https://www.britannica.com/art/science-fiction'],
+    ['Science Fiction (Wikipedia)', 'https://en.wikipedia.org/wiki/Science_fiction'],
+    ['Science Fiction Foundation', 'https://www.sf-foundation.org/'],
+  ],
+  'famous robots': [
+    ['List of Fictional Robots (Wikipedia)', 'https://en.wikipedia.org/wiki/List_of_fictional_robots_and_androids'],
+    ['Robotics in Fiction (Wikipedia)', 'https://en.wikipedia.org/wiki/Robotics_in_fiction'],
+    ['RUR and Robot Origin (Wikipedia)', 'https://en.wikipedia.org/wiki/R.U.R.'],
+  ],
+  'isaac asimov': [
+    ['Isaac Asimov (Encyclopedia Britannica)', 'https://www.britannica.com/biography/Isaac-Asimov'],
+    ['Isaac Asimov (Wikipedia)', 'https://en.wikipedia.org/wiki/Isaac_Asimov'],
+    ['Foundation Series (Wikipedia)', 'https://en.wikipedia.org/wiki/Foundation_series'],
+  ],
+  'alien (1979)': [
+    ['Alien (1979 film) (Wikipedia)', 'https://en.wikipedia.org/wiki/Alien_(film)'],
+    ['Alien (1979) (IMDb)', 'https://www.imdb.com/title/tt0078748/'],
+    ['Alien Franchise (Wikipedia)', 'https://en.wikipedia.org/wiki/Alien_(franchise)'],
+  ],
+  "blake's 7 (1978)": [
+    ['Blake\'s 7 (Wikipedia)', 'https://en.wikipedia.org/wiki/Blake%27s_7'],
+    ['List of Blake\'s 7 Characters (Wikipedia)', 'https://en.wikipedia.org/wiki/List_of_Blake%27s_7_characters'],
+    ['Blake\'s 7 (IMDb)', 'https://www.imdb.com/title/tt0076987/'],
+  ],
+  'doctor who (1963)': [
+    ['Doctor Who (Wikipedia)', 'https://en.wikipedia.org/wiki/Doctor_Who'],
+    ['Doctor Who (1963) (IMDb)', 'https://www.imdb.com/title/tt0056751/'],
+    ['BBC Doctor Who', 'https://www.bbc.co.uk/doctorwho'],
+  ],
+  'forbidden planet (1956)': [
+    ['Forbidden Planet (Wikipedia)', 'https://en.wikipedia.org/wiki/Forbidden_Planet'],
+    ['Forbidden Planet (IMDb)', 'https://www.imdb.com/title/tt0049223/'],
+    ['Robby the Robot (Wikipedia)', 'https://en.wikipedia.org/wiki/Robby_the_Robot'],
+  ],
+  'ace double d-031 (1953)': [
+    ['The Encyclopedia of Science Fiction', 'https://sf-encyclopedia.com/'],
+    ['ISFDB (Internet Speculative Fiction Database)', 'https://www.isfdb.org/'],
+    ['Ace Doubles (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Double'],
+    ['Ace Books (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Books'],
+    ['Ace Double D-Series Guide', 'https://people.uncw.edu/smithms/D-series.html'],
+  ],
+  'ace double d-053 (1954)': [
+    ['The Encyclopedia of Science Fiction', 'https://sf-encyclopedia.com/'],
+    ['ISFDB (Internet Speculative Fiction Database)', 'https://www.isfdb.org/'],
+    ['Ace Doubles (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Double'],
+    ['Ace Books (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Books'],
+    ['Ace Double D-Series Guide', 'https://people.uncw.edu/smithms/D-series.html'],
+  ],
+  'ace double d-096 (1955)': [
+    ['The Encyclopedia of Science Fiction', 'https://sf-encyclopedia.com/'],
+    ['ISFDB (Internet Speculative Fiction Database)', 'https://www.isfdb.org/'],
+    ['Ace Doubles (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Double'],
+    ['Ace Books (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Books'],
+    ['Ace Double D-Series Guide', 'https://people.uncw.edu/smithms/D-series.html'],
+  ],
+  'ace double d-103 (1955)': [
+    ['The Encyclopedia of Science Fiction', 'https://sf-encyclopedia.com/'],
+    ['ISFDB (Internet Speculative Fiction Database)', 'https://www.isfdb.org/'],
+    ['Ace Doubles (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Double'],
+    ['Ace Books (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Books'],
+    ['Ace Double D-Series Guide', 'https://people.uncw.edu/smithms/D-series.html'],
+  ],
+  'ace double d-150 (1956)': [
+    ['The Encyclopedia of Science Fiction', 'https://sf-encyclopedia.com/'],
+    ['ISFDB (Internet Speculative Fiction Database)', 'https://www.isfdb.org/'],
+    ['Ace Doubles (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Double'],
+    ['Ace Books (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Books'],
+    ['Ace Double D-Series Guide', 'https://people.uncw.edu/smithms/D-series.html'],
+  ],
+  'ace double d-249 (1957)': [
+    ['The Encyclopedia of Science Fiction', 'https://sf-encyclopedia.com/'],
+    ['ISFDB (Internet Speculative Fiction Database)', 'https://www.isfdb.org/'],
+    ['Ace Doubles (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Double'],
+    ['Ace Books (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Books'],
+    ['Ace Double D-Series Guide', 'https://people.uncw.edu/smithms/D-series.html'],
+  ],
+  'ace double d-295 (1958)': [
+    ['The Encyclopedia of Science Fiction', 'https://sf-encyclopedia.com/'],
+    ['ISFDB (Internet Speculative Fiction Database)', 'https://www.isfdb.org/'],
+    ['Ace Doubles (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Double'],
+    ['Ace Books (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Books'],
+    ['Ace Double D-Series Guide', 'https://people.uncw.edu/smithms/D-series.html'],
+  ],
+  'ace double d-413 (1959)': [
+    ['The Encyclopedia of Science Fiction', 'https://sf-encyclopedia.com/'],
+    ['ISFDB (Internet Speculative Fiction Database)', 'https://www.isfdb.org/'],
+    ['Ace Doubles (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Double'],
+    ['Ace Books (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Books'],
+    ['Ace Double D-Series Guide', 'https://people.uncw.edu/smithms/D-series.html'],
+  ],
+  'ace double d-421 (1960)': [
+    ['The Encyclopedia of Science Fiction', 'https://sf-encyclopedia.com/'],
+    ['ISFDB (Internet Speculative Fiction Database)', 'https://www.isfdb.org/'],
+    ['Ace Doubles (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Double'],
+    ['Ace Books (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Books'],
+    ['Ace Double D-Series Guide', 'https://people.uncw.edu/smithms/D-series.html'],
+  ],
+  'ace double d-449 (1960)': [
+    ['The Encyclopedia of Science Fiction', 'https://sf-encyclopedia.com/'],
+    ['ISFDB (Internet Speculative Fiction Database)', 'https://www.isfdb.org/'],
+    ['Ace Doubles (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Double'],
+    ['Ace Books (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Books'],
+    ['Ace Double D-Series Guide', 'https://people.uncw.edu/smithms/D-series.html'],
+  ],
+  'ace double d-491 (1961)': [
+    ['The Encyclopedia of Science Fiction', 'https://sf-encyclopedia.com/'],
+    ['ISFDB (Internet Speculative Fiction Database)', 'https://www.isfdb.org/'],
+    ['Ace Doubles (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Double'],
+    ['Ace Books (Wikipedia)', 'https://en.wikipedia.org/wiki/Ace_Books'],
+    ['Ace Double D-Series Guide', 'https://people.uncw.edu/smithms/D-series.html'],
+  ],
 };
 
 function mediaLabel(source) {
@@ -616,6 +774,10 @@ async function render(card, allCards) {
 
   const supplemental = isAceSource(card.source) ? [] : await buildSupplementalLinks(wiki);
   for (const l of supplemental) addUnique(l.label, l.href);
+  const srcNorm = norm(card.source || '');
+  const srcBase = srcNorm.replace(/\s*\(\d{4}\)\s*$/, '');
+  const sciFiRefs = SCI_FI_REFERENCE_LINKS[srcNorm] || SCI_FI_REFERENCE_LINKS[srcBase] || [];
+  for (const [label, href] of sciFiRefs) addUnique(label, href);
 
   if (entity?.links?.length) {
     for (const l of entity.links) {
