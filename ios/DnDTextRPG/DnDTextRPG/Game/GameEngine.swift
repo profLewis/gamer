@@ -21321,6 +21321,7 @@ class GameEngine: ObservableObject {
 
     func handleCombatDefeat() {
         clearAllUndoRedo()
+        suppressMenuUntil = .distantPast // same fix as handleGameVictory: don't let a pre-defeat long-press swallow the first menu tap
         cancelCombatIdleTimer()
         combatHesitating = false
         // Combat cleanup
@@ -21443,6 +21444,7 @@ class GameEngine: ObservableObject {
 
     func handleGameVictory() {
         clearAllUndoRedo()
+        suppressMenuUntil = .distantPast // a long-press right before the killing blow can otherwise swallow the first tap on this menu
         SoundManager.shared.stopMusic()
         SoundManager.shared.playVictory()
         clearTerminal()
