@@ -45,6 +45,14 @@ class Colors:
     MAGIC = f'{_RESET_ALL}{_BG}{_BRIGHT}'            # Bright green
 
 
+class UserInterruptRequest(Exception):
+    """Raised when user requests interrupt via Ctrl-C."""
+
+
+class UserSuspendRequest(Exception):
+    """Raised when user requests suspend via Ctrl-Z."""
+
+
 def set_terminal_theme(clear: bool = True):
     """Set terminal to black background with green text."""
     print(f'{_BG}{_FG}', end='', flush=True)
@@ -125,6 +133,7 @@ def fits_in_terminal(text: str, margin: int = 5) -> bool:
 
 _message_log: List[str] = []
 _message_log_max = 3
+_menu_last_selection: Dict[Tuple[str, Tuple[str, ...], bool], int] = {}
 
 
 def status_message(text: str) -> None:
@@ -215,30 +224,22 @@ SPLASH_SCREEN = r'''
 
 SPLASH_DRAGON = r'''
 {title}
-                                  __                  _
-                                 / /\                /\ \
-                                / /  \              /  \ \
-                               / / /\ \            / /\ \ \
-                  _           / / /\ \ \          / / /\ \ \
-                 /\_\        / / /  \ \ \        / / /  \ \_\
-                / / /  _    / / /___/ /\ \      / / /   / / /
-               / / /  /\_\ / / /_____/ /\ \    / / /   / / /
-              / / /__/ / // /_________/\ \ \  / / /___/ / /
-             / / /____/ // / /_       __\ \_\/ / /____\/ /
-             \/________/ \_\___\     /____/_/\/_________/
-
-                            ,     \    /      ,
-                           / \    )\__/(     / \
-                          /   \  (_\  /_)   /   \
-                     ____/_____\__\@  @/___/_____\____
-                    |             |\../|              |
-                    |              \VV/               |
-                    |         ---- DnD ----          |
-                    |_________________________________|
-                     |    /\ /      \\       \ /\    |
-                     |  /   V        ))       V   \  |
-                     |/     `       //        '     \|
-                     `              V                '
+                    ___====-_  _-====___
+              _--^^^#####//      \\#####^^^--_
+           _-^##########// (    ) \\##########^-_
+          -############//  |\^^/|  \\############-
+        _/############//   (@::@)   \\############\_
+       /#############((     \\//     ))#############\
+      -###############\\    (oo)    //###############-
+     -#################\\  / VV \  //#################-
+    -###################\\/      \\//###################-
+   _#/|##########/\######(   /\   )######/\##########|\#_
+   |/ |#/\#/\#/\/  \#/\##\  |  |  /##/\#/  \/\#/\#/\#| \|
+   `  |/  V  V  `   V  \#\| |  | |/#/  V   '  V  V  \|  '
+      `   `  `      `   / | |  | | \   '      '  '   '
+                         (  | |  | |  )
+                        __\ | |  | | /__
+                       (vvv(VVV)(VVV)vvv)
 
                 ╔═════════════════════════════════════════╗
                 ║         ██████╗ ███╗   ██╗██████╗       ║
@@ -294,32 +295,119 @@ SPLASH_SIMPLE = r'''
 {reset}
 '''
 
+SPLASH_CASTLE = r'''
+{title}
+      /\                                   |>>>>
+  /\ /  \ /\                               |
+ /  V /\ V  \                              |
+/    /  \    \      * * *  * * *           |
+\___/ /\ \___/   < < < < < < < < <==       |
+    \/_  _\/      * * *  * * *             |
+      /\/\                                     __[]__
+     /_/  \_           _                     _|_o__o_|_
+      / /\ \          / \                   |  []  []  |
+     /_/  \_\     ___/___\___      _________|__________|____
+                   |  _   _  |    |  [] [] [] [] [] [] []  |
+                   | |_| |_| |____|_________________________|
+                   |  ___ ___|_____|  _   _   _   _   _    |
+                   | |   |   |     | |_| |_| |_| |_| |_|   |
+                   |_|___|___|     |_______________________|
+
+                ╔═════════════════════════════════════════╗
+                ║         ██████╗ ███╗   ██╗██████╗       ║
+                ║         ██╔══██╗████╗  ██║██╔══██╗      ║
+                ║         ██║  ██║██╔██╗ ██║██║  ██║      ║
+                ║         ██║  ██║██║╚██╗██║██║  ██║      ║
+                ║         ██████╔╝██║ ╚████║██████╔╝      ║
+                ║         ╚═════╝ ╚═╝  ╚═══╝╚═════╝       ║
+                ║           Castle Siege Edition          ║
+                ╚═════════════════════════════════════════╝
+{reset}
+'''
+
+
+DRAGON_SPLASH_ART = r'''
+___====-_  _-====___
+_--^^^#####//      \\#####^^^--_
+_-^##########// (    ) \\##########^-_
+-############//  |\^^/|  \\############-
+_/############//   (@::@)   \\############\_
+/#############((     \\//     ))#############\
+-###############\\    (oo)    //###############-
+-#################\\  / VV \  //#################-
+-###################\\/      \\//###################-
+_#/|##########/\######(   /\   )######/\##########|\#_
+|/ |#/\#/\#/\/  \#/\##\  |  |  /##/\#/  \/\#/\#/\#| \|
+`  |/  V  V  `   V  \#\| |  | |/#/  V   '  V  V  \|  '
+`   `  `      `   / | |  | | \   '      '  '   '
+(  | |  | |  )
+__\ | |  | | /__
+(vvv(VVV)(VVV)vvv)
+'''
+
+
+DRAGON_SPLASH_LOGO = r'''
+╔═════════════════════════════════════════╗
+║         ██████╗ ███╗   ██╗██████╗       ║
+║         ██╔══██╗████╗  ██║██╔══██╗      ║
+║         ██║  ██║██╔██╗ ██║██║  ██║      ║
+║         ██║  ██║██║╚██╗██║██║  ██║      ║
+║         ██████╔╝██║ ╚████║██████╔╝      ║
+║         ╚═════╝ ╚═╝  ╚═══╝╚═════╝       ║
+║                                         ║
+║                 DnD RPG                 ║
+╚═════════════════════════════════════════╝
+'''
+
+
+def _center_block(block: str, width: int) -> str:
+    """Center each line in a multiline text block."""
+    lines = [ln.rstrip() for ln in block.strip("\n").splitlines()]
+    return "\n".join(ln.center(width) for ln in lines)
+
+
+def _hyperlink(text: str, url: str) -> str:
+    """Create a terminal hyperlink (OSC 8)."""
+    return f"\033]8;;{url}\033\\{text}\033]8;;\033\\"
+
 
 def show_splash_screen(style: str = "dragon") -> None:
     """Display the D&D splash screen."""
     # Use scrollback-preserving clear
     clear_screen(preserve_scrollback=True)
 
+    cols, term_height = get_terminal_size()
+
     if style == "dragon":
-        splash = SPLASH_DRAGON
+        timbaloo_link = _hyperlink("timbaloo", "https://timbaloo.com")
+        gift_line = "A gift for you from timbaloo".center(cols).replace("timbaloo", timbaloo_link)
+        splash = (
+            f"{Colors.TITLE}"
+            + _center_block(DRAGON_SPLASH_ART, cols)
+            + "\n\n"
+            + _center_block(DRAGON_SPLASH_LOGO, cols)
+            + "\n\n"
+            + f"{gift_line}\n"
+            + f"{'https://timbaloo.com':^{cols}}\n"
+            + f"{'Press ENTER to begin...':^{cols}}\n"
+            + f"{Colors.RESET}"
+        )
+    elif style == "castle":
+        splash = SPLASH_CASTLE
     elif style == "simple":
         splash = SPLASH_SIMPLE
     else:
         splash = SPLASH_SCREEN
 
     # Check if splash fits in terminal
-    _, term_height = get_terminal_size()
     splash_lines = splash.count('\n')
 
     # Use simple splash if terminal is too small
-    if splash_lines > term_height - 2 and style != "simple":
+    if splash_lines > term_height - 2 and style != "simple" and style != "dragon":
         splash = SPLASH_SIMPLE
 
     # Format with colors
-    formatted = splash.format(
-        title=Colors.TITLE,
-        reset=Colors.RESET
-    )
+    formatted = splash if style == "dragon" else splash.format(title=Colors.TITLE, reset=Colors.RESET)
 
     print(formatted)
 
@@ -468,6 +556,12 @@ def _getch(timeout: Optional[float] = None) -> Optional[str]:
                 return None  # Timeout
 
         ch = sys.stdin.read(1)
+
+        # Honor terminal control keys in raw mode.
+        if ch == '\x03':  # Ctrl-C
+            raise UserInterruptRequest
+        if ch == '\x1a':  # Ctrl-Z
+            raise UserSuspendRequest
 
         # Handle escape sequences (arrow keys)
         if ch == '\x1b':  # ESC
@@ -648,17 +742,27 @@ def get_menu_choice(options: List[str], title: str = "Choose an option:",
         use_defaults = allow_default
         use_arrow_keys = True
 
-    # If no default specified and defaults are enabled, use first option
-    if default is None and use_defaults:
-        default = 1
+    # Menu memory: when returning to a menu, preselect last chosen option.
+    menu_key = (title, tuple(str(o) for o in options), bool(allow_back))
+    remembered = _menu_last_selection.get(menu_key)
+    if default is None:
+        if remembered is not None and 1 <= remembered <= len(options):
+            default = remembered
+        elif use_defaults:
+            default = 1
 
     # Check if we can use interactive mode (requires TTY)
     interactive = use_arrow_keys and _is_tty() and timeout is None
 
     if interactive:
-        return _get_menu_choice_interactive(options, title, default or 1, allow_back)
+        choice = _get_menu_choice_interactive(options, title, default or 1, allow_back)
     else:
-        return _get_menu_choice_fallback(options, title, default, use_defaults, timeout, allow_back)
+        choice = _get_menu_choice_fallback(options, title, default, use_defaults, timeout, allow_back)
+
+    if 1 <= choice <= len(options):
+        _menu_last_selection[menu_key] = choice
+
+    return choice
 
 
 def _get_menu_choice_interactive(options: List[str], title: str, default: int,
@@ -678,6 +782,8 @@ def _get_menu_choice_interactive(options: List[str], title: str, default: int,
         while True:
             try:
                 ch = _getch()
+                if ch is None:
+                    continue
 
                 # Arrow keys
                 if ch == '\x1b[A' or ch == 'k':  # Up arrow or k
@@ -701,10 +807,15 @@ def _get_menu_choice_interactive(options: List[str], title: str, default: int,
                 elif ch == '\r' or ch == '\n' or ch == ' ':  # Enter or Space
                     return selected
 
-                elif ch == '\x1b' or ch == 'q':  # ESC or q - back if allowed, else default
+                elif ch == '\x1b':  # ESC - back if allowed, else default
                     if allow_back:
                         return 0
                     return default
+
+                elif ch == 'q' or ch == 'Q':  # q - back if possible, otherwise quit app
+                    if allow_back:
+                        return 0
+                    raise KeyboardInterrupt
 
                 elif ch == '\x7f' or ch == 'b':  # Backspace or 'b' - back if allowed
                     if allow_back:
@@ -728,10 +839,14 @@ def _get_menu_choice_interactive(options: List[str], title: str, default: int,
                         elif num_options >= 10:
                             return 10
 
-            except (EOFError, KeyboardInterrupt):
+            except EOFError:
                 if allow_back:
                     return 0
                 return default
+            except KeyboardInterrupt:
+                raise
+            except (UserInterruptRequest, UserSuspendRequest):
+                raise
 
     finally:
         _show_cursor()
@@ -775,15 +890,56 @@ def _get_menu_choice_fallback(options: List[str], title: str, default: Optional[
             min_val = 0 if allow_back else 1
             print(f"{Colors.WARNING}Please enter a number between {min_val} and {max_val}{Colors.RESET}")
         except ValueError:
+            lowered = user_input.strip().lower()
+            if lowered == 'q':
+                if allow_back:
+                    return 0
+                raise KeyboardInterrupt
             print(f"{Colors.WARNING}Please enter a valid number{Colors.RESET}")
 
 
 def confirm(prompt: str = "Continue?", default: bool = True) -> bool:
-    """Get yes/no confirmation. Default is yes."""
+    """Get yes/no confirmation. In TTY mode, single-key y/n submits immediately."""
     default_str = "y" if default else "n"
     hint = "Y/n" if default else "y/N"
+
+    # Interactive terminals: accept single-key input (y/n + Enter optional).
+    if _is_tty():
+        print(f"{Colors.INFO}{prompt} ({hint}): {Colors.RESET}", end="", flush=True)
+        try:
+            ch = _getch()
+        except EOFError:
+            print()
+            return default
+        except KeyboardInterrupt:
+            print()
+            raise
+        except (UserInterruptRequest, UserSuspendRequest):
+            print()
+            raise
+
+        if ch in ("\r", "\n", " "):
+            print(default_str)
+            return default
+        if ch is None:
+            # Can happen after Ctrl-Z suspend/resume.
+            print(default_str)
+            return default
+        if ch and ch.lower() == "y":
+            print("y")
+            return True
+        if ch and ch.lower() == "n":
+            print("n")
+            return False
+
+        # Unknown key: fall back to normal line input.
+        print()
+        response = get_input("", default=default_str).lower().strip()
+        return response in ("y", "yes", "")
+
+    # Non-interactive fallback (pipes/tests): keep line-input behavior.
     response = get_input(f"{prompt} ({hint}): ", default=default_str).lower().strip()
-    return response in ('y', 'yes', '')
+    return response in ("y", "yes", "")
 
 
 def print_combat_action(actor: str, action: str, target: str = "",

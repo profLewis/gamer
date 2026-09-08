@@ -163,6 +163,27 @@ struct DMCommandResult {
     let douseTorch: Bool         // [DOUSE_TORCH] — extinguish the torch
     let unsecureDirection: String?  // [UNSECURE:direction] — remove barricade
     let secureDirection: String?    // [SECURE:direction] — add barricade
+
+    // Just DM mode — extended commands
+    let shouldSave: Bool
+    let shouldSearch: Bool
+    let shouldListen: Bool
+    let shouldRest: Bool
+    let shouldLongRest: Bool
+    let shouldCollectTreasure: Bool
+    let shouldShowMap: Bool
+    let shouldShowInventory: Bool
+    let shouldShowParty: Bool
+    let shouldDodge: Bool
+    let shouldFlee: Bool
+    let shouldPlayDead: Bool
+    let shouldTalkNPC: Bool
+    let shouldTradeNPC: Bool
+    let attackTarget: String?         // [ATTACK:Goblin]
+    let castSpell: (spell: String, target: String)?  // [CAST_SPELL:Fireball:Goblin]
+    let buyItem: String?              // [BUY:Healing Potion]
+    let sellItem: String?             // [SELL:Dagger]
+    let pickUpItem: String?           // [PICK_UP:Torch]
 }
 
 class DMEngine {
@@ -171,6 +192,11 @@ class DMEngine {
     // Conversation history for context (last few exchanges)
     private var conversationHistory: [(role: String, content: String)] = []
     private let maxHistory = 8  // Keep last 8 messages (4 exchanges)
+
+    /// Just DM mode — larger context and token limits
+    var justDMMode: Bool = false
+    private var effectiveMaxHistory: Int { justDMMode ? 24 : maxHistory }
+    private var effectiveMaxTokens: Int { justDMMode ? 500 : 300 }
 
     // MARK: - Provider
 
@@ -294,8 +320,8 @@ class DMEngine {
             (role: entry.isUser ? "user" : "assistant", content: entry.text)
         }
         // Trim to max history size
-        if conversationHistory.count > maxHistory {
-            conversationHistory = Array(conversationHistory.suffix(maxHistory))
+        if conversationHistory.count > effectiveMaxHistory {
+            conversationHistory = Array(conversationHistory.suffix(effectiveMaxHistory))
         }
     }
 
@@ -303,8 +329,8 @@ class DMEngine {
     func injectContext(_ message: String) {
         conversationHistory.append((role: "user", content: "[SYSTEM CONTEXT] \(message)"))
         conversationHistory.append((role: "assistant", content: "Understood, I'm aware of these recent events."))
-        if conversationHistory.count > maxHistory {
-            conversationHistory = Array(conversationHistory.suffix(maxHistory))
+        if conversationHistory.count > effectiveMaxHistory {
+            conversationHistory = Array(conversationHistory.suffix(effectiveMaxHistory))
         }
     }
 
@@ -330,8 +356,8 @@ class DMEngine {
         conversationHistory.append((role: "user", content: userMessage))
 
         // Trim history
-        if conversationHistory.count > maxHistory {
-            conversationHistory = Array(conversationHistory.suffix(maxHistory))
+        if conversationHistory.count > effectiveMaxHistory {
+            conversationHistory = Array(conversationHistory.suffix(effectiveMaxHistory))
         }
 
         callAI(provider: provider, apiKey: key, system: systemPrompt, messages: conversationHistory) { [weak self] response in
@@ -396,6 +422,28 @@ class DMEngine {
         var unsecureDir: String? = nil
         var secureDir: String? = nil
 
+        // Just DM extended commands
+        var doSave = false
+        var doSearch = false
+        var doListen = false
+        var doRest = false
+        var doLongRest = false
+        var doCollectTreasure = false
+        var doShowMap = false
+        var doShowInventory = false
+        var doShowParty = false
+        var doDodge = false
+        var doFlee = false
+        var doPlayDead = false
+        var doTalkNPC = false
+        var doTradeNPC = false
+        var attackTarget: String? = nil
+        var castSpellName: String? = nil
+        var castSpellTarget: String? = nil
+        var buyItemName: String? = nil
+        var sellItemName: String? = nil
+        var pickUpItemName: String? = nil
+
         for line in response.components(separatedBy: .newlines) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
 
@@ -448,9 +496,63 @@ class DMEngine {
             } else if let range = trimmed.range(of: #"\[SECURE:(north|south|east|west)\]"#, options: [.regularExpression, .caseInsensitive]) {
                 let tag = String(trimmed[range])
                 secureDir = String(tag.dropFirst("[SECURE:".count).dropLast(1)).lowercased()
+            // Just DM extended tags
+            } else if trimmed.range(of: #"\[SAVE\]"#, options: .regularExpression) != nil {
+                doSave = true
+            } else if trimmed.range(of: #"\[SEARCH\]"#, options: .regularExpression) != nil {
+                doSearch = true
+            } else if trimmed.range(of: #"\[LISTEN\]"#, options: .regularExpression) != nil {
+                doListen = true
+            } else if trimmed.range(of: #"\[LONG_REST\]"#, options: .regularExpression) != nil {
+                doLongRest = true
+            } else if trimmed.range(of: #"\[REST\]"#, options: .regularExpression) != nil {
+                doRest = true
+            } else if trimmed.range(of: #"\[COLLECT_TREASURE\]"#, options: .regularExpression) != nil {
+                doCollectTreasure = true
+            } else if trimmed.range(of: #"\[SHOW_MAP\]"#, options: .regularExpression) != nil {
+                doShowMap = true
+            } else if trimmed.range(of: #"\[SHOW_INVENTORY\]"#, options: .regularExpression) != nil {
+                doShowInventory = true
+            } else if trimmed.range(of: #"\[SHOW_PARTY\]"#, options: .regularExpression) != nil {
+                doShowParty = true
+            } else if trimmed.range(of: #"\[DODGE\]"#, options: .regularExpression) != nil {
+                doDodge = true
+            } else if trimmed.range(of: #"\[FLEE\]"#, options: .regularExpression) != nil {
+                doFlee = true
+            } else if trimmed.range(of: #"\[PLAY_DEAD\]"#, options: .regularExpression) != nil {
+                doPlayDead = true
+            } else if trimmed.range(of: #"\[TALK_NPC\]"#, options: .regularExpression) != nil {
+                doTalkNPC = true
+            } else if trimmed.range(of: #"\[TRADE_NPC\]"#, options: .regularExpression) != nil {
+                doTradeNPC = true
+            } else if let range = trimmed.range(of: #"\[ATTACK:(.+?)\]"#, options: .regularExpression) {
+                let tag = String(trimmed[range])
+                attackTarget = String(tag.dropFirst("[ATTACK:".count).dropLast(1))
+            } else if let range = trimmed.range(of: #"\[CAST_SPELL:(.+?):(.+?)\]"#, options: .regularExpression) {
+                let tag = String(trimmed[range])
+                let inner = String(tag.dropFirst("[CAST_SPELL:".count).dropLast(1))
+                let parts = inner.split(separator: ":", maxSplits: 1)
+                if parts.count == 2 {
+                    castSpellName = String(parts[0])
+                    castSpellTarget = String(parts[1])
+                }
+            } else if let range = trimmed.range(of: #"\[BUY:(.+?)\]"#, options: .regularExpression) {
+                let tag = String(trimmed[range])
+                buyItemName = String(tag.dropFirst("[BUY:".count).dropLast(1))
+            } else if let range = trimmed.range(of: #"\[SELL:(.+?)\]"#, options: .regularExpression) {
+                let tag = String(trimmed[range])
+                sellItemName = String(tag.dropFirst("[SELL:".count).dropLast(1))
+            } else if let range = trimmed.range(of: #"\[PICK_UP:(.+?)\]"#, options: .regularExpression) {
+                let tag = String(trimmed[range])
+                pickUpItemName = String(tag.dropFirst("[PICK_UP:".count).dropLast(1))
             } else {
                 cleanLines.append(line)
             }
+        }
+
+        var spellTuple: (spell: String, target: String)? = nil
+        if let sn = castSpellName, let st = castSpellTarget {
+            spellTuple = (spell: sn, target: st)
         }
 
         return DMCommandResult(
@@ -468,7 +570,26 @@ class DMEngine {
             lightTorch: doLightTorch,
             douseTorch: doDouseTorch,
             unsecureDirection: unsecureDir,
-            secureDirection: secureDir
+            secureDirection: secureDir,
+            shouldSave: doSave,
+            shouldSearch: doSearch,
+            shouldListen: doListen,
+            shouldRest: doRest,
+            shouldLongRest: doLongRest,
+            shouldCollectTreasure: doCollectTreasure,
+            shouldShowMap: doShowMap,
+            shouldShowInventory: doShowInventory,
+            shouldShowParty: doShowParty,
+            shouldDodge: doDodge,
+            shouldFlee: doFlee,
+            shouldPlayDead: doPlayDead,
+            shouldTalkNPC: doTalkNPC,
+            shouldTradeNPC: doTradeNPC,
+            attackTarget: attackTarget,
+            castSpell: spellTuple,
+            buyItem: buyItemName,
+            sellItem: sellItemName,
+            pickUpItem: pickUpItemName
         )
     }
 
@@ -771,6 +892,108 @@ class DMEngine {
         """ } ?? "")
         """
 
+        // Just DM mode — override ad-lib level with full command set
+        if context.justDMMode {
+            prompt += """
+
+            MODE: JUST DM — You are the sole interface for this game. The player types natural \
+            language and you interpret their intent, narrate the outcome, and issue command tags \
+            to change game state.
+
+            CRITICAL RULES:
+            - ALWAYS narrate first (2-4 sentences), then place command tags on separate lines at the end
+            - NEVER describe a state change without the matching command tag
+            - If the player's intent maps to a game action, use the appropriate tag
+            - If the player asks about something, just narrate (no tags needed)
+            - Keep narration atmospheric but brief
+
+            AVAILABLE COMMANDS (place each on its own line after narration):
+
+            MOVEMENT & EXPLORATION:
+              [MOVE:north|south|east|west] — move through an exit (ONLY valid exits!)
+              [TELEPORT] — teleport to dungeon entrance
+              [SEARCH] — search the current room
+              [LISTEN] — listen at doors for sounds
+              [COLLECT_TREASURE] — pick up treasure in the room
+              [PICK_UP:item_name] — pick up a specific dropped item
+              [SHOW_MAP] — display the dungeon map
+
+            PARTY MANAGEMENT:
+              [REST] — short rest (heals ~25% HP)
+              [LONG_REST] — long rest (full heal, restores spell slots)
+              [SHOW_INVENTORY] — display party inventory
+              [SHOW_PARTY] — display party status
+              [SAVE] — quick save the game
+
+            ITEMS & EQUIPMENT:
+              [GRANT_ITEM:name] — give the party a new item
+              [DROP_ITEM:name] — remove an item from inventory
+              [EQUIP_ITEM:name] — equip an item the party already has
+              [USE_ITEM:name] — use a consumable item
+              [BONUS_GOLD:amount] — award gold
+
+            HEALTH & STATUS:
+              [HEAL:amount] — heal the party
+              [DAMAGE:amount] — damage to enemies (in combat) or party (in exploration)
+              [DAMAGE_PARTY:amount] — damage to party (in combat)
+
+            TORCH:
+              [LIGHT_TORCH] — light the party's torch
+              [DOUSE_TORCH] — extinguish the torch
+
+            DOORS:
+              [SECURE:direction] — barricade a door
+              [UNSECURE:direction] — remove a barricade
+            """
+
+            if context.inCombat {
+                prompt += """
+
+                COMBAT COMMANDS (combat is in progress!):
+                  [ATTACK:target_name] — attack a specific enemy
+                  [CAST_SPELL:spell_name:target_name] — cast a spell at a target
+                  [DODGE] — take the Dodge action
+                  [FLEE] — attempt to flee combat
+                  [PLAY_DEAD] — play dead
+                  [DAMAGE:amount] — damage the enemy monsters
+                  [DAMAGE_PARTY:amount] — damage the party (traps, retaliation)
+                """
+            }
+
+            if context.npcInfo != nil {
+                prompt += """
+
+                NPC INTERACTION (NPC present):
+                  [TALK_NPC] — initiate conversation with present NPC
+                  [TRADE_NPC] — open trade with NPC
+                  [BUY:item_name] — buy from merchant
+                  [SELL:item_name] — sell to merchant
+                """
+            }
+
+            prompt += """
+
+            INTERPRETATION GUIDELINES:
+            - "go north" / "head north" → [MOVE:north]
+            - "look around" / "search" / "check for traps" → [SEARCH]
+            - "rest" / "take a break" → [REST]
+            - "use potion" / "drink healing potion" → [USE_ITEM:Potion of Healing]
+            - "attack the goblin" / "hit the orc" → [ATTACK:Goblin]
+            - "cast fireball at them" → [CAST_SPELL:Fireball:target]
+            - "save" / "save my progress" → [SAVE]
+            - "what's in my bag" / "inventory" → [SHOW_INVENTORY]
+            - "how's everyone doing" / "status" → [SHOW_PARTY]
+            - "where am I" / "show map" → [SHOW_MAP]
+            - "talk to the merchant" → [TALK_NPC]
+            - "buy a potion" → [BUY:Potion of Healing]
+            - NEVER use [MOVE:direction] for a direction not in the Exits list
+            - NEVER use [MOVE:direction] for a barricaded door
+            - Only DROP/EQUIP/USE items the party actually has (see inventory above)
+            - Be creative! Make the adventure memorable.
+            - Stay in character as a classic D&D Dungeon Master
+            """
+        } else {
+
         switch context.adLibLevel {
         case .off:
             break
@@ -889,6 +1112,8 @@ class DMEngine {
             """
         }
 
+        } // end else (non-justDM)
+
         // HAL 9000 refusal style for all DM levels
         // Add FAQ knowledge for gameplay questions
         prompt += """
@@ -958,7 +1183,7 @@ class DMEngine {
 
         let body: [String: Any] = [
             "model": "claude-sonnet-4-5-20250929",
-            "max_tokens": 300,
+            "max_tokens": effectiveMaxTokens,
             "system": system,
             "messages": messages.map { ["role": $0.role, "content": $0.content] }
         ]
@@ -997,7 +1222,7 @@ class DMEngine {
 
         let body: [String: Any] = [
             "model": "gpt-4o-mini",
-            "max_tokens": 300,
+            "max_tokens": effectiveMaxTokens,
             "messages": oaiMessages
         ]
 
@@ -1041,7 +1266,7 @@ class DMEngine {
         let body: [String: Any] = [
             "system_instruction": ["parts": [["text": system]]],
             "contents": contents,
-            "generationConfig": ["maxOutputTokens": 300]
+            "generationConfig": ["maxOutputTokens": effectiveMaxTokens]
         ]
 
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
@@ -1254,5 +1479,6 @@ struct DMContext {
     var timeLimit: String? = nil
     var droppedItems: String? = nil
     var npcInfo: String? = nil
+    var justDMMode: Bool = false
     var inCombat: Bool { combatSummary != nil }
 }

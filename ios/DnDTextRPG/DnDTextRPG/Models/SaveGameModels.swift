@@ -134,6 +134,9 @@ class SaveGameManager {
 
         // Trim old breakpoints for this slot
         trimBreakpoints(slotId: saveGame.slotId)
+
+        // Enforce max slot limit — delete oldest slots if over 10
+        trimExcessSlots()
     }
 
     func load(id: UUID) -> SaveGame? {
@@ -168,6 +171,17 @@ class SaveGameManager {
             for save in toDelete {
                 delete(id: save.id)
             }
+        }
+    }
+
+    /// Delete the oldest slots if total exceeds maxSlots
+    private func trimExcessSlots() {
+        let slots = listSlots()
+        guard slots.count > SaveGameManager.maxSlots else { return }
+        // Slots are sorted newest first — delete from the end
+        let excess = slots.suffix(from: SaveGameManager.maxSlots)
+        for slot in excess {
+            deleteSlot(slotId: slot.slotId)
         }
     }
 }

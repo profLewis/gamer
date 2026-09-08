@@ -85,15 +85,31 @@ struct MenuOption: Identifiable {
     let tint: MenuTint
     let isCompactNav: Bool  // Compact navigation symbol (⏮, ⏭, ?) — grouped into one cell
 
-    static let maxButtonLength = 20
+    static let maxButtonLength = 22
 
     init(_ text: String, isDefault: Bool = false, isDisabled: Bool = false, isAlert: Bool = false, tint: MenuTint = .normal, compact: Bool = false) {
-        self.text = text.count > Self.maxButtonLength ? String(text.prefix(Self.maxButtonLength - 1)) + "…" : text
+        self.text = Self.trimToFit(text)
         self.isDefault = isDefault
         self.isDisabled = isDisabled
         self.isAlert = isAlert
         self.tint = tint
         self.isCompactNav = compact
+    }
+
+    /// Trim text to fit button width, cutting at a word boundary when possible
+    private static func trimToFit(_ text: String) -> String {
+        guard text.count > maxButtonLength else { return text }
+        // Try to break at last space within the limit
+        let prefix = String(text.prefix(maxButtonLength))
+        if let lastSpace = prefix.lastIndex(of: " ") {
+            let trimmed = String(prefix[prefix.startIndex..<lastSpace])
+            // Only use word break if it keeps at least half the allowed length
+            if trimmed.count >= maxButtonLength / 2 {
+                return trimmed
+            }
+        }
+        // No good word break — hard cut
+        return prefix
     }
 }
 
