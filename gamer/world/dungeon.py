@@ -136,6 +136,29 @@ class Room:
             'cleared': self.cleared,
         }
 
+    @classmethod
+    def from_dict(cls, data: Dict) -> 'Room':
+        """Reconstruct a room from serialized data."""
+        room_type_name = str(data.get('room_type', 'EMPTY'))
+        room_type = RoomType[room_type_name] if room_type_name in RoomType.__members__ else RoomType.EMPTY
+        room = cls(
+            id=int(data.get('id', 0)),
+            room_type=room_type,
+            name=str(data.get('name', 'Unknown Room')),
+            description=str(data.get('description', '')),
+            x=int(data.get('x', 0)),
+            y=int(data.get('y', 0)),
+        )
+
+        exits_data = data.get('exits', {}) or {}
+        for direction_name, room_id in exits_data.items():
+            if direction_name in Direction.__members__:
+                room.exits[Direction[direction_name]] = int(room_id)
+
+        room.visited = bool(data.get('visited', False))
+        room.cleared = bool(data.get('cleared', False))
+        return room
+
 
 # Room descriptions by type
 ROOM_DESCRIPTIONS: Dict[RoomType, List[str]] = {
@@ -320,6 +343,40 @@ class Dungeon:
             'rooms': {rid: room.to_dict() for rid, room in self.rooms.items()},
             'current_room_id': self.current_room_id,
         }
+
+    @classmethod
+    def from_dict(cls, data: Dict) -> 'Dungeon':
+        """Reconstruct a dungeon from serialized data."""
+        dungeon = cls(
+            name=str(data.get('name', 'Unknown Dungeon')),
+            level=int(data.get('level', 1)),
+        )
+
+        rooms_raw = data.get('rooms', {}) or {}
+        for room_id_raw, room_data in rooms_raw.items():
+            room = Room.from_dict(room_data or {})
+            try:
+                room_id = int(room_id_raw)
+            except (TypeError, ValueError):
+                room_id = room.id
+            room.id = room_id
+            dungeon.rooms[room_id] = room
+
+        try:
+            current_room_id = int(data.get('current_room_id', 0))
+        except (TypeError, ValueError):
+            current_room_id = 0
+
+        if dungeon.rooms:
+            if current_room_id not in dungeon.rooms:
+                current_room_id = next(iter(dungeon.rooms.keys()))
+            dungeon.current_room_id = current_room_id
+
+            # Ensure at least one room is marked visited for map and navigation UX.
+            if not any(r.visited for r in dungeon.rooms.values()):
+                dungeon.rooms[current_room_id].visited = True
+
+        return dungeon
 
     def get_map_display(self, radius: int = 2) -> str:
         """Generate a simple text map centered on current room."""

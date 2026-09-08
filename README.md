@@ -117,6 +117,11 @@ Requires Xcode 15.0+. Open `ios/DnDTextRPG/DnDTextRPG.xcodeproj` and build for i
 
 See [ios/README.md](ios/README.md) for detailed build instructions.
 
+## iOS/Python Feature Parity
+
+- Current reconciliation status and mapping:
+  [docs/ios_python_parity.md](docs/ios_python_parity.md)
+
 ## DnDex (Card Dex)
 
 - Browse all generated player, monster, and location cards in the **DnDex** viewer:

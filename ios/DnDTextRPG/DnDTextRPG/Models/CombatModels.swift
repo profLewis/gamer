@@ -73,14 +73,14 @@ enum MonsterType: String, CaseIterable, Codable {
     case troll = "Troll"
     case minotaur = "Minotaur"
     case basilisk = "Basilisk"
-    case displacerBeast = "Displacer Beast"
+    case displacerBeast = "Phase Stalker"
     case wraith = "Wraith"
-    case demogorgon = "Demogorgon"
-    case mindFlayer = "Mind Flayer"
+    case demogorgon = "The Maw"
+    case mindFlayer = "Brain Eater"
     // Boss (CR 10+)
-    case beholder = "Beholder"
+    case beholder = "Eye Tyrant"
     case youngDragon = "Young Dragon"
-    case vecna = "Vecna"
+    case vecna = "The Undying King"
 
     struct Stats {
         let hp: Int
@@ -186,13 +186,13 @@ enum MonsterType: String, CaseIterable, Codable {
         case .troll: return "A long-limbed horror with tearing claws, rancid breath, and flesh that knits itself back together. Trolls keep fighting through wounds that would kill almost anything else. Without fire or acid, victory can collapse into a brutal stalemate."
         case .minotaur: return "A bull-headed juggernaut bred for slaughter in corridors, arenas, and labyrinth halls. It reads terrain instinctively, using corners and lanes to set devastating charges. Minotaurs are not subtle, but they are brutally efficient predators."
         case .basilisk: return "A thick-scaled reptile with cold eyes and a gaze that petrifies flesh into stone. It advances with predatory patience, forcing heroes to choose between looking and dying. Basilisk encounters are won through discipline, mirrors, and nerves."
-        case .displacerBeast: return "A sleek six-legged hunter with barbed tentacles and a magically distorted outline. Its true body never seems to be where it appears, causing attacks to miss by inches. The displacer beast thrives on confusion and overconfidence."
+        case .displacerBeast: return "A sleek six-legged hunter with barbed tentacles and a magically distorted outline. Its true body never seems to be where it appears, causing attacks to miss by inches. The phase stalker thrives on confusion and overconfidence."
         case .wraith: return "A shadow-wrapped undead spirit that glides soundlessly and drains life at a touch. It carries an aura of dread that weakens resolve before blades even meet. Wraiths turn victory sour by leaving survivors exhausted, chilled, and hollow."
-        case .demogorgon: return "A nightmare predator from the Upside Down with a flower-like maw and relentless hunting drive. It closes distance fast, tears through isolated targets, and pressures the backline without hesitation. Demogorgon fights feel like survival horror, not standard skirmishes."
-        case .mindFlayer: return "A psionic aberration with facial tentacles, alien calm, and frightening mental precision. Mind flayers attack cognition first, disrupting choices before physical damage arrives. In close range, they become executioners with terrifying brain-harvest methods."
-        case .beholder: return "A floating tyrant of paranoid intellect, ringed with eyestalks that project distinct killing rays. It controls vertical space, line-of-sight, and battlefield tempo all at once. A beholder encounter punishes predictable movement and poor positioning."
+        case .demogorgon: return "A nightmare predator from the deep dark between worlds, with a flower-like maw and relentless hunting drive. It closes distance fast, tears through isolated targets, and pressures the backline without hesitation. Facing the Maw feels like survival horror, not a standard skirmish."
+        case .mindFlayer: return "A psionic aberration with facial tentacles, alien calm, and frightening mental precision. Brain eaters attack cognition first, disrupting choices before physical damage arrives. In close range, they become executioners with terrifying brain-harvest methods."
+        case .beholder: return "A floating tyrant of paranoid intellect, ringed with eyestalks that project distinct killing rays. It controls vertical space, line-of-sight, and battlefield tempo all at once. An eye tyrant encounter punishes predictable movement and poor positioning."
         case .youngDragon: return "A juvenile dragon already large enough to shatter shields with claw, fang, and breath weapon. Proud and territorial, it probes enemies before committing to lethal aggression. Underestimating a young dragon is usually a one-fight lesson."
-        case .vecna: return "The Undying King, a lich of vast cunning, forbidden scholarship, and godlike ambition. Vecna bends death, memory, and fate into tools for domination across worlds. Facing him is not just a battle - it is a contest against ancient strategy itself."
+        case .vecna: return "The Undying King, a lich of vast cunning, forbidden scholarship, and godlike ambition. He bends death, memory, and fate into tools for domination across worlds. Facing him is not just a battle - it is a contest against ancient strategy itself."
         }
     }
 
@@ -258,7 +258,7 @@ enum MonsterType: String, CaseIterable, Codable {
         case .youngDragon:
             return ["a searing fire breath", "its rending claws", "a crushing tail swipe", "its snapping jaws"]
         case .vecna:
-            return ["a necrotic ray", "the Hand of Vecna", "a soul-rending spell", "a withering touch of undeath"]
+            return ["a necrotic ray", "the Grasp of the Undying King", "a soul-rending spell", "a withering touch of undeath"]
         }
     }
 

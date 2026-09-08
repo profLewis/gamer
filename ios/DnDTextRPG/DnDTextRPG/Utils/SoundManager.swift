@@ -298,11 +298,22 @@ class SoundManager {
     /// Death — grim descending tone
     func playDeath() {
         guard battleSoundsEnabled else { return }
+        // Funeral march: Chopin-style "dum dum da dum... dum da dum dum dum"
+        // Bb minor funeral march theme
+        let bb3: Double = 233   // Bb3
+        let f3:  Double = 175   // F3
+        let db4: Double = 277   // Db4
+        let ab3: Double = 208   // Ab3
         playSequence([
-            (300, 0.15, 0.25, .square),
-            (200, 0.15, 0.2, .square),
-            (150, 0.2, 0.18, .triangle),
-            (100, 0.3, 0.15, .sine),
+            (bb3, 0.30, 0.20, .triangle),   // DUM
+            (bb3, 0.30, 0.20, .triangle),   // DUM
+            (bb3, 0.15, 0.18, .triangle),   // da
+            (bb3, 0.30, 0.20, .triangle),   // DUM
+            (0, 0.10, 0, .sine),            // rest
+            (db4, 0.15, 0.18, .triangle),   // da
+            (bb3, 0.30, 0.20, .triangle),   // DUM
+            (ab3, 0.15, 0.16, .triangle),   // da
+            (f3,  0.40, 0.15, .sine),       // DUM (low, fading)
         ])
     }
 

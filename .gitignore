@@ -25,3 +25,6 @@ saves/
 
 # Multiplayer temp files
 ~/.dnd_multiplayer/
+
+# Local game data backups (saves, settings, keys)
+.dnd_data/

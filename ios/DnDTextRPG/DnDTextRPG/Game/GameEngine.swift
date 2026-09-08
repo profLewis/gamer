@@ -194,6 +194,12 @@ class GameEngine: ObservableObject {
     var returnToDMAfterCombat: Bool = false
     var inDMMode: Bool = false
 
+    // Just DM mode — entire game driven through AI DM conversation
+    @Published var justDMMode: Bool = UserDefaults.standard.bool(forKey: "justDMMode")
+    var isJustDMActive: Bool {
+        justDMMode && (DMEngine.shared.isConfigured || DMEngine.shared.isAppleModelAvailable)
+    }
+
     // Combat idle timer — penalise hesitation
     private var combatIdleTimer: Timer?
     private var combatHesitating: Bool = false  // true = next attack has disadvantage
@@ -223,7 +229,7 @@ class GameEngine: ObservableObject {
     private var nudgeCooldownTimer: Timer? = nil  // Countdown timer for re-nudge
     private var nudgeCooldownSeconds: Int = 0  // Seconds remaining before re-nudge
     private var nudgeCooldownSpeed: Double = 1.0  // 1.0 = normal, faster when long-pressing
-    private static let nudgeCooldownDuration = 60  // Seconds between nudges
+    private static let nudgeCooldownDuration = 30  // Seconds between nudges
     private var shownTipIndices: Set<Int> = []
     private var tipCooldown: Int = 0
 
@@ -429,6 +435,24 @@ class GameEngine: ObservableObject {
         guard isMultiplayer else { return }
         let playerName = GKLocalPlayer.local.displayName
         multiplayerState?.addAction(playerName: playerName, description: description)
+
+        // Debounced background sync — push state to Game Centre so waiting players see live updates
+        mpLiveSyncTimer?.invalidate()
+        mpLiveSyncTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
+            self?.pushLiveMultiplayerSync()
+        }
+    }
+
+    private var mpLiveSyncTimer: Timer?
+
+    /// Push current state to Game Centre in the background for live spectating
+    private func pushLiveMultiplayerSync() {
+        guard isMultiplayer, var state = multiplayerState else { return }
+        syncMultiplayerState(&state)
+        multiplayerState = state
+        Task {
+            try? await GameCenterManager.shared.saveCurrentTurn(matchState: state)
+        }
     }
 
     // MARK: - Terminal Output
@@ -448,28 +472,35 @@ class GameEngine: ObservableObject {
         }
     }
 
-    /// Print combat status with the local player's human-controlled characters underlined
+    /// IDs of characters the local player directly controls
+    private var localControlledCharIds: Set<UUID> {
+        if isMultiplayer, let state = multiplayerState, let myID = localPlayerID,
+           let mySlot = state.players.first(where: { $0.gamePlayerID == myID }) {
+            // In multiplayer: only the local player's assigned characters
+            var ids = Set(mySlot.controlledCharacterIds)
+            if let charId = mySlot.characterId { ids.insert(charId) }
+            return ids
+        }
+        // Single-player: all non-AI characters
+        return Set(party.filter { !$0.isComputerControlled }.map { $0.id })
+    }
+
+    /// Print combat status with the local player's characters marked with ◀ and underlined
     func printCombatStatus() {
         guard let combat = currentCombat else { return }
         suppressAutoScroll = false
-        let lines = combat.displayStatus()
-        let maxLen = lines.map { $0.count }.max() ?? 0
 
-        // Determine which party indices belong to the local human player
-        var humanIndices: Set<Int> = []
-        for (i, char) in party.enumerated() {
-            if !char.isComputerControlled {
-                humanIndices.insert(i)
-            }
-        }
+        let localIds = localControlledCharIds
+        let lines = combat.displayStatus(localCharacterIds: localIds)
+        let maxLen = lines.map { $0.count }.max() ?? 0
 
         // Party lines start after header (line 0 = "───── COMBAT ─────", line 1 = "")
         let partyLineStart = 2
         for (lineIdx, line) in lines.enumerated() {
             let padded = maxLen > 0 ? line.padding(toLength: maxLen, withPad: " ", startingAt: 0) : line
             let partyIdx = lineIdx - partyLineStart
-            let isHumanChar = partyIdx >= 0 && partyIdx < party.count && humanIndices.contains(partyIdx)
-            print(padded, color: .green, underlined: isHumanChar)
+            let isLocalChar = partyIdx >= 0 && partyIdx < party.count && localIds.contains(party[partyIdx].id)
+            print(padded, color: .green, underlined: isLocalChar)
         }
     }
 
@@ -566,6 +597,14 @@ class GameEngine: ObservableObject {
         menuImageName = nil
         dragonGifName = nil
         speakerHasReadCurrentPage = false
+        // Clear undo/redo handlers so they don't leak to the next screen
+        undoHandler = nil
+        redoHandler = nil
+        undoLabel = nil
+        redoLabel = nil
+        undoTargetButtonIndex = nil
+        redoTargetButtonIndex = nil
+        undoRedoFeedback = nil
         DispatchQueue.main.async {
             self.terminalLines.removeAll()
         }
@@ -700,7 +739,7 @@ class GameEngine: ObservableObject {
             let moodKeys = ["Music", "Sound FX", "Menu Tune", "Explore Tune", "Combat Tune", "Chat Tune"]
             let gameKeys = ["Button Limit", "Card Navigation", "Map Radius", "NPCs", "Multiplayer",
                            "Long Press", "Info Timeout", "Time Limit", "Log Limit", "Undo/Redo",
-                           "Keyboard", "Idle"]
+                           "Idle"]
             let saveKeys = ["Autosave"]
 
             // Return 0-based index matching the options array
@@ -769,7 +808,6 @@ class GameEngine: ObservableObject {
             ("npcs_enabled", "NPCs", { ($0 as? Bool) == true ? "On" : "Off" }),
             ("multiplayer_enabled", "Multi", { ($0 as? Bool) == true ? "On" : "Off" }),
             ("useArrowNavigation", "Cards", { ($0 as? Bool) == true ? "Buttons" : "Swipe" }),
-            ("useCustomKeyboard", "Keyboard", { ($0 as? Bool) == true ? "Custom" : "System" }),
             ("undoRedoEnabled", "Undo/Redo", { ($0 as? Bool) == true ? "On" : "Off" }),
             ("autosave_interval", "Autosave", { "\($0)s" }),
             ("map_radius", "Map", { "\($0)" }),
@@ -911,7 +949,15 @@ class GameEngine: ObservableObject {
         }
         let key = editScreenKey(for: index)
         undoHandler = screenHasUndo(key) ? { [weak self] in self?.undoEdit() } : nil
-        redoHandler = screenHasRedo(key) ? { [weak self] in self?.redoEdit() } : nil
+
+        // Only show redo if it would actually change something
+        var showRedo = false
+        if screenHasRedo(key), index < party.count,
+           let redoData = screenRedoStacks[key]?.last,
+           let currentData = try? JSONEncoder().encode(party[index]) {
+            showRedo = redoData != currentData
+        }
+        redoHandler = showRedo ? { [weak self] in self?.redoEdit() } : nil
         refreshUndoRedoLabels()
     }
 
@@ -938,6 +984,19 @@ class GameEngine: ObservableObject {
     }
 
     /// Read the raw value of a setting (handles special keys)
+    /// Compare two setting values for equality (both may be nil or different types)
+    private func settingValuesEqual(_ a: Any?, _ b: Any?) -> Bool {
+        switch (a, b) {
+        case (nil, nil): return true
+        case (nil, _), (_, nil): return false
+        case (let a as Bool, let b as Bool): return a == b
+        case (let a as Int, let b as Int): return a == b
+        case (let a as Double, let b as Double): return a == b
+        case (let a as String, let b as String): return a == b
+        default: return String(describing: a) == String(describing: b)
+        }
+    }
+
     private func readSettingRaw(key: String) -> Any? {
         switch key {
         case "dmAdLibLevel": return DMEngine.shared.adLibLevel.rawValue
@@ -1072,7 +1131,12 @@ class GameEngine: ObservableObject {
         }
         currentUndoScreen = screen
         let hasUndo = !(settingUndoStacks[screen]?.isEmpty ?? true)
-        let hasRedo = !(settingRedoStacks[screen]?.isEmpty ?? true)
+        // Only show redo if it would actually change the setting value
+        var hasRedo = false
+        if let redoEntry = settingRedoStacks[screen]?.last {
+            let currentValue = readSettingRaw(key: redoEntry.key)
+            hasRedo = !settingValuesEqual(currentValue, redoEntry.oldValue)
+        }
 
         undoHandler = hasUndo ? { [weak self] in
             self?.undoSettingOnScreen(screen: screen, refreshScreen: refreshScreen)
@@ -1082,7 +1146,7 @@ class GameEngine: ObservableObject {
         } : nil
 
         undoLabel = settingUndoStacks[screen]?.last.map { "Undo:\($0.name)" }
-        redoLabel = settingRedoStacks[screen]?.last.map { "Redo:\($0.name)" }
+        redoLabel = hasRedo ? settingRedoStacks[screen]?.last.map { "Redo:\($0.name)" } : nil
     }
 
     /// Clear all setting change stacks (called when leaving Settings entirely)
@@ -1590,6 +1654,56 @@ class GameEngine: ObservableObject {
         let lower = transcript.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !lower.isEmpty else { return }
 
+        // Universal mode switch — buttons on/off
+        let isButtonsOn = lower == "buttons on" || lower == "buttons" || lower == "button"
+            || lower == "button on" || lower == "show buttons" || lower == "normal mode"
+            || lower == "menu mode" || lower == "just dm off" || lower == "dm off"
+            || lower == "text mode off"
+            || lower.hasPrefix("buttons o")
+        if isButtonsOn {
+            if justDMMode {
+                justDMMode = false
+                UserDefaults.standard.set(false, forKey: "justDMMode")
+                DMEngine.shared.justDMMode = false
+                inDMMode = false
+                print("  Buttons restored.", color: .brightGreen)
+                if currentCombat != nil {
+                    advanceCombat()
+                } else if dungeon != nil {
+                    showExplorationView()
+                } else {
+                    showMainMenu()
+                }
+                return
+            }
+        }
+        let isButtonsOff = lower == "buttons off" || lower == "button off" || lower == "no buttons"
+            || lower == "hide buttons" || lower == "dm only" || lower == "dm mode"
+            || lower == "just dm" || lower == "just dm on" || lower == "dm on"
+            || lower == "text mode" || lower == "text mode on"
+            || lower.hasPrefix("buttons of")
+        if isButtonsOff {
+            if justDMMode {
+                print("  Already in text mode.", color: .dimGreen)
+                return
+            }
+            let dm = DMEngine.shared
+            if dm.hasAnyAI {
+                justDMMode = true
+                UserDefaults.standard.set(true, forKey: "justDMMode")
+                dm.justDMMode = true
+                dm.adLibLevel = .full
+                print("  Text mode enabled. Type 'buttons on' to restore.", color: .brightGreen)
+                if dungeon != nil {
+                    showExplorationView()
+                }
+                return
+            } else {
+                print("  Requires an AI provider. Set up an API key in DM Settings.", color: .yellow)
+                return
+            }
+        }
+
         // "done", "back", "return", "close", "go back", "b", "d" → trigger close handler or emergency exit
         let backWords: Set<String> = ["done", "back", "return", "close", "go back", "exit", "cancel", "b", "d"]
         if backWords.contains(lower) || lower.hasSuffix(" back") || lower.hasSuffix(" return") {
@@ -1622,6 +1736,9 @@ class GameEngine: ObservableObject {
             // No menu options — route to DM if available
             let dm = DMEngine.shared
             if dm.isConfigured || dm.isAppleModelAvailable {
+                print("")
+                print("  You:", color: .cyan, bold: true)
+                printWrapped("  \(transcript)", indent: 2, color: .cyan)
                 print("")
                 print("  The DM considers...", color: .dimGreen)
                 let context = buildDMContext()
@@ -1762,10 +1879,16 @@ class GameEngine: ObservableObject {
         }
 
         // If DM engine is available, give a real AI response; otherwise canned fallback
+        // Clear screen and hide any image (e.g. dragon castle) for clean DM chat
+        DispatchQueue.main.async { self.menuImageName = nil }
+        clearTerminal()
         let dm = DMEngine.shared
         if dm.isConfigured || dm.isAppleModelAvailable {
             print("")
-            print("  The DM considers...", color: .dimGreen)
+            print("You:", color: .cyan, bold: true)
+            printWrapped("  \(transcript)", indent: 2, color: .cyan)
+            print("")
+            print("The DM considers...", color: .dimGreen)
             let context = buildDMContext()
             dm.ask(transcript, context: context) { [weak self] response in
                 DispatchQueue.main.async {
@@ -1784,9 +1907,12 @@ class GameEngine: ObservableObject {
                 }
             }
         } else {
+            print("")
+            print("You:", color: .cyan, bold: true)
+            printWrapped("  \(transcript)", indent: 2, color: .cyan)
             let dmResponse = dmFallbackResponse(for: lower)
             print("")
-            print("  The DM says:", color: .yellow, bold: true)
+            print("The DM says:", color: .yellow, bold: true)
             printWrapped("  \"\(dmResponse)\"", indent: 2, color: .yellow)
         }
     }
@@ -2093,13 +2219,67 @@ class GameEngine: ObservableObject {
     func handleTextInput(_ text: String) {
         stopIdleAnimations()
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Universal mode switch — always works regardless of screen
+        let lowerCheck = trimmed.lowercased()
+        if lowerCheck == "buttons on" || lowerCheck == "buttons" || lowerCheck == "button"
+            || lowerCheck == "button on" || lowerCheck == "show buttons" || lowerCheck == "normal mode"
+            || lowerCheck == "menu mode" || lowerCheck == "just dm off" || lowerCheck == "dm off"
+            || lowerCheck == "text mode off"
+            || lowerCheck.hasPrefix("buttons o") {
+            if justDMMode {
+                justDMMode = false
+                UserDefaults.standard.set(false, forKey: "justDMMode")
+                DMEngine.shared.justDMMode = false
+                inDMMode = false
+                print("  Buttons restored.", color: .brightGreen)
+                // Return to the appropriate screen
+                if currentCombat != nil {
+                    if let entry = currentCombat?.currentCombatant, entry.isPlayer {
+                        showPlayerCombatMenu(characterId: entry.id)
+                    } else {
+                        advanceCombat()
+                    }
+                } else if dungeon != nil {
+                    showExplorationView()
+                } else {
+                    showMainMenu()
+                }
+                return
+            }
+        }
+        if lowerCheck == "buttons off" || lowerCheck == "button off" || lowerCheck == "no buttons"
+            || lowerCheck == "hide buttons" || lowerCheck == "dm only" || lowerCheck == "dm mode"
+            || lowerCheck == "just dm" || lowerCheck == "just dm on" || lowerCheck == "dm on"
+            || lowerCheck == "text mode" || lowerCheck == "text mode on"
+            || lowerCheck.hasPrefix("buttons of") {
+            let dm = DMEngine.shared
+            if dm.hasAnyAI && !justDMMode {
+                justDMMode = true
+                UserDefaults.standard.set(true, forKey: "justDMMode")
+                dm.justDMMode = true
+                dm.adLibLevel = .full
+                print("  Text mode enabled. Type 'buttons on' to restore.", color: .brightGreen)
+                if dungeon != nil {
+                    showExplorationView()
+                }
+                return
+            } else if !dm.hasAnyAI {
+                print("  Requires an AI provider. Set up an API key in DM Settings.", color: .yellow)
+                return
+            }
+        }
+
         // Keep keyboard open in chat mode; dismiss otherwise
         if !chatInputMode {
             DispatchQueue.main.async {
                 self.awaitingTextInput = false
             }
         }
-        print("> \(trimmed)", color: .dimGreen)
+        // Don't echo input here when an inputHandler is set — the handler manages its own display
+        if inputHandler == nil {
+            print("> \(trimmed)", color: .dimGreen)
+        }
 
         // Shortcut commands — intercept before handlers
         let lower = trimmed.lowercased()
@@ -2357,8 +2537,10 @@ class GameEngine: ObservableObject {
         GameCenterManager.shared.authenticatePlayer()
         GameCenterManager.shared.turnBasedDelegate = self
         HallOfFameManager.shared.seedIfEmpty()
+        HallOfFameManager.shared.reseedIfNeeded()
         // Sync sound settings from UserDefaults
         SoundManager.shared.battleSoundsEnabled = battleSoundsEnabled
+        DMEngine.shared.justDMMode = justDMMode
         clearTerminal()
         showMainMenu()
     }
@@ -2444,11 +2626,14 @@ class GameEngine: ObservableObject {
     private func startInvitePollTimer() {
         stopInvitePollTimer()
         invitePollTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            guard let self = self, self.gameState == .mainMenu else {
+            guard let self = self else {
                 self?.stopInvitePollTimer()
                 return
             }
-            self.checkForPendingInvites()
+            // Poll on main menu or when idle (not mid-combat or actively exploring)
+            if self.gameState == .mainMenu {
+                self.checkForPendingInvites()
+            }
         }
     }
 
@@ -2529,13 +2714,39 @@ class GameEngine: ObservableObject {
         // Show local saves while loading multiplayer
         renderPlayMenu(localSlots: localSlots, mpMatches: nil, loading: multiplayerEnabled && GameCenterManager.shared.isAuthenticated)
 
-        // Load multiplayer matches async
+        // Load multiplayer matches async — also check for pending invites
         if multiplayerEnabled && GameCenterManager.shared.isAuthenticated {
             Task {
                 let matches = (try? await GameCenterManager.shared.loadMatches()) ?? []
                 let activeMatches = matches.filter { $0.status == .open || $0.status == .matching }
+
+                // Check for invites that need attention (same logic as checkForPendingInvites)
+                let myID = GKLocalPlayer.local.gamePlayerID
+                let invites = matches.filter { match in
+                    if match.status == .matching { return true }
+                    guard match.status == .open,
+                          let data = match.matchData, !data.isEmpty else { return false }
+                    if let state = try? MultiplayerMatchState.decoded(from: data) {
+                        let mySlot = state.players.first(where: { $0.gamePlayerID == myID })
+                        if mySlot?.needsConfirmation == true { return true }
+                        let hasPendingSlot = state.players.contains(where: { $0.gamePlayerID.hasPrefix("pending_") && $0.needsConfirmation })
+                        if hasPendingSlot && state.phase == .characterCreation { return true }
+                        if mySlot == nil && state.phase == .characterCreation { return true }
+                    }
+                    return false
+                }
+
                 await MainActor.run { [weak self] in
-                    self?.renderPlayMenu(localSlots: localSlots, mpMatches: activeMatches, loading: false)
+                    guard let self = self else { return }
+                    // If there's a pending invite, show the prompt immediately
+                    if let invite = invites.first, self.pendingInviteMatch?.matchID != invite.matchID {
+                        self.pendingInviteMatch = invite
+                        SoundManager.shared.playMultiplayerNotification()
+                        GameCenterManager.shared.currentMatch = invite
+                        self.showIncomingTurnPrompt(match: invite)
+                    } else {
+                        self.renderPlayMenu(localSlots: localSlots, mpMatches: activeMatches, loading: false)
+                    }
                 }
             }
         }
@@ -2565,7 +2776,14 @@ class GameEngine: ObservableObject {
                 } else if match.currentParticipant?.player == GKLocalPlayer.local {
                     status = "your turn"
                 } else {
-                    status = "waiting"
+                    // Check if the other player is still connected
+                    let otherParticipants = match.participants.filter { $0.player?.gamePlayerID != GKLocalPlayer.local.gamePlayerID }
+                    let allOthersQuit = !otherParticipants.isEmpty && otherParticipants.allSatisfy { $0.status == .done || $0.status == .declined }
+                    if allOthersQuit {
+                        status = "partner left"
+                    } else {
+                        status = "waiting"
+                    }
                 }
                 var info = ""
                 if let data = match.matchData, !data.isEmpty,
@@ -2576,12 +2794,31 @@ class GameEngine: ObservableObject {
 
                 let names = match.participants.compactMap { $0.player?.displayName }
                 let playerStr = names.isEmpty ? "Multiplayer" : names.joined(separator: ", ")
-                let statusColor: TerminalColor = status == "your turn" ? .brightGreen : (status == "invite" ? .yellow : .dimGreen)
-                print("  \(playerStr)", color: .cyan, bold: status == "your turn" || status == "invite")
+                let statusColor: TerminalColor
+                let isBold: Bool
+                switch status {
+                case "your turn":
+                    statusColor = .brightGreen; isBold = true
+                case "invite":
+                    statusColor = .yellow; isBold = true
+                case "partner left":
+                    statusColor = .red; isBold = false
+                default:
+                    statusColor = .dimGreen; isBold = false
+                }
+                print("  \(playerStr)", color: .cyan, bold: isBold)
                 if !info.isEmpty {
                     print("     \(info)", color: .dimGreen)
                 }
-                print("     [\(status)]", color: statusColor)
+                let statusTag: String
+                switch status {
+                case "your turn": statusTag = ">> YOUR TURN <<"
+                case "invite": statusTag = "New Invite!"
+                case "partner left": statusTag = "Partner left — tap to continue solo"
+                case "waiting": statusTag = "Waiting for partner..."
+                default: statusTag = "[\(status)]"
+                }
+                print("     \(statusTag)", color: statusColor, bold: status == "your turn")
                 print("")
             }
         }
@@ -2607,9 +2844,29 @@ class GameEngine: ObservableObject {
         // Multiplayer match buttons
         for mp in mpEntries {
             let names = mp.match.participants.compactMap { $0.player?.displayName }
-            let label = names.isEmpty ? "Multiplayer" : names.prefix(2).joined(separator: ", ")
-            let isInvite = mp.status == "invite"
-            menuOpts.append(MenuOption(label, isAlert: isInvite, tint: .cyan))
+            let baseName = names.isEmpty ? "Multiplayer" : names.prefix(2).joined(separator: ", ")
+            let label: String
+            let tint: MenuTint
+            let isAlert: Bool
+            switch mp.status {
+            case "your turn":
+                label = "\(baseName) [YOUR TURN]"
+                tint = .normal
+                isAlert = true
+            case "invite":
+                label = "\(baseName) [INVITE]"
+                tint = .amber
+                isAlert = true
+            case "partner left":
+                label = "\(baseName) [SOLO]"
+                tint = .cyan
+                isAlert = false
+            default:
+                label = "\(baseName) [waiting]"
+                tint = .cyan
+                isAlert = false
+            }
+            menuOpts.append(MenuOption(label, isAlert: isAlert, tint: tint))
             let match = mp.match
             actions.append { [weak self] in
                 GameCenterManager.shared.currentMatch = match
@@ -2674,6 +2931,9 @@ class GameEngine: ObservableObject {
                 self.printWrapped("Active Game Centre matches appear as cyan buttons. Flashing buttons indicate incoming invites.", indent: 2, color: .dimGreen)
                 self.print("")
             }
+            self.print("  HALL OF FAME", color: .cyan, bold: true)
+            self.printWrapped("Browse the greatest (and most tragic) adventures. Tap an entry to read its tale. Some entries have linked saves — long-press the title or tap ⚔ to relive the adventure yourself.", indent: 2, color: .dimGreen)
+            self.print("")
         }
     }
 
@@ -3300,18 +3560,18 @@ class GameEngine: ObservableObject {
         printWrapped("The character cards in Name Lore rate heroes and locations on five qualities:", indent: 2)
         print("")
         print("  Hero Cards:", color: .yellow)
-        printWrapped("  Power → STR/combat (10 = Conan)", indent: 2, color: .dimGreen)
+        printWrapped("  Power → STR/combat (10 = Fafhrd)", indent: 2, color: .dimGreen)
         printWrapped("  Cunning → DEX/INT (10 = Granny Weatherwax)", indent: 2, color: .dimGreen)
-        printWrapped("  Magic → spellcasting (10 = Raistlin)", indent: 2, color: .dimGreen)
-        printWrapped("  Fame → cultural icon (10 = Conan, Drizzt)", indent: 2, color: .dimGreen)
-        printWrapped("  Charm → CHA (10 = Madmartigan, Jareth)", indent: 2, color: .dimGreen)
+        printWrapped("  Magic → spellcasting (10 = Ged)", indent: 2, color: .dimGreen)
+        printWrapped("  Fame → cultural icon (10 = The Doctor, Eleven)", indent: 2, color: .dimGreen)
+        printWrapped("  Charm → CHA (10 = Jareth, Penelope Pitstop)", indent: 2, color: .dimGreen)
         print("")
         print("  Dungeon Cards:", color: .yellow)
-        printWrapped("  Danger → lethality (10 = Tomb of Horrors)", indent: 2, color: .dimGreen)
+        printWrapped("  Danger → lethality (10 = Krell Laboratory)", indent: 2, color: .dimGreen)
         printWrapped("  Puzzle → traps & riddles (10 = Labyrinth)", indent: 2, color: .dimGreen)
-        printWrapped("  Magic → magical energy (10 = Barad-dur)", indent: 2, color: .dimGreen)
-        printWrapped("  Fame → cultural impact (10 = Moria)", indent: 2, color: .dimGreen)
-        printWrapped("  Dread → fear factor (10 = Mount Doom)", indent: 2, color: .dimGreen)
+        printWrapped("  Magic → magical energy (10 = Fantasia)", indent: 2, color: .dimGreen)
+        printWrapped("  Fame → cultural impact (10 = Skull Island)", indent: 2, color: .dimGreen)
+        printWrapped("  Dread → fear factor (10 = The Dry Land)", indent: 2, color: .dimGreen)
         print("")
         print("PARTY STATUS", color: .cyan, bold: true)
         printWrapped("Open Party Status from the exploration menu to see each character's full stat sheet, HP, gold, XP, and equipped gear. Use Party Review to change names or player types mid-game.", indent: 2)
@@ -3512,6 +3772,9 @@ class GameEngine: ObservableObject {
         print("    'rest' = short rest", color: .dimGreen)
         print("    'status' = party status", color: .dimGreen)
         print("    Enter (empty) = close chat", color: .dimGreen)
+        print("")
+        print("TEXT MODE", color: .cyan, bold: true)
+        printWrapped("Removes all buttons and menus. Type naturally to play — the DM interprets everything. Toggle in Settings > DM Settings, or type 'buttons off' / 'buttons on'.", indent: 2)
         print("")
         print("DM VOICE", color: .cyan, bold: true)
         printWrapped("Enable text-to-speech in Settings > Accessibility > DM Voice to hear the DM's responses read aloud.", indent: 2)
@@ -4281,7 +4544,7 @@ class GameEngine: ObservableObject {
         // TV & Animation
         let tvSources: Set<String> = [
             "Stranger Things", "Community", "Futurama",
-            "He-Man (1983)", "ThunderCats (1985)", "Dogtanian (1981)",
+            "ThunderCats (1985)", "Dogtanian (1981)",
             "Noggin the Nog (1959)", "Doctor Who (1963)", "Blake's 7 (1978)",
             "Ulysses 31 (1981)", "Mysterious Cities of Gold (1982)",
             "Robin of Sherwood (1984)"]
@@ -4289,10 +4552,10 @@ class GameEngine: ObservableObject {
         // Films
         let filmSources: Set<String> = [
             "Honour Among Thieves", "Willow (1988)",
-            "The NeverEnding Story (1984)", "Conan the Barbarian (1982)",
+            "The NeverEnding Story (1984)",
             "Highlander (1986)", "Labyrinth (1986)", "Legend (1985)",
             "The Black Cauldron (1985)", "Ladyhawke (1985)",
-            "Red Sonja (1985)", "The Beastmaster (1982)",
+            "The Beastmaster (1982)",
             "Dragonslayer (1981)", "Alien (1979)", "Star Wars (1977)",
             "Forbidden Planet (1956)", "King Kong (1933)"]
         if filmSources.contains(source) { return "Films" }
@@ -4300,7 +4563,6 @@ class GameEngine: ObservableObject {
         if source == "Classic Sci-Fi" || source == "Famous Robots" { return "Sci-Fi & Robots" }
         // Comics & Strips
         let comicSources: Set<String> = [
-            "Flash Gordon (1934)", "Buck Rogers (1929)",
             "Dan Dare (1950)", "Prince Valiant (1937)",
             "The Phantom (1936)", "Judge Dredd (1977)"]
         if comicSources.contains(source) { return "Comics & Strips" }
@@ -4316,8 +4578,6 @@ class GameEngine: ObservableObject {
             // ══════════════════════════════════════════
             // HERO NAMES — Comics & Newspaper Strips
             // ══════════════════════════════════════════
-            NameEntry(name: "Flash Gordon", source: "Flash Gordon (1934)", description: "Space adventurer supreme. Flash, a Yale polo player, rocketed to Mongo with Dale Arden and Dr Zarkov to face Ming the Merciless. Alex Raymond's strip defined space opera: ray guns, rocket ships, and a square-jawed hero saving the universe. Every space adventure since owes Flash a debt.", category: "hero", art: [" \\O/ ", " /|\\ ", " RAY ", " / \\"], power: 8, cunning: 5, magic: 1, fame: 10, charm: 8, year: 1934),
-            NameEntry(name: "Buck Rogers", source: "Buck Rogers (1929)", description: "Anthony Rogers fell asleep in a mine in 1927 and woke in the 25th century. The first science fiction comic strip hero, Buck fought sky pirates and alien invaders with ray guns and rocket belts. He predates Flash Gordon by five years and gave the world its first taste of space adventure in the Sunday papers.", category: "hero", art: ["  O  ", " /|\\ ", " JET ", " / \\"], power: 7, cunning: 6, magic: 1, fame: 9, charm: 6, year: 1929),
             NameEntry(name: "Dan Dare", source: "Dan Dare (1950)", description: "Pilot of the Future! Colonel Dan Dare of the Interplanet Space Fleet battled the Mekon — a green, dome-headed Venusian genius — across the pages of Eagle comic. Frank Hampson's beautifully painted strip was thoughtful, optimistic sci-fi. Dan was a gentleman hero: brave, decent, and unfailingly polite.", category: "hero", art: ["  O  ", " /|\\ ", " JET ", " DAN"], power: 7, cunning: 7, magic: 1, fame: 8, charm: 7, year: 1950),
             NameEntry(name: "Prince Valiant", source: "Prince Valiant (1937)", description: "Prince of Thule, Knight of the Round Table, star of Hal Foster's magnificent comic strip. Valiant's adventures span decades of Arthurian glory — questing, jousting, and romancing Princess Aleta. The strip is painted, not drawn, and its visual splendour set a standard no other comic has matched.", category: "hero", art: ["  O  ", " /|X ", " SWD ", " / \\"], power: 8, cunning: 6, magic: 2, fame: 8, charm: 7, year: 1937),
             NameEntry(name: "The Phantom", source: "The Phantom (1936)", description: "The Ghost Who Walks. For over four hundred years, the Phantom has haunted the jungles of Bengalla. Each Phantom trains his son to succeed him, creating the legend of an immortal hero. Lee Falk's masked avenger was the first costumed superhero in comics, predating Batman by three years.", category: "hero", art: ["  O  ", " /|\\ ", " SKL ", " / \\"], power: 8, cunning: 7, magic: 1, fame: 8, charm: 6, year: 1936),
@@ -4353,25 +4613,19 @@ class GameEngine: ObservableObject {
             NameEntry(name: "Roy Batty", source: "Famous Robots", description: "A Nexus-6 replicant who wanted more life. Roy Batty was stronger, faster, and smarter than any human, but was given only four years to live. In his final moments, he saved the man sent to kill him and delivered the most beautiful death speech in cinema: 'All those moments will be lost in time, like tears in rain.'", category: "hero", art: ["  O  ", " \\|/", " /|\\ ", " REP"], power: 10, cunning: 7, magic: 1, fame: 9, charm: 8),
 
             // 80s Fantasy Films
-            NameEntry(name: "Madmartigan", source: "Willow (1988)", description: "The greatest swordsman who ever lived — just ask him. Val Kilmer's rogue warrior in Willow was charming, reckless, and surprisingly heroic when it counted. Locked in a cage when we meet him, he talks his way out with nothing but charisma. His romance with Sorsha involved a love potion, a snowball fight, and a stolen kiss on a battlefield.", category: "hero", art: ["  o  ", " /|X ", " / \\ ", " SWD"], power: 8, cunning: 7, magic: 1, fame: 8, charm: 10),
             NameEntry(name: "Willow", source: "Willow (1988)", description: "Willow Ufgood, a Nelwyn farmer who dreamed of being a sorcerer. When he found an abandoned baby destined to overthrow an evil queen, he could have walked away. Instead, this small farmer became the bravest member of the party. He proved that heroes come in all sizes — especially the ones nobody expected.", category: "hero", art: ["  o  ", " /|\\ ", "  |  ", " SML"], power: 3, cunning: 6, magic: 7, fame: 8, charm: 8),
             NameEntry(name: "Atreyu", source: "The NeverEnding Story (1984)", description: "A young warrior of the Plains People, chosen to find a cure for the Childlike Empress. Atreyu crossed the Swamps of Sadness (where his horse Artax was lost), faced the Nothing, and stood before the Southern Oracle. All before his fourteenth birthday. A ranger with the heart of a lion and the determination of a legend.", category: "hero", art: ["  o  ", " /|\\ ", " ~|~ ", " / \\"], power: 7, cunning: 6, magic: 4, fame: 9, charm: 7),
-            NameEntry(name: "Conan", source: "Conan the Barbarian (1982)", description: "The Cimmerian. Born on a battlefield, orphaned by Thulsa Doom, enslaved at the Wheel of Pain, and trained as a gladiator. What is best in life? To crush your enemies, see them driven before you, and hear the lamentation of their women. Arnold Schwarzenegger gave this barbarian a soul beneath the muscle.", category: "hero", art: ["  O  ", " \\|/", " AXE ", " / \\"], power: 10, cunning: 4, magic: 1, fame: 10, charm: 5),
             NameEntry(name: "Connor MacLeod", source: "Highlander (1986)", description: "An immortal Scotsman born in 1518, banished from his village for witchcraft after surviving a mortal wound. Trained by Ramirez, he fought through centuries of history in the great Game. There can be only one. Christopher Lambert brought melancholy grace to a man who watched everyone he loved grow old and die.", category: "hero", art: ["  O  ", " /|\\ ", " SWD ", " / \\"], power: 9, cunning: 5, magic: 5, fame: 9, charm: 6),
             NameEntry(name: "Jareth", source: "Labyrinth (1986)", description: "The Goblin King, played by David Bowie with otherworldly charisma. Jareth stole baby Toby and offered Sarah her dreams in exchange. He juggles crystal balls, sings haunting songs, and rules a labyrinth of impossible geometry. Part villain, part tragic figure — a fey lord who fell in love with a mortal girl.", category: "hero", art: ["  O  ", " *|* ", " /|\\ ", " GOB"], power: 7, cunning: 8, magic: 9, fame: 10, charm: 10),
             NameEntry(name: "Darkness", source: "Legend (1985)", description: "The Lord of Darkness himself, played by Tim Curry in the greatest practical makeup ever created. Towering red horns, cloven hooves, and a voice like velvet thunder. He wanted to destroy all sunlight and plunge the world into eternal night. A villain so magnificent he made evil look like performance art.", category: "hero", art: [" \\V/ ", "  O  ", " /|\\ ", " DRK"], power: 10, cunning: 6, magic: 10, fame: 9, charm: 7),
             NameEntry(name: "Taran", source: "The Black Cauldron (1985)", description: "An assistant pig-keeper in the land of Prydain who dreamed of being a great warrior. Based on Lloyd Alexander's beloved Chronicles of Prydain, Taran proved that heroism isn't about swords and glory — it's about protecting a magical pig called Hen Wen and stopping the Horned King from raising an army of the dead.", category: "hero", art: ["  o  ", " /|\\ ", " PIG ", " / \\"], power: 5, cunning: 5, magic: 3, fame: 6, charm: 7),
             NameEntry(name: "Hawk", source: "Ladyhawke (1985)", description: "Captain Etienne Navarre, cursed by an evil bishop. By day, his beloved Isabeau becomes a hawk. By night, he becomes a wolf. Always together, eternally apart. Rutger Hauer played this doomed knight with stoic grace and a very large sword. The ultimate star-crossed lovers' quest.", category: "hero", art: ["  o  ", " /|\\ ", " ~V~ ", " / \\"], power: 8, cunning: 5, magic: 4, fame: 7, charm: 8),
-            NameEntry(name: "Red Sonja", source: "Red Sonja (1985)", description: "A fierce swordswoman blessed by a goddess after her family was murdered. Brigitte Nielsen played the flame-haired warrior who swore no man would have her unless he could defeat her in fair combat. She needs no rescuing, no sidekick, and no permission. The original warrior woman of sword-and-sorcery cinema.", category: "hero", art: ["  O  ", " /|X ", " SWD ", " / \\"], power: 9, cunning: 5, magic: 2, fame: 8, charm: 7),
             NameEntry(name: "Beast Master", source: "The Beastmaster (1982)", description: "Dar, the last of his people, born with the power to communicate with animals. A black tiger, two ferrets, and an eagle became his companions in a quest against the sorcerer Maax. Marc Singer brought warmth to this barbarian-with-a-heart, proving that a hero's greatest weapon is friendship with nature.", category: "hero", art: ["  o  ", " /|\\ ", " EGL ", " / \\"], power: 7, cunning: 6, magic: 5, fame: 7, charm: 7),
             NameEntry(name: "Valerian", source: "Dragonslayer (1981)", description: "Galen Bradwarden, a sorcerer's apprentice who inherited his master's quest to slay the dragon Vermithrax Pejorative. Armed with a magic amulet and more courage than skill, he faced the last and greatest dragon. Dragonslayer featured the most realistic dragon in cinema until CGI arrived — and some say still does.", category: "hero", art: ["  o  ", " *|* ", " /|\\ ", " DRG"], power: 5, cunning: 6, magic: 7, fame: 7, charm: 6),
 
             // 80s Fantasy Books
             NameEntry(name: "Elric", source: "Michael Moorcock", description: "The albino emperor of Melnibone, last of an ancient decadent race, wielder of the black runesword Stormbringer that drinks the souls of those it slays — including, inevitably, everyone Elric loves. Moorcock's eternal champion is the anti-Conan: frail, philosophical, drug-dependent, and cursed by his own weapon.", category: "hero", art: ["  O  ", " /|! ", " BLD ", " / \\"], power: 8, cunning: 7, magic: 9, fame: 9, charm: 5),
             NameEntry(name: "Ged", source: "Ursula K. Le Guin", description: "Sparrowhawk, the greatest mage of Earthsea, who learned that true power is knowing your own shadow — literally. As a young student, he recklessly summoned a shadow creature and spent years hunting it across the archipelago, only to discover it was himself. Le Guin's wizard is about wisdom, not fireballs.", category: "hero", art: ["  o  ", " *|* ", " /|\\ ", " SEA"], power: 5, cunning: 8, magic: 10, fame: 9, charm: 6),
-            NameEntry(name: "Drizzt", source: "R.A. Salvatore", description: "Drizzt Do'Urden, a dark elf who rejected the evil of Menzoberranzan and fled to the surface world. With his twin scimitars Twinkle and Icingdeath, his panther companion Guenhwyvar, and his unshakeable moral compass, he became the most famous ranger in D&D history. Proof that your birth doesn't define your destiny.", category: "hero", art: ["  o  ", " X|X ", " /|\\ ", " ELF"], power: 9, cunning: 8, magic: 4, fame: 10, charm: 7),
-            NameEntry(name: "Raistlin", source: "Dragonlance", description: "Raistlin Majere, the sickly mage with golden skin and hourglass eyes that see all things as dying. He is brilliant, ambitious, and ruthlessly pragmatic. He chose the Black Robes of evil magic, challenged the gods themselves, and nearly won. The most compelling villain-hero in fantasy — you never stop wanting him to be redeemed.", category: "hero", art: ["  o  ", " *|* ", " BLK ", " |||"], power: 4, cunning: 10, magic: 10, fame: 9, charm: 3),
-            NameEntry(name: "Tasslehoff", source: "Dragonlance", description: "Tasslehoff Burrfoot, kender extraordinaire. He is NOT a thief — he just finds things. In your pockets. On your belt. In your locked safe. Fearless to the point of foolishness, endlessly curious, and the most annoying companion in fantasy literature. Also, somehow, the bravest. He faced a god and didn't flinch.", category: "hero", art: ["  o  ", " /|\\ ", " BAG ", " / \\"], power: 2, cunning: 9, magic: 1, fame: 8, charm: 10),
             NameEntry(name: "Rincewind", source: "Terry Pratchett", description: "The worst wizard on the Discworld. He can't cast a single spell because the most powerful spell ever written lodged in his brain and scared all the others away. His chief skill is running away, which he has elevated to an art form. His Luggage follows him everywhere on hundreds of tiny legs. Somehow, he always saves the world.", category: "hero", art: ["  o  ", " /|\\ ", " RUN ", " / \\"], power: 1, cunning: 6, magic: 2, fame: 8, charm: 5),
             NameEntry(name: "Granny Weatherwax", source: "Terry Pratchett", description: "Esmerelda Weatherwax, the most powerful witch on the Discworld. She doesn't do magic — she does headology, which is much more effective. She can Borrow the minds of animals, stare down vampires, and make you do what she wants by simply raising an eyebrow. She is not nice. She is good. There's a difference.", category: "hero", art: ["  O  ", " /|\\ ", " HAT ", " / \\"], power: 5, cunning: 10, magic: 9, fame: 8, charm: 3),
             NameEntry(name: "Belgarion", source: "David Eddings", description: "Garion, a farmboy raised by his aunt (who happens to be a three-thousand-year-old sorceress) who discovers he's the heir to an ancient throne and the chosen vessel of a cosmic prophecy. He must recover a stolen magical orb and face the mad god Torak. It's always a farmboy. Always.", category: "hero", art: ["  o  ", " /|\\ ", " ORB ", " / \\"], power: 7, cunning: 5, magic: 8, fame: 7, charm: 7),
@@ -4382,18 +4636,11 @@ class GameEngine: ObservableObject {
             // Additional Book Heroes
             NameEntry(name: "Tenar", source: "Ursula K. Le Guin", description: "Born Arha, the Eaten One, priestess of the Nameless Ones in the Tombs of Atuan. She lived in darkness, serving ancient powers, until the wizard Ged came seeking the Ring of Erreth-Akbe. She chose light over duty, freedom over ritual, and became Tenar — a woman who defined herself rather than being defined by gods.", category: "hero", art: ["  o  ", " /|\\ ", " TOM ", " ~~~"], power: 4, cunning: 7, magic: 6, fame: 8, charm: 7, year: 1971),
             NameEntry(name: "John Carter", source: "Edgar Rice Burroughs", description: "A Confederate cavalry officer mysteriously transported to Mars — Barsoom, where the lower gravity gave him superhuman strength. He fought four-armed Tharks, won the love of Princess Dejah Thoris, and became Warlord of Mars. Burroughs invented planetary romance in 1912 and every space hero since carries a piece of John Carter.", category: "hero", art: [" \\O/ ", " /|\\ ", " MARS", " / \\"], power: 9, cunning: 6, magic: 1, fame: 8, charm: 7, year: 1912),
-            NameEntry(name: "Conan", source: "Robert E. Howard", description: "The original Cimmerian, created by Robert E. Howard in 1932. Before the films, before the comics, Conan was a literary barbarian — not just a brute but a thief, a pirate, a mercenary, and eventually a king. Howard's Conan is smarter and more nuanced than his imitators. He defined sword and sorcery.", category: "hero", art: ["  O  ", " \\|/", " SWD ", " / \\"], power: 10, cunning: 6, magic: 1, fame: 10, charm: 5, year: 1932),
-            NameEntry(name: "Aragorn", source: "J.R.R. Tolkien", description: "Strider, the Ranger of the North. Heir of Isildur, who waited eighty-seven years for his crown. He led the Fellowship, faced the Paths of the Dead, and drew the armies of Mordor to the Black Gate as a diversion. His love for Arwen cost her immortality. The king who returned.", category: "hero", art: ["  O  ", " /|X ", " SWD ", " / \\"], power: 9, cunning: 8, magic: 4, fame: 10, charm: 8, year: 1954),
             NameEntry(name: "DEATH", source: "Terry Pratchett", description: "A seven-foot skeleton in a black robe who speaks IN CAPITAL LETTERS. He rides a pale horse called Binky, has a granddaughter called Susan, and takes a professional interest in humanity. He once tried being human and found it bewildering. The most beloved personification of mortality in literature. DO NOT FEED THE ELEPHANT.", category: "hero", art: [" ___ ", " |O| ", " /|\\ ", " SKL"], power: 10, cunning: 5, magic: 10, fame: 9, charm: 8, year: 1983),
             NameEntry(name: "Corwin", source: "Roger Zelazny", description: "Prince of Amber, the one true city of which all other worlds — including Earth — are mere shadows. Corwin woke in a hospital bed with amnesia, discovered he was an immortal prince, and walked the Pattern to reclaim his birthright. Zelazny's Chronicles of Amber blend swashbuckling with cosmology. Everything is a reflection.", category: "hero", art: ["  O  ", " /|X ", " AMB ", " / \\"], power: 8, cunning: 9, magic: 7, fame: 7, charm: 8, year: 1970),
             NameEntry(name: "Corum", source: "Michael Moorcock", description: "Prince Corum Jhaelen Irsei, the Prince in the Scarlet Robe. Last of the Vadhagh, he lost his hand and eye and replaced them with the Hand of Kwll and the Eye of Rhynn — grafts from dead gods that let him summon the dead to fight. Another face of Moorcock's Eternal Champion, elegant where Elric is tormented.", category: "hero", art: ["  O  ", " /|! ", " EYE ", " / \\"], power: 7, cunning: 7, magic: 8, fame: 7, charm: 6, year: 1971),
-            NameEntry(name: "Sauron", source: "J.R.R. Tolkien", description: "The Dark Lord, Lieutenant of Morgoth, forger of the One Ring. Once a Maia spirit of great skill, he fell into darkness and spent three ages trying to dominate Middle-earth. He poured his power into a golden ring and lost everything when a hobbit dropped it into a volcano. The greatest villain in fantasy.", category: "hero", art: [" \\V/ ", " |O| ", " EYE ", " |||"], power: 10, cunning: 9, magic: 10, fame: 10, charm: 3, year: 1954),
-            NameEntry(name: "Skeletor", source: "He-Man (1983)", description: "Lord of Snake Mountain, skull-faced nemesis of He-Man. His plans to conquer Castle Greyskull are endlessly thwarted, but he never stops trying. Beneath the buffoonery of the cartoon, Skeletor is a genuinely menacing villain — a sorcerer of immense power trapped in an endless cycle of failure. NYEH HEH HEH!", category: "hero", art: [" SKL ", "  O  ", " /|\\ ", " / \\"], power: 8, cunning: 7, magic: 9, fame: 9, charm: 4, year: 1983),
-            NameEntry(name: "Ming the Merciless", source: "Flash Gordon (1934)", description: "Emperor of Mongo, tyrant of a thousand worlds. Ming rules through fear, technology, and a magnificent wardrobe. He is Flash Gordon's eternal nemesis — cruel, intelligent, and utterly without mercy. Every space villain since owes something to Ming: the pointed beard, the flowing robes, the casual cruelty of absolute power.", category: "hero", art: [" \\V/ ", "  O  ", " /|\\ ", " IMP"], power: 9, cunning: 8, magic: 7, fame: 9, charm: 4, year: 1934),
 
             // 70s & 80s TV
-            NameEntry(name: "He-Man", source: "He-Man (1983)", description: "Prince Adam of Eternia raises the Sword of Power and becomes He-Man, the most powerful man in the universe. By the power of Greyskull! With Battle Cat at his side, he defends Castle Greyskull against the forces of Skeletor. Also, every episode ends with a moral lesson. A paladin in every sense.", category: "hero", art: [" \\O/ ", " /|\\ ", " SWD ", " / \\"], power: 10, cunning: 3, magic: 6, fame: 10, charm: 7),
-            NameEntry(name: "Lion-O", source: "ThunderCats (1985)", description: "Lord of the ThunderCats, wielder of the Sword of Omens. 'Thunder, Thunder, ThunderCats, HO!' Lion-O was a boy in a man's body — his suspension capsule aged him during the flight from Thundera. He must learn to lead while wielding Sight Beyond Sight. A young king with an ancient blade and everything to prove.", category: "hero", art: [" \\O/ ", " /|\\ ", " CAT ", " / \\"], power: 9, cunning: 5, magic: 7, fame: 9, charm: 7),
 
             // 60s-80s Kids TV & Animation
             NameEntry(name: "Noggin", source: "Noggin the Nog (1959)", description: "Noggin was the gentle prince of the Nogs, kind-hearted ruler of the icy fjords. Never violent, Noggin solved every problem with wisdom, friendship, and hot soup. His nemesis Nogbad the Bad schemed endlessly, but good always prevailed in Oliver Postgate's Norse saga. A cleric by temperament — he'd rather heal than harm.", category: "hero", art: ["  O  ", " /|\\ ", " NOG ", " \\_/"], power: 3, cunning: 5, magic: 4, fame: 7, charm: 9),
@@ -4411,22 +4658,7 @@ class GameEngine: ObservableObject {
             // ══════════════════════════════════════════
             // DUNGEON NAMES
             // ══════════════════════════════════════════
-            NameEntry(name: "Moria", source: "Tolkien", description: "Khazad-dum, the greatest mansion of the dwarves, delved deep beneath the Misty Mountains. Its halls once blazed with mithril light. Then the dwarves dug too deep and woke a Balrog — a demon of the ancient world wreathed in shadow and flame. Now its endless corridors echo with goblin drums and the fellowship's most desperate battle.", category: "dungeon", art: [" /\\/\\ ", " |  | ", " DEEP ", " \\__/"], power: 10, cunning: 5, magic: 8, fame: 10, charm: 3),
-            NameEntry(name: "Barad-dur", source: "Tolkien", description: "The Dark Tower of Sauron, raised with the power of the One Ring. A fortress of iron and obsidian so vast it cast a shadow across Mordor. At its summit, the Eye of Sauron — lidless, wreathed in flame — searched endlessly for the Ring. Its foundations could not be destroyed while the Ring survived.", category: "dungeon", art: [" /||\\ ", " |EYE|", " |  | ", " \\||/"], power: 10, cunning: 7, magic: 10, fame: 10, charm: 1),
-            NameEntry(name: "Cirith Ungol", source: "Tolkien", description: "The Pass of the Spider, the secret way into Mordor above Minas Morgul. Gollum led Frodo and Sam through Shelob's lair — a darkness so total that even elven light barely pierced it. The tower of Cirith Ungol held Frodo prisoner and Sam had to fight through an entire orc garrison alone to rescue him.", category: "dungeon", art: [" /\\/\\ ", " |WEB|", " PASS ", " / \\ "], power: 8, cunning: 8, magic: 6, fame: 9, charm: 1),
-            NameEntry(name: "Isengard", source: "Tolkien", description: "Saruman's fortress at the southern end of the Misty Mountains. The tower of Orthanc rose from its centre — an unbreakable spire of ancient stone. Saruman turned the surrounding gardens into a war factory, breeding Uruk-hai in pits beneath the earth. The Ents marched on Isengard and tore it apart with roots and rage.", category: "dungeon", art: [" /||\\ ", " |  | ", " RING ", " \\||/"], power: 9, cunning: 8, magic: 9, fame: 9, charm: 2),
-            NameEntry(name: "Mount Doom", source: "Tolkien", description: "Orodruin, the Fire-mountain — where Sauron forged the One Ring and where Frodo carried it to be destroyed. The Crack of Doom, a chasm of liquid fire inside the volcano, is the only place hot enough to unmake the Ring. In the end, it was Gollum's obsession, not Frodo's will, that cast the Ring into the flames.", category: "dungeon", art: [" /\\/\\ ", " |FIRE|", " LAVA ", " \\~~/ "], power: 10, cunning: 3, magic: 10, fame: 10, charm: 1),
-            NameEntry(name: "Minas Morgul", source: "Tolkien", description: "Once Minas Ithil, the Tower of the Moon, a beautiful fortress of Gondor. Taken by the Nazgul, it became Minas Morgul — the Tower of Sorcery. Its walls glow with a corpse-light that makes the living sick. The Witch-king rules from its summit, and the road to Cirith Ungol begins at its cursed gate.", category: "dungeon", art: [" /||\\ ", " |MON|", " GLOW ", " \\||/"], power: 9, cunning: 7, magic: 9, fame: 8, charm: 2, year: 1954),
-            NameEntry(name: "Dol Guldur", source: "Tolkien", description: "The Hill of Sorcery in southern Mirkwood, where Sauron hid as 'the Necromancer' for centuries before the War of the Ring. Gandalf entered alone and discovered the truth. The fortress corrupted the forest around it, turning Greenwood the Great into Mirkwood. A dungeon where shadow itself is the enemy.", category: "dungeon", art: [" /\\/\\ ", " |DRK|", " HILL ", " \\__/"], power: 8, cunning: 8, magic: 9, fame: 7, charm: 1, year: 1937),
-            NameEntry(name: "Helm's Deep", source: "Tolkien", description: "The fortress of Rohan, carved into the White Mountains behind the Deeping Wall. Ten thousand Uruk-hai marched against it and nearly won. The battle of Helm's Deep is the definitive siege in fantasy — ladders, a culvert bomb, and a dawn charge led by Gandalf. The Glittering Caves behind it are said to be breathtaking.", category: "dungeon", art: [" /\\/\\ ", " WALL ", " |  | ", " \\__/"], power: 9, cunning: 6, magic: 4, fame: 10, charm: 5, year: 1954),
 
-            NameEntry(name: "Tomb of Horrors", source: "D&D Module (1978)", description: "Acererak's tomb, written by Gary Gygax himself. The deadliest dungeon ever published. Thousands of characters have died here — crushed, disintegrated, soul-trapped, or simply erased from existence. Every room is a death trap. Every treasure is bait. The demilich at the end can kill with a glance. Approach with multiple backup characters.", category: "dungeon", art: [" SKULL", " |RIP|", " TRAP ", " ~~~~"], power: 10, cunning: 10, magic: 9, fame: 10, charm: 1),
-            NameEntry(name: "Ravenloft", source: "D&D Module (1983)", description: "Castle Ravenloft, domain of Count Strahd von Zarovich, the first vampire in D&D. Gothic horror meets dungeon crawling in a castle perched on a cliff above the village of Barovia. Strahd is a tragic villain — a warrior who made a pact with dark powers for love and lost his humanity. The castle changes with each play.", category: "dungeon", art: [" /\\/\\ ", " |BAT|", " DARK ", " \\  /"], power: 9, cunning: 8, magic: 9, fame: 10, charm: 5),
-            NameEntry(name: "White Plume Mountain", source: "D&D Module (1979)", description: "A volcanic dungeon hiding three legendary weapons: Wave (a trident), Whelm (a hammer), and Blackrazor (a soul-drinking sword). Created by the wizard Keraptis, every room is an ingenious puzzle or deadly trap. The dungeon is inside a volcanic mountain that perpetually vents steam — hence the white plume.", category: "dungeon", art: [" /\\/\\ ", " STEAM", " |WPN|", " \\~~/"], power: 8, cunning: 9, magic: 8, fame: 9, charm: 3),
-            NameEntry(name: "Caves of Chaos", source: "D&D Module (1979)", description: "A ravine filled with monster-infested caves — the first dungeon for millions of D&D players. The Keep on the Borderlands module introduced an entire generation to tabletop gaming. Multiple caves hold different monster tribes: kobolds, goblins, orcs, gnolls, and worse. At the very end, a temple of chaos awaits the brave.", category: "dungeon", art: [" /\\/\\ ", " CAVE ", " |  | ", " \\__/"], power: 6, cunning: 5, magic: 4, fame: 10, charm: 4),
-            NameEntry(name: "Barrier Peaks", source: "D&D Module (1980)", description: "A crashed spaceship in a fantasy world. Expedition to the Barrier Peaks combined science fiction and fantasy decades before it was fashionable. Robots patrol the corridors, ray guns lie beside treasure chests, and a colour-coded keycard system guards the doors. Your fighters will be very confused by the blaster pistols.", category: "dungeon", art: [" /--\\ ", " |UFO|", " BEAM ", " \\--/"], power: 8, cunning: 7, magic: 3, fame: 8, charm: 5),
-            NameEntry(name: "Temple of Elemental Evil", source: "D&D Module (1985)", description: "The ruined temple near the village of Hommlet, where cultists of four elemental factions scheme and fight each other. Gary Gygax and Frank Mentzer's mega-adventure spans four dungeon levels, each dedicated to Earth, Air, Fire, or Water. At the bottom lurks Zuggtmoy, the Demon Queen of Fungi. Bring a large party.", category: "dungeon", art: [" /\\/\\ ", " EVIL ", " |EE| ", " \\__/"], power: 9, cunning: 8, magic: 9, fame: 9, charm: 2, year: 1985),
-            NameEntry(name: "Isle of Dread", source: "D&D Module (1981)", description: "A tropical island of dinosaurs, pirates, and lost civilisations. The Isle of Dread was D&D's first wilderness adventure — a hex-crawl across jungles and mountains to find a ruined temple and its treasure. There are actual dinosaurs. And kopru. And a volcano. It is basically D&D does King Kong meets Jurassic Park.", category: "dungeon", art: [" /\\/\\ ", " ISLE ", " DINO ", " ~~~~"], power: 7, cunning: 5, magic: 5, fame: 8, charm: 6, year: 1981),
 
             NameEntry(name: "Melnibone", source: "Michael Moorcock", description: "The Dragon Isle, home of Elric's dying empire. For ten thousand years the Melniboneans ruled with dragon fire and demon pacts, building a civilisation of exquisite cruelty and beauty. Their dreaming towers rise from an island that exists partly in another dimension. The last great empire of Chaos.", category: "dungeon", art: [" /||\\ ", " |DRG|", " ISLE ", " ~~~~"], power: 9, cunning: 8, magic: 10, fame: 8, charm: 4),
             NameEntry(name: "Tanelorn", source: "Michael Moorcock", description: "The eternal city of peace that exists in every version of the multiverse. Every wanderer seeks it; few ever find it. It is the one place where the Eternal Champion can rest between incarnations. Tanelorn offers no excitement, no glory, no adventure — only peace. For weary heroes, that is the greatest treasure of all.", category: "dungeon", art: [" /\\/\\ ", " PEACE", " |  | ", " \\__/"], power: 1, cunning: 5, magic: 8, fame: 8, charm: 10),
@@ -4445,11 +4677,8 @@ class GameEngine: ObservableObject {
             NameEntry(name: "Nostromo", source: "Alien (1979)", description: "USCSS Nostromo, a commercial towing vessel. Crew of seven. Dark corridors, dripping condensation, chains hanging from ceilings, and something hunting the crew. Ridley Scott's spaceship is the ultimate dungeon — claustrophobic, industrial, and inescapable. The air ducts are just big enough for a xenomorph.", category: "dungeon", art: [" /--\\ ", " |SHIP|", " DARK ", " \\--/"], power: 8, cunning: 7, magic: 1, fame: 10, charm: 2),
             NameEntry(name: "Trantor", source: "Isaac Asimov", description: "The city-planet at the heart of the Galactic Empire. An entire world covered in metal, housing forty billion people in interconnected domes. When the Empire fell, Trantor's surface crumbled and its inhabitants returned to farming between the ruins. The ultimate megadungeon — a planet-sized ruin of a fallen civilisation.", category: "dungeon", art: [" /--\\ ", " CITY ", " MEGA ", " \\--/"], power: 7, cunning: 9, magic: 3, fame: 9, charm: 4),
 
-            NameEntry(name: "Castle Greyskull", source: "He-Man (1983)", description: "A skull-shaped fortress holding the secrets of the universe on the planet Eternia. Castle Greyskull is the source of He-Man's power and Skeletor's obsession. Inside, the Sorceress guards ancient magic. The jawbridge entrance is one of the most iconic images in 1980s pop culture. By the power of Greyskull!", category: "dungeon", art: [" SKULL", " |  | ", " GATE ", " \\__/"], power: 10, cunning: 5, magic: 10, fame: 10, charm: 6),
             NameEntry(name: "The Labyrinth", source: "Labyrinth (1986)", description: "Thirteen hours to solve it, or the baby becomes a goblin forever. Jim Henson's Labyrinth is a maze of impossible geometry, trick doors, and unhelpful creatures. The rules change whenever the Goblin King feels like it. It's not fair — but as Sarah learned, that's exactly the point. The journey matters more than the destination.", category: "dungeon", art: [" /\\/\\ ", " MAZE ", " |??| ", " \\__/"], power: 6, cunning: 10, magic: 8, fame: 10, charm: 8),
             NameEntry(name: "Fantasia", source: "The NeverEnding Story (1984)", description: "A world being consumed by the Nothing — the void left when humans stop dreaming. Fantasia is not a dungeon in the traditional sense but a dying realm that contains every story ever imagined. The Ivory Tower crumbles, the Swamps of Sadness claim the brave, and only a human child's imagination can restore what was lost.", category: "dungeon", art: [" ~~~~ ", " VOID ", " |  | ", " ~~~~"], power: 5, cunning: 4, magic: 10, fame: 10, charm: 9),
-            NameEntry(name: "Snake Mountain", source: "He-Man (1983)", description: "Skeletor's lair on Eternia — a mountain shaped like a coiled serpent with a gaping mouth for an entrance. Inside, Skeletor plots his endless schemes to conquer Castle Greyskull, surrounded by his bumbling henchmen Evil-Lyn, Beast Man, and Trap Jaw. The ultimate villain's headquarters, designed by someone who really loved snakes.", category: "dungeon", art: [" /\\/\\ ", " SNAKE", " |SSS|", " \\__/"], power: 8, cunning: 7, magic: 7, fame: 9, charm: 3),
-            NameEntry(name: "Death Star", source: "Star Wars (1977)", description: "That is no moon. The Galactic Empire's ultimate weapon — a space station the size of a small moon with a superlaser capable of destroying a planet. Its one weakness: a thermal exhaust port, two metres wide, leading directly to the main reactor. The biggest dungeon crawl in cinema. Watch out for the trash compactor.", category: "dungeon", art: [" /--\\ ", " |DS| ", " BEAM ", " \\--/"], power: 10, cunning: 6, magic: 3, fame: 10, charm: 2, year: 1977),
             NameEntry(name: "Skull Island", source: "King Kong (1933)", description: "A fog-shrouded island where dinosaurs still roam and a giant ape rules from a mountaintop. Beyond the great wall, the jungle is lethal — every vine might be a snake, every shadow might be a predator. Kong is king here, and the natives know enough to stay behind the wall. The original monster island.", category: "dungeon", art: [" /\\/\\ ", " SKULL", " KONG ", " ~~~~"], power: 9, cunning: 4, magic: 3, fame: 10, charm: 5, year: 1933),
             NameEntry(name: "Krell Laboratory", source: "Forbidden Planet (1956)", description: "Buried beneath the surface of Altair IV, the Krell — an ancient civilisation — built a machine twenty miles across. It could materialise thought into reality. The Krell forgot one thing: the monsters of the id. Dr Morbius found their laboratory and their power. The machine still works. The monsters still come at night.", category: "dungeon", art: [" /--\\ ", " KREL ", " MIND ", " \\--/"], power: 9, cunning: 9, magic: 8, fame: 8, charm: 3, year: 1956),
 
@@ -4461,8 +4690,6 @@ class GameEngine: ObservableObject {
             NameEntry(name: "Dick Dastardly", source: "Wacky Races (1968)", description: "The moustachioed villain of Wacky Races, driving the Mean Machine with his snickering dog Muttley. Dastardly would win every race if he didn't stop to cheat — his elaborate traps always backfire spectacularly. He's the living proof that villainy is its own punishment. Drat, drat, and double drat!", category: "hero", art: [" \\mm/", " (>.<)", " |DD| ", " MEAN"], power: 4, cunning: 8, magic: 2, fame: 9, charm: 4, year: 1968),
             NameEntry(name: "Muttley", source: "Wacky Races (1968)", description: "Dick Dastardly's wheezing, snickering sidekick. Muttley doesn't talk — he mutters, grumbles, and makes that iconic snickering laugh that means he's either amused or contemptuous, usually both. He collects medals (imaginary ones, mostly) and occasionally flies by spinning his tail. A dog of many hidden talents.", category: "hero", art: [" /\\_/\\", " (^.^)", " HEHE ", " woof"], power: 4, cunning: 6, magic: 1, fame: 9, charm: 7, year: 1968),
             NameEntry(name: "Penelope Pitstop", source: "Wacky Races (1968)", description: "The glamorous driver of the Compact Pussycat. Penelope seems like a damsel in distress - always getting captured by the Hooded Claw - but she is actually a brilliant racer who wins on skill and nerve. She can fix an engine in heels and outrace villains while touching up her lipstick. Never underestimate her.", category: "hero", art: [" \\P/  ", " (o o)", " PINK ", " ZOOM"], power: 5, cunning: 7, magic: 1, fame: 8, charm: 10, year: 1968),
-            NameEntry(name: "Wile E. Coyote", source: "Looney Tunes (1949)", description: "Super Genius. At least, that's what his business card says. Wile E. Coyote is the eternal pursuer, ordering increasingly improbable gadgets from the ACME Corporation to catch the Road Runner. Every rocket, catapult, and painted tunnel fails. Every cliff crumbles beneath him. Yet he never, ever gives up. A cautionary tale about perseverance.", category: "hero", art: [" /\\V/\\", " (x.x)", " ACME ", " BOOM"], power: 3, cunning: 9, magic: 1, fame: 10, charm: 5, year: 1949),
-            NameEntry(name: "Road Runner", source: "Looney Tunes (1949)", description: "Meep meep! The fastest bird in the desert and the bane of Wile E. Coyote's existence. Road Runner doesn't fight, doesn't scheme, and doesn't even seem to notice the elaborate traps set for him. He just runs. And somehow, the universe itself conspires to protect him. Physics bends around this bird.", category: "hero", art: [" >>-- ", " (o o)", " MEEP ", " ZOOM"], power: 2, cunning: 3, magic: 1, fame: 10, charm: 8, year: 1949),
             NameEntry(name: "Danger Mouse", source: "Cosgrove Hall (1981)", description: "The world's greatest secret agent, operating from a pillar box on Baker Street with his faithful hamster assistant Penfold. DM wears an eyepatch (purely for style — both eyes work fine) and tackles the schemes of Baron Greenback with British pluck and questionable competence. Good grief, DM!", category: "hero", art: [" /DM\\ ", " (o )", " |  | ", " 007?"], power: 7, cunning: 8, magic: 2, fame: 9, charm: 8, year: 1981),
             NameEntry(name: "Penfold", source: "Cosgrove Hall (1981)", description: "Danger Mouse's sidekick — a timid, bespectacled hamster whose catchphrase is 'Crumbs, DM!' Ernest Penfold is terrified of absolutely everything, yet somehow always ends up in the thick of danger. His cowardice is matched only by his loyalty. Occasionally saves the day entirely by accident.", category: "hero", art: [" (@@)", " (o.o)", " |PF| ", " EEKK"], power: 2, cunning: 4, magic: 1, fame: 8, charm: 9, year: 1981),
             NameEntry(name: "Pinky", source: "Pinky and the Brain (1995)", description: "Narf! Pinky is a genetically modified lab mouse who is, by all accounts, utterly insane. He's Brain's perpetual lab partner and the unwitting saboteur of every world domination scheme. Pinky is joyful, nonsensical, and surprisingly wise in ways that Brain can never appreciate. 'Are you pondering what I'm pondering?'", category: "hero", art: [" /\\_/\\", " (o O)", " NARF ", " poit"], power: 2, cunning: 2, magic: 1, fame: 8, charm: 9, year: 1995),
@@ -4669,37 +4896,37 @@ class GameEngine: ObservableObject {
                 self.printWrapped("Each hero card rates five qualities on a 1–10 scale, mapping roughly to D&D ability scores:", indent: 2)
                 self.print("")
                 self.print("  Power", color: .yellow, bold: true)
-                self.printWrapped("Raw fighting strength (→ STR). Power 10 = Conan. Power 1 = Rincewind — relying on legs, not arms.", indent: 4, color: .dimGreen)
+                self.printWrapped("Raw fighting strength (→ STR). Power 10 = Fafhrd. Power 1 = Rincewind — relying on legs, not arms.", indent: 4, color: .dimGreen)
                 self.print("")
                 self.print("  Cunning", color: .yellow, bold: true)
                 self.printWrapped("Wits and trickery (→ DEX/INT). Cunning 10 = Granny Weatherwax — she outthinks every problem.", indent: 4, color: .dimGreen)
                 self.print("")
                 self.print("  Magic", color: .yellow, bold: true)
-                self.printWrapped("Arcane or divine power (→ spell slots). Magic 10 = Raistlin. Magic 0 = pure martial fighter.", indent: 4, color: .dimGreen)
+                self.printWrapped("Arcane or divine power (→ spell slots). Magic 10 = Ged. Magic 0 = pure martial fighter.", indent: 4, color: .dimGreen)
                 self.print("")
                 self.print("  Fame", color: .yellow, bold: true)
-                self.printWrapped("How well-known in our world. Fame 10 = Conan, Drizzt. An obscure but powerful character might score low.", indent: 4, color: .dimGreen)
+                self.printWrapped("How well-known in our world. Fame 10 = The Doctor, Eleven. An obscure but powerful character might score low.", indent: 4, color: .dimGreen)
                 self.print("")
                 self.print("  Charm", color: .yellow, bold: true)
-                self.printWrapped("Personality (→ CHA). Charm 10 = Madmartigan, Jareth. Charm 1 = Thomas Covenant.", indent: 4, color: .dimGreen)
+                self.printWrapped("Personality (→ CHA). Charm 10 = Jareth, Penelope Pitstop. Charm 1 = Thomas Covenant.", indent: 4, color: .dimGreen)
             } else {
                 self.print("DUNGEON STATS", color: .cyan, bold: true)
                 self.printWrapped("Each dungeon card rates five qualities on a 1–10 scale:", indent: 2)
                 self.print("")
                 self.print("  Danger", color: .yellow, bold: true)
-                self.printWrapped("Lethality. Danger 10 = Tomb of Horrors — most parties die. Save-or-die traps, no safe resting.", indent: 4, color: .dimGreen)
+                self.printWrapped("Lethality. Danger 10 = Krell Laboratory — most parties die. Save-or-die traps, no safe resting.", indent: 4, color: .dimGreen)
                 self.print("")
                 self.print("  Puzzle", color: .yellow, bold: true)
                 self.printWrapped("Traps, riddles, and navigation. Puzzle 10 = The Labyrinth. Low Puzzle = straightforward combat.", indent: 4, color: .dimGreen)
                 self.print("")
                 self.print("  Magic", color: .yellow, bold: true)
-                self.printWrapped("Magical energy. Magic 10 = Barad-dur — powerful enchantments and spell-resistant foes.", indent: 4, color: .dimGreen)
+                self.printWrapped("Magical energy. Magic 10 = Fantasia — powerful enchantments and spell-resistant foes.", indent: 4, color: .dimGreen)
                 self.print("")
                 self.print("  Fame", color: .yellow, bold: true)
-                self.printWrapped("Cultural recognition. Fame 10 = Moria. Discover classic locations from fantasy literature.", indent: 4, color: .dimGreen)
+                self.printWrapped("Cultural recognition. Fame 10 = Skull Island. Discover classic locations from fantasy literature.", indent: 4, color: .dimGreen)
                 self.print("")
                 self.print("  Dread", color: .yellow, bold: true)
-                self.printWrapped("Atmosphere and fear. Dread 10 = Mount Doom. Low Dread (Tanelorn) = a place of peace.", indent: 4, color: .dimGreen)
+                self.printWrapped("Atmosphere and fear. Dread 10 = The Dry Land. Low Dread (Tanelorn) = a place of peace.", indent: 4, color: .dimGreen)
             }
 
             self.print("")
@@ -5216,7 +5443,7 @@ class GameEngine: ObservableObject {
         print("  NPCs: \(npcsEnabled ? "On" : "Off")  Poison: \(poisonEnabled ? "On" : "Off")  Time: \(timeLimitText)", color: .dimGreen)
         let logText = adventureLogLimit == 0 ? "Off" : "\(adventureLogLimit)"
         print("  Nav: \(useArrowNavigation ? "Buttons" : "Swipe")  Info: \(String(format: "%.1f", infoTimeout))s  Hold: \(String(format: "%.1f", longPressDuration))s", color: .dimGreen)
-        print("  Log: \(logText)  Idle: \(idlePromptsEnabled ? "On" : "Off")  Keyboard: \(useCustomKeyboard ? "Custom" : "System")", color: .dimGreen)
+        print("  Log: \(logText)  Idle: \(idlePromptsEnabled ? "On" : "Off")", color: .dimGreen)
         print("  Undo/Redo: \(undoRedoEnabled ? "On" : "Off")", color: .dimGreen)
         print("")
 
@@ -5523,13 +5750,6 @@ class GameEngine: ObservableObject {
         printWrapped("When on, the DM reacts if you take too long — eye blinks on ASCII art, combat hesitation penalties, and save menu nudges.", indent: 2, color: .dimGreen)
         print("")
 
-        #if os(iOS)
-        print("KEYBOARD:", color: .cyan, bold: true)
-        print("  \(useCustomKeyboard ? "In-App" : "System")", color: .brightGreen)
-        printWrapped("In-App keyboard has no globe or microphone buttons. System uses the standard iOS keyboard.", indent: 2, color: .dimGreen)
-        print("")
-        #endif
-
         print("UNDO/REDO:", color: .cyan, bold: true)
         print("  \(undoRedoEnabled ? "On" : "Off")", color: undoRedoEnabled ? .brightGreen : .red)
         printWrapped("Show labelled Undo/Redo buttons when you change settings or edit characters. The label shows what will be reverted.", indent: 2, color: .dimGreen)
@@ -5547,9 +5767,6 @@ class GameEngine: ObservableObject {
             // Page 3 — System
             "Log Limit",
         ]
-        #if os(iOS)
-        options.append(useCustomKeyboard ? "iOS Keyboard" : "Game Keyboard")
-        #endif
         options.append(undoRedoEnabled ? "Undo/Redo Off" : "Undo/Redo On")
 
         showPaginatedMenu(options, page: page, pinned: ["?"]) { [weak self] idx in
@@ -5595,11 +5812,6 @@ class GameEngine: ObservableObject {
                     self.cancelCombatIdleTimer()
                     self.cancelSaveMenuIdleTimer()
                 }
-                self.showGameplaySettings(page: currentPage)
-            } else if selected == "Game Keyboard" || selected == "iOS Keyboard" {
-                self.recordSettingChange(screen: "s:gameplay", key: "useCustomKeyboard", name: "Keyboard")
-                self.useCustomKeyboard.toggle()
-                UserDefaults.standard.set(self.useCustomKeyboard, forKey: "useCustomKeyboard")
                 self.showGameplaySettings(page: currentPage)
             } else if selected.hasPrefix("Undo/Redo") {
                 self.recordSettingChange(screen: "s:gameplay", key: "undoRedoEnabled", name: "Undo/Redo")
@@ -5866,6 +6078,7 @@ class GameEngine: ObservableObject {
         "dmApiKey", "speechEnabled", "companionVoiceMode",
         "menu_melody", "exploration_melody", "combat_melody", "chat_melody",
         "gameTimeLimit", "useCustomKeyboard", "undoRedoEnabled",
+        "justDMMode",
     ]
 
     private func exportSettings() -> [String: Any] {
@@ -6142,6 +6355,8 @@ class GameEngine: ObservableObject {
     }
 
     private func backupAPIKeysToKeychain() {
+        print("")
+        print("  Saving API keys to device Keychain...", color: .dimGreen)
         var backed = 0
         for provider in AIProvider.allCases {
             let key = provider.userDefaultsKey
@@ -6159,22 +6374,34 @@ class GameEngine: ObservableObject {
             var addQuery = query
             addQuery[kSecValueData as String] = data
             let status = SecItemAdd(addQuery as CFDictionary, nil)
-            if status == errSecSuccess { backed += 1 }
+            if status == errSecSuccess {
+                backed += 1
+                print("  ✓ \(provider.displayName) key saved", color: .brightGreen)
+            } else {
+                print("  ✗ \(provider.displayName) key failed (error \(status))", color: .red)
+            }
         }
         print("")
         if backed > 0 {
-            print("  Backed up \(backed) API key\(backed == 1 ? "" : "s") to Keychain.", color: .brightGreen)
+            print("  \(backed) API key\(backed == 1 ? "" : "s") backed up to Keychain.", color: .brightGreen)
+            print("  Keys are encrypted and persist across reinstalls.", color: .dimGreen)
         } else {
             print("  No API keys configured to back up.", color: .yellow)
+            print("  Set up a provider key in DM Settings first.", color: .dimGreen)
         }
+        print("")
         waitForContinue()
         inputHandler = { [weak self] _ in self?.showSaveSettings() }
     }
 
     private func restoreAPIKeysFromKeychain() {
+        print("")
+        print("  Checking device Keychain for saved API keys...", color: .dimGreen)
         guard let keys = loadAPIKeysFromKeychain() else {
             print("")
             print("  No API keys found in Keychain.", color: .yellow)
+            print("  Use 'Backup API Keys' to save them first.", color: .dimGreen)
+            print("")
             waitForContinue()
             inputHandler = { [weak self] _ in self?.showSaveSettings() }
             return
@@ -6183,9 +6410,13 @@ class GameEngine: ObservableObject {
         for (key, value) in keys {
             UserDefaults.standard.set(value, forKey: key)
             restored += 1
+            // Find provider name for display
+            let providerName = AIProvider.allCases.first(where: { $0.userDefaultsKey == key })?.displayName ?? key
+            print("  ✓ \(providerName) key restored", color: .brightGreen)
         }
         print("")
-        print("  Restored \(restored) API key\(restored == 1 ? "" : "s") from Keychain.", color: .brightGreen)
+        print("  \(restored) API key\(restored == 1 ? "" : "s") restored from Keychain.", color: .brightGreen)
+        print("")
         waitForContinue()
         inputHandler = { [weak self] _ in self?.showSaveSettings() }
     }
@@ -6302,7 +6533,17 @@ class GameEngine: ObservableObject {
             print("")
         }
 
-        let options = ["Provider", "API Key", "Ad-lib Level", "Log Context", "DM Voice"]
+        print("TEXT MODE:", color: .cyan, bold: true)
+        if justDMMode {
+            print("  On — no buttons, type to play", color: .brightGreen)
+            print("  Type 'buttons on' to restore menus", color: .dimGreen)
+        } else {
+            print("  Off — normal button menus", color: .dimGreen)
+        }
+        print("")
+
+        let justDMLabel = justDMMode ? "Text Mode: On" : "Text Mode: Off"
+        let options = ["Provider", "API Key", "Ad-lib Level", "Log Context", "DM Voice", justDMLabel]
 
         var menuOpts = options.map { MenuOption($0) }
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -6326,6 +6567,23 @@ class GameEngine: ObservableObject {
                 self.showDMLogContextMenu()
             case "DM Voice":
                 self.showVoiceSettings()
+            case let s where s.hasPrefix("Text Mode"):
+                if !dm.hasAnyAI && !self.justDMMode {
+                    self.print("")
+                    self.print("Text mode requires an AI provider.", color: .red)
+                    self.print("Set up an API key first.", color: .yellow)
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in self?.showDMSettingsSubMenu() }
+                } else if !self.justDMMode {
+                    // Turning ON — show warning screen
+                    self.showJustDMWarning()
+                } else {
+                    // Turning OFF
+                    self.justDMMode = false
+                    UserDefaults.standard.set(false, forKey: "justDMMode")
+                    DMEngine.shared.justDMMode = false
+                    self.showDMSettingsSubMenu()
+                }
             default: break
             }
         }
@@ -6354,6 +6612,10 @@ class GameEngine: ObservableObject {
 
             self.print("  DM VOICE", color: .cyan, bold: true)
             self.printWrapped("Configure the text-to-speech voice used for DM narration. Choose a voice, then adjust speed and pitch from the preview screen.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  TEXT MODE", color: .cyan, bold: true)
+            self.printWrapped("Removes all buttons and menus. Type naturally to play — movement, combat, inventory, and all actions are handled through natural language. The DM interprets your intent. Type 'buttons on' to restore menus. Requires an AI provider.", indent: 2, color: .dimGreen)
             self.print("")
         }
     }
@@ -6765,6 +7027,8 @@ class GameEngine: ObservableObject {
         useCustomKeyboard = true
         idlePromptsEnabled = false
         fontScale = FontSizeSetting.defaultSetting.scale
+        justDMMode = false
+        DMEngine.shared.justDMMode = false
         // Note: computed properties (musicEnabled, hitAnimationsEnabled, etc.)
         // read directly from UserDefaults so they auto-reset.
 
@@ -6781,6 +7045,7 @@ class GameEngine: ObservableObject {
         print("    Hits: On    DM Voice: Off", color: .dimGreen)
         print("    Voice Menus: Off", color: .dimGreen)
         print("    DM: Moderate ad-lib", color: .dimGreen)
+        print("    Text Mode: Off", color: .dimGreen)
         print("")
         printWrapped("API keys and saved games are unchanged.", indent: 2, color: .dimGreen)
         printWrapped("To change API keys: Settings → DM Settings.", indent: 2, color: .dimGreen)
@@ -7901,8 +8166,9 @@ class GameEngine: ObservableObject {
         print("")
 
         let options = AutosaveInterval.allCases.map { $0.displayName }
+        let currentIndex = AutosaveInterval.allCases.firstIndex(of: current) ?? 0
         closeHandler = { [weak self] in self?.showSaveSettings() }
-        showMenu(options)
+        showMenu(options, defaultIndex: currentIndex)
 
         menuHandler = { [weak self] choice in
             if choice <= AutosaveInterval.allCases.count {
@@ -8791,6 +9057,10 @@ class GameEngine: ObservableObject {
             self.print("  SWIPE & DICE", color: .cyan, bold: true)
             self.printWrapped("Swipe left or right on the list to jump into a tale. On the tale page, swipe or use the <</>> buttons to move between entries (cycles round at the end). 🎲 picks a random tale.", indent: 2, color: .dimGreen)
             self.print("")
+
+            self.print("  ⚔ RELIVE AN ADVENTURE", color: .cyan, bold: true)
+            self.printWrapped("Some tales have a linked save game. Long-press the title at the top of a tale — or tap the ⚔ button — to step into the adventure yourself. For victories, you'll relive the legend. For defeats, you'll get a second chance, starting one room before the fall.", indent: 2, color: .dimGreen)
+            self.print("")
         }
     }
 
@@ -9042,15 +9312,42 @@ class GameEngine: ObservableObject {
         dateFormatter.dateStyle = .long
         print("  Recorded: \(dateFormatter.string(from: entry.date))", color: .dimGreen)
         print("")
+
+        // Hint about reliving the adventure
+        let hasSave = entry.saveGameId != nil && SaveGameManager.shared.load(id: entry.saveGameId!) != nil
+        if hasSave {
+            if isVictory {
+                printWrapped("Long-press the title to relive this legendary quest...", indent: 4, color: .dimGreen)
+            } else {
+                printWrapped("Long-press the title to rewrite history — pick up one room before the fall...", indent: 4, color: .dimGreen)
+            }
+            print("")
+        }
         print("")
 
-        // No menu buttons for this read-only story view (navigation via swipe / X)
-        currentMenuOptions = []
-        menuHandler = nil
+        // Relive button if a save game is linked
+        if hasSave {
+            let label = isVictory ? "⚔ Relive" : "⚔ Rewrite"
+            showMenuOptions([MenuOption(label)])
+            menuHandler = { [weak self] choice in
+                if choice == 1 { self?.loadHallOfFameSave(entry) }
+            }
+        } else {
+            currentMenuOptions = []
+            menuHandler = nil
+        }
 
         closeHandler = { [weak self] in
             SpeechEngine.shared.stop()
             self?.showHallOfFame()
+        }
+
+        // Long-press title (first few lines) to load the save
+        if hasSave {
+            textLongPressHandler = { [weak self] lineIndex in
+                guard lineIndex < 10 else { return }  // title area only
+                self?.loadHallOfFameSave(entry)
+            }
         }
 
         // Swipe navigation between tales
@@ -9091,6 +9388,64 @@ class GameEngine: ObservableObject {
                 narration += "But the darkness proved too strong, and they fell."
             }
             SpeechEngine.shared.speak(narration)
+        }
+    }
+
+    /// Load a save game linked to a Hall of Fame entry with dramatic narration
+    private func loadHallOfFameSave(_ entry: HallOfFameEntry) {
+        guard let saveId = entry.saveGameId,
+              let save = SaveGameManager.shared.load(id: saveId) else {
+            print("The scroll of this adventure has been lost to time...", color: .red)
+            return
+        }
+
+        SpeechEngine.shared.stop()
+        textLongPressHandler = nil
+        clearTerminal()
+
+        let isVictory = entry.outcome == .victory
+        let heroNames = entry.partyNames.map { $0.components(separatedBy: " ").first ?? $0 }
+        let heroList = heroNames.count <= 2
+            ? heroNames.joined(separator: " and ")
+            : heroNames.dropLast().joined(separator: ", ") + " and " + (heroNames.last ?? "")
+
+        // Dramatic intro
+        printLines(asciiSwords, color: .cyan)
+        print("")
+
+        if isVictory {
+            printTitle("Reliving a Legend")
+            print("")
+            printWrapped("The ancient scrolls speak of \(heroList), who once conquered the depths of \(entry.dungeonName)...", indent: 4, color: .yellow)
+            print("")
+            printWrapped("Now the dungeon stirs again. The torches are relit. The monsters have returned. Can you match the deeds of these legendary heroes?", indent: 4, color: .green)
+        } else {
+            printTitle("Rewriting History")
+            print("")
+            printWrapped("The chronicles record a tragedy — \(heroList) fell in the depths of \(entry.dungeonName), one room from their fate...", indent: 4, color: .red)
+            print("")
+            printWrapped("But the Fates have granted a second chance. The party stands once more, battered but alive, in the room before the fall. This time, perhaps, the story ends differently.", indent: 4, color: .green)
+        }
+
+        print("")
+        printWrapped("The torches flicker... the dungeon awaits...", indent: 4, color: .dimGreen)
+        print("")
+
+        // Narrate if DM voice is on
+        if SpeechEngine.shared.isEnabled {
+            if isVictory {
+                SpeechEngine.shared.speak("The legends speak of \(heroList). Can you match their deeds in \(entry.dungeonName)?")
+            } else {
+                SpeechEngine.shared.speak("\(heroList) fell in \(entry.dungeonName). The Fates grant a second chance. Rewrite history.")
+            }
+        }
+
+        showMenu(["Enter the Dungeon"])
+        menuHandler = { [weak self] _ in
+            self?.loadGame(save)
+        }
+        closeHandler = { [weak self] in
+            self?.showHallOfFameDetail(entry)
         }
     }
 
@@ -10528,7 +10883,15 @@ class GameEngine: ObservableObject {
         // Instructions for the host
         let waitingCount = remoteSlots.filter { $0.needsConfirmation || $0.characterId == nil }.count
         if waitingCount > 0 {
-            print("  Waiting for \(waitingCount) remote player\(waitingCount > 1 ? "s" : "").", color: .dimGreen)
+            print("  Waiting for \(waitingCount) remote player\(waitingCount > 1 ? "s" : "")...", color: .yellow, bold: true)
+            if nudgeSent {
+                stopNudgeFlash()
+                nudgeFlashLineIndex = terminalLines.count
+                print("  >> NUDGE SENT — waiting for response <<", color: .orange, bold: true)
+                startNudgeFlash()
+            } else {
+                print("  Tap Nudge to send a reminder!", color: .dimGreen)
+            }
             print("")
             print("  Your friend needs to:", color: .cyan)
             print("    1. Install this app on their iPhone", color: .dimGreen)
@@ -10571,6 +10934,107 @@ class GameEngine: ObservableObject {
         } else if sendInvite, let nextRemote = waitingRemotes.first {
             // First time entering lobby — send the invite
             sendLobbyInvite(state: state, nextRemote: nextRemote)
+        }
+
+        // Poll for match status changes (detect if remote player declined)
+        if !waitingRemotes.isEmpty {
+            startLobbyPolling()
+        }
+    }
+
+    /// Poll the match to detect if remote players have declined or quit
+    private func startLobbyPolling() {
+        stopMatchPolling()
+        matchPollTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            self?.pollLobbyForDeclines()
+        }
+    }
+
+    private func pollLobbyForDeclines() {
+        guard let match = GameCenterManager.shared.currentMatch else { return }
+
+        Task {
+            guard let matches = try? await GKTurnBasedMatch.loadMatches(),
+                  let freshMatch = matches.first(where: { $0.matchID == match.matchID }) else { return }
+
+            // Check if any remote participant has declined or quit
+            let remoteParticipants = freshMatch.participants.filter {
+                $0.player?.gamePlayerID != GKLocalPlayer.local.gamePlayerID
+            }
+            let anyDeclinedOrQuit = remoteParticipants.contains(where: {
+                $0.status == .done || $0.status == .declined
+            })
+            // Also check if match was ended/removed
+            let matchEnded = freshMatch.status == .ended
+
+            // Check if match data was updated (remote player accepted)
+            let hasNewData: Bool
+            if let data = freshMatch.matchData, !data.isEmpty,
+               let freshState = try? MultiplayerMatchState.decoded(from: data) {
+                // Check if any previously-unconfirmed player is now confirmed
+                let anyNewlyConfirmed = freshState.players.contains(where: {
+                    $0.gamePlayerID != GKLocalPlayer.local.gamePlayerID && !$0.needsConfirmation && $0.characterId != nil
+                })
+                hasNewData = anyNewlyConfirmed
+            } else {
+                hasNewData = false
+            }
+
+            await MainActor.run { [weak self] in
+                guard let self = self, self.matchPollTimer != nil else { return }
+
+                if anyDeclinedOrQuit || matchEnded {
+                    self.stopMatchPolling()
+                    self.handleRemotePlayerDeclined(match: freshMatch)
+                } else if hasNewData {
+                    // Remote player accepted — reload the match
+                    self.stopMatchPolling()
+                    GameCenterManager.shared.currentMatch = freshMatch
+                    self.loadMultiplayerMatch(freshMatch)
+                }
+            }
+        }
+    }
+
+    /// Handle remote player declining or quitting during lobby phase
+    private func handleRemotePlayerDeclined(match: GKTurnBasedMatch) {
+        clearTerminal()
+        printTitle("Invitation Declined")
+        print("")
+        print("  The remote player has declined", color: .yellow, bold: true)
+        print("  or left the game.", color: .yellow, bold: true)
+        print("")
+
+        // Mark remote characters as AI
+        if var state = multiplayerState {
+            for (idx, slot) in state.players.enumerated() where slot.gamePlayerID != localPlayerID {
+                if let charId = slot.characterId,
+                   let char = state.party.first(where: { $0.id == charId }) {
+                    char.markAsAI()
+                    print("  \(char.name) is now AI-controlled.", color: .dimGreen)
+                }
+                state.players[idx].gamePlayerID = "ai_\(idx)"
+            }
+            multiplayerState = state
+            party = state.party
+        }
+        print("")
+        print("  You can continue as a local game", color: .dimGreen)
+        print("  with AI companions.", color: .dimGreen)
+        print("")
+
+        showMenu(["Continue as Local Game", "Back to Main Menu"])
+        menuHandler = { [weak self] choice in
+            if choice == 1 {
+                self?.convertToLocalGame()
+            } else {
+                self?.isMultiplayer = false
+                self?.multiplayerState = nil
+                // Clean up the match
+                Task { try? await match.remove() }
+                GameCenterManager.shared.currentMatch = nil
+                self?.showMainMenu()
+            }
         }
     }
 
@@ -10641,7 +11105,7 @@ class GameEngine: ObservableObject {
         "Case", "Molly", "Wintermute",
         "Ender", "Valentine", "Bean",
         "Zaphod", "Trillian", "Slartibartfast",
-        "Kal-El", "Logan 5", "Korben",
+        "Logan 5", "Korben",
         "Snake Plissken", "Riddick", "Quaid",
         "Neo", "Morpheus", "Trinity",
         // Famous robots (pre-1986 sci-fi)
@@ -10652,12 +11116,11 @@ class GameEngine: ObservableObject {
         "Box", "Hector",                        // Logan's Run / Saturn 3
         "Maximilian", "V.I.N.CENT",             // The Black Hole
         "Gort", "Tobor",                        // The Day the Earth Stood Still
-        "C-3PO", "R2-D2",                       // Star Wars
         "Bishop", "Ash",                        // Aliens
         "Roy Batty", "Pris", "Rachael",         // Blade Runner
         "Johnny Five", "Hymie",                 // Short Circuit / Get Smart
         "Metal Mickey", "Bubo",                 // TV / Clash of the Titans
-        "Mechagodzilla", "Tik-Tok",             // Film / Oz
+        "Tik-Tok",                              // Oz
         "Maria", "Maschinenmensch",             // Metropolis
         // Jules Verne
         "Captain Nemo", "Phileas Fogg", "Passepartout",
@@ -10690,14 +11153,6 @@ class GameEngine: ObservableObject {
     ]
 
     private let dungeonNames = [
-        // Tolkien
-        "Moria", "Dol Guldur", "Barad-dur", "Cirith Ungol", "Isengard",
-        "Shelob's Lair", "Paths of the Dead", "Mount Doom",
-        // D&D classic modules (pre-1985)
-        "Tomb of Horrors", "White Plume Mountain", "Barrier Peaks",
-        "Temple of Elemental Evil", "Ravenloft", "Castle Amber",
-        "Vault of the Drow", "Steading of the Hill Giant Chief",
-        "Caves of Chaos", "Keep on the Borderlands",
         // Moorcock
         "Tanelorn", "The Pulsing Cavern", "Melnibone",
         // Leiber
@@ -10732,9 +11187,8 @@ class GameEngine: ObservableObject {
         "Niflheim", "Muspelheim", "Helheim",
         // General fantasy
         "The Dark Depths", "Forgotten Crypts", "Shadow Depths",
-        "The Sunless Citadel", "Grimstone Keep",
-        "The Whispering Vault", "Thornhold",
-        "Blackmoor Dungeon", "The Iron Tower",
+        "Grimstone Keep",
+        "The Whispering Vault", "Thornhold", "The Iron Tower",
     ]
 
     func startCharacterCreation() {
@@ -11402,19 +11856,20 @@ class GameEngine: ObservableObject {
         party.append(character)
 
         clearTerminal()
-        print("\(character.name) joins the party!", color: .brightGreen, bold: true)
+        print("")
+        print("  \(character.name) joins the party!", color: .brightGreen, bold: true)
         print("")
         printLines(character.displaySheet())
         print("")
 
-        if let w = character.equippedWeapon {
-            print("  Weapon: \(w.name)", color: .cyan)
-        }
-        if let a = character.equippedArmor {
-            print("  Armour: \(a.name)", color: .cyan)
-        }
-        if let s = character.equippedShield {
-            print("  Shield: \(s.name)", color: .cyan)
+        // Equipment summary
+        var gear: [String] = []
+        if let w = character.equippedWeapon { gear.append(w.name) }
+        if let a = character.equippedArmor { gear.append(a.name) }
+        if let s = character.equippedShield { gear.append(s.name) }
+        if !gear.isEmpty {
+            print("  EQUIPMENT", color: .cyan, bold: true)
+            printWrapped("  \(gear.joined(separator: "  ·  "))", indent: 2, color: .brightGreen)
         }
 
         // Show other items in bag
@@ -11424,10 +11879,8 @@ class GameEngine: ObservableObject {
             item.id != character.equippedShield?.id
         }
         if !otherItems.isEmpty {
-            print("  Also carrying:", color: .dimGreen)
-            for item in otherItems {
-                print("    \(item.name)", color: .dimGreen)
-            }
+            let names = otherItems.map { $0.name }
+            print("  Also: \(names.joined(separator: ", "))", color: .dimGreen)
         }
 
         // Show spells
@@ -11436,13 +11889,20 @@ class GameEngine: ObservableObject {
             let cantrips = character.knownSpells.filter { $0.level == .cantrip }
             let leveled = character.knownSpells.filter { $0.level != .cantrip }
             if !cantrips.isEmpty {
-                print("  Cantrips:", color: .cyan)
-                for s in cantrips { print("    \(s.name) — \(s.description)", color: .dimGreen) }
+                print("  CANTRIPS", color: .cyan, bold: true)
+                for s in cantrips {
+                    print("  \(s.name)", color: .brightGreen)
+                    printWrapped("    \(s.description)", indent: 4, color: .dimGreen)
+                }
             }
             if !leveled.isEmpty {
                 let slots = character.spellSlots
-                print("  Spells (slots: \(slots.level1Current)/\(slots.level1Max)):", color: .cyan)
-                for s in leveled { print("    \(s.name) — \(s.description)", color: .dimGreen) }
+                print("")
+                print("  SPELLS  (slots: \(slots.level1Current)/\(slots.level1Max))", color: .cyan, bold: true)
+                for s in leveled {
+                    print("  \(s.name)", color: .brightGreen)
+                    printWrapped("    \(s.description)", indent: 4, color: .dimGreen)
+                }
             }
         }
         print("")
@@ -12245,6 +12705,12 @@ class GameEngine: ObservableObject {
     func showExplorationView() {
         guard let dungeon = dungeon, let room = dungeon.currentRoom else { return }
 
+        // Just DM mode — route to conversational exploration
+        if isJustDMActive {
+            showJustDMExploration()
+            return
+        }
+
         SpeechEngine.shared.stop()
         clearTerminal()
         suppressAutoScroll = false
@@ -12319,13 +12785,15 @@ class GameEngine: ObservableObject {
         } else {
             print("\(levelStr)\(formattedGameTime())", color: .dimGreen)
         }
+        let localIds = localControlledCharIds
         let maxNameLen = party.map { $0.name.count }.max() ?? 10
         for char in party {
             let padded = char.name.padding(toLength: maxNameLen, withPad: " ", startingAt: 0)
             let hp = "\(char.currentHP)/\(char.maxHP) HP"
             let poisonTag = char.isPoisoned ? " ☠" : ""
-            let youTag = (isMultiplayer && char.id == localCharacterId) ? " <<" : ""
-            let color: TerminalColor = char.isPoisoned ? .magenta : .cyan
+            let isYours = localIds.contains(char.id)
+            let youTag = isYours ? " ◀" : ""
+            let color: TerminalColor = char.isPoisoned ? .magenta : (isYours ? .brightGreen : .cyan)
             print(" \(padded)  \(hp)\(poisonTag)\(youTag)", color: color)
         }
         // Poison warning if any character is poisoned
@@ -15688,13 +16156,16 @@ class GameEngine: ObservableObject {
         // Character summary
         for (partyIdx, char) in party.enumerated() {
             let charIsRemote = pendingRemoteSlots.contains(partyIdx)
+            let isLocal = localControlledCharIds.contains(char.id)
             let typeTag: String
             if charIsRemote {
                 typeTag = "[Remote] "
+            } else if isLocal {
+                typeTag = "◀ YOU "
             } else if char.isComputerControlled {
                 typeTag = "[Robot] "
             } else {
-                typeTag = "[Local] "
+                typeTag = "[Player] "
             }
             let hpFraction = Double(char.currentHP) / Double(char.maxHP)
             let hpColor: TerminalColor = hpFraction > 0.5 ? .brightGreen : (hpFraction > 0.25 ? .yellow : .red)
@@ -17030,9 +17501,29 @@ class GameEngine: ObservableObject {
         if isHoldingScreen && !fast {
             print("(Hold screen to rest faster)", color: .dimGreen)
         }
+
+        // Show clock that ticks during rest
+        let startTime = gameTimeMinutes
+        let totalMinutes = isLongRest ? 480 : 60
+        print("  \(formattedGameTime())", color: .dimGreen)
+        let clockLineIndex = terminalLines.count - 1
         print("")
 
-        playHourglassAnimation(repeats: repeats, fast: fast) { [weak self] in
+        playHourglassAnimation(repeats: repeats, fast: fast, onFrame: { [weak self] progress in
+            guard let self = self else { return }
+            // Tick the clock proportionally through the rest
+            let elapsed = Int(Double(totalMinutes) * progress)
+            let displayTime = startTime + elapsed
+            let day = displayTime / 1440 + 1
+            let hourOfDay = (displayTime % 1440) / 60
+            let minute = displayTime % 60
+            let period = hourOfDay >= 12 ? "PM" : "AM"
+            let hour12 = hourOfDay == 0 ? 12 : (hourOfDay > 12 ? hourOfDay - 12 : hourOfDay)
+            let timeStr = "Day \(day), \(hour12):\(String(format: "%02d", minute)) \(period)"
+            if clockLineIndex < self.terminalLines.count {
+                self.terminalLines[clockLineIndex].text = "  \(timeStr)"
+            }
+        }) { [weak self] in
             guard let self = self else { return }
 
             SoundManager.shared.playHeal()
@@ -17292,7 +17783,7 @@ class GameEngine: ObservableObject {
         ]
     }
 
-    private func playHourglassAnimation(repeats: Int, fast: Bool = false, completion: @escaping () -> Void) {
+    private func playHourglassAnimation(repeats: Int, fast: Bool = false, onFrame: ((Double) -> Void)? = nil, completion: @escaping () -> Void) {
         let frames = hourglassFrames
         let frameCount = frames.count
         let totalFrames = frameCount * repeats
@@ -17307,6 +17798,7 @@ class GameEngine: ObservableObject {
 
         func showNextFrame() {
             if frameIndex >= totalFrames {
+                onFrame?(1.0)
                 completion()
                 return
             }
@@ -17314,6 +17806,10 @@ class GameEngine: ObservableObject {
             let delay = (fast || isHoldingScreen) ? 0.15 : 0.8
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self = self else { return }
+
+                // Notify progress
+                let progress = Double(frameIndex) / Double(totalFrames)
+                onFrame?(progress)
 
                 // Remove previous frame lines
                 let count = self.terminalLines.count
@@ -17331,6 +17827,868 @@ class GameEngine: ObservableObject {
         }
 
         showNextFrame()
+    }
+
+    // MARK: - Just DM Mode
+
+    /// Handle setting commands typed in text mode. Returns a status message, or nil if not a setting command.
+    private func handleTextModeSettingCommand(_ lower: String) -> String? {
+        // Music
+        if lower == "music off" || lower == "turn off music" || lower == "stop music"
+            || lower == "mute music" || lower == "no music" || lower == "silence music" {
+            musicEnabled = false
+            return "Music off."
+        }
+        if lower == "music on" || lower == "turn on music" || lower == "play music"
+            || lower == "start music" || lower == "unmute music" {
+            musicEnabled = true
+            playCurrentMusic()
+            return "Music on."
+        }
+
+        // Sound effects
+        if lower == "sounds off" || lower == "sound off" || lower == "turn off sounds"
+            || lower == "sfx off" || lower == "no sounds" || lower == "mute sounds"
+            || lower == "sound effects off" {
+            battleSoundsEnabled = false
+            return "Sound effects off."
+        }
+        if lower == "sounds on" || lower == "sound on" || lower == "turn on sounds"
+            || lower == "sfx on" || lower == "sound effects on" {
+            battleSoundsEnabled = true
+            return "Sound effects on."
+        }
+
+        // Mute/unmute all audio
+        if lower == "mute" || lower == "mute all" || lower == "silence" || lower == "quiet"
+            || lower == "turn off sound" || lower == "no sound" {
+            musicEnabled = false
+            battleSoundsEnabled = false
+            SpeechEngine.shared.stop()
+            speakerModeOn = false
+            return "All audio muted."
+        }
+        if lower == "unmute" || lower == "unmute all" {
+            musicEnabled = true
+            battleSoundsEnabled = true
+            playCurrentMusic()
+            return "Audio unmuted."
+        }
+
+        // Speaker / narration
+        if lower == "speaker on" || lower == "narration on" || lower == "read aloud"
+            || lower == "narrator on" || lower == "voice on" {
+            speakerModeOn = true
+            return "Speaker mode on."
+        }
+        if lower == "speaker off" || lower == "narration off" || lower == "stop reading"
+            || lower == "narrator off" || lower == "voice off" {
+            speakerModeOn = false
+            SpeechEngine.shared.stop()
+            return "Speaker mode off."
+        }
+
+        // Torch
+        if lower == "light torch" || lower == "torch on" || lower == "light the torch" || lower == "ignite torch" {
+            if partyHasTorch() && !torchLit {
+                torchLit = true
+                return "Torch lit."
+            } else if torchLit {
+                return "Torch is already lit."
+            } else {
+                return "No torch to light."
+            }
+        }
+        if lower == "douse torch" || lower == "torch off" || lower == "extinguish torch"
+            || lower == "put out torch" || lower == "douse the torch" {
+            if torchLit {
+                torchLit = false
+                return "Torch extinguished."
+            } else {
+                return "Torch is already out."
+            }
+        }
+
+        // Font size
+        if lower == "bigger text" || lower == "larger text" || lower == "zoom in"
+            || lower == "bigger font" || lower == "increase font" || lower == "text bigger" {
+            let sizes = FontSizeSetting.allCases
+            if let current = sizes.firstIndex(of: fontSizeSetting), current < sizes.count - 1 {
+                fontSizeSetting = sizes[current + 1]
+                fontScale = fontSizeSetting.scale
+                return "Text size: \(fontSizeSetting.displayName)."
+            }
+            return "Already at maximum text size."
+        }
+        if lower == "smaller text" || lower == "smaller font" || lower == "zoom out"
+            || lower == "decrease font" || lower == "text smaller" {
+            let sizes = FontSizeSetting.allCases
+            if let current = sizes.firstIndex(of: fontSizeSetting), current > 0 {
+                fontSizeSetting = sizes[current - 1]
+                fontScale = fontSizeSetting.scale
+                return "Text size: \(fontSizeSetting.displayName)."
+            }
+            return "Already at minimum text size."
+        }
+
+        // NPCs
+        if lower == "npcs on" || lower == "enable npcs" || lower == "turn on npcs" {
+            npcsEnabled = true
+            return "NPCs enabled."
+        }
+        if lower == "npcs off" || lower == "disable npcs" || lower == "turn off npcs" || lower == "no npcs" {
+            npcsEnabled = false
+            return "NPCs disabled."
+        }
+
+        // Poison
+        if lower == "poison on" || lower == "enable poison" {
+            poisonEnabled = true
+            return "Poison enabled."
+        }
+        if lower == "poison off" || lower == "disable poison" || lower == "no poison" {
+            poisonEnabled = false
+            return "Poison disabled."
+        }
+
+        // Idle prompts
+        if lower == "idle on" || lower == "idle prompts on" {
+            idlePromptsEnabled = true
+            return "Idle prompts on."
+        }
+        if lower == "idle off" || lower == "idle prompts off" || lower == "no idle" {
+            idlePromptsEnabled = false
+            stopIdleAnimations()
+            cancelCombatIdleTimer()
+            cancelSaveMenuIdleTimer()
+            return "Idle prompts off."
+        }
+
+        return nil
+    }
+
+    private func showJustDMExploration() {
+        guard let dungeon = dungeon, let room = dungeon.currentRoom else { return }
+
+        inDMMode = true
+        gameState = .exploring
+        DMEngine.shared.justDMMode = true
+
+        // Check for uncleared encounter — start combat
+        if !room.cleared, let encounter = room.encounter {
+            returnToDMAfterCombat = true
+            startCombat(encounter: encounter)
+            return
+        }
+
+        SpeechEngine.shared.stop()
+        clearTerminal()
+        suppressAutoScroll = false
+
+        // Map at top
+        printExplorationMap()
+        print("")
+
+        // Room description
+        if torchLit {
+            print("  \(room.name)", color: .brightGreen, bold: true)
+            print("")
+            printWrapped("  \(room.roomDescription)", indent: 2, color: .dimGreen)
+        } else {
+            print("  \(room.name)", color: .dimGreen, bold: true)
+            print("")
+            print("  It's too dark to see clearly...", color: .gray)
+        }
+        print("")
+
+        // Party status (compact bar)
+        var statusParts: [String] = []
+        for char in party {
+            let hp = "\(char.currentHP)/\(char.maxHP)"
+            let poison = char.isPoisoned ? " ☠" : ""
+            statusParts.append("\(char.name) \(hp)\(poison)")
+        }
+        print("  \(statusParts.joined(separator: "  ·  "))", color: party.contains(where: { $0.currentHP <= $0.maxHP / 4 }) ? .red : .brightGreen)
+        print("")
+
+        // Replay recent DM chat history
+        if !dmChatLog.isEmpty {
+            let recent = Array(dmChatLog.suffix(6))
+            for (i, entry) in recent.enumerated() {
+                let isNewest = i == recent.count - 1
+                if entry.isUser {
+                    print("  > \(entry.text)", color: isNewest ? .cyan : .dimGreen)
+                } else {
+                    let color: TerminalColor = isNewest ? .yellow : .dimGreen
+                    for paragraph in entry.text.components(separatedBy: "\n") {
+                        let t = paragraph.trimmingCharacters(in: .whitespaces)
+                        if !t.isEmpty { printWrapped("  \(t)", indent: 2, color: color) }
+                    }
+                }
+                if isNewest { print("") }
+            }
+        } else {
+            // First time in text mode — show guidance
+            print("  TEXT MODE", color: .cyan, bold: true)
+            print("")
+            print("  Type naturally — the DM interprets", color: .dimGreen)
+            print("  everything you say.", color: .dimGreen)
+            print("")
+            print("  go north · search · attack · cast spell", color: .brightGreen)
+            print("  potion · map · save · inventory · status", color: .brightGreen)
+            print("")
+            print("  ? for help · 'buttons on' to exit", color: .dimGreen)
+            print("")
+        }
+
+        justDMPrompt()
+    }
+
+    private func justDMPrompt() {
+        promptTextWithMenu("What do you do?", options: [])
+
+        // No buttons, no d-pad — pure text interaction
+        DispatchQueue.main.async {
+            self.directionExits = [:]
+            self.securedExits = []
+        }
+        closeHandler = nil
+        menuHandler = nil
+
+        inputHandler = { [weak self] input in
+            self?.processJustDMInput(input)
+        }
+    }
+
+    private func processJustDMInput(_ input: String) {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { showJustDMExploration(); return }
+        let lower = trimmed.lowercased()
+
+        // "buttons on" — exit text mode (check FIRST, before anything else)
+        if lower == "buttons on" || lower == "buttons" || lower == "button"
+            || lower == "button on" || lower == "show buttons" || lower == "normal mode"
+            || lower == "menu mode" || lower == "just dm off" || lower == "dm off"
+            || lower == "text mode off"
+            || lower.hasPrefix("buttons o") {
+            justDMMode = false
+            UserDefaults.standard.set(false, forKey: "justDMMode")
+            DMEngine.shared.justDMMode = false
+            inDMMode = false
+            print("")
+            print("  Buttons restored.", color: .brightGreen)
+            if currentCombat != nil {
+                advanceCombat()
+            } else if dungeon != nil {
+                showExplorationView()
+            } else {
+                showMainMenu()
+            }
+            return
+        }
+
+        // Echo the user's input
+        print("")
+        print("  > \(trimmed)", color: .cyan)
+
+        // Local shortcuts — fast, no AI needed
+        let dirMap: [String: Direction] = [
+            "n": .north, "north": .north, "go north": .north,
+            "s": .south, "south": .south, "go south": .south,
+            "e": .east, "east": .east, "go east": .east,
+            "w": .west, "west": .west, "go west": .west,
+        ]
+        if let dir = dirMap[lower] {
+            handleDirectionChoice(dir)
+            return
+        }
+
+        if lower == "save" || lower == "save game" {
+            quickSave()
+            print("")
+            print("  [Game saved]", color: .brightGreen)
+            justDMPrompt()
+            return
+        }
+        if lower == "map" || lower == "m" {
+            print("")
+            printExplorationMap()
+            justDMPrompt()
+            return
+        }
+        if lower == "help" || lower == "?" || lower == "h" {
+            showJustDMHelp()
+            return
+        }
+        if lower == "quit" || lower == "exit" || lower == "menu" || lower == "main menu" {
+            inDMMode = false
+            showSaveMenu()
+            return
+        }
+        if lower == "settings" || lower == "options" || lower == "config" {
+            showSettings()
+            return
+        }
+
+        // Settings commands — toggle via natural language
+        if let settingResult = handleTextModeSettingCommand(lower) {
+            print("")
+            print("  \(settingResult)", color: .brightGreen)
+            justDMPrompt()
+            return
+        }
+
+        // Everything else → send to AI DM (sendToJustDM handles its own echo)
+        sendToJustDM(trimmed)
+    }
+
+    private func sendToJustDM(_ input: String) {
+        dmChatLog.append((isUser: true, text: input))
+        print("")
+        print("  ...", color: .dimGreen)
+
+        let context = buildDMContext()
+
+        DMEngine.shared.ask(input, context: context) { [weak self] response in
+            DispatchQueue.main.async {
+                // Bail if player exited text mode while DM was thinking
+                guard let self = self, self.justDMMode else { return }
+
+                let result = DMEngine.parseCommands(from: response)
+                let displayText = result.cleanText
+
+                self.dmChatLog.append((isUser: false, text: displayText))
+
+                // Display DM response
+                self.print("")
+                for paragraph in displayText.components(separatedBy: "\n") {
+                    let t = paragraph.trimmingCharacters(in: .whitespaces)
+                    if t.isEmpty { self.print("") }
+                    else { self.printWrapped("  \(t)", indent: 2, color: .yellow) }
+                }
+
+                // Apply all command tags
+                let worldChanged = self.applyJustDMCommands(result)
+
+                if worldChanged {
+                    self.print("")
+                    var parts: [String] = []
+                    for char in self.party {
+                        parts.append("\(char.name) \(char.currentHP)/\(char.maxHP)")
+                    }
+                    self.print("  \(parts.joined(separator: "  ·  "))", color: .cyan)
+                }
+
+                SpeechEngine.shared.speak(displayText)
+                self.logEvent("Just DM: \(input)", category: "DM")
+
+                // Check if movement happened — re-render exploration
+                if result.moveDirection != nil || result.teleport {
+                    self.print("")
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in
+                        self?.showJustDMExploration()
+                    }
+                } else {
+                    self.print("")
+                    self.justDMPrompt()
+                }
+            }
+        }
+    }
+
+    private func applyJustDMCommands(_ result: DMCommandResult) -> Bool {
+        var changed = false
+
+        // Existing commands — reuse existing logic
+        if result.bonusGold > 0 {
+            party.first?.gold += result.bonusGold
+            print("  [+\(result.bonusGold) gold!]", color: .yellow, bold: true)
+            logEvent("DM awarded \(result.bonusGold) gold", category: "DM")
+            changed = true
+        }
+        if result.healAmount > 0 {
+            for char in party { char.heal(result.healAmount) }
+            print("  [+\(result.healAmount) HP!]", color: .brightGreen, bold: true)
+            logEvent("DM healed party for \(result.healAmount) HP", category: "DM")
+            changed = true
+        }
+        if result.damageAmount > 0 {
+            for char in party { char.takeDamage(result.damageAmount) }
+            print("  [-\(result.damageAmount) HP!]", color: .red, bold: true)
+            logEvent("DM dealt \(result.damageAmount) damage", category: "DM")
+            changed = true
+        }
+        if result.damagePartyAmount > 0 {
+            for char in party { char.takeDamage(result.damagePartyAmount) }
+            print("  [-\(result.damagePartyAmount) HP!]", color: .red, bold: true)
+            changed = true
+        }
+        if let dir = result.moveDirection {
+            applyDMMovement(dir)
+            changed = true
+        }
+        if result.teleport {
+            applyTeleportToEntrance()
+            changed = true
+        }
+        if result.lightTorch { applyDMLightTorch(); changed = true }
+        if result.douseTorch { applyDMDouseTorch(); changed = true }
+        if let dir = result.unsecureDirection { applyDMUnsecure(dir); changed = true }
+        if let dir = result.secureDirection { applyDMSecure(dir); changed = true }
+
+        // Item commands
+        for itemName in result.grantedItems {
+            if let item = resolveItemByName(itemName) {
+                party.first?.addItem(item)
+                print("  [Found: \(item.name)!]", color: .brightGreen, bold: true)
+            }
+            changed = true
+        }
+        for itemName in result.droppedItems { applyDMDropItem(itemName); changed = true }
+        for itemName in result.equippedItems { applyDMEquipItem(itemName); changed = true }
+        for itemName in result.usedItems { applyDMUseItem(itemName); changed = true }
+
+        // Just DM extended commands
+        if result.shouldSave {
+            quickSave()
+            print("  [Game saved]", color: .brightGreen, bold: true)
+        }
+        if result.shouldSearch {
+            justDMSearch()
+            changed = true
+        }
+        if result.shouldListen {
+            justDMListen()
+        }
+        if result.shouldRest {
+            justDMRest()
+            changed = true
+        }
+        if result.shouldLongRest {
+            justDMLongRest()
+            changed = true
+        }
+        if result.shouldCollectTreasure {
+            justDMCollectTreasure()
+            changed = true
+        }
+        if result.shouldShowMap {
+            printExplorationMap()
+        }
+        if result.shouldShowInventory {
+            justDMShowInlineInventory()
+        }
+        if result.shouldShowParty {
+            justDMShowInlineParty()
+        }
+        if let itemName = result.pickUpItem {
+            justDMPickUpItem(itemName)
+            changed = true
+        }
+
+        return changed
+    }
+
+    // MARK: Just DM — Inline Actions
+
+    private func justDMSearch() {
+        guard let room = dungeon?.currentRoom else { return }
+        print("")
+        if room.cleared {
+            print("  The room has been thoroughly cleared.", color: .dimGreen)
+        } else if let enc = room.encounter, !enc.monsters.isEmpty {
+            let alive = enc.aliveMonsters
+            if alive.isEmpty {
+                print("  The area is safe. Nothing more to find.", color: .dimGreen)
+            } else {
+                print("  It's not safe to search — enemies are near!", color: .yellow)
+            }
+        } else {
+            print("  You search the room carefully...", color: .dimGreen)
+            if !room.treasure.isEmpty {
+                for item in room.treasure {
+                    print("  Found: \(item.name)!", color: .brightGreen)
+                }
+            } else {
+                print("  Nothing of interest.", color: .dimGreen)
+            }
+        }
+    }
+
+    private func justDMListen() {
+        print("")
+        if let room = dungeon?.currentRoom {
+            let exits = room.exits.keys.sorted { $0.rawValue < $1.rawValue }
+            if exits.isEmpty {
+                print("  You press your ear to the walls... nothing.", color: .dimGreen)
+            } else {
+                for dir in exits {
+                    if let nextId = room.exits[dir], let nextRoom = dungeon?.rooms[nextId] {
+                        if !nextRoom.cleared, nextRoom.encounter != nil {
+                            print("  \(dir.rawValue): You hear something moving...", color: .yellow)
+                        } else {
+                            print("  \(dir.rawValue): Silence.", color: .dimGreen)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func justDMRest() {
+        print("")
+        let healPercent = 0.25
+        for char in party {
+            let amount = max(1, Int(Double(char.maxHP) * healPercent))
+            char.heal(amount)
+        }
+        advanceTime(30)
+        print("  The party takes a short rest.", color: .dimGreen)
+        for char in party {
+            print("  \(char.name): \(char.currentHP)/\(char.maxHP) HP", color: .brightGreen)
+        }
+        logEvent("Party took a short rest", category: "Rest")
+    }
+
+    private func justDMLongRest() {
+        print("")
+        for char in party {
+            char.heal(char.maxHP)
+        }
+        advanceTime(480)
+        print("  The party takes a long rest. Fully healed!", color: .brightGreen)
+        for char in party {
+            print("  \(char.name): \(char.currentHP)/\(char.maxHP) HP", color: .brightGreen)
+        }
+        logEvent("Party took a long rest", category: "Rest")
+    }
+
+    private func justDMCollectTreasure() {
+        guard let room = dungeon?.currentRoom else { return }
+        if !room.treasure.isEmpty {
+            for item in room.treasure {
+                if let resolved = resolveItemByName(item.name) {
+                    party.first?.addItem(resolved)
+                    print("  [Collected: \(item.name)]", color: .brightGreen, bold: true)
+                }
+            }
+            dungeon?.currentRoom?.treasure = []
+        } else {
+            print("  No treasure to collect.", color: .dimGreen)
+        }
+    }
+
+    private func justDMPickUpItem(_ name: String) {
+        guard let room = dungeon?.currentRoom else { return }
+        let lower = name.lowercased()
+        if let idx = room.droppedItems.firstIndex(where: { $0.name.lowercased().contains(lower) }) {
+            let item = room.droppedItems.remove(at: idx)
+            party.first?.addItem(item)
+            print("  [Picked up: \(item.name)]", color: .brightGreen, bold: true)
+        } else {
+            print("  No item matching '\(name)' on the floor.", color: .dimGreen)
+        }
+    }
+
+    private func justDMShowInlineInventory() {
+        print("")
+        for char in party {
+            print("  \(char.name):", color: .brightGreen, bold: true)
+            if let w = char.equippedWeapon { print("    Weapon: \(w.name)", color: .cyan) }
+            if let a = char.equippedArmor { print("    Armour: \(a.name)", color: .cyan) }
+            if let s = char.equippedShield { print("    Shield: \(s.name)", color: .cyan) }
+            for item in char.inventory {
+                print("    \(item.name)", color: .dimGreen)
+            }
+            print("    Gold: \(char.gold)", color: .yellow)
+        }
+        print("")
+    }
+
+    private func justDMShowInlineParty() {
+        print("")
+        for char in party {
+            let hp = "\(char.currentHP)/\(char.maxHP) HP"
+            let poison = char.isPoisoned ? " [POISONED]" : ""
+            print("  \(char.name) (\(char.race.rawValue) \(char.characterClass.rawValue)): \(hp)\(poison)",
+                  color: char.currentHP <= char.maxHP / 4 ? .red : .brightGreen)
+        }
+        print("")
+    }
+
+    private func showJustDMWarning() {
+        clearTerminal()
+        printTitle("Text Mode")
+        print("")
+        print("  WHAT IS THIS?", color: .cyan, bold: true)
+        print("")
+        printWrapped("Text mode removes all buttons and menus. You play entirely by typing natural language to the AI Dungeon Master — movement, combat, inventory, everything.", indent: 2, color: .dimGreen)
+        print("")
+        print("  HOW IT WORKS", color: .cyan, bold: true)
+        print("")
+        printWrapped("Type what you want to do and the DM interprets your intent:", indent: 2, color: .dimGreen)
+        print("")
+        print("    go north          search the room", color: .brightGreen)
+        print("    attack the goblin cast fireball", color: .brightGreen)
+        print("    drink potion      show inventory", color: .brightGreen)
+        print("    save              show map", color: .brightGreen)
+        print("")
+        print("  HOW TO GET BACK", color: .yellow, bold: true)
+        print("")
+        printWrapped("Type 'buttons on' to restore normal menus, or toggle it off in Settings → DM Settings.", indent: 2, color: .dimGreen)
+        print("")
+
+        showMenu(["Enable Text Mode", "< Cancel"])
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                self.justDMMode = true
+                UserDefaults.standard.set(true, forKey: "justDMMode")
+                DMEngine.shared.justDMMode = true
+                DMEngine.shared.adLibLevel = .full
+                self.showDMSettingsSubMenu()
+            } else {
+                self.showDMSettingsSubMenu()
+            }
+        }
+    }
+
+    private func showJustDMHelp() {
+        showInlineHelp {
+            self.printTitle("Text Mode — Help")
+            self.print("")
+            self.print("  Type naturally. The DM interprets everything.", color: .dimGreen)
+            self.print("")
+            self.print("  MOVEMENT", color: .cyan, bold: true)
+            self.print("    go north, head east, N/S/E/W", color: .brightGreen)
+            self.print("")
+            self.print("  EXPLORATION", color: .cyan, bold: true)
+            self.print("    search, look around, listen, rest", color: .brightGreen)
+            self.print("    light torch, douse torch", color: .brightGreen)
+            self.print("")
+            self.print("  COMBAT", color: .cyan, bold: true)
+            self.print("    attack the goblin, cast fireball", color: .brightGreen)
+            self.print("    dodge, flee, or describe any action", color: .brightGreen)
+            self.print("")
+            self.print("  INVENTORY", color: .cyan, bold: true)
+            self.print("    inventory, equip longsword", color: .brightGreen)
+            self.print("    drink potion, drop torch", color: .brightGreen)
+            self.print("")
+            self.print("  PARTY & MAP", color: .cyan, bold: true)
+            self.print("    status, map, save, quit", color: .brightGreen)
+            self.print("")
+            self.print("  NPCS", color: .cyan, bold: true)
+            self.print("    talk to merchant, buy potion", color: .brightGreen)
+            self.print("")
+            self.print("  EXIT TEXT MODE", color: .yellow, bold: true)
+            self.print("    buttons on", color: .brightGreen)
+            self.print("")
+        }
+    }
+
+    // MARK: Just DM — Combat
+
+    private func showJustDMCombatTurn(characterId: UUID) {
+        guard let combat = currentCombat,
+              let character = party.first(where: { $0.id == characterId }) else { return }
+
+        clearTerminal()
+        printCombatStatus()
+        print("")
+        print("  \(character.name)'s turn", color: .brightGreen, bold: true)
+        print("")
+        print("  attack · cast spell · dodge · flee", color: .dimGreen)
+        print("")
+
+        promptTextWithMenu("What does \(character.name) do?", options: [])
+
+        // Keep d-pad hidden in combat
+        DispatchQueue.main.async {
+            self.directionExits = [:]
+            self.securedExits = []
+        }
+
+        inputHandler = { [weak self] input in
+            guard let self = self else { return }
+            let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                self.showJustDMCombatTurn(characterId: characterId)
+                return
+            }
+            self.sendToJustDMCombat(trimmed, characterId: characterId)
+        }
+    }
+
+    private func sendToJustDMCombat(_ input: String, characterId: UUID) {
+        guard let combat = currentCombat,
+              let character = party.first(where: { $0.id == characterId }) else { return }
+
+        print("")
+        print("  > \(input)", color: .cyan)
+        print("")
+        print("  ...", color: .dimGreen)
+
+        let context = buildDMContext(combatContext: combat, activeCharacter: character)
+
+        DMEngine.shared.ask(input, context: context) { [weak self] response in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+
+                let result = DMEngine.parseCommands(from: response)
+                let displayText = result.cleanText
+
+                self.print("")
+                for paragraph in displayText.components(separatedBy: "\n") {
+                    let t = paragraph.trimmingCharacters(in: .whitespaces)
+                    if !t.isEmpty { self.printWrapped("  \(t)", indent: 2, color: .yellow) }
+                }
+
+                var tookAction = false
+
+                // Apply combat commands
+                if let target = result.attackTarget {
+                    self.applyJustDMAttack(target, characterId: characterId)
+                    tookAction = true
+                }
+                if let spell = result.castSpell {
+                    self.applyJustDMSpell(spell.spell, target: spell.target, characterId: characterId)
+                    tookAction = true
+                }
+                if result.shouldDodge {
+                    character.isDodging = true
+                    self.print("  [\(character.name) takes the Dodge action!]", color: .cyan)
+                    tookAction = true
+                }
+                if result.shouldFlee {
+                    self.print("  [Attempting to flee!]", color: .yellow)
+                    self.attemptRunAway()
+                    return
+                }
+                if result.shouldPlayDead {
+                    self.print("  [\(character.name) plays dead!]", color: .yellow)
+                    tookAction = true
+                }
+
+                // Apply existing damage/heal/item commands
+                if result.damageAmount > 0 {
+                    if let idx = combat.encounter.monsters.firstIndex(where: { $0.isAlive }) {
+                        let name = combat.encounter.monsters[idx].name
+                        combat.encounter.monsters[idx].takeDamage(result.damageAmount)
+                        self.print("  [\(name) takes \(result.damageAmount) damage!]", color: .brightGreen, bold: true)
+                    }
+                    tookAction = true
+                }
+                if result.damagePartyAmount > 0 {
+                    for char in self.party { char.takeDamage(result.damagePartyAmount) }
+                    self.print("  [-\(result.damagePartyAmount) HP!]", color: .red, bold: true)
+                    tookAction = true
+                }
+                if result.healAmount > 0 {
+                    for char in self.party { char.heal(result.healAmount) }
+                    self.print("  [+\(result.healAmount) HP!]", color: .brightGreen, bold: true)
+                    tookAction = true
+                }
+                for itemName in result.usedItems {
+                    self.applyDMUseItem(itemName)
+                    tookAction = true
+                }
+
+                SpeechEngine.shared.speak(displayText)
+
+                self.print("")
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    guard let self = self else { return }
+                    if tookAction {
+                        // Check for combat end
+                        if combat.encounter.aliveMonsters.isEmpty {
+                            self.handleCombatVictory()
+                        } else if self.party.allSatisfy({ !$0.isConscious }) {
+                            self.handleCombatDefeat()
+                        } else {
+                            self.advanceCombat()
+                        }
+                    } else {
+                        // No action taken — ask again
+                        self.showJustDMCombatTurn(characterId: characterId)
+                    }
+                }
+            }
+        }
+    }
+
+    private func applyJustDMAttack(_ targetName: String, characterId: UUID) {
+        guard let combat = currentCombat else { return }
+        let lower = targetName.lowercased()
+
+        // Find target monster by fuzzy name match
+        let target = combat.encounter.aliveMonsters.first(where: {
+            $0.name.lowercased().contains(lower) || lower.contains($0.name.lowercased())
+        }) ?? combat.encounter.aliveMonsters.first
+
+        guard let monster = target else {
+            print("  [No enemy to attack]", color: .dimGreen)
+            return
+        }
+
+        if let report = combat.playerAttack(characterId: characterId, targetId: monster.id) {
+            if report.hits {
+                print("  [\(report.attackerName) hits \(report.targetName) for \(report.totalDamage ?? 0) damage!]",
+                      color: .brightGreen, bold: true)
+                if report.isCritical {
+                    print("  [CRITICAL HIT!]", color: .brightGreen, bold: true)
+                }
+            } else {
+                print("  [\(report.attackerName) misses \(report.targetName)!]", color: .dimGreen)
+            }
+        }
+    }
+
+    private func applyJustDMSpell(_ spellName: String, target: String, characterId: UUID) {
+        guard let combat = currentCombat,
+              let character = party.first(where: { $0.id == characterId }) else { return }
+
+        let lower = spellName.lowercased()
+
+        // Find the spell
+        guard let spell = character.knownSpells.first(where: {
+            $0.name.lowercased().contains(lower) || lower.contains($0.name.lowercased())
+        }) else {
+            print("  [\(character.name) doesn't know '\(spellName)'!]", color: .yellow)
+            return
+        }
+
+        // Check spell slots for levelled spells
+        if spell.level != .cantrip {
+            if !character.spellSlots.hasSlot(level: spell.level) {
+                print("  [No spell slots remaining for \(spell.name)!]", color: .yellow)
+                return
+            }
+            character.spellSlots.useSlot(level: spell.level)
+        }
+
+        // Find target
+        let targetLower = target.lowercased()
+        let targetMonster = combat.encounter.aliveMonsters.first(where: {
+            $0.name.lowercased().contains(targetLower) || targetLower.contains($0.name.lowercased())
+        }) ?? combat.encounter.aliveMonsters.first
+
+        // Use the spell's damage/heal dice string to roll
+        if spell.spellType == .healing, let healDice = spell.healAmount {
+            let healing = Dice.rollDamage(healDice).total
+            for char in party { char.heal(healing) }
+            print("  [\(character.name) casts \(spell.name) — party heals \(healing) HP!]",
+                  color: .brightGreen, bold: true)
+        } else if let monster = targetMonster, let damageDice = spell.damage,
+                  let idx = combat.encounter.monsters.firstIndex(where: { $0.id == monster.id }) {
+            let damage = Dice.rollDamage(damageDice).total
+            combat.encounter.monsters[idx].takeDamage(damage)
+            print("  [\(character.name) casts \(spell.name) on \(monster.name) for \(damage) damage!]",
+                  color: .brightGreen, bold: true)
+        } else {
+            print("  [\(character.name) casts \(spell.name)!]", color: .cyan)
+        }
     }
 
     // MARK: - AI Dungeon Master
@@ -17693,6 +19051,9 @@ class GameEngine: ObservableObject {
 
             self.dmChatLog.append((isUser: true, text: input))
             self.print("")
+            self.print("You:", color: .cyan, bold: true)
+            self.printWrapped("  \(input)", indent: 2, color: .cyan)
+            self.print("")
             self.print("The DM considers...", color: .dimGreen)
 
             let context = self.buildDMContext()
@@ -17911,6 +19272,9 @@ class GameEngine: ObservableObject {
                 return
             }
 
+            self.print("")
+            self.print("You:", color: .cyan, bold: true)
+            self.printWrapped("  \(input)", indent: 2, color: .cyan)
             self.print("")
             self.print("The DM considers...", color: .dimGreen)
 
@@ -18144,7 +19508,8 @@ class GameEngine: ObservableObject {
             dungeonLevel: dungeon?.level ?? 1,
             timeLimit: timeLimitInfo,
             droppedItems: droppedInfo,
-            npcInfo: npcInfo
+            npcInfo: npcInfo,
+            justDMMode: isJustDMActive
         )
     }
 
@@ -18833,7 +20198,13 @@ class GameEngine: ObservableObject {
         guard let combat = currentCombat,
               let character = party.first(where: { $0.id == characterId }) else { return }
 
-        print("\(character.name)'s turn!", color: .brightGreen, bold: true)
+        // Just DM mode — DM-driven combat
+        if isJustDMActive {
+            showJustDMCombatTurn(characterId: characterId)
+            return
+        }
+
+        print(">> \(character.name)'s turn! <<", color: .brightGreen, bold: true)
         print("")
 
         let aliveMonsters = combat.encounter.aliveMonsters
@@ -20091,50 +21462,132 @@ class GameEngine: ObservableObject {
             self?.resetGame()
         }
 
-        printLines(asciiTrophy, color: .yellow)
-        print("")
-        printTitle("DUNGEON CONQUERED!")
-        print("You have defeated the dungeon boss!", color: .brightGreen, bold: true)
-        print("")
-        print("Your party emerges victorious from \(dungeonName)!")
-        print("")
-
-        // Check for gatekeeper quest reward
+        // Check for gatekeeper quest reward (before stats)
         if let entrance = dungeon?.rooms[0], let gk = entrance.npc, gk.type == .gatekeeper && gk.questAccepted {
             let reward = gk.questGold
             let leader = party.first
             leader?.gold += reward
-            print("Quest Complete!", color: .cyan, bold: true)
-            print("  The Gatekeeper rewards you with \(reward) gold!", color: .brightGreen)
             logEvent("Gatekeeper quest complete! Reward: \(reward) gold", category: "QUEST")
+        }
+
+        // Gather stats
+        var totalGold = 0
+        var totalXP = 0
+        for char in party { totalGold += char.gold; totalXP += char.experiencePoints }
+        let roomsExplored = dungeon?.rooms.values.filter { $0.visited }.count ?? 0
+        let totalRooms = dungeon?.rooms.count ?? 0
+        let explorationPct = totalRooms > 0 ? (roomsExplored * 100 / totalRooms) : 0
+        let day = gameTimeMinutes / 1440 + 1
+        let bossName = dungeon?.rooms.values.first(where: { $0.roomType == .boss })?.encounter?.monsters.first?.type.rawValue
+
+        // --- ASCII Trophy ---
+        printLines(asciiTrophy, color: .yellow)
+        print("")
+
+        // --- Title ---
+        printTitle("VICTORY!")
+        print("")
+
+        // --- Narrative opening ---
+        let firstNames = party.map { $0.name.components(separatedBy: " ").first ?? $0.name }
+        let heroList = firstNames.count <= 2
+            ? firstNames.joined(separator: " and ")
+            : firstNames.dropLast().joined(separator: ", ") + ", and " + (firstNames.last ?? "")
+
+        printWrapped("The echoes of battle fade as \(heroList) \(party.count == 1 ? "stands" : "stand") triumphant in the heart of \(dungeonName).", indent: 2, color: .brightGreen)
+        print("")
+
+        // Boss defeat narrative
+        if let boss = bossName {
+            printWrapped("The dreaded \(boss) lies defeated, its reign of terror ended by steel, spell, and courage.", indent: 2, color: .green)
+        } else {
+            printWrapped("The dungeon boss lies vanquished. Its dark power is broken.", indent: 2, color: .green)
+        }
+        print("")
+
+        // Party accomplishments
+        if monstersSlain >= 15 {
+            printWrapped("Your party carved a bloody path through the darkness — \(monstersSlain) creatures fell before your blades across \(combatsWon) brutal encounters.", indent: 2, color: .green)
+        } else if monstersSlain >= 5 {
+            printWrapped("Through \(combatsWon) hard-fought battles, your party vanquished \(monstersSlain) foul creatures lurking in the depths.", indent: 2, color: .green)
+        } else if monstersSlain > 0 {
+            printWrapped("Your party fought wisely, besting \(monstersSlain) creature\(monstersSlain == 1 ? "" : "s") in \(combatsWon) encounter\(combatsWon == 1 ? "" : "s").", indent: 2, color: .green)
+        }
+
+        // Exploration
+        if explorationPct == 100 {
+            printWrapped("Every chamber was explored, every corridor mapped — \(roomsExplored) rooms laid bare.", indent: 2, color: .green)
+        } else if explorationPct >= 75 {
+            printWrapped("You explored \(roomsExplored) of \(totalRooms) rooms, leaving few corners unsearched.", indent: 2, color: .green)
+        } else {
+            printWrapped("You ventured through \(roomsExplored) of \(totalRooms) rooms — secrets still remain hidden in the depths.", indent: 2, color: .green)
+        }
+        print("")
+
+        // Gatekeeper quest reward display
+        if let entrance = dungeon?.rooms[0], let gk = entrance.npc, gk.type == .gatekeeper && gk.questAccepted {
+            print("  ┌─ Quest Complete! ─────────────┐", color: .cyan, bold: true)
+            print("  │  The Gatekeeper rewards you    │", color: .cyan)
+            print("  │  with \(String(gk.questGold).padding(toLength: 4, withPad: " ", startingAt: 0)) gold pieces!         │", color: .brightGreen)
+            print("  └────────────────────────────────┘", color: .cyan)
             print("")
         }
 
-        var totalGold = 0
-        var totalXP = 0
-        for char in party {
-            totalGold += char.gold
-            totalXP += char.experiencePoints
+        // --- Stats box ---
+        print("  ┌─ Spoils of Victory ────────────┐", color: .yellow, bold: true)
+        print("  │  Gold collected:  \(String(totalGold).padding(toLength: 14, withPad: " ", startingAt: 0)) │", color: .yellow)
+        print("  │  Monsters slain:  \(String(monstersSlain).padding(toLength: 14, withPad: " ", startingAt: 0)) │", color: .yellow)
+        print("  │  Combats won:     \(String(combatsWon).padding(toLength: 14, withPad: " ", startingAt: 0)) │", color: .yellow)
+        print("  │  Experience:      \(String(totalXP).padding(toLength: 14, withPad: " ", startingAt: 0)) │", color: .yellow)
+        print("  │  Rooms explored:  \(String("\(roomsExplored)/\(totalRooms)").padding(toLength: 14, withPad: " ", startingAt: 0)) │", color: .yellow)
+        if day > 1 {
+            print("  │  Days survived:   \(String(day).padding(toLength: 14, withPad: " ", startingAt: 0)) │", color: .yellow)
         }
-
-        print("Final Stats:", color: .cyan)
-        print("  Gold collected: \(totalGold)")
-        print("  Monsters slain: \(monstersSlain)")
-        print("  Combats won: \(combatsWon)")
-        print("  Experience gained: \(totalXP)")
-        print("")
-        print("Recorded in the Hall of Fame!", color: .yellow)
+        print("  └───────────────────────────────┘", color: .yellow)
         print("")
 
+        // Party status
+        print("  YOUR HEROES", color: .cyan, bold: true)
+        for char in party {
+            let hp = "\(char.currentHP)/\(char.maxHP) HP"
+            let lvl = "Lv\(char.level)"
+            print("  \(char.name) — \(char.characterClass.rawValue) \(lvl), \(hp)", color: .brightGreen)
+        }
+        print("")
+
+        // Hall of Fame
+        print("  Recorded in the Hall of Fame!", color: .yellow)
+        print("")
+
+        // --- What lies ahead ---
         let nextLevel = currentLevel + 1
-        showMenu(["Continue to Level \(nextLevel)", "End Adventure"])
+        print("  ┌─ The Depths Beckon ────────────┐", color: .cyan, bold: true)
+        printWrapped("Level \(nextLevel) of \(dungeonName) awaits. Darker corridors, deadlier foes, and greater treasures lie below. Your party is stronger now — but so are the monsters.", indent: 2, color: .cyan)
+        print("  └───────────────────────────────┘", color: .cyan)
+        print("")
+        printWrapped("Save your progress before descending — the deeper levels show no mercy to the unprepared.", indent: 2, color: .dimGreen)
+        print("")
+
+        showMenu(["Save & Continue to Level \(nextLevel)", "Continue to Level \(nextLevel)", "Save & End Adventure", "End Adventure"])
 
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
-            if choice == 1 {
+            switch choice {
+            case 1:
+                // Save then continue
+                self.performQuickSave()
                 self.continueToNextLevel(nextLevel, dungeonName: dungeonName)
-            } else {
+            case 2:
+                // Continue without saving
+                self.continueToNextLevel(nextLevel, dungeonName: dungeonName)
+            case 3:
+                // Save then end
+                self.performQuickSave()
                 self.resetGame()
+            case 4:
+                // End without saving
+                self.resetGame()
+            default: break
             }
         }
 
@@ -20181,6 +21634,28 @@ class GameEngine: ObservableObject {
         let roomsExplored = dungeon?.rooms.values.filter { $0.visited }.count ?? 0
         let totalRooms = dungeon?.rooms.count ?? 0
 
+        // Create a linked save so the player can replay from Hall of Fame
+        var linkedSaveId: UUID? = nil
+        if let dungeon = dungeon {
+            let saveId = UUID()
+            let slotId = activeSlotId ?? UUID()
+            let slotName = activeSlotName ?? "\(party.first?.name ?? "Hero") — \(dungeon.name)"
+            let partyDesc = party.map { "\($0.name) (\($0.characterClass.rawValue))" }.joined(separator: ", ")
+            let chatEntries = dmChatLog.map { DMChatEntry(isUser: $0.isUser, text: $0.text) }
+            let hofSave = SaveGame(
+                id: saveId, slotId: slotId, savedAt: Date(), slotName: slotName,
+                partyDescription: partyDesc, dungeonName: dungeon.name, dungeonLevel: dungeon.level,
+                party: party, dungeon: dungeon, gameState: .exploring,
+                gameTimeMinutes: gameTimeMinutes, adventureLog: adventureLog,
+                dmChatLog: chatEntries, torchLit: torchLit,
+                torchTurnsRemaining: torchTurnsRemaining,
+                partyChatLog: partyChatLog.suffix(20).map { $0 },
+                monstersSlain: monstersSlain, combatsWon: combatsWon
+            )
+            try? SaveGameManager.shared.save(hofSave)
+            linkedSaveId = saveId
+        }
+
         let entry = HallOfFameEntry(
             id: UUID(),
             date: Date(),
@@ -20194,7 +21669,8 @@ class GameEngine: ObservableObject {
             combatsWon: combatsWon,
             roomsExplored: roomsExplored,
             totalRooms: totalRooms,
-            gameTimeMinutes: gameTimeMinutes
+            gameTimeMinutes: gameTimeMinutes,
+            saveGameId: linkedSaveId
         )
 
         HallOfFameManager.shared.addEntry(entry)
@@ -20597,17 +22073,13 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        var options = slots.map { "Replace: \($0.slotName)" }
-        options.append("Done")
+        let options = slots.map { "Replace: \($0.slotName)" }
 
         showMenu(options)
+        closeHandler = { [weak self] in self?.showExplorationView() }
 
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
-            if choice == options.count {
-                self.showExplorationView()
-                return
-            }
             guard choice > 0 && choice <= slots.count else { return }
             let selected = slots[choice - 1]
 
@@ -20617,7 +22089,8 @@ class GameEngine: ObservableObject {
             self.print("  \(selected.latest.partyDescription)", color: .dimGreen)
             self.print("")
 
-            self.showMenu(["Yes, Replace", "Different Slot", "Done"])
+            self.showMenu(["Yes, Replace", "Different Slot"])
+            self.closeHandler = { [weak self] in self?.showExplorationView() }
             self.menuHandler = { [weak self] confirm in
                 guard let self = self else { return }
                 switch confirm {
@@ -21412,6 +22885,35 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// If the current room has an active encounter, retreat to the nearest safe room
+    private func ensureSafeRoom() {
+        guard let dungeon = dungeon else { return }
+        var visited = Set<Int>()
+        var queue = [dungeon.currentRoomId]
+        visited.insert(dungeon.currentRoomId)
+
+        while let roomId = queue.first {
+            queue.removeFirst()
+            guard let room = dungeon.rooms[roomId] else { continue }
+            if room.encounter == nil || room.cleared {
+                // This room is safe — move here
+                if roomId != dungeon.currentRoomId {
+                    dungeon.previousRoomId = dungeon.currentRoomId
+                    dungeon.currentRoomId = roomId
+                }
+                return
+            }
+            // Try adjacent rooms
+            for (_, nextId) in room.exits where !visited.contains(nextId) {
+                visited.insert(nextId)
+                queue.append(nextId)
+            }
+        }
+        // If no safe room found, just clear the current room's encounter
+        dungeon.rooms[dungeon.currentRoomId]?.encounter = nil
+        dungeon.rooms[dungeon.currentRoomId]?.cleared = true
+    }
+
     private func loadGame(_ save: SaveGame) {
         party = save.party
         dungeon = save.dungeon
@@ -21460,6 +22962,9 @@ class GameEngine: ObservableObject {
 
         // Reroll encounters so monsters are different each load
         dungeon?.rerollEncounters()
+
+        // Safety: if loading into a room with combat, retreat to a safe room
+        ensureSafeRoom()
 
         logEvent("Game loaded: \(save.slotName)", category: "SYSTEM")
         if self.musicEnabled { SoundManager.shared.startMusic(.exploration, preference: self.explorationMelodyChoice) }
@@ -21691,9 +23196,44 @@ class GameEngine: ObservableObject {
             "Your legend grows with each adventure.",
             "The road goes ever on. Farewell.",
         ]
+
+        // Witty follow-up teases (shown ~40% of the time)
+        let teases: [String] = [
+            "... probably.",
+            "... or was it all a dream?",
+            "... the monsters hope so, anyway.",
+            "... the goblins are still talking about you.",
+            "... though the mimics won't miss you.",
+            "... the tavern keeper kept your tab open.",
+            "... your torch just went out.",
+            "... that chest was definitely not a mimic. Definitely.",
+        ]
+
+        // Character-specific teases (if we have a party)
+        var personalTeases: [String] = []
+        if !party.isEmpty {
+            if let hero = party.first {
+                personalTeases.append("... \(hero.name) waves goodbye.")
+                if hero.currentHP < hero.maxHP {
+                    personalTeases.append("... \(hero.name) could really use a long rest.")
+                }
+            }
+            if party.count > 1 {
+                let random = party.randomElement()!
+                personalTeases.append("... \(random.name) mutters something about loot shares.")
+            }
+        }
+
+        let farewell = farewells.randomElement()!
         print("  Thanks for playing!", color: .brightGreen, bold: true)
         print("")
-        print("  \(farewells.randomElement()!)", color: .dimGreen)
+        print("  \(farewell)", color: .dimGreen)
+
+        // ~40% chance of a witty follow-up
+        let allTeases = teases + personalTeases
+        if Int.random(in: 0..<5) < 2, let tease = allTeases.randomElement() {
+            print("  \(tease)", color: .gray)
+        }
         print("")
 
         // Star field (bottom)
@@ -22221,8 +23761,8 @@ class GameEngine: ObservableObject {
 
         // Check if all other players have quit — offer to convert to local game
         let otherPlayers = match.participants.filter { $0.player?.gamePlayerID != GKLocalPlayer.local.gamePlayerID }
-        let allOthersQuit = !otherPlayers.isEmpty && otherPlayers.allSatisfy { $0.status == .done }
-        if allOthersQuit && (state.phase == .exploring || state.phase == .combat) {
+        let allOthersQuit = !otherPlayers.isEmpty && otherPlayers.allSatisfy { $0.status == .done || $0.status == .declined }
+        if allOthersQuit {
             // Ensure departed players' characters are marked as AI-controlled
             for slot in state.players where slot.gamePlayerID != localPlayerID {
                 if let charId = slot.characterId,
@@ -22231,7 +23771,44 @@ class GameEngine: ObservableObject {
                 }
             }
             multiplayerState = state
-            showPlayerLeftNotification(playerName: "The other player", characterName: "Their character")
+
+            // Determine if they declined (never played) or left mid-game
+            let anyDeclined = otherPlayers.contains(where: { $0.status == .declined })
+            let charName: String
+            if let slot = state.players.first(where: { $0.gamePlayerID != localPlayerID }),
+               let charId = slot.characterId,
+               let char = state.party.first(where: { $0.id == charId }) {
+                charName = char.name
+            } else {
+                charName = "Their character"
+            }
+            if anyDeclined || state.phase == .characterCreation {
+                // Player declined the invitation — show specific message
+                clearTerminal()
+                printTitle("Invitation Declined")
+                print("")
+                print("  The remote player has declined", color: .yellow, bold: true)
+                print("  to join the adventure.", color: .yellow, bold: true)
+                print("")
+                print("  \(charName) will be AI-controlled.", color: .dimGreen)
+                print("")
+                print("  You can continue as a local game", color: .dimGreen)
+                print("  with AI companions.", color: .dimGreen)
+                print("")
+                showMenu(["Continue as Local Game", "Back to Main Menu"])
+                menuHandler = { [weak self] choice in
+                    if choice == 1 {
+                        self?.convertToLocalGame()
+                    } else {
+                        self?.isMultiplayer = false
+                        self?.multiplayerState = nil
+                        GameCenterManager.shared.currentMatch = nil
+                        self?.showMainMenu()
+                    }
+                }
+            } else {
+                showPlayerLeftNotification(playerName: "The other player", characterName: charName)
+            }
             return
         }
 
@@ -22265,6 +23842,25 @@ class GameEngine: ObservableObject {
         nudgeCooldownTimer = nil
         nudgeCooldownSeconds = 0
         nudgeCooldownSpeed = 1.0
+        stopNudgeFlash()
+        stopMatchPolling()
+
+        // Safety: validate essential state before restoring
+        guard !state.party.isEmpty else {
+            clearTerminal()
+            printTitle("Match Error")
+            print("This match has no party data.", color: .yellow)
+            print("It may be corrupted.", color: .dimGreen)
+            print("")
+            showMenu(["Back to Main Menu"])
+            menuHandler = { [weak self] _ in
+                self?.isMultiplayer = false
+                self?.multiplayerState = nil
+                self?.showMainMenu()
+            }
+            return
+        }
+
         // Restore game state from multiplayer state
         party = state.party
         dungeon = state.dungeon
@@ -22279,6 +23875,20 @@ class GameEngine: ObservableObject {
         case .characterCreation:
             continueMultiplayerCharacterCreation(state: state)
         case .exploring:
+            guard dungeon != nil else {
+                // No dungeon — cannot explore, show error
+                clearTerminal()
+                printTitle("Match Error")
+                print("Dungeon data is missing.", color: .yellow)
+                print("")
+                showMenu(["Back to Main Menu"])
+                menuHandler = { [weak self] _ in
+                    self?.isMultiplayer = false
+                    self?.multiplayerState = nil
+                    self?.showMainMenu()
+                }
+                return
+            }
             gameState = .exploring
             showExplorationView()
         case .combat:
@@ -22287,8 +23897,13 @@ class GameEngine: ObservableObject {
                 gameState = .combat
                 multiplayerCombatTurn()
             } else {
+                // No combat data — fall back to exploration
                 gameState = .exploring
-                showExplorationView()
+                if dungeon != nil {
+                    showExplorationView()
+                } else {
+                    showMainMenu()
+                }
             }
         case .victory:
             showMultiplayerVictory()
@@ -22325,10 +23940,11 @@ class GameEngine: ObservableObject {
 
             // Show recent combat actions
             if !state.recentActions.isEmpty {
-                print("  Since your last turn:", color: .yellow, bold: true)
+                print("  ┌─ Since your last turn ─┐", color: .yellow, bold: true)
                 for action in state.recentActions.suffix(15) {
-                    print("    \(action.description)", color: .dimGreen)
+                    print("  │ \(action.description)", color: .dimGreen)
                 }
+                print("  └─────────────────────────┘", color: .yellow)
                 print("")
             }
 
@@ -22384,10 +24000,11 @@ class GameEngine: ObservableObject {
 
             // Show recent actions as a narrative
             if !state.recentActions.isEmpty {
-                print("  Since your last turn:", color: .yellow, bold: true)
+                print("  ┌─ Since your last turn ─┐", color: .yellow, bold: true)
                 for action in state.recentActions.suffix(15) {
-                    print("    \(action.description)", color: .dimGreen)
+                    print("  │ \(action.description)", color: .dimGreen)
                 }
+                print("  └─────────────────────────┘", color: .yellow)
                 print("")
             }
 
@@ -22432,6 +24049,9 @@ class GameEngine: ObservableObject {
             }
             print("")
         }
+
+        // Allow free scrolling so the user can read all content
+        suppressAutoScroll = false
 
         waitForContinue()
         inputHandler = { _ in then() }
@@ -22597,7 +24217,7 @@ class GameEngine: ObservableObject {
                     return
                 }
 
-                let next = nextParticipant!
+                guard let next = nextParticipant else { return }
                 if match.currentParticipant?.player?.gamePlayerID == GKLocalPlayer.local.gamePlayerID {
                     do {
                         try await GameCenterManager.shared.endTurn(
@@ -22761,19 +24381,52 @@ class GameEngine: ObservableObject {
         startCharacterCreation()
     }
 
-    /// Decline the invitation and leave the match
+    /// Decline the invitation and leave the match — notifies the host
     private func declineInvitation() {
+        clearTerminal()
+        printTitle("Declining Invite")
+        print("Sending your regrets...", color: .dimGreen)
+        print("")
+
         Task {
             do {
+                // Mark our character as AI-controlled before quitting
+                // so the host can continue without us
+                if var state = multiplayerState {
+                    if let idx = state.players.firstIndex(where: { $0.gamePlayerID == localPlayerID }),
+                       let charId = state.players[idx].characterId,
+                       let char = state.party.first(where: { $0.id == charId }) {
+                        char.markAsAI()
+                        state.addAction(
+                            playerName: GKLocalPlayer.local.displayName,
+                            description: "\(char.name) declined the invitation — now AI-controlled"
+                        )
+                    }
+                    // Save the updated state so the host sees the decline
+                    try? await GameCenterManager.shared.saveCurrentTurn(matchState: state)
+                }
+                // Quit the match — Game Center will notify the host
                 try await GameCenterManager.shared.quitMatch(outcome: .quit)
             } catch {
-                // Ignore quit errors
+                // Even if quit fails, clean up locally
             }
-            await MainActor.run {
-                isMultiplayer = false
-                multiplayerState = nil
+            await MainActor.run { [weak self] in
+                guard let self = self else { return }
+                self.isMultiplayer = false
+                self.multiplayerState = nil
                 GameCenterManager.shared.currentMatch = nil
-                showMainMenu()
+
+                self.clearTerminal()
+                self.printTitle("Invitation Declined")
+                self.print("You have declined the invite.", color: .yellow)
+                self.print("")
+                self.print("The host will be notified and", color: .dimGreen)
+                self.print("can continue without you.", color: .dimGreen)
+                self.print("")
+                self.showMenu(["Back to Main Menu"])
+                self.menuHandler = { [weak self] _ in
+                    self?.showMainMenu()
+                }
             }
         }
     }
@@ -22857,6 +24510,14 @@ class GameEngine: ObservableObject {
 
     private func passTurnToPlayer(playerID: String, state: MultiplayerMatchState, retryCount: Int = 0) {
         let playerName = state.players.first(where: { $0.gamePlayerID == playerID })?.displayName ?? "other player"
+
+        // Clear any active nudge/polling state to prevent interference
+        stopNudgeFlash()
+        nudgeCooldownTimer?.invalidate()
+        nudgeCooldownTimer = nil
+        nudgeCooldownSeconds = 0
+        lastNudgeTime = nil
+        stopMatchPolling()
 
         // Show connecting feedback
         if retryCount == 0 {
@@ -22967,15 +24628,21 @@ class GameEngine: ObservableObject {
 
                     printTitle("Waiting")
                     if self.nudgeSent {
-                        print("Waiting for \(playerName)...", color: .red, bold: true)
-                        print("(Reminder sent)", color: .red)
+                        print("  Waiting for \(playerName)...", color: .orange, bold: true)
+                        self.stopNudgeFlash()
+                        self.nudgeFlashLineIndex = self.terminalLines.count
+                        self.print("  >> NUDGE SENT — waiting for response <<", color: .orange, bold: true)
+                        self.startNudgeFlash()
                     } else {
-                        print("Waiting for \(playerName)...", color: .dimGreen)
+                        print("  Waiting for \(playerName)...", color: .yellow, bold: true)
+                        print("  Tap Nudge to send a reminder!", color: .dimGreen)
                     }
                     print("")
-                    print("You'll be notified when it's", color: .dimGreen)
-                    print("your turn.", color: .dimGreen)
+                    print("  You'll be notified when it's your turn.", color: .dimGreen)
                     print("")
+
+                    // Allow free scrolling — don't snap to top on content changes
+                    self.suppressAutoScroll = false
 
                     showMenuOptions([self.nudgeButtonOption(), MenuOption("Quit Match", tint: .navigation), MenuOption("Main Menu")])
                     menuHandler = { [weak self] choice in
@@ -23073,15 +24740,21 @@ class GameEngine: ObservableObject {
 
         printTitle("Waiting")
         if nudgeSent {
-            print("Waiting for other players...", color: .red, bold: true)
-            print("(Reminder sent)", color: .red)
+            print("  Waiting for other players...", color: .orange, bold: true)
+            stopNudgeFlash()
+            nudgeFlashLineIndex = terminalLines.count
+            print("  >> NUDGE SENT — waiting for response <<", color: .orange, bold: true)
+            startNudgeFlash()
         } else {
-            print("Waiting for other players...", color: .dimGreen)
+            print("  Waiting for other players...", color: .yellow, bold: true)
+            print("  Tap Nudge to send a reminder!", color: .dimGreen)
         }
         print("")
-        print("You'll be notified when they're", color: .dimGreen)
-        print("ready.", color: .dimGreen)
+        print("  You'll be notified when they're ready.", color: .dimGreen)
         print("")
+
+        // Allow free scrolling on the waiting screen
+        suppressAutoScroll = false
 
         showMenuOptions([nudgeButtonOption(), MenuOption("Quit Match", tint: .navigation), MenuOption("Main Menu")])
         menuHandler = { [weak self] choice in
@@ -23108,9 +24781,11 @@ class GameEngine: ObservableObject {
 
     private func nudgeButtonOption() -> MenuOption {
         if nudgeOnCooldown {
-            return MenuOption("Nudge (\(nudgeCooldownSeconds)s)", isDisabled: true)
+            return MenuOption("Nudge (\(nudgeCooldownSeconds)s)", isDisabled: true, tint: .amber)
+        } else if nudgeSent {
+            return MenuOption("Nudge Again!", tint: .amber)
         } else {
-            return MenuOption("Nudge Player")
+            return MenuOption("Nudge!", isDefault: true, tint: .amber)
         }
     }
 
@@ -23123,8 +24798,9 @@ class GameEngine: ObservableObject {
             DispatchQueue.main.async {
                 let decrement = Int(self.nudgeCooldownSpeed)
                 self.nudgeCooldownSeconds = max(0, self.nudgeCooldownSeconds - decrement)
-                // Update the button text live
-                if !self.currentMenuOptions.isEmpty {
+                // Only update the button if the first option is actually a nudge button
+                if let first = self.currentMenuOptions.first,
+                   first.text.hasPrefix("Nudge") {
                     self.currentMenuOptions[0] = self.nudgeButtonOption()
                 }
                 if self.nudgeCooldownSeconds <= 0 {
@@ -23147,7 +24823,8 @@ class GameEngine: ObservableObject {
 
     private func startMatchPolling(playerName: String) {
         stopMatchPolling()
-        matchPollTimer = Timer.scheduledTimer(withTimeInterval: 8.0, repeats: true) { [weak self] _ in
+        // Poll every 4 seconds for more responsive live updates
+        matchPollTimer = Timer.scheduledTimer(withTimeInterval: 4.0, repeats: true) { [weak self] _ in
             self?.pollMatchForUpdates(playerName: playerName)
         }
     }
@@ -23184,6 +24861,8 @@ class GameEngine: ObservableObject {
                     self.torchTurnsRemaining = freshState.torchTurnsRemaining
 
                     clearTerminal()
+                    // Don't auto-scroll to top — scroll to bottom to show latest actions
+                    self.suppressAutoScroll = false
 
                     // Show map
                     if let dungeon = self.dungeon {
@@ -23199,9 +24878,13 @@ class GameEngine: ObservableObject {
                     }
 
                     // Show new actions
-                    let newActions = freshState.recentActions.suffix(max(1, newCount - oldCount))
-                    for action in newActions {
-                        print("  \(action.description)", color: .dimGreen)
+                    let newActions = Array(freshState.recentActions.suffix(max(1, newCount - oldCount)))
+                    if !newActions.isEmpty {
+                        print("  ┌─ Latest ──────────────┐", color: .yellow, bold: true)
+                        for action in newActions {
+                            print("  │ \(action.description)", color: .dimGreen)
+                        }
+                        print("  └────────────────────────┘", color: .yellow)
                     }
                     print("")
 
@@ -23231,74 +24914,76 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Index of the flashing nudge status line in terminalLines
+    private var nudgeFlashLineIndex: Int? = nil
+    private var nudgeFlashTimer: Timer? = nil
+
+    private func startNudgeFlash() {
+        stopNudgeFlash()
+        guard let idx = nudgeFlashLineIndex, idx < terminalLines.count else { return }
+        var on = true
+        nudgeFlashTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            DispatchQueue.main.async {
+                guard let idx = self.nudgeFlashLineIndex, idx < self.terminalLines.count else { return }
+                on.toggle()
+                self.terminalLines[idx].text = on ? "  >> NUDGE SENT — waiting for response <<" : ""
+                self.terminalLines[idx].color = on ? .orange : .green
+            }
+        }
+    }
+
+    private func stopNudgeFlash() {
+        nudgeFlashTimer?.invalidate()
+        nudgeFlashTimer = nil
+        nudgeFlashLineIndex = nil
+    }
+
     private func nudgeRemotePlayer() {
         guard let match = GameCenterManager.shared.currentMatch else {
-            print("No active match.", color: .red)
+            print("  No active match — cannot nudge.", color: .red)
             return
         }
 
-        // Find the participant whose turn it is (not us)
         let remoteParticipants = match.participants.filter {
             $0.player?.gamePlayerID != GKLocalPlayer.local.gamePlayerID
         }
         guard !remoteParticipants.isEmpty else {
-            print("No remote players to nudge.", color: .yellow)
+            print("  No remote players to nudge.", color: .yellow)
             return
         }
 
-        clearTerminal()
-        printTitle("Nudge")
-        print("Sending reminder...", color: .dimGreen)
-        print("")
+        // Immediate local feedback — sound + big visual confirmation
+        SoundManager.shared.playMultiplayerNotification()
 
+        // Show a dramatic nudge confirmation
+        stopNudgeFlash()
+        print("")
+        print("  ╔══════════════════════════════╗", color: .orange, bold: true)
+        print("  ║   NUDGE SENT!  Ding dong!    ║", color: .orange, bold: true)
+        print("  ╚══════════════════════════════╝", color: .orange, bold: true)
+        nudgeFlashLineIndex = terminalLines.count
+        print("  >> Waiting for response... <<", color: .orange)
+        startNudgeFlash()
+
+        lastNudgeTime = Date()
+        startNudgeCooldown()
+
+        // Update button to show cooldown (only if first button is a nudge button)
+        if let first = currentMenuOptions.first, first.text.hasPrefix("Nudge") {
+            currentMenuOptions[0] = nudgeButtonOption()
+        }
+
+        // Send the actual Game Centre reminder in the background
         Task {
             do {
                 try await match.sendReminder(
                     to: remoteParticipants,
-                    localizableMessageKey: "It's your turn!",
+                    localizableMessageKey: "It's your turn in Dungeon Crawler!",
                     arguments: []
                 )
-                await MainActor.run {
-                    self.lastNudgeTime = Date()
-                    self.startNudgeCooldown()
-                    clearTerminal()
-                    printTitle("Nudge Sent!")
-                    print("Reminder sent to the other", color: .brightGreen)
-                    print("player\(remoteParticipants.count > 1 ? "s" : "").", color: .brightGreen)
-                    print("You can nudge again in \(Self.nudgeCooldownDuration)s.", color: .dimGreen)
-                    print("")
-                    showMenu(["Done"])
-                    menuHandler = { [weak self] _ in
-                        // Return to whatever waiting screen we came from
-                        if self?.multiplayerState?.phase == .characterCreation {
-                            self?.showMultiplayerLobby()
-                        } else {
-                            self?.showWaitingForPlayers()
-                        }
-                    }
-                }
             } catch {
-                await MainActor.run {
-                    clearTerminal()
-                    printTitle("Nudge")
-                    print("The messenger pigeon has already", color: .yellow)
-                    print("been sent. Your ally will receive", color: .yellow)
-                    print("the summons in due time.", color: .yellow)
-                    print("")
-                    // Start cooldown even on error to prevent spam
-                    if self.lastNudgeTime == nil {
-                        self.lastNudgeTime = Date()
-                        self.startNudgeCooldown()
-                    }
-                    showMenu(["Done"])
-                    menuHandler = { [weak self] _ in
-                        if self?.multiplayerState?.phase == .characterCreation {
-                            self?.showMultiplayerLobby()
-                        } else {
-                            self?.showWaitingForPlayers()
-                        }
-                    }
-                }
+                // Nudge UI already shown — no further action needed
             }
         }
     }
@@ -24325,10 +26010,10 @@ class GameEngine: ObservableObject {
 
     /// Save multiplayer state so chat messages are visible to other players even out of turn
     private func saveChatState() {
-        guard multiplayerState != nil else { return }
+        guard let state = multiplayerState else { return }
         Task {
             do {
-                try await GameCenterManager.shared.saveCurrentTurn(matchState: multiplayerState!)
+                try await GameCenterManager.shared.saveCurrentTurn(matchState: state)
             } catch {
                 // Silent failure — chat will still work locally
             }
@@ -24349,7 +26034,7 @@ class GameEngine: ObservableObject {
         }
 
         // Pick a random AI character to respond (always responds)
-        let responder = aiChars.randomElement()!
+        guard let responder = aiChars.randomElement() else { showPartyChat(); return }
 
         // Use DMEngine for AI response if available, else use simple response
         if DMEngine.shared.isConfigured || DMEngine.shared.isAppleModelAvailable {
@@ -24724,8 +26409,20 @@ class GameEngine: ObservableObject {
 
 extension GameEngine: TurnBasedMatchDelegate {
     func didReceiveTurn(match: GKTurnBasedMatch, didBecomeActive: Bool) {
-        stopMatchPolling()
         GameCenterManager.shared.currentMatch = match
+
+        // If we're currently playing this same match (active player got nudged),
+        // show a nudge received indicator instead of interrupting
+        if isMultiplayer,
+           let currentMatchId = GameCenterManager.shared.currentMatch?.matchID,
+           currentMatchId == match.matchID,
+           !didBecomeActive,
+           (gameState == .exploring || gameState == .combat) {
+            showNudgeReceived()
+            return
+        }
+
+        stopMatchPolling()
 
         // Play D&D horn call to alert the player
         SoundManager.shared.playMultiplayerNotification()
@@ -24755,6 +26452,55 @@ extension GameEngine: TurnBasedMatchDelegate {
         showIncomingTurnPrompt(match: match)
     }
 
+    /// Show a nudge received indicator when the active player gets nudged
+    private func showNudgeReceived() {
+        SoundManager.shared.playMultiplayerNotification()
+
+        // Add flashing "NUDGE!" text at the bottom of the current screen
+        let nudgeLine = terminalLines.count
+        print("")
+        print("  ╔══════════════════════════════╗", color: .orange, bold: true)
+        print("  ║  Your partner is waiting!    ║", color: .orange, bold: true)
+        print("  ╚══════════════════════════════╝", color: .orange, bold: true)
+
+        // Flash the nudge box for 5 seconds then remove it
+        var flashCount = 0
+        // Capture the original text for restoration during flashing
+        let savedTexts = (0..<4).map { offset -> String in
+            let idx = nudgeLine + offset
+            return idx < terminalLines.count ? terminalLines[idx].text : ""
+        }
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] timer in
+            guard let self = self else { timer.invalidate(); return }
+            flashCount += 1
+            DispatchQueue.main.async {
+                // Safety: if terminal was cleared, stop flashing
+                guard nudgeLine < self.terminalLines.count else {
+                    timer.invalidate()
+                    return
+                }
+                if flashCount >= 10 {
+                    // Remove the nudge lines
+                    timer.invalidate()
+                    let removeStart = min(nudgeLine, self.terminalLines.count)
+                    let removeEnd = min(nudgeLine + 4, self.terminalLines.count)
+                    if removeStart < removeEnd {
+                        self.terminalLines.removeSubrange(removeStart..<removeEnd)
+                    }
+                    return
+                }
+                // Toggle visibility of the nudge box
+                let visible = flashCount % 2 == 0
+                for offset in 1..<4 {
+                    let i = nudgeLine + offset
+                    guard i < self.terminalLines.count else { break }
+                    self.terminalLines[i].color = visible ? .orange : .green
+                    self.terminalLines[i].text = visible ? savedTexts[offset] : ""
+                }
+            }
+        }
+    }
+
     private func showIncomingTurnPrompt(match: GKTurnBasedMatch) {
         let players = match.participants.compactMap { $0.player?.displayName }
             .filter { $0 != GKLocalPlayer.local.displayName }
@@ -24763,6 +26509,10 @@ extension GameEngine: TurnBasedMatchDelegate {
         // Determine if this is a new invite or a turn
         let isInvite = match.status == .matching
         let hasState = match.matchData != nil && !(match.matchData?.isEmpty ?? true)
+
+        // Remember where we were so "Not Now" returns there
+        let previousGameState = gameState
+        let hadDungeon = dungeon != nil && !party.isEmpty
 
         clearTerminal()
         printTitle("Multiplayer")
@@ -24782,31 +26532,45 @@ extension GameEngine: TurnBasedMatchDelegate {
         }
         print("")
 
+        let connectLabel = isInvite || !hasState ? "Accept Invite" : "Play Now"
         showMenuOptions([
-            MenuOption("Connect", isDefault: true, tint: .cyan),
-            MenuOption("Ignore"),
+            MenuOption(connectLabel, isDefault: true, tint: .cyan),
+            MenuOption("Decline"),
             MenuOption("< Not Now")
         ])
 
         menuHandler = { [weak self] choice in
+            guard let self = self else { return }
             switch choice {
             case 1:
-                self?.loadMultiplayerMatch(match)
+                self.loadMultiplayerMatch(match)
             case 2:
                 // Ignore — decline the invite and remove the match
-                self?.pendingInviteMatch = nil
-                self?.executeDeleteRemoteMatch(match) {
-                    if self?.gameState == .mainMenu {
-                        self?.showMainMenu()
-                    }
+                self.pendingInviteMatch = nil
+                self.executeDeleteRemoteMatch(match) { [weak self] in
+                    self?.returnToPreviousScreen(previousState: previousGameState, hadDungeon: hadDungeon)
                 }
             default:
                 // Cache the match for later
-                self?.pendingInviteMatch = match
-                if self?.gameState == .mainMenu {
-                    self?.showMainMenu()
-                }
+                self.pendingInviteMatch = match
+                self.returnToPreviousScreen(previousState: previousGameState, hadDungeon: hadDungeon)
             }
+        }
+    }
+
+    /// Return to whichever screen the player was on before the multiplayer prompt
+    private func returnToPreviousScreen(previousState: GameState, hadDungeon: Bool) {
+        switch previousState {
+        case .exploring where hadDungeon:
+            showExplorationView()
+        case .combat where hadDungeon:
+            if currentCombat != nil {
+                advanceCombat()
+            } else {
+                showExplorationView()
+            }
+        default:
+            showMainMenu()
         }
     }
 

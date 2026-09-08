@@ -35,6 +35,7 @@ struct TerminalView: View {
     @ObservedObject private var voiceInput = VoiceInputManager.shared
     @State private var inputText: String = ""
     @FocusState private var isInputFocused: Bool
+    @State private var textModeAutoSubmitTimer: Timer? = nil
     #if os(iOS)
     @State private var showCustomKeyboard: Bool = false
     @State private var keyboardCollapsedAt: Date = .distantPast
@@ -50,6 +51,8 @@ struct TerminalView: View {
     let terminalBackground = Color.black
 
     private var scale: CGFloat { gameEngine.fontScale }
+
+
 
     var body: some View {
         GeometryReader { geometry in
@@ -97,7 +100,7 @@ struct TerminalView: View {
                                         Image(imageName)
                                             .resizable()
                                             .scaledToFit()
-                                            .frame(maxWidth: 220, maxHeight: 220)
+                                            .frame(maxWidth: 340 * scale, maxHeight: 220 * scale)
                                             .cornerRadius(8)
                                             .opacity(0.85)
                                         Spacer()
@@ -111,28 +114,33 @@ struct TerminalView: View {
                         }
                         .scrollDisabled(gameEngine.scrollLocked)
                         .onChange(of: gameEngine.terminalLines.count) { _ in
-                            guard !gameEngine.suppressAutoScroll else { return }
-                            scrollToBottom(scrollProxy)
-                            // Delayed re-scrolls for long pages where LazyVStack layout lags
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                guard !gameEngine.suppressAutoScroll else { return }
+                            if gameEngine.suppressAutoScroll {
+                                scrollToTop(scrollProxy)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                    guard gameEngine.suppressAutoScroll else { return }
+                                    scrollToTop(scrollProxy)
+                                }
+                            } else {
                                 scrollToBottom(scrollProxy)
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                guard !gameEngine.suppressAutoScroll else { return }
-                                scrollToBottom(scrollProxy)
+                                // Delayed re-scrolls for long pages where LazyVStack layout lags
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                    guard !gameEngine.suppressAutoScroll else { return }
+                                    scrollToBottom(scrollProxy)
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                    guard !gameEngine.suppressAutoScroll else { return }
+                                    scrollToBottom(scrollProxy)
+                                }
                             }
                         }
                         .onChange(of: isInputFocused) { focused in
                             if focused {
                                 #if os(iOS)
-                                // Intercept focus: show custom keyboard instead of system keyboard
-                                if gameEngine.useCustomKeyboard && Date().timeIntervalSince(keyboardCollapsedAt) > 0.5 {
-                                    isInputFocused = false
-                                    showCustomKeyboard = true
-                                }
+                                // System keyboard appearing — dismiss custom keyboard to avoid showing both
+                                showCustomKeyboard = false
                                 #endif
                                 // Re-scroll after keyboard appears
+                                guard !gameEngine.suppressAutoScroll else { return }
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                     scrollToBottom(scrollProxy)
                                 }
@@ -140,12 +148,14 @@ struct TerminalView: View {
                         }
                         .onChange(of: gameEngine.awaitingTextInput) { awaiting in
                             if awaiting {
+                                guard !gameEngine.suppressAutoScroll else { return }
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                     scrollToBottom(scrollProxy)
                                 }
                             }
                         }
                         .onChange(of: gameEngine.currentMenuOptions.count) { _ in
+                            guard !gameEngine.suppressAutoScroll else { return }
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                                 scrollToBottom(scrollProxy)
                             }
@@ -153,30 +163,41 @@ struct TerminalView: View {
                     }
                     .background(terminalBackground)
                     .gesture(
-                        DragGesture(minimumDistance: 30, coordinateSpace: .local)
+                        DragGesture(minimumDistance: 20, coordinateSpace: .global)
                             .onEnded { value in
                                 let horizontal = value.translation.width
                                 let vertical = value.translation.height
-                                guard abs(horizontal) > abs(vertical) * 0.7 else { return }
+                                // Accept if mostly horizontal (allow up to ~55° from horizontal)
+                                guard abs(horizontal) > abs(vertical) * 0.5 else { return }
+                                guard abs(horizontal) > 40 else { return } // Require decent travel distance
                                 if horizontal < 0 {
-                                    if let handler = gameEngine.swipeLeftHandler {
-                                        handler()
+                                    // Swipe left = next card if available, else go back
+                                    if let next = gameEngine.swipeLeftHandler {
+                                        next()
                                     } else if let close = gameEngine.closeHandler {
                                         close()
                                     } else if gameEngine.gameState == .victory || gameEngine.gameState == .gameOver {
                                         gameEngine.emergencyExit()
                                     }
                                 } else {
-                                    gameEngine.swipeRightHandler?()
+                                    // Swipe right = previous card if available, else forward/continue
+                                    if let prev = gameEngine.swipeRightHandler {
+                                        prev()
+                                    } else if gameEngine.currentMenuOptions.count == 1 {
+                                        gameEngine.handleMenuChoice(1)
+                                    }
                                 }
                             }
                     )
                     .onLongPressGesture(minimumDuration: 999, pressing: { pressing in
                         gameEngine.isHoldingScreen = pressing
+                        if pressing {
+                            isInputFocused = false
+                        }
                     }, perform: {})
 
-                    // Direction pad + menu buttons
-                    if !gameEngine.directionExits.isEmpty || !gameEngine.currentMenuOptions.isEmpty {
+                    // Direction pad + menu buttons (hidden in Just DM mode)
+                    if !gameEngine.isJustDMActive, !gameEngine.directionExits.isEmpty || !gameEngine.currentMenuOptions.isEmpty {
                         VStack(spacing: 12) {
                             // Direction D-pad (when exploring)
                             if !gameEngine.directionExits.isEmpty {
@@ -213,7 +234,9 @@ struct TerminalView: View {
                                     pressedIndex: gameEngine.pressedMenuIndex,
                                     longPressDuration: gameEngine.longPressDuration,
                                     onUndo: gameEngine.undoHandler,
-                                    onRedo: gameEngine.redoHandler
+                                    onRedo: gameEngine.redoHandler,
+                                    undoTargetIndex: gameEngine.undoTargetButtonIndex,
+                                    redoTargetIndex: gameEngine.redoTargetButtonIndex
                                 )
                             }
 
@@ -222,81 +245,87 @@ struct TerminalView: View {
                         .padding(.vertical, 4)
                         .background(Color.black.opacity(0.95))
                         .gesture(
-                            DragGesture(minimumDistance: 30, coordinateSpace: .local)
+                            DragGesture(minimumDistance: 20, coordinateSpace: .global)
                                 .onEnded { value in
                                     let horizontal = value.translation.width
                                     let vertical = value.translation.height
-                                    guard abs(horizontal) > abs(vertical) * 0.7 else { return }
+                                    guard abs(horizontal) > abs(vertical) * 0.5 else { return }
+                                    guard abs(horizontal) > 40 else { return }
                                     if horizontal < 0 {
-                                        if let handler = gameEngine.swipeLeftHandler {
-                                            handler()
+                                        if let next = gameEngine.swipeLeftHandler {
+                                            next()
                                         } else if let close = gameEngine.closeHandler {
                                             close()
                                         }
                                     } else {
-                                        gameEngine.swipeRightHandler?()
+                                        if let prev = gameEngine.swipeRightHandler {
+                                            prev()
+                                        } else if gameEngine.currentMenuOptions.count == 1 {
+                                            gameEngine.handleMenuChoice(1)
+                                        }
                                     }
                                 }
                         )
                     }
 
                     // Standard input bar — always visible
-                    // LHS: > prompt (+ text field when input active)
-                    // RHS: card nav, speaker, mic, close
-                    HStack(spacing: 8) {
-                        // > prompt
-                        Text(">")
-                            .font(.system(size: 14 * scale, design: .monospaced))
-                            .foregroundColor(gameEngine.chatInputMode ? Color.orange : terminalGreen)
+                    HStack(spacing: 4) {
+                            // > prompt — always visible
+                            Text(">")
+                                .font(.system(size: 14 * scale, design: .monospaced))
+                                .foregroundColor(gameEngine.chatInputMode ? Color.orange : terminalGreen)
 
-                        // Text field — always available for typing commands
-                        TextField("", text: $inputText)
-                            .font(.system(size: 14 * scale, design: .monospaced))
-                            .foregroundColor(gameEngine.chatInputMode ? Color.orange : terminalGreen)
-                            .textFieldStyle(PlainTextFieldStyle())
-                            #if os(iOS)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            #endif
-                            .focused($isInputFocused)
-                            #if os(iOS)
-                            .toolbar {
-                                ToolbarItemGroup(placement: .keyboard) {
-                                    Spacer()
-                                    Button(action: {
-                                        isInputFocused = false
-                                    }) {
-                                        Image(systemName: "keyboard.chevron.compact.down")
-                                            .font(.system(size: 16))
-                                            .foregroundColor(.gray)
+                            // Text field
+                            TextField("", text: $inputText)
+                                .font(.system(size: 14 * scale, design: .monospaced))
+                                .foregroundColor(gameEngine.chatInputMode ? Color.orange : terminalGreen)
+                                .tint(gameEngine.chatInputMode ? Color.orange : terminalGreen)
+                                .accentColor(gameEngine.chatInputMode ? Color.orange : terminalGreen)
+                                .textFieldStyle(.plain)
+                                #if os(iOS)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                #endif
+                                .focused($isInputFocused)
+                                .onChange(of: inputText) { newText in
+                                    // Text mode auto-submit: if typing stops for 1.5s, submit
+                                    textModeAutoSubmitTimer?.invalidate()
+                                    textModeAutoSubmitTimer = nil
+                                    if gameEngine.isJustDMActive && !newText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        textModeAutoSubmitTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { _ in
+                                            DispatchQueue.main.async {
+                                                submitInput()
+                                            }
+                                        }
                                     }
                                 }
-                            }
-                            #endif
-                            .onSubmit {
-                                submitInput()
-                            }
+                                .onSubmit {
+                                    textModeAutoSubmitTimer?.invalidate()
+                                    textModeAutoSubmitTimer = nil
+                                    submitInput()
+                                }
 
-                        Spacer()
+                            Spacer()
 
-                        // Card navigation — arrows or swipe mode
+                        if !gameEngine.isJustDMActive {
+                        // Card navigation — <</>>/swipe mode
                         if let posLabel = gameEngine.cardPositionLabel {
                             if gameEngine.useArrowNavigation {
                                 HStack(spacing: 2) {
                                     Button(action: { gameEngine.swipeRightHandler?() }) {
-                                        Image(systemName: "chevron.left")
-                                            .font(.system(size: 14 * scale * gameEngine.iconScale))
+                                        Text("<<")
+                                            .font(.system(size: 13 * scale, design: .monospaced))
                                             .foregroundColor(gameEngine.swipeRightHandler != nil
                                                 ? Color(red: 0.0, green: 0.6, blue: 0.25)
                                                 : Color(red: 0.2, green: 0.2, blue: 0.2))
                                     }
                                     .disabled(gameEngine.swipeRightHandler == nil)
                                     Text(posLabel)
-                                        .font(.system(size: 11 * scale, design: .monospaced))
+                                        .font(.system(size: 13 * scale, design: .monospaced))
                                         .foregroundColor(Color(red: 0.0, green: 0.5, blue: 0.2))
                                     Button(action: { gameEngine.swipeLeftHandler?() }) {
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 14 * scale * gameEngine.iconScale))
+                                        Text(">>")
+                                            .font(.system(size: 13 * scale, design: .monospaced))
                                             .foregroundColor(gameEngine.swipeLeftHandler != nil
                                                 ? Color(red: 0.0, green: 0.6, blue: 0.25)
                                                 : Color(red: 0.2, green: 0.2, blue: 0.2))
@@ -314,7 +343,7 @@ struct TerminalView: View {
                                 // Swipe mode — just show position + dice
                                 HStack(spacing: 4) {
                                     Text(posLabel)
-                                        .font(.system(size: 11 * scale, design: .monospaced))
+                                        .font(.system(size: 13 * scale, design: .monospaced))
                                         .foregroundColor(Color(red: 0.0, green: 0.5, blue: 0.2))
                                     if gameEngine.swipeRandomHandler != nil {
                                         Button(action: { gameEngine.swipeRandomHandler?() }) {
@@ -327,8 +356,8 @@ struct TerminalView: View {
                             }
                         }
 
-                        // Reroll dice (non-chat)
-                        if !gameEngine.chatInputMode {
+                        // Reroll dice (non-chat) — hide when card-nav dice is already showing
+                        if !gameEngine.chatInputMode && gameEngine.swipeRandomHandler == nil {
                             if gameEngine.rerollHandler != nil {
                                 Button(action: { gameEngine.rerollHandler?() }) {
                                     Image(systemName: "dice")
@@ -338,9 +367,39 @@ struct TerminalView: View {
                             }
                         }
 
-                        // Undo/redo now shown in compact nav cell at bottom
+                        // Undo/redo icon buttons + feedback
+                        if gameEngine.undoHandler != nil {
+                            Button(action: { gameEngine.undoHandler?() }) {
+                                Image(systemName: "arrow.uturn.backward")
+                                    .font(.system(size: 18 * scale * gameEngine.iconScale))
+                                    .foregroundColor(Color(red: 0.95, green: 0.7, blue: 0.2))
+                            }
+                        }
+                        if let feedback = gameEngine.undoRedoFeedback {
+                            Text(feedback)
+                                .font(.system(size: 11 * scale, design: .monospaced))
+                                .foregroundColor(Color(red: 0.95, green: 0.7, blue: 0.2).opacity(0.7))
+                                .lineLimit(1)
+                                .allowsHitTesting(false)
+                        }
+                        if gameEngine.redoHandler != nil {
+                            Button(action: { gameEngine.redoHandler?() }) {
+                                Image(systemName: "arrow.uturn.forward")
+                                    .font(.system(size: 18 * scale * gameEngine.iconScale))
+                                    .foregroundColor(Color(red: 0.95, green: 0.7, blue: 0.2))
+                            }
+                        }
 
                         #if os(iOS)
+                        // Dismiss system keyboard button (only when system keyboard is active)
+                        if isInputFocused {
+                            Button(action: { isInputFocused = false }) {
+                                Image(systemName: "keyboard.chevron.compact.down")
+                                    .font(.system(size: 18 * scale * gameEngine.iconScale))
+                                    .foregroundColor(Color(red: 0.0, green: 0.6, blue: 0.25))
+                            }
+                        }
+
                         // Read aloud icon — tap to toggle, long-press to pause this page
                         if gameEngine.voiceMenuEnabled {
                             Button(action: {
@@ -359,8 +418,8 @@ struct TerminalView: View {
                             )
                         }
 
-                        // Microphone icon
-                        if gameEngine.voiceMenuEnabled {
+                        // Microphone icon (only when no keyboard is showing)
+                        if gameEngine.voiceMenuEnabled && !isInputFocused && !showCustomKeyboard {
                             Button(action: {
                                 if voiceInput.isListening {
                                     voiceInput.stopListening()
@@ -427,7 +486,8 @@ struct TerminalView: View {
                                     .foregroundColor(Color(red: 0.0, green: 0.6, blue: 0.25))
                             }
                         }
-                    }
+                        } // end if !isJustDMActive
+                        }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
                     .background(Color.black.opacity(0.95))
@@ -447,7 +507,35 @@ struct TerminalView: View {
                             text: $inputText,
                             onSubmit: { submitInput() },
                             onCollapse: { showCustomKeyboard = false; keyboardCollapsedAt = Date() },
-                            scale: scale
+                            scale: scale,
+                            voiceEnabled: gameEngine.voiceMenuEnabled,
+                            isListening: voiceInput.isListening,
+                            onMicTap: {
+                                if voiceInput.isListening {
+                                    voiceInput.stopListening()
+                                } else {
+                                    let isTextInput = gameEngine.awaitingTextInput
+                                    let onComplete: (String) -> Void = isTextInput ? { text in
+                                        inputText = ""
+                                        gameEngine.handleTextInput(text)
+                                    } : { text in
+                                        inputText = ""
+                                        gameEngine.handleVoiceMenuChoice(text)
+                                    }
+                                    let onTranscript: (String) -> Void = { text in
+                                        inputText = text
+                                    }
+                                    if voiceInput.isAuthorised {
+                                        voiceInput.startListening(onTranscript: onTranscript, onComplete: onComplete)
+                                    } else {
+                                        voiceInput.requestAuthorisation { granted in
+                                            if granted {
+                                                voiceInput.startListening(onTranscript: onTranscript, onComplete: onComplete)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         )
                         .transition(.move(edge: .bottom))
                     }
@@ -633,6 +721,14 @@ struct TerminalView: View {
     }
     #endif
 
+    private func scrollToTop(_ proxy: ScrollViewProxy) {
+        if let firstLine = gameEngine.terminalLines.first {
+            withAnimation {
+                proxy.scrollTo(firstLine.id, anchor: .top)
+            }
+        }
+    }
+
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
         if let lastLine = gameEngine.terminalLines.last {
             withAnimation {
@@ -745,6 +841,9 @@ struct MenuButtonsView: View {
     /// Undo/redo handlers — shown as ↩/↪ segments in the compact nav cell
     var onUndo: (() -> Void)? = nil
     var onRedo: (() -> Void)? = nil
+    /// 0-based index of the menu button targeted by undo/redo (highlighted visually)
+    var undoTargetIndex: Int? = nil
+    var redoTargetIndex: Int? = nil
 
     let terminalGreen = Color(red: 0.0, green: 0.9, blue: 0.3)
     let terminalDarkGreen = Color(red: 0.0, green: 0.4, blue: 0.15)
@@ -807,7 +906,7 @@ struct MenuButtonsView: View {
             }
 
             // Compact nav cell (↩ ⏮ ? ⏭ ↪) — single cell, bottom right
-            if !compact.isEmpty || onUndo != nil || onRedo != nil {
+            if !compact.isEmpty {
                 // Push to right column if regular count is even
                 if regular.count % 2 == 0 {
                     Color.clear.frame(minHeight: buttonMinHeight)
@@ -827,6 +926,8 @@ struct MenuButtonsView: View {
     /// A standard full-width button
     @ViewBuilder
     private func regularButton(option: MenuOption, index: Int) -> some View {
+        let isUndoTarget = undoTargetIndex == index
+        let isRedoTarget = redoTargetIndex == index
         Button(action: {
             if !option.isDisabled {
                 onSelect(index + 1)
@@ -845,13 +946,29 @@ struct MenuButtonsView: View {
                     .minimumScaleFactor(0.6)
 
                 Spacer()
+
+                // Undo/redo target indicators — subtle amber hint
+                if isUndoTarget && isRedoTarget {
+                    Text("↩↪")
+                        .font(.system(size: 10 * scale, design: .monospaced))
+                        .foregroundColor(terminalAmber.opacity(0.5))
+                } else if isUndoTarget {
+                    Text("↩")
+                        .font(.system(size: 10 * scale, design: .monospaced))
+                        .foregroundColor(terminalAmber.opacity(0.5))
+                } else if isRedoTarget {
+                    Text("↪")
+                        .font(.system(size: 10 * scale, design: .monospaced))
+                        .foregroundColor(terminalAmber.opacity(0.5))
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, buttonVerticalPadding)
             .frame(minHeight: buttonMinHeight)
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(buttonStrokeColor(option), lineWidth: option.isDefault || option.isAlert ? 2 : 1)
+                    .stroke(isUndoTarget || isRedoTarget ? terminalAmber.opacity(0.35) : buttonStrokeColor(option),
+                            lineWidth: option.isDefault || option.isAlert || isUndoTarget || isRedoTarget ? 2 : 1)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
                             .fill(buttonFillColor(option))
@@ -872,69 +989,97 @@ struct MenuButtonsView: View {
         )
     }
 
-    /// Segment descriptor for the compact nav cell
-    private enum CompactSegment: Hashable {
+    /// Fixed 3-slot compact nav cell: [slot0 | slot1 | slot2]
+    /// Slot 0 = << > other compact item > empty
+    /// Slot 1 = ? > other compact item > empty
+    /// Slot 2 = >> > other compact item > empty
+    private enum CompactSlotContent {
         case menuItem(Int) // index into options
-        case undo
-        case redo
+        case empty
     }
 
-    /// Compact navigation cell: ↩ ⏮ ? ⏭ ↪ rendered as tappable segments inside one normal-sized button
     @ViewBuilder
     private func compactNavCell(indices: [Int]) -> some View {
-        let segments: [CompactSegment] = {
-            var s: [CompactSegment] = []
-            if onUndo != nil { s.append(.undo) }
-            for i in indices { s.append(.menuItem(i)) }
-            if onRedo != nil { s.append(.redo) }
-            return s
+        // Map known compact symbols to their index
+        let backIdx = indices.first(where: { options[$0].text == "<<" })
+        let helpIdx = indices.first(where: { options[$0].text == "?" || options[$0].text == "?\u{0338}" })
+        let nextIdx = indices.first(where: { options[$0].text == ">>" })
+
+        // Any other compact items (e.g. 🎲, ↺) fill remaining empty slots
+        let knownIdxs = Set([backIdx, helpIdx, nextIdx].compactMap { $0 })
+        let otherIndices = indices.filter { !knownIdxs.contains($0) }
+        var otherIter = otherIndices.makeIterator()
+
+        // Slot 0: << > other > empty
+        let slot0: CompactSlotContent = {
+            if let i = backIdx { return .menuItem(i) }
+            if let i = otherIter.next() { return .menuItem(i) }
+            return .empty
+        }()
+        // Slot 1: ? > other > empty
+        let slot1: CompactSlotContent = {
+            if let i = helpIdx { return .menuItem(i) }
+            if let i = otherIter.next() { return .menuItem(i) }
+            return .empty
+        }()
+        // Slot 2: >> > other > empty
+        let slot2: CompactSlotContent = {
+            if let i = nextIdx { return .menuItem(i) }
+            if let i = otherIter.next() { return .menuItem(i) }
+            return .empty
         }()
 
+        let slots = [slot0, slot1, slot2]
+        let compactFontSize: CGFloat = 15 * scale
+
         HStack(spacing: 0) {
-            ForEach(Array(segments.enumerated()), id: \.offset) { segIdx, segment in
-                switch segment {
-                case .menuItem(let index):
-                    let option = options[index]
-                    Button(action: { onSelect(index + 1) }) {
-                        Text(option.text)
-                            .font(.system(size: 13 * scale, design: .monospaced))
-                            .fontWeight(.medium)
-                            .foregroundColor(terminalDimGreen)
+            ForEach(0..<3, id: \.self) { slotIdx in
+                let isActive: Bool = {
+                    switch slots[slotIdx] {
+                    case .empty: return false
+                    default: return true
+                    }
+                }()
+
+                ZStack {
+                    // Subtle background highlight for active slots
+                    if isActive {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(terminalDimGreen.opacity(0.08))
+                            .padding(2)
+                    }
+
+                    switch slots[slotIdx] {
+                    case .menuItem(let index):
+                        let option = options[index]
+                        Button(action: { onSelect(index + 1) }) {
+                            Text(option.text)
+                                .font(.system(size: compactFontSize, design: .monospaced))
+                                .fontWeight(.semibold)
+                                .foregroundColor(terminalDimGreen)
+                                .frame(maxWidth: .infinity, minHeight: buttonMinHeight)
+                        }
+                        .buttonStyle(.plain)
+                        .scaleEffect(pressedIndex == index + 1 ? 0.92 : 1.0)
+                        .brightness(pressedIndex == index + 1 ? 0.3 : 0.0)
+                        .animation(.easeInOut(duration: 0.15), value: pressedIndex)
+                        .simultaneousGesture(
+                            LongPressGesture(minimumDuration: longPressDuration)
+                                .onEnded { _ in onLongPress?(index + 1) }
+                        )
+                    case .empty:
+                        Text("·")
+                            .font(.system(size: 10 * scale, design: .monospaced))
+                            .foregroundColor(terminalDimGreen.opacity(0.2))
                             .frame(maxWidth: .infinity, minHeight: buttonMinHeight)
                     }
-                    .buttonStyle(.plain)
-                    .scaleEffect(pressedIndex == index + 1 ? 0.92 : 1.0)
-                    .brightness(pressedIndex == index + 1 ? 0.3 : 0.0)
-                    .animation(.easeInOut(duration: 0.15), value: pressedIndex)
-                    .simultaneousGesture(
-                        LongPressGesture(minimumDuration: longPressDuration)
-                            .onEnded { _ in onLongPress?(index + 1) }
-                    )
-                case .undo:
-                    Button(action: { onUndo?() }) {
-                        Text("↩")
-                            .font(.system(size: 13 * scale, design: .monospaced))
-                            .fontWeight(.medium)
-                            .foregroundColor(terminalDimGreen)
-                            .frame(maxWidth: .infinity, minHeight: buttonMinHeight)
-                    }
-                    .buttonStyle(.plain)
-                case .redo:
-                    Button(action: { onRedo?() }) {
-                        Text("↪")
-                            .font(.system(size: 13 * scale, design: .monospaced))
-                            .fontWeight(.medium)
-                            .foregroundColor(terminalDimGreen)
-                            .frame(maxWidth: .infinity, minHeight: buttonMinHeight)
-                    }
-                    .buttonStyle(.plain)
                 }
-                // Divider between segments
-                if segIdx < segments.count - 1 {
+                // Divider between slots — always visible
+                if slotIdx < 2 {
                     Rectangle()
                         .fill(terminalDimGreen.opacity(0.3))
                         .frame(width: 1)
-                        .padding(.vertical, 6)
+                        .padding(.vertical, 4)
                 }
             }
         }
@@ -1018,11 +1163,7 @@ struct MenuButtonsView: View {
     }
 
     private var gridColumns: [GridItem] {
-        if options.count <= 1 {
-            return [GridItem(.flexible())]
-        } else {
-            return [GridItem(.flexible()), GridItem(.flexible())]
-        }
+        [GridItem(.flexible()), GridItem(.flexible())]
     }
 }
 

@@ -15,6 +15,9 @@ struct GameKeyboardView: View {
     var onSubmit: () -> Void
     var onCollapse: () -> Void
     var scale: CGFloat = 1.0
+    var voiceEnabled: Bool = false
+    var isListening: Bool = false
+    var onMicTap: (() -> Void)? = nil
 
     @State private var isShifted = false
     @State private var isCapsLock = false
@@ -194,6 +197,19 @@ struct GameKeyboardView: View {
                         .shadow(color: .black.opacity(0.3), radius: 0, x: 0, y: 1)
                 }
                 .buttonStyle(.plain)
+
+                // Microphone
+                Button(action: { onMicTap?() }) {
+                    Image(systemName: isListening ? "mic.fill" : (voiceEnabled ? "mic" : "mic.slash"))
+                        .font(.system(size: 16 * scale))
+                        .foregroundColor(isListening ? .red : (voiceEnabled ? keyFg : Color(white: 0.35)))
+                        .frame(width: 40 * scale, height: keyHeight)
+                        .background(isListening ? specialKeyBg.opacity(0.8) : specialKeyBg)
+                        .cornerRadius(5)
+                        .shadow(color: .black.opacity(0.3), radius: 0, x: 0, y: 1)
+                }
+                .buttonStyle(.plain)
+                .disabled(!voiceEnabled)
 
                 // Return
                 Button(action: { onSubmit() }) {

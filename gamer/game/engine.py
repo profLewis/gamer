@@ -64,16 +64,25 @@ class GameEngine:
         self.session = session
         self.party = session.get_characters()
 
-        # Restore dungeon state if exists
-        if session.dungeon_state:
-            # Would need to reconstruct dungeon from state
-            pass
+        # Restore dungeon state from primary field or DM snapshot fallback.
+        dungeon_data = session.dungeon_state
+        if not dungeon_data and session.dm_state:
+            dungeon_data = session.dm_state.get("dungeon")
 
-        if session.dm_state:
-            # Would need to reconstruct DM state
-            pass
+        self.dm.dungeon = None
+        if dungeon_data:
+            try:
+                self.dm.dungeon = Dungeon.from_dict(dungeon_data)
+            except Exception:
+                self.dm.dungeon = None
 
-        self.state = GameState.EXPLORING if self.party else GameState.PARTY_SETUP
+        # Do not enter exploration unless both party and dungeon are valid.
+        if self.party and self.dm.dungeon and self.dm.dungeon.current_room:
+            self.state = GameState.EXPLORING
+        elif self.party:
+            self.state = GameState.MAIN_MENU
+        else:
+            self.state = GameState.PARTY_SETUP
         return True
 
     def save_game(self) -> bool:
