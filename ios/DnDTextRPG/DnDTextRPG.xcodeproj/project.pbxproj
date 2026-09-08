@@ -34,6 +34,7 @@
 		C4D5E6F7A8B9C0D100445567 /* VoiceInputManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4D5E6F7A8B9C0D100445566 /* VoiceInputManager.swift */; };
 		D5E6F7A8B9C0D1E200556678 /* FAQData.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5E6F7A8B9C0D1E200556677 /* FAQData.swift */; };
 		E6F7A8B9C0D1E2F300667790 /* NPCModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F7A8B9C0D1E2F300667789 /* NPCModels.swift */; };
+		0AC4F9C5695C427481E81514 /* MerchantModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B0C527A53D24F0394605EEB /* MerchantModels.swift */; };
 		AA00000000000000000004 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000003 /* Localizable.xcstrings */; };
 		BB00000000000000000002 /* GameKeyboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000000000000000001 /* GameKeyboardView.swift */; };
 		CC00000000000000000002 /* dragon_animation.gif in Resources */ = {isa = PBXBuildFile; fileRef = CC00000000000000000001 /* dragon_animation.gif */; };
@@ -70,6 +71,7 @@
 		C4D5E6F7A8B9C0D100445566 /* VoiceInputManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInputManager.swift; sourceTree = "<group>"; };
 		D5E6F7A8B9C0D1E200556677 /* FAQData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FAQData.swift; sourceTree = "<group>"; };
 		E6F7A8B9C0D1E2F300667789 /* NPCModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NPCModels.swift; sourceTree = "<group>"; };
+		4B0C527A53D24F0394605EEB /* MerchantModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MerchantModels.swift; sourceTree = "<group>"; };
 		D18E1F342F3DF78F0076A164 /* DnDTextRPG.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DnDTextRPG.entitlements; sourceTree = "<group>"; };
 		AA00000000000000000003 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		BB00000000000000000001 /* GameKeyboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameKeyboardView.swift; sourceTree = "<group>"; };
@@ -149,6 +151,7 @@
 				A1B2C3D4E5F6A7B800112235 /* StateDiff.swift */,
 				B3C4D5E6F7A8B9C000334455 /* MultiplayerModels.swift */,
 				E6F7A8B9C0D1E2F300667789 /* NPCModels.swift */,
+				4B0C527A53D24F0394605EEB /* MerchantModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -276,6 +279,7 @@
 				C4D5E6F7A8B9C0D100445567 /* VoiceInputManager.swift in Sources */,
 				D5E6F7A8B9C0D1E200556678 /* FAQData.swift in Sources */,
 				E6F7A8B9C0D1E2F300667790 /* NPCModels.swift in Sources */,
+				0AC4F9C5695C427481E81514 /* MerchantModels.swift in Sources */,
 				BB00000000000000000002 /* GameKeyboardView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

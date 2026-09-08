@@ -1077,10 +1077,17 @@ struct DungeonNPC: Codable {
     /// Voice identifier for this NPC (assigned on first talk, persisted)
     var voiceIdentifier: String?
 
+    /// Wandering Traders carry a named Merchant persona so they get the same
+    /// bargaining/rare-goods/advice interactions as shop and armoury merchants.
+    var merchant: Merchant?
+
     var name: String { type.rawValue }
 
     init(type: NPCType) {
         self.type = type
+        if type == .wanderingTrader {
+            self.merchant = Merchant.random(tier: .wanderingPeddler)
+        }
     }
 
     /// Record that a topic was asked and return the new count

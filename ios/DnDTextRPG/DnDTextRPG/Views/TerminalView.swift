@@ -78,6 +78,17 @@ struct TerminalView: View {
                                             .onTapGesture {
                                                 gameEngine.swipeLeftHandler?()
                                             }
+                                    } else if gameEngine.awaitingContinue {
+                                        // "Press to continue" screens (victory/level-up/defeat/etc.) — the
+                                        // corner X icon shows closeHandler (abandon) instead of this whenever
+                                        // closeHandler is set, which leaves touch users with no visible way
+                                        // to advance. Tap-anywhere is the reliable fallback.
+                                        TerminalLineView(line: line, scale: scale)
+                                            .id(line.id)
+                                            .contentShape(Rectangle())
+                                            .onTapGesture {
+                                                gameEngine.handleContinue()
+                                            }
                                     } else {
                                         TerminalLineView(line: line, scale: scale)
                                             .id(line.id)

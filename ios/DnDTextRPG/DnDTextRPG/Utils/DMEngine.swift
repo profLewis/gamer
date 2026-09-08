@@ -277,7 +277,14 @@ class DMEngine {
             return
         }
 
-        let systemPrompt = buildSystemPrompt(context: context)
+        // Deliberately NOT reusing buildSystemPrompt(context:) here — that prompt
+        // (300+ lines of rules plus all 53 FAQ entries) is sized for cloud models
+        // with huge context windows. The on-device FoundationModels session has a
+        // much smaller budget (~4K tokens total); a prompt that size reliably
+        // exceeds it, so session.respond(to:) throws on effectively every call
+        // and silently falls back to the canned Basic DM — which is why the
+        // Apple-tier DM can look "stuck" on generic atmosphere lines.
+        let systemPrompt = buildAppleSystemPrompt(context: context)
 
         // Get or create session
         let session: LanguageModelSession
@@ -298,11 +305,52 @@ class DMEngine {
                     completion(text)
                 }
             } catch {
+                #if DEBUG
+                print("[DMEngine] Apple on-device model error (falling back to Basic DM): \(error)")
+                #endif
                 DispatchQueue.main.async {
                     completion(nil)
                 }
             }
         }
+    }
+
+    /// Compact system prompt for the Apple on-device model — see askAppleModel().
+    /// Keeps only what's needed to stay grounded in the live game state; drops the
+    /// ASCII-art rules, the full Just-DM command grammar, and the FAQ dump that the
+    /// cloud-model prompt carries.
+    private func buildAppleSystemPrompt(context: DMContext) -> String {
+        var prompt = """
+        You are a Dungeon Master for a D&D 5e text adventure. Be vivid but brief (1-3 sentences), \
+        second person. Base everything on the facts below — never invent rooms, exits, monsters, \
+        or items not listed here. If cleared, describe aftermath, not active threats.
+
+        LOCATION: \(context.roomName) — \(context.roomDescription)
+        EXITS: \(context.exits)
+        """
+        if let secured = context.securedExits { prompt += "\nBARRICADED: \(secured)" }
+        if let npc = context.npcInfo { prompt += "\n\(npc)" }
+        prompt += "\nSTATUS: \(context.isCleared ? "cleared — threats dealt with" : "not cleared — danger present")"
+        if let treasure = context.treasureInRoom { prompt += "\n\(treasure)" }
+        if let encounter = context.encounterInfo { prompt += "\n\(encounter)" }
+        if let dropped = context.droppedItems { prompt += "\n\(dropped)" }
+        prompt += "\nPARTY: \(context.partyStatus)"
+
+        if context.justDMMode {
+            prompt += """
+
+            MODE: Interpret the player's intent, narrate briefly, then add short command tags on \
+            their own line if the intent maps to an action: [MOVE:direction] [SEARCH] [LISTEN] \
+            [REST] [LONG_REST] [SHOW_MAP] [SHOW_INVENTORY] [SHOW_PARTY] [SAVE] [ATTACK:name] \
+            [USE_ITEM:name] [TALK_NPC] [TRADE_NPC] [BUY:name] [SELL:name]. Only use [MOVE:direction] \
+            for a direction listed in EXITS above that isn't barricaded. If just asking a question, \
+            narrate only — no tags needed.
+            """
+        } else if context.adLibLevel == .moderate || context.adLibLevel == .full {
+            prompt += "\nYou may rarely use tags like [HEAL:n], [GRANT_ITEM:name], [BONUS_GOLD:n] if dramatically fitting, but sparingly."
+        }
+
+        return prompt
     }
 
     // MARK: - Conversation

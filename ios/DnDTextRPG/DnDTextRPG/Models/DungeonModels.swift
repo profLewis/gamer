@@ -169,11 +169,12 @@ class Room: Identifiable, ObservableObject, Codable {
     @Published var droppedItems: [Item]     // Items left behind by the party
     @Published var npc: DungeonNPC?         // NPC present in this room
     @Published var secured: Set<Direction>  // Barred/secured exits
+    @Published var merchant: Merchant?      // Shopkeeper present in this room (shop/armoury rooms)
 
     enum CodingKeys: String, CodingKey {
         case id, x, y, roomType, name, roomDescription, exits, visited, cleared
         case encounter, treasure, isLocked, searchedFor, trapTriggered
-        case hiddenItems, hiddenGold, droppedItems, npc, secured
+        case hiddenItems, hiddenGold, droppedItems, npc, secured, merchant
     }
 
     init(id: Int, x: Int, y: Int, type: RoomType) {
@@ -196,6 +197,7 @@ class Room: Identifiable, ObservableObject, Codable {
         self.droppedItems = []
         self.npc = nil
         self.secured = []
+        self.merchant = nil
     }
 
     required init(from decoder: Decoder) throws {
@@ -221,6 +223,7 @@ class Room: Identifiable, ObservableObject, Codable {
         droppedItems = try container.decodeIfPresent([Item].self, forKey: .droppedItems) ?? []
         npc = try container.decodeIfPresent(DungeonNPC.self, forKey: .npc)
         secured = try container.decodeIfPresent(Set<Direction>.self, forKey: .secured) ?? []
+        merchant = try container.decodeIfPresent(Merchant.self, forKey: .merchant)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -244,6 +247,7 @@ class Room: Identifiable, ObservableObject, Codable {
         try container.encode(droppedItems, forKey: .droppedItems)
         try container.encodeIfPresent(npc, forKey: .npc)
         try container.encode(secured, forKey: .secured)
+        try container.encodeIfPresent(merchant, forKey: .merchant)
     }
 
     static func generateName(for type: RoomType) -> String {
@@ -589,6 +593,24 @@ class Dungeon: ObservableObject, Codable {
             shopRoom.encounter = nil
             shopRoom.hiddenItems = []
             shopRoom.hiddenGold = 0
+            shopRoom.merchant = Merchant.random(tier: MerchantTier.forDungeonLevel(level))
+        }
+
+        // Armoury rooms have a chance of a merchant having set up shop there too
+        // (matches the "a merchant has set up shop here" flavour text — keep the
+        // text and the mechanic in sync so it's never just narrative dressing).
+        let armouryMerchantVariant = "Swords, shields, and helms line the walls. A forge in the corner is cold but could be relit. A merchant has set up shop here."
+        let armouryPlainVariants = [
+            "Weapon racks and armour stands fill this room. Most have been picked clean, but some items remain.",
+            "Rows of rusted weapons stand at attention like silent soldiers. A workbench holds tools for repair and sharpening.",
+        ]
+        for armouryRoom in rooms.values where armouryRoom.roomType == .armory {
+            if Int.random(in: 1...100) <= 40 {
+                armouryRoom.merchant = Merchant.random(tier: MerchantTier.forDungeonLevel(level))
+                armouryRoom.roomDescription = armouryMerchantVariant
+            } else {
+                armouryRoom.roomDescription = armouryPlainVariants.randomElement()!
+            }
         }
 
         // Spawn NPCs in ~30-40% of non-boss, non-entrance rooms (max 6)
@@ -806,6 +828,8 @@ class Dungeon: ObservableObject, Codable {
                         roomRow += "[@]"
                     } else if !room.cleared && room.encounter != nil {
                         roomRow += "[!]"
+                    } else if room.merchant != nil {
+                        roomRow += "[M]"
                     } else if room.npc != nil && !(room.npc?.hasBeenTalkedTo ?? true) {
                         roomRow += "[?]"
                     } else {
@@ -857,6 +881,7 @@ class Dungeon: ObservableObject, Codable {
                 visibleSymbols.insert(room.roomType.symbol)
             }
             visibleSymbols.insert(room.roomType.symbol)
+            if room.merchant != nil { visibleSymbols.insert("M") }
         }
 
         // Check if any secured doors are visible
@@ -869,7 +894,7 @@ class Dungeon: ObservableObject, Codable {
             ("E", "Entry"), ("=", "Hall"), ("#", "Room"),
             ("$", "Loot"), ("+", "Shrine"), ("L", "Library"),
             ("B", "Boss"), ("A", "Armoury"), ("P", "Prison"),
-            ("S", "Shop"), ("X", "Secured")
+            ("S", "Shop"), ("M", "Merchant"), ("X", "Secured")
         ]
         let activeEntries = allKeyEntries.filter { visibleSymbols.contains($0.symbol) }
 

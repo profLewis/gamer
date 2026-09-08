@@ -12865,8 +12865,11 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("Actions"))
         actions.append { [weak self] in self?.showActionsMenu() }
 
-        if room.roomType == .shop && (room.cleared || room.encounter == nil) {
-            menuOpts.append(MenuOption("Merchant"))
+        // Merchant present in the room itself (shop room, or an armoury a merchant
+        // has set up shop in) — was previously gated on `.shop` only, which left
+        // armoury-room merchants mentioned in the room text but unreachable.
+        if room.merchant != nil, (room.cleared || room.encounter == nil) {
+            menuOpts.append(MenuOption("Visit Merchant"))
             actions.append { [weak self] in if self?.torchLit == true { self?.visitShop() } }
         }
 
@@ -14684,11 +14687,12 @@ class GameEngine: ObservableObject {
 
     private func tradeWithNPC() {
         guard let room = dungeon?.currentRoom, var npc = room.npc, let dungeon = dungeon else { return }
+        let merchant = npc.merchant ?? Merchant.random(tier: .wanderingPeddler)
 
         // Open the shop with NPC-specific inventory
-        pickCharacter(title: "Who trades with the \(npc.type.rawValue)?") { [weak self] character in
+        pickCharacter(title: "Who trades with \(merchant.name)?") { [weak self] character in
             guard let self = self else { return }
-            self.shopEngine.openShop(character: character, dungeonLevel: dungeon.level) { [weak self] in
+            self.shopEngine.openShop(character: character, dungeonLevel: dungeon.level, merchant: merchant) { [weak self] in
                 npc.hasTraded = true
                 room.npc = npc
                 self?.talkToNPC()
@@ -16100,11 +16104,11 @@ class GameEngine: ObservableObject {
     // MARK: - Shop
 
     func visitShop() {
-        guard let dungeon = dungeon else { return }
+        guard let dungeon = dungeon, let room = dungeon.currentRoom, let merchant = room.merchant else { return }
 
-        pickCharacter(title: "Who visits the merchant?") { [weak self] character in
+        pickCharacter(title: "Who visits \(merchant.name)?") { [weak self] character in
             guard let self = self else { return }
-            self.shopEngine.openShop(character: character, dungeonLevel: dungeon.level) { [weak self] in
+            self.shopEngine.openShop(character: character, dungeonLevel: dungeon.level, merchant: merchant) { [weak self] in
                 self?.showExplorationView()
             }
         }
@@ -19513,6 +19517,19 @@ class GameEngine: ObservableObject {
         )
     }
 
+    /// Ask the DM (whichever tier is active — cloud, Apple on-device, or the
+    /// Basic keyword DM) to narrate a merchant interaction in that merchant's
+    /// voice. The actual game effect (discount, rare item, etc.) is always
+    /// resolved separately as a dice/table mechanic — this only ever produces
+    /// flavour text, so it degrades gracefully with no AI at all.
+    func merchantNarration(_ situation: String, merchant: Merchant, completion: @escaping (String) -> Void) {
+        var context = buildDMContext()
+        context.npcInfo = "Merchant present: \(merchant.name), proprietor of \(merchant.shopName) (\(merchant.tier.rawValue)). Persona: \(merchant.personaBlurb) Catchphrase: \(merchant.catchphrase) Stay fully in character as this merchant — do not break the persona, do not narrate outside the shop."
+        DMEngine.shared.ask(situation, context: context) { response in
+            completion(response)
+        }
+    }
+
     private func resolveItemByName(_ name: String) -> Item? {
         let lower = name.lowercased()
 
@@ -21155,8 +21172,60 @@ class GameEngine: ObservableObject {
         print("")
         logEvent("\(character.name) reached Level \(newLevel)! (+\(hpGain) HP)", category: "LEVEL")
 
+        if Self.abilityScoreImprovementLevels.contains(newLevel) {
+            offerAbilityScoreImprovement(character: character, completion: completion)
+            return
+        }
+
         waitForContinue()
         inputHandler = { _ in completion() }
+    }
+
+    /// D&D 5e Ability Score Improvement levels. Only level 4 is currently reachable
+    /// (characters cap at level 5 — see Character.canLevelUp), but the rest are kept
+    /// so this keeps working automatically if the level cap is ever raised.
+    private static let abilityScoreImprovementLevels: Set<Int> = [4, 8, 12, 16, 19]
+
+    private static func primaryAbility(for characterClass: CharacterClass) -> Ability {
+        switch characterClass {
+        case .fighter, .barbarian: return .strength
+        case .wizard: return .intelligence
+        case .rogue, .ranger: return .dexterity
+        case .cleric: return .wisdom
+        }
+    }
+
+    /// Grants +2 to one ability score (player's choice; capped at 20 per 5e rules).
+    /// AI-controlled party members auto-pick their class's primary ability.
+    private func offerAbilityScoreImprovement(character: Character, completion: @escaping () -> Void) {
+        print("Ability Score Improvement!", color: .yellow, bold: true)
+
+        func apply(_ ability: Ability) {
+            let newScore = min(20, character.abilityScores.score(for: ability) + 2)
+            character.abilityScores.set(ability, to: newScore)
+            print("  \(character.name)'s \(ability.rawValue) increases to \(newScore)!", color: .brightGreen)
+            logEvent("\(character.name) improved \(ability.rawValue) to \(newScore) (Level \(character.level) ASI)", category: "LEVEL")
+            waitForContinue()
+            inputHandler = { _ in completion() }
+        }
+
+        if character.isComputerControlled {
+            apply(Self.primaryAbility(for: character.characterClass))
+            return
+        }
+
+        print("Choose one ability to increase by 2 (max 20):", color: .cyan)
+        print("")
+        let abilities = Ability.allCases
+        let options = abilities.map { ability -> String in
+            let score = character.abilityScores.score(for: ability)
+            return score >= 20 ? "\(ability.rawValue) (\(score) — MAX)" : "\(ability.rawValue) (\(score))"
+        }
+        showMenu(options)
+        menuHandler = { choice in
+            guard abilities.indices.contains(choice) else { return }
+            apply(abilities[choice])
+        }
     }
 
     /// Characters eligible for combat loot (those who actually fought); nil = whole party
