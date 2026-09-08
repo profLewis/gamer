@@ -751,9 +751,84 @@ class DMEngine {
         if q.contains("draw") || q.contains("picture") || q.contains("show me") || q.contains("what does") || q.contains("look like") || q.contains("map") {
             return simpleDrawResponse(question: question, context: context)
         }
+        if q.contains("merchant") || q.contains("shop") || q.contains("buy") || q.contains("sell") || q.contains("trade") || q.contains("haggle") || q.contains("bargain") || q.contains("price") || q.contains("afford") {
+            return simpleMerchantResponse(context: context)
+        }
+        if q.contains("level up") || q.contains("stronger") || q.contains("get better") || q.contains("improve") || q.contains("stat") || q.contains("ability score") || q.contains("build") || q.contains("xp") || q.contains("experience") {
+            return simpleProgressionResponse()
+        }
+        if q.contains("quest") || q.contains("objective") || q.contains("goal") || q.contains("boss") || q.contains("where do i go") || q.contains("what am i") {
+            return simpleQuestResponse(context: context)
+        }
+        if q.contains("rest") || q.contains("sleep") || q.contains("recover") || q.contains("heal") || q.contains("camp") {
+            return simpleRestResponse(context: context)
+        }
+        if q.contains("fight") || q.contains("tactic") || q.contains("strategy") || q.contains("beat") || q.contains("weak spot") || q.contains("weakness") {
+            return simpleTacticsResponse(context: context)
+        }
+        if q.contains("lore") || q.contains("history") || q.contains("legend") || q.contains("story") || q.contains("who built") || q.contains("who made") {
+            return simpleLoreResponse(context: context)
+        }
+        if q.contains("companion") || q.contains("party member") || q.contains("ally") || q.contains("friend") {
+            return simplePartyResponse(context: context)
+        }
 
         // Default — atmospheric flavour based on room
         return simpleAtmosphereResponse(context: context)
+    }
+
+    private func simpleMerchantResponse(context: DMContext) -> String {
+        if let npc = context.npcInfo, npc.lowercased().contains("merchant") {
+            return ["A merchant is right here, ready to deal. Use the Merchant/Visit Merchant button to browse stock, haggle, or ask about rare goods.",
+                    "Someone's set up shop nearby — step up and use the shop menu to see what they're offering, or try to talk them down on price.",
+                    "There's a merchant in this very room. Open the shop and see what gold can buy — or try your luck haggling."].randomElement()!
+        }
+        return ["No merchant here, but shops and armouries sometimes have one set up — keep an eye out as you explore.",
+                "Not every room has a shopkeeper. Try armouries and dedicated shop rooms — and wandering traders you meet along the way.",
+                "You'll need to find a merchant first — shop rooms always have one, and armouries sometimes do too."].randomElement()!
+    }
+
+    private func simpleProgressionResponse() -> String {
+        ["Defeat monsters for experience — enough of it and your party levels up automatically, gaining hit points and new abilities.",
+         "Keep fighting and exploring. XP adds up, and at the right levels you'll even get to raise an ability score outright.",
+         "Strength comes from experience earned in battle. Clear encounters, survive, and your characters grow more capable over time."].randomElement()!
+    }
+
+    private func simpleQuestResponse(context: DMContext) -> String {
+        if context.roomType == "Boss Chamber" {
+            return "You can feel it — whatever rules this dungeon is close. This is where the real fight happens."
+        }
+        return ["Your goal is simple: survive, grow stronger, and find the one who commands this dungeon.",
+                "Push deeper, room by room. Somewhere below, something powerful is waiting — that's your true objective.",
+                "Explore, fight what you must, gather what you can carry, and work your way toward the heart of the dungeon."].randomElement()!
+    }
+
+    private func simpleRestResponse(context: DMContext) -> String {
+        if context.isCleared {
+            return ["This room is safe enough to rest in. Use the Rest option to recover — a short rest heals some HP, a long rest heals fully and restores spells.",
+                    "You could catch your breath here. Resting mends wounds and, if you rest long enough, refills spell slots too."].randomElement()!
+        }
+        return ["This doesn't feel like a safe place to rest — clear out any threats first.",
+                "Resting here would be risky with danger still nearby. Deal with it, then rest easy."].randomElement()!
+    }
+
+    private func simpleTacticsResponse(context: DMContext) -> String {
+        if let encounter = context.encounterInfo {
+            return "\(encounter). Focus one enemy at a time, use spells and abilities wisely, and don't be afraid to retreat if things turn bad."
+        }
+        return ["Fight smart: focus fire the biggest threat, use terrain to your advantage, and keep an eye on everyone's HP.",
+                "Every party member has a role — melee up front, spellcasters and archers behind. Use that.",
+                "If a fight looks unwinnable, fleeing or playing dead beats a wipe. Live to fight another day."].randomElement()!
+    }
+
+    private func simpleLoreResponse(context: DMContext) -> String {
+        ["This dungeon has clearly stood for a long, long time — you can feel the weight of history in every stone.",
+         "Whoever built this place is long gone, but their work endures — and so, it seems, do the things they left behind.",
+         "Old carvings, worn stone, forgotten names — this dungeon keeps its secrets close. Perhaps a library room holds more answers."].randomElement()!
+    }
+
+    private func simplePartyResponse(context: DMContext) -> String {
+        "\(context.partyStatus)\n\nYour companions stand with you, for better or worse. Keep them healed and equipped, and they'll do the same for you."
     }
 
     private func simpleLookResponse(context: DMContext) -> String {

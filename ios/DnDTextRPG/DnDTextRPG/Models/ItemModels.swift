@@ -267,6 +267,12 @@ struct ItemCatalog {
              weaponStats: nil, armorStats: nil, potionStats: nil)
     }
 
+    static func whetstone() -> Item {
+        Item(id: UUID(), name: "Whetstone", description: "Use it on your equipped weapon to sharpen the edge — a temporary +1 to attack and damage rolls.",
+             type: .misc, weight: 0.5, value: 5,
+             weaponStats: nil, armorStats: nil, potionStats: nil)
+    }
+
     // MARK: Starting Equipment
 
     static func startingEquipmentOptions(for characterClass: CharacterClass) -> [(String, [Item])] {
@@ -316,6 +322,7 @@ struct ItemCatalog {
         stock.append(antidote())
         stock.append(torch())
         stock.append(rope())
+        stock.append(whetstone())
         stock.append(dagger())
         stock.append(leatherArmor())
         stock.append(shortsword())

@@ -250,17 +250,32 @@ struct FAQData {
     static let shops = FAQCategory(title: "Shops & Gold", contexts: ["shop", "exploration"], entries: [
         FAQEntry(
             question: "How do I buy things?",
-            answer: "When you enter a shop room, tap 'Visit Merchant' from the exploration menu. Browse the stock and buy items with gold. Prices are fixed. Higher-level shops stock better gear.",
+            answer: "Whenever a merchant is present — a shop room, some armouries, or a Wandering Trader you've met — tap 'Visit Merchant' from the exploration menu. Browse the stock and buy items with gold. Higher-tier merchants (General Store, Trading Post, Hyperstore) stock more and better gear the deeper you go.",
             keywords: ["buy", "purchase", "merchant", "shopping", "how to buy"]
         ),
         FAQEntry(
             question: "How do I sell items?",
-            answer: "Visit the Merchant in a shop room and choose 'Sell'. You can sell any item from your pack for half its value. This is a good way to clear inventory space and earn gold for better gear.",
+            answer: "Visit a Merchant and choose 'Sell'. You can sell any item from your pack for half its value. This is a good way to clear inventory space and earn gold for better gear.",
             keywords: ["sell", "sell items", "get gold", "sell gear"]
         ),
         FAQEntry(
+            question: "Can I haggle with merchants?",
+            answer: "Yes — choose 'Haggle' at a merchant, pick an item, and roll a Persuasion check against their price. Succeed and you get a 15-30% discount; fail and the price stays put. Tougher merchants (bigger shops) haggle harder.",
+            keywords: ["haggle", "bargain", "discount", "negotiate", "lower price"]
+        ),
+        FAQEntry(
+            question: "What are 'rare goods' at a merchant?",
+            answer: "Choose 'Ask About Rare Goods' to see if the merchant has anything special stashed away — an item outside their normal stock, offered at a premium. Bigger merchants are more likely to have something, but it's never guaranteed.",
+            keywords: ["rare goods", "under the counter", "special item", "secret stock"]
+        ),
+        FAQEntry(
+            question: "What does a Whetstone do?",
+            answer: "Use it from your pack on your currently equipped weapon to sharpen it — a +1 bonus to attack and damage rolls for your next 3 attacks. You need a weapon equipped to use it.",
+            keywords: ["whetstone", "sharpen", "sharpen weapon", "sharpening stone"]
+        ),
+        FAQEntry(
             question: "Where do I get gold?",
-            answer: "Gold comes from searching rooms (treasure chests and hidden stashes), defeating monsters (loot drops), selling items at the Merchant, and occasionally from the DM as quest rewards.",
+            answer: "Gold comes from searching rooms (treasure chests and hidden stashes), defeating monsters (loot drops), selling items to a Merchant, and occasionally from the DM as quest rewards.",
             keywords: ["gold", "money", "coins", "earn gold", "get gold", "treasure"]
         ),
     ])

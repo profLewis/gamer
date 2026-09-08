@@ -1118,8 +1118,10 @@ final class Combat: ObservableObject {
             attackAbilityMod = strMod
         }
 
-        let attackMod = attackAbilityMod + profBonus
+        let sharpenBonus = character.weaponSharpenedUses > 0 ? 1 : 0
+        let attackMod = attackAbilityMod + profBonus + sharpenBonus
         let attack = Dice.attackRoll(modifier: attackMod, targetAC: monster.armorClass, disadvantage: disadvantage)
+        if character.weaponSharpenedUses > 0 { character.weaponSharpenedUses -= 1 }
 
         let abilityLabel = (weaponStats?.isRanged == true) ? "DEX" : (weaponStats?.isFinesse == true && dexMod > strMod) ? "DEX" : "STR"
         let breakdown = "\(abilityLabel) \(attackAbilityMod >= 0 ? "+" : "")\(attackAbilityMod), Prof +\(profBonus)"
@@ -1131,7 +1133,7 @@ final class Combat: ObservableObject {
         var targetDefeated = false
 
         if attack.hits {
-            let damageMod = attackAbilityMod
+            let damageMod = attackAbilityMod + sharpenBonus
             let baseDice = weaponStats?.damage ?? "1d4"  // Unarmed fallback
             damageDice = baseDice
             damageModifier = damageMod

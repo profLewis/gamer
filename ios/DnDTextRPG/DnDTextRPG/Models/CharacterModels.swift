@@ -346,6 +346,7 @@ class Character: ObservableObject, Identifiable, Codable {
     @Published var rageUsesRemaining: Int    // Barbarian: uses per long rest
     @Published var isRaging: Bool            // Barbarian: currently raging
     @Published var huntersMarkActive: Bool   // Ranger: bonus damage active
+    @Published var weaponSharpenedUses: Int  // Whetstone: +1 to hit/damage for this many attacks
 
     // AI control
     @Published var isComputerControlled: Bool
@@ -364,7 +365,7 @@ class Character: ObservableObject, Identifiable, Codable {
         case isConscious, deathSaveSuccesses, deathSaveFailures
         case inventory, equippedWeapon, equippedArmor, equippedShield
         case knownSpells, spellSlots
-        case secondWindUsed, rageUsesRemaining, isRaging, huntersMarkActive
+        case secondWindUsed, rageUsesRemaining, isRaging, huntersMarkActive, weaponSharpenedUses
         case isComputerControlled
         case isPoisoned, poisonDamagePerTurn, poisonTurnsRemaining
     }
@@ -398,6 +399,7 @@ class Character: ObservableObject, Identifiable, Codable {
         self.rageUsesRemaining = characterClass == .barbarian ? 2 : 0
         self.isRaging = false
         self.huntersMarkActive = false
+        self.weaponSharpenedUses = 0
 
         // Status effects
         self.isPoisoned = false
@@ -445,6 +447,7 @@ class Character: ObservableObject, Identifiable, Codable {
         rageUsesRemaining = (try? container.decodeIfPresent(Int.self, forKey: .rageUsesRemaining)) ?? 0
         isRaging = (try? container.decodeIfPresent(Bool.self, forKey: .isRaging)) ?? false
         huntersMarkActive = (try? container.decodeIfPresent(Bool.self, forKey: .huntersMarkActive)) ?? false
+        weaponSharpenedUses = (try? container.decodeIfPresent(Int.self, forKey: .weaponSharpenedUses)) ?? 0
         isComputerControlled = (try? container.decodeIfPresent(Bool.self, forKey: .isComputerControlled)) ?? false
         isPoisoned = (try? container.decodeIfPresent(Bool.self, forKey: .isPoisoned)) ?? false
         poisonDamagePerTurn = (try? container.decodeIfPresent(Int.self, forKey: .poisonDamagePerTurn)) ?? 0
@@ -481,6 +484,7 @@ class Character: ObservableObject, Identifiable, Codable {
         try container.encode(rageUsesRemaining, forKey: .rageUsesRemaining)
         try container.encode(isRaging, forKey: .isRaging)
         try container.encode(huntersMarkActive, forKey: .huntersMarkActive)
+        try container.encode(weaponSharpenedUses, forKey: .weaponSharpenedUses)
         try container.encode(isComputerControlled, forKey: .isComputerControlled)
         try container.encode(isPoisoned, forKey: .isPoisoned)
         try container.encode(poisonDamagePerTurn, forKey: .poisonDamagePerTurn)

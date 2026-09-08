@@ -15593,7 +15593,7 @@ class GameEngine: ObservableObject {
     }
 
     private func showUsePotionMenu(character: Character, onBack: (() -> Void)? = nil, fromDM: Bool = false) {
-        let potions = character.inventory.filter { $0.type == .potion }
+        let potions = character.inventory.filter { $0.type == .potion || $0.name == "Whetstone" }
 
         clearTerminal()
         printSubtitle("Use Item")
@@ -15621,6 +15621,8 @@ class GameEngine: ObservableObject {
         for potion in potions {
             if let effect = potion.potionStats?.effect {
                 print("  \(potion.name): \(effect)", color: .dimGreen)
+            } else if potion.name == "Whetstone" {
+                print("  Whetstone: sharpen your equipped weapon (+1 to hit/damage for 3 attacks)", color: .dimGreen)
             }
         }
         print("")
@@ -15631,6 +15633,31 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             guard idx >= 0 && idx < potions.count else { return }
             let potion = potions[idx]
+
+            // Whetstone sharpens the user's own equipped weapon — not consumed by
+            // another party member, so it skips the potion "who drinks it?" flow.
+            if potion.name == "Whetstone" {
+                guard character.equippedWeapon != nil else {
+                    self.print("")
+                    self.print("  You have no weapon equipped to sharpen.", color: .red)
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in
+                        self?.showUsePotionMenu(character: character, onBack: onBack, fromDM: fromDM)
+                    }
+                    return
+                }
+                character.removeItem(potion)
+                character.weaponSharpenedUses = 3
+                self.print("")
+                self.print("  \(character.name) sharpens \(character.equippedWeapon?.name ?? "their weapon") with the whetstone.", color: .brightGreen)
+                self.print("  +1 to attack and damage rolls for the next 3 attacks.", color: .yellow)
+                self.logMultiplayerAction("\(character.name) sharpens their weapon")
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.showPackMenu(character: character, onBack: onBack, fromDM: fromDM)
+                }
+                return
+            }
 
             let applyPotion = { (target: Character) in
                 character.removeItem(potion)
@@ -19490,6 +19517,10 @@ class GameEngine: ObservableObject {
             let capStr = capabilities.isEmpty ? "" : " (can: \(capabilities.joined(separator: ", ")))"
             npcInfo = "NPC present: \(npc.type.rawValue)\(capStr) — \(npc.hasBeenTalkedTo ? "already spoken to" : "not yet spoken to")"
         }
+        if let room = room, let merchant = room.merchant {
+            let merchantLine = "Merchant present: \(merchant.name) of \(merchant.shopName) (\(merchant.tier.rawValue)) — can buy/sell/haggle here."
+            npcInfo = npcInfo.map { "\($0)\n\(merchantLine)" } ?? merchantLine
+        }
 
         return DMContext(
             roomName: room?.name ?? "Unknown",
@@ -19560,6 +19591,7 @@ class GameEngine: ObservableObject {
         if lower.contains("rope") { return ItemCatalog.rope() }
         if lower.contains("holy symbol") { return ItemCatalog.holySymbol() }
         if lower.contains("thieve") || lower.contains("lockpick") { return ItemCatalog.thievesTools() }
+        if lower.contains("whetstone") || lower.contains("sharpening stone") { return ItemCatalog.whetstone() }
         if lower.contains("spell component") || lower.contains("component pouch") { return ItemCatalog.spellComponentPouch() }
 
         // Fallback — create a generic misc item so the DM's gift isn't lost

@@ -10,6 +10,7 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS and macOS, wit
 - **12 Races**: Human, High Elf, Wood Elf, Hill Dwarf, Mountain Dwarf, Lightfoot Halfling, Stout Halfling, Half-Elf, Half-Orc, Rock Gnome, Tiefling, Dragonborn
 - **6 Classes**: Fighter, Wizard, Rogue, Cleric, Ranger, Barbarian
 - **Ability Scores**: Standard array or 4d6 drop lowest
+- **Ability Score Improvement**: raise an ability score by 2 (your choice, capped at 20) at D&D 5e ASI levels as you level up
 - **18 Skills** with proficiency system
 - **Parties** of 1-4 characters (human or AI-controlled)
 - **Long-press** any party size to auto-generate an all-AI party
@@ -35,10 +36,18 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS and macOS, wit
 
 ### Procedural Dungeons
 - 11 room types: corridors, chambers, treasure rooms, armories, shrines, libraries, prisons, trap rooms, boss chambers, and more
-- ASCII minimap showing only visited rooms with dynamic key (only shows symbols present on the map)
+- ASCII minimap showing only visited rooms with dynamic key (only shows symbols present on the map) — merchant rooms are marked with `[M]`
 - Encounters and traps scaled by dungeon level
-- Treasure, equipment, potions, and a merchant in armory rooms
+- Treasure, equipment, and potions throughout; shop rooms always have a merchant, and armouries sometimes do too
 - Multi-level progression — defeat the boss to descend deeper
+
+### Merchants
+- **4 tiers**, scaling with dungeon depth: Wandering Peddler, General Store, Trading Post, and Hyperstore
+- Each merchant is a named character with their own shop name and persona, not a generic vendor
+- **Buy, Sell, Haggle** (a Persuasion check for a discount), and **Ask About Rare Goods** (a chance at an under-the-counter item at a premium)
+- Merchants occasionally offer unsolicited advice
+- Bargaining and rare-goods outcomes are always resolved as real game mechanics (dice rolls, item tables) — the DM only narrates on top, so it works with cloud AI, Apple on-device AI, or no AI at all
+- Found in shop rooms (guaranteed once per dungeon level), some armouries, and via Wandering Trader NPCs — a **Visit Merchant** button appears whenever one is present
 
 ### 30 Monsters
 
