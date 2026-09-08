@@ -5,7 +5,7 @@
       "type": "player",
       "name": "Flash Gordon",
       "source": "Flash Gordon (1934)",
-      "description": "Space adventurer supreme. Flash, a Yale polo player, rocketed to Mongo with Dale Arden and Dr Zarkov to face Ming the Merciless. Alex Raymond's strip defined space opera: ray guns, rocket ships, and a square-jawed hero saving the universe. Every space adventure since owes Flash a debt.",
+      "description": "",
       "stats": {
         "Power": 8,
         "Cunning": 5,
@@ -23,7 +23,7 @@
       "type": "player",
       "name": "Buck Rogers",
       "source": "Buck Rogers (1929)",
-      "description": "Anthony Rogers fell asleep in a mine in 1927 and woke in the 25th century. The first science fiction comic strip hero, Buck fought sky pirates and alien invaders with ray guns and rocket belts. He predates Flash Gordon by five years and gave the world its first taste of space adventure in the Sunday papers.",
+      "description": "",
       "stats": {
         "Power": 7,
         "Cunning": 6,
@@ -473,7 +473,7 @@
       "type": "player",
       "name": "Madmartigan",
       "source": "Willow (1988)",
-      "description": "The greatest swordsman who ever lived - just ask him. Val Kilmer's rogue warrior in Willow was charming, reckless, and surprisingly heroic when it counted. Locked in a cage when we meet him, he talks his way out with nothing but charisma. His romance with Sorsha involved a love potion, a snowball fight, and a stolen kiss on a battlefield.",
+      "description": "",
       "stats": {
         "Power": 8,
         "Cunning": 7,
@@ -527,7 +527,7 @@
       "type": "player",
       "name": "Conan",
       "source": "Conan the Barbarian (1982)",
-      "description": "The Cimmerian. Born on a battlefield, orphaned by Thulsa Doom, enslaved at the Wheel of Pain, and trained as a gladiator. What is best in life? To crush your enemies, see them driven before you, and hear the lamentation of their women. Arnold Schwarzenegger gave this barbarian a soul beneath the muscle.",
+      "description": "",
       "stats": {
         "Power": 10,
         "Cunning": 4,
@@ -635,7 +635,7 @@
       "type": "player",
       "name": "Red Sonja",
       "source": "Red Sonja (1985)",
-      "description": "A fierce swordswoman blessed by a goddess after her family was murdered. Brigitte Nielsen played the flame-haired warrior who swore no man would have her unless he could defeat her in fair combat. She needs no rescuing, no sidekick, and no permission. The original warrior woman of sword-and-sorcery cinema.",
+      "description": "",
       "stats": {
         "Power": 9,
         "Cunning": 5,
@@ -725,7 +725,7 @@
       "type": "player",
       "name": "Drizzt",
       "source": "R.A. Salvatore",
-      "description": "Drizzt Do'Urden, a dark elf who rejected the evil of Menzoberranzan and fled to the surface world. With his twin scimitars Twinkle and Icingdeath, his panther companion Guenhwyvar, and his unshakeable moral compass, he became the most famous ranger in D&D history. Proof that your birth doesn't define your destiny.",
+      "description": "",
       "stats": {
         "Power": 9,
         "Cunning": 8,
@@ -743,7 +743,7 @@
       "type": "player",
       "name": "Raistlin",
       "source": "Dragonlance",
-      "description": "Raistlin Majere, the sickly mage with golden skin and hourglass eyes that see all things as dying. He is brilliant, ambitious, and ruthlessly pragmatic. He chose the Black Robes of evil magic, challenged the gods themselves, and nearly won. The most compelling villain-hero in fantasy - you never stop wanting him to be redeemed.",
+      "description": "",
       "stats": {
         "Power": 4,
         "Cunning": 10,
@@ -761,7 +761,7 @@
       "type": "player",
       "name": "Tasslehoff",
       "source": "Dragonlance",
-      "description": "Tasslehoff Burrfoot, kender extraordinaire. He is NOT a thief - he just finds things. In your pockets. On your belt. In your locked safe. Fearless to the point of foolishness, endlessly curious, and the most annoying companion in fantasy literature. Also, somehow, the bravest. He faced a god and didn't flinch.",
+      "description": "",
       "stats": {
         "Power": 2,
         "Cunning": 9,
@@ -923,7 +923,7 @@
       "type": "player",
       "name": "Conan",
       "source": "Robert E. Howard",
-      "description": "The original Cimmerian, created by Robert E. Howard in 1932. Before the films, before the comics, Conan was a literary barbarian - not just a brute but a thief, a pirate, a mercenary, and eventually a king. Howard's Conan is smarter and more nuanced than his imitators. He defined sword and sorcery.",
+      "description": "",
       "stats": {
         "Power": 10,
         "Cunning": 6,
@@ -941,7 +941,7 @@
       "type": "player",
       "name": "Aragorn",
       "source": "J.R.R. Tolkien",
-      "description": "Strider, the Ranger of the North. Heir of Isildur, who waited eighty-seven years for his crown. He led the Fellowship, faced the Paths of the Dead, and drew the armies of Mordor to the Black Gate as a diversion. His love for Arwen cost her immortality. The king who returned.",
+      "description": "",
       "stats": {
         "Power": 9,
         "Cunning": 8,
@@ -1013,7 +1013,7 @@
       "type": "player",
       "name": "Sauron",
       "source": "J.R.R. Tolkien",
-      "description": "The Dark Lord, Lieutenant of Morgoth, forger of the One Ring. Once a Maia spirit of great skill, he fell into darkness and spent three ages trying to dominate Middle-earth. He poured his power into a golden ring and lost everything when a hobbit dropped it into a volcano. The greatest villain in fantasy.",
+      "description": "",
       "stats": {
         "Power": 10,
         "Cunning": 9,
@@ -1031,7 +1031,7 @@
       "type": "player",
       "name": "Skeletor",
       "source": "He-Man (1983)",
-      "description": "Lord of Snake Mountain, skull-faced nemesis of He-Man. His plans to conquer Castle Greyskull are endlessly thwarted, but he never stops trying. Beneath the buffoonery of the cartoon, Skeletor is a genuinely menacing villain - a sorcerer of immense power trapped in an endless cycle of failure. NYEH HEH HEH!",
+      "description": "",
       "stats": {
         "Power": 8,
         "Cunning": 7,
@@ -1049,7 +1049,7 @@
       "type": "player",
       "name": "Ming the Merciless",
       "source": "Flash Gordon (1934)",
-      "description": "Emperor of Mongo, tyrant of a thousand worlds. Ming rules through fear, technology, and a magnificent wardrobe. He is Flash Gordon's eternal nemesis - cruel, intelligent, and utterly without mercy. Every space villain since owes something to Ming: the pointed beard, the flowing robes, the casual cruelty of absolute power.",
+      "description": "",
       "stats": {
         "Power": 9,
         "Cunning": 8,
@@ -1067,7 +1067,7 @@
       "type": "player",
       "name": "He-Man",
       "source": "He-Man (1983)",
-      "description": "Prince Adam of Eternia raises the Sword of Power and becomes He-Man, the most powerful man in the universe. By the power of Greyskull! With Battle Cat at his side, he defends Castle Greyskull against the forces of Skeletor. Also, every episode ends with a moral lesson. A paladin in every sense.",
+      "description": "",
       "stats": {
         "Power": 10,
         "Cunning": 3,
@@ -1085,7 +1085,7 @@
       "type": "player",
       "name": "Lion-O",
       "source": "ThunderCats (1985)",
-      "description": "Lord of the ThunderCats, wielder of the Sword of Omens. 'Thunder, Thunder, ThunderCats, HO!' Lion-O was a boy in a man's body - his suspension capsule aged him during the flight from Thundera. He must learn to lead while wielding Sight Beyond Sight. A young king with an ancient blade and everything to prove.",
+      "description": "",
       "stats": {
         "Power": 9,
         "Cunning": 5,
@@ -1391,7 +1391,7 @@
       "type": "player",
       "name": "Wile E. Coyote",
       "source": "Looney Tunes (1949)",
-      "description": "Super Genius. At least, that's what his business card says. Wile E. Coyote is the eternal pursuer, ordering increasingly improbable gadgets from the ACME Corporation to catch the Road Runner. Every rocket, catapult, and painted tunnel fails. Every cliff crumbles beneath him. Yet he never, ever gives up. A cautionary tale about perseverance.",
+      "description": "",
       "stats": {
         "Power": 3,
         "Cunning": 9,
@@ -1409,7 +1409,7 @@
       "type": "player",
       "name": "Road Runner",
       "source": "Looney Tunes (1949)",
-      "description": "Meep meep! The fastest bird in the desert and the bane of Wile E. Coyote's existence. Road Runner doesn't fight, doesn't scheme, and doesn't even seem to notice the elaborate traps set for him. He just runs. And somehow, the universe itself conspires to protect him. Physics bends around this bird.",
+      "description": "",
       "stats": {
         "Power": 2,
         "Cunning": 3,
@@ -1933,7 +1933,7 @@
       "type": "location",
       "name": "Moria",
       "source": "Tolkien",
-      "description": "Khazad-dum, the greatest mansion of the dwarves, delved deep beneath the Misty Mountains. Its halls once blazed with mithril light. Then the dwarves dug too deep and woke a Balrog - a demon of the ancient world wreathed in shadow and flame. Now its endless corridors echo with goblin drums and the fellowship's most desperate battle.",
+      "description": "",
       "stats": {
         "Danger": 10,
         "Puzzle": 5,
@@ -1951,7 +1951,7 @@
       "type": "location",
       "name": "Barad-dur",
       "source": "Tolkien",
-      "description": "The Dark Tower of Sauron, raised with the power of the One Ring. A fortress of iron and obsidian so vast it cast a shadow across Mordor. At its summit, the Eye of Sauron - lidless, wreathed in flame - searched endlessly for the Ring. Its foundations could not be destroyed while the Ring survived.",
+      "description": "",
       "stats": {
         "Danger": 10,
         "Puzzle": 7,
@@ -1969,7 +1969,7 @@
       "type": "location",
       "name": "Cirith Ungol",
       "source": "Tolkien",
-      "description": "The Pass of the Spider, the secret way into Mordor above Minas Morgul. Gollum led Frodo and Sam through Shelob's lair - a darkness so total that even elven light barely pierced it. The tower of Cirith Ungol held Frodo prisoner and Sam had to fight through an entire orc garrison alone to rescue him.",
+      "description": "",
       "stats": {
         "Danger": 8,
         "Puzzle": 8,
@@ -1987,7 +1987,7 @@
       "type": "location",
       "name": "Isengard",
       "source": "Tolkien",
-      "description": "Saruman's fortress at the southern end of the Misty Mountains. The tower of Orthanc rose from its centre - an unbreakable spire of ancient stone. Saruman turned the surrounding gardens into a war factory, breeding Uruk-hai in pits beneath the earth. The Ents marched on Isengard and tore it apart with roots and rage.",
+      "description": "",
       "stats": {
         "Danger": 9,
         "Puzzle": 8,
@@ -2005,7 +2005,7 @@
       "type": "location",
       "name": "Mount Doom",
       "source": "Tolkien",
-      "description": "Orodruin, the Fire-mountain - where Sauron forged the One Ring and where Frodo carried it to be destroyed. The Crack of Doom, a chasm of liquid fire inside the volcano, is the only place hot enough to unmake the Ring. In the end, it was Gollum's obsession, not Frodo's will, that cast the Ring into the flames.",
+      "description": "",
       "stats": {
         "Danger": 10,
         "Puzzle": 3,
@@ -2023,7 +2023,7 @@
       "type": "location",
       "name": "Minas Morgul",
       "source": "Tolkien",
-      "description": "Once Minas Ithil, the Tower of the Moon, a beautiful fortress of Gondor. Taken by the Nazgul, it became Minas Morgul - the Tower of Sorcery. Its walls glow with a corpse-light that makes the living sick. The Witch-king rules from its summit, and the road to Cirith Ungol begins at its cursed gate.",
+      "description": "",
       "stats": {
         "Danger": 9,
         "Puzzle": 7,
@@ -2041,7 +2041,7 @@
       "type": "location",
       "name": "Dol Guldur",
       "source": "Tolkien",
-      "description": "The Hill of Sorcery in southern Mirkwood, where Sauron hid as 'the Necromancer' for centuries before the War of the Ring. Gandalf entered alone and discovered the truth. The fortress corrupted the forest around it, turning Greenwood the Great into Mirkwood. A dungeon where shadow itself is the enemy.",
+      "description": "",
       "stats": {
         "Danger": 8,
         "Puzzle": 8,
@@ -2059,7 +2059,7 @@
       "type": "location",
       "name": "Helm's Deep",
       "source": "Tolkien",
-      "description": "The fortress of Rohan, carved into the White Mountains behind the Deeping Wall. Ten thousand Uruk-hai marched against it and nearly won. The battle of Helm's Deep is the definitive siege in fantasy - ladders, a culvert bomb, and a dawn charge led by Gandalf. The Glittering Caves behind it are said to be breathtaking.",
+      "description": "",
       "stats": {
         "Danger": 9,
         "Puzzle": 6,
@@ -2077,7 +2077,7 @@
       "type": "location",
       "name": "Tomb of Horrors",
       "source": "D&D Module (1978)",
-      "description": "Acererak's tomb, written by Gary Gygax himself. The deadliest dungeon ever published. Thousands of characters have died here - crushed, disintegrated, soul-trapped, or simply erased from existence. Every room is a death trap. Every treasure is bait. The demilich at the end can kill with a glance. Approach with multiple backup characters.",
+      "description": "",
       "stats": {
         "Danger": 10,
         "Puzzle": 10,
@@ -2095,7 +2095,7 @@
       "type": "location",
       "name": "Ravenloft",
       "source": "D&D Module (1983)",
-      "description": "Castle Ravenloft, domain of Count Strahd von Zarovich, the first vampire in D&D. Gothic horror meets dungeon crawling in a castle perched on a cliff above the village of Barovia. Strahd is a tragic villain - a warrior who made a pact with dark powers for love and lost his humanity. The castle changes with each play.",
+      "description": "",
       "stats": {
         "Danger": 9,
         "Puzzle": 8,
@@ -2113,7 +2113,7 @@
       "type": "location",
       "name": "White Plume Mountain",
       "source": "D&D Module (1979)",
-      "description": "A volcanic dungeon hiding three legendary weapons: Wave (a trident), Whelm (a hammer), and Blackrazor (a soul-drinking sword). Created by the wizard Keraptis, every room is an ingenious puzzle or deadly trap. The dungeon is inside a volcanic mountain that perpetually vents steam - hence the white plume.",
+      "description": "",
       "stats": {
         "Danger": 8,
         "Puzzle": 9,
@@ -2131,7 +2131,7 @@
       "type": "location",
       "name": "Caves of Chaos",
       "source": "D&D Module (1979)",
-      "description": "A ravine filled with monster-infested caves - the first dungeon for millions of D&D players. The Keep on the Borderlands module introduced an entire generation to tabletop gaming. Multiple caves hold different monster tribes: kobolds, goblins, orcs, gnolls, and worse. At the very end, a temple of chaos awaits the brave.",
+      "description": "",
       "stats": {
         "Danger": 6,
         "Puzzle": 5,
@@ -2149,7 +2149,7 @@
       "type": "location",
       "name": "Barrier Peaks",
       "source": "D&D Module (1980)",
-      "description": "A crashed spaceship in a fantasy world. Expedition to the Barrier Peaks combined science fiction and fantasy decades before it was fashionable. Robots patrol the corridors, ray guns lie beside treasure chests, and a colour-coded keycard system guards the doors. Your fighters will be very confused by the blaster pistols.",
+      "description": "",
       "stats": {
         "Danger": 8,
         "Puzzle": 7,
@@ -2167,7 +2167,7 @@
       "type": "location",
       "name": "Temple of Elemental Evil",
       "source": "D&D Module (1985)",
-      "description": "The ruined temple near the village of Hommlet, where cultists of four elemental factions scheme and fight each other. Gary Gygax and Frank Mentzer's mega-adventure spans four dungeon levels, each dedicated to Earth, Air, Fire, or Water. At the bottom lurks Zuggtmoy, the Demon Queen of Fungi. Bring a large party.",
+      "description": "",
       "stats": {
         "Danger": 9,
         "Puzzle": 8,
@@ -2185,7 +2185,7 @@
       "type": "location",
       "name": "Isle of Dread",
       "source": "D&D Module (1981)",
-      "description": "A tropical island of dinosaurs, pirates, and lost civilisations. The Isle of Dread was D&D's first wilderness adventure - a hex-crawl across jungles and mountains to find a ruined temple and its treasure. There are actual dinosaurs. And kopru. And a volcano. It is basically D&D does King Kong meets Jurassic Park.",
+      "description": "",
       "stats": {
         "Danger": 7,
         "Puzzle": 5,
@@ -2455,7 +2455,7 @@
       "type": "location",
       "name": "Castle Greyskull",
       "source": "He-Man (1983)",
-      "description": "A skull-shaped fortress holding the secrets of the universe on the planet Eternia. Castle Greyskull is the source of He-Man's power and Skeletor's obsession. Inside, the Sorceress guards ancient magic. The jawbridge entrance is one of the most iconic images in 1980s pop culture. By the power of Greyskull!",
+      "description": "",
       "stats": {
         "Danger": 10,
         "Puzzle": 5,
@@ -2509,7 +2509,7 @@
       "type": "location",
       "name": "Snake Mountain",
       "source": "He-Man (1983)",
-      "description": "Skeletor's lair on Eternia - a mountain shaped like a coiled serpent with a gaping mouth for an entrance. Inside, Skeletor plots his endless schemes to conquer Castle Greyskull, surrounded by his bumbling henchmen Evil-Lyn, Beast Man, and Trap Jaw. The ultimate villain's headquarters, designed by someone who really loved snakes.",
+      "description": "",
       "stats": {
         "Danger": 8,
         "Puzzle": 7,
@@ -2527,7 +2527,7 @@
       "type": "location",
       "name": "Death Star",
       "source": "Star Wars (1977)",
-      "description": "That is no moon. The Galactic Empire's ultimate weapon - a space station the size of a small moon with a superlaser capable of destroying a planet. Its one weakness: a thermal exhaust port, two metres wide, leading directly to the main reactor. The biggest dungeon crawl in cinema. Watch out for the trash compactor.",
+      "description": "",
       "stats": {
         "Danger": 10,
         "Puzzle": 6,
@@ -3345,9 +3345,9 @@
     {
       "id": "monster-displacerBeast",
       "type": "monster",
-      "name": "Displacer Beast",
+      "name": "Phase Stalker",
       "source": "Bestiary",
-      "description": "A sleek six-legged hunter with barbed tentacles and a magically distorted outline. Its true body never seems to be where it appears, causing attacks to miss by inches. The displacer beast thrives on confusion and overconfidence.",
+      "description": "A sleek six-legged hunter with barbed tentacles and a magically distorted outline. Its true body never seems to be where it appears, causing attacks to miss by inches. The phase stalker thrives on confusion and overconfidence.",
       "stats": {
         "HP": 85,
         "AC": 13,
@@ -3377,9 +3377,9 @@
     {
       "id": "monster-demogorgon",
       "type": "monster",
-      "name": "Demogorgon",
+      "name": "The Maw",
       "source": "Bestiary",
-      "description": "A nightmare predator from the Upside Down with a flower-like maw and relentless hunting drive. It closes distance fast, tears through isolated targets, and pressures the backline without hesitation. Demogorgon fights feel like survival horror, not standard skirmishes.",
+      "description": "A nightmare predator from the deep dark between worlds, with a flower-like maw and relentless hunting drive. It closes distance fast, tears through isolated targets, and pressures the backline without hesitation. Facing the Maw feels like survival horror, not a standard skirmish.",
       "stats": {
         "HP": 68,
         "AC": 14,
@@ -3393,9 +3393,9 @@
     {
       "id": "monster-mindFlayer",
       "type": "monster",
-      "name": "Mind Flayer",
+      "name": "Brain Eater",
       "source": "Bestiary",
-      "description": "A psionic aberration with facial tentacles, alien calm, and frightening mental precision. Mind flayers attack cognition first, disrupting choices before physical damage arrives. In close range, they become executioners with terrifying brain-harvest methods.",
+      "description": "A psionic aberration with facial tentacles, alien calm, and frightening mental precision. Brain eaters attack cognition first, disrupting choices before physical damage arrives. In close range, they become executioners with terrifying brain-harvest methods.",
       "stats": {
         "HP": 71,
         "AC": 15,
@@ -3409,9 +3409,9 @@
     {
       "id": "monster-beholder",
       "type": "monster",
-      "name": "Beholder",
+      "name": "Eye Tyrant",
       "source": "Bestiary",
-      "description": "A floating tyrant of paranoid intellect, ringed with eyestalks that project distinct killing rays. It controls vertical space, line-of-sight, and battlefield tempo all at once. A beholder encounter punishes predictable movement and poor positioning.",
+      "description": "A floating tyrant of paranoid intellect, ringed with eyestalks that project distinct killing rays. It controls vertical space, line-of-sight, and battlefield tempo all at once. An eye tyrant encounter punishes predictable movement and poor positioning.",
       "stats": {
         "HP": 180,
         "AC": 18,
@@ -3441,9 +3441,9 @@
     {
       "id": "monster-vecna",
       "type": "monster",
-      "name": "Vecna",
+      "name": "The Undying King",
       "source": "Bestiary",
-      "description": "The Undying King, a lich of vast cunning, forbidden scholarship, and godlike ambition. Vecna bends death, memory, and fate into tools for domination across worlds. Facing him is not just a battle - it is a contest against ancient strategy itself.",
+      "description": "The Undying King, a lich of vast cunning, forbidden scholarship, and godlike ambition. He bends death, memory, and fate into tools for domination across worlds. Facing him is not just a battle - it is a contest against ancient strategy itself.",
       "stats": {
         "HP": 120,
         "AC": 18,
