@@ -194,6 +194,20 @@ struct SpellCatalog {
               description: "5d8 HP of creatures fall unconscious")
     }
 
+    // MARK: Wizard Level 2
+
+    static func scorchingRay() -> Spell {
+        Spell(name: "Scorching Ray", level: .level2, spellType: .attack, target: .singleEnemy,
+              damage: "4d6", damageType: "fire",
+              description: "4d6 fire damage (ranged spell attack)")
+    }
+
+    static func acidArrow() -> Spell {
+        Spell(name: "Acid Arrow", level: .level2, spellType: .attack, target: .singleEnemy,
+              damage: "4d4", damageType: "acid",
+              description: "4d4 acid damage (ranged spell attack)")
+    }
+
     // MARK: Cleric Cantrips
 
     static func sacredFlame() -> Spell {
@@ -233,6 +247,20 @@ struct SpellCatalog {
         Spell(name: "Healing Word", level: .level1, spellType: .healing, target: .singleAlly,
               healAmount: "1d4", usesCasterMod: true,
               description: "Heal 1d4 + WIS mod HP (bonus action)")
+    }
+
+    // MARK: Cleric Level 2
+
+    static func spiritualWeapon() -> Spell {
+        Spell(name: "Spiritual Weapon", level: .level2, spellType: .attack, target: .singleEnemy,
+              damage: "2d8", damageType: "force",
+              description: "2d8 force damage (bonus action, ranged spell attack)")
+    }
+
+    static func prayerOfHealing() -> Spell {
+        Spell(name: "Prayer of Healing", level: .level2, spellType: .healing, target: .singleAlly,
+              healAmount: "2d8", usesCasterMod: true,
+              description: "Heal 2d8 + WIS mod HP")
     }
 
     // MARK: Ranger Level 1
@@ -292,6 +320,16 @@ struct SpellCatalog {
 
     static func spellsForLevelUp(characterClass: CharacterClass, newLevel: Int) -> [Spell] {
         switch characterClass {
+        case .wizard:
+            if newLevel == 3 {
+                return [scorchingRay(), acidArrow()]
+            }
+            return []
+        case .cleric:
+            if newLevel == 3 {
+                return [spiritualWeapon(), prayerOfHealing()]
+            }
+            return []
         case .ranger:
             if newLevel == 2 {
                 return [huntersMark(), cureWoundsRanger()]

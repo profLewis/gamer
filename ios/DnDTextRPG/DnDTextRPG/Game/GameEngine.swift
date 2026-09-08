@@ -11897,10 +11897,13 @@ class GameEngine: ObservableObject {
             }
             if !leveled.isEmpty {
                 let slots = character.spellSlots
+                let slotsLabel = slots.level2Max > 0
+                    ? "slots: \(slots.level1Current)/\(slots.level1Max) L1, \(slots.level2Current)/\(slots.level2Max) L2"
+                    : "slots: \(slots.level1Current)/\(slots.level1Max)"
                 print("")
-                print("  SPELLS  (slots: \(slots.level1Current)/\(slots.level1Max))", color: .cyan, bold: true)
+                print("  SPELLS  (\(slotsLabel))", color: .cyan, bold: true)
                 for s in leveled {
-                    print("  \(s.name)", color: .brightGreen)
+                    print("  \(s.name) (\(s.level.displayName))", color: .brightGreen)
                     printWrapped("    \(s.description)", indent: 4, color: .dimGreen)
                 }
             }
@@ -20718,7 +20721,8 @@ class GameEngine: ObservableObject {
         print("")
 
         let cantrips = character.knownSpells.filter { $0.level == .cantrip }
-        let leveled = character.knownSpells.filter { $0.level != .cantrip && character.canCastSpell($0) }
+        let level1Spells = character.knownSpells.filter { $0.level == .level1 && character.canCastSpell($0) }
+        let level2Spells = character.knownSpells.filter { $0.level == .level2 && character.canCastSpell($0) }
 
         var spellOptions: [Spell] = []
 
@@ -20731,14 +20735,25 @@ class GameEngine: ObservableObject {
             print("")
         }
 
-        if !leveled.isEmpty {
+        if !level1Spells.isEmpty {
             let l1 = character.spellSlots.level1Current
             let l1m = character.spellSlots.level1Max
             print("  LEVEL 1 (slots: \(l1)/\(l1m)):", color: .cyan, bold: true)
-            for s in leveled {
+            for s in level1Spells {
                 print("    \(s.name) — \(s.description)", color: .dimGreen)
             }
-            spellOptions.append(contentsOf: leveled)
+            spellOptions.append(contentsOf: level1Spells)
+            print("")
+        }
+
+        if !level2Spells.isEmpty {
+            let l2 = character.spellSlots.level2Current
+            let l2m = character.spellSlots.level2Max
+            print("  LEVEL 2 (slots: \(l2)/\(l2m)):", color: .cyan, bold: true)
+            for s in level2Spells {
+                print("    \(s.name) — \(s.description)", color: .dimGreen)
+            }
+            spellOptions.append(contentsOf: level2Spells)
             print("")
         }
 
