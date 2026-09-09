@@ -84,3 +84,87 @@ class CharacterLibraryManager {
         }
     }
 }
+
+// MARK: - Character Hall of Fame
+//
+// Parallels HallOfFame.swift (game runs), but for individual characters:
+// every survivor of a victorious run is inducted here, with a link to a
+// Character Roster save so "relive this hero" works the same way a Hall of
+// Fame game entry links to a game save.
+
+struct CharacterHallOfFameEntry: Codable, Identifiable {
+    let id: UUID
+    let date: Date
+    let characterName: String
+    let race: String
+    let characterClass: String
+    let level: Int
+    let gold: Int
+    let dungeonName: String
+    let dungeonLevel: Int
+    var linkedCharacterId: UUID?  // matches a CharacterLibraryManager saved character
+
+    var score: Int { level * 200 + gold }
+
+    init(id: UUID = UUID(), date: Date, characterName: String, race: String, characterClass: String,
+         level: Int, gold: Int, dungeonName: String, dungeonLevel: Int, linkedCharacterId: UUID? = nil) {
+        self.id = id
+        self.date = date
+        self.characterName = characterName
+        self.race = race
+        self.characterClass = characterClass
+        self.level = level
+        self.gold = gold
+        self.dungeonName = dungeonName
+        self.dungeonLevel = dungeonLevel
+        self.linkedCharacterId = linkedCharacterId
+    }
+}
+
+class CharacterHallOfFameManager {
+    static let shared = CharacterHallOfFameManager()
+
+    private var hallDirectory: URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let dir = docs.appendingPathComponent("CharacterHallOfFame")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    func listEntries() -> [CharacterHallOfFameEntry] {
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: hallDirectory,
+            includingPropertiesForKeys: nil
+        ) else { return [] }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        return files
+            .filter { $0.pathExtension == "json" }
+            .compactMap { url -> CharacterHallOfFameEntry? in
+                guard let data = try? Data(contentsOf: url) else { return nil }
+                return try? decoder.decode(CharacterHallOfFameEntry.self, from: data)
+            }
+            .sorted { $0.score > $1.score }
+    }
+
+    func addEntry(_ entry: CharacterHallOfFameEntry) {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = .prettyPrinted
+        guard let data = try? encoder.encode(entry) else { return }
+        let fileURL = hallDirectory.appendingPathComponent("\(entry.id.uuidString).json")
+        try? data.write(to: fileURL)
+        trimToTop10()
+    }
+
+    private func trimToTop10() {
+        let entries = listEntries()
+        guard entries.count > 10 else { return }
+        for entry in entries.suffix(from: 10) {
+            let fileURL = hallDirectory.appendingPathComponent("\(entry.id.uuidString).json")
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+    }
+}

@@ -94,14 +94,15 @@ Features:
 - Rename and delete save slots
 
 ### Character Roster
-- Save individual characters independent of game saves — a separate system from Saved Adventures, clearly labelled so it's never confused with them
+- Save individual characters independent of game saves — a separate system from Saved Adventures ("Character Saves" in the Play menu, next to "Continue Quest"), clearly labelled so it's never confused with them
+- **Save to Roster** is available wherever it matters: on the Party Review card for every character before an adventure starts (covers new, auto-generated, and quick-start parties alike), during party creation, and from Party Status mid-adventure (handy right after a level-up)
 - **Load Character** during party creation brings a saved character into a new party at their current level, gear, and gold (HP/spell slots/combat state reset for the fresh start)
-- **Save to Roster** during party creation, or from Party Status mid-adventure, updates that character's roster entry — so a character can carry level-ups and loot from one adventure into the next
 - Up to 20 characters can be kept in the roster
 
 ### Hall of Fame
 - Scoring: victories, gold, monsters slain, exploration, difficulty multiplier
 - Pre-seeded with Stranger Things-themed entries
+- **Character Hall of Fame** — every survivor of a victorious adventure is automatically saved to the Character Roster and inducted here, the character-level counterpart to the game Hall of Fame above; tap an entry to view and reload that hero
 
 ### Game Center
 - Leaderboards: Gold collected, Victories, Monsters slain

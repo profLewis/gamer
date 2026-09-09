@@ -310,8 +310,8 @@ struct FAQData {
         ),
         FAQEntry(
             question: "Can I keep the same character across adventures?",
-            answer: "Yes — that's the Character Roster, separate from Saved Adventures. During party creation, tap 'Load Character' to bring in a saved character at their current level, gear, and gold. Save a character to the roster right after creating them, or anytime from Party Status → Save to Roster (handy after a level-up). Up to 20 characters can be kept.",
-            keywords: ["character roster", "keep character", "same character", "persist character", "load character", "save character"]
+            answer: "Yes — that's Character Saves (the Character Roster), separate from Saved Adventures, both in the Play menu. There are three ways to save a character: the 'Save to Roster' button on their card in Party Review (works for every party — hand-built, auto-generated, or quick-start), right after creating them, or anytime from Party Status → Save to Roster (handy after a level-up). During party creation, tap 'Load Character' to bring a saved one into a new party at their current level, gear, and gold. Survivors of a victorious adventure are saved automatically and inducted into the Character Hall of Fame. Up to 20 characters can be kept.",
+            keywords: ["character roster", "character saves", "keep character", "same character", "persist character", "load character", "save character", "character hall of fame"]
         ),
     ])
 
