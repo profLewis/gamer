@@ -708,12 +708,19 @@ class GameEngine: ObservableObject {
         // catching a genuine dead end quickly. Combat is excluded — its
         // animation/timer sequencing legitimately spans longer gaps with no
         // menu on screen.
+        let armedBreadcrumb = lastCharCreationBreadcrumb
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
             guard let self = self else { return }
             guard self.currentMenuOptions.isEmpty, self.menuHandler == nil,
                   !self.awaitingTextInput, !self.awaitingContinue,
                   self.closeHandler == nil,
                   self.gameState != .combat else { return }
+            // Diagnostic: this watchdog's own full state at fire time, plus
+            // what the breadcrumb was when THIS PARTICULAR watchdog was
+            // armed (as opposed to whatever ran most recently) — with
+            // multiple clearTerminal() calls in a chain, multiple watchdogs
+            // stack up, and it matters which one actually fired.
+            self.lastCharCreationBreadcrumb = "WATCHDOG(armedAt:\(armedBreadcrumb)) opts:\(self.currentMenuOptions.count) menuH:\(self.menuHandler != nil) closeH:\(self.closeHandler != nil) awaitText:\(self.awaitingTextInput) awaitCont:\(self.awaitingContinue) state:\(self.gameState)"
             self.recoverFromOrphanedScreen()
         }
     }
