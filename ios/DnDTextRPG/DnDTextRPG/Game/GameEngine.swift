@@ -1873,17 +1873,16 @@ class GameEngine: ObservableObject {
             destination()
         }
 
-        // If nothing is currently visible or tappable (no D-pad, no menu
-        // buttons — e.g. a dark/blind search run from a screen that never
-        // had a D-pad to begin with), the player would otherwise be looking
-        // at a totally empty control area with no way to tell it isn't
-        // stuck. Turn on the same tap-to-continue affordance
-        // waitForContinue() uses so there's always something visible and
-        // immediately actionable.
-        if currentMenuOptions.isEmpty && directionExits.isEmpty {
-            awaitingContinue = true
-            inputHandler = { _ in fire() }
-        }
+        // Always offer tap-to-continue (tapping the printed result text),
+        // not just when the D-pad/menu buttons are also empty — search,
+        // listen, and similar results wait out a fixed infoTimeout even
+        // when triggered from the main exploration screen (D-pad still
+        // showing), and previously had no way to skip that wait early
+        // besides the small corner close icon. This is the same
+        // tap-anywhere affordance waitForContinue() uses; it layers over
+        // whatever controls are already on screen without hiding them.
+        awaitingContinue = true
+        inputHandler = { _ in fire() }
 
         // Registered BEFORE autoReadIfSpeakerMode() — its 0.3s startup
         // delay means speech can start and, for short text, even finish
@@ -13363,6 +13362,7 @@ class GameEngine: ObservableObject {
             self.print("")
             self.print("  BUTTONS", color: .cyan, bold: true)
             self.printWrapped("Search looks for hidden items. Listen reveals what's beyond exits. Rest (centre) heals — hold for long rest.", indent: 2, color: .dimGreen)
+            self.printWrapped("Search/Listen results auto-continue after a delay (Settings > Info Timeout) — tap the result text to continue immediately instead of waiting.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  CHAT", color: .cyan, bold: true)
             self.printWrapped("Type at the > prompt to chat with the DM. Tap ✕ to leave chat.", indent: 2, color: .dimGreen)
@@ -13382,6 +13382,9 @@ class GameEngine: ObservableObject {
             self.print("")
             self.print("  LISTEN", color: .cyan, bold: true)
             self.printWrapped("Reveals monsters in adjacent rooms. Uses Perception.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  RESULT SCREENS", color: .cyan, bold: true)
+            self.printWrapped("Search/Listen results auto-continue after a delay (Settings > Info Timeout) — tap the result text to continue right away instead of waiting.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  PICK UP / TAKE TREASURE", color: .cyan, bold: true)
             self.printWrapped("Appears when loot or gold is on the floor.", indent: 2, color: .dimGreen)
@@ -21871,6 +21874,15 @@ class GameEngine: ObservableObject {
             }
         }
 
+        // Change Weapon — costs the turn, small chance of fumbling it. Only
+        // shown when there's an actual alternative carried in the pack.
+        if character.inventory.contains(where: { $0.type == .weapon }) {
+            options.append("Change Weapon")
+            actions.append { [weak self] in
+                self?.showCombatChangeWeaponMenu(characterId: characterId)
+            }
+        }
+
         // Cast Spell (spellcasters with spells)
         if !character.knownSpells.isEmpty {
             let hasCantrips = character.knownSpells.contains { $0.level == .cantrip }
@@ -21947,6 +21959,75 @@ class GameEngine: ObservableObject {
         }
         resetIdleTimer()
         startCombatIdleTimer(characterId: characterId)
+    }
+
+    /// Weapon picker for the "Change Weapon" combat action — see
+    /// performCombatWeaponChange() for what actually happens on selection.
+    private func showCombatChangeWeaponMenu(characterId: UUID) {
+        guard let character = party.first(where: { $0.id == characterId }) else { return }
+        let weapons = character.inventory.filter { $0.type == .weapon }
+        guard !weapons.isEmpty else { showPlayerCombatMenu(characterId: characterId); return }
+
+        clearTerminal()
+        printCombatStatus()
+        print("")
+        printTitle("Change Weapon")
+        print("  Wielding: \(character.equippedWeapon?.name ?? "bare hands")", color: .dimGreen)
+        print("  Switching weapons costs your turn, and there's a small chance you fumble the draw.", color: .yellow)
+        print("")
+
+        showMenu(weapons.map { $0.name } + ["< Back"])
+        closeHandler = { [weak self] in self?.showPlayerCombatMenu(characterId: characterId) }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == weapons.count + 1 {
+                self.showPlayerCombatMenu(characterId: characterId)
+                return
+            }
+            guard choice >= 1 && choice <= weapons.count else { return }
+            self.performCombatWeaponChange(characterId: characterId, newWeapon: weapons[choice - 1])
+        }
+    }
+
+    /// Actually swaps the weapon (or fumbles it — ~15% chance the new
+    /// weapon is dropped instead of equipped) and ends the character's
+    /// turn. Mutates character.equippedWeapon directly on the live
+    /// Character instance shared by both `party` and `combat.party` (same
+    /// object references — playerAttack() reads equippedWeapon fresh on
+    /// every attack, not a snapshot taken at combat start), so the new
+    /// weapon is what subsequent attacks in THIS combat immediately use —
+    /// no separate "reload" step needed. logEvent/logMultiplayerAction
+    /// make sure it's visible in the adventure log and multiplayer feed
+    /// like any other combat action, rather than only being reflected in
+    /// state silently.
+    private func performCombatWeaponChange(characterId: UUID, newWeapon: Item) {
+        guard let combat = currentCombat,
+              let character = party.first(where: { $0.id == characterId }) else { return }
+
+        clearTerminal()
+        printCombatStatus()
+        print("")
+
+        let fumbled = Int.random(in: 1...100) <= 15
+        if fumbled {
+            character.removeItem(newWeapon)
+            print("  \(character.name) fumbles drawing \(newWeapon.name) — it slips free and clatters to the floor!", color: .yellow, bold: true)
+            print("  (\(newWeapon.name) is lost.)", color: .dimGreen)
+            logEvent("\(character.name) fumbled changing to \(newWeapon.name) — dropped it", category: "COMBAT")
+            logMultiplayerAction("\(character.name) fumbled switching weapons and dropped \(newWeapon.name)!")
+        } else {
+            let oldWeaponName = character.equippedWeapon?.name ?? "bare hands"
+            character.equipWeapon(newWeapon)
+            print("  \(character.name) swaps \(oldWeaponName) for \(newWeapon.name)!", color: .brightGreen, bold: true)
+            logEvent("\(character.name) switched weapon to \(newWeapon.name)", category: "COMBAT")
+            logMultiplayerAction("\(character.name) switched weapons — now wielding \(newWeapon.name)")
+        }
+        print("")
+
+        combat.checkCombatEnd()
+        combat.nextTurn()
+        waitForContinue()
+        inputHandler = { [weak self] _ in self?.advanceCombat() }
     }
 
     // MARK: - Combat Idle Timer
