@@ -772,15 +772,16 @@ class GameEngine: ObservableObject {
         // — its animation/timer sequencing legitimately spans longer gaps
         // with no menu on screen.
         //
-        // 3s: back down from an 8s stopgap tried earlier this session. That
-        // widening didn't fix reported false triggers because duration was
-        // never the actual problem — see clearTerminalGeneration's comment
-        // for the real bug (a stale watchdog from a long-superseded screen
-        // firing during an unrelated later one). With that fixed, a shorter
-        // timeout is safe again and recovers a genuine dead end faster.
+        // 8s: back up from a 3s stopgap. That was fine while a persistent
+        // recurrence still fell through to the visible error screen after
+        // 3 retries, but recoverFromOrphanedScreen()'s character-creation
+        // path is now uncapped (see its own comment) — a real dead end
+        // always recovers eventually no matter the timeout, so there's no
+        // downside to widening it, and it gives more breathing room to
+        // actually read a screen and tap before a silent rebuild interrupts.
         let armedBreadcrumb = lastCharCreationBreadcrumb
         let myGeneration = clearTerminalGeneration
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { [weak self] in
             guard let self = self else { return }
             // Stand down if any newer clearTerminal() has happened since —
             // the screen this watchdog was armed for has already been
@@ -1817,17 +1818,23 @@ class GameEngine: ObservableObject {
         // Mid-character-creation, the underlying progress (which slot,
         // who's already in the party) is untouched — only this one
         // screen's buttons went dead. Silently rebuild the current step
-        // instead of dropping the player to an error screen: the repeated
-        // "Accept -> blank screen" reports all trace back to exactly this
-        // state (gameState == .characterCreation, party mid-build), and
+        // instead of dropping the player to an error screen:
         // chooseCharacterType() is a pure "which screen for this slot"
         // dispatcher — safe to re-invoke, no data loss, no double-adding
-        // characters. This doesn't fix the still-unidentified cause of the
-        // buttons going dead, but it means the player never sees it.
-        // Capped at 3 in a row so a persistent underlying cause falls
-        // through to the visible recovery screen instead of silently
-        // "flickering" forever.
-        if gameState == .characterCreation, silentCharCreationRecoveryCount < 3 {
+        // characters.
+        //
+        // Uncapped (was 3): diagnostics proved this specific dead end is
+        // never a permanently broken screen — autoCreateCharacter()
+        // reliably renders correctly first (confirmed live: menuHandler/
+        // closeHandler set, currentMenuOptions has its 2 entries) and
+        // something still-unidentified clears it again ~3s later. A cap
+        // meant a persistent recurrence (observed happening on 3s cycles)
+        // still eventually dumped the player onto the visible error
+        // screen. Since a re-render is safe here no matter how many times
+        // it takes, don't give up — keep the player on a working screen
+        // instead. silentCharCreationRecoveryCount is still tracked (see
+        // its declaration) for the day this needs bounding again.
+        if gameState == .characterCreation {
             silentCharCreationRecoveryCount += 1
             chooseCharacterType()
             return
