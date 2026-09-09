@@ -945,17 +945,46 @@ class Dungeon: ObservableObject, Codable {
         return (true, "You move \(direction.rawValue).\n\n\(nextRoom.describe())")
     }
 
+    /// The full fixed legend — always shown in its entirety (never filtered
+    /// to "symbols currently visible") so the map's line count, and
+    /// therefore its on-screen size, never depends on room content or the
+    /// torch being lit or unlit. A content-dependent legend used to make
+    /// the box visibly resize both room-to-room and whenever the torch
+    /// toggled, since the unlit map never showed a legend at all.
+    private static let mapLegendEntries: [(symbol: String, label: String)] = [
+        ("@", "You"), ("!", "Danger"), (".", "Empty"),
+        ("E", "Entry"), ("=", "Hall"), ("#", "Room"),
+        ("$", "Loot"), ("+", "Shrine"), ("L", "Library"),
+        ("B", "Boss"), ("A", "Armoury"), ("P", "Prison"),
+        ("S", "Shop"), ("M", "Merchant"), ("G", "Gym"), ("X", "Secured"), ("K", "Locked")
+    ]
+
+    private static var mapLegendRowCount: Int { (mapLegendEntries.count + 2) / 3 }
+
+    /// Builds the fixed-size legend block (separator + packed rows), used
+    /// identically by both the lit and unlit branches of getMapDisplay.
+    private func mapLegendLines(border: String) -> [String] {
+        var lines: [String] = ["+\(border)+"]
+        var row = ""
+        for (i, entry) in Self.mapLegendEntries.enumerated() {
+            let item = "\(entry.symbol)=\(entry.label)"
+            row = row.isEmpty ? item : row + "  \(item)"
+            if (i + 1) % 3 == 0 || i == Self.mapLegendEntries.count - 1 {
+                lines.append("| \(row)".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|")
+                row = ""
+            }
+        }
+        return lines
+    }
+
     /// Calculate how many terminal lines a map with the given radius will produce
     func mapLineCount(visibilityRadius: Int, torchLit: Bool, compact: Bool = false, verticalRadius: Int? = nil) -> Int {
         let vRadius = verticalRadius ?? visibilityRadius
-        if !torchLit {
-            // Top border + header + separator + 3 rows + bottom border = 7, or 5 compact
-            return compact ? 5 : 7
-        }
         let headerLines = compact ? 1 : 3  // just top border (compact) vs top + MAP + separator
         let gridLines = (2 * vRadius + 1) + (2 * vRadius)  // room rows + corridor rows
         let hereLine = 1  // always reserved so the box size never depends on room content — see getMapDisplay
-        let legendLines = compact ? 1 : 4  // compact: just bottom border; full: separator + ~2 legend rows + bottom border
+        // compact: just bottom border; full: separator + fixed legend rows + bottom border
+        let legendLines = compact ? 1 : (1 + Self.mapLegendRowCount + 1)
         return headerLines + gridLines + hereLine + legendLines
     }
 
@@ -997,6 +1026,7 @@ class Dungeon: ObservableObject, Codable {
             }
             let hereLine = "| @ here: torch unlit".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|"
             lines.append(hereLine)
+            if !compact { lines.append(contentsOf: mapLegendLines(border: border)) }
             lines.append("+\(border)+")
             return lines
         }
@@ -1105,57 +1135,10 @@ class Dungeon: ObservableObject, Codable {
         let hereLine = "| \(hereText)".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|"
         lines.append(hereLine)
 
-        // Build key from symbols actually visible on the map
-        var visibleSymbols = Set<String>()
-        visibleSymbols.insert("@") // current room is always shown
-        for room in visibleRooms {
-            if room.id == currentRoomId {
-                // already added @
-            } else if !room.cleared && room.encounter != nil {
-                visibleSymbols.insert("!")
-            } else {
-                visibleSymbols.insert(room.roomType.symbol)
-            }
-            visibleSymbols.insert(room.roomType.symbol)
-            if room.merchant != nil { visibleSymbols.insert("M") }
-            if room.trainer != nil { visibleSymbols.insert("G") }
-        }
-
-        // Check if any secured or locked doors are visible
-        if visibleRooms.contains(where: { !$0.secured.isEmpty }) {
-            visibleSymbols.insert("X")
-        }
-        if visibleRooms.contains(where: { room in room.doorLockIds.keys.contains(where: { room.isLockedShut($0) }) }) {
-            visibleSymbols.insert("K")
-        }
-
-        let allKeyEntries: [(symbol: String, label: String)] = [
-            ("@", "You"), ("!", "Danger"), (".", "Empty"),
-            ("E", "Entry"), ("=", "Hall"), ("#", "Room"),
-            ("$", "Loot"), ("+", "Shrine"), ("L", "Library"),
-            ("B", "Boss"), ("A", "Armoury"), ("P", "Prison"),
-            ("S", "Shop"), ("M", "Merchant"), ("G", "Gym"), ("X", "Secured"), ("K", "Locked")
-        ]
-        let activeEntries = allKeyEntries.filter { visibleSymbols.contains($0.symbol) }
-
-        if !compact && !activeEntries.isEmpty {
-            lines.append("+\(border)+")
-            // Pack entries into rows, ~3 per line
-            var row = ""
-            for (i, entry) in activeEntries.enumerated() {
-                let item = "\(entry.symbol)=\(entry.label)"
-                if row.isEmpty {
-                    row = item
-                } else {
-                    row += "  \(item)"
-                }
-                if (i + 1) % 3 == 0 || i == activeEntries.count - 1 {
-                    let keyLine = "| \(row)".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|"
-                    lines.append(keyLine)
-                    row = ""
-                }
-            }
-        }
+        // Always the full fixed legend (see mapLegendLines) — not filtered to
+        // symbols currently visible — so the box height never depends on
+        // room content, matching the unlit branch exactly at the same radius.
+        if !compact { lines.append(contentsOf: mapLegendLines(border: border)) }
         lines.append("+\(border)+")
 
         return lines

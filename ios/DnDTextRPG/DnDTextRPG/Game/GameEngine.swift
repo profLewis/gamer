@@ -491,16 +491,29 @@ class GameEngine: ObservableObject {
             return (char, String(name.prefix(maxLen)))
         }
 
-        // Phase 3: ensure uniqueness — append class initial if needed
+        // Phase 3: ensure uniqueness — append class initial if needed, then
+        // fall back to a positional number as an absolute guarantee. Class
+        // initial alone can still collide (two same-named party members of
+        // the same class would both become e.g. "Bram (Fig)"), and relying
+        // solely on the source names already being distinct is fragile —
+        // whatever produced them (roster load, manual entry, auto-generate)
+        // might not guarantee that in every path. Using `i` (each
+        // character's own position) as the last resort makes this function
+        // unique by construction no matter what the inputs look like.
         let names = candidates.map { $0.1.lowercased() }
+        var usedLower = Set<String>()
         for (i, (char, name)) in candidates.enumerated() {
             let isDuplicate = names.enumerated().contains { $0.offset != i && $0.element == name.lowercased() }
+            var candidate = name
             if isDuplicate {
                 let classInitial = String(char.characterClass.rawValue.prefix(3))
-                result[char.id] = "\(name) (\(classInitial))"
-            } else {
-                result[char.id] = name
+                candidate = "\(name) (\(classInitial))"
             }
+            if usedLower.contains(candidate.lowercased()) {
+                candidate = "\(name) #\(i + 1)"
+            }
+            usedLower.insert(candidate.lowercased())
+            result[char.id] = candidate
         }
 
         return result
@@ -834,9 +847,17 @@ class GameEngine: ObservableObject {
             // superseded by something else; it's not this watchdog's place
             // to judge whatever's on screen now.
             guard self.clearTerminalGeneration == myGeneration else { return }
-            guard self.currentMenuOptions.isEmpty, self.menuHandler == nil,
+            // Judge purely on what's actually visible/tappable — currentMenuOptions
+            // and directionExits both empty means there is nothing on screen the
+            // player could press, full stop. Previously this also required
+            // menuHandler/closeHandler == nil, but a stale (non-nil) handler left
+            // over from an earlier screen is just as dead as no handler at all if
+            // there's no button wired to invoke it — that combination stood the
+            // watchdog down and left the control box permanently invisible instead
+            // of self-healing, since with zero buttons handleMenuChoice's own
+            // orphan-tap recovery never gets a tap to react to either.
+            guard self.currentMenuOptions.isEmpty, self.directionExits.isEmpty,
                   !self.awaitingTextInput, !self.awaitingContinue,
-                  self.closeHandler == nil,
                   self.gameState != .combat else { return }
             // Diagnostic: this watchdog's own full state at fire time, plus
             // what the breadcrumb was when THIS PARTICULAR watchdog was
@@ -11010,14 +11031,29 @@ class GameEngine: ObservableObject {
             }
             print("")
         }
+        // Only one human-controlled seat allowed in the whole party — once
+        // hasHuman is true (always true by here, since the first slot is
+        // forced human above), "Human Player" is not offered again. Without
+        // this, a later slot could pick Human too, and the only way to fix
+        // it was to go back and downgrade an earlier slot to Robot/Remote —
+        // this way the constraint is enforced up front, before Accept, by
+        // simply never presenting the invalid choice.
+        let gcAuth = GameCenterManager.shared.isAuthenticated && totalCharacters >= 2
+        if hasHuman {
+            let controlWords = gcAuth ? "Computer or Remote" : "Computer"
+            print("  (You already control \(party.first(where: { !$0.isComputerControlled })?.name ?? "a character") — this slot must be \(controlWords).)", color: .dimGreen)
+            print("")
+        }
         print("Who controls character \(creatingCharacterIndex + 1) of \(totalCharacters)?")
         print("")
 
-        let gcAuth = GameCenterManager.shared.isAuthenticated && totalCharacters >= 2
-        var opts = ["Human Player", "Computer (AI)"]
+        var opts: [String] = []
+        if !hasHuman { opts.append("Human Player") }
+        opts.append("Computer (AI)")
         if gcAuth { opts.append("Remote Player") }
+        let computerIndex = opts.firstIndex(of: "Computer (AI)")! + 1
 
-        showMenu(opts, defaultIndex: 1)
+        showMenu(opts, defaultIndex: computerIndex)
 
         closeHandler = { [weak self] in
             guard let self = self else { return }
@@ -11040,15 +11076,15 @@ class GameEngine: ObservableObject {
             }
         }
         menuHandler = { [weak self] choice in
-            guard let self = self else { return }
-            switch choice {
-            case 1:
+            guard let self = self, choice >= 1, choice <= opts.count else { return }
+            switch opts[choice - 1] {
+            case "Human Player":
                 self.creatingAsAI = false
                 self.startCharacterCreation()
-            case 2:
+            case "Computer (AI)":
                 self.creatingAsAI = true
                 self.autoCreateCharacter()
-            case 3 where gcAuth:
+            case "Remote Player":
                 self.inviteRemotePlayer()
             default: break
             }
@@ -11955,10 +11991,12 @@ class GameEngine: ObservableObject {
         print("  Skills: \(skillStr)", color: .green)
         print("")
 
+        // No separate rerollHandler here (which would also show a dice icon
+        // in the top bar) — "Reroll" is already an explicit menu button
+        // below, so a second icon doing the same thing was pure redundancy.
         showMenu(["Accept", "Reroll"])
         setBreadcrumb("autoCreateCharacter.afterShowMenu")
         closeHandler = { [weak self] in self?.startCharacterCreation() }
-        rerollHandler = { [weak self] in self?.autoCreateCharacter() }
         menuHandler = { [weak self] choice in
             switch choice {
             case 1: self?.finishCharacterCreation()
