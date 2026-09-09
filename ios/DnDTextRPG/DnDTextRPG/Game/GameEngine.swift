@@ -676,6 +676,26 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Runs a UI-state update immediately if already on the main thread
+    /// (true for every call site in this file — all triggered by SwiftUI
+    /// button taps), instead of unconditionally deferring via
+    /// DispatchQueue.main.async. THE ACTUAL ROOT CAUSE of the
+    /// "Accept -> blank screen" saga (finally proven via checkpoint
+    /// breadcrumbs inside autoCreateCharacter() itself): menuHandler/
+    /// closeHandler are set synchronously and were confirmed correct, but
+    /// currentMenuOptions — updated via .async, same as here — read back
+    /// as empty (opts:0) at the very moment the function finished, and
+    /// still empty a full 3+ seconds later. A .async block queued on a
+    /// congested/backed-up main queue can be delayed arbitrarily; a
+    /// synchronous update on the thread that's already main can't be.
+    private func runOnMain(_ block: @escaping () -> Void) {
+        if Thread.isMainThread {
+            block()
+        } else {
+            DispatchQueue.main.async(execute: block)
+        }
+    }
+
     func clearTerminal() {
         // Bumped once per call, captured by each watchdog below as
         // myGeneration. THE REAL BUG (found after extensive investigation
@@ -729,7 +749,7 @@ class GameEngine: ObservableObject {
         undoTargetButtonIndex = nil
         redoTargetButtonIndex = nil
         undoRedoFeedback = nil
-        DispatchQueue.main.async {
+        runOnMain {
             self.terminalLines.removeAll()
             // Same reasoning as menuHandler above: if a guard-return ever
             // happens between clearTerminal() and a screen's own showMenu
@@ -1340,7 +1360,7 @@ class GameEngine: ObservableObject {
 
     func showMenu(_ options: [String], defaultIndex: Int = 0) {
         menuLongPressHandler = nil
-        DispatchQueue.main.async {
+        runOnMain {
             self.directionExits = [:]
             self.securedExits = []
             self.dpadCenterLabel = nil
@@ -1363,7 +1383,7 @@ class GameEngine: ObservableObject {
 
     func showMenuOptions(_ options: [MenuOption]) {
         menuLongPressHandler = nil
-        DispatchQueue.main.async {
+        runOnMain {
             self.directionExits = [:]
             self.securedExits = []
             self.dpadCenterLabel = nil
@@ -1650,7 +1670,7 @@ class GameEngine: ObservableObject {
 
     func showMenuWithDirections(_ options: [MenuOption], exits: [Direction: Bool]) {
         menuLongPressHandler = nil
-        DispatchQueue.main.async {
+        runOnMain {
             self.directionExits = exits
             self.currentMenuOptions = options.map { opt in
                 if !opt.isCompactNav && (opt.text == "?" || opt.text == "?\u{0338}" || opt.text == "<<" || opt.text == ">>") {
@@ -1666,7 +1686,7 @@ class GameEngine: ObservableObject {
 
     func promptText(_ prompt: String) {
         print(prompt, color: .green)
-        DispatchQueue.main.async {
+        runOnMain {
             self.directionExits = [:]
             self.securedExits = []
             self.currentMenuOptions = []
@@ -1679,7 +1699,7 @@ class GameEngine: ObservableObject {
     /// Show both a text input prompt and menu buttons simultaneously
     func promptTextWithMenu(_ prompt: String, options: [String]) {
         print(prompt, color: .green)
-        DispatchQueue.main.async {
+        runOnMain {
             self.directionExits = [:]
             self.securedExits = []
             self.currentMenuOptions = options.enumerated().map { index, text in
@@ -1693,7 +1713,7 @@ class GameEngine: ObservableObject {
     }
 
     func waitForContinue() {
-        DispatchQueue.main.async {
+        runOnMain {
             self.directionExits = [:]
             self.securedExits = []
             self.currentMenuOptions = []
