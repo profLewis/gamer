@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Keyboard Shortcut Helpers (macOS only)
 
@@ -609,6 +610,19 @@ struct TerminalView: View {
             if let text = newVal {
                 inputText = text
                 gameEngine.prefillInputText = nil
+            }
+        }
+        .fileExporter(isPresented: $gameEngine.showLogExporter,
+                      document: LogFileDocument(text: gameEngine.pendingLogExportText),
+                      contentType: .plainText,
+                      defaultFilename: "adventure-log") { _ in }
+        .fileImporter(isPresented: $gameEngine.showLogImporter,
+                      allowedContentTypes: [.plainText]) { result in
+            guard case .success(let url) = result else { return }
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+            if let text = try? String(contentsOf: url, encoding: .utf8) {
+                gameEngine.importAdventureLog(from: text)
             }
         }
     }

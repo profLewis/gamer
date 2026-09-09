@@ -9,9 +9,32 @@ import SwiftUI
 import Combine
 import AVFoundation
 import GameKit
+import UniformTypeIdentifiers
 #if os(macOS)
 import AppKit
 #endif
+
+/// Plain-text document wrapper for exporting/importing the adventure log.
+struct LogFileDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.plainText] }
+    var text: String
+
+    init(text: String) {
+        self.text = text
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        guard let data = configuration.file.regularFileContents,
+              let string = String(data: data, encoding: .utf8) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        text = string
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Data(text.utf8))
+    }
+}
 
 class GameEngine: ObservableObject {
     // MARK: - Published Properties
@@ -166,6 +189,11 @@ class GameEngine: ObservableObject {
     // Time & history
     @Published var gameTimeMinutes: Int = 360  // Start at Day 1, 6:00 AM
     @Published var adventureLog: [String] = []
+
+    // Adventure log export/import (TerminalView attaches .fileExporter/.fileImporter to these)
+    @Published var showLogExporter: Bool = false
+    @Published var showLogImporter: Bool = false
+    var pendingLogExportText: String = ""
 
     // Run stats
     private var monstersSlain: Int = 0
@@ -17692,8 +17720,39 @@ class GameEngine: ObservableObject {
 
         print("")
 
+        showMenu(["Export Log", "Import Log"])
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1: self.prepareLogExport()
+            case 2: self.showLogImporter = true
+            default: break
+            }
+        }
         closeHandler = { [weak self] in
             self?.showPartyStatus()
+        }
+    }
+
+    /// Builds the exportable text and flips the flag TerminalView watches to
+    /// present the system export/save dialog.
+    func prepareLogExport() {
+        let header = "D&D Text RPG — Adventure Log\nExported: \(Date())\n\(adventureLog.count) events\n\n"
+        pendingLogExportText = header + adventureLog.joined(separator: "\n")
+        showLogExporter = true
+    }
+
+    /// Appends an externally-loaded log's lines onto the current session's
+    /// log (never replaces it — importing is additive, so you can't lose
+    /// the current run's history by mistake).
+    func importAdventureLog(from text: String) {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+        guard !lines.isEmpty else { return }
+        adventureLog.append("--- Imported log (\(lines.count) lines) ---")
+        adventureLog.append(contentsOf: lines)
+        logEvent("Imported an adventure log (\(lines.count) lines)", category: "SYSTEM")
+        if gameState == .exploring || dungeon != nil {
+            showAdventureLog()
         }
     }
 
