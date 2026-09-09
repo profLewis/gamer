@@ -388,7 +388,12 @@ class GameEngine: ObservableObject {
     /// The full sequence is what's needed to see WHERE things stopped
     /// updating relative to what should have happened next.
     private var breadcrumbHistory: [String] = []
-    private func setBreadcrumb(_ text: String) {
+    /// Not private: ShopEngine (and any other helper class) can record
+    /// breadcrumbs into the same trail recoverFromOrphanedScreen() prints,
+    /// so a reproducible "screen didn't load correctly" report from outside
+    /// GameEngine itself still self-diagnoses instead of needing a fresh
+    /// repro with ad-hoc logging bolted on afterward.
+    func setBreadcrumb(_ text: String) {
         let elapsed = Date().timeIntervalSince(charCreationFlowStart)
         lastCharCreationBreadcrumb = "[+\(String(format: "%.2f", elapsed))s] \(text)"
         breadcrumbHistory.append(lastCharCreationBreadcrumb)
@@ -2032,8 +2037,8 @@ class GameEngine: ObservableObject {
         silentCharCreationRecoveryCount = 0
 
         clearTerminal()
-        printTitle("Hmm...")
-        print("  That screen didn't load correctly.", color: .yellow)
+        printTitle("A Glitch in the Weave")
+        printWrapped("The scene wavers and refuses to settle — as if the Dungeon Master lost their place in the script. Let's pick up where we left off.", indent: 2, color: .yellow)
         // Temporary diagnostic — see breadcrumbHistory's comment. Shows the
         // full sequence of steps leading up to the screen going blank
         // (not just the last one, which by now is the watchdog's own entry)

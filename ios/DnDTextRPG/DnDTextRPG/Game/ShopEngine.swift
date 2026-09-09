@@ -45,6 +45,7 @@ class ShopEngine {
         self.character = character
         self.merchant = merchant
         self.stock = ItemCatalog.shopStock(forLevel: dungeonLevel)
+        game?.setBreadcrumb("ShopEngine.openShop(\(merchant.name),lvl:\(dungeonLevel),stock:\(stock.count))")
         game?.logEvent("Visited \(merchant.name) at \(merchant.shopName)", category: "SHOP")
         showShopMain(completion: completion)
     }
@@ -82,8 +83,10 @@ class ShopEngine {
 
     private func showBuyMenu(completion: @escaping () -> Void) {
         guard let game = game, let character = character else { return }
+        game.setBreadcrumb("ShopEngine.showBuyMenu(stock:\(stock.count))")
 
         game.clearTerminal()
+        game.setBreadcrumb("ShopEngine.showBuyMenu.afterClear")
         game.printTitle("Buy Items")
         printPurseAndCarryLine(character)
         game.print("")
@@ -103,6 +106,7 @@ class ShopEngine {
         game.print("")
 
         let stockItems = self.stock
+        game.setBreadcrumb("ShopEngine.showBuyMenu.beforeShowPaginated(opts:\(options.count))")
         game.showPaginatedMenuOptions(options, pinned: ["< Back"], handler: { [weak self] idx in
             guard let self = self, let game = self.game else { return }
 
