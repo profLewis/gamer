@@ -395,6 +395,10 @@ class GameEngine: ObservableObject {
     /// the D-pad's NW corner, mirroring the NPC icon's SE corner.
     @Published var dpadTorchLabel: String? = nil
     var dpadTorchHandler: (() -> Void)?
+    /// Search Room / Listen quick-access icons — top corners of the D-pad,
+    /// mirroring the torch/NPC icons on the bottom corners.
+    var dpadSearchHandler: (() -> Void)?
+    var dpadListenHandler: (() -> Void)?
 
     // Shop
     private lazy var shopEngine = ShopEngine(game: self)
@@ -1371,6 +1375,8 @@ class GameEngine: ObservableObject {
             self.dpadNPCHandler = nil
             self.dpadTorchLabel = nil
             self.dpadTorchHandler = nil
+            self.dpadSearchHandler = nil
+            self.dpadListenHandler = nil
             self.currentMenuOptions = options.enumerated().map { index, text in
                 let tint = Self.autoTint(text)
                 let compact = text == "?" || text == "?\u{0338}" || text == "<<" || text == ">>"
@@ -1394,6 +1400,8 @@ class GameEngine: ObservableObject {
             self.dpadNPCHandler = nil
             self.dpadTorchLabel = nil
             self.dpadTorchHandler = nil
+            self.dpadSearchHandler = nil
+            self.dpadListenHandler = nil
             self.currentMenuOptions = options.map { opt in
                 if !opt.isCompactNav && (opt.text == "?" || opt.text == "?\u{0338}" || opt.text == "<<" || opt.text == ">>") {
                     return MenuOption(opt.text, isDefault: opt.isDefault, isDisabled: opt.isDisabled, isAlert: opt.isAlert, tint: opt.tint, compact: true)
@@ -13399,6 +13407,11 @@ class GameEngine: ObservableObject {
                 self.dpadTorchHandler = nil
             }
         }
+
+        // Search Room / Listen — shown on the D-pad (NW/NE corners) as
+        // quick-access icons; always available during exploration.
+        dpadSearchHandler = { [weak self] in self?.searchRoom() }
+        dpadListenHandler = { [weak self] in self?.listenAtDoors() }
 
         // --- Middle row: Inventory + Party Status ---
         menuOpts.append(MenuOption("Inventory"))

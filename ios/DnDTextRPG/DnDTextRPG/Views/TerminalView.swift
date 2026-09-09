@@ -260,7 +260,9 @@ struct TerminalView: View {
                                     npcLabel: gameEngine.dpadNPCLabel,
                                     onNPCTap: gameEngine.dpadNPCHandler,
                                     torchLabel: gameEngine.dpadTorchLabel,
-                                    onTorchTap: gameEngine.dpadTorchHandler
+                                    onTorchTap: gameEngine.dpadTorchHandler,
+                                    onSearchTap: gameEngine.dpadSearchHandler,
+                                    onListenTap: gameEngine.dpadListenHandler
                                 )
                             }
 
@@ -1286,6 +1288,8 @@ struct DirectionPadView: View {
     var onNPCTap: (() -> Void)? = nil
     var torchLabel: String? = nil
     var onTorchTap: (() -> Void)? = nil
+    var onSearchTap: (() -> Void)? = nil
+    var onListenTap: (() -> Void)? = nil
 
     let terminalGreen = Color(red: 0.0, green: 0.9, blue: 0.3)
     let terminalDarkGreen = Color(red: 0.0, green: 0.4, blue: 0.15)
@@ -1296,34 +1300,42 @@ struct DirectionPadView: View {
 
     private let npcCyan = Color(red: 0.2, green: 0.7, blue: 0.9)
     private let torchBlue = Color(red: 0.3, green: 0.55, blue: 0.95)
+    private let searchAmber = Color(red: 0.8, green: 0.6, blue: 0.2)
+    private let listenAmber = Color(red: 0.8, green: 0.6, blue: 0.2)
+
+    @ViewBuilder
+    private func cornerIconButton(systemName: String, color: Color, action: (() -> Void)?) -> some View {
+        if let action = action {
+            Button(action: action) {
+                Image(systemName: systemName)
+                    .font(.system(size: 16 * scale))
+                    .foregroundColor(color)
+                    .frame(width: max(80, 80 * scale), height: max(44, 34 * scale))
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(color.opacity(0.6), lineWidth: 1)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(color.opacity(0.15))
+                            )
+                    )
+            }
+            .buttonStyle(.plain)
+        } else {
+            Color.clear.frame(width: max(80, 80 * scale), height: max(44, 34 * scale))
+        }
+    }
 
     var body: some View {
         VStack(spacing: 4) {
-            // Torch toggle (NW corner) — mirrors the NPC icon's SE corner
+            // Search Room (NW) + North + Listen (NE) — mirrors the bottom
+            // row's [Torch | South | NPC] so the whole pad reads as three
+            // symmetric rows.
             HStack(spacing: 4) {
-                if let label = torchLabel, let action = onTorchTap {
-                    Button(action: action) {
-                        Image(systemName: label == "Douse" ? "flame.fill" : "flame")
-                            .font(.system(size: 16 * scale))
-                            .foregroundColor(torchBlue)
-                            .frame(width: max(80, 80 * scale), height: max(44, 34 * scale))
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(torchBlue.opacity(0.6), lineWidth: 1)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(torchBlue.opacity(0.15))
-                                    )
-                            )
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    Color.clear.frame(width: max(80, 80 * scale), height: 1)
-                }
-                Spacer(minLength: 0)
+                cornerIconButton(systemName: "sparkle.magnifyingglass", color: searchAmber, action: onSearchTap)
+                dirButton(.north)
+                cornerIconButton(systemName: "ear", color: listenAmber, action: onListenTap)
             }
-            // North
-            dirButton(.north)
             // West + Center + East
             HStack(spacing: 4) {
                 dirButton(.west)
@@ -1353,30 +1365,11 @@ struct DirectionPadView: View {
                 }
                 dirButton(.east)
             }
-            // South + NPC button (SE corner)
+            // Torch (SW) + South + NPC (SE)
             HStack(spacing: 4) {
-                // Spacer to align South under Center (West-width gap on left)
-                Color.clear.frame(width: max(80, 80 * scale), height: 1)
+                cornerIconButton(systemName: torchLabel == "Douse" ? "flame.fill" : "flame", color: torchBlue, action: onTorchTap)
                 dirButton(.south)
-                if let _ = npcLabel, let action = onNPCTap {
-                    Button(action: action) {
-                        Image(systemName: "scroll")
-                            .font(.system(size: 16 * scale))
-                            .foregroundColor(npcCyan)
-                            .frame(width: max(80, 80 * scale), height: max(44, 34 * scale))
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(npcCyan.opacity(0.6), lineWidth: 1)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(npcCyan.opacity(0.15))
-                                    )
-                            )
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    Color.clear.frame(width: max(80, 80 * scale), height: 1)
-                }
+                cornerIconButton(systemName: "scroll", color: npcCyan, action: (npcLabel != nil) ? onNPCTap : nil)
             }
         }
     }
