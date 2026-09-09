@@ -340,6 +340,11 @@ class GameEngine: ObservableObject {
     /// self-diagnoses which function it happened in, instead of needing a
     /// fresh repro every time. Temporary instrumentation, not a fix in
     /// itself — see recoverFromOrphanedScreen().
+    /// Bumped by every clearTerminal() call — lets each armed watchdog tell
+    /// whether it's still watching the most recent screen transition, or
+    /// whether something newer has happened since (in which case it's not
+    /// its job to judge whatever screen is up now). See clearTerminal().
+    private var clearTerminalGeneration: Int = 0
     private var lastCharCreationBreadcrumb: String = "none"
     /// Wall-clock start of the current character-creation flow — reset each
     /// time startCharacterCreation() begins a fresh New Adventure (idx:0).
@@ -668,6 +673,24 @@ class GameEngine: ObservableObject {
     }
 
     func clearTerminal() {
+        // Bumped once per call, captured by each watchdog below as
+        // myGeneration. THE REAL BUG (found after extensive investigation
+        // into the "Accept -> blank screen" reports): a watchdog only ever
+        // checked "is the menu empty right now" — with no way to tell "the
+        // specific screen I was watching never recovered" apart from "some
+        // completely different, much LATER screen just happens to be
+        // mid-transition (its own clearTerminal() ran a moment ago, about
+        // to set up its own valid menu) at the exact instant I woke up to
+        // check." An old watchdog from an earlier, already-abandoned screen
+        // (e.g. a much earlier menu tap, long superseded by many legitimate
+        // screen transitions since) could fire during a completely
+        // unrelated, perfectly fine later screen and wrongly kill it —
+        // exactly what the breadcrumb history showed once armedAt was
+        // captured: watchdogs firing minutes after screens that had nothing
+        // to do with what was currently on screen. Comparing generations
+        // makes a watchdog stand down the instant anything newer has
+        // started, instead of judging a screen it was never watching.
+        clearTerminalGeneration += 1
         stopIdleAnimations()
         stopMenuAnimation()
         SpeechEngine.shared.stop()
@@ -725,21 +748,21 @@ class GameEngine: ObservableObject {
         // — its animation/timer sequencing legitimately spans longer gaps
         // with no menu on screen.
         //
-        // 8s (was 2s): diagnostic builds this session traced a reproducible
-        // case (New Adventure -> load a Hall of Fame character -> Accept)
-        // where menuHandler/closeHandler are synchronously set right after
-        // showMenu() with no guard-return in between (verified repeatedly),
-        // yet the watchdog still found them nil ~2-5s later with no further
-        // app-level breadcrumb in between — i.e. something outside this
-        // codebase's own screen-transition code was intervening, most
-        // recently narrowed to (and partially fixed for) GameKit's
-        // didReceiveTurn firing independent of gameState. 2s was too tight
-        // a margin for that class of external interruption; 8s gives it
-        // much more room without meaningfully delaying recovery from an
-        // actual dead end.
+        // 3s: back down from an 8s stopgap tried earlier this session. That
+        // widening didn't fix reported false triggers because duration was
+        // never the actual problem — see clearTerminalGeneration's comment
+        // for the real bug (a stale watchdog from a long-superseded screen
+        // firing during an unrelated later one). With that fixed, a shorter
+        // timeout is safe again and recovers a genuine dead end faster.
         let armedBreadcrumb = lastCharCreationBreadcrumb
-        DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { [weak self] in
+        let myGeneration = clearTerminalGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
             guard let self = self else { return }
+            // Stand down if any newer clearTerminal() has happened since —
+            // the screen this watchdog was armed for has already been
+            // superseded by something else; it's not this watchdog's place
+            // to judge whatever's on screen now.
+            guard self.clearTerminalGeneration == myGeneration else { return }
             guard self.currentMenuOptions.isEmpty, self.menuHandler == nil,
                   !self.awaitingTextInput, !self.awaitingContinue,
                   self.closeHandler == nil,
