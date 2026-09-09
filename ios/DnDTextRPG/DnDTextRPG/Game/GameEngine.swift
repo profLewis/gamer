@@ -124,6 +124,17 @@ class GameEngine: ObservableObject {
     /// Idle animation prompts (eye blinks, combat hesitation, save menu nags)
     @Published var idlePromptsEnabled: Bool = UserDefaults.standard.bool(forKey: "idlePromptsEnabled")
 
+    /// Blinking terminal cursor next to the "> " prompt when waiting for the
+    /// player (menu/D-pad on screen, or a text/continue prompt). On by default.
+    @Published var blinkingCursorEnabled: Bool = UserDefaults.standard.object(forKey: "blinkingCursorEnabled") == nil ? true : UserDefaults.standard.bool(forKey: "blinkingCursorEnabled")
+
+    /// True whenever there's something on screen for the player to act on
+    /// right now — used to gate the blinking cursor so it doesn't blink
+    /// through animations/transitions where nothing is actually waiting.
+    var isWaitingForInput: Bool {
+        !currentMenuOptions.isEmpty || !directionExits.isEmpty || awaitingTextInput || awaitingContinue
+    }
+
     /// When set, shows a dice icon next to the return button in text input for re-rolling suggestions
     var rerollHandler: (() -> Void)?
 
@@ -1327,6 +1338,8 @@ class GameEngine: ObservableObject {
         case "idlePromptsEnabled":
             idlePromptsEnabled = UserDefaults.standard.bool(forKey: key)
             if !idlePromptsEnabled { stopIdleAnimations(); cancelCombatIdleTimer(); cancelSaveMenuIdleTimer() }
+        case "blinkingCursorEnabled":
+            blinkingCursorEnabled = UserDefaults.standard.bool(forKey: key)
         case "fontSizeSetting":
             fontScale = fontSizeSetting.scale
         case "undoRedoEnabled":
@@ -1357,6 +1370,7 @@ class GameEngine: ObservableObject {
         case "undoRedoEnabled": return undoRedoEnabled ? "On" : "Off"
         case "useCustomKeyboard": return useCustomKeyboard ? "Custom" : "System"
         case "idlePromptsEnabled": return idlePromptsEnabled ? "On" : "Off"
+        case "blinkingCursorEnabled": return blinkingCursorEnabled ? "On" : "Off"
         case "map_radius": return "\(mapRadius)"
         case "maxButtonsPerScreen": return "\(maxButtonsPerScreen)"
         case "autosave_interval": return autosaveInterval.displayName
@@ -2631,10 +2645,21 @@ class GameEngine: ObservableObject {
                 || (hasDigit && (lower.contains(" hp") || lower.hasSuffix("hp") || lower.contains("hp:") || lower.contains("hp)")))
                 || (hasDigit && lower.contains("vs ac"))
                 || (hasDigit && lower.contains("d20 ->"))
+            // Inventory bag rows ("[W] Longsword — 3.0lb, 15gp") and short
+            // labelled stat lines ("Gold: 120", "Carry Weight: 45 / 150 lb")
+            // are exactly the kind of digit-heavy content the letter-ratio
+            // check below exists to drop — a short item name or a bigger
+            // gold value tips the ratio under 50% easily, silently dropping
+            // some bag items/stats but not others depending on their exact
+            // length. Recognized structurally so the whole inventory reads
+            // out consistently rather than partially.
+            let isInventoryBagRow = ["[W]", "[A]", "[S]", "[P]", "[?]", "[$]", "[.]"].contains(where: { trimmed.hasPrefix($0) })
+            let isLabelledStat = trimmed.range(of: "^[A-Za-z][A-Za-z ]{0,24}:\\s*\\S", options: .regularExpression) != nil
+            let isForcedReadable = isCombatEssential || isInventoryBagRow || isLabelledStat
 
             // Only read narrative/informative colours
             // Skip: dimGreen (nav hints), gray (decorative), red (damage numbers)
-            if !hasQuote && !isCombatEssential {
+            if !hasQuote && !isForcedReadable {
                 switch line.color {
                 case .yellow, .white, .green, .brightGreen, .cyan, .orange, .magenta:
                     break  // these can contain readable content
@@ -2659,7 +2684,7 @@ class GameEngine: ObservableObject {
                 return nil
             }
 
-            if !isCombatEssential {
+            if !isForcedReadable {
                 // Skip lines with no readable text
                 let letterCount = trimmed.filter { $0.isLetter }.count
                 if letterCount == 0 { return nil }
@@ -6377,6 +6402,11 @@ class GameEngine: ObservableObject {
         printWrapped("When on, the DM reacts if you take too long — eye blinks on ASCII art, combat hesitation penalties, and save menu nudges.", indent: 2, color: .dimGreen)
         print("")
 
+        print("BLINKING CURSOR:", color: .cyan, bold: true)
+        print("  \(blinkingCursorEnabled ? "On" : "Off")", color: blinkingCursorEnabled ? .brightGreen : .red)
+        printWrapped("Blinks the cursor next to the > prompt while waiting for you to act.", indent: 2, color: .dimGreen)
+        print("")
+
         print("UNDO/REDO:", color: .cyan, bold: true)
         print("  \(undoRedoEnabled ? "On" : "Off")", color: undoRedoEnabled ? .brightGreen : .red)
         printWrapped("Show labelled Undo/Redo buttons when you change settings or edit characters. The label shows what will be reverted.", indent: 2, color: .dimGreen)
@@ -6392,6 +6422,7 @@ class GameEngine: ObservableObject {
             multiplayerEnabled ? "Multi Off" : "Multi On", "Time Limit",
             idlePromptsEnabled ? "Idle Off" : "Idle On",
             multipleShopsEnabled ? "Multi-Shop Off" : "Multi-Shop On",
+            blinkingCursorEnabled ? "Cursor Off" : "Cursor On",
             // Page 3 — System
             "Log Limit",
         ]
@@ -6440,6 +6471,11 @@ class GameEngine: ObservableObject {
                     self.cancelCombatIdleTimer()
                     self.cancelSaveMenuIdleTimer()
                 }
+                self.showGameplaySettings(page: currentPage)
+            } else if selected.hasPrefix("Cursor") {
+                self.recordSettingChange(screen: "s:gameplay", key: "blinkingCursorEnabled", name: "Cursor")
+                self.blinkingCursorEnabled.toggle()
+                UserDefaults.standard.set(self.blinkingCursorEnabled, forKey: "blinkingCursorEnabled")
                 self.showGameplaySettings(page: currentPage)
             } else if selected.hasPrefix("Multi-Shop") {
                 self.recordSettingChange(screen: "s:gameplay", key: "multiple_shops_enabled", name: "Multi-Shop")
@@ -7475,6 +7511,7 @@ class GameEngine: ObservableObject {
         add("useCustomKeyboard", "Keyboard", current: useCustomKeyboard ? "Custom" : "System", dflt: "Custom")
         #endif
         add("idlePromptsEnabled", "Idle Prompts", current: idlePromptsEnabled ? "On" : "Off", dflt: "Off")
+        add("blinkingCursorEnabled", "Blinking Cursor", current: blinkingCursorEnabled ? "On" : "Off", dflt: "On")
 
         add("autosave_interval", "Autosave", current: autosaveInterval.displayName, dflt: AutosaveInterval.everyRoom.displayName)
 
@@ -7605,6 +7642,7 @@ class GameEngine: ObservableObject {
         if keys.contains("iconScaleSetting") { iconScaleSetting = 0 }
         if keys.contains("useCustomKeyboard") { useCustomKeyboard = true }
         if keys.contains("idlePromptsEnabled") { idlePromptsEnabled = false }
+        if keys.contains("blinkingCursorEnabled") { blinkingCursorEnabled = true }
         if keys.contains("fontSizeSetting") { fontScale = FontSizeSetting.defaultSetting.scale }
         if keys.contains("undoRedoEnabled") && !undoRedoEnabled { clearAllUndoRedo() }
 
@@ -7660,6 +7698,7 @@ class GameEngine: ObservableObject {
         iconScaleSetting = 0
         useCustomKeyboard = true
         idlePromptsEnabled = false
+        blinkingCursorEnabled = true
         fontScale = FontSizeSetting.defaultSetting.scale
         justDMMode = false
         DMEngine.shared.justDMMode = false
@@ -25145,9 +25184,14 @@ class GameEngine: ObservableObject {
         printWrapped("Save & Return saves your game first so you can continue later.", indent: 2, color: .dimGreen)
         print("")
 
+        // "Quit" here previously read as ambiguous with actually exiting the
+        // app (that's the separate performQuit()/exit(0) flow, reachable
+        // from the main menu) — this one only returns to the main menu,
+        // discarding unsaved progress. Spelled out so it can't be confused
+        // for the real quit-the-app action.
         var menuOpts = [
             MenuOption("Save & Return"),
-            MenuOption("Quit", tint: .danger),
+            MenuOption("Quit Without Saving", tint: .danger),
             MenuOption("Cancel", tint: .navigation),
         ]
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -25160,7 +25204,7 @@ class GameEngine: ObservableObject {
             case "Save & Return":
                 self.performQuickSave()
                 self.resetGame()
-            case "Quit":
+            case "Quit Without Saving":
                 self.resetGame()
             case "Cancel":
                 self.showExplorationView()
@@ -25180,8 +25224,8 @@ class GameEngine: ObservableObject {
             self.printWrapped("Saves your game to the current slot, then returns to the main menu. You can continue this adventure later from the main menu.", indent: 2, color: .dimGreen)
             self.print("")
 
-            self.print("  QUIT", color: .cyan, bold: true)
-            self.printWrapped("Returns to the main menu without saving. Any unsaved progress since your last save will be lost.", indent: 2, color: .dimGreen)
+            self.print("  QUIT WITHOUT SAVING", color: .cyan, bold: true)
+            self.printWrapped("Returns to the main menu without saving. Any unsaved progress since your last save will be lost. This does not close the app — for that, use Quit from the main menu.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  CANCEL", color: .cyan, bold: true)

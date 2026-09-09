@@ -325,6 +325,19 @@ struct TerminalView: View {
                                 .font(.system(size: 14 * scale, design: .monospaced))
                                 .foregroundColor(gameEngine.chatInputMode ? Color.orange : terminalGreen)
 
+                            // Blinking cursor block — only while genuinely waiting on the
+                            // player (menu/D-pad/text/continue prompt on screen) and the
+                            // field is empty, so it doesn't sit next to typed text.
+                            if gameEngine.blinkingCursorEnabled && inputText.isEmpty && gameEngine.isWaitingForInput {
+                                TimelineView(.periodic(from: .now, by: 0.53)) { context in
+                                    let visible = Int(context.date.timeIntervalSinceReferenceDate / 0.53) % 2 == 0
+                                    Text("█")
+                                        .font(.system(size: 14 * scale, design: .monospaced))
+                                        .foregroundColor(gameEngine.chatInputMode ? Color.orange : terminalGreen)
+                                        .opacity(visible ? 1 : 0)
+                                }
+                            }
+
                             // Text field
                             TextField("", text: $inputText)
                                 .font(.system(size: 14 * scale, design: .monospaced))
