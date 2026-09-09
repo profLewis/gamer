@@ -27985,6 +27985,23 @@ extension GameEngine: TurnBasedMatchDelegate {
             return
         }
 
+        // GameKit calls this directly — e.g. right after
+        // GKLocalPlayer.local.register(self) during authentication, for any
+        // match already needing attention — with no relation to what the
+        // player is doing right now. Interrupting mid-way through building a
+        // brand new local party (this isn't the local-to-multiplayer
+        // conversion or invite-accept case; those are handled below, tied to
+        // state the player set up themselves) would otherwise unconditionally
+        // clearTerminal() the character-creation screen out from under
+        // whatever the player was doing. Cache it and surface it once
+        // they're back at a safe point instead — same pattern
+        // checkForPendingInvites() already uses for the polling path.
+        if !isMultiplayer, (gameState == .characterCreation || gameState == .partySetup),
+           pendingRemoteSlots.isEmpty, pendingRemoteCharacterId == nil, !didBecomeActive {
+            pendingInviteMatch = match
+            return
+        }
+
         stopMatchPolling()
 
         // Play D&D horn call to alert the player
