@@ -9859,13 +9859,13 @@ class GameEngine: ObservableObject {
         print("How many adventurers in your party?", color: .brightGreen)
         print("")
         print("  Long-press: auto-create party", color: .dimGreen)
-        print("  (you play one, the rest are robots)", color: .dimGreen)
+        print("  (all AI teammates)", color: .dimGreen)
         if multiplayerEnabled {
             print("")
-            print("  Multiplayer: after creating your", color: .cyan)
-            print("  party, swap any robot slot to Remote", color: .cyan)
-            print("  in Party Review, or later via", color: .cyan)
-            print("  Party Status during the game.", color: .cyan)
+            print("  Multiplayer: choose Remote Player", color: .cyan)
+            print("  right when creating each teammate,", color: .cyan)
+            print("  or swap Robot<->Remote afterward in", color: .cyan)
+            print("  Party Review or Party Status.", color: .cyan)
         }
         print("")
 
