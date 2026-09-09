@@ -1846,56 +1846,75 @@ class GameEngine: ObservableObject {
     /// Where to return after auto-timeout (nil = exploration view)
     private var autoReturnDestination: (() -> Void)?
 
+    /// One-shot signal fired when speaker mode has genuinely finished
+    /// reading the current autoReturn() screen aloud — set by
+    /// startReadingScreen() itself, either straight from SpeechEngine's
+    /// AVSpeechSynthesizerDelegate "didFinish" callback (see onFinish) when
+    /// there was something to say, or immediately when there was nothing
+    /// new to read. A real completion signal rather than a guessed delay,
+    /// so a longer search/listen result is never cut off mid-sentence.
+    private var speechReadCompleteHandler: (() -> Void)?
+
     func autoReturn(after seconds: Double? = nil) {
         let seconds = seconds ?? infoTimeout
         let destination = autoReturnDestination ?? { [weak self] in self?.showExplorationView() }
         autoReturnDestination = nil
         closeHandler = destination
+        speechReadCompleteHandler = nil
+
+        // Fires destination() exactly once, however it ends up triggered
+        // (manual tap, the real speech-finished signal, or the fallback
+        // timer below) — clearing closeHandler/speechReadCompleteHandler
+        // first so whichever path runs first wins and the rest are no-ops.
+        let fire: () -> Void = { [weak self] in
+            guard let self = self, self.closeHandler != nil else { return }
+            self.closeHandler = nil
+            self.speechReadCompleteHandler = nil
+            destination()
+        }
+
+        // If nothing is currently visible or tappable (no D-pad, no menu
+        // buttons — e.g. a dark/blind search run from a screen that never
+        // had a D-pad to begin with), the player would otherwise be looking
+        // at a totally empty control area with no way to tell it isn't
+        // stuck. Turn on the same tap-to-continue affordance
+        // waitForContinue() uses so there's always something visible and
+        // immediately actionable.
+        if currentMenuOptions.isEmpty && directionExits.isEmpty {
+            awaitingContinue = true
+            inputHandler = { _ in fire() }
+        }
+
+        // Registered BEFORE autoReadIfSpeakerMode() — its 0.3s startup
+        // delay means speech can start and, for short text, even finish
+        // well within that window, so the handler must already be in place.
+        if speakerModeOn {
+            speechReadCompleteHandler = fire
+        }
         // showMenu()/waitForContinue() etc. all trigger speaker mode's
         // auto-read of the screen's text, but this brief "print a result,
         // then return" pattern (search, listen, dark search, and similar
         // flavour-text screens) never went through either — the DM voice
         // simply stayed silent for all of them in speaker mode.
         autoReadIfSpeakerMode()
-        // If nothing is currently visible or tappable (no D-pad, no menu
-        // buttons — e.g. a dark/blind search run from a screen that never
-        // had a D-pad to begin with), the player would otherwise be looking
-        // at a totally empty control area with no way to tell it isn't
-        // stuck, for the whole delay until this timer fires. Turn on the
-        // same tap-to-continue affordance waitForContinue() uses so there's
-        // always something visible and immediately actionable — closeHandler
-        // is cleared on tap so the timer's own fire later becomes a no-op
-        // instead of calling destination() a second time.
-        if currentMenuOptions.isEmpty && directionExits.isEmpty {
-            awaitingContinue = true
-            inputHandler = { [weak self] _ in
-                self?.closeHandler = nil
-                destination()
-            }
-        }
-        scheduleAutoReturnFire(after: seconds, destination: destination)
+
+        scheduleAutoReturnFallback(after: seconds, fire: fire)
     }
 
-    /// Fires `destination` after `seconds`, unless speaker mode is still
-    /// reading this screen aloud (either mid-speech, or about to start —
-    /// autoReadIfSpeakerMode() above has a short startup delay before
-    /// speech actually begins) — in which case it reschedules itself as a
-    /// short poll instead, using the existing isSpeakingAloud/
-    /// speakerHasReadCurrentPage signals (see startSpeakingCheck()) rather
-    /// than guessing a fixed delay long enough for arbitrary-length text.
-    /// Without this, a longer search/listen result could get cut off
-    /// mid-sentence by infoTimeout on a screen with nothing else to keep it
-    /// open.
-    private func scheduleAutoReturnFire(after seconds: Double, destination: @escaping () -> Void) {
+    /// Fallback timer for autoReturn() — the only path when speaker mode is
+    /// off, and a safety net (rescheduling itself as a short poll) in the
+    /// unlikely case the real speechReadCompleteHandler signal is ever
+    /// missed (e.g. an audio session error swallows the delegate callback).
+    private func scheduleAutoReturnFallback(after seconds: Double, fire: @escaping () -> Void) {
         Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
             DispatchQueue.main.async {
-                guard let self = self, self.closeHandler != nil else { return }
+                guard let self = self else { return }
                 let stillSpeaking = self.speakerModeOn && (self.isSpeakingAloud || !self.speakerHasReadCurrentPage)
                 if stillSpeaking {
-                    self.scheduleAutoReturnFire(after: 0.5, destination: destination)
+                    self.scheduleAutoReturnFallback(after: 0.5, fire: fire)
                     return
                 }
-                destination()
+                fire()
             }
         }
     }
@@ -2513,6 +2532,7 @@ class GameEngine: ObservableObject {
         }
         guard !newLines.isEmpty else {
             speakerHasReadCurrentPage = true
+            fireSpeechReadComplete()
             return
         }
         // Add new lines to the memory buffer (circular, max 10)
@@ -2524,9 +2544,20 @@ class GameEngine: ObservableObject {
         }
         let text = newLines.joined(separator: ". ")
         speakerHasReadCurrentPage = true
+        // Real completion signal for autoReturn() (see speechReadCompleteHandler)
+        // — fires on SpeechEngine's actual AVSpeechSynthesizerDelegate
+        // "didFinish" callback, not a guessed delay.
+        speech.onFinish = { [weak self] in self?.fireSpeechReadComplete() }
         speech.speakAloud(text)
         isSpeakingAloud = true
         startSpeakingCheck()
+    }
+
+    private func fireSpeechReadComplete() {
+        if let handler = speechReadCompleteHandler {
+            speechReadCompleteHandler = nil
+            handler()
+        }
     }
 
     private func startSpeakingCheck() {
@@ -2556,6 +2587,19 @@ class GameEngine: ObservableObject {
         let artStr = "/\\|_+=#~<>^{}()[].:;*`\"─╔╗╠╣╚╝║✦✧★☆✓·▸☠☢█░▓▄▀▌▐▲▼◆◇●○■□▪▫◈◊♦♠♣♥⚔⚗⚡⚰⛊⛏☽☾⊕⊘⊗┌┐└┘├┤┬┴┼━┃╭╮╯╰"
         // HP/score pattern: digits/digits like "12/20"
         let hpPattern = try? NSRegularExpression(pattern: "\\d+/\\d+")
+        // Combat/mechanics essentials — who's fighting, what roll, hit or
+        // miss, damage dealt, resulting HP. These are printed in colours
+        // (dimGreen, red) and digit-heavy formats ("d20 -> [15] +3 = 18 vs
+        // AC 14") that the general narrative filters below exist
+        // specifically to treat as decorative "stat noise" and drop — which
+        // meant speaker mode silently skipped most of a combat turn (who
+        // attacked whom, whether it hit, and the actual damage/HP) even
+        // though "Damage:"/"HP" abbreviation-expansion further down was
+        // clearly written assuming such lines WOULD reach it. Recognized by
+        // keyword/pattern and let straight through, bypassing the colour
+        // and letter-ratio checks (not the ASCII-art/table checks below,
+        // which these lines pass naturally anyway).
+        let combatKeywords = ["damage!", "critical", " attacks ", "defeated!", "unconscious!", "poisoned!"]
         let lines = terminalLines.compactMap { line -> String? in
             let trimmed = line.text.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { return nil }
@@ -2563,9 +2607,17 @@ class GameEngine: ObservableObject {
             // Lines containing quoted speech are always readable
             let hasQuote = trimmed.contains("\"") || trimmed.contains("\u{201C}") || trimmed.contains("\u{201D}")
 
+            let lower = trimmed.lowercased()
+            let hasDigit = trimmed.contains(where: { $0.isNumber })
+            let isCombatEssential = combatKeywords.contains(where: { lower.contains($0) })
+                || lower == "hit!" || lower == "miss." || lower.hasPrefix("miss ")
+                || (hasDigit && (lower.contains(" hp") || lower.hasSuffix("hp") || lower.contains("hp:") || lower.contains("hp)")))
+                || (hasDigit && lower.contains("vs ac"))
+                || (hasDigit && lower.contains("d20 ->"))
+
             // Only read narrative/informative colours
             // Skip: dimGreen (nav hints), gray (decorative), red (damage numbers)
-            if !hasQuote {
+            if !hasQuote && !isCombatEssential {
                 switch line.color {
                 case .yellow, .white, .green, .brightGreen, .cyan, .orange, .magenta:
                     break  // these can contain readable content
@@ -2590,20 +2642,22 @@ class GameEngine: ObservableObject {
                 return nil
             }
 
-            // Skip lines with no readable text
-            let letterCount = trimmed.filter { $0.isLetter }.count
-            if letterCount == 0 { return nil }
-            // Lines need at least 50% letters to be narrative (filters stat lines)
-            if trimmed.count > 5 && Double(letterCount) / Double(trimmed.count) < 0.5 {
-                return nil
-            }
+            if !isCombatEssential {
+                // Skip lines with no readable text
+                let letterCount = trimmed.filter { $0.isLetter }.count
+                if letterCount == 0 { return nil }
+                // Lines need at least 50% letters to be narrative (filters stat lines)
+                if trimmed.count > 5 && Double(letterCount) / Double(trimmed.count) < 0.5 {
+                    return nil
+                }
 
-            // Skip table/stat lines containing HP-style "X/Y" patterns with padded spacing
-            if let regex = hpPattern {
-                let range = NSRange(trimmed.startIndex..., in: trimmed)
-                if regex.firstMatch(in: trimmed, range: range) != nil {
-                    // Only skip if it looks like a status line (has padding/alignment)
-                    if trimmed.contains("  ") { return nil }
+                // Skip table/stat lines containing HP-style "X/Y" patterns with padded spacing
+                if let regex = hpPattern {
+                    let range = NSRange(trimmed.startIndex..., in: trimmed)
+                    if regex.firstMatch(in: trimmed, range: range) != nil {
+                        // Only skip if it looks like a status line (has padding/alignment)
+                        if trimmed.contains("  ") { return nil }
+                    }
                 }
             }
 
