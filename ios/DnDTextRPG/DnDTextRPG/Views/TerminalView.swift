@@ -1090,7 +1090,10 @@ struct MenuButtonsView: View {
         }()
 
         let slots = [slot0, slot1, slot2]
-        let compactFontSize: CGFloat = 15 * scale
+        // Matches regularButton's font exactly (13pt, semibold only for
+        // default/alert) so compact nav cells (<</>>/?/pinned "< Back" etc.)
+        // never look like a different font from the rest of the buttons.
+        let compactFontSize: CGFloat = 13 * scale
 
         HStack(spacing: 0) {
             ForEach(0..<3, id: \.self) { slotIdx in
@@ -1115,7 +1118,7 @@ struct MenuButtonsView: View {
                         Button(action: { onSelect(index + 1) }) {
                             Text(option.text)
                                 .font(.system(size: compactFontSize, design: .monospaced))
-                                .fontWeight(.semibold)
+                                .fontWeight(option.isDefault || option.isAlert ? .semibold : .regular)
                                 .foregroundColor(terminalDimGreen)
                                 .frame(maxWidth: .infinity, minHeight: buttonMinHeight)
                         }

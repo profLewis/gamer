@@ -104,7 +104,7 @@ Features:
 ### Hall of Fame
 - Scoring: victories, gold, monsters slain, exploration, difficulty multiplier
 - Pre-seeded with Stranger Things-themed entries
-- Reached via **Continue Adventure** in the Play menu; a "Load Game" button there opens actual save-game management (resume, rename, delete)
+- Reached via **Continue Adventure** in the Play menu; each entry is a numbered button (tap to read its tale, matching how the Character Hall of Fame lists its heroes), and a "Manage Saves" button opens actual save-game management (resume, rename, delete) — including adventures still in progress, which never earn a Hall of Fame entry of their own
 - **Character Hall of Fame** — every survivor of a victorious adventure is automatically saved to the Character Roster and inducted here, the character-level counterpart to the game Hall of Fame; reached from New Adventure's character selection, with its own "Manage Character Saves" for the full roster
 
 ### Game Center

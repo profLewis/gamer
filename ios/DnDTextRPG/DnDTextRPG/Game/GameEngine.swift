@@ -319,6 +319,11 @@ class GameEngine: ObservableObject {
     /// One-shot per New Adventure flow — whether we've already offered to
     /// bring back the most recent Character Hall of Fame hero for slot 1.
     private var hasOfferedHallOfFameReturn: Bool = false
+    /// Set right before returning to startCharacterCreation() after the
+    /// player explicitly says "No, create someone new" to the welcome-back
+    /// prompt — hides "Load Character" on that one next screen only, since
+    /// re-offering it immediately after declining would be redundant.
+    private var suppressLoadCharacterButtonOnce: Bool = false
     private var tempCharacterName: String = ""
     private var tempRace: Race?
     private var tempClass: CharacterClass?
@@ -2983,8 +2988,9 @@ class GameEngine: ObservableObject {
 
         // Kept deliberately short: just New Adventure and Continue Adventure.
         // Continue Adventure opens the game Hall of Fame (past tales), which
-        // has its own "Load Game" entry for actual save management —
-        // Character Saves live the same way, one level inside New
+        // has its own "Manage Saves" entry for actual save management (this
+        // also covers in-progress adventures, which never get a Hall of Fame
+        // entry) — Character Saves live the same way, one level inside New
         // Adventure's character selection where they're relevant.
         menuOpts.append(MenuOption("Continue Adventure"))
         actions.append { [weak self] in self?.showHallOfFame() }
@@ -3020,7 +3026,7 @@ class GameEngine: ObservableObject {
             self.printWrapped("Start a fresh adventure. Pick your party size, then create each character — or load one from the Character Hall of Fame (defaults to your most recent hero, if you have one). Long-press for a quick start with a random party.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  CONTINUE ADVENTURE", color: .cyan, bold: true)
-            self.printWrapped("Opens the Hall of Fame — the greatest (and most tragic) completed adventures. Tap an entry to read its tale; some have a linked save you can relive. Tap 'Load Game' there to resume an adventure in progress or manage your saves.", indent: 2, color: .dimGreen)
+            self.printWrapped("Opens the Hall of Fame — the greatest (and most tragic) completed adventures. Tap a numbered entry to read its tale; some have a linked save you can relive. Tap 'Manage Saves' there to resume an adventure still in progress or manage your saves.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  CHARACTER SAVES", color: .cyan, bold: true)
             self.printWrapped("Found inside New Adventure's character selection (the Character Hall of Fame screen) — 'Manage Character Saves' there browses and deletes your full Character Roster, not just Hall-of-Famers. Save a character any time from Party Review or Party Status.", indent: 2, color: .dimGreen)
@@ -9024,28 +9030,22 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        // Track line ranges for each entry (for text long-press)
-        var entryLineRanges: [(entry: HallOfFameEntry, startLine: Int, endLine: Int)] = []
-
         if entries.isEmpty {
             print("  No adventures recorded yet.", color: .dimGreen)
             print("  Complete a dungeon to earn your place!", color: .dimGreen)
             print("")
 
-            showMenuOptions([MenuOption("?", tint: .navigation, compact: true), MenuOption("Load Game", tint: .navigation, compact: true)])
-            closeHandler = { [weak self] in
-                self?.showMainMenu()
-            }
+            showMenu(["Manage Saves", "< Back"])
+            closeHandler = { [weak self] in self?.showMainMenu() }
             menuHandler = { [weak self] choice in
-                if choice == 1 { self?.showHallOfFameHelp() } else { self?.showLoadGameMenu(returnTo: .mainMenu) }
+                guard let self = self else { return }
+                if choice == 1 { self.showLoadGameMenu(returnTo: .mainMenu) } else { self.showMainMenu() }
             }
         } else {
             let dateFormatter = DateFormatter()
             dateFormatter.dateStyle = .medium
 
-            // Track line ranges for each entry (for tap-to-read)
-            var entryStartLines: [(entry: HallOfFameEntry, nameText: String)] = []
-
+            var options: [String] = []
             for (index, entry) in entries.enumerated() {
                 let outcomeTag = entry.outcome == .victory ? "W" : "L"
                 let outcomeColor: TerminalColor = entry.outcome == .victory ? .yellow : .red
@@ -9054,81 +9054,31 @@ class GameEngine: ObservableObject {
                 let name = String(entry.dungeonName.prefix(20))
                 let headerText = "\(num) \(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts"
                 print(headerText, color: outcomeColor)
-                entryStartLines.append((entry, headerText))
 
                 let day = entry.gameTimeMinutes / 1440 + 1
                 printWrapped(entry.partyDescription, indent: 3, color: .dimGreen)
                 printWrapped("Gold:\(entry.goldCollected) Slain:\(entry.monstersSlain) Rooms:\(entry.roomsExplored)/\(entry.totalRooms) Day \(day)", indent: 3, color: .dimGreen)
                 print("   \(dateFormatter.string(from: entry.date))", color: .dimGreen)
                 print("")
+
+                options.append("\(name) Lv.\(entry.dungeonLevel) \(outcomeTag)")
             }
 
-            printWrapped("Tap an entry to read its tale.", indent: 2, color: .dimGreen)
+            printWrapped("Tap an entry to read its tale — the tale screen has a Relive/Rewrite button if a save is linked. 'Manage Saves' browses everything, including adventures still in progress.", indent: 2, color: .dimGreen)
             print("")
 
-            var menuOpts = [MenuOption("?", tint: .navigation, compact: true)]
-            if entries.count > 1 {
-                menuOpts.append(MenuOption("🎲", tint: .navigation, compact: true))
-            }
-            menuOpts.append(MenuOption("Load Game", tint: .navigation, compact: true))
-            showMenuOptions(menuOpts)
-            closeHandler = { [weak self] in
-                self?.showMainMenu()
-            }
-            menuHandler = { [weak self] choice in
+            showPaginatedMenuOptions(options, pinned: ["?", "Manage Saves", "< Back"], handler: { [weak self] idx in
+                guard let self = self, idx >= 0 && idx < entries.count else { return }
+                self.showHallOfFameDetail(entries[idx], entries: entries, index: idx)
+            }, pinnedHandler: { [weak self] choice in
                 guard let self = self else { return }
-                let text = menuOpts[choice - 1].text
-                if text == "?" { self.showHallOfFameHelp() }
-                else if text == "🎲" {
-                    let r = Int.random(in: 0..<entries.count)
-                    self.showHallOfFameDetail(entries[r], entries: entries, index: r)
-                } else if text == "Load Game" {
-                    self.showLoadGameMenu(returnTo: .mainMenu)
+                switch choice {
+                case 0: self.showHallOfFameHelp()
+                case 1: self.showLoadGameMenu(returnTo: .mainMenu)
+                default: self.showMainMenu()
                 }
-            }
-
-            // Swipe into the tales — left for next, right for previous
-            if entries.count > 1 {
-                cardPositionLabel = " \(entries.count)"
-                swipeLeftHandler = { [weak self] in
-                    self?.showHallOfFameDetail(entries[0], entries: entries, index: 0)
-                }
-                swipeRightHandler = { [weak self] in
-                    self?.showHallOfFameDetail(entries[entries.count - 1], entries: entries, index: entries.count - 1)
-                }
-            } else if entries.count == 1 {
-                swipeLeftHandler = { [weak self] in
-                    self?.showHallOfFameDetail(entries[0], entries: entries, index: 0)
-                }
-            }
-
-            // Set up tap handler — map line taps to entries
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                // Find each entry's header line in terminalLines
-                var blockRanges: [(entry: HallOfFameEntry, startLine: Int)] = []
-                let claimedLines = NSMutableIndexSet()
-                for item in entryStartLines {
-                    for (i, line) in self.terminalLines.enumerated() {
-                        if line.text == item.nameText && !claimedLines.contains(i) {
-                            blockRanges.append((item.entry, i))
-                            claimedLines.add(i)
-                            break
-                        }
-                    }
-                }
-
-                let allEntries = entries
-                self.textLongPressHandler = { [weak self] lineIndex in
-                    for (i, block) in blockRanges.enumerated() {
-                        let endLine = (i + 1 < blockRanges.count) ? blockRanges[i + 1].startLine : (self?.terminalLines.count ?? 0)
-                        if lineIndex >= block.startLine && lineIndex < endLine {
-                            self?.showHallOfFameDetail(block.entry, entries: allEntries, index: i)
-                            return
-                        }
-                    }
-                }
-            }
+            })
+            closeHandler = { [weak self] in self?.showMainMenu() }
         }
     }
 
@@ -9146,19 +9096,23 @@ class GameEngine: ObservableObject {
             self.print("")
 
             self.print("  TAP AN ENTRY", color: .cyan, bold: true)
-            self.printWrapped("Tap any entry in the list to read a dramatic tale of that adventure, generated by the Dungeon Master. The tale includes party composition, key battles, and the final outcome.", indent: 2, color: .dimGreen)
+            self.printWrapped("Tap the numbered button for an entry to read a dramatic tale of that adventure, generated by the Dungeon Master. The tale includes party composition, key battles, and the final outcome.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  STATS", color: .cyan, bold: true)
             self.printWrapped("The summary at the top shows total victories, defeats, best gold haul, and most monsters slain across all recorded runs.", indent: 2, color: .dimGreen)
             self.print("")
 
-            self.print("  SWIPE & DICE", color: .cyan, bold: true)
-            self.printWrapped("Swipe left or right on the list to jump into a tale. On the tale page, swipe or use the <</>> buttons to move between entries (cycles round at the end). 🎲 picks a random tale.", indent: 2, color: .dimGreen)
+            self.print("  WITHIN A TALE", color: .cyan, bold: true)
+            self.printWrapped("Swipe or use the <</>> buttons to move between tales (cycles round at the end); the dice button picks a random one.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  ⚔ RELIVE AN ADVENTURE", color: .cyan, bold: true)
             self.printWrapped("Some tales have a linked save game. Long-press the title at the top of a tale — or tap the ⚔ button — to step into the adventure yourself. For victories, you'll relive the legend. For defeats, you'll get a second chance, starting one room before the fall.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  MANAGE SAVES", color: .cyan, bold: true)
+            self.printWrapped("Browses every saved game, not just Hall of Fame tales — including adventures still in progress. Resume, rename, or delete from there.", indent: 2, color: .dimGreen)
             self.print("")
         }
     }
@@ -11327,7 +11281,9 @@ class GameEngine: ObservableObject {
             let taken = party.map { $0.name }.joined(separator: ", ")
             print("  Already in party: \(taken)", color: .dimGreen)
         }
-        let hasRosterCharacters = !creatingAsAI && !CharacterLibraryManager.shared.listCharacters().isEmpty
+        let suppressLoadCharacter = suppressLoadCharacterButtonOnce
+        suppressLoadCharacterButtonOnce = false
+        let hasRosterCharacters = !creatingAsAI && !suppressLoadCharacter && !CharacterLibraryManager.shared.listCharacters().isEmpty
         if hasRosterCharacters {
             print("  Bringing back a hero? Tap Load Character below.", color: .cyan)
         }
@@ -11955,6 +11911,7 @@ class GameEngine: ObservableObject {
                 record.character.prepareForNewAdventure()
                 self.loadCharacterFromRoster(record.character)
             case 2:
+                self.suppressLoadCharacterButtonOnce = true
                 self.startCharacterCreation()
             default:
                 self.showCharacterHallOfFame(loadHandler: { [weak self] character in
@@ -11991,8 +11948,7 @@ class GameEngine: ObservableObject {
         printLines(character.displaySheet())
         print("")
 
-        waitForContinue()
-        inputHandler = { [weak self] _ in
+        let accept: () -> Void = { [weak self] in
             guard let self = self else { return }
             self.creatingCharacterIndex += 1
             if self.creatingCharacterIndex < self.totalCharacters {
@@ -12002,6 +11958,17 @@ class GameEngine: ObservableObject {
             } else {
                 self.showPartyReview()
             }
+        }
+        let goBack: () -> Void = { [weak self] in
+            guard let self = self else { return }
+            self.party.removeAll { $0.id == character.id }
+            self.startCharacterCreation()
+        }
+
+        showMenu(["Accept", "< Back"])
+        closeHandler = goBack
+        menuHandler = { choice in
+            if choice == 1 { accept() } else { goBack() }
         }
     }
 
