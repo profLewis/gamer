@@ -97,7 +97,7 @@ Features:
 - Save individual characters independent of game saves — a separate system from Saved Adventures, reached inside **New Adventure**'s character selection rather than as its own Play menu button, so the Play menu stays to just "New Adventure" / "Continue Adventure"
 - **Save to Roster** is available wherever it matters: on the Party Review card for every character before an adventure starts (covers new, auto-generated, and quick-start parties alike), during party creation, and from Party Status mid-adventure (handy right after a level-up)
 - Starts pre-seeded with one Level 1 example of each class, so there's always something to load right away
-- **Load Character**, offered while picking party members, opens the Character Hall of Fame — pick any inducted hero, or tap "Manage Character Saves" there to browse and delete the full roster (not just Hall-of-Famers). Loading brings a character in at their current level, gear, and gold (HP/spell slots/combat state reset for the fresh start)
+- **Load Character**, offered while picking party members, opens the Character Hall of Fame — pick any inducted hero, or tap "Manage Saves" there to browse and delete the full roster (not just Hall-of-Famers). Loading brings a character in at their current level, gear, and gold (HP/spell slots/combat state reset for the fresh start)
 - Starting a brand new adventure automatically offers to bring back your most recently inducted hero for the first party slot
 - Up to 20 characters can be kept in the roster
 
@@ -105,7 +105,7 @@ Features:
 - Scoring: victories, gold, monsters slain, exploration, difficulty multiplier
 - Pre-seeded with Stranger Things-themed entries
 - Reached via **Continue Adventure** in the Play menu; each entry is a numbered button (tap to read its tale, matching how the Character Hall of Fame lists its heroes), and a "Manage Saves" button opens actual save-game management (resume, rename, delete) — including adventures still in progress, which never earn a Hall of Fame entry of their own
-- **Character Hall of Fame** — every survivor of a victorious adventure is automatically saved to the Character Roster and inducted here, the character-level counterpart to the game Hall of Fame; reached from New Adventure's character selection, with its own "Manage Character Saves" for the full roster
+- **Character Hall of Fame** — every survivor of a victorious adventure is automatically saved to the Character Roster and inducted here, the character-level counterpart to the game Hall of Fame; reached from New Adventure's character selection, with its own "Manage Saves" for the full roster
 
 ### Game Center
 - Leaderboards: Gold collected, Victories, Monsters slain

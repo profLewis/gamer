@@ -1303,11 +1303,15 @@ class GameEngine: ObservableObject {
         // Page 0: might need ▸ only. Middle pages: ◂ + ▸. Last page: ◂ only.
         let hasBack = page > 0
 
-        // Compact nav items (<</>>/pinned) share a single button-sized cell visually.
-        // Reserve just 1 visual slot for the compact nav cell, regardless of item count.
-        let firstNavItems = 1   // compact cell: [>> + pinned]
-        let middleNavItems = 1  // compact cell: [<< + >> + pinned]
-        let lastNavItems = 1    // compact cell: [<< + pinned]
+        // << / >> / "?" share a single compact button-sized cell visually —
+        // that's 1 reserved slot regardless of which of those three are
+        // active. Every other pinned button (e.g. "< Back", "Manage Saves")
+        // renders as its own regular, always-visible button instead (see
+        // menuOpts below), so each needs its own reserved slot on every page.
+        let regularPinnedCount = pinned.filter { $0 != "?" && $0 != "?\u{0338}" }.count
+        let firstNavItems = 1 + regularPinnedCount   // compact cell: [>> + ?] + regular pinned buttons
+        let middleNavItems = 1 + regularPinnedCount  // compact cell: [<< + >> + ?] + regular pinned buttons
+        let lastNavItems = 1 + regularPinnedCount    // compact cell: [<< + ?] + regular pinned buttons
         let firstPageSlots = max(1, limit - firstNavItems)
         let middlePageSlots = max(1, limit - middleNavItems)
         let lastPageSlots = max(1, limit - lastNavItems)
@@ -1383,8 +1387,14 @@ class GameEngine: ObservableObject {
         // Build MenuOptions with tints
         let menuOpts = visibleOptions.enumerated().map { idx, text -> MenuOption in
             let m = mapping[idx]
-            if m == -1 || m == -2 || m == -3 {
-                // Navigation (<</>>) and pinned (?) — compact
+            // The compact nav cell only has 3 physical slots (for <<, ?, >>).
+            // Only "?" is safe to squeeze in there alongside the arrows —
+            // any other pinned button (e.g. "< Back", "Manage Saves") is
+            // rendered as a normal, always-visible button instead, so it's
+            // never silently dropped when both << and >> are active at once
+            // and the compact cell is already full.
+            let isCompactPinnedHelp = m == -3 && (text == "?" || text == "?\u{0338}")
+            if m == -1 || m == -2 || isCompactPinnedHelp {
                 return MenuOption(text, tint: .navigation, compact: true)
             }
             let isDefault: Bool
@@ -1430,6 +1440,7 @@ class GameEngine: ObservableObject {
     /// pinnedHandler is called with the pinned item's index (0-based within pinned array).
     func showPaginatedMenuOptions(_ allOptions: [String], page: Int = 0,
                                    pinned: [String] = [],
+                                   defaultIndex: Int? = nil,
                                    handler: @escaping (Int) -> Void,
                                    pinnedHandler: @escaping (Int) -> Void) {
         let limit = maxButtonsPerScreen
@@ -1439,7 +1450,7 @@ class GameEngine: ObservableObject {
         // If everything fits, just show normally
         if totalItems + pinnedCount <= limit {
             let all = allOptions + pinned
-            showMenu(all)
+            showMenu(all, defaultIndex: defaultIndex ?? 0)
             menuHandler = { choice in
                 let idx = choice - 1
                 if idx < allOptions.count {
@@ -1452,7 +1463,7 @@ class GameEngine: ObservableObject {
         }
 
         // Use base paginated menu, then override handler for pinned
-        showPaginatedMenu(allOptions, page: page, pinned: pinned, handler: handler)
+        showPaginatedMenu(allOptions, page: page, pinned: pinned, defaultIndex: defaultIndex, handler: handler)
 
         // Wrap the existing menuHandler to also handle pinned items
         let baseHandler = menuHandler
@@ -3029,7 +3040,7 @@ class GameEngine: ObservableObject {
             self.printWrapped("Opens the Hall of Fame — the greatest (and most tragic) completed adventures. Tap a numbered entry to read its tale; some have a linked save you can relive. Tap 'Manage Saves' there to resume an adventure still in progress or manage your saves.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  CHARACTER SAVES", color: .cyan, bold: true)
-            self.printWrapped("Found inside New Adventure's character selection (the Character Hall of Fame screen) — 'Manage Character Saves' there browses and deletes your full Character Roster, not just Hall-of-Famers. Save a character any time from Party Review or Party Status.", indent: 2, color: .dimGreen)
+            self.printWrapped("Found inside New Adventure's character selection (the Character Hall of Fame screen) — 'Manage Saves' there browses and deletes your full Character Roster, not just Hall-of-Famers. Save a character any time from Party Review or Party Status.", indent: 2, color: .dimGreen)
             self.print("")
             if self.multiplayerEnabled {
                 self.print("  MULTIPLAYER MATCHES", color: .cyan, bold: true)
@@ -11257,13 +11268,23 @@ class GameEngine: ObservableObject {
     ]
 
     func startCharacterCreation() {
-        // Offer to bring back your most recent Hall of Fame hero for the
-        // first slot — once per New Adventure flow, and only for the human
-        // player's own slot (not AI companions).
+        // Offer to bring back a Hall of Fame hero for the first slot — once
+        // per New Adventure flow, and only for the human player's own slot
+        // (not AI companions). Goes straight to the Character Hall of Fame
+        // itself (numbered list, most recent hero pre-selected as the
+        // default), with "Create New" alongside it, rather than a separate
+        // yes/no prompt screen.
         if creatingCharacterIndex == 0 && !creatingAsAI && !hasOfferedHallOfFameReturn {
             hasOfferedHallOfFameReturn = true
             if let entry = CharacterHallOfFameManager.shared.mostRecentAvailableEntry() {
-                showHallOfFameReturnPrompt(entry: entry)
+                showCharacterHallOfFame(loadHandler: { [weak self] character in
+                    character.prepareForNewAdventure()
+                    self?.loadCharacterFromRoster(character)
+                }, onBack: { [weak self] in self?.startNewGame() },
+                   createNewHandler: { [weak self] in
+                    self?.suppressLoadCharacterButtonOnce = true
+                    self?.startCharacterCreation()
+                }, defaultCharacterId: entry.linkedCharacterId)
                 return
             }
         }
@@ -11885,40 +11906,6 @@ class GameEngine: ObservableObject {
             self.printWrapped("• Use undo/redo to change your picks (must be enabled in Settings > Gameplay).", indent: 2)
             self.printWrapped("• X icon goes back to ability scores.", indent: 2)
             self.print("")
-        }
-    }
-
-    /// "Welcome back" screen offered once per New Adventure, for the first
-    /// (human) character slot, when a Character Hall of Fame entry exists.
-    private func showHallOfFameReturnPrompt(entry: CharacterHallOfFameEntry) {
-        clearTerminal()
-        printTitle("Welcome Back")
-        print("  Continue as \(entry.characterName)?", color: .brightGreen, bold: true)
-        print("  Level \(entry.level) \(entry.race) \(entry.characterClass) — \(entry.gold)gp", color: .dimGreen)
-        print("")
-
-        showMenu(["Yes, load \(entry.characterName)", "No, create someone new", "Browse Hall of Fame"])
-        closeHandler = { [weak self] in self?.startNewGame() }
-        menuHandler = { [weak self] choice in
-            guard let self = self else { return }
-            switch choice {
-            case 1:
-                guard let linkedId = entry.linkedCharacterId,
-                      let record = CharacterLibraryManager.shared.listCharacters().first(where: { $0.character.id == linkedId }) else {
-                    self.startCharacterCreation()
-                    return
-                }
-                record.character.prepareForNewAdventure()
-                self.loadCharacterFromRoster(record.character)
-            case 2:
-                self.suppressLoadCharacterButtonOnce = true
-                self.startCharacterCreation()
-            default:
-                self.showCharacterHallOfFame(loadHandler: { [weak self] character in
-                    character.prepareForNewAdventure()
-                    self?.loadCharacterFromRoster(character)
-                }, onBack: { [weak self] in self?.startCharacterCreation() })
-            }
         }
     }
 
@@ -22591,16 +22578,28 @@ class GameEngine: ObservableObject {
     /// - loadHandler: when set, this is being browsed to pick a character to
     ///   join the party being created — tapping an entry loads it directly.
     ///   When nil, tapping an entry opens its roster detail/delete screen.
-    /// "Manage Character Saves" is always offered — the full Character
-    /// Roster (not just Hall-of-Famers) is reachable from here.
-    func showCharacterHallOfFame(loadHandler: ((Character) -> Void)? = nil, onBack: (() -> Void)? = nil) {
+    /// - createNewHandler: when set, adds a "Create New" pinned option (used
+    ///   when this screen doubles as the entry point for a fresh party slot).
+    /// - defaultCharacterId: pre-selects the numbered button for the entry
+    ///   linked to this character id (e.g. the most recently inducted hero),
+    ///   so it's the one-tap default without changing display order.
+    /// "Manage Saves" is always offered — the full Character Roster (not
+    /// just Hall-of-Famers) is reachable from here.
+    func showCharacterHallOfFame(loadHandler: ((Character) -> Void)? = nil, onBack: (() -> Void)? = nil,
+                                  createNewHandler: (() -> Void)? = nil, defaultCharacterId: UUID? = nil) {
         clearTerminal()
+        printLines(asciiCrown, color: .yellow)
+        print("")
         printTitle("Character Hall of Fame")
 
         let entries = CharacterHallOfFameManager.shared.listEntries()
         let backTarget = onBack ?? { [weak self] in self?.showPlayMenu() }
         let manageAction: () -> Void = { [weak self] in
-            self?.showCharacterRoster(loadHandler: loadHandler, onBack: { self?.showCharacterHallOfFame(loadHandler: loadHandler, onBack: onBack) })
+            self?.showCharacterRoster(loadHandler: loadHandler, onBack: { self?.showCharacterHallOfFame(loadHandler: loadHandler, onBack: onBack, createNewHandler: createNewHandler) })
+        }
+        var pinnedOptions = ["Manage Saves", "< Back"]
+        if let createNewHandler = createNewHandler {
+            pinnedOptions.insert("Create New", at: 0)
         }
 
         if entries.isEmpty {
@@ -22608,9 +22607,12 @@ class GameEngine: ObservableObject {
             print("")
             print("  Every survivor of a victorious adventure is inducted here, with their level, gear, and gold saved to your Character Roster.", color: .dimGreen)
             print("")
-            showMenu(["Manage Character Saves", "< Back"])
+            showMenu(pinnedOptions)
             menuHandler = { choice in
-                if choice == 1 { manageAction() } else { backTarget() }
+                let text = pinnedOptions[choice - 1]
+                if text == "Create New" { createNewHandler?() }
+                else if text == "Manage Saves" { manageAction() }
+                else { backTarget() }
             }
             closeHandler = backTarget
             return
@@ -22620,20 +22622,24 @@ class GameEngine: ObservableObject {
         dateFormatter.dateStyle = .medium
 
         var options: [String] = []
+        var defaultIdx: Int? = nil
         for (i, entry) in entries.enumerated() {
             print("  \(i + 1). \(entry.characterName) — \(entry.race) \(entry.characterClass) L\(entry.level)", color: .brightGreen, bold: true)
             print("     Score: \(entry.score)  ·  \(entry.gold)gp  ·  \(entry.dungeonName) (Lv\(entry.dungeonLevel))  ·  \(dateFormatter.string(from: entry.date))", color: .dimGreen)
             options.append(entry.characterName)
+            if let defaultCharacterId = defaultCharacterId, entry.linkedCharacterId == defaultCharacterId {
+                defaultIdx = i
+            }
         }
         print("")
 
-        showPaginatedMenuOptions(options, pinned: ["Manage Character Saves", "< Back"], handler: { [weak self] idx in
+        showPaginatedMenuOptions(options, pinned: pinnedOptions, defaultIndex: defaultIdx, handler: { [weak self] idx in
             guard let self = self, idx >= 0 && idx < entries.count else { return }
             guard let linkedId = entries[idx].linkedCharacterId,
                   let record = CharacterLibraryManager.shared.listCharacters().first(where: { $0.character.id == linkedId }) else {
                 self.print("  That character's roster save is no longer available.", color: .yellow)
                 self.waitForContinue()
-                self.inputHandler = { [weak self] _ in self?.showCharacterHallOfFame(loadHandler: loadHandler, onBack: onBack) }
+                self.inputHandler = { [weak self] _ in self?.showCharacterHallOfFame(loadHandler: loadHandler, onBack: onBack, createNewHandler: createNewHandler, defaultCharacterId: defaultCharacterId) }
                 return
             }
             if let loadHandler = loadHandler {
@@ -22642,8 +22648,10 @@ class GameEngine: ObservableObject {
                 self.showCharacterRosterActions(record: record, loadHandler: nil, onBack: { self.showCharacterHallOfFame(onBack: onBack) })
             }
         }, pinnedHandler: { choice in
-            // pinned order: "Manage Character Saves" then "< Back"
-            if choice == 0 { manageAction() } else { backTarget() }
+            let text = pinnedOptions[choice]
+            if text == "Create New" { createNewHandler?() }
+            else if text == "Manage Saves" { manageAction() }
+            else { backTarget() }
         })
         closeHandler = backTarget
     }
@@ -24410,6 +24418,16 @@ class GameEngine: ObservableObject {
             "    |    \\___/    |",
             "     \\___________/",
             "       ||| |||",
+        ]
+    }
+
+    private var asciiCrown: [String] {
+        [
+            "     /\\  /\\  /\\",
+            "    /  \\/  \\/  \\",
+            "   /   *  *  *  \\",
+            "  |________________|",
+            "  |________________|",
         ]
     }
 
