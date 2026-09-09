@@ -308,8 +308,10 @@ class ShopEngine {
                     case 2:
                         self.haggleRareGood(rareItem, price: price, completion: completion)
                     default:
-                        game.waitForContinue()
-                        game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
+                        // A plain decline with no new reaction to read —
+                        // return straight to the shop instead of making the
+                        // player tap through an extra "continue" first.
+                        self.showShopMain(completion: completion)
                     }
                 }
             }
@@ -381,8 +383,9 @@ class ShopEngine {
             if choice == 1 {
                 self.buyRareGood(item, price: price, completion: completion)
             } else {
-                game.waitForContinue()
-                game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
+                // A plain decline with no new reaction to read — return
+                // straight to the shop instead of an extra "continue" tap.
+                self.showShopMain(completion: completion)
             }
         }
     }

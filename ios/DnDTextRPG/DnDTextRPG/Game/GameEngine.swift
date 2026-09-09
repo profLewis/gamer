@@ -647,6 +647,8 @@ class GameEngine: ObservableObject {
         // taps instead of failing safely. handleMenuChoice's fallback
         // recovers from the nil case instead.
         menuHandler = nil
+        awaitingTextInput = false
+        awaitingContinue = false
         suppressAutoScroll = true
         scrollLocked = false
         swipeLeftHandler = nil
@@ -666,6 +668,15 @@ class GameEngine: ObservableObject {
         undoRedoFeedback = nil
         DispatchQueue.main.async {
             self.terminalLines.removeAll()
+            // Same reasoning as menuHandler above: if a guard-return ever
+            // happens between clearTerminal() and a screen's own showMenu
+            // call, this stops the PREVIOUS screen's buttons (now bound to
+            // a nil menuHandler) from lingering visibly over blank content
+            // — e.g. tapping a stale "Accept"/"Reroll" from the last screen
+            // and landing on nothing. Every legitimate screen sets its own
+            // options right after printing content, so this never matters
+            // in normal flow.
+            self.currentMenuOptions = []
         }
     }
 
@@ -1392,6 +1403,22 @@ class GameEngine: ObservableObject {
             }
         }
 
+        // Regular (non-compact) pinned buttons — e.g. "Manage Saves" — need
+        // their own explicit displayNumber too, not just content items.
+        // Without one they'd fall back to a per-page positional count (see
+        // regularButton's fallbackDisplayNumber), which can collide with a
+        // content item's absolute number on the very same page (both
+        // showing "5.", say). Numbering them right after the content list
+        // guarantees no collision is possible, and keeps each pinned
+        // button's number stable across every page since it doesn't depend
+        // on what content happens to share that page.
+        var pinnedDisplayNumbers: [String: Int] = [:]
+        var nextPinnedNumber = totalItems + 1
+        for p in pinned where !GameEngine.isCompactPinnedNavText(p) {
+            pinnedDisplayNumbers[p] = nextPinnedNumber
+            nextPinnedNumber += 1
+        }
+
         // Build MenuOptions with tints
         let menuOpts = visibleOptions.enumerated().map { idx, text -> MenuOption in
             let m = mapping[idx]
@@ -1414,8 +1441,17 @@ class GameEngine: ObservableObject {
             // already this item's true position in the full, unpaginated
             // allOptions array, so this stays correct (and matches a
             // caller's own printed "N. ..." reference list) no matter which
-            // page it lands on, unlike a fresh per-page count.
-            let displayNumber = m >= 0 ? m + 1 : nil
+            // page it lands on, unlike a fresh per-page count. Regular
+            // pinned buttons (m == -3) get one from pinnedDisplayNumbers
+            // (see above) for the same reason.
+            let displayNumber: Int?
+            if m >= 0 {
+                displayNumber = m + 1
+            } else if m == -3 {
+                displayNumber = pinnedDisplayNumbers[text]
+            } else {
+                displayNumber = nil
+            }
             return MenuOption(text, isDefault: isDefault, tint: Self.autoTint(text), displayNumber: displayNumber)
         }
         showMenuOptions(menuOpts)
@@ -2905,15 +2941,12 @@ class GameEngine: ObservableObject {
         clearTerminal()
         printTitle("Play")
 
-        // Summary info
-        print("  1. New Adventure", color: .brightGreen, bold: true)
+        // Summary info — no numbering here, since it doesn't necessarily
+        // match the actual button positions below (multiplayer matches can
+        // insert between them) and the button labels already self-explain.
+        print("  New Adventure", color: .brightGreen, bold: true)
         print("     Long-press for quick start", color: .dimGreen)
         print("")
-
-        if !localSlots.isEmpty {
-            print("  2. Saved Adventure\(localSlots.count == 1 ? "" : "s") (\(localSlots.count))", color: .dimGreen)
-            print("")
-        }
 
         // Show multiplayer matches
         var mpEntries: [(match: GKTurnBasedMatch, info: String, status: String)] = []
@@ -9419,16 +9452,25 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        // Relive button if a save game is linked
+        // Always offer a way back, plus Relive/Rewrite when a save is linked
         if hasSave {
             let label = isVictory ? "⚔ Relive" : "⚔ Rewrite"
-            showMenuOptions([MenuOption(label)])
+            showMenuOptions([MenuOption(label), MenuOption("< Back", tint: .navigation)])
             menuHandler = { [weak self] choice in
-                if choice == 1 { self?.loadHallOfFameSave(entry) }
+                guard let self = self else { return }
+                if choice == 1 {
+                    self.loadHallOfFameSave(entry)
+                } else {
+                    SpeechEngine.shared.stop()
+                    self.showHallOfFame()
+                }
             }
         } else {
-            currentMenuOptions = []
-            menuHandler = nil
+            showMenuOptions([MenuOption("< Back", tint: .navigation)])
+            menuHandler = { [weak self] _ in
+                SpeechEngine.shared.stop()
+                self?.showHallOfFame()
+            }
         }
 
         closeHandler = { [weak self] in
@@ -13049,13 +13091,21 @@ class GameEngine: ObservableObject {
             actions.append { [weak self] in if self?.torchLit == true { self?.presentRiddle(index: idx, room: room) } }
         }
 
-        // Talk to NPC — shown on the D-pad (SE corner) rather than in menu buttons
-        // Without a torch, NPCs are harder to find (only show if already spoken to)
+        // Talk to NPC — shown on the D-pad (SE corner) rather than in menu buttons.
+        // Without a torch, NPCs are harder to find (only show if already spoken to).
+        // Always set both branches (not just the truthy one) — otherwise a
+        // stale NPC icon from a previous room lingers into rooms with no NPC,
+        // since neither this render pass nor showMenuWithDirections clears it.
         if let npc = room.npc, npcsEnabled, (torchLit || npc.hasBeenTalkedTo) {
             let talkLabel = npc.hasBeenTalkedTo ? "Talk" : "Speak to \(npc.type.rawValue.components(separatedBy: " ").last ?? "Stranger")"
             DispatchQueue.main.async {
                 self.dpadNPCLabel = talkLabel
                 self.dpadNPCHandler = { [weak self] in self?.talkToNPC() }
+            }
+        } else {
+            DispatchQueue.main.async {
+                self.dpadNPCLabel = nil
+                self.dpadNPCHandler = nil
             }
         }
 
