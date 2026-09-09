@@ -1851,6 +1851,12 @@ class GameEngine: ObservableObject {
         let destination = autoReturnDestination ?? { [weak self] in self?.showExplorationView() }
         autoReturnDestination = nil
         closeHandler = destination
+        // showMenu()/waitForContinue() etc. all trigger speaker mode's
+        // auto-read of the screen's text, but this brief "print a result,
+        // then return" pattern (search, listen, dark search, and similar
+        // flavour-text screens) never went through either — the DM voice
+        // simply stayed silent for all of them in speaker mode.
+        autoReadIfSpeakerMode()
         // If nothing is currently visible or tappable (no D-pad, no menu
         // buttons — e.g. a dark/blind search run from a screen that never
         // had a D-pad to begin with), the player would otherwise be looking
