@@ -202,6 +202,11 @@ class ShopEngine {
 
     // MARK: - Haggle
 
+    /// Attempts allowed per item per shop visit before the merchant ends
+    /// negotiation on it — without a cap, a losing player could just keep
+    /// re-rolling the same lowball offer forever.
+    private static let maxHaggleAttempts = 3
+
     private func showHaggleMenu(completion: @escaping () -> Void) {
         guard let game = game, let character = character, let merchant = merchant else { return }
 
@@ -209,7 +214,7 @@ class ShopEngine {
         game.printTitle("Haggle")
         printPurseAndCarryLine(character)
         game.print("  \(merchant.greeting)", color: .cyan)
-        game.print("  Tap an item below to make your case — a Persuasion check decides if the price drops.", color: .dimGreen)
+        game.print("  Tap an item below, then name your price — the merchant accepts or refuses. Refused once, you can try again with a better offer.", color: .green)
         game.print("")
 
         var options: [String] = []
@@ -219,74 +224,109 @@ class ShopEngine {
         let stockItems = self.stock
 
         game.showPaginatedMenuOptions(options, pinned: ["< Back"], handler: { [weak self] idx in
-            guard let self = self, let game = self.game, let character = self.character, let merchant = self.merchant else { return }
+            guard let self = self else { return }
             guard idx >= 0 && idx < stockItems.count else { return }
-            let item = stockItems[idx]
+            self.showHaggleOfferPrompt(item: stockItems[idx], attempt: 1, completion: completion)
+        }, pinnedHandler: { [weak self] _ in
+            self?.showShopMain(completion: completion)
+        })
+    }
 
+    /// Prompts for a gold offer on `item`, then resolves it against a
+    /// Persuasion check whose difficulty scales with how steep a discount
+    /// was asked for (and stiffens slightly on each repeat attempt for the
+    /// same item, capped at maxHaggleAttempts).
+    private func showHaggleOfferPrompt(item: Item, attempt: Int, completion: @escaping () -> Void) {
+        guard let game = game, let character = character, let merchant = merchant else { return }
+
+        game.clearTerminal()
+        printPurseAndCarryLine(character)
+        game.print("")
+        game.print("  \(item.name) — asking price \(item.value)gp", color: .brightGreen, bold: true)
+        if attempt > 1 {
+            game.print("  Attempt \(attempt) of \(Self.maxHaggleAttempts) — \(merchant.name)'s patience is wearing thin.", color: .yellow)
+        }
+        game.print("")
+
+        // A floor keeps offers sane — the merchant won't entertain an
+        // insultingly low bid no matter the roll — and offering the full
+        // asking price isn't haggling at all, so that's rejected too.
+        let floor = max(1, item.value / 4)
+        game.promptText("Name your price (\(floor)-\(item.value - 1)gp), or 0 to walk away:")
+        game.closeHandler = { [weak self] in self?.showHaggleMenu(completion: completion) }
+        game.inputHandler = { [weak self] text in
+            guard let self = self, let game = self.game, let character = self.character, let merchant = self.merchant else { return }
+            let trimmed = text.trimmingCharacters(in: .whitespaces)
+            guard let offer = Int(trimmed), offer >= 0 else {
+                game.print("  \"Speak plainly — a number, adventurer.\"", color: .yellow)
+                game.waitForContinue()
+                game.inputHandler = { [weak self] _ in self?.showHaggleOfferPrompt(item: item, attempt: attempt, completion: completion) }
+                return
+            }
+            if offer == 0 {
+                game.print("  You step back from the table.", color: .dimGreen)
+                game.waitForContinue()
+                game.inputHandler = { [weak self] _ in self?.showHaggleMenu(completion: completion) }
+                return
+            }
+            guard offer < item.value else {
+                game.print("  \"That's the asking price, friend — just buy it!\"", color: .yellow)
+                game.waitForContinue()
+                game.inputHandler = { [weak self] _ in self?.showHaggleOfferPrompt(item: item, attempt: attempt, completion: completion) }
+                return
+            }
+            guard offer >= floor else {
+                game.print("  \"\(offer) gold? You insult me.\" \(merchant.name) won't even consider it.", color: .red)
+                let canRetry = attempt < Self.maxHaggleAttempts
+                game.waitForContinue()
+                if canRetry {
+                    game.inputHandler = { [weak self] _ in self?.showHaggleOfferPrompt(item: item, attempt: attempt + 1, completion: completion) }
+                } else {
+                    game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
+                }
+                return
+            }
+
+            let discountPct = Double(item.value - offer) / Double(item.value)
             let persuasionMod = character.skillModifier(for: .persuasion)
             let roll = Dice.roll(20)
             let total = roll + persuasionMod
-            let dc = merchant.tier.haggleDC
+            // Steeper asks need a better roll; each repeat attempt on this
+            // same item also stiffens the merchant's resolve a little.
+            let effectiveDC = merchant.tier.haggleDC + Int((discountPct * 40).rounded()) + (attempt - 1) * 2
 
             game.print("")
-            game.print("  \(character.name) rolls Persuasion: d20[\(roll)] + \(persuasionMod) = \(total) vs DC \(dc)", color: .dimGreen)
+            game.print("  \(character.name) offers \(offer)gp and rolls Persuasion: d20[\(roll)] + \(persuasionMod) = \(total) vs DC \(effectiveDC)", color: .cyan)
 
-            if total >= dc {
-                if item.value <= 1 {
-                    // Already about as cheap as it gets — no gold amount to round
-                    // down to, so sweeten the deal with a bonus item instead of
-                    // claiming a discount that didn't actually happen.
-                    self.narrate(situation: "The player successfully haggles over the price of a \(item.name), which is already dirt cheap. Since the price can't drop any further, react in character by throwing in a second one for free as a goodwill gesture.",
-                                 offline: merchant.offlineHaggleSuccessLine(), color: .brightGreen) {
-                        if character.gold >= item.value, character.canCarry(item) {
-                            character.gold -= item.value
-                            let gotFirst = character.addItem(item.newInstance())
-                            let gotSecond = character.addItem(item.newInstance())
-                            if gotFirst && gotSecond {
-                                game.print("  Purchased two \(item.name)s for the price of one — \(item.value) gold.", color: .yellow)
-                            } else if gotFirst {
-                                game.print("  Purchased \(item.name) for \(item.value) gold. (No room to carry the bonus one.)", color: .yellow)
-                            } else {
-                                game.print("  (You agreed the deal but couldn't carry the goods.)", color: .dimGreen)
-                            }
-                            game.logEvent("Haggled a 2-for-1 deal on \(item.name) with \(merchant.name)", category: "SHOP")
-                        } else {
-                            game.print("  (You agreed the deal but couldn't complete the purchase.)", color: .dimGreen)
-                        }
-                        game.waitForContinue()
-                        game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
-                    }
-                    return
-                }
-                let discount = Double.random(in: 0.15...0.30)
-                // Guarantee a real discount — rounding could otherwise land back
-                // on the original price for cheap items (e.g. "haggled from 1 to 1").
-                let newPrice = min(item.value - 1, max(1, Int((Double(item.value) * (1 - discount)).rounded())))
-                self.narrate(situation: "The player successfully haggles over the price of a \(item.name) with a Persuasion check. React in character, agreeing (grudgingly or graciously) to a lower price of \(newPrice) gold instead of \(item.value).",
+            if total >= effectiveDC {
+                self.narrate(situation: "The player offers \(offer) gold for a \(item.name) (asking price \(item.value)) and makes a successful Persuasion check. React in character, agreeing to the price.",
                              offline: merchant.offlineHaggleSuccessLine(), color: .brightGreen) {
-                    if character.gold >= newPrice, character.canCarry(item) {
-                        character.gold -= newPrice
+                    if character.gold >= offer, character.canCarry(item) {
+                        character.gold -= offer
                         let newItem = item.newInstance()
                         _ = character.addItem(newItem)
-                        game.print("  Purchased \(newItem.name) for \(newPrice) gold (haggled down from \(item.value)).", color: .yellow)
-                        game.logEvent("Haggled \(item.name) down to \(newPrice) gold (from \(item.value)) with \(merchant.name)", category: "SHOP")
+                        game.print("  Purchased \(newItem.name) for \(offer) gold (haggled down from \(item.value)).", color: .yellow)
+                        game.logEvent("Haggled \(item.name) down to \(offer) gold (from \(item.value)) with \(merchant.name)", category: "SHOP")
                     } else {
-                        game.print("  (You agreed a price of \(newPrice)gp but couldn't complete the purchase.)", color: .dimGreen)
+                        game.print("  (You agreed a price of \(offer)gp but couldn't complete the purchase.)", color: .yellow)
                     }
                     game.waitForContinue()
                     game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
                 }
             } else {
-                self.narrate(situation: "The player tries to haggle over the price of a \(item.name) but fails to persuade you. React in character, firmly refusing to lower the price.",
+                let canRetry = attempt < Self.maxHaggleAttempts
+                self.narrate(situation: "The player offers \(offer) gold for a \(item.name) (asking price \(item.value)) but fails the Persuasion check. React in character, refusing that price\(canRetry ? ", but leave room for a better offer" : " and firmly end the negotiation").",
                              offline: merchant.offlineHaggleFailLine(), color: .red) {
-                    game.logEvent("Failed to haggle over \(item.name) with \(merchant.name)", category: "SHOP")
+                    game.logEvent("Offered \(offer) gold for \(item.name) with \(merchant.name) — refused", category: "SHOP")
                     game.waitForContinue()
-                    game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
+                    if canRetry {
+                        game.inputHandler = { [weak self] _ in self?.showHaggleOfferPrompt(item: item, attempt: attempt + 1, completion: completion) }
+                    } else {
+                        game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
+                    }
                 }
             }
-        }, pinnedHandler: { [weak self] _ in
-            self?.showShopMain(completion: completion)
-        })
+        }
     }
 
     // MARK: - Rare Goods
