@@ -31,6 +31,25 @@ func computeMenuShortcuts(for options: [MenuOption], excluding: Set<Swift.Charac
 }
 #endif
 
+// MARK: - Log Importer
+
+/// Thin wrapper around .fileImporter. SwiftUI's file importer on this SDK
+/// doesn't expose a way to force the system picker to open on its "Browse"
+/// tab instead of "Recents" (no initialDirectory on this fileImporter
+/// overload) — that choice belongs to the system UI, not the app.
+struct LogImporterModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    let onCompletion: (Result<URL, Error>) -> Void
+
+    func body(content: Content) -> some View {
+        content.fileImporter(
+            isPresented: $isPresented,
+            allowedContentTypes: [.plainText],
+            onCompletion: onCompletion
+        )
+    }
+}
+
 struct TerminalView: View {
     @EnvironmentObject var gameEngine: GameEngine
     @ObservedObject private var voiceInput = VoiceInputManager.shared
@@ -627,16 +646,17 @@ struct TerminalView: View {
         .fileExporter(isPresented: $gameEngine.showLogExporter,
                       document: LogFileDocument(text: gameEngine.pendingLogExportText),
                       contentType: .plainText,
-                      defaultFilename: "adventure-log") { _ in }
-        .fileImporter(isPresented: $gameEngine.showLogImporter,
-                      allowedContentTypes: [.plainText]) { result in
+                      defaultFilename: "adventure-log") { result in
+            gameEngine.handleLogExportResult(result)
+        }
+        .modifier(LogImporterModifier(isPresented: $gameEngine.showLogImporter) { result in
             guard case .success(let url) = result else { return }
             let accessed = url.startAccessingSecurityScopedResource()
             defer { if accessed { url.stopAccessingSecurityScopedResource() } }
             if let text = try? String(contentsOf: url, encoding: .utf8) {
                 gameEngine.importAdventureLog(from: text)
             }
-        }
+        })
     }
 
     // MARK: - Shortcut Positions (for button underlines)

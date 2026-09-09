@@ -89,6 +89,11 @@ struct FAQData {
             keywords: ["locked door", "key", "lockpick", "pick the lock", "force the door", "thieves tools"]
         ),
         FAQEntry(
+            question: "How do I export or import the adventure log?",
+            answer: "From the Adventure Log screen, tap 'Export Log' to save the full history (every day, not just today) as a text file, or 'Import Log' to load one back in — importing adds to the current log rather than replacing it. If saving to your chosen location fails for any reason, the log is automatically saved inside the app instead, so it's never lost. The log view shows everything by default (set a display limit in Settings > Gameplay if you'd rather see a shorter, day-by-day view).",
+            keywords: ["export log", "import log", "adventure log", "save log", "log file", "backup log"]
+        ),
+        FAQEntry(
             question: "How do I find the boss?",
             answer: "The boss lurks in the deepest room of the dungeon. Explore thoroughly — the boss room is usually far from the entrance. You'll get warnings as you approach. Save before entering!",
             keywords: ["boss", "final boss", "find boss", "where is boss", "end boss"]

@@ -18026,26 +18026,34 @@ class GameEngine: ObservableObject {
         if adventureLog.isEmpty {
             print("  No events recorded yet.", color: .dimGreen)
         } else {
-            // Filter to today's entries (current game day) for cleaner reading
-            let currentDay = gameTimeMinutes / 1440 + 1
-            let todayPrefix = "[Day \(currentDay),"
-            let todayEntries = adventureLog.filter { $0.hasPrefix(todayPrefix) }
-
             let limit = adventureLogLimit
             let entries: [String]
-            let source = todayEntries.isEmpty ? adventureLog : todayEntries
-            if limit > 0 && source.count > limit {
-                entries = Array(source.suffix(limit))
-                print("  (Showing last \(limit) of \(source.count) today — change in Settings > Gameplay)", color: .dimGreen)
-                print("")
+            if limit == 0 {
+                // "All" means all — the full history across every day, not
+                // just today. (Export always includes everything regardless
+                // of this setting.)
+                entries = adventureLog
+                if adventureLog.count > 200 {
+                    print("  Long log! Set a display limit in Settings > Gameplay if scrolling takes too long.", color: .dimGreen)
+                    print("")
+                }
             } else {
-                entries = source
-                if currentDay > 1 && !todayEntries.isEmpty {
-                    print("  (Showing Day \(currentDay) — \(todayEntries.count) of \(adventureLog.count) events)", color: .dimGreen)
+                // Filter to today's entries (current game day) for a shorter,
+                // more focused view when a limit is set.
+                let currentDay = gameTimeMinutes / 1440 + 1
+                let todayPrefix = "[Day \(currentDay),"
+                let todayEntries = adventureLog.filter { $0.hasPrefix(todayPrefix) }
+                let source = todayEntries.isEmpty ? adventureLog : todayEntries
+                if source.count > limit {
+                    entries = Array(source.suffix(limit))
+                    print("  (Showing last \(limit) of \(source.count) today — change in Settings > Gameplay)", color: .dimGreen)
                     print("")
-                } else if adventureLog.count > 200 {
-                    print("  Long log! Change display limit in Settings > Gameplay if scrolling takes too long.", color: .dimGreen)
-                    print("")
+                } else {
+                    entries = source
+                    if currentDay > 1 && !todayEntries.isEmpty {
+                        print("  (Showing Day \(currentDay) — \(todayEntries.count) of \(adventureLog.count) events)", color: .dimGreen)
+                        print("")
+                    }
                 }
             }
             let charColors: [TerminalColor] = [.brightGreen, .cyan, .magenta, .orange]
@@ -18093,6 +18101,47 @@ class GameEngine: ObservableObject {
         let header = "D&D Text RPG — Adventure Log\nExported: \(Date())\n\(adventureLog.count) events\n\n"
         pendingLogExportText = header + adventureLog.joined(separator: "\n")
         showLogExporter = true
+    }
+
+    /// Called by TerminalView's .fileExporter completion. On success, just
+    /// confirms; if the system picker failed or was denied (not a plain
+    /// user cancel), the log is never lost — it's written into the app's
+    /// own sandboxed space instead, which needs no filesystem permission at
+    /// all, and the player is told exactly where to find it.
+    func handleLogExportResult(_ result: Result<URL, Error>) {
+        switch result {
+        case .success(let url):
+            print("  Log exported to \(url.lastPathComponent).", color: .brightGreen)
+        case .failure(let error):
+            let nsError = error as NSError
+            // A plain user cancel isn't a failure worth falling back for.
+            if nsError.domain == NSCocoaErrorDomain && nsError.code == NSUserCancelledError { return }
+            if let savedURL = saveLogToGameSpace(pendingLogExportText) {
+                print("  Couldn't save to that location, so the log was saved inside the app instead:", color: .yellow)
+                print("  \(savedURL.lastPathComponent)", color: .dimGreen)
+            } else {
+                print("  Couldn't export the log.", color: .red)
+            }
+        }
+    }
+
+    /// Writes text into the app's own Documents/ExportedLogs directory — no
+    /// filesystem permission needed since it's inside the app's sandbox.
+    /// Used as a guaranteed fallback when the user-facing file picker fails.
+    @discardableResult
+    private func saveLogToGameSpace(_ text: String) -> URL? {
+        guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
+        let dir = docs.appendingPathComponent("ExportedLogs")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd-HHmmss"
+        let url = dir.appendingPathComponent("adventure-log-\(formatter.string(from: Date())).txt")
+        do {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            return url
+        } catch {
+            return nil
+        }
     }
 
     /// Appends an externally-loaded log's lines onto the current session's
