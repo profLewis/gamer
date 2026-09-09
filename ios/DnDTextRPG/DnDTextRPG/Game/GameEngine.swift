@@ -1700,6 +1700,13 @@ class GameEngine: ObservableObject {
         // Flash the title text as visual feedback on every button press
         flashTitle()
 
+        // Diagnostic: record exactly what this tap resolved to before
+        // calling into the handler — if the handler turns out to be nil, or
+        // a downstream function returns without setting its own breadcrumb,
+        // this is what recoverFromOrphanedScreen() will show. Overwritten by
+        // any more specific breadcrumb the handler itself sets.
+        lastCharCreationBreadcrumb = "handleMenuChoice(choice:\(choice), options:\(currentMenuOptions.map { $0.text }), hasHandler:\(menuHandler != nil))"
+
         if let handler = menuHandler {
             handler(choice)
         } else {
