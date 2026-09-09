@@ -49,6 +49,12 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS and macOS, wit
 - Bargaining and rare-goods outcomes are always resolved as real game mechanics (dice rolls, item tables) — the DM only narrates on top, so it works with cloud AI, Apple on-device AI, or no AI at all
 - Found in shop rooms (guaranteed once per dungeon level), some armouries, and via Wandering Trader NPCs — a **Visit Merchant** button appears whenever one is present
 
+### Training Gyms
+- Found by chance in chamber rooms, run by a named trainer with a specialty skill
+- Get in by **paying a membership fee** or **sparring** (a skill check against the trainer) for free entry
+- Training teaches a character a new skill proficiency outright, or a small XP bonus if they already have it
+- A **Visit Gym** button appears whenever one is present, marked `[G]` on the minimap
+
 ### 30 Monsters
 
 The dungeon is home to 30 different creature types, from lowly rats and kobolds to terrifying beholders and dragons.

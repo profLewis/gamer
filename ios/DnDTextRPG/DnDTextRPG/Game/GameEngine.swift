@@ -12904,6 +12904,11 @@ class GameEngine: ObservableObject {
             actions.append { [weak self] in if self?.torchLit == true { self?.visitShop() } }
         }
 
+        if room.trainer != nil, (room.cleared || room.encounter == nil) {
+            menuOpts.append(MenuOption("Visit Gym"))
+            actions.append { [weak self] in if self?.torchLit == true { self?.visitGym() } }
+        }
+
         if let idx = room.riddleIndex, !room.riddleResolved, (room.cleared || room.encounter == nil) {
             menuOpts.append(MenuOption("Solve Riddle"))
             actions.append { [weak self] in if self?.torchLit == true { self?.presentRiddle(index: idx, room: room) } }
@@ -16360,6 +16365,112 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             self.shopEngine.openShop(character: character, dungeonLevel: dungeon.level, merchant: merchant) { [weak self] in
                 self?.showExplorationView()
+            }
+        }
+    }
+
+    /// Training gym entry: pay a membership fee, or spar (a skill check
+    /// against the trainer's specialty) for free entry.
+    func visitGym() {
+        guard let room = dungeon?.currentRoom, let trainer = room.trainer else { return }
+
+        clearTerminal()
+        printTitle(trainer.gymName)
+        print("")
+        print("  \(trainer.name) — trains \(trainer.specialty.rawValue)", color: .dimGreen)
+        printWrapped("\"\(trainer.greeting)\"", indent: 2, color: .yellow)
+        print("")
+
+        showMenu(["Pay Membership (\(trainer.membershipFee)gp)", "Spar for Free Entry", "< Leave"])
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1:
+                self.pickCharacter(title: "Who pays the membership?") { [weak self] character in
+                    guard let self = self else { return }
+                    guard character.gold >= trainer.membershipFee else {
+                        self.print("")
+                        self.print("  \"Not enough gold, friend.\"", color: .red)
+                        self.waitForContinue()
+                        self.inputHandler = { [weak self] _ in self?.showExplorationView() }
+                        return
+                    }
+                    character.gold -= trainer.membershipFee
+                    self.print("")
+                    self.print("  \"Welcome to \(trainer.gymName).\"", color: .brightGreen)
+                    self.advanceTime(15)
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
+                }
+            case 2:
+                self.pickCharacter(title: "Who spars?") { [weak self] character in
+                    guard let self = self else { return }
+                    let mod = character.skillModifier(for: trainer.specialty)
+                    let roll = Dice.roll(20)
+                    let total = roll + mod
+                    self.print("")
+                    self.print("  \(character.name) spars: d20[\(roll)] + \(mod) = \(total) vs DC \(trainer.sparDC)", color: .dimGreen)
+                    self.advanceTime(15)
+                    if total >= trainer.sparDC {
+                        self.print("  \"Not bad! You've earned your way in.\"", color: .brightGreen)
+                        self.waitForContinue()
+                        self.inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
+                    } else {
+                        self.print("  \"Not good enough. Pay up, or come back stronger.\"", color: .red)
+                        self.waitForContinue()
+                        self.inputHandler = { [weak self] _ in self?.showExplorationView() }
+                    }
+                }
+            default:
+                self.showExplorationView()
+            }
+        }
+    }
+
+    /// Training grants proficiency in a skill the character doesn't already
+    /// have (permanent); training an already-known skill gives a small XP
+    /// bonus instead so the option is never a dead end.
+    private func showGymTraining(trainer: Trainer, room: Room) {
+        pickCharacter(title: "Who trains?") { [weak self] character in
+            guard let self = self else { return }
+
+            var offered: [Skill] = [trainer.specialty]
+            for skill in Skill.allCases.shuffled() where !offered.contains(skill) {
+                offered.append(skill)
+                if offered.count >= 4 { break }
+            }
+
+            self.clearTerminal()
+            self.printTitle(trainer.gymName)
+            print("")
+            self.print("  Which skill should \(character.name) train?", color: .cyan)
+            print("")
+
+            let options = offered.map { skill -> String in
+                character.skillProficiencies.contains(skill) ? "\(skill.rawValue) (already trained)" : skill.rawValue
+            }
+            self.showMenu(options + ["< Done"])
+            self.menuHandler = { [weak self] choice in
+                guard let self = self else { return }
+                guard choice >= 1 && choice <= offered.count else {
+                    self.showExplorationView()
+                    return
+                }
+                let skill = offered[choice - 1]
+                self.print("")
+                if character.skillProficiencies.contains(skill) {
+                    let xp = 20
+                    character.experiencePoints += xp
+                    self.print("  \"You've already got a good handle on that — but keep at it.\" (+\(xp) XP)", color: .yellow)
+                } else {
+                    character.skillProficiencies.insert(skill)
+                    self.print("  \(character.name) is now proficient in \(skill.rawValue)!", color: .brightGreen, bold: true)
+                    self.logEvent("\(character.name) trained \(skill.rawValue) at \(trainer.gymName)", category: "LEVEL")
+                    self.logMultiplayerAction("\(character.name) trained \(skill.rawValue) at \(trainer.gymName)")
+                }
+                self.advanceTime(30)
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
             }
         }
     }

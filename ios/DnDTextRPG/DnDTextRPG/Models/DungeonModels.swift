@@ -172,11 +172,12 @@ class Room: Identifiable, ObservableObject, Codable {
     @Published var merchant: Merchant?      // Shopkeeper present in this room (shop/armoury rooms)
     @Published var riddleIndex: Int?        // Index into RiddleData.all, nil = no riddle challenge here
     @Published var riddleResolved: Bool = false  // Solved OR given up on (button hidden either way)
+    @Published var trainer: Trainer?        // Training gym present in this room
 
     enum CodingKeys: String, CodingKey {
         case id, x, y, roomType, name, roomDescription, exits, visited, cleared
         case encounter, treasure, isLocked, searchedFor, trapTriggered
-        case hiddenItems, hiddenGold, droppedItems, npc, secured, merchant
+        case hiddenItems, hiddenGold, droppedItems, npc, secured, merchant, trainer
         case riddleIndex, riddleResolved
     }
 
@@ -203,6 +204,7 @@ class Room: Identifiable, ObservableObject, Codable {
         self.merchant = nil
         self.riddleIndex = nil
         self.riddleResolved = false
+        self.trainer = nil
     }
 
     required init(from decoder: Decoder) throws {
@@ -231,6 +233,7 @@ class Room: Identifiable, ObservableObject, Codable {
         merchant = try container.decodeIfPresent(Merchant.self, forKey: .merchant)
         riddleIndex = try container.decodeIfPresent(Int.self, forKey: .riddleIndex)
         riddleResolved = try container.decodeIfPresent(Bool.self, forKey: .riddleResolved) ?? false
+        trainer = try container.decodeIfPresent(Trainer.self, forKey: .trainer)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -257,6 +260,7 @@ class Room: Identifiable, ObservableObject, Codable {
         try container.encodeIfPresent(merchant, forKey: .merchant)
         try container.encodeIfPresent(riddleIndex, forKey: .riddleIndex)
         try container.encode(riddleResolved, forKey: .riddleResolved)
+        try container.encodeIfPresent(trainer, forKey: .trainer)
     }
 
     static func generateName(for type: RoomType) -> String {
@@ -636,6 +640,16 @@ class Dungeon: ObservableObject, Codable {
             }
         }
 
+        // Training gyms — a chance in chamber rooms, offering to teach a new
+        // skill proficiency for a fee or by winning a sparring check.
+        let chamberRooms = rooms.values.filter { $0.roomType == .chamber && $0.encounter == nil }
+        for room in chamberRooms {
+            if Int.random(in: 1...100) <= 20 {
+                let specialty = Skill.allCases.randomElement()!
+                room.trainer = Trainer.random(specialty: specialty, dungeonLevel: level)
+            }
+        }
+
         // Spawn NPCs in ~30-40% of non-boss, non-entrance rooms (max 6)
         let npcCandidates = rooms.values.filter {
             $0.roomType != .entrance && $0.roomType != .boss && $0.encounter == nil
@@ -853,6 +867,8 @@ class Dungeon: ObservableObject, Codable {
                         roomRow += "[!]"
                     } else if room.merchant != nil {
                         roomRow += "[M]"
+                    } else if room.trainer != nil {
+                        roomRow += "[G]"
                     } else if room.npc != nil && !(room.npc?.hasBeenTalkedTo ?? true) {
                         roomRow += "[?]"
                     } else {
@@ -905,6 +921,7 @@ class Dungeon: ObservableObject, Codable {
             }
             visibleSymbols.insert(room.roomType.symbol)
             if room.merchant != nil { visibleSymbols.insert("M") }
+            if room.trainer != nil { visibleSymbols.insert("G") }
         }
 
         // Check if any secured doors are visible
@@ -917,7 +934,7 @@ class Dungeon: ObservableObject, Codable {
             ("E", "Entry"), ("=", "Hall"), ("#", "Room"),
             ("$", "Loot"), ("+", "Shrine"), ("L", "Library"),
             ("B", "Boss"), ("A", "Armoury"), ("P", "Prison"),
-            ("S", "Shop"), ("M", "Merchant"), ("X", "Secured")
+            ("S", "Shop"), ("M", "Merchant"), ("G", "Gym"), ("X", "Secured")
         ]
         let activeEntries = allKeyEntries.filter { visibleSymbols.contains($0.symbol) }
 
