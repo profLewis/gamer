@@ -347,9 +347,19 @@ class GameEngine: ObservableObject {
     /// second stall between two steps (as opposed to another process
     /// interfering) shows up directly instead of needing more guesswork.
     private var charCreationFlowStart: Date = Date()
+    /// Last several breadcrumbs, oldest first — a single overwriteable
+    /// breadcrumb only shows what was happening AT THE MOMENT OF FAILURE;
+    /// by the time the watchdog fires and stamps its own entry, whatever
+    /// the user actually did (loadCharacterFromRoster, chooseCharacterType,
+    /// autoCreateCharacter...) has already been overwritten and is lost.
+    /// The full sequence is what's needed to see WHERE things stopped
+    /// updating relative to what should have happened next.
+    private var breadcrumbHistory: [String] = []
     private func setBreadcrumb(_ text: String) {
         let elapsed = Date().timeIntervalSince(charCreationFlowStart)
         lastCharCreationBreadcrumb = "[+\(String(format: "%.2f", elapsed))s] \(text)"
+        breadcrumbHistory.append(lastCharCreationBreadcrumb)
+        if breadcrumbHistory.count > 10 { breadcrumbHistory.removeFirst() }
     }
     private var tempCharacterName: String = ""
     private var tempRace: Race?
@@ -1745,16 +1755,19 @@ class GameEngine: ObservableObject {
     /// showMenu setup. Returns to a known-good state rather than leaving
     /// the player stuck.
     private func recoverFromOrphanedScreen() {
-        let breadcrumb = lastCharCreationBreadcrumb
+        let history = breadcrumbHistory
         clearTerminal()
         printTitle("Hmm...")
         print("  That screen didn't load correctly.", color: .yellow)
-        // Temporary diagnostic — see lastCharCreationBreadcrumb's comment.
-        // Shows exactly which function was last entered before the screen
-        // went blank, so a reproducible dead end self-diagnoses instead of
-        // needing another live repro.
-        print("  (ref: \(breadcrumb))", color: .dimGreen)
-        logEvent("Orphaned screen recovered — last: \(breadcrumb)", category: "SYSTEM")
+        // Temporary diagnostic — see breadcrumbHistory's comment. Shows the
+        // full sequence of steps leading up to the screen going blank
+        // (not just the last one, which by now is the watchdog's own entry)
+        // so a reproducible dead end self-diagnoses instead of needing
+        // another live repro.
+        for line in history {
+            print("  \(line)", color: .dimGreen)
+        }
+        logEvent("Orphaned screen recovered — history: \(history.joined(separator: " | "))", category: "SYSTEM")
         print("")
         if dungeon != nil && !party.isEmpty {
             showMenu(["Return to Game", "Main Menu"])
@@ -11444,7 +11457,7 @@ class GameEngine: ObservableObject {
     ]
 
     func startCharacterCreation() {
-        if creatingCharacterIndex == 0 { charCreationFlowStart = Date() }
+        if creatingCharacterIndex == 0 { charCreationFlowStart = Date(); breadcrumbHistory = [] }
         setBreadcrumb("startCharacterCreation(idx:\(creatingCharacterIndex),total:\(totalCharacters),asAI:\(creatingAsAI),offeredHoF:\(hasOfferedHallOfFameReturn))")
         // Set this unconditionally, before the early-return Hall of Fame
         // path below — gameState gates background work like the Game
