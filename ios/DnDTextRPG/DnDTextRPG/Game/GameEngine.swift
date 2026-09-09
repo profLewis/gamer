@@ -1265,6 +1265,7 @@ class GameEngine: ObservableObject {
     func showPaginatedMenu(_ allOptions: [String], page: Int = 0,
                             pinned: [String] = [],
                             defaultIndex: Int? = nil,
+                            pinnedHandler: ((Int) -> Void)? = nil,
                             handler: @escaping (Int) -> Void) {
         let limit = maxButtonsPerScreen
         let pinnedCount = pinned.count
@@ -1272,24 +1273,15 @@ class GameEngine: ObservableObject {
 
         // If everything fits, just show normally
         if totalItems + pinnedCount <= limit {
-            var all = allOptions + pinned
-            showMenu(all)
-            menuHandler = { choice in
-                let idx = choice - 1
-                if idx < totalItems {
-                    handler(idx)
-                }
-                // pinned items handled by caller via separate check
-            }
-            // Let caller install its own menuHandler that also handles pinned
-            // Actually, provide a combined handler
-            let _ = all // suppress warning
+            let all = allOptions + pinned
+            showMenu(all, defaultIndex: defaultIndex ?? 0)
             menuHandler = { choice in
                 let idx = choice - 1
                 if idx < allOptions.count {
                     handler(idx)
+                } else {
+                    pinnedHandler?(idx - allOptions.count)
                 }
-                // pinned items: caller checks choice > allOptions.count
             }
             return
         }
@@ -1303,12 +1295,14 @@ class GameEngine: ObservableObject {
         // Page 0: might need ▸ only. Middle pages: ◂ + ▸. Last page: ◂ only.
         let hasBack = page > 0
 
-        // << / >> / "?" share a single compact button-sized cell visually —
-        // that's 1 reserved slot regardless of which of those three are
-        // active. Every other pinned button (e.g. "< Back", "Manage Saves")
-        // renders as its own regular, always-visible button instead (see
-        // menuOpts below), so each needs its own reserved slot on every page.
-        let regularPinnedCount = pinned.filter { $0 != "?" && $0 != "?\u{0338}" }.count
+        // << / >> / "?" / "< Back" share a single compact button-sized cell
+        // visually — that's 1 reserved slot regardless of which of those are
+        // active (TerminalView prioritises << / >> / Back over "?" if all 4
+        // would ever collide, so Back is never the one silently dropped).
+        // Every other pinned button (e.g. "Manage Saves") renders as its own
+        // regular, always-visible button instead (see menuOpts below), so
+        // each of those needs its own reserved slot on every page.
+        let regularPinnedCount = pinned.filter { !GameEngine.isCompactPinnedNavText($0) }.count
         let firstNavItems = 1 + regularPinnedCount   // compact cell: [>> + ?] + regular pinned buttons
         let middleNavItems = 1 + regularPinnedCount  // compact cell: [<< + >> + ?] + regular pinned buttons
         let lastNavItems = 1 + regularPinnedCount    // compact cell: [<< + ?] + regular pinned buttons
@@ -1387,14 +1381,13 @@ class GameEngine: ObservableObject {
         // Build MenuOptions with tints
         let menuOpts = visibleOptions.enumerated().map { idx, text -> MenuOption in
             let m = mapping[idx]
-            // The compact nav cell only has 3 physical slots (for <<, ?, >>).
-            // Only "?" is safe to squeeze in there alongside the arrows —
-            // any other pinned button (e.g. "< Back", "Manage Saves") is
-            // rendered as a normal, always-visible button instead, so it's
-            // never silently dropped when both << and >> are active at once
-            // and the compact cell is already full.
-            let isCompactPinnedHelp = m == -3 && (text == "?" || text == "?\u{0338}")
-            if m == -1 || m == -2 || isCompactPinnedHelp {
+            // The compact nav cell only has 3 physical slots (for <<, ?, >>,
+            // and now also "< Back" — see isCompactPinnedNavText). Any other
+            // pinned button (e.g. "Manage Saves") is rendered as a normal,
+            // always-visible button instead, so it's never silently dropped
+            // when the compact cell is already full.
+            let isCompactPinnedNav = m == -3 && GameEngine.isCompactPinnedNavText(text)
+            if m == -1 || m == -2 || isCompactPinnedNav {
                 return MenuOption(text, tint: .navigation, compact: true)
             }
             let isDefault: Bool
@@ -1413,14 +1406,26 @@ class GameEngine: ObservableObject {
             let m = mapping[idx]
             if m == -1 {
                 // << — go to previous page
-                self?.showPaginatedMenu(allOptions, page: safePage - 1, pinned: pinned, defaultIndex: defaultIndex, handler: handler)
+                self?.showPaginatedMenu(allOptions, page: safePage - 1, pinned: pinned, defaultIndex: defaultIndex, pinnedHandler: pinnedHandler, handler: handler)
             } else if m == -2 {
                 // >> — go to next page
-                self?.showPaginatedMenu(allOptions, page: safePage + 1, pinned: pinned, defaultIndex: defaultIndex, handler: handler)
+                self?.showPaginatedMenu(allOptions, page: safePage + 1, pinned: pinned, defaultIndex: defaultIndex, pinnedHandler: pinnedHandler, handler: handler)
+            } else if m == -3 {
+                // Pinned item — resolved by text so it's correct regardless
+                // of visual position (compact vs. regular). Handled here,
+                // inside showPaginatedMenu itself, rather than relying on an
+                // external one-time wrap: << / >> re-invoke this same
+                // function directly, which would otherwise silently discard
+                // any wrapper installed by a caller after the first render —
+                // exactly what made pinned buttons (e.g. "< Back") stop
+                // working after navigating to a second page.
+                let options = self?.currentMenuOptions ?? []
+                if idx < options.count, let pinnedIdx = pinned.firstIndex(of: options[idx].text) {
+                    pinnedHandler?(pinnedIdx)
+                }
             } else if m >= 0 {
                 handler(m)
             }
-            // pinned items (m == -3) are ignored here — caller handles via pinnedHandler
         }
 
         // Long-press on ◂/▸ jumps 3 pages
@@ -1429,9 +1434,9 @@ class GameEngine: ObservableObject {
             guard idx >= 0 && idx < mapping.count else { return }
             let m = mapping[idx]
             if m == -1 {
-                self?.showPaginatedMenu(allOptions, page: max(0, safePage - 3), pinned: pinned, defaultIndex: defaultIndex, handler: handler)
+                self?.showPaginatedMenu(allOptions, page: max(0, safePage - 3), pinned: pinned, defaultIndex: defaultIndex, pinnedHandler: pinnedHandler, handler: handler)
             } else if m == -2 {
-                self?.showPaginatedMenu(allOptions, page: min(totalPages - 1, safePage + 3), pinned: pinned, defaultIndex: defaultIndex, handler: handler)
+                self?.showPaginatedMenu(allOptions, page: min(totalPages - 1, safePage + 3), pinned: pinned, defaultIndex: defaultIndex, pinnedHandler: pinnedHandler, handler: handler)
             }
         }
     }
@@ -1443,60 +1448,27 @@ class GameEngine: ObservableObject {
                                    defaultIndex: Int? = nil,
                                    handler: @escaping (Int) -> Void,
                                    pinnedHandler: @escaping (Int) -> Void) {
-        let limit = maxButtonsPerScreen
-        let totalItems = allOptions.count
-        let pinnedCount = pinned.count
-
-        // If everything fits, just show normally
-        if totalItems + pinnedCount <= limit {
-            let all = allOptions + pinned
-            showMenu(all, defaultIndex: defaultIndex ?? 0)
-            menuHandler = { choice in
-                let idx = choice - 1
-                if idx < allOptions.count {
-                    handler(idx)
-                } else {
-                    pinnedHandler(idx - allOptions.count)
-                }
-            }
-            return
-        }
-
-        // Use base paginated menu, then override handler for pinned
-        showPaginatedMenu(allOptions, page: page, pinned: pinned, defaultIndex: defaultIndex, handler: handler)
-
-        // Wrap the existing menuHandler to also handle pinned items
-        let baseHandler = menuHandler
-        menuHandler = { [weak self] choice in
-            // Check if this is a pinned item
-            let options = self?.currentMenuOptions ?? []
-            let idx = choice - 1
-            if idx >= 0 && idx < options.count {
-                let text = options[idx].text
-                if let pinnedIdx = pinned.firstIndex(of: text) {
-                    pinnedHandler(pinnedIdx)
-                    return
-                }
-            }
-            baseHandler?(choice)
-        }
-
-        // Also wrap long press handler for pinned
-        let baseLongPress = menuLongPressHandler
-        menuLongPressHandler = { [weak self] choice in
-            let options = self?.currentMenuOptions ?? []
-            let idx = choice - 1
-            if idx >= 0 && idx < options.count {
-                let text = options[idx].text
-                if pinned.contains(text) {
-                    return // ignore long press on pinned
-                }
-            }
-            baseLongPress?(choice)
-        }
+        // Delegates entirely to showPaginatedMenu, which now handles pinned
+        // items internally (by text, so it's correct regardless of visual
+        // position) on every page — including ones reached via << / >>
+        // navigation. This used to be handled here instead, by wrapping
+        // menuHandler once after the first render; that wrapper was silently
+        // discarded whenever << / >> re-invoked showPaginatedMenu directly,
+        // which is exactly what made pinned buttons (e.g. "< Back") stop
+        // working after navigating to a second page.
+        showPaginatedMenu(allOptions, page: page, pinned: pinned, defaultIndex: defaultIndex, pinnedHandler: pinnedHandler, handler: handler)
     }
 
     /// Auto-assign button tint based on text content
+    /// Whether a pinned button is safe to squeeze into the compact <</>>/?
+    /// nav cell (which has only 3 physical slots) instead of rendering as
+    /// its own regular button. Only "?" and "< Back" qualify — TerminalView
+    /// prioritises << / >> / Back over "?" if all 4 would ever collide on
+    /// one page, so Back is never the one silently dropped.
+    static func isCompactPinnedNavText(_ text: String) -> Bool {
+        text == "?" || text == "?\u{0338}" || text == "< Back"
+    }
+
     static func autoTint(_ text: String) -> MenuTint {
         // Every "< X" button in this app (Back, Done, Cancel, Leave, Not Now...)
         // is a navigation/dismissal action by convention — tint them all the
@@ -9057,13 +9029,18 @@ class GameEngine: ObservableObject {
             dateFormatter.dateStyle = .medium
 
             var options: [String] = []
-            for (index, entry) in entries.enumerated() {
+            for entry in entries {
                 let outcomeTag = entry.outcome == .victory ? "W" : "L"
                 let outcomeColor: TerminalColor = entry.outcome == .victory ? .yellow : .red
 
-                let num = "\(index + 1)."
+                // No manual numbering here — the matching button below
+                // already carries its own number, correctly relative to
+                // whichever page it's on. A hand-written absolute index
+                // would only match the button's number on page 1; beyond
+                // that they'd silently diverge. The dungeon name (shared
+                // with the button text) is what ties a block to its button.
                 let name = String(entry.dungeonName.prefix(20))
-                let headerText = "\(num) \(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts"
+                let headerText = "\(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts"
                 print(headerText, color: outcomeColor)
 
                 let day = entry.gameTimeMinutes / 1440 + 1
@@ -12084,7 +12061,7 @@ class GameEngine: ObservableObject {
             }
         }
 
-        showMenu(["Continue", "Save to Roster & Continue"])
+        showMenu(["Continue", "Save to Roster"])
         closeHandler = advance
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
@@ -22624,7 +22601,12 @@ class GameEngine: ObservableObject {
         var options: [String] = []
         var defaultIdx: Int? = nil
         for (i, entry) in entries.enumerated() {
-            print("  \(i + 1). \(entry.characterName) — \(entry.race) \(entry.characterClass) L\(entry.level)", color: .brightGreen, bold: true)
+            // No manual numbering — the matching button carries its own
+            // number, correctly relative to whichever page it's on; a
+            // hand-written absolute index would only match on page 1. The
+            // character name (shared with the button text) ties this block
+            // to its button instead.
+            print("  \(entry.characterName) — \(entry.race) \(entry.characterClass) L\(entry.level)", color: .brightGreen, bold: true)
             print("     Score: \(entry.score)  ·  \(entry.gold)gp  ·  \(entry.dungeonName) (Lv\(entry.dungeonLevel))  ·  \(dateFormatter.string(from: entry.date))", color: .dimGreen)
             options.append(entry.characterName)
             if let defaultCharacterId = defaultCharacterId, entry.linkedCharacterId == defaultCharacterId {

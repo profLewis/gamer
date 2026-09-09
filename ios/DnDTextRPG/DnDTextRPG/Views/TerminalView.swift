@@ -1062,11 +1062,12 @@ struct MenuButtonsView: View {
     private func compactNavCell(indices: [Int]) -> some View {
         // Map known compact symbols to their index
         let backIdx = indices.first(where: { options[$0].text == "<<" })
+        let backButtonIdx = indices.first(where: { options[$0].text == "< Back" })
         let helpIdx = indices.first(where: { options[$0].text == "?" || options[$0].text == "?\u{0338}" })
         let nextIdx = indices.first(where: { options[$0].text == ">>" })
 
         // Any other compact items (e.g. 🎲, ↺) fill remaining empty slots
-        let knownIdxs = Set([backIdx, helpIdx, nextIdx].compactMap { $0 })
+        let knownIdxs = Set([backIdx, backButtonIdx, helpIdx, nextIdx].compactMap { $0 })
         let otherIndices = indices.filter { !knownIdxs.contains($0) }
         var otherIter = otherIndices.makeIterator()
 
@@ -1076,8 +1077,12 @@ struct MenuButtonsView: View {
             if let i = otherIter.next() { return .menuItem(i) }
             return .empty
         }()
-        // Slot 1: ? > other > empty
+        // Slot 1: < Back > ? > other > empty — Back wins the slot over Help
+        // in the rare case both are pinned alongside active << and >> (only
+        // 3 physical slots exist), since losing your way back matters more
+        // than losing quick access to a help screen.
         let slot1: CompactSlotContent = {
+            if let i = backButtonIdx { return .menuItem(i) }
             if let i = helpIdx { return .menuItem(i) }
             if let i = otherIter.next() { return .menuItem(i) }
             return .empty
