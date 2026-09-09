@@ -139,6 +139,23 @@ enum CharacterClass: String, CaseIterable, Codable {
         }
     }
 
+    /// A class+level rank title — the visible "you've grown" marker for a
+    /// text-based game (no portrait to put a hat on, so the title does that
+    /// job). Levels 1-5 only, matching the current level cap.
+    func rankTitle(atLevel level: Int) -> String {
+        let titles: [String]
+        switch self {
+        case .fighter:   titles = ["Recruit", "Soldier", "Warrior", "Veteran", "Champion"]
+        case .wizard:    titles = ["Apprentice", "Adept", "Conjurer", "Magus", "Archmage"]
+        case .rogue:     titles = ["Footpad", "Cutpurse", "Infiltrator", "Shadowblade", "Master Thief"]
+        case .cleric:    titles = ["Acolyte", "Curate", "Priest", "High Priest", "Hierophant"]
+        case .ranger:    titles = ["Tracker", "Pathfinder", "Warden", "Ranger-Captain", "Wildkeeper"]
+        case .barbarian: titles = ["Brawler", "Berserker", "Reaver", "Warchief", "Juggernaut"]
+        }
+        let idx = max(0, min(titles.count - 1, level - 1))
+        return titles[idx]
+    }
+
     /// Optimal ability score assignment order for auto-assign
     var abilityPriority: [Ability] {
         switch self {

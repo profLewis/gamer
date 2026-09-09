@@ -12820,7 +12820,7 @@ class GameEngine: ObservableObject {
         let maxNameLen = party.map { $0.name.count }.max() ?? 10
         for char in party {
             let padded = char.name.padding(toLength: maxNameLen, withPad: " ", startingAt: 0)
-            let hp = "\(char.currentHP)/\(char.maxHP) HP"
+            let hp = "L\(char.level) \(char.currentHP)/\(char.maxHP) HP"
             let poisonTag = char.isPoisoned ? " ☠" : ""
             let isYours = localIds.contains(char.id)
             let youTag = isYours ? " ◀" : ""
@@ -13695,7 +13695,7 @@ class GameEngine: ObservableObject {
         let maxNameLen = party.map { $0.name.count }.max() ?? 10
         for char in party {
             let padded = char.name.padding(toLength: maxNameLen, withPad: " ", startingAt: 0)
-            let hp = "\(char.currentHP)/\(char.maxHP) HP"
+            let hp = "L\(char.level) \(char.currentHP)/\(char.maxHP) HP"
             let poisonTag = char.isPoisoned ? " ☠" : ""
             let color: TerminalColor = char.isPoisoned ? .magenta : .cyan
             print(" \(padded)  \(hp)\(poisonTag)", color: color)
@@ -16490,6 +16490,7 @@ class GameEngine: ObservableObject {
             let shortClass = String(char.characterClass.rawValue.prefix(3))
             let namePrefix = (char.isComputerControlled && !charIsRemote && !char.name.hasPrefix("R.")) ? "R. " : ""
             print("  \(namePrefix)\(shortName(for: char))  \(char.race.rawValue) \(shortClass) L\(char.level)  \(typeTag)", color: .brightGreen, bold: true)
+            print("    ✦ \(char.characterClass.rankTitle(atLevel: char.level))", color: .cyan)
 
             // Line 2: HP bar + AC + Gold + XP
             let barLen = 8
@@ -21464,16 +21465,28 @@ class GameEngine: ObservableObject {
     func showLevelUpScreen(character: Character, completion: @escaping () -> Void) {
         let oldLevel = character.level
         let newLevel = oldLevel + 1
+        let oldTitle = character.characterClass.rankTitle(atLevel: oldLevel)
+        let newTitle = character.characterClass.rankTitle(atLevel: newLevel)
 
         character.level = newLevel
 
         clearTerminal()
         SoundManager.shared.playVictory()
 
-        printTitle("LEVEL UP!")
+        // Big, hard-to-miss fanfare — this is the one moment the game makes a
+        // point of showing growth, since there's no portrait to hang a new
+        // hat on in a text UI.
+        printLines([
+            "   ✦ · ✦ · ✦ · ✦ · ✦ · ✦   ",
+            "      L E V E L   U P !     ",
+            "   ✦ · ✦ · ✦ · ✦ · ✦ · ✦   ",
+        ], color: .yellow)
         print("")
         print("\(character.name) reaches Level \(newLevel)!", color: .yellow, bold: true)
-        logMultiplayerAction("\(character.name) reached Level \(newLevel)!")
+        if newTitle != oldTitle {
+            print("\(character.name) is now a \(newTitle)!", color: .brightGreen, bold: true)
+        }
+        logMultiplayerAction("\(character.name) reached Level \(newLevel) — \(newTitle)!")
         print("")
 
         // Roll hit die for HP
@@ -21484,53 +21497,71 @@ class GameEngine: ObservableObject {
         character.maxHP += hpGain
         character.currentHP += hpGain
 
-        printLines(diceArt(hpRoll), color: .brightGreen)
-        print("  HP: +\(hpGain) (d\(hitDie)[\(hpRoll)] + \(conMod) CON) → \(character.maxHP) max HP", color: .brightGreen)
-        print("")
-
         // Update spell slots
         let newSlots = SpellCatalog.startingSlots(for: character.characterClass, level: newLevel)
+        var slotLine: String? = nil
         if !newSlots.isEmpty {
             character.spellSlots.level1Max = newSlots.level1Max
             character.spellSlots.level1Current = newSlots.level1Max
             character.spellSlots.level2Max = newSlots.level2Max
             character.spellSlots.level2Current = newSlots.level2Max
             if newSlots.level1Max > 0 {
-                print("  Spell Slots: \(newSlots.level1Max) L1\(newSlots.level2Max > 0 ? ", \(newSlots.level2Max) L2" : "")", color: .cyan)
+                slotLine = "Spell Slots: \(newSlots.level1Max) L1\(newSlots.level2Max > 0 ? ", \(newSlots.level2Max) L2" : "")"
             }
         }
 
         // Learn new spells
         let newSpells = SpellCatalog.spellsForLevelUp(characterClass: character.characterClass, newLevel: newLevel)
-        if !newSpells.isEmpty {
-            for spell in newSpells {
-                character.knownSpells.append(spell)
-                print("  New Spell: \(spell.name) — \(spell.description)", color: .cyan)
-            }
+        for spell in newSpells {
+            character.knownSpells.append(spell)
         }
 
-        // Class feature announcements
+        // Class feature announcement for this level, if any
+        var newFeature: String? = nil
         switch character.characterClass {
         case .fighter:
             if newLevel == 2 {
-                print("  New Ability: Second Wind — heal 1d10+level once per short rest", color: .yellow)
+                newFeature = "Second Wind — heal 1d10+level once per short rest"
             }
         case .rogue:
             let dice = (newLevel + 1) / 2
             if dice > (oldLevel + 1) / 2 {
-                print("  Sneak Attack: now \(dice)d6 bonus damage", color: .yellow)
+                newFeature = "Sneak Attack — now \(dice)d6 bonus damage"
             }
         case .barbarian:
             character.rageUsesRemaining = character.rageMaxUses
             if newLevel == 3 {
-                print("  Rage: now 3 uses per long rest", color: .yellow)
+                newFeature = "Rage — now 3 uses per long rest"
             }
         default:
             break
         }
 
+        // --- New things first, always ---
+        print("  ✦ NEW THIS LEVEL", color: .brightGreen, bold: true)
+        printLines(diceArt(hpRoll), color: .brightGreen)
+        print("  +\(hpGain) HP (d\(hitDie)[\(hpRoll)] + \(conMod) CON) → \(character.maxHP) max HP", color: .brightGreen)
+        if let slotLine = slotLine {
+            print("  \(slotLine)", color: .cyan)
+        }
+        for spell in newSpells {
+            print("  New Spell: \(spell.name) — \(spell.description)", color: .cyan)
+        }
+        if let newFeature = newFeature {
+            print("  New Ability: \(newFeature)", color: .cyan)
+        }
         print("")
-        logEvent("\(character.name) reached Level \(newLevel)! (+\(hpGain) HP)", category: "LEVEL")
+
+        // --- Reminder of what they already had, so nothing gets forgotten ---
+        let existingSpells = character.knownSpells.filter { spell in !newSpells.contains(where: { $0.name == spell.name }) }
+        if !existingSpells.isEmpty {
+            let names = existingSpells.prefix(4).map { $0.name }.joined(separator: ", ")
+            let more = existingSpells.count > 4 ? " +\(existingSpells.count - 4) more" : ""
+            print("  Still have: \(names)\(more)", color: .dimGreen)
+        }
+        print("")
+
+        logEvent("\(character.name) reached Level \(newLevel) (\(newTitle))! (+\(hpGain) HP)", category: "LEVEL")
 
         if Self.abilityScoreImprovementLevels.contains(newLevel) {
             offerAbilityScoreImprovement(character: character, completion: completion)
