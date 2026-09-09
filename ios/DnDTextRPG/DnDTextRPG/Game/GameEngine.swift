@@ -567,7 +567,18 @@ class GameEngine: ObservableObject {
     // MARK: - Terminal Output
 
     func print(_ text: String, color: TerminalColor = .green, bold: Bool = false, underlined: Bool = false, size: CGFloat = 14, centered: Bool = false) {
-        DispatchQueue.main.async {
+        // runOnMain, not unconditional .async — see its own comment.
+        // print() and clearTerminal() used to disagree here: clearTerminal()
+        // became synchronous (see runOnMain()) but print() stayed .async, so
+        // a synchronous clearTerminal() call could run — and immediately
+        // report the array as empty — BEFORE an earlier screen's own
+        // still-queued print() appends had landed. A second screen
+        // rendered inside the same call chain (e.g. searchRoom() calling
+        // forageSupplies(), both of which clearTerminal()+printExplorationMap())
+        // would then have its own prints queue up BEHIND the first screen's
+        // now-unblocked ones instead of after a real clear, so both screens'
+        // content appended together — "the map shows twice."
+        runOnMain {
             self.terminalLines.append(TerminalLine(text, color: color, bold: bold, underlined: underlined, size: size, centered: centered))
         }
     }
@@ -13082,9 +13093,15 @@ class GameEngine: ObservableObject {
     /// every time. Compact mode kicks in above the smallest radius to keep
     /// wider maps from needing much scroll.
     private func bestMapRadius() -> (radius: Int, verticalRadius: Int, compact: Bool) {
-        let maxRadius = effectiveMapRadius()
-        guard maxRadius > 0 else { return (0, 0, false) }
-        return (maxRadius, maxRadius, maxRadius > 1)
+        // Always the configured radius, not effectiveMapRadius() — the
+        // viewport SIZE shouldn't depend on the torch; getMapDisplay's own
+        // torchLit parameter (passed separately by printExplorationMap())
+        // already hides room details when dark. Using effectiveMapRadius()
+        // here (0 with no torch) used to make the whole map box shrink to a
+        // small fixed size whenever the torch went out, instead of just
+        // going dark in place at the same size.
+        guard mapRadius > 0 else { return (0, 0, false) }
+        return (mapRadius, mapRadius, mapRadius > 1)
     }
 
     /// Redraws the full exploration screen: map + room description + party + menu

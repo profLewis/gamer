@@ -962,21 +962,41 @@ class Dungeon: ObservableObject, Codable {
     func getMapDisplay(visibilityRadius: Int = 3, torchLit: Bool = true, compact: Bool = false, verticalRadius: Int? = nil) -> [String] {
         guard let current = rooms[currentRoomId] else { return ["No map available."] }
 
-        // Torch off: show only [@] with no direction info — you can't see the passages
+        // Torch off: no direction info — you can't see the passages. Sized
+        // to match the same viewport (border width, room/corridor row count)
+        // the lit map would use at this same radius, instead of a small
+        // fixed box — the box used to visibly shrink and grow every time
+        // the torch toggled, rather than just going dark in place.
         if !torchLit {
-            let border = String(repeating: "-", count: 26)
-            let emptyRow = "|".padding(toLength: 28, withPad: " ", startingAt: 0) + "|"
-            let centerRow = "|      [@]".padding(toLength: 28, withPad: " ", startingAt: 0) + "|"
+            let vRadius = verticalRadius ?? visibilityRadius
+            let viewMinX = current.x - visibilityRadius
+            let viewMaxX = current.x + visibilityRadius
+            let viewMinY = current.y - vRadius
+            let viewMaxY = current.y + vRadius
+
+            let mapWidth = min((viewMaxX - viewMinX + 1) * 5 + 3, 40)
+            let border = String(repeating: "-", count: max(mapWidth, 26))
 
             var lines: [String] = []
             lines.append("+\(border)+")
             if !compact {
-                lines.append("| MAP".padding(toLength: 27, withPad: " ", startingAt: 0) + "|")
+                lines.append("| MAP".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|")
                 lines.append("+\(border)+")
             }
-            lines.append(emptyRow)
-            lines.append(centerRow)
-            lines.append(emptyRow)
+            for y in viewMinY...viewMaxY {
+                var roomRow = "| "
+                for x in viewMinX...viewMaxX {
+                    roomRow += (x == current.x && y == current.y) ? "[@]  " : "     "
+                }
+                roomRow = roomRow.padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|"
+                lines.append(roomRow)
+                if y < viewMaxY {
+                    let corridorRow = "|".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|"
+                    lines.append(corridorRow)
+                }
+            }
+            let hereLine = "| @ here: torch unlit".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|"
+            lines.append(hereLine)
             lines.append("+\(border)+")
             return lines
         }
