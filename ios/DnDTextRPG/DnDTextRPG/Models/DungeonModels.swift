@@ -183,12 +183,18 @@ class Room: Identifiable, ObservableObject, Codable {
     @Published var doorLockIds: [Direction: UUID] = [:]
     /// Which locked doors (see doorLockIds) are currently open.
     @Published var openedLocks: Set<Direction> = []
+    /// If set, this room has a teleport pad leading to the room with this
+    /// id. Set on both rooms of a pair for a bidirectional pad, or on just
+    /// one for a one-way pad. See Dungeon.generateDungeon()'s teleport-pad
+    /// placement.
+    @Published var teleportDestinationRoomId: Int? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, x, y, roomType, name, roomDescription, exits, visited, cleared
         case encounter, treasure, isLocked, searchedFor, trapTriggered
         case hiddenItems, hiddenGold, droppedItems, npc, secured, merchant, trainer
         case riddleIndex, riddleResolved, doorLockIds, openedLocks
+        case teleportDestinationRoomId
     }
 
     init(id: Int, x: Int, y: Int, type: RoomType) {
@@ -217,6 +223,7 @@ class Room: Identifiable, ObservableObject, Codable {
         self.trainer = nil
         self.doorLockIds = [:]
         self.openedLocks = []
+        self.teleportDestinationRoomId = nil
     }
 
     required init(from decoder: Decoder) throws {
@@ -248,6 +255,7 @@ class Room: Identifiable, ObservableObject, Codable {
         trainer = try container.decodeIfPresent(Trainer.self, forKey: .trainer)
         doorLockIds = try container.decodeIfPresent([Direction: UUID].self, forKey: .doorLockIds) ?? [:]
         openedLocks = try container.decodeIfPresent(Set<Direction>.self, forKey: .openedLocks) ?? []
+        teleportDestinationRoomId = try container.decodeIfPresent(Int.self, forKey: .teleportDestinationRoomId)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -277,6 +285,7 @@ class Room: Identifiable, ObservableObject, Codable {
         try container.encodeIfPresent(trainer, forKey: .trainer)
         try container.encode(doorLockIds, forKey: .doorLockIds)
         try container.encode(openedLocks, forKey: .openedLocks)
+        try container.encodeIfPresent(teleportDestinationRoomId, forKey: .teleportDestinationRoomId)
     }
 
     static func generateName(for type: RoomType) -> String {
@@ -637,7 +646,12 @@ class Dungeon: ObservableObject, Codable {
         var candidates = rooms.values
             .filter { $0.roomType != .entrance && $0.roomType != .boss }
             .sorted { (abs($0.x) + abs($0.y)) < (abs($1.x) + abs($1.y)) }
-        let numShops = max(1, numRooms / 15)
+        // Settings toggle (GameEngine.multipleShopsEnabled) — read the same
+        // UserDefaults key directly since Dungeon doesn't hold a reference
+        // to GameEngine. Off forces exactly one shop regardless of size.
+        let multipleShopsEnabled = UserDefaults.standard.object(forKey: "multiple_shops_enabled") == nil
+            || UserDefaults.standard.bool(forKey: "multiple_shops_enabled")
+        let numShops = multipleShopsEnabled ? max(1, numRooms / 15) : 1
         for shopIndex in 0..<numShops {
             guard !candidates.isEmpty else { break }
             let shopRoom: Room

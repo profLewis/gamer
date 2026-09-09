@@ -258,7 +258,9 @@ struct TerminalView: View {
                                     longPressDuration: gameEngine.longPressDuration,
                                     torchOff: !gameEngine.torchLit,
                                     npcLabel: gameEngine.dpadNPCLabel,
-                                    onNPCTap: gameEngine.dpadNPCHandler
+                                    onNPCTap: gameEngine.dpadNPCHandler,
+                                    torchLabel: gameEngine.dpadTorchLabel,
+                                    onTorchTap: gameEngine.dpadTorchHandler
                                 )
                             }
 
@@ -1282,6 +1284,8 @@ struct DirectionPadView: View {
     var torchOff: Bool = false
     var npcLabel: String? = nil
     var onNPCTap: (() -> Void)? = nil
+    var torchLabel: String? = nil
+    var onTorchTap: (() -> Void)? = nil
 
     let terminalGreen = Color(red: 0.0, green: 0.9, blue: 0.3)
     let terminalDarkGreen = Color(red: 0.0, green: 0.4, blue: 0.15)
@@ -1291,9 +1295,33 @@ struct DirectionPadView: View {
     let securedAmber = Color(red: 0.8, green: 0.6, blue: 0.1)
 
     private let npcCyan = Color(red: 0.2, green: 0.7, blue: 0.9)
+    private let torchBlue = Color(red: 0.3, green: 0.55, blue: 0.95)
 
     var body: some View {
         VStack(spacing: 4) {
+            // Torch toggle (NW corner) — mirrors the NPC icon's SE corner
+            HStack(spacing: 4) {
+                if let label = torchLabel, let action = onTorchTap {
+                    Button(action: action) {
+                        Image(systemName: label == "Douse" ? "flame.fill" : "flame")
+                            .font(.system(size: 16 * scale))
+                            .foregroundColor(torchBlue)
+                            .frame(width: max(80, 80 * scale), height: max(44, 34 * scale))
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(torchBlue.opacity(0.6), lineWidth: 1)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .fill(torchBlue.opacity(0.15))
+                                    )
+                            )
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Color.clear.frame(width: max(80, 80 * scale), height: 1)
+                }
+                Spacer(minLength: 0)
+            }
             // North
             dirButton(.north)
             // West + Center + East

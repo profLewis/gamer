@@ -356,6 +356,10 @@ class GameEngine: ObservableObject {
     var dpadCenterLongPressHandler: (() -> Void)?
     @Published var dpadNPCLabel: String? = nil
     var dpadNPCHandler: (() -> Void)?
+    /// "Douse" or "Illuminate" — quick torch toggle shown as a blue icon in
+    /// the D-pad's NW corner, mirroring the NPC icon's SE corner.
+    @Published var dpadTorchLabel: String? = nil
+    var dpadTorchHandler: (() -> Void)?
 
     // Shop
     private lazy var shopEngine = ShopEngine(game: self)
@@ -683,6 +687,28 @@ class GameEngine: ObservableObject {
             // options right after printing content, so this never matters
             // in normal flow.
             self.currentMenuOptions = []
+        }
+
+        // Watchdog: catches the case the two fixes above don't — a
+        // guard-return between clearTerminal() and a screen's own setup now
+        // leaves a genuinely blank, buttonless screen (see above) instead of
+        // stale buttons, but a buttonless screen means handleMenuChoice's
+        // own orphan recovery never gets a tap to react to. If nothing has
+        // rendered a real screen shortly after this clear, self-heal instead
+        // of leaving the player stuck looking at nothing. 2s is generous
+        // enough for every normal synchronous screen transition in this
+        // codebase (narrate() prints its offline fallback and calls its
+        // continuation immediately, not after an AI round-trip) while still
+        // catching a genuine dead end quickly. Combat is excluded — its
+        // animation/timer sequencing legitimately spans longer gaps with no
+        // menu on screen.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self = self else { return }
+            guard self.currentMenuOptions.isEmpty, self.menuHandler == nil,
+                  !self.awaitingTextInput, !self.awaitingContinue,
+                  self.closeHandler == nil,
+                  self.gameState != .combat else { return }
+            self.recoverFromOrphanedScreen()
         }
     }
 
@@ -1253,6 +1279,8 @@ class GameEngine: ObservableObject {
             self.dpadCenterLongPressHandler = nil
             self.dpadNPCLabel = nil
             self.dpadNPCHandler = nil
+            self.dpadTorchLabel = nil
+            self.dpadTorchHandler = nil
             self.currentMenuOptions = options.enumerated().map { index, text in
                 let tint = Self.autoTint(text)
                 let compact = text == "?" || text == "?\u{0338}" || text == "<<" || text == ">>"
@@ -1274,6 +1302,8 @@ class GameEngine: ObservableObject {
             self.dpadCenterLongPressHandler = nil
             self.dpadNPCLabel = nil
             self.dpadNPCHandler = nil
+            self.dpadTorchLabel = nil
+            self.dpadTorchHandler = nil
             self.currentMenuOptions = options.map { opt in
                 if !opt.isCompactNav && (opt.text == "?" || opt.text == "?\u{0338}" || opt.text == "<<" || opt.text == ">>") {
                     return MenuOption(opt.text, isDefault: opt.isDefault, isDisabled: opt.isDisabled, isAlert: opt.isAlert, tint: opt.tint, compact: true)
@@ -5402,6 +5432,19 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Whether a dungeon can generate more than one shop room (roughly 1 per
+    /// 15 rooms — see Dungeon.generateDungeon()). Off forces exactly one,
+    /// for players who find several shops per run too convenient.
+    var multipleShopsEnabled: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: "multiple_shops_enabled") == nil { return true }
+            return UserDefaults.standard.bool(forKey: "multiple_shops_enabled")
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "multiple_shops_enabled")
+        }
+    }
+
     var poisonEnabled: Bool {
         get {
             if UserDefaults.standard.object(forKey: "poison_enabled") == nil { return true }
@@ -5942,6 +5985,7 @@ class GameEngine: ObservableObject {
             npcsEnabled ? "NPCs Off" : "NPCs On", poisonEnabled ? "Poison Off" : "Poison On",
             multiplayerEnabled ? "Multi Off" : "Multi On", "Time Limit",
             idlePromptsEnabled ? "Idle Off" : "Idle On",
+            multipleShopsEnabled ? "Multi-Shop Off" : "Multi-Shop On",
             // Page 3 — System
             "Log Limit",
         ]
@@ -5990,6 +6034,10 @@ class GameEngine: ObservableObject {
                     self.cancelCombatIdleTimer()
                     self.cancelSaveMenuIdleTimer()
                 }
+                self.showGameplaySettings(page: currentPage)
+            } else if selected.hasPrefix("Multi-Shop") {
+                self.recordSettingChange(screen: "s:gameplay", key: "multiple_shops_enabled", name: "Multi-Shop")
+                self.multipleShopsEnabled.toggle()
                 self.showGameplaySettings(page: currentPage)
             } else if selected.hasPrefix("Undo/Redo") {
                 self.recordSettingChange(screen: "s:gameplay", key: "undoRedoEnabled", name: "Undo/Redo")
@@ -6250,6 +6298,7 @@ class GameEngine: ObservableObject {
     private static let settingsKeys: [String] = [
         "maxButtonsPerScreen", "longPressDuration", "infoTimeout", "customInfoTimeouts",
         "map_radius", "useArrowNavigation", "multiplayer_enabled", "npcs_enabled",
+        "multiple_shops_enabled",
         "hit_animations", "voiceMenuEnabled", "iconScaleSetting", "adventureLogLimit",
         "fontSizeSetting", "music_enabled", "battle_sounds_enabled",
         "autosave_interval", "dmProvider", "dmAdLibLevel", "dmLogContextSize",
@@ -7000,6 +7049,7 @@ class GameEngine: ObservableObject {
         add("useArrowNavigation", "Card Navigation", current: useArrowNavigation ? "Buttons" : "Swipe", dflt: "Swipe")
         add("map_radius", "Map Radius", current: "\(mapRadius)", dflt: "1")
         add("npcs_enabled", "NPCs", current: npcsEnabled ? "On" : "Off", dflt: "Off")
+        add("multiple_shops_enabled", "Multi-Shop", current: multipleShopsEnabled ? "On" : "Off", dflt: "On")
         add("multiplayer_enabled", "Multiplayer", current: multiplayerEnabled ? "On" : "Off", dflt: "Off")
         add("undoRedoEnabled", "Undo/Redo", current: undoRedoEnabled ? "On" : "Off", dflt: "On")
 
@@ -13112,6 +13162,26 @@ class GameEngine: ObservableObject {
             DispatchQueue.main.async {
                 self.dpadNPCLabel = nil
                 self.dpadNPCHandler = nil
+            }
+        }
+
+        // Torch toggle — shown on the D-pad (NW corner) as a quick-access
+        // icon, alongside the existing "Douse Torch"/"Illuminate" entry in
+        // the Actions submenu (not removed — some players prefer the list).
+        if torchLit {
+            DispatchQueue.main.async {
+                self.dpadTorchLabel = "Douse"
+                self.dpadTorchHandler = { [weak self] in self?.douseTorch() }
+            }
+        } else if partyHasTorch() {
+            DispatchQueue.main.async {
+                self.dpadTorchLabel = "Illuminate"
+                self.dpadTorchHandler = { [weak self] in self?.lightTorch() }
+            }
+        } else {
+            DispatchQueue.main.async {
+                self.dpadTorchLabel = nil
+                self.dpadTorchHandler = nil
             }
         }
 
