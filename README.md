@@ -126,6 +126,12 @@ Requires Xcode 15.0+. Open `ios/DnDTextRPG/DnDTextRPG.xcodeproj` and build for i
 
 See [ios/README.md](ios/README.md) for detailed build instructions.
 
+## Testing
+
+- Manual QA checklist covering every system — combat, spells, leveling,
+  merchants, riddles, traps, save/load, DM tiers, and more:
+  [docs/QA_CHECKLIST.md](docs/QA_CHECKLIST.md)
+
 ## iOS/Python Feature Parity
 
 - Current reconciliation status and mapping:
