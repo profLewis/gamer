@@ -1793,12 +1793,21 @@ class GameEngine: ObservableObject {
         } else if inHelpContext && menuHandler != nil {
             // Help pages: long-press any button → How to Play
             showHowToPlay()
-        } else if let handler = menuHandler {
-            // Fall back to normal handler if no long-press handler
-            // Don't clear menu prematurely — the handler sets up the new menu
-            handler(choice)
         }
-        // If no handler at all, do nothing — don't clear the menu
+        // No dedicated long-press handler — do nothing. Buttons use
+        // .simultaneousGesture for long-press detection (see regularButton
+        // in TerminalView.swift), which means a plain tap held just past
+        // longPressDuration fires BOTH this and the button's own tap action
+        // for the same physical touch. Re-invoking menuHandler(choice) here
+        // used to be an intentional fallback ("do something on long-press
+        // regardless"), but combined with that dual-firing it meant a
+        // slightly slow tap silently ran the tap's own handler TWICE — the
+        // second, stale-index invocation landing on whatever screen the
+        // first call had already built. That's what produced reports like
+        // "Accept -> blank screen": e.g. finishCharacterCreation() adding a
+        // character and building a new menu, then immediately being called
+        // again by the long-press fallback with the same stale choice
+        // number, which the new menu reinterpreted as a different button.
     }
 
     /// Match a voice transcript against current menu options and select the best match
@@ -12108,7 +12117,20 @@ class GameEngine: ObservableObject {
     }
 
     func finishCharacterCreation() {
-        guard let race = tempRace, let charClass = tempClass else { return }
+        lastCharCreationBreadcrumb = "finishCharacterCreation(idx:\(creatingCharacterIndex),total:\(totalCharacters),tempRace:\(tempRace?.rawValue ?? "nil"),tempClass:\(tempClass?.rawValue ?? "nil"))"
+        // Self-heal instead of silently bailing: race/class should always be
+        // set by whichever screen led here (autoCreateCharacter, chooseClass,
+        // autoAssignAndFinish), but if this is ever reached without them —
+        // e.g. a stale button from a screen that got replaced — a random
+        // pick keeps the flow moving instead of leaving a dead, unresponsive
+        // "Accept" button with no visible sign anything went wrong.
+        if tempRace == nil { tempRace = Race.allCases.randomElement() }
+        if tempClass == nil { tempClass = CharacterClass.allCases.randomElement() }
+        guard let race = tempRace, let charClass = tempClass else {
+            lastCharCreationBreadcrumb += ".GUARD-FAILED"
+            recoverFromOrphanedScreen()
+            return
+        }
 
         var scores = AbilityScores(
             strength: assignedScores[.strength] ?? 10,
@@ -12222,6 +12244,7 @@ class GameEngine: ObservableObject {
 
         let advance: () -> Void = { [weak self] in
             guard let self = self else { return }
+            self.lastCharCreationBreadcrumb = "finishCharacterCreation.advance(idx:\(self.creatingCharacterIndex)->\(self.creatingCharacterIndex + 1),total:\(self.totalCharacters),multi:\(self.isMultiplayer))"
             self.creatingCharacterIndex += 1
             if self.creatingCharacterIndex < self.totalCharacters {
                 self.chooseCharacterType()
@@ -13172,6 +13195,28 @@ class GameEngine: ObservableObject {
             actions.append { [weak self] in if self?.torchLit == true { self?.useTeleportPad(from: room, to: destRoom) } }
         }
 
+        if let vMethod = room.verticalMethod, let vDestId = room.verticalDestinationRoomId,
+           let vDestRoom = dungeon.rooms[vDestId], (room.cleared || room.encounter == nil) {
+            let label: String
+            let met: Bool
+            switch vMethod {
+            case "stairs":
+                label = "Take the Stairs"
+                met = true
+            case "rope":
+                label = "Climb the Rope"
+                met = party.flatMap { $0.inventory }.contains { $0.name.hasPrefix("Rope") }
+            default: // "levitation"
+                label = "Levitate"
+                met = party.contains { $0.spellSlots.level1Current > 0 || $0.spellSlots.level2Current > 0 }
+            }
+            menuOpts.append(MenuOption(label, isDisabled: !met))
+            actions.append { [weak self] in
+                guard let self = self, self.torchLit, met else { return }
+                self.useVerticalConnection(method: vMethod, from: room, to: vDestRoom)
+            }
+        }
+
         // Talk to NPC — shown on the D-pad (SE corner) rather than in menu buttons.
         // Without a torch, NPCs are harder to find (only show if already spoken to).
         // Always set both branches (not just the truthy one) — otherwise a
@@ -13616,6 +13661,49 @@ class GameEngine: ObservableObject {
         logEvent("Teleported from \(room.name) to \(destination.name)", category: "EXPLORE")
         logMultiplayerAction("The party stepped through a teleport pad into \(destination.name)")
         explorationStatusMessage = ("The pad hums, and the room shifts around you...", .cyan)
+        autosaveIfNeeded()
+        showExplorationView()
+    }
+
+    /// Move between floors via stairs, a rope-climbed hole, or levitation
+    /// magic. Requirements (rope carried / spell slot available) are
+    /// checked by the caller before this is ever invoked — see the
+    /// "Take the Stairs"/"Climb the Rope"/"Levitate" menu option above.
+    private func useVerticalConnection(method: String, from room: Room, to destination: Room) {
+        guard let dungeon = dungeon else { return }
+        dungeon.currentRoomId = destination.id
+        advanceTime(10)
+        tickTorch()
+        checkTorchEvent()
+
+        switch method {
+        case "rope":
+            explorationStatusMessage = ("You climb the rope through the hole into another level...", .cyan)
+            logEvent("Climbed via rope from \(room.name) to \(destination.name)", category: "EXPLORE")
+        case "levitation":
+            // Spend a slot from whichever caster has one — this is what
+            // "casts" the levitation, not a specific known spell (the
+            // catalog doesn't have one yet).
+            if let caster = party.first(where: { $0.spellSlots.level2Current > 0 }) {
+                caster.spellSlots.level2Current -= 1
+            } else if let caster = party.first(where: { $0.spellSlots.level1Current > 0 }) {
+                caster.spellSlots.level1Current -= 1
+            }
+            // Small risk of a bump on the way — never lethal, just a scare.
+            if Int.random(in: 1...100) <= 10, let unlucky = party.filter({ $0.isConscious }).randomElement() {
+                let bump = Dice.roll(4)
+                unlucky.currentHP = max(1, unlucky.currentHP - bump)
+                explorationStatusMessage = ("You levitate smoothly — until \(unlucky.name) bumps the ceiling! (-\(bump) HP)", .yellow)
+                logEvent("\(unlucky.name) bumped the ceiling while levitating (-\(bump) HP)", category: "EXPLORE")
+            } else {
+                explorationStatusMessage = ("You levitate gently between floors, minding the ceiling...", .cyan)
+            }
+            logEvent("Levitated from \(room.name) to \(destination.name)", category: "EXPLORE")
+        default: // "stairs"
+            explorationStatusMessage = ("You take the stairs to another level...", .cyan)
+            logEvent("Took the stairs from \(room.name) to \(destination.name)", category: "EXPLORE")
+        }
+        logMultiplayerAction("The party moved to another floor via \(method)")
         autosaveIfNeeded()
         showExplorationView()
     }

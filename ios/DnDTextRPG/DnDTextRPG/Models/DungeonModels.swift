@@ -188,6 +188,15 @@ class Room: Identifiable, ObservableObject, Codable {
     /// one for a one-way pad. See Dungeon.generateDungeon()'s teleport-pad
     /// placement.
     @Published var teleportDestinationRoomId: Int? = nil
+    /// If set, this room connects to another floor via the room with this
+    /// id, using verticalMethod. Mirrors teleportDestinationRoomId's
+    /// same-room-pair pattern. See Dungeon.generateDungeon()'s vertical-
+    /// connection placement.
+    @Published var verticalDestinationRoomId: Int? = nil
+    /// "stairs" (free, always works), "rope" (needs a Rope item carried),
+    /// or "levitation" (needs an available spell slot). nil if no vertical
+    /// connection here.
+    @Published var verticalMethod: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, x, y, roomType, name, roomDescription, exits, visited, cleared
@@ -195,6 +204,7 @@ class Room: Identifiable, ObservableObject, Codable {
         case hiddenItems, hiddenGold, droppedItems, npc, secured, merchant, trainer
         case riddleIndex, riddleResolved, doorLockIds, openedLocks
         case teleportDestinationRoomId
+        case verticalDestinationRoomId, verticalMethod
     }
 
     init(id: Int, x: Int, y: Int, type: RoomType) {
@@ -224,6 +234,8 @@ class Room: Identifiable, ObservableObject, Codable {
         self.doorLockIds = [:]
         self.openedLocks = []
         self.teleportDestinationRoomId = nil
+        self.verticalDestinationRoomId = nil
+        self.verticalMethod = nil
     }
 
     required init(from decoder: Decoder) throws {
@@ -256,6 +268,8 @@ class Room: Identifiable, ObservableObject, Codable {
         doorLockIds = try container.decodeIfPresent([Direction: UUID].self, forKey: .doorLockIds) ?? [:]
         openedLocks = try container.decodeIfPresent(Set<Direction>.self, forKey: .openedLocks) ?? []
         teleportDestinationRoomId = try container.decodeIfPresent(Int.self, forKey: .teleportDestinationRoomId)
+        verticalDestinationRoomId = try container.decodeIfPresent(Int.self, forKey: .verticalDestinationRoomId)
+        verticalMethod = try container.decodeIfPresent(String.self, forKey: .verticalMethod)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -730,6 +744,31 @@ class Dungeon: ObservableObject, Codable {
                 }
                 usedForPad.insert(roomA.id)
                 usedForPad.insert(roomB.id)
+            }
+        }
+
+        // Vertical connections — a second "floor" reachable via stairs (free,
+        // always works), a rope through a hole (needs a Rope item carried),
+        // or a levitation shaft (needs an available spell slot). All are
+        // bidirectional — same two rooms link both ways once the method's
+        // requirement is met. Skipped in small dungeons.
+        if numRooms >= 15 {
+            let vCandidates = rooms.values.filter {
+                $0.roomType != .entrance && $0.roomType != .boss && $0.teleportDestinationRoomId == nil
+            }
+            if let roomA = vCandidates.randomElement() {
+                let farEnough = vCandidates.filter {
+                    $0.id != roomA.id
+                        && (abs($0.x - roomA.x) + abs($0.y - roomA.y)) >= 4
+                        && !roomA.exits.values.contains($0.id)
+                }
+                if let roomB = farEnough.randomElement() {
+                    let method = ["stairs", "rope", "levitation"].randomElement()!
+                    roomA.verticalDestinationRoomId = roomB.id
+                    roomA.verticalMethod = method
+                    roomB.verticalDestinationRoomId = roomA.id
+                    roomB.verticalMethod = method
+                }
             }
         }
 
