@@ -329,6 +329,12 @@ class GameEngine: ObservableObject {
     /// prompt — hides "Load Character" on that one next screen only, since
     /// re-offering it immediately after declining would be redundant.
     private var suppressLoadCharacterButtonOnce: Bool = false
+    /// Skills a gym trainer refused to teach outright, promising them
+    /// instead once the character "proves it in a real fight" — granted
+    /// automatically in handleCombatVictory(). In-memory only (not part of
+    /// Character's Codable state): a standing offer for the rest of this
+    /// play session, not a commitment that needs to survive a save file.
+    private var pendingBattleTrainedSkills: [UUID: [(skill: Skill, gymName: String)]] = [:]
     private var tempCharacterName: String = ""
     private var tempRace: Race?
     private var tempClass: CharacterClass?
@@ -16765,13 +16771,83 @@ class GameEngine: ObservableObject {
                     let xp = 20
                     character.experiencePoints += xp
                     self.print("  \"You've already got a good handle on that — but keep at it.\" (+\(xp) XP)", color: .yellow)
+                    self.advanceTime(30)
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
                 } else {
-                    character.skillProficiencies.insert(skill)
-                    self.print("  \(character.name) is now proficient in \(skill.rawValue)!", color: .brightGreen, bold: true)
-                    self.logEvent("\(character.name) trained \(skill.rawValue) at \(trainer.gymName)", category: "LEVEL")
-                    self.logMultiplayerAction("\(character.name) trained \(skill.rawValue) at \(trainer.gymName)")
+                    self.attemptGymTraining(skill: skill, character: character, trainer: trainer, room: room)
                 }
-                self.advanceTime(30)
+            }
+        }
+    }
+
+    /// A new skill isn't always an instant hand-out: it's picked up
+    /// naturally about as often as it takes a puzzle to prove aptitude, and
+    /// sometimes the trainer flatly refuses until the character has used it
+    /// for real — that promise is fulfilled by handleCombatVictory().
+    private func attemptGymTraining(skill: Skill, character: Character, trainer: Trainer, room: Room) {
+        let roll = Int.random(in: 1...100)
+        switch roll {
+        case 1...40:
+            self.print("  It clicks right away — a natural fit.", color: .cyan)
+            grantGymSkill(skill, to: character, trainer: trainer, room: room)
+        case 41...70:
+            let riddle = RiddleData.all.randomElement()!
+            presentGymRiddle(riddle, skill: skill, character: character, trainer: trainer, room: room)
+        default:
+            pendingBattleTrainedSkills[character.id, default: []].append((skill, trainer.gymName))
+            self.print("  \"\(skill.rawValue)? I won't just hand that over — go prove it in a real fight, and it's yours.\"", color: .yellow)
+            self.advanceTime(15)
+            self.waitForContinue()
+            self.inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
+        }
+    }
+
+    private func grantGymSkill(_ skill: Skill, to character: Character, trainer: Trainer, room: Room) {
+        character.skillProficiencies.insert(skill)
+        self.print("  \(character.name) is now proficient in \(skill.rawValue)!", color: .brightGreen, bold: true)
+        self.logEvent("\(character.name) trained \(skill.rawValue) at \(trainer.gymName)", category: "LEVEL")
+        self.logMultiplayerAction("\(character.name) trained \(skill.rawValue) at \(trainer.gymName)")
+        self.advanceTime(30)
+        self.waitForContinue()
+        self.inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
+    }
+
+    /// One retry on a wrong answer, then the trainer sends them away —
+    /// mirrors presentRiddle's leniency (never a hard dead end).
+    private func presentGymRiddle(_ riddle: Riddle, skill: Skill, character: Character, trainer: Trainer, room: Room, attemptsUsed: Int = 0) {
+        let (options, correctIndex) = riddle.shuffled()
+
+        clearTerminal()
+        printTitle(trainer.gymName)
+        print("")
+        print("  \"Answer me this, and \(skill.rawValue) is yours.\"", color: .cyan)
+        printWrapped("\"\(riddle.question)\"", indent: 2, color: .yellow)
+        print("")
+
+        showMenu(options + ["< Give Up"])
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == options.count + 1 {
+                self.print("")
+                self.print("  You leave the puzzle unanswered — perhaps another time.", color: .dimGreen)
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
+                return
+            }
+            guard choice >= 1 && choice <= options.count else { return }
+            self.print("")
+            if choice - 1 == correctIndex {
+                self.print("  Correct! \"\(riddle.correctAnswer)\"", color: .brightGreen, bold: true)
+                self.grantGymSkill(skill, to: character, trainer: trainer, room: room)
+            } else if attemptsUsed < 1 {
+                self.print("  Not quite. Try again.", color: .red)
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.presentGymRiddle(riddle, skill: skill, character: character, trainer: trainer, room: room, attemptsUsed: attemptsUsed + 1)
+                }
+            } else {
+                self.print("  \"Not this time. Come back when you've thought it over.\"", color: .red)
                 self.waitForContinue()
                 self.inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
             }
@@ -22228,6 +22304,19 @@ class GameEngine: ObservableObject {
             let nextLevel = char.level + 1
             if char.canLevelUp {
                 print("  \(char.name) has enough XP for Level \(nextLevel)!", color: .yellow)
+            }
+        }
+
+        // Fulfil any "prove it in a real fight" gym-training promises
+        for char in rewardParty {
+            guard let pending = pendingBattleTrainedSkills[char.id], !pending.isEmpty else { continue }
+            pendingBattleTrainedSkills[char.id] = nil
+            for (skill, gymName) in pending where !char.skillProficiencies.contains(skill) {
+                char.skillProficiencies.insert(skill)
+                print("")
+                print("  \(char.name) has proven themself — \(gymName) now counts them proficient in \(skill.rawValue)!", color: .brightGreen, bold: true)
+                logEvent("\(char.name) earned \(skill.rawValue) proficiency in combat (promised by \(gymName))", category: "LEVEL")
+                logMultiplayerAction("\(char.name) earned \(skill.rawValue) proficiency in combat, as promised by \(gymName)")
             }
         }
 
