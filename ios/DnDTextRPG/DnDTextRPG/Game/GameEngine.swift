@@ -1873,9 +1873,28 @@ class GameEngine: ObservableObject {
                 destination()
             }
         }
+        scheduleAutoReturnFire(after: seconds, destination: destination)
+    }
+
+    /// Fires `destination` after `seconds`, unless speaker mode is still
+    /// reading this screen aloud (either mid-speech, or about to start —
+    /// autoReadIfSpeakerMode() above has a short startup delay before
+    /// speech actually begins) — in which case it reschedules itself as a
+    /// short poll instead, using the existing isSpeakingAloud/
+    /// speakerHasReadCurrentPage signals (see startSpeakingCheck()) rather
+    /// than guessing a fixed delay long enough for arbitrary-length text.
+    /// Without this, a longer search/listen result could get cut off
+    /// mid-sentence by infoTimeout on a screen with nothing else to keep it
+    /// open.
+    private func scheduleAutoReturnFire(after seconds: Double, destination: @escaping () -> Void) {
         Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self = self, self.closeHandler != nil else { return }
+                let stillSpeaking = self.speakerModeOn && (self.isSpeakingAloud || !self.speakerHasReadCurrentPage)
+                if stillSpeaking {
+                    self.scheduleAutoReturnFire(after: 0.5, destination: destination)
+                    return
+                }
                 destination()
             }
         }
