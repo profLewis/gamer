@@ -11435,6 +11435,24 @@ class GameEngine: ObservableObject {
 
     func startCharacterCreation() {
         lastCharCreationBreadcrumb = "startCharacterCreation(idx:\(creatingCharacterIndex),total:\(totalCharacters),asAI:\(creatingAsAI),offeredHoF:\(hasOfferedHallOfFameReturn))"
+        // Set this unconditionally, before the early-return Hall of Fame
+        // path below — gameState gates background work like the Game
+        // Center invite-poll timer (checkForPendingInvites/
+        // startInvitePollTimer, only active "on the main menu"). Leaving it
+        // stuck at .mainMenu through the whole character-creation flow (as
+        // it used to be, since the HoF path returned before ever reaching
+        // this line) let that poll timer's 5s-interval GameCenter check
+        // treat the player as still being on the main menu and call
+        // showIncomingTurnPrompt() mid-flow — an unconditional
+        // clearTerminal() with no relation to character creation, dropping
+        // whatever screen was up (e.g. straight after loading a Hall of
+        // Fame hero) into a dead, buttonless state. That's what produced
+        // "Accept -> blank screen": nothing wrong with Accept itself, just
+        // an unrelated background poll clearing the screen out from under
+        // it because gameState still said "main menu".
+        gameState = .characterCreation
+        stopInvitePollTimer()
+
         // Offer to bring back a Hall of Fame hero for the first slot — once
         // per New Adventure flow, and only for the human player's own slot
         // (not AI companions). Goes straight to the Character Hall of Fame
@@ -11457,8 +11475,6 @@ class GameEngine: ObservableObject {
         }
 
         clearTerminal()
-        gameState = .characterCreation
-
         printSubtitle("Character \(creatingCharacterIndex + 1) of \(totalCharacters)")
 
         // Show name suggestions as tappable buttons
