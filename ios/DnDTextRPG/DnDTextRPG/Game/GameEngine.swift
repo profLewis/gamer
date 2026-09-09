@@ -721,6 +721,26 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Runs a D-pad quick-action (e.g. Search Room, Listen) that's really a
+    /// full "show a result, tap to continue" screen under the hood, without
+    /// letting the D-pad itself vanish for that screen. showMenu()/
+    /// waitForContinue() reset directionExits as part of clearing every
+    /// other leftover handler for the new screen — correct for a real
+    /// screen change, but visually jarring for what's meant to read as an
+    /// in-place action. Re-fills directionExits/securedExits right after
+    /// ONLY if the action left them empty — if it legitimately set new ones
+    /// (e.g. it fully returned to exploration on a changed room), that's
+    /// left alone.
+    private func runPreservingDirectionExits(_ action: () -> Void) {
+        let exits = directionExits
+        let secured = securedExits
+        action()
+        if directionExits.isEmpty {
+            directionExits = exits
+            securedExits = secured
+        }
+    }
+
     func clearTerminal() {
         // Bumped once per call, captured by each watchdog below as
         // myGeneration. THE REAL BUG (found after extensive investigation
@@ -13476,8 +13496,23 @@ class GameEngine: ObservableObject {
 
         // Search Room / Listen — shown on the D-pad (NW/NE corners) as
         // quick-access icons; always available during exploration.
-        dpadSearchHandler = { [weak self] in self?.searchRoom() }
-        dpadListenHandler = { [weak self] in self?.listenAtDoors() }
+        // searchRoom()/listenAtDoors() are full "show a result, tap to
+        // continue" screens (same as the Actions-menu list items they
+        // mirror) — waitForContinue()/showMenu() reset directionExits as
+        // part of clearing every other screen's leftover state, which is
+        // fine for a deliberate screen change but made the whole D-pad
+        // visibly vanish and the button layout jump for what's meant to be
+        // a quick, in-place action. runPreservingDirectionExits() re-fills
+        // it right after IF the action left it empty, keeping the D-pad in
+        // place through the result screen instead.
+        dpadSearchHandler = { [weak self] in
+            guard let self = self else { return }
+            self.runPreservingDirectionExits { self.searchRoom() }
+        }
+        dpadListenHandler = { [weak self] in
+            guard let self = self else { return }
+            self.runPreservingDirectionExits { self.listenAtDoors() }
+        }
 
         // --- Middle row: Inventory + Party Status ---
         menuOpts.append(MenuOption("Inventory"))
