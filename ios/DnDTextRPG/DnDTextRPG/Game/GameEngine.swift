@@ -2599,9 +2599,27 @@ class GameEngine: ObservableObject {
         // and letter-ratio checks (not the ASCII-art/table checks below,
         // which these lines pass naturally anyway).
         let combatKeywords = ["damage!", "critical", " attacks ", "defeated!", "unconscious!", "poisoned!"]
+        // Map legend/key rows (see Dungeon.mapLegendLines) are bar-separated
+        // "X=Label" pairs like "@=You  !=Danger  .=Empty" — a visual
+        // reference the player can already see, not narration. Detected
+        // structurally (every "  "-separated part matches symbol=Word)
+        // rather than by keyword, so it doesn't matter which of the fixed
+        // legend entries are showing.
+        let legendPartPattern = try? NSRegularExpression(pattern: "^\\S{1,2}=[A-Za-z]+$")
         let lines = terminalLines.compactMap { line -> String? in
             let trimmed = line.text.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { return nil }
+
+            if let legendPartPattern = legendPartPattern {
+                let core = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "|")).trimmingCharacters(in: .whitespaces)
+                let parts = core.components(separatedBy: "  ").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                if !parts.isEmpty && parts.allSatisfy({ part in
+                    let range = NSRange(part.startIndex..., in: part)
+                    return legendPartPattern.firstMatch(in: part, range: range) != nil
+                }) {
+                    return nil
+                }
+            }
 
             // Lines containing quoted speech are always readable
             let hasQuote = trimmed.contains("\"") || trimmed.contains("\u{201C}") || trimmed.contains("\u{201D}")
@@ -23128,7 +23146,6 @@ class GameEngine: ObservableObject {
         let shouldReturnToDM = returnToDMAfterCombat
         returnToDMAfterCombat = false
 
-        waitForContinue()
         let continueAction: () -> Void = { [weak self] in
             guard let self = self else { return }
             // Show loot pickup first, then level-ups, then back to DM or exploration
@@ -23149,17 +23166,21 @@ class GameEngine: ObservableObject {
             self.showLootSequence(gold: lootGold, goldSource: "Combat loot",
                                   items: lootItems, itemSource: "Combat loot", onDone: afterLoot)
         }
-        // Auto-continue after 3x timeout (user can tap to continue sooner)
-        let victoryTimer = Timer.scheduledTimer(withTimeInterval: infoTimeout * 3, repeats: false) { [weak self] _ in
-            DispatchQueue.main.async {
-                guard self?.inputHandler != nil else { return }
-                continueAction()
-            }
-        }
-        inputHandler = { _ in
-            victoryTimer.invalidate()
-            continueAction()
-        }
+        // Was a hand-rolled Timer + inputHandler pair, guarded only by
+        // "is inputHandler currently non-nil" — true of almost any active
+        // screen, not specifically this one. If that Timer ever fired after
+        // the player had already tapped through to a LATER, unrelated
+        // screen (its own inputHandler in active use for something else),
+        // it would fire continueAction() a second time regardless, wiping
+        // that screen via clearTerminal() and calling showLootSequence()
+        // again with already-granted loot — which, having nothing left to
+        // show, could render as little more than a blank screen instead of
+        // "text appropriate to the victory and what's next". autoReturn()
+        // already solves exactly this: it guards on closeHandler, set and
+        // cleared specifically for THIS destination, not shared with
+        // whatever screen comes after.
+        autoReturnDestination = continueAction
+        autoReturn(after: infoTimeout * 3)
     }
 
     func handleCombatDefeat() {
