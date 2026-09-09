@@ -10959,16 +10959,26 @@ class GameEngine: ObservableObject {
             return
         }
 
-        // Default remaining characters to Auto (AI) — skip type choice
-        creatingAsAI = true
-        autoCreateCharacter()
-        return
-
-        // NOTE: manual type choice below is no longer used — player types
-        // can be changed in Party Review after creation
-
+        // Ask who controls each remaining slot — previously this defaulted
+        // straight to Computer (AI) with no choice shown at all (silently
+        // forcing every non-first/non-last slot to be AI, discoverable only
+        // by later noticing the [Auto] tag in Party Review), which made a
+        // party of >1 human player impossible to set up here and gave no
+        // indication a new character was even starting. Recap who's already
+        // in the party so it's clear the previous slot was actually
+        // accepted, then ask explicitly. Defaults to Computer (AI) (see
+        // defaultIndex below) so a quick tap/Return keeps the old
+        // one-tap-through behaviour for anyone who doesn't care.
         clearTerminal()
         printSubtitle("Character \(creatingCharacterIndex + 1) of \(totalCharacters)")
+        if !party.isEmpty {
+            print("  Party so far:", color: .cyan)
+            for char in party {
+                let tag = char.isComputerControlled ? "Computer" : "You"
+                print("    \(char.name) — \(char.race.rawValue) \(char.characterClass.rawValue) (\(tag))", color: .dimGreen)
+            }
+            print("")
+        }
         print("Who controls this character?")
         print("")
 
@@ -10976,7 +10986,7 @@ class GameEngine: ObservableObject {
         var opts = ["Human Player", "Computer (AI)"]
         if gcAuth { opts.append("Remote Player") }
 
-        showMenu(opts)
+        showMenu(opts, defaultIndex: 1)
 
         closeHandler = { [weak self] in
             guard let self = self else { return }
