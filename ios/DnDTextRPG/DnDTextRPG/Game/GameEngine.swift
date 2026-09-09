@@ -18026,34 +18026,20 @@ class GameEngine: ObservableObject {
         if adventureLog.isEmpty {
             print("  No events recorded yet.", color: .dimGreen)
         } else {
+            // Always the full history across every day — no day filtering.
+            // A display limit (if set) only caps how many of the most recent
+            // entries are shown, never which days are included.
             let limit = adventureLogLimit
             let entries: [String]
-            if limit == 0 {
-                // "All" means all — the full history across every day, not
-                // just today. (Export always includes everything regardless
-                // of this setting.)
+            if limit > 0 && adventureLog.count > limit {
+                entries = Array(adventureLog.suffix(limit))
+                print("  (Showing last \(limit) of \(adventureLog.count) events — change in Settings > Gameplay)", color: .dimGreen)
+                print("")
+            } else {
                 entries = adventureLog
                 if adventureLog.count > 200 {
                     print("  Long log! Set a display limit in Settings > Gameplay if scrolling takes too long.", color: .dimGreen)
                     print("")
-                }
-            } else {
-                // Filter to today's entries (current game day) for a shorter,
-                // more focused view when a limit is set.
-                let currentDay = gameTimeMinutes / 1440 + 1
-                let todayPrefix = "[Day \(currentDay),"
-                let todayEntries = adventureLog.filter { $0.hasPrefix(todayPrefix) }
-                let source = todayEntries.isEmpty ? adventureLog : todayEntries
-                if source.count > limit {
-                    entries = Array(source.suffix(limit))
-                    print("  (Showing last \(limit) of \(source.count) today — change in Settings > Gameplay)", color: .dimGreen)
-                    print("")
-                } else {
-                    entries = source
-                    if currentDay > 1 && !todayEntries.isEmpty {
-                        print("  (Showing Day \(currentDay) — \(todayEntries.count) of \(adventureLog.count) events)", color: .dimGreen)
-                        print("")
-                    }
                 }
             }
             let charColors: [TerminalColor] = [.brightGreen, .cyan, .magenta, .orange]
