@@ -37,6 +37,13 @@ struct TerminalView: View {
     @State private var inputText: String = ""
     @FocusState private var isInputFocused: Bool
     @State private var textModeAutoSubmitTimer: Timer? = nil
+    /// Last time the user manually dragged the terminal scroll view — while
+    /// recent, auto-scroll-to-bottom backs off so they can scroll up mid-combat
+    /// to reread what happened without being yanked back down.
+    @State private var lastManualScrollAt: Date = .distantPast
+    private var recentlyScrolledManually: Bool {
+        Date().timeIntervalSince(lastManualScrollAt) < 4.0
+    }
     #if os(iOS)
     @State private var showCustomKeyboard: Bool = false
     @State private var keyboardCollapsedAt: Date = .distantPast
@@ -125,6 +132,10 @@ struct TerminalView: View {
                             .animation(.easeInOut(duration: 0.12), value: gameEngine.textFlashOpacity)
                         }
                         .scrollDisabled(gameEngine.scrollLocked)
+                        .simultaneousGesture(
+                            DragGesture(minimumDistance: 6)
+                                .onChanged { _ in lastManualScrollAt = Date() }
+                        )
                         .onChange(of: gameEngine.terminalLines.count) { _ in
                             if gameEngine.suppressAutoScroll {
                                 scrollToTop(scrollProxy)
@@ -756,6 +767,9 @@ struct TerminalView: View {
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
+        // Respect a recent manual scroll — e.g. scrolling back up mid-combat to
+        // reread what happened — instead of immediately snapping back down.
+        guard !recentlyScrolledManually else { return }
         if let lastLine = gameEngine.terminalLines.last {
             withAnimation {
                 proxy.scrollTo(lastLine.id, anchor: .bottom)

@@ -235,8 +235,8 @@ struct FAQData {
         ),
         FAQEntry(
             question: "How do I level up?",
-            answer: "Characters gain XP from defeating monsters and completing objectives. When you earn enough XP, you level up automatically, gaining more HP, better attack bonuses, and new abilities. Check party status to see your current XP and level.",
-            keywords: ["level up", "xp", "experience", "gain level", "levelling"]
+            answer: "Characters gain XP from defeating monsters, completing objectives, and DM/quest rewards. Level up is automatic once you cross the threshold: 300 XP for Level 2, 900 for Level 3, 2,700 for Level 4, 6,500 for Level 5 (the level cap). Party Status shows your current XP and how much you need for the next level.",
+            keywords: ["level up", "xp", "experience", "gain level", "levelling", "threshold", "how much xp"]
         ),
         FAQEntry(
             question: "How many party members should I have?",

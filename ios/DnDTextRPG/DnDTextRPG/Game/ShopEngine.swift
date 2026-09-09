@@ -33,10 +33,19 @@ class ShopEngine {
         self.game = game
     }
 
+    /// Gold + carry weight — shown on every sub-screen (buy/sell/haggle), not
+    /// just the shop's main landing screen, since it's exactly what you need
+    /// to know while deciding whether you can afford or carry something.
+    private func printPurseAndCarryLine(_ character: Character) {
+        guard let game = game else { return }
+        game.print("  Gold: \(character.gold)  |  Carrying: \(String(format: "%.0f", character.currentWeight))/\(String(format: "%.0f", character.carryCapacity))lb (\(character.inventory.count) items)", color: .yellow)
+    }
+
     func openShop(character: Character, dungeonLevel: Int, merchant: Merchant, completion: @escaping () -> Void) {
         self.character = character
         self.merchant = merchant
         self.stock = ItemCatalog.shopStock(forLevel: dungeonLevel)
+        game?.logEvent("Visited \(merchant.name) at \(merchant.shopName)", category: "SHOP")
         showShopMain(completion: completion)
     }
 
@@ -76,7 +85,7 @@ class ShopEngine {
 
         game.clearTerminal()
         game.printTitle("Buy Items")
-        game.print("  Gold: \(character.gold)", color: .yellow)
+        printPurseAndCarryLine(character)
         game.print("")
 
         var options: [String] = []
@@ -117,6 +126,7 @@ class ShopEngine {
             character.gold -= item.value
             let newItem = item.newInstance()
             _ = character.addItem(newItem)
+            game.logEvent("Bought \(newItem.name) for \(item.value) gold from \(self.merchant?.name ?? "a merchant")", category: "SHOP")
 
             game.print("")
             game.print("  Purchased \(newItem.name) for \(item.value) gold.", color: .brightGreen)
@@ -138,7 +148,7 @@ class ShopEngine {
 
         game.clearTerminal()
         game.printTitle("Sell Items")
-        game.print("  Gold: \(character.gold)", color: .yellow)
+        printPurseAndCarryLine(character)
         game.print("  (Items sell for half their value)", color: .dimGreen)
         game.print("")
 
@@ -169,6 +179,7 @@ class ShopEngine {
 
             character.removeItem(item)
             character.gold += sellValue
+            game.logEvent("Sold \(item.name) for \(sellValue) gold to \(self.merchant?.name ?? "a merchant")", category: "SHOP")
 
             game.print("")
             game.print("  Sold \(item.name) for \(sellValue) gold.", color: .brightGreen)
@@ -190,13 +201,14 @@ class ShopEngine {
 
         game.clearTerminal()
         game.printTitle("Haggle")
+        printPurseAndCarryLine(character)
         game.print("  \(merchant.greeting)", color: .cyan)
-        game.print("  Pick an item to try talking down the price on.", color: .dimGreen)
+        game.print("  Tap an item below to make your case — a Persuasion check decides if the price drops.", color: .dimGreen)
         game.print("")
 
         var options: [String] = []
         for item in stock {
-            options.append("\(item.name)  \(item.value)gp")
+            options.append("Try: \(item.name) (\(item.value)gp)")
         }
         let stockItems = self.stock
 
@@ -214,8 +226,36 @@ class ShopEngine {
             game.print("  \(character.name) rolls Persuasion: d20[\(roll)] + \(persuasionMod) = \(total) vs DC \(dc)", color: .dimGreen)
 
             if total >= dc {
+                if item.value <= 1 {
+                    // Already about as cheap as it gets — no gold amount to round
+                    // down to, so sweeten the deal with a bonus item instead of
+                    // claiming a discount that didn't actually happen.
+                    self.narrate(situation: "The player successfully haggles over the price of a \(item.name), which is already dirt cheap. Since the price can't drop any further, react in character by throwing in a second one for free as a goodwill gesture.",
+                                 offline: merchant.offlineHaggleSuccessLine(), color: .brightGreen) {
+                        if character.gold >= item.value, character.canCarry(item) {
+                            character.gold -= item.value
+                            let gotFirst = character.addItem(item.newInstance())
+                            let gotSecond = character.addItem(item.newInstance())
+                            if gotFirst && gotSecond {
+                                game.print("  Purchased two \(item.name)s for the price of one — \(item.value) gold.", color: .yellow)
+                            } else if gotFirst {
+                                game.print("  Purchased \(item.name) for \(item.value) gold. (No room to carry the bonus one.)", color: .yellow)
+                            } else {
+                                game.print("  (You agreed the deal but couldn't carry the goods.)", color: .dimGreen)
+                            }
+                            game.logEvent("Haggled a 2-for-1 deal on \(item.name) with \(merchant.name)", category: "SHOP")
+                        } else {
+                            game.print("  (You agreed the deal but couldn't complete the purchase.)", color: .dimGreen)
+                        }
+                        game.waitForContinue()
+                        game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
+                    }
+                    return
+                }
                 let discount = Double.random(in: 0.15...0.30)
-                let newPrice = max(1, Int((Double(item.value) * (1 - discount)).rounded()))
+                // Guarantee a real discount — rounding could otherwise land back
+                // on the original price for cheap items (e.g. "haggled from 1 to 1").
+                let newPrice = min(item.value - 1, max(1, Int((Double(item.value) * (1 - discount)).rounded())))
                 self.narrate(situation: "The player successfully haggles over the price of a \(item.name) with a Persuasion check. React in character, agreeing (grudgingly or graciously) to a lower price of \(newPrice) gold instead of \(item.value).",
                              offline: merchant.offlineHaggleSuccessLine(), color: .brightGreen) {
                     if character.gold >= newPrice, character.canCarry(item) {
@@ -223,6 +263,7 @@ class ShopEngine {
                         let newItem = item.newInstance()
                         _ = character.addItem(newItem)
                         game.print("  Purchased \(newItem.name) for \(newPrice) gold (haggled down from \(item.value)).", color: .yellow)
+                        game.logEvent("Haggled \(item.name) down to \(newPrice) gold (from \(item.value)) with \(merchant.name)", category: "SHOP")
                     } else {
                         game.print("  (You agreed a price of \(newPrice)gp but couldn't complete the purchase.)", color: .dimGreen)
                     }
@@ -232,6 +273,7 @@ class ShopEngine {
             } else {
                 self.narrate(situation: "The player tries to haggle over the price of a \(item.name) but fails to persuade you. React in character, firmly refusing to lower the price.",
                              offline: merchant.offlineHaggleFailLine(), color: .red) {
+                    game.logEvent("Failed to haggle over \(item.name) with \(merchant.name)", category: "SHOP")
                     game.waitForContinue()
                     game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
                 }
@@ -248,6 +290,7 @@ class ShopEngine {
 
         game.clearTerminal()
         game.printTitle("Under the Counter")
+        if let character = character { printPurseAndCarryLine(character) }
 
         let roll = Int.random(in: 1...100)
         if roll <= merchant.tier.rareGoodsChance, let rareItem = Self.rareGoodsPool.randomElement() {
@@ -273,6 +316,7 @@ class ShopEngine {
         } else {
             self.narrate(situation: "The player asks if you have anything special or rare hidden away, but you don't have anything unusual today. React in character.",
                          offline: merchant.offlineRareGoodsNoneLine(), color: .dimGreen) {
+                game.logEvent("Asked \(merchant.name) about rare goods — nothing on offer", category: "SHOP")
                 game.waitForContinue()
                 game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
             }
@@ -296,6 +340,7 @@ class ShopEngine {
         character.gold -= price
         let newItem = item.newInstance()
         _ = character.addItem(newItem)
+        game.logEvent("Bought under-the-counter \(newItem.name) for \(price) gold from \(merchant?.name ?? "a merchant")", category: "SHOP")
         game.print("  You purchase the \(newItem.name) for \(price) gold.", color: .brightGreen)
         game.waitForContinue()
         game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
@@ -314,7 +359,8 @@ class ShopEngine {
 
         if total >= dc {
             let discount = Double.random(in: 0.10...0.20)
-            let newPrice = max(1, Int((Double(price) * (1 - discount)).rounded()))
+            // Guarantee a real discount even after rounding — see showHaggleMenu.
+            let newPrice = min(price - 1, max(1, Int((Double(price) * (1 - discount)).rounded())))
             self.narrate(situation: "The player haggles over the price of the \(item.name) you just showed them under the counter. React in character, agreeing to a lower price of \(newPrice) gold instead of \(price).",
                          offline: merchant.offlineHaggleSuccessLine(), color: .brightGreen) { [weak self] in
                 self?.buyRareGood(item, price: newPrice, completion: completion)

@@ -11,6 +11,7 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS and macOS, wit
 - **6 Classes**: Fighter, Wizard, Rogue, Cleric, Ranger, Barbarian
 - **Ability Scores**: Standard array or 4d6 drop lowest
 - **Ability Score Improvement**: raise an ability score by 2 (your choice, capped at 20) at D&D 5e ASI levels as you level up
+- **Experience & Leveling**: standard D&D 5e XP thresholds — Level 2 at 300 XP, Level 3 at 900 XP, Level 4 at 2,700 XP, Level 5 (cap) at 6,500 XP. Earned from combat and awarded by the DM; shown on Party Status alongside how much is needed for the next level
 - **18 Skills** with proficiency system
 - **Parties** of 1-4 characters (human or AI-controlled)
 - **Long-press** any party size to auto-generate an all-AI party

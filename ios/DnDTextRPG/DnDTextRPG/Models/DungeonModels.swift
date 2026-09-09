@@ -510,6 +510,16 @@ class Dungeon: ObservableObject, Codable {
     /// Next room ID for dynamic expansion
     private var nextRoomId: Int = 0
 
+    /// Chance a given non-special room gets a monster encounter, scaled by
+    /// dungeon level. Used to be a single step (0.35 at level 1, 0.5 at every
+    /// level after) — Medium difficulty starts at level 2, so it immediately
+    /// hit the same monster density as much deeper levels while merchants
+    /// stayed rare (one guaranteed shop room, occasional armoury). Ramping
+    /// gradually keeps Medium noticeably lighter than Hard/Brutal.
+    private var encounterChance: Double {
+        level <= 1 ? 0.35 : min(0.5, 0.35 + Double(level - 2) * 0.05)
+    }
+
     private func generateDungeon() {
         let numRooms = 20 + level * 5
 
@@ -552,7 +562,6 @@ class Dungeon: ObservableObject, Codable {
                     // Add encounter based on room type
                     if roomType != .entrance && roomType != .shrine {
                         if roomType != .empty {
-                            let encounterChance = level == 1 ? 0.35 : 0.5
                             let diff: EncounterDifficulty = level == 1 ? .easy : .medium
                             if Double.random(in: 0...1) < encounterChance {
                                 newRoom.encounter = Encounter.generate(level: level, difficulty: diff)
@@ -599,13 +608,25 @@ class Dungeon: ObservableObject, Codable {
             bossRoom.hiddenGold = 0
         }
 
-        // Place exactly one shop room — pick a non-entrance, non-boss room roughly mid-dungeon
-        let candidates = rooms.values
+        // Place shop rooms — one per ~15 rooms in the dungeon (was a hard-coded
+        // single shop regardless of dungeon size, which felt sparse next to how
+        // many rooms carry a monster encounter). The first shop keeps the
+        // original placement (roughly mid-dungeon); any extra shops are spread
+        // across the rest of the dungeon.
+        var candidates = rooms.values
             .filter { $0.roomType != .entrance && $0.roomType != .boss }
             .sorted { (abs($0.x) + abs($0.y)) < (abs($1.x) + abs($1.y)) }
-        let midIndex = candidates.count / 2
-        let shopRange = max(0, midIndex - 2)...min(candidates.count - 1, midIndex + 2)
-        if let shopRoom = candidates[shopRange].randomElement() {
+        let numShops = max(1, numRooms / 15)
+        for shopIndex in 0..<numShops {
+            guard !candidates.isEmpty else { break }
+            let shopRoom: Room
+            if shopIndex == 0 {
+                let midIndex = candidates.count / 2
+                let shopRange = max(0, midIndex - 2)...min(candidates.count - 1, midIndex + 2)
+                shopRoom = candidates[shopRange].randomElement()!
+            } else {
+                shopRoom = candidates.randomElement()!
+            }
             shopRoom.roomType = .shop
             shopRoom.name = Room.generateName(for: .shop)
             shopRoom.roomDescription = RoomType.shop.description
@@ -613,6 +634,7 @@ class Dungeon: ObservableObject, Codable {
             shopRoom.hiddenItems = []
             shopRoom.hiddenGold = 0
             shopRoom.merchant = Merchant.random(tier: MerchantTier.forDungeonLevel(level))
+            candidates.removeAll { $0.id == shopRoom.id }
         }
 
         // Armoury rooms have a chance of a merchant having set up shop there too
@@ -624,7 +646,7 @@ class Dungeon: ObservableObject, Codable {
             "Rows of rusted weapons stand at attention like silent soldiers. A workbench holds tools for repair and sharpening.",
         ]
         for armouryRoom in rooms.values where armouryRoom.roomType == .armory {
-            if Int.random(in: 1...100) <= 40 {
+            if Int.random(in: 1...100) <= 55 {
                 armouryRoom.merchant = Merchant.random(tier: MerchantTier.forDungeonLevel(level))
                 armouryRoom.roomDescription = armouryMerchantVariant
             } else {
@@ -705,7 +727,6 @@ class Dungeon: ObservableObject, Codable {
 
             // Encounter
             if roomType != .entrance && roomType != .shrine && roomType != .shop && roomType != .empty {
-                let encounterChance = level == 1 ? 0.35 : 0.5
                 let diff: EncounterDifficulty = level == 1 ? .easy : .medium
                 if Double.random(in: 0...1) < encounterChance {
                     newRoom.encounter = Encounter.generate(level: level, difficulty: diff)
@@ -752,7 +773,6 @@ class Dungeon: ObservableObject, Codable {
             if room.roomType == .boss {
                 room.encounter = Encounter.generateBoss(level: level)
             } else if room.roomType != .empty {
-                let encounterChance = level == 1 ? 0.35 : 0.5
                 let diff: EncounterDifficulty = level == 1 ? .easy : .medium
                 guard Double.random(in: 0...1) < encounterChance else {
                     room.encounter = nil

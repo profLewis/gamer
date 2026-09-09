@@ -106,8 +106,8 @@ class GameEngine: ObservableObject {
     var adventureLogLimit: Int {
         get {
             let val = UserDefaults.standard.object(forKey: "adventureLogLimit")
-            return val == nil ? 50 : UserDefaults.standard.integer(forKey: "adventureLogLimit")
-        } // 0 = all, default 50
+            return val == nil ? 0 : UserDefaults.standard.integer(forKey: "adventureLogLimit")
+        } // 0 = all (default)
         set { UserDefaults.standard.set(newValue, forKey: "adventureLogLimit") }
     }
     var iconScale: CGFloat {
@@ -458,7 +458,7 @@ class GameEngine: ObservableObject {
         }
     }
 
-    private func logEvent(_ message: String, category: String? = nil) {
+    func logEvent(_ message: String, category: String? = nil) {
         let timestamp = formattedGameTime()
         if let cat = category {
             adventureLog.append("[\(timestamp)] [\(cat)] \(message)")
@@ -1479,9 +1479,13 @@ class GameEngine: ObservableObject {
 
     /// Auto-assign button tint based on text content
     static func autoTint(_ text: String) -> MenuTint {
+        // Every "< X" button in this app (Back, Done, Cancel, Leave, Not Now...)
+        // is a navigation/dismissal action by convention — tint them all the
+        // same regardless of the label, so they read consistently everywhere.
+        if text.hasPrefix("< ") { return .navigation }
         let lower = text.lowercased()
         // Navigation / back buttons
-        if lower == "done" || lower.hasPrefix("done (") || lower == "< cancel"
+        if lower == "done" || lower.hasPrefix("done (")
             || lower == "cancel" || lower == "continue" || lower == "next"
             || lower == "back" || lower == "quit" || lower == "save & quit"
             || lower.hasPrefix("delete") || lower.hasPrefix("clear all")
@@ -5253,7 +5257,7 @@ class GameEngine: ObservableObject {
 
     var npcsEnabled: Bool {
         get {
-            if UserDefaults.standard.object(forKey: "npcs_enabled") == nil { return false }
+            if UserDefaults.standard.object(forKey: "npcs_enabled") == nil { return true }
             return UserDefaults.standard.bool(forKey: "npcs_enabled")
         }
         set {
@@ -6872,7 +6876,7 @@ class GameEngine: ObservableObject {
         add("gameTimeLimit", "Time Limit", current: gtStr, dflt: "Off")
 
         let logStr = adventureLogLimit == 0 ? "All" : "\(adventureLogLimit)"
-        add("adventureLogLimit", "Log Limit", current: logStr, dflt: "50")
+        add("adventureLogLimit", "Log Limit", current: logStr, dflt: "All")
 
         #if os(iOS)
         add("useCustomKeyboard", "Keyboard", current: useCustomKeyboard ? "Custom" : "System", dflt: "Custom")
@@ -16552,12 +16556,20 @@ class GameEngine: ObservableObject {
             print("  \(namePrefix)\(shortName(for: char))  \(char.race.rawValue) \(shortClass) L\(char.level)  \(typeTag)", color: .brightGreen, bold: true)
             print("    ✦ \(char.characterClass.rankTitle(atLevel: char.level))", color: .cyan)
 
-            // Line 2: HP bar + AC + Gold + XP
+            // Line 2: HP bar + AC + Gold
             let barLen = 8
             let filled = Int(hpFraction * Double(barLen))
             let hpBar = String(repeating: "█", count: filled) + String(repeating: "░", count: barLen - filled)
             let wpnStr = char.equippedWeapon.map { "  \(String($0.name.prefix(10)))" } ?? ""
             print("    [\(hpBar)] \(char.currentHP)/\(char.maxHP) AC\(char.armorClass) \(char.gold)gp\(wpnStr)", color: hpColor)
+
+            // Line 3: XP + progress toward next level
+            if char.level >= 5 {
+                print("    XP: \(char.experiencePoints) (max level)", color: .dimGreen)
+            } else {
+                let nextXP = Character.xpForLevel(char.level + 1)
+                print("    XP: \(char.experiencePoints)/\(nextXP) to Level \(char.level + 1)", color: .dimGreen)
+            }
         }
         print("")
 
