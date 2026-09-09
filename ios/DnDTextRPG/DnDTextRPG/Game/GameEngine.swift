@@ -721,15 +721,24 @@ class GameEngine: ObservableObject {
         // stale buttons, but a buttonless screen means handleMenuChoice's
         // own orphan recovery never gets a tap to react to. If nothing has
         // rendered a real screen shortly after this clear, self-heal instead
-        // of leaving the player stuck looking at nothing. 2s is generous
-        // enough for every normal synchronous screen transition in this
-        // codebase (narrate() prints its offline fallback and calls its
-        // continuation immediately, not after an AI round-trip) while still
-        // catching a genuine dead end quickly. Combat is excluded — its
-        // animation/timer sequencing legitimately spans longer gaps with no
-        // menu on screen.
+        // of leaving the player stuck looking at nothing. Combat is excluded
+        // — its animation/timer sequencing legitimately spans longer gaps
+        // with no menu on screen.
+        //
+        // 8s (was 2s): diagnostic builds this session traced a reproducible
+        // case (New Adventure -> load a Hall of Fame character -> Accept)
+        // where menuHandler/closeHandler are synchronously set right after
+        // showMenu() with no guard-return in between (verified repeatedly),
+        // yet the watchdog still found them nil ~2-5s later with no further
+        // app-level breadcrumb in between — i.e. something outside this
+        // codebase's own screen-transition code was intervening, most
+        // recently narrowed to (and partially fixed for) GameKit's
+        // didReceiveTurn firing independent of gameState. 2s was too tight
+        // a margin for that class of external interruption; 8s gives it
+        // much more room without meaningfully delaying recovery from an
+        // actual dead end.
         let armedBreadcrumb = lastCharCreationBreadcrumb
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { [weak self] in
             guard let self = self else { return }
             guard self.currentMenuOptions.isEmpty, self.menuHandler == nil,
                   !self.awaitingTextInput, !self.awaitingContinue,
