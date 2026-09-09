@@ -13264,15 +13264,49 @@ class GameEngine: ObservableObject {
         ]
 
         let trap = traps.randomElement()!
-        let damage = Dice.rollSum(trap.dice, d: trap.sides)
+        var damage = Dice.rollSum(trap.dice, d: trap.sides)
 
         print("")
         print("*** TRAP! ***", color: .red, bold: true)
         print(trap.desc, color: .red)
-        print("  \(trap.name) — \(damage) damage!", color: .red)
         print("")
 
         SoundManager.shared.playDeath()
+
+        // Thieves' Tools give the party a chance to disarm the trap entirely.
+        let hasThievesTools = party.contains { char in char.inventory.contains { $0.name == "Thieves' Tools" } }
+        var disarmed = false
+        if hasThievesTools {
+            let bestTools = party.map { $0.skillModifier(for: .sleightOfHand) }.max() ?? 0
+            let roll = Dice.d20()
+            if roll + bestTools >= 14 {
+                disarmed = true
+                print("  Your Thieves' Tools make quick work of it — \(trap.name) disarmed! No damage taken.", color: .brightGreen)
+            } else {
+                print("  You try to disarm it with your Thieves' Tools, but fumble — \(trap.name) triggers anyway!", color: .yellow)
+            }
+        }
+
+        // Rope softens the fall from a Pit Trap specifically.
+        let hasRope = party.contains { char in char.inventory.contains { $0.name == "Rope (50 ft)" } }
+        if !disarmed && trap.name == "Pit Trap" && hasRope {
+            damage = max(1, damage / 2)
+            print("  Your rope catches you halfway down — half damage!", color: .brightGreen)
+        }
+
+        if disarmed {
+            print("")
+            logEvent("Trap: \(trap.name) disarmed with Thieves' Tools", category: "TRAP")
+            logMultiplayerAction("Disarmed \(trap.name) with Thieves' Tools — no damage")
+            waitForContinue()
+            inputHandler = { [weak self] _ in
+                self?.showExplorationView()
+            }
+            return
+        }
+
+        print("  \(trap.name) — \(damage) damage!", color: .red)
+        print("")
 
         // Damage a random party member (or the lead)
         let target = party.randomElement() ?? party[0]
@@ -13790,7 +13824,10 @@ class GameEngine: ObservableObject {
                 let gold = room.hiddenGold
                 room.hiddenGold = 0
                 let source = searchSourceDescription(for: room.roomType)
-                let searchNarrative = "You search the \(room.name.lowercased()) carefully...\n  ...and find \(gold) gold pieces!"
+                let findText = (room.roomType == .corridor || room.roomType == .empty)
+                    ? "...and find a dropped purse containing \(gold) gold pieces!"
+                    : "...and find \(gold) gold pieces!"
+                let searchNarrative = "You search the \(room.name.lowercased()) carefully...\n  \(findText)"
                 showGoldPickupMenu(gold: gold, source: source, narrative: searchNarrative) { [weak self] in
                     self?.showExplorationView()
                 }
@@ -14526,6 +14563,9 @@ class GameEngine: ObservableObject {
         if npc.type.canTrade && !npc.hasTraded {
             options.append(MenuOption("Trade", tint: .cyan))
             actions.append { [weak self] in self?.tradeWithNPC() }
+        } else if !npc.hasOfferedOneOffTrade {
+            options.append(MenuOption("Ask to Trade", tint: .cyan))
+            actions.append { [weak self] in self?.askNPCToTrade() }
         }
 
         if npc.type.canHeal {
@@ -14699,6 +14739,113 @@ class GameEngine: ObservableObject {
                 npc.hasTraded = true
                 room.npc = npc
                 self?.talkToNPC()
+            }
+        }
+    }
+
+    /// Non-merchant NPCs aren't shopkeepers, but the player can still ask if
+    /// they'll trade. Most decline in character; a few will sell the one item
+    /// they're carrying; a couple might take offence and attack instead.
+    private func askNPCToTrade() {
+        guard let room = dungeon?.currentRoom, var npc = room.npc else { return }
+
+        clearTerminal()
+        printLines(npc.type.asciiArt, color: .cyan)
+        print("")
+        print("  \(npc.type.rawValue)", color: .brightGreen, bold: true)
+        print("")
+
+        npc.hasOfferedOneOffTrade = true
+        room.npc = npc
+
+        switch npc.type {
+        case .goblinDefector:
+            if Int.random(in: 1...100) <= 35 {
+                printWrapped("\"Trade?! You think I've got treasure for the likes of you?!\"", indent: 2, color: .red)
+                print("")
+                printWrapped("The \(npc.type.rawValue) turns on you!", indent: 2, color: .red, bold: true)
+                logEvent("\(npc.type.rawValue) turned hostile and attacked", category: "NPC")
+                room.npc = nil
+                let monster = Monster.create(.goblin, customName: npc.type.rawValue)
+                waitForContinue()
+                inputHandler = { [weak self] _ in
+                    self?.startCombat(encounter: Encounter(monsters: [monster], difficulty: .easy))
+                }
+                return
+            }
+            printWrapped("\"Trade? ...Fine. Don't expect charity.\"", indent: 2, color: .yellow)
+            offerOneOffNPCSale(item: ItemCatalog.dagger(), price: 15, npc: npc, room: room)
+        case .dwarvenSmith:
+            printWrapped("\"Ha! Like my work, do you? I've a spare blade going.\"", indent: 2, color: .yellow)
+            offerOneOffNPCSale(item: ItemCatalog.longsword(), price: 20, npc: npc, room: room)
+        case .elfScout:
+            printWrapped("\"I carry a spare bow. Yours, for the right price.\"", indent: 2, color: .yellow)
+            offerOneOffNPCSale(item: ItemCatalog.longbow(), price: 20, npc: npc, room: room)
+        case .madAlchemist:
+            printWrapped("\"Ooh, a customer! I've a potion here — mostly stable.\"", indent: 2, color: .yellow)
+            offerOneOffNPCSale(item: ItemCatalog.greaterHealingPotion(), price: 30, npc: npc, room: room)
+        case .woundedKnight:
+            printWrapped("\"Take my blade — I've little use for it like this. Name a fair price.\"", indent: 2, color: .yellow)
+            offerOneOffNPCSale(item: ItemCatalog.shortsword(), price: 10, npc: npc, room: room)
+        case .oldPriestess:
+            printWrapped("\"A holy symbol, blessed and spare. Take it, for a small offering.\"", indent: 2, color: .yellow)
+            offerOneOffNPCSale(item: ItemCatalog.holySymbol(), price: 5, npc: npc, room: room)
+        case .mysteriousStranger:
+            if Int.random(in: 1...100) <= 50 {
+                printWrapped("\"...Perhaps. I have something. You didn't see where it came from.\"", indent: 2, color: .yellow)
+                offerOneOffNPCSale(item: ItemCatalog.thievesTools(), price: 25, npc: npc, room: room)
+            } else {
+                printWrapped("\"Trade requires trust. I have neither the goods nor the inclination.\"", indent: 2, color: .dimGreen)
+                waitForContinue()
+                inputHandler = { [weak self] _ in self?.talkToNPC() }
+            }
+        default:
+            let declines = [
+                "\"I'm no merchant, just a traveller like you.\"",
+                "\"I've nothing worth your coin, I'm afraid.\"",
+                "\"Trade? Wrong person to ask, friend.\"",
+            ]
+            printWrapped(declines.randomElement()!, indent: 2, color: .dimGreen)
+            waitForContinue()
+            inputHandler = { [weak self] _ in self?.talkToNPC() }
+        }
+    }
+
+    private func offerOneOffNPCSale(item: Item, price: Int, npc: DungeonNPC, room: Room) {
+        print("")
+        print("  \(item.name) — \(price)gp", color: .yellow)
+        printWrapped("  \(item.description)", indent: 2, color: .dimGreen)
+        showMenu(["Buy it", "< No thanks"])
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            guard choice == 1 else {
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in self?.talkToNPC() }
+                return
+            }
+            self.pickCharacter(title: "Who buys the \(item.name)?", onBack: { [weak self] in self?.talkToNPC() }) { [weak self] character in
+                guard let self = self else { return }
+                guard character.gold >= price else {
+                    self.print("")
+                    self.print("  Not enough gold.", color: .red)
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in self?.talkToNPC() }
+                    return
+                }
+                guard character.canCarry(item) else {
+                    self.print("")
+                    self.print("  Too much to carry — lighten your load first.", color: .red)
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in self?.talkToNPC() }
+                    return
+                }
+                character.gold -= price
+                _ = character.addItem(item.newInstance())
+                self.print("")
+                self.print("  Purchased \(item.name) for \(price) gold.", color: .brightGreen)
+                self.logMultiplayerAction("\(character.name) bought \(item.name) from \(npc.type.rawValue)")
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in self?.talkToNPC() }
             }
         }
     }
@@ -15862,7 +16009,7 @@ class GameEngine: ObservableObject {
         printWrapped("Items are things in your backpack — potions, torches, rope, etc. Equipment (weapons, armour, shields) is what you wear or wield.", indent: 2, color: .dimGreen)
         print("")
 
-        let usableItems = character.inventory.filter { $0.type == .potion }
+        let usableItems = character.inventory.filter { $0.type == .potion || $0.name == "Whetstone" }
         let hasOthers = party.count > 1
 
         var menuOpts: [MenuOption] = []
@@ -15899,7 +16046,7 @@ class GameEngine: ObservableObject {
             self.printWrapped("Your pack holds items you're carrying but not wearing — potions, torches, scrolls, gems, and spare gear.", indent: 2, color: .green)
             self.print("")
             self.print("  USE ITEM", color: .cyan, bold: true)
-            self.printWrapped("Drink a potion to heal or gain temporary effects. Only consumable items can be used.", indent: 2, color: .dimGreen)
+            self.printWrapped("Drink a potion to heal or gain temporary effects, or use a tool item like a Whetstone. Only consumable/usable items appear here.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  DROP ITEM", color: .cyan, bold: true)
             self.printWrapped("Drop an item on the ground in the current room. You can pick it up again later if you return.", indent: 2, color: .dimGreen)
@@ -15907,6 +16054,46 @@ class GameEngine: ObservableObject {
             self.print("  GIVE ITEM", color: .cyan, bold: true)
             self.printWrapped("Transfer an item to another party member. They must have room in their pack to accept it.", indent: 2, color: .dimGreen)
             self.print("")
+
+            if !character.inventory.isEmpty {
+                self.print("  WHAT'S IN \(self.shortName(for: character).uppercased())'S PACK", color: .cyan, bold: true)
+                self.print("")
+                for item in character.inventory {
+                    self.print("  \(item.name)", color: .brightGreen)
+                    self.printWrapped("    \(item.description)", indent: 4, color: .dimGreen)
+                    self.printWrapped("    \(self.itemUsageHint(item))", indent: 4, color: .yellow)
+                    self.print("")
+                }
+            }
+        }
+    }
+
+    /// How/when an item can actually be used — shown in pack help and at merchants,
+    /// so nothing sits in the pack as a mystery.
+    /// How/when an item can actually be used — shown in pack help and at
+    /// merchants, so nothing sits in the pack (or on a shelf) as a mystery.
+    func itemUsageHint(_ item: Item) -> String {
+        switch item.name {
+        case "Whetstone":
+            return "Use: sharpens your equipped weapon (+1 to hit/damage, next 3 attacks)."
+        case let name where item.type == .potion:
+            if name.lowercased().contains("antidote") {
+                return "Use: cures poison. No effect if not poisoned."
+            }
+            return "Use: drink to heal HP immediately."
+        case "Torch":
+            return "Light or douse via the room Actions menu — lights your way and reveals more of the map."
+        case "Thieves' Tools":
+            return "Passive: gives the party a chance to disarm traps instead of triggering them."
+        case "Rope (50 ft)":
+            return "Passive: halves damage from Pit Trap encounters."
+        case "Spell Component Pouch", "Holy Symbol":
+            return "Spellcasting focus — narrative/roleplay item, not required to cast spells in this version."
+        default:
+            if item.type == .weapon || item.type == .armor || item.type == .shield {
+                return "Equip via the Equipment menu to wear or wield it."
+            }
+            return "No direct action — worth selling to a merchant if you don't need it."
         }
     }
 

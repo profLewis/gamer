@@ -409,12 +409,18 @@ class Room: Identifiable, ObservableObject, Codable {
             }
 
         case .corridor:
-            // Corridor — very rare minor finds
+            // Corridor — very rare minor finds, occasionally a dropped purse
             if Dice.d8() >= 7 {
                 items.append([ItemCatalog.torch, ItemCatalog.rope].randomElement()!())
             }
+            if Dice.d8() >= 7 { gold = Dice.rollSum(1, d: 4) * 3 }
 
-        case .entrance, .boss, .shop, .empty:
+        case .empty:
+            // Empty rooms are otherwise featureless, but someone may have
+            // dropped a purse in a hurry.
+            if Dice.d10() >= 8 { gold = Dice.rollSum(1, d: 6) * 2 }
+
+        case .entrance, .boss, .shop:
             // No hidden loot
             break
         }

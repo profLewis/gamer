@@ -27,11 +27,11 @@ struct Monster: Identifiable, Codable {
         currentHP = max(0, currentHP - amount)
     }
 
-    static func create(_ type: MonsterType) -> Monster {
+    static func create(_ type: MonsterType, customName: String? = nil) -> Monster {
         let stats = type.stats
         return Monster(
             id: UUID(),
-            name: type.rawValue,
+            name: customName ?? type.rawValue,
             type: type,
             currentHP: stats.hp,
             maxHP: stats.hp,

@@ -1081,6 +1081,10 @@ struct DungeonNPC: Codable {
     /// bargaining/rare-goods/advice interactions as shop and armoury merchants.
     var merchant: Merchant?
 
+    /// Whether the player has already asked this (non-merchant) NPC to trade —
+    /// one-off, unlike the repeatable Merchant flow.
+    var hasOfferedOneOffTrade: Bool = false
+
     var name: String { type.rawValue }
 
     init(type: NPCType) {

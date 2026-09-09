@@ -82,7 +82,10 @@ class ShopEngine {
         var options: [String] = []
         for item in stock {
             options.append("\(item.name)  \(item.value)gp  \(String(format: "%.1f", item.weight))lb")
+            game.print("  \(item.name): \(item.description)", color: .dimGreen)
+            game.print("    \(game.itemUsageHint(item))", color: .yellow)
         }
+        game.print("")
 
         let stockItems = self.stock
         game.showPaginatedMenuOptions(options, pinned: ["< Back"], handler: { [weak self] idx in
@@ -253,34 +256,85 @@ class ShopEngine {
                          offline: merchant.offlineRareGoodsFoundLine(), color: .cyan) {
                 game.print("")
                 game.print("  \(rareItem.name) — \(price)gp (normally \(rareItem.value)gp)", color: .yellow)
-                game.showMenu(["Buy it", "< No thanks"])
+                game.showMenu(["Buy it", "Haggle", "< No thanks"])
                 game.menuHandler = { [weak self] choice in
-                    guard let self = self, let game = self.game, let character = self.character else { return }
-                    if choice == 1 {
-                        guard character.gold >= price else {
-                            game.print("  \"Not enough coin for that, friend.\"", color: .red)
-                            game.waitForContinue()
-                            game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
-                            return
-                        }
-                        guard character.canCarry(rareItem) else {
-                            game.print("  \"You can barely stand as it is! Lighten your load first.\"", color: .red)
-                            game.waitForContinue()
-                            game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
-                            return
-                        }
-                        character.gold -= price
-                        let newItem = rareItem.newInstance()
-                        _ = character.addItem(newItem)
-                        game.print("  You purchase the \(newItem.name) for \(price) gold.", color: .brightGreen)
+                    guard let self = self else { return }
+                    switch choice {
+                    case 1:
+                        self.buyRareGood(rareItem, price: price, completion: completion)
+                    case 2:
+                        self.haggleRareGood(rareItem, price: price, completion: completion)
+                    default:
+                        game.waitForContinue()
+                        game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
                     }
-                    game.waitForContinue()
-                    game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
                 }
             }
         } else {
             self.narrate(situation: "The player asks if you have anything special or rare hidden away, but you don't have anything unusual today. React in character.",
                          offline: merchant.offlineRareGoodsNoneLine(), color: .dimGreen) {
+                game.waitForContinue()
+                game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
+            }
+        }
+    }
+
+    private func buyRareGood(_ item: Item, price: Int, completion: @escaping () -> Void) {
+        guard let game = game, let character = character else { return }
+        guard character.gold >= price else {
+            game.print("  \"Not enough coin for that, friend.\"", color: .red)
+            game.waitForContinue()
+            game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
+            return
+        }
+        guard character.canCarry(item) else {
+            game.print("  \"You can barely stand as it is! Lighten your load first.\"", color: .red)
+            game.waitForContinue()
+            game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
+            return
+        }
+        character.gold -= price
+        let newItem = item.newInstance()
+        _ = character.addItem(newItem)
+        game.print("  You purchase the \(newItem.name) for \(price) gold.", color: .brightGreen)
+        game.waitForContinue()
+        game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
+    }
+
+    private func haggleRareGood(_ item: Item, price: Int, completion: @escaping () -> Void) {
+        guard let game = game, let character = character, let merchant = merchant else { return }
+        let persuasionMod = character.skillModifier(for: .persuasion)
+        let roll = Dice.roll(20)
+        let total = roll + persuasionMod
+        // Under-the-counter goods are already a favour — harder to talk down further.
+        let dc = merchant.tier.haggleDC + 3
+
+        game.print("")
+        game.print("  \(character.name) rolls Persuasion: d20[\(roll)] + \(persuasionMod) = \(total) vs DC \(dc)", color: .dimGreen)
+
+        if total >= dc {
+            let discount = Double.random(in: 0.10...0.20)
+            let newPrice = max(1, Int((Double(price) * (1 - discount)).rounded()))
+            self.narrate(situation: "The player haggles over the price of the \(item.name) you just showed them under the counter. React in character, agreeing to a lower price of \(newPrice) gold instead of \(price).",
+                         offline: merchant.offlineHaggleSuccessLine(), color: .brightGreen) { [weak self] in
+                self?.buyRareGood(item, price: newPrice, completion: completion)
+            }
+        } else {
+            self.narrate(situation: "The player tries to haggle over the price of the \(item.name) but fails to persuade you. React in character, refusing to lower the price on a rare item.",
+                         offline: merchant.offlineHaggleFailLine(), color: .red) { [weak self] in
+                self?.buyRareGoodsRetry(item, price: price, completion: completion)
+            }
+        }
+    }
+
+    private func buyRareGoodsRetry(_ item: Item, price: Int, completion: @escaping () -> Void) {
+        guard let game = game else { return }
+        game.showMenu(["Buy it at \(price)gp", "< No thanks"])
+        game.menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                self.buyRareGood(item, price: price, completion: completion)
+            } else {
                 game.waitForContinue()
                 game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
             }
@@ -307,19 +361,32 @@ class ShopEngine {
 
     // MARK: - Narration helper
 
-    /// Narrates via the active DM tier when any AI is available; otherwise uses
-    /// the guaranteed offline-safe line. Either way `then` runs once the line
-    /// has been printed.
+    /// Always resolves immediately with the offline-safe line (which is itself
+    /// randomly picked from a small pool per call, so it isn't repetitive) —
+    /// `then` never waits on the DM. If any AI is available, a request for
+    /// richer flavour fires in the background and, if it comes back within a
+    /// few seconds, is appended as a bonus extra line; if it's slow, times
+    /// out, or never resolves, it's silently dropped. This is deliberate:
+    /// merchant AI narration used to gate the whole interaction, so a slow or
+    /// hung DM call meant the player never even saw what was for sale.
     private func narrate(situation: String, offline: String, color: TerminalColor, then: @escaping () -> Void) {
         guard let game = game, let merchant = merchant else { then(); return }
-        if DMEngine.shared.hasAnyAI {
-            game.merchantNarration(situation, merchant: merchant) { line in
+
+        game.print("  \(offline)", color: color)
+        then()
+
+        guard DMEngine.shared.hasAnyAI else { return }
+
+        final class ResolutionFlag { var done = false }
+        let flag = ResolutionFlag()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { flag.done = true }
+
+        game.merchantNarration(situation, merchant: merchant) { line in
+            DispatchQueue.main.async {
+                guard !flag.done else { return }
+                flag.done = true
                 game.print("  \(line)", color: color)
-                then()
             }
-        } else {
-            game.print("  \(offline)", color: color)
-            then()
         }
     }
 }
