@@ -180,6 +180,15 @@ class GameEngine: ObservableObject {
     @Published var textTapEnabled: Bool = false
     @Published var gameState: GameState = .mainMenu
 
+    /// Victory/defeat are meta-game milestones (save/continue, return to menu) —
+    /// not narrative moments — so they always need real buttons and a close
+    /// icon even in Just DM Mode. Without this, isJustDMActive hides the
+    /// entire menu-button area and close icon (TerminalView), leaving the
+    /// victory screen with printed text and no way back to the main menu.
+    var forceInteractiveControls: Bool {
+        gameState == .victory || gameState == .gameOver
+    }
+
     // MARK: - Game State
 
     @Published var party: [Character] = []
@@ -12539,81 +12548,21 @@ class GameEngine: ObservableObject {
 
     // MARK: - Exploration
 
-    /// Estimate total available terminal lines for the current screen
-    private func estimateAvailableLines() -> Int {
-        #if os(iOS)
-        let screenHeight = UIScreen.main.bounds.height
-        let safeTop: CGFloat = 50   // status bar + notch
-        let safeBottom: CGFloat = 34 // home indicator
-
-        // D-pad: 3 rows × 44pt + 2 × 4pt spacing = 140pt
-        let dpadHeight: CGFloat = 140 * fontScale
-        // Menu buttons: ~10 buttons in 2-column compact grid
-        // Each row: max(36, 32*scale) + 4pt spacing ≈ 40pt, 5 rows ≈ 200pt
-        let menuButtonRows: CGFloat = 5
-        let buttonRowHeight: CGFloat = max(36, 32 * fontScale) + 4
-        let menuHeight = menuButtonRows * buttonRowHeight
-        // Padding around button area
-        let buttonAreaPadding: CGFloat = 24
-        let buttonsHeight = dpadHeight + menuHeight + buttonAreaPadding
-
-        let availableHeight = screenHeight - safeTop - safeBottom - buttonsHeight
-        let lineHeight: CGFloat = (mapFontSize + 2) * fontScale  // font + spacing
-        return max(10, Int(availableHeight / lineHeight))
-        #elseif os(macOS)
-        return 35  // reasonable default for macOS window
-        #else
-        return 30
-        #endif
-    }
-
-    /// Estimate how many non-map lines the exploration view uses
-    private func estimateExplorationLines() -> Int {
-        // Torch warning (1), blank (1), room name (1), room desc (2-3 wrapped lines),
-        // danger/treasure (1), exits (1), blank (1), multiplayer label (0-1),
-        // level/time (1), party status (party.count), blank (1), status message (1)
-        return 10 + party.count + (isMultiplayer ? 1 : 0)
-    }
-
-    /// Calculate the best map radius to fill the screen without scrolling.
-    /// Returns (horizontal radius, vertical radius, compact).
-    /// The map can be non-square — wider than tall — to avoid scrolling.
+    /// The map radius/compact mode to use — always the same for a given
+    /// map_radius setting and torch state, regardless of which screen is
+    /// calling. Radius used to shrink dynamically to fit an *estimated*
+    /// available-line count, which changed the map's rendered box width
+    /// between redraws (e.g. exploration vs. a full-screen map view) —
+    /// since @ sits at a column offset from the left edge that depends on
+    /// radius, a changing radius made @ appear to jump around even though
+    /// it's always centered within its own box. Fixing the radius to the
+    /// user's setting keeps the box — and @'s position in it — identical
+    /// every time. Compact mode kicks in above the smallest radius to keep
+    /// wider maps from needing much scroll.
     private func bestMapRadius() -> (radius: Int, verticalRadius: Int, compact: Bool) {
-        guard let dungeon = dungeon else { return (effectiveMapRadius(), effectiveMapRadius(), false) }
         let maxRadius = effectiveMapRadius()
         guard maxRadius > 0 else { return (0, 0, false) }
-
-        let totalLines = estimateAvailableLines()
-        let nonMapLines = estimateExplorationLines()
-        let availableForMap = totalLines - nonMapLines
-
-        // Try full square first, then shrink vertical before horizontal
-        for r in stride(from: maxRadius, through: 1, by: -1) {
-            // Try square at this radius
-            let mapLines = dungeon.mapLineCount(visibilityRadius: r, torchLit: torchLit, compact: false)
-            if mapLines <= availableForMap {
-                return (r, r, false)
-            }
-            // Try square compact at this radius
-            let compactLines = dungeon.mapLineCount(visibilityRadius: r, torchLit: torchLit, compact: true)
-            if compactLines <= availableForMap {
-                return (r, r, true)
-            }
-            // Try non-square: keep horizontal radius r, shrink vertical
-            for vr in stride(from: r - 1, through: 1, by: -1) {
-                let nsLines = dungeon.mapLineCount(visibilityRadius: r, torchLit: torchLit, compact: false, verticalRadius: vr)
-                if nsLines <= availableForMap {
-                    return (r, vr, false)
-                }
-                let nsCompact = dungeon.mapLineCount(visibilityRadius: r, torchLit: torchLit, compact: true, verticalRadius: vr)
-                if nsCompact <= availableForMap {
-                    return (r, vr, true)
-                }
-            }
-        }
-
-        // Even radius 1 doesn't fit — use 1 compact as minimum
-        return (1, 1, true)
+        return (maxRadius, maxRadius, maxRadius > 1)
     }
 
     /// Redraws the full exploration screen: map + room description + party + menu
@@ -15764,7 +15713,7 @@ class GameEngine: ObservableObject {
             options.append(desc)
         }
 
-        showPaginatedMenuOptions(options, pinned: ["Done"], handler: { [weak self] idx in
+        showPaginatedMenuOptions(options, pinned: ["< Done"], handler: { [weak self] idx in
             guard idx >= 0 && idx < items.count else { return }
             let item = items[idx]
 
@@ -21184,7 +21133,7 @@ class GameEngine: ObservableObject {
 
         let menuOpts = spellOptions.map { $0.name }
 
-        showPaginatedMenuOptions(menuOpts, pinned: ["Done"], handler: { [weak self] idx in
+        showPaginatedMenuOptions(menuOpts, pinned: ["< Done"], handler: { [weak self] idx in
             guard idx >= 0 && idx < spellOptions.count else { return }
             let spell = spellOptions[idx]
             self?.selectSpellTarget(characterId: characterId, spell: spell)

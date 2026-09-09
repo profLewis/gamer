@@ -208,8 +208,9 @@ struct TerminalView: View {
                         }
                     }, perform: {})
 
-                    // Direction pad + menu buttons (hidden in Just DM mode)
-                    if !gameEngine.isJustDMActive, !gameEngine.directionExits.isEmpty || !gameEngine.currentMenuOptions.isEmpty {
+                    // Direction pad + menu buttons (hidden in Just DM mode, except on
+                    // victory/defeat milestone screens — see forceInteractiveControls)
+                    if (!gameEngine.isJustDMActive || gameEngine.forceInteractiveControls), !gameEngine.directionExits.isEmpty || !gameEngine.currentMenuOptions.isEmpty {
                         VStack(spacing: 12) {
                             // Direction D-pad (when exploring)
                             if !gameEngine.directionExits.isEmpty {
@@ -319,7 +320,7 @@ struct TerminalView: View {
 
                             Spacer()
 
-                        if !gameEngine.isJustDMActive {
+                        if !gameEngine.isJustDMActive || gameEngine.forceInteractiveControls {
                         // Card navigation — <</>>/swipe mode
                         if let posLabel = gameEngine.cardPositionLabel {
                             if gameEngine.useArrowNavigation {
@@ -498,7 +499,7 @@ struct TerminalView: View {
                                     .foregroundColor(Color(red: 0.0, green: 0.6, blue: 0.25))
                             }
                         }
-                        } // end if !isJustDMActive
+                        } // end if !isJustDMActive || forceInteractiveControls
                         }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)

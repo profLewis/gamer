@@ -802,8 +802,9 @@ class Dungeon: ObservableObject, Codable {
         }
         let headerLines = compact ? 1 : 3  // just top border (compact) vs top + MAP + separator
         let gridLines = (2 * vRadius + 1) + (2 * vRadius)  // room rows + corridor rows
+        let hereLine = 1  // always reserved so the box size never depends on room content — see getMapDisplay
         let legendLines = compact ? 1 : 4  // compact: just bottom border; full: separator + ~2 legend rows + bottom border
-        return headerLines + gridLines + legendLines
+        return headerLines + gridLines + hereLine + legendLines
     }
 
     func getMapDisplay(visibilityRadius: Int = 3, torchLit: Bool = true, compact: Bool = false, verticalRadius: Int? = nil) -> [String] {
@@ -907,6 +908,28 @@ class Dungeon: ObservableObject, Codable {
                 lines.append(corridorRow)
             }
         }
+
+        // @ always covers up whatever else is in the player's own room (room
+        // type, a merchant, an uncleared encounter...) — spell that out on
+        // its own line instead of silently dropping it. Always print this
+        // line (even when there's nothing but the room type) so the box's
+        // line count — and therefore @'s position — never depends on what's
+        // in the room.
+        var hereSymbols: [(symbol: String, label: String)] = []
+        let hereLabels: [String: String] = [
+            "E": "Entry", "=": "Hall", "#": "Room", "$": "Loot", "!": "Trap", "+": "Shrine",
+            "L": "Library", "B": "Boss", "A": "Armoury", "P": "Prison", "S": "Shop", ".": "Empty"
+        ]
+        if let label = hereLabels[current.roomType.symbol] {
+            hereSymbols.append((current.roomType.symbol, label))
+        }
+        if !current.cleared && current.encounter != nil { hereSymbols.append(("!", "Danger")) }
+        if current.merchant != nil { hereSymbols.append(("M", "Merchant")) }
+        if current.trainer != nil { hereSymbols.append(("G", "Gym")) }
+        if current.npc != nil && !(current.npc?.hasBeenTalkedTo ?? true) { hereSymbols.append(("?", "NPC")) }
+        let hereText = "@ here: " + hereSymbols.map { "\($0.symbol)=\($0.label)" }.joined(separator: " ")
+        let hereLine = "| \(hereText)".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|"
+        lines.append(hereLine)
 
         // Build key from symbols actually visible on the map
         var visibleSymbols = Set<String>()

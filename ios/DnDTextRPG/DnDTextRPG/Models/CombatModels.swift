@@ -1302,11 +1302,27 @@ final class Combat: ObservableObject {
             return nil  // Monster dead, caller handles nextTurn
         }
 
-        // Find a target (random conscious party member)
-        let targets = party.filter { $0.isConscious }
-        guard let target = targets.randomElement() else {
+        // Playing dead / fled party members are normally left alone (that's
+        // the whole point), but there's a chance a monster notices anyway —
+        // which breaks the act.
+        let activeTargets = party.filter { $0.isConscious && !$0.isPlayingDead && !$0.hasFledCombat }
+        let hiddenTargets = party.filter { $0.isConscious && ($0.isPlayingDead || $0.hasFledCombat) }
+
+        var target: Character?
+        if !hiddenTargets.isEmpty && Int.random(in: 1...100) <= 15 {
+            target = hiddenTargets.randomElement()
+        }
+        if target == nil {
+            target = activeTargets.randomElement() ?? hiddenTargets.randomElement()
+        }
+        guard let target = target else {
             state = .defeat
             return nil
+        }
+
+        // Getting attacked ends the ruse, whatever caused the monster to pick them.
+        if target.isPlayingDead {
+            target.isPlayingDead = false
         }
 
         return monsterAttack(monsterId: current.id, targetId: target.id)
