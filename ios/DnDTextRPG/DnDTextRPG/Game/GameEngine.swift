@@ -3062,8 +3062,11 @@ class GameEngine: ObservableObject {
 
     private func showPlayMenu() {
         clearAllUndoRedo()
-        clearTerminal()
-        printTitle("Play")
+        // No clearTerminal()/printTitle() here — renderPlayMenu(), called
+        // right below, does both itself. Doing it twice used to just be
+        // redundant, harmless work; now that clearTerminal()'s state reset
+        // runs synchronously (see runOnMain()), calling it twice back to
+        // back visibly duplicated the "Play" title for a frame.
 
         // Load local saves immediately
         let localSlots = SaveGameManager.shared.listSlots()
