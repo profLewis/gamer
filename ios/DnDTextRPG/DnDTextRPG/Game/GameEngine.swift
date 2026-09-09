@@ -11796,6 +11796,7 @@ class GameEngine: ObservableObject {
 
         // Show result for confirmation
         clearTerminal()
+        setBreadcrumb("autoCreateCharacter.afterClear")
         printSubtitle("Auto-Generated Character")
         print("  Name:  \(tempCharacterName)", color: .brightGreen)
         print("  Race:  \(tempRace?.rawValue ?? "?")", color: .green)
@@ -11813,6 +11814,7 @@ class GameEngine: ObservableObject {
         print("")
 
         showMenu(["Accept", "Reroll"])
+        setBreadcrumb("autoCreateCharacter.afterShowMenu")
         closeHandler = { [weak self] in self?.startCharacterCreation() }
         rerollHandler = { [weak self] in self?.autoCreateCharacter() }
         menuHandler = { [weak self] choice in
@@ -11822,6 +11824,7 @@ class GameEngine: ObservableObject {
             default: break
             }
         }
+        setBreadcrumb("autoCreateCharacter.complete(menuH:\(menuHandler != nil),closeH:\(closeHandler != nil),opts:\(currentMenuOptions.count))")
     }
 
     func startAssigningScores() {
