@@ -345,6 +345,10 @@ class GameEngine: ObservableObject {
     /// whether something newer has happened since (in which case it's not
     /// its job to judge whatever screen is up now). See clearTerminal().
     private var clearTerminalGeneration: Int = 0
+    /// Consecutive silent self-heals in recoverFromOrphanedScreen()'s
+    /// character-creation path — reset on every fresh New Adventure flow
+    /// and on every genuine advance (a new screen with real content).
+    private var silentCharCreationRecoveryCount: Int = 0
     private var lastCharCreationBreadcrumb: String = "none"
     /// Wall-clock start of the current character-creation flow — reset each
     /// time startCharacterCreation() begins a fresh New Adventure (idx:0).
@@ -1788,6 +1792,28 @@ class GameEngine: ObservableObject {
     /// the player stuck.
     private func recoverFromOrphanedScreen() {
         let history = breadcrumbHistory
+        logEvent("Orphaned screen recovered — history: \(history.joined(separator: " | "))", category: "SYSTEM")
+
+        // Mid-character-creation, the underlying progress (which slot,
+        // who's already in the party) is untouched — only this one
+        // screen's buttons went dead. Silently rebuild the current step
+        // instead of dropping the player to an error screen: the repeated
+        // "Accept -> blank screen" reports all trace back to exactly this
+        // state (gameState == .characterCreation, party mid-build), and
+        // chooseCharacterType() is a pure "which screen for this slot"
+        // dispatcher — safe to re-invoke, no data loss, no double-adding
+        // characters. This doesn't fix the still-unidentified cause of the
+        // buttons going dead, but it means the player never sees it.
+        // Capped at 3 in a row so a persistent underlying cause falls
+        // through to the visible recovery screen instead of silently
+        // "flickering" forever.
+        if gameState == .characterCreation, silentCharCreationRecoveryCount < 3 {
+            silentCharCreationRecoveryCount += 1
+            chooseCharacterType()
+            return
+        }
+        silentCharCreationRecoveryCount = 0
+
         clearTerminal()
         printTitle("Hmm...")
         print("  That screen didn't load correctly.", color: .yellow)
@@ -1799,7 +1825,6 @@ class GameEngine: ObservableObject {
         for line in history {
             print("  \(line)", color: .dimGreen)
         }
-        logEvent("Orphaned screen recovered — history: \(history.joined(separator: " | "))", category: "SYSTEM")
         print("")
         if dungeon != nil && !party.isEmpty {
             showMenu(["Return to Game", "Main Menu"])
@@ -11489,7 +11514,7 @@ class GameEngine: ObservableObject {
     ]
 
     func startCharacterCreation() {
-        if creatingCharacterIndex == 0 { charCreationFlowStart = Date(); breadcrumbHistory = [] }
+        if creatingCharacterIndex == 0 { charCreationFlowStart = Date(); breadcrumbHistory = []; silentCharCreationRecoveryCount = 0 }
         setBreadcrumb("startCharacterCreation(idx:\(creatingCharacterIndex),total:\(totalCharacters),asAI:\(creatingAsAI),offeredHoF:\(hasOfferedHallOfFameReturn))")
         // Set this unconditionally, before the early-return Hall of Fame
         // path below — gameState gates background work like the Game
@@ -12334,6 +12359,7 @@ class GameEngine: ObservableObject {
         let advance: () -> Void = { [weak self] in
             guard let self = self else { return }
             self.setBreadcrumb("finishCharacterCreation.advance(idx:\(self.creatingCharacterIndex)->\(self.creatingCharacterIndex + 1),total:\(self.totalCharacters),multi:\(self.isMultiplayer))")
+            self.silentCharCreationRecoveryCount = 0
             self.creatingCharacterIndex += 1
             if self.creatingCharacterIndex < self.totalCharacters {
                 self.chooseCharacterType()
