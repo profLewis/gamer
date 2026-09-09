@@ -17736,7 +17736,7 @@ class GameEngine: ObservableObject {
         GameCenterManager.shared.showMatchmaker(minPlayers: 2, maxPlayers: 2)
     }
 
-    func showAdventureLog() {
+    func showAdventureLog(onBack: (() -> Void)? = nil) {
         clearTerminal()
         printTitle("Adventure Log")
         print("  Time: \(formattedGameTime())", color: .cyan)
@@ -17802,7 +17802,7 @@ class GameEngine: ObservableObject {
             default: break
             }
         }
-        closeHandler = { [weak self] in
+        closeHandler = onBack ?? { [weak self] in
             self?.showPartyStatus()
         }
     }
@@ -21543,7 +21543,7 @@ class GameEngine: ObservableObject {
         character.level = newLevel
 
         clearTerminal()
-        SoundManager.shared.playVictory()
+        SoundManager.shared.playLevelUp()
 
         // Big, hard-to-miss fanfare — this is the one moment the game makes a
         // point of showing growth, since there's no portrait to hang a new
@@ -21558,6 +21558,7 @@ class GameEngine: ObservableObject {
         if newTitle != oldTitle {
             print("\(character.name) is now a \(newTitle)!", color: .brightGreen, bold: true)
         }
+        print("  \(Self.levelUpFlourish(for: character.characterClass))", color: .cyan)
         logMultiplayerAction("\(character.name) reached Level \(newLevel) — \(newTitle)!")
         print("")
 
@@ -21647,6 +21648,28 @@ class GameEngine: ObservableObject {
     /// D&D 5e Ability Score Improvement levels. Only level 4 is currently reachable
     /// (characters cap at level 5 — see Character.canLevelUp), but the rest are kept
     /// so this keeps working automatically if the level cap is ever raised.
+    /// A characteristic beat of celebration per class, printed on level-up —
+    /// since a text UI has no portrait or sprite to animate, this is the
+    /// closest thing to "the character does a little dance."
+    private static func levelUpFlourish(for characterClass: CharacterClass) -> String {
+        let lines: [String]
+        switch characterClass {
+        case .fighter:
+            lines = ["💪 flexes and lets out a battle roar!", "💪 slams a fist against their breastplate, grinning."]
+        case .wizard:
+            lines = ["✨ traces a shimmering rune in the air, cackling with delight!", "✨ conjures a burst of harmless sparks and takes a little bow."]
+        case .rogue:
+            lines = ["🗡️ flips a dagger, grins, and gives a mock bow.", "🗡️ vanishes into shadow for a beat, then reappears with a flourish."]
+        case .cleric:
+            lines = ["🙏 raises a hand skyward as warm light glimmers around them.", "🙏 murmurs a quiet thanks, eyes shining with renewed conviction."]
+        case .ranger:
+            lines = ["🏹 lets out a sharp whistle and does a little victory jig.", "🏹 nocks an arrow skyward and lets it fly in celebration."]
+        case .barbarian:
+            lines = ["🪓 pounds their chest and stomps the ground, whooping with joy!", "🪓 hoists their weapon overhead with a triumphant roar!"]
+        }
+        return lines.randomElement()!
+    }
+
     private static let abilityScoreImprovementLevels: Set<Int> = [4, 8, 12, 16, 19]
 
     private static func primaryAbility(for characterClass: CharacterClass) -> Ability {
@@ -21886,10 +21909,16 @@ class GameEngine: ObservableObject {
         print("Your party has fallen...", color: .red)
         print("")
         print("The dungeon claims another group of adventurers.")
+        print("")
 
-        waitForContinue()
-        inputHandler = { [weak self] _ in
-            self?.resetGame()
+        showMenu(["View Adventure Log", "Return to Main Menu"])
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                self.showAdventureLog(onBack: { [weak self] in self?.resetGame() })
+            } else {
+                self.resetGame()
+            }
         }
     }
 

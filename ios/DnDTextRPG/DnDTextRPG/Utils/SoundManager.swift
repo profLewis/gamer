@@ -211,6 +211,20 @@ class SoundManager {
         ])
     }
 
+    /// Level up — a brighter, punchier fanfare than victory (distinct so it
+    /// doesn't feel like the exact same cue as clearing the dungeon).
+    func playLevelUp() {
+        guard battleSoundsEnabled else { return }
+        playSequence([
+            (392, 0.08, 0.22, .square),   // G4
+            (523, 0.08, 0.24, .square),   // C5
+            (659, 0.08, 0.26, .square),   // E5
+            (784, 0.08, 0.28, .square),   // G5
+            (1047, 0.1, 0.3, .square),    // C6
+            (1319, 0.22, 0.32, .sine),    // E6
+        ])
+    }
+
     /// Defeat — sad descending tones
     func playDefeat() {
         guard battleSoundsEnabled else { return }
