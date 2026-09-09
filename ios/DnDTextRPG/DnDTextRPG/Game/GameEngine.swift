@@ -316,6 +316,9 @@ class GameEngine: ObservableObject {
     // Character creation state
     private var creatingCharacterIndex: Int = 0
     private var totalCharacters: Int = 1
+    /// One-shot per New Adventure flow — whether we've already offered to
+    /// bring back the most recent Character Hall of Fame hero for slot 1.
+    private var hasOfferedHallOfFameReturn: Bool = false
     private var tempCharacterName: String = ""
     private var tempRace: Race?
     private var tempClass: CharacterClass?
@@ -2579,11 +2582,74 @@ class GameEngine: ObservableObject {
         GameCenterManager.shared.turnBasedDelegate = self
         HallOfFameManager.shared.seedIfEmpty()
         HallOfFameManager.shared.reseedIfNeeded()
+        seedCharacterRosterIfEmpty()
         // Sync sound settings from UserDefaults
         SoundManager.shared.battleSoundsEnabled = battleSoundsEnabled
         DMEngine.shared.justDMMode = justDMMode
         clearTerminal()
         showMainMenu()
+    }
+
+    /// First-run only: gives the Character Roster (and Character Hall of
+    /// Fame) something to load right away — one Level 1 example of each
+    /// class — instead of starting completely empty. Mirrors
+    /// HallOfFameManager.seedIfEmpty()'s "give new players something to
+    /// explore" role, one layer down.
+    private func seedCharacterRosterIfEmpty() {
+        guard CharacterLibraryManager.shared.listCharacters().isEmpty else { return }
+
+        let starters: [(name: String, race: Race, cls: CharacterClass)] = [
+            ("Bram", .human, .fighter),
+            ("Sable", .highElf, .wizard),
+            ("Pip", .lightfootHalfling, .rogue),
+            ("Wren", .hillDwarf, .cleric),
+            ("Kestrel", .woodElf, .ranger),
+            ("Ursa", .halfOrc, .barbarian),
+        ]
+
+        for starter in starters {
+            let sorted = AbilityScores.standardArray.sorted(by: >)
+            var scores = AbilityScores(strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10)
+            for (idx, ability) in starter.cls.abilityPriority.enumerated() {
+                scores.set(ability, to: sorted[idx])
+            }
+            for (ability, bonus) in starter.race.abilityBonuses {
+                scores.set(ability, to: scores.score(for: ability) + bonus)
+            }
+
+            let character = Character(name: starter.name, race: starter.race, characterClass: starter.cls, abilityScores: scores)
+            let skills = Array(starter.cls.skillChoices.shuffled().prefix(starter.cls.numSkillChoices))
+            for skill in skills { character.skillProficiencies.insert(skill) }
+            character.gold = Dice.rollSum(4, d: 4) * 10
+
+            let equipOptions = ItemCatalog.startingEquipmentOptions(for: starter.cls)
+            if let (_, items) = equipOptions.first {
+                for item in items { _ = character.addItem(item) }
+            }
+            autoEquip(character)
+
+            let startingSpells = SpellCatalog.startingSpells(for: starter.cls)
+            if !startingSpells.isEmpty {
+                character.knownSpells = startingSpells
+                character.spellSlots = SpellCatalog.startingSlots(for: starter.cls, level: 1)
+            }
+            if starter.cls == .barbarian {
+                character.rageUsesRemaining = character.rageMaxUses
+            }
+
+            CharacterLibraryManager.shared.save(character)
+            CharacterHallOfFameManager.shared.addEntry(CharacterHallOfFameEntry(
+                date: Date(),
+                characterName: character.name,
+                race: character.race.rawValue,
+                characterClass: character.characterClass.rawValue,
+                level: 1,
+                gold: character.gold,
+                dungeonName: "Starter Kit",
+                dungeonLevel: 1,
+                linkedCharacterId: character.id
+            ))
+        }
     }
 
     // MARK: - Main Menu
@@ -2807,12 +2873,6 @@ class GameEngine: ObservableObject {
             print("")
         }
 
-        let rosterCount = CharacterLibraryManager.shared.listCharacters().count
-        if rosterCount > 0 {
-            print("  \(rosterCount) character\(rosterCount == 1 ? "" : "s") in your Character Roster", color: .dimGreen)
-            print("")
-        }
-
         // Show multiplayer matches
         var mpEntries: [(match: GKTurnBasedMatch, info: String, status: String)] = []
         if let matches = mpMatches {
@@ -2921,30 +2981,13 @@ class GameEngine: ObservableObject {
             }
         }
 
-        // Game saves (adventures in progress) and character saves (the
-        // Character Roster) are paired here — same row of the menu, same
-        // "browse a save system" shape — but kept as two separate,
-        // distinctly-labelled entries so they're never confused with
-        // each other. Manage Saves (game saves specifically) sits right
-        // below; the roster manages its own entries (Delete) inline.
-        if !localSlots.isEmpty {
-            menuOpts.append(MenuOption("Continue Quest"))
-            actions.append { [weak self] in self?.showLoadGameMenu(returnTo: .mainMenu) }
-        }
-
-        menuOpts.append(MenuOption("Character Saves", tint: .navigation))
-        actions.append { [weak self] in self?.showCharacterRoster() }
-
-        if !localSlots.isEmpty {
-            menuOpts.append(MenuOption("Manage Saves"))
-            actions.append { [weak self] in self?.showManageSavesMenu(returnTo: .mainMenu) }
-        }
-
-        menuOpts.append(MenuOption("Hall of Fame", tint: .navigation))
+        // Kept deliberately short: just New Adventure and Continue Adventure.
+        // Continue Adventure opens the game Hall of Fame (past tales), which
+        // has its own "Load Game" entry for actual save management —
+        // Character Saves live the same way, one level inside New
+        // Adventure's character selection where they're relevant.
+        menuOpts.append(MenuOption("Continue Adventure"))
         actions.append { [weak self] in self?.showHallOfFame() }
-
-        menuOpts.append(MenuOption("Character Hall of Fame", tint: .navigation))
-        actions.append { [weak self] in self?.showCharacterHallOfFame() }
 
         menuOpts.append(MenuOption("?", tint: .navigation))
         actions.append { [weak self] in self?.showPlayHelp() }
@@ -2970,37 +3013,23 @@ class GameEngine: ObservableObject {
     }
 
     private func showPlayHelp() {
-        let hasSaves = SaveGameManager.shared.listSlots().count > 0
         showInlineHelp {
             self.printTitle("Play Menu Help")
             self.print("")
             self.print("  NEW ADVENTURE", color: .cyan, bold: true)
-            self.printWrapped("Start a fresh adventure. Create your party, choose a dungeon, and begin exploring. Long-press for a quick start with a random party.", indent: 2, color: .dimGreen)
+            self.printWrapped("Start a fresh adventure. Pick your party size, then create each character — or load one from the Character Hall of Fame (defaults to your most recent hero, if you have one). Long-press for a quick start with a random party.", indent: 2, color: .dimGreen)
             self.print("")
-            self.print("  CONTINUE QUEST", color: .cyan, bold: true)
-            if hasSaves {
-                self.printWrapped("Resume a saved adventure. Browse your saves with full details — party members, dungeon level, game time, and save dates. Tap to load.", indent: 2, color: .dimGreen)
-            } else {
-                self.printWrapped("Appears when you have saved adventures. Save during a quest to create a save point you can return to later.", indent: 2, color: .dimGreen)
-            }
+            self.print("  CONTINUE ADVENTURE", color: .cyan, bold: true)
+            self.printWrapped("Opens the Hall of Fame — the greatest (and most tragic) completed adventures. Tap an entry to read its tale; some have a linked save you can relive. Tap 'Load Game' there to resume an adventure in progress or manage your saves.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  CHARACTER SAVES", color: .cyan, bold: true)
-            self.printWrapped("The Character Roster — separate from Saved Adventures. Save a character after creating them (or from Party Status/Party Review any time) to keep their level, gear, and gold for a future party. Bring one back with 'Load Character' during party creation.", indent: 2, color: .dimGreen)
-            self.print("")
-            self.print("  MANAGE SAVES", color: .cyan, bold: true)
-            self.printWrapped("Delete old saves or manage cloud saves. Each adventure can have multiple save points that you can return to.", indent: 2, color: .dimGreen)
+            self.printWrapped("Found inside New Adventure's character selection (the Character Hall of Fame screen) — 'Manage Character Saves' there browses and deletes your full Character Roster, not just Hall-of-Famers. Save a character any time from Party Review or Party Status.", indent: 2, color: .dimGreen)
             self.print("")
             if self.multiplayerEnabled {
                 self.print("  MULTIPLAYER MATCHES", color: .cyan, bold: true)
                 self.printWrapped("Active Game Centre matches appear as cyan buttons. Flashing buttons indicate incoming invites.", indent: 2, color: .dimGreen)
                 self.print("")
             }
-            self.print("  HALL OF FAME", color: .cyan, bold: true)
-            self.printWrapped("Browse the greatest (and most tragic) adventures. Tap an entry to read its tale. Some entries have linked saves — long-press the title or tap ⚔ to relive the adventure yourself.", indent: 2, color: .dimGreen)
-            self.print("")
-            self.print("  CHARACTER HALL OF FAME", color: .cyan, bold: true)
-            self.printWrapped("Every survivor of a victorious adventure is inducted here, linked to their Character Roster save — the character-level counterpart to the Hall of Fame above.", indent: 2, color: .dimGreen)
-            self.print("")
         }
     }
 
@@ -9003,12 +9032,12 @@ class GameEngine: ObservableObject {
             print("  Complete a dungeon to earn your place!", color: .dimGreen)
             print("")
 
-            showMenu(["?"])
+            showMenuOptions([MenuOption("?", tint: .navigation, compact: true), MenuOption("Load Game", tint: .navigation, compact: true)])
             closeHandler = { [weak self] in
                 self?.showMainMenu()
             }
             menuHandler = { [weak self] choice in
-                if choice == 1 { self?.showHallOfFameHelp() }
+                if choice == 1 { self?.showHallOfFameHelp() } else { self?.showLoadGameMenu(returnTo: .mainMenu) }
             }
         } else {
             let dateFormatter = DateFormatter()
@@ -9041,6 +9070,7 @@ class GameEngine: ObservableObject {
             if entries.count > 1 {
                 menuOpts.append(MenuOption("🎲", tint: .navigation, compact: true))
             }
+            menuOpts.append(MenuOption("Load Game", tint: .navigation, compact: true))
             showMenuOptions(menuOpts)
             closeHandler = { [weak self] in
                 self?.showMainMenu()
@@ -9052,6 +9082,8 @@ class GameEngine: ObservableObject {
                 else if text == "🎲" {
                     let r = Int.random(in: 0..<entries.count)
                     self.showHallOfFameDetail(entries[r], entries: entries, index: r)
+                } else if text == "Load Game" {
+                    self.showLoadGameMenu(returnTo: .mainMenu)
                 }
             }
 
@@ -9520,6 +9552,7 @@ class GameEngine: ObservableObject {
 
     func startNewGame() {
         clearAllUndoRedo()
+        hasOfferedHallOfFameReturn = false
         clearTerminal()
         printTitle("New Adventure")
         print("How many adventurers in your party?", color: .brightGreen)
@@ -11270,6 +11303,17 @@ class GameEngine: ObservableObject {
     ]
 
     func startCharacterCreation() {
+        // Offer to bring back your most recent Hall of Fame hero for the
+        // first slot — once per New Adventure flow, and only for the human
+        // player's own slot (not AI companions).
+        if creatingCharacterIndex == 0 && !creatingAsAI && !hasOfferedHallOfFameReturn {
+            hasOfferedHallOfFameReturn = true
+            if let entry = CharacterHallOfFameManager.shared.mostRecentAvailableEntry() {
+                showHallOfFameReturnPrompt(entry: entry)
+                return
+            }
+        }
+
         clearTerminal()
         gameState = .characterCreation
 
@@ -11321,7 +11365,8 @@ class GameEngine: ObservableObject {
                 // Random — submit empty name to trigger auto-name
                 self.inputHandler?("")
             } else if tapped == "Load Character" {
-                self.showCharacterRoster(loadHandler: { [weak self] character in
+                self.showCharacterHallOfFame(loadHandler: { [weak self] character in
+                    character.prepareForNewAdventure()
                     self?.loadCharacterFromRoster(character)
                 }, onBack: { [weak self] in self?.startCharacterCreation() })
             } else if tapped == "?" {
@@ -11884,6 +11929,39 @@ class GameEngine: ObservableObject {
             self.printWrapped("• Use undo/redo to change your picks (must be enabled in Settings > Gameplay).", indent: 2)
             self.printWrapped("• X icon goes back to ability scores.", indent: 2)
             self.print("")
+        }
+    }
+
+    /// "Welcome back" screen offered once per New Adventure, for the first
+    /// (human) character slot, when a Character Hall of Fame entry exists.
+    private func showHallOfFameReturnPrompt(entry: CharacterHallOfFameEntry) {
+        clearTerminal()
+        printTitle("Welcome Back")
+        print("  Continue as \(entry.characterName)?", color: .brightGreen, bold: true)
+        print("  Level \(entry.level) \(entry.race) \(entry.characterClass) — \(entry.gold)gp", color: .dimGreen)
+        print("")
+
+        showMenu(["Yes, load \(entry.characterName)", "No, create someone new", "Browse Hall of Fame"])
+        closeHandler = { [weak self] in self?.startNewGame() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1:
+                guard let linkedId = entry.linkedCharacterId,
+                      let record = CharacterLibraryManager.shared.listCharacters().first(where: { $0.character.id == linkedId }) else {
+                    self.startCharacterCreation()
+                    return
+                }
+                record.character.prepareForNewAdventure()
+                self.loadCharacterFromRoster(record.character)
+            case 2:
+                self.startCharacterCreation()
+            default:
+                self.showCharacterHallOfFame(loadHandler: { [weak self] character in
+                    character.prepareForNewAdventure()
+                    self?.loadCharacterFromRoster(character)
+                }, onBack: { [weak self] in self?.startCharacterCreation() })
+            }
         }
     }
 
@@ -22543,19 +22621,31 @@ class GameEngine: ObservableObject {
         }
     }
 
-    func showCharacterHallOfFame(onBack: (() -> Void)? = nil) {
+    /// - loadHandler: when set, this is being browsed to pick a character to
+    ///   join the party being created — tapping an entry loads it directly.
+    ///   When nil, tapping an entry opens its roster detail/delete screen.
+    /// "Manage Character Saves" is always offered — the full Character
+    /// Roster (not just Hall-of-Famers) is reachable from here.
+    func showCharacterHallOfFame(loadHandler: ((Character) -> Void)? = nil, onBack: (() -> Void)? = nil) {
         clearTerminal()
         printTitle("Character Hall of Fame")
 
         let entries = CharacterHallOfFameManager.shared.listEntries()
+        let backTarget = onBack ?? { [weak self] in self?.showPlayMenu() }
+        let manageAction: () -> Void = { [weak self] in
+            self?.showCharacterRoster(loadHandler: loadHandler, onBack: { self?.showCharacterHallOfFame(loadHandler: loadHandler, onBack: onBack) })
+        }
+
         if entries.isEmpty {
             print("  No legends yet.", color: .yellow)
             print("")
             print("  Every survivor of a victorious adventure is inducted here, with their level, gear, and gold saved to your Character Roster.", color: .dimGreen)
             print("")
-            showMenu(["< Back"])
-            menuHandler = { [weak self] _ in (onBack ?? { self?.showPlayMenu() })() }
-            closeHandler = onBack ?? { [weak self] in self?.showPlayMenu() }
+            showMenu(["Manage Character Saves", "< Back"])
+            menuHandler = { choice in
+                if choice == 1 { manageAction() } else { backTarget() }
+            }
+            closeHandler = backTarget
             return
         }
 
@@ -22570,20 +22660,25 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        showPaginatedMenuOptions(options, pinned: ["< Back"], handler: { [weak self] idx in
+        showPaginatedMenuOptions(options, pinned: ["Manage Character Saves", "< Back"], handler: { [weak self] idx in
             guard let self = self, idx >= 0 && idx < entries.count else { return }
             guard let linkedId = entries[idx].linkedCharacterId,
                   let record = CharacterLibraryManager.shared.listCharacters().first(where: { $0.character.id == linkedId }) else {
                 self.print("  That character's roster save is no longer available.", color: .yellow)
                 self.waitForContinue()
-                self.inputHandler = { [weak self] _ in self?.showCharacterHallOfFame(onBack: onBack) }
+                self.inputHandler = { [weak self] _ in self?.showCharacterHallOfFame(loadHandler: loadHandler, onBack: onBack) }
                 return
             }
-            self.showCharacterRosterActions(record: record, loadHandler: nil, onBack: { self.showCharacterHallOfFame(onBack: onBack) })
-        }, pinnedHandler: { [weak self] _ in
-            (onBack ?? { self?.showPlayMenu() })()
+            if let loadHandler = loadHandler {
+                loadHandler(record.character)
+            } else {
+                self.showCharacterRosterActions(record: record, loadHandler: nil, onBack: { self.showCharacterHallOfFame(onBack: onBack) })
+            }
+        }, pinnedHandler: { choice in
+            // pinned order: "Manage Character Saves" then "< Back"
+            if choice == 0 { manageAction() } else { backTarget() }
         })
-        closeHandler = onBack ?? { [weak self] in self?.showPlayMenu() }
+        closeHandler = backTarget
     }
 
     private func recordHallOfFame(outcome: RunOutcome) {

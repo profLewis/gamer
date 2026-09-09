@@ -149,6 +149,16 @@ class CharacterHallOfFameManager {
             .sorted { $0.score > $1.score }
     }
 
+    /// Most recently inducted entry (by date, not score) whose linked
+    /// character is still present in the roster — used to default "New
+    /// Adventure" to offering your last hero back.
+    func mostRecentAvailableEntry() -> CharacterHallOfFameEntry? {
+        let rosterIds = Set(CharacterLibraryManager.shared.listCharacters().map { $0.character.id })
+        return listEntries()
+            .filter { $0.linkedCharacterId.map { rosterIds.contains($0) } ?? false }
+            .max { $0.date < $1.date }
+    }
+
     func addEntry(_ entry: CharacterHallOfFameEntry) {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
