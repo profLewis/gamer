@@ -2923,6 +2923,9 @@ class GameEngine: ObservableObject {
             actions.append { [weak self] in self?.showManageSavesMenu(returnTo: .mainMenu) }
         }
 
+        menuOpts.append(MenuOption("Character Roster", tint: .navigation))
+        actions.append { [weak self] in self?.showCharacterRoster() }
+
         menuOpts.append(MenuOption("Hall of Fame", tint: .navigation))
         actions.append { [weak self] in self?.showHallOfFame() }
 
@@ -11249,6 +11252,8 @@ class GameEngine: ObservableObject {
         print("")
 
         var menuOpts = suggestionList.map { String($0) }
+        let hasRosterCharacters = !creatingAsAI && !CharacterLibraryManager.shared.listCharacters().isEmpty
+        if hasRosterCharacters { menuOpts.append("Load Character") }
         menuOpts.append("Random")
         menuOpts.append("?")
 
@@ -11278,6 +11283,10 @@ class GameEngine: ObservableObject {
             } else if menuOpts[menuIdx] == "Random" {
                 // Random — submit empty name to trigger auto-name
                 self.inputHandler?("")
+            } else if menuOpts[menuIdx] == "Load Character" {
+                self.showCharacterRoster(loadHandler: { [weak self] character in
+                    self?.loadCharacterFromRoster(character)
+                }, onBack: { [weak self] in self?.startCharacterCreation() })
             } else if menuOpts[menuIdx] == "?" {
                 self.showCharacterHelp()
             }
@@ -11838,6 +11847,46 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Adds a character loaded from the Character Roster to the party being
+    /// built, then continues character creation exactly as finishCharacterCreation
+    /// does — same next-slot/party-review/multiplayer handoff.
+    private func loadCharacterFromRoster(_ character: Character) {
+        // Avoid two party members with the same display name
+        let existingNames = Set(party.map { $0.name.lowercased() })
+        if existingNames.contains(character.name.lowercased()) {
+            var suffix = 2
+            var candidate = "\(character.name) (\(suffix))"
+            while existingNames.contains(candidate.lowercased()) {
+                suffix += 1
+                candidate = "\(character.name) (\(suffix))"
+            }
+            character.name = candidate
+        }
+
+        party.append(character)
+
+        clearTerminal()
+        print("")
+        print("  \(character.name) joins the party!", color: .brightGreen, bold: true)
+        print("  Loaded from your Character Roster — Level \(character.level) \(character.race.rawValue) \(character.characterClass.rawValue).", color: .cyan)
+        print("")
+        printLines(character.displaySheet())
+        print("")
+
+        waitForContinue()
+        inputHandler = { [weak self] _ in
+            guard let self = self else { return }
+            self.creatingCharacterIndex += 1
+            if self.creatingCharacterIndex < self.totalCharacters {
+                self.chooseCharacterType()
+            } else if self.isMultiplayer, let lastChar = self.party.last {
+                self.multiplayerCharacterCreated(character: lastChar)
+            } else {
+                self.showPartyReview()
+            }
+        }
+    }
+
     func finishCharacterCreation() {
         guard let race = tempRace, let charClass = tempClass else { return }
 
@@ -11951,9 +12000,7 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        waitForContinue()
-
-        inputHandler = { [weak self] _ in
+        let advance: () -> Void = { [weak self] in
             guard let self = self else { return }
             self.creatingCharacterIndex += 1
             if self.creatingCharacterIndex < self.totalCharacters {
@@ -11962,6 +12009,19 @@ class GameEngine: ObservableObject {
                 self.multiplayerCharacterCreated(character: lastChar)
             } else {
                 self.showPartyReview()
+            }
+        }
+
+        showMenu(["Continue", "Save to Roster & Continue"])
+        closeHandler = advance
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 2 {
+                self.saveCharacterToRoster(character)
+                self.waitForContinue()
+                self.inputHandler = { _ in advance() }
+            } else {
+                advance()
             }
         }
     }
@@ -16574,7 +16634,7 @@ class GameEngine: ObservableObject {
         print("")
 
         // Build menu
-        var menuOpts = ["Party Review", "Adventure Log", "Settings", "?"]
+        var menuOpts = ["Party Review", "Save to Roster", "Adventure Log", "Settings", "?"]
         let hasPoisoned = party.contains(where: { $0.isPoisoned })
         if hasPoisoned {
             menuOpts.insert("Cure Poison", at: 0)
@@ -16594,6 +16654,8 @@ class GameEngine: ObservableObject {
                 self.showPoisonInfo(onBack: { self.showPartyStatus() })
             case "Party Review":
                 self.showInGamePartyReview()
+            case "Save to Roster":
+                self.showSavePartyToRosterMenu()
             case "Adventure Log":
                 self.showAdventureLog()
             case "Settings":
@@ -16603,6 +16665,39 @@ class GameEngine: ObservableObject {
             default:
                 self.showExplorationView()
             }
+        }
+    }
+
+    /// Lets the player pick which party member(s) to save/update in the
+    /// Character Roster mid-adventure — e.g. after a level-up — so progress
+    /// on that character carries into future parties.
+    private func showSavePartyToRosterMenu() {
+        clearTerminal()
+        printTitle("Save to Roster")
+        print("  Saving a character here updates their Character Roster entry with their current level, gear, and gold.", color: .dimGreen)
+        print("")
+
+        var options = party.map { "\($0.name) — Level \($0.level) \($0.characterClass.rawValue)" }
+        options.append("Save Whole Party")
+
+        showMenu(options + ["< Back"])
+        closeHandler = { [weak self] in self?.showPartyStatus() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == options.count + 1 {
+                self.showPartyStatus()
+                return
+            }
+            self.clearTerminal()
+            if choice == options.count {
+                for char in self.party { self.saveCharacterToRoster(char, silent: true) }
+                self.print("  Whole party saved to the Character Roster.", color: .brightGreen)
+            } else {
+                self.saveCharacterToRoster(self.party[choice - 1])
+            }
+            self.print("")
+            self.waitForContinue()
+            self.inputHandler = { [weak self] _ in self?.showPartyStatus() }
         }
     }
 
@@ -22254,6 +22349,105 @@ class GameEngine: ObservableObject {
             dungeonLevel: dungeon?.level ?? 1,
             isVictory: outcome == .victory
         )
+    }
+
+    // MARK: - Character Roster
+    //
+    // Saves/loads individual characters independent of game saves, so a
+    // character's level, gear, and gold can carry over into a new adventure.
+    // Deliberately kept visually and terminologically distinct from
+    // "Saved Adventures" — different title, different verbs ("Roster" /
+    // "Load into Party" vs "Continue Quest" / "Load") — so it's always
+    // obvious which system is in play.
+
+    /// - loadHandler: when set, this is being browsed to pick a character to
+    ///   join the party being created — each row offers "Load into Party".
+    ///   When nil, this is a standalone browse/manage screen.
+    func showCharacterRoster(loadHandler: ((Character) -> Void)? = nil, onBack: (() -> Void)? = nil) {
+        clearTerminal()
+        printTitle("Character Roster")
+
+        let records = CharacterLibraryManager.shared.listCharacters()
+
+        if records.isEmpty {
+            print("  No saved characters yet.", color: .yellow)
+            print("")
+            print("  Characters you save after creating them (or from Party Status during an adventure) will appear here, ready to bring into a future party.", color: .dimGreen)
+            print("")
+            showMenu(["< Back"])
+            menuHandler = { [weak self] _ in
+                (onBack ?? { self?.showPlayMenu() })()
+            }
+            closeHandler = onBack ?? { [weak self] in self?.showPlayMenu() }
+            return
+        }
+
+        print("  \(records.count) saved character\(records.count == 1 ? "" : "s")\(loadHandler != nil ? " — tap one to add it to your party" : "")", color: .dimGreen)
+        print("")
+
+        var options: [String] = []
+        for record in records {
+            let c = record.character
+            options.append("\(c.name) — \(c.race.rawValue) \(c.characterClass.rawValue) L\(c.level)")
+        }
+
+        showPaginatedMenuOptions(options, pinned: ["< Back"], handler: { [weak self] idx in
+            guard let self = self, idx >= 0 && idx < records.count else { return }
+            self.showCharacterRosterActions(record: records[idx], loadHandler: loadHandler, onBack: onBack)
+        }, pinnedHandler: { [weak self] _ in
+            (onBack ?? { self?.showPlayMenu() })()
+        })
+        closeHandler = onBack ?? { [weak self] in self?.showPlayMenu() }
+    }
+
+    private func showCharacterRosterActions(record: SavedCharacterRecord, loadHandler: ((Character) -> Void)?, onBack: (() -> Void)?) {
+        clearTerminal()
+        let c = record.character
+        printSubtitle("\(c.name)")
+        printLines(c.displaySheet())
+        print("")
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .short
+        print("  Saved: \(dateFormatter.string(from: record.savedAt))", color: .dimGreen)
+        print("")
+
+        var options: [String] = []
+        if loadHandler != nil { options.append("Load into Party") }
+        options.append("Delete from Roster")
+
+        showMenu(options)
+        let backToList: () -> Void = { [weak self] in
+            self?.showCharacterRoster(loadHandler: loadHandler, onBack: onBack)
+        }
+        closeHandler = backToList
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1 && choice <= options.count else { return }
+            switch options[choice - 1] {
+            case "Load into Party":
+                let loaded = c
+                loaded.prepareForNewAdventure()
+                loadHandler?(loaded)
+            case "Delete from Roster":
+                CharacterLibraryManager.shared.delete(id: c.id)
+                self.print("")
+                self.print("  \(c.name) removed from the roster.", color: .yellow)
+                self.waitForContinue()
+                self.inputHandler = { _ in backToList() }
+            default: break
+            }
+        }
+    }
+
+    /// Saves (or updates) a character to the roster and confirms to the player.
+    @discardableResult
+    func saveCharacterToRoster(_ character: Character, silent: Bool = false) -> Bool {
+        let ok = CharacterLibraryManager.shared.save(character)
+        if !silent {
+            print(ok ? "  \(character.name) saved to your Character Roster." : "  Couldn't save \(character.name) to the roster.",
+                  color: ok ? .brightGreen : .red)
+        }
+        return ok
     }
 
     // MARK: - Save / Load

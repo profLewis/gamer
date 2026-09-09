@@ -91,6 +91,12 @@ Features:
 - Load any breakpoint from a slot's history
 - Rename and delete save slots
 
+### Character Roster
+- Save individual characters independent of game saves — a separate system from Saved Adventures, clearly labelled so it's never confused with them
+- **Load Character** during party creation brings a saved character into a new party at their current level, gear, and gold (HP/spell slots/combat state reset for the fresh start)
+- **Save to Roster** during party creation, or from Party Status mid-adventure, updates that character's roster entry — so a character can carry level-ups and loot from one adventure into the next
+- Up to 20 characters can be kept in the roster
+
 ### Hall of Fame
 - Scoring: victories, gold, monsters slain, exploration, difficulty multiplier
 - Pre-seeded with Stranger Things-themed entries

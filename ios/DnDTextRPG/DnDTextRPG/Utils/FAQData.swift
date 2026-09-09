@@ -298,6 +298,11 @@ struct FAQData {
             answer: "You can have up to 5 save slots. If all slots are full, you'll need to overwrite an existing save or delete one from Settings → Save → Manage Saves.",
             keywords: ["save slots", "how many saves", "save limit", "delete save"]
         ),
+        FAQEntry(
+            question: "Can I keep the same character across adventures?",
+            answer: "Yes — that's the Character Roster, separate from Saved Adventures. During party creation, tap 'Load Character' to bring in a saved character at their current level, gear, and gold. Save a character to the roster right after creating them, or anytime from Party Status → Save to Roster (handy after a level-up). Up to 20 characters can be kept.",
+            keywords: ["character roster", "keep character", "same character", "persist character", "load character", "save character"]
+        ),
     ])
 
     // MARK: - Multiplayer

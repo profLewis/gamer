@@ -589,6 +589,28 @@ class Character: ObservableObject, Identifiable, Codable {
         poisonTurnsRemaining = 0
     }
 
+    /// Reset per-adventure/per-combat state to a fresh start — used when a
+    /// character loaded from the Character Roster joins a new party. Keeps
+    /// everything that makes it "the same character" (level, XP, gear, gold,
+    /// spells known) but clears anything that only made sense mid-adventure.
+    func prepareForNewAdventure() {
+        currentHP = maxHP
+        tempHP = 0
+        isConscious = true
+        deathSaveSuccesses = 0
+        deathSaveFailures = 0
+        curePoison()
+        if !spellSlots.isEmpty { spellSlots.restoreAll() }
+        secondWindUsed = false
+        rageUsesRemaining = rageMaxUses
+        isRaging = false
+        huntersMarkActive = false
+        isPlayingDead = false
+        hasFledCombat = false
+        isDodging = false
+        weaponSharpenedUses = 0
+    }
+
     /// Called each combat turn — returns damage taken from poison, or 0 if recovered
     func tickPoison() -> (damage: Int, cured: Bool) {
         guard isPoisoned, poisonTurnsRemaining > 0 else { return (0, false) }
