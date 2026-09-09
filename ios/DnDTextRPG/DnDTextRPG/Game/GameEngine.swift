@@ -335,6 +335,12 @@ class GameEngine: ObservableObject {
     /// Character's Codable state): a standing offer for the rest of this
     /// play session, not a commitment that needs to survive a save file.
     private var pendingBattleTrainedSkills: [UUID: [(skill: Skill, gymName: String)]] = [:]
+    /// Breadcrumb of the last character-creation function entered — surfaced
+    /// by recoverFromOrphanedScreen() so a reproducible dead-end
+    /// self-diagnoses which function it happened in, instead of needing a
+    /// fresh repro every time. Temporary instrumentation, not a fix in
+    /// itself — see recoverFromOrphanedScreen().
+    private var lastCharCreationBreadcrumb: String = "none"
     private var tempCharacterName: String = ""
     private var tempRace: Race?
     private var tempClass: CharacterClass?
@@ -1715,9 +1721,16 @@ class GameEngine: ObservableObject {
     /// showMenu setup. Returns to a known-good state rather than leaving
     /// the player stuck.
     private func recoverFromOrphanedScreen() {
+        let breadcrumb = lastCharCreationBreadcrumb
         clearTerminal()
         printTitle("Hmm...")
         print("  That screen didn't load correctly.", color: .yellow)
+        // Temporary diagnostic — see lastCharCreationBreadcrumb's comment.
+        // Shows exactly which function was last entered before the screen
+        // went blank, so a reproducible dead end self-diagnoses instead of
+        // needing another live repro.
+        print("  (ref: \(breadcrumb))", color: .dimGreen)
+        logEvent("Orphaned screen recovered — last: \(breadcrumb)", category: "SYSTEM")
         print("")
         if dungeon != nil && !party.isEmpty {
             showMenu(["Return to Game", "Main Menu"])
@@ -9770,6 +9783,7 @@ class GameEngine: ObservableObject {
 
     /// Show party roster with options to swap AI/Remote slots before starting
     private func showPartyReview() {
+        lastCharCreationBreadcrumb = "showPartyReview(party:\(party.count))"
         clearTerminal()
         printTitle("Party Review")
 
@@ -10757,6 +10771,7 @@ class GameEngine: ObservableObject {
 
     /// Ask if this character is human, AI, or remote player, then proceed
     private func chooseCharacterType() {
+        lastCharCreationBreadcrumb = "chooseCharacterType(idx:\(creatingCharacterIndex),total:\(totalCharacters))"
         // Skip slots pre-assigned as remote — go to party review when done
         if pendingRemoteSlots.contains(creatingCharacterIndex) {
             creatingCharacterIndex += 1
@@ -11396,6 +11411,7 @@ class GameEngine: ObservableObject {
     ]
 
     func startCharacterCreation() {
+        lastCharCreationBreadcrumb = "startCharacterCreation(idx:\(creatingCharacterIndex),total:\(totalCharacters),asAI:\(creatingAsAI),offeredHoF:\(hasOfferedHallOfFameReturn))"
         // Offer to bring back a Hall of Fame hero for the first slot — once
         // per New Adventure flow, and only for the human player's own slot
         // (not AI companions). Goes straight to the Character Hall of Fame
@@ -11661,6 +11677,7 @@ class GameEngine: ObservableObject {
 
     /// Fully auto-create a character with random name, race, class, scores, and skills
     func autoCreateCharacter() {
+        lastCharCreationBreadcrumb = "autoCreateCharacter(idx:\(creatingCharacterIndex),total:\(totalCharacters))"
         // Random unique name
         tempCharacterName = pickUniqueName()
         // Random race & class
@@ -12041,6 +12058,7 @@ class GameEngine: ObservableObject {
     /// built, then continues character creation exactly as finishCharacterCreation
     /// does — same next-slot/party-review/multiplayer handoff.
     private func loadCharacterFromRoster(_ character: Character) {
+        lastCharCreationBreadcrumb = "loadCharacterFromRoster(\(character.name),idx:\(creatingCharacterIndex),total:\(totalCharacters))"
         // Avoid two party members with the same display name
         let existingNames = Set(party.map { $0.name.lowercased() })
         if existingNames.contains(character.name.lowercased()) {
@@ -12065,6 +12083,7 @@ class GameEngine: ObservableObject {
 
         let accept: () -> Void = { [weak self] in
             guard let self = self else { return }
+            self.lastCharCreationBreadcrumb = "loadCharacterFromRoster.accept(\(character.name),idx:\(self.creatingCharacterIndex)->\(self.creatingCharacterIndex + 1),total:\(self.totalCharacters),multi:\(self.isMultiplayer))"
             self.creatingCharacterIndex += 1
             if self.creatingCharacterIndex < self.totalCharacters {
                 self.chooseCharacterType()
@@ -12076,6 +12095,7 @@ class GameEngine: ObservableObject {
         }
         let goBack: () -> Void = { [weak self] in
             guard let self = self else { return }
+            self.lastCharCreationBreadcrumb = "loadCharacterFromRoster.goBack(\(character.name))"
             self.party.removeAll { $0.id == character.id }
             self.startCharacterCreation()
         }
@@ -13147,6 +13167,11 @@ class GameEngine: ObservableObject {
             actions.append { [weak self] in if self?.torchLit == true { self?.presentRiddle(index: idx, room: room) } }
         }
 
+        if let destId = room.teleportDestinationRoomId, let destRoom = dungeon.rooms[destId], (room.cleared || room.encounter == nil) {
+            menuOpts.append(MenuOption("Use Teleport Pad"))
+            actions.append { [weak self] in if self?.torchLit == true { self?.useTeleportPad(from: room, to: destRoom) } }
+        }
+
         // Talk to NPC — shown on the D-pad (SE corner) rather than in menu buttons.
         // Without a torch, NPCs are harder to find (only show if already spoken to).
         // Always set both branches (not just the truthy one) — otherwise a
@@ -13577,6 +13602,21 @@ class GameEngine: ObservableObject {
                 print(result.message, color: .yellow)
             }
         }
+        showExplorationView()
+    }
+
+    /// Step through a teleport pad — see Dungeon.generateDungeon()'s
+    /// placement (single-way or bidirectional) and Room.teleportDestinationRoomId.
+    private func useTeleportPad(from room: Room, to destination: Room) {
+        guard let dungeon = dungeon else { return }
+        dungeon.currentRoomId = destination.id
+        advanceTime(5)
+        tickTorch()
+        checkTorchEvent()
+        logEvent("Teleported from \(room.name) to \(destination.name)", category: "EXPLORE")
+        logMultiplayerAction("The party stepped through a teleport pad into \(destination.name)")
+        explorationStatusMessage = ("The pad hums, and the room shifts around you...", .cyan)
+        autosaveIfNeeded()
         showExplorationView()
     }
 
@@ -25849,6 +25889,7 @@ class GameEngine: ObservableObject {
 
     /// Called after a character is fully created in multiplayer mode
     func multiplayerCharacterCreated(character: Character) {
+        lastCharCreationBreadcrumb = "multiplayerCharacterCreated(\(character.name),hasState:\(multiplayerState != nil))"
         guard var state = multiplayerState else {
             print("Error: Lost connection to multiplayer match.", color: .red)
             print("Your character was created but could not be saved to the match.", color: .yellow)

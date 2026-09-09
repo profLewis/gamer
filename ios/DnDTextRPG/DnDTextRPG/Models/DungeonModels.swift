@@ -707,6 +707,32 @@ class Dungeon: ObservableObject, Codable {
             }
         }
 
+        // Teleport pads — a rare shortcut linking two distant rooms. A
+        // bidirectional pad works both ways; a one-way pad only leads out,
+        // with no pad back. Skipped in small dungeons where a shortcut
+        // wouldn't mean much.
+        if numRooms >= 12 {
+            let padCandidates = rooms.values.filter { $0.roomType != .entrance && $0.roomType != .boss }
+            var usedForPad: Set<Int> = []
+            let numPads = numRooms >= 25 ? 2 : 1
+            for _ in 0..<numPads {
+                let available = padCandidates.filter { !usedForPad.contains($0.id) }
+                guard let roomA = available.randomElement() else { break }
+                let farEnough = available.filter {
+                    $0.id != roomA.id
+                        && (abs($0.x - roomA.x) + abs($0.y - roomA.y)) >= 4
+                        && !roomA.exits.values.contains($0.id)
+                }
+                guard let roomB = farEnough.randomElement() else { continue }
+                roomA.teleportDestinationRoomId = roomB.id
+                if Int.random(in: 1...100) <= 70 {
+                    roomB.teleportDestinationRoomId = roomA.id
+                }
+                usedForPad.insert(roomA.id)
+                usedForPad.insert(roomB.id)
+            }
+        }
+
         // Locked doors — a rare obstacle needing a key, lockpicking, or force.
         // Generation is a flood fill with no cycles, so a room's exit toward
         // a higher room id always leads to a "child" subtree with exactly one
