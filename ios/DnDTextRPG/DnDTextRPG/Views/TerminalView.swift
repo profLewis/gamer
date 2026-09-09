@@ -218,7 +218,10 @@ struct TerminalView: View {
                                         next()
                                     } else if let close = gameEngine.closeHandler {
                                         close()
-                                    } else if gameEngine.gameState == .victory || gameEngine.gameState == .gameOver {
+                                    } else if !gameEngine.awaitingContinue {
+                                        // No swipe handler and no closeHandler — an
+                                        // orphaned screen; fall back to the same
+                                        // emergency exit the X icon uses.
                                         gameEngine.emergencyExit()
                                     }
                                 } else {
@@ -519,8 +522,14 @@ struct TerminalView: View {
                                     .font(.system(size: 20 * scale * gameEngine.iconScale))
                                     .foregroundColor(Color(red: 0.0, green: 0.6, blue: 0.25))
                             }
-                        } else if gameEngine.gameState == .victory || gameEngine.gameState == .gameOver || gameEngine.gameState == .combat {
-                            // Fallback: always show X on combat/victory/defeat screens
+                        } else {
+                            // Fallback: closeHandler is nil and nothing is
+                            // awaiting a tap-to-continue — an orphaned screen
+                            // (e.g. one that cleared the terminal and printed
+                            // content but never reached its own showMenu/
+                            // closeHandler setup). Always show a way out
+                            // rather than leaving stale buttons with no way
+                            // back, regardless of which screen this is.
                             Button(action: {
                                 gameEngine.emergencyExit()
                             }) {
@@ -739,12 +748,20 @@ struct TerminalView: View {
             }
         }
 
-        // Number keys for menu options
+        // Number keys for menu options — maps the typed digit to the Nth
+        // regular (numbered) button, matching what's actually displayed on
+        // screen (see MenuButtonsView's displayNumber), not the button's raw
+        // position in currentMenuOptions. Those differ whenever a compact
+        // item (e.g. << on page 2+) sits earlier in that array.
         if hasMenu {
-            if let num = Int(chars), num >= 1, num <= gameEngine.currentMenuOptions.count {
-                if !gameEngine.currentMenuOptions[num - 1].isDisabled {
-                    gameEngine.handleMenuChoice(num)
-                    return .handled
+            if let num = Int(chars), num >= 1 {
+                let regularOptions = gameEngine.currentMenuOptions.enumerated().filter { !$0.element.isCompactNav }
+                if num <= regularOptions.count {
+                    let (absoluteIdx, option) = regularOptions[num - 1]
+                    if !option.isDisabled {
+                        gameEngine.handleMenuChoice(absoluteIdx + 1)
+                        return .handled
+                    }
                 }
             }
         }
@@ -812,8 +829,10 @@ struct TerminalView: View {
                 }
             } else if gameEngine.awaitingContinue {
                 gameEngine.handleContinue()
-            } else if gameEngine.gameState == .victory || gameEngine.gameState == .gameOver {
-                // Fallback: return key always exits victory/defeat
+            } else if gameEngine.closeHandler == nil {
+                // Nothing else applies and there's no closeHandler — an
+                // orphaned screen. Fall back to the same emergency exit the
+                // X icon uses, rather than the Return key doing nothing.
                 gameEngine.emergencyExit()
             }
             return
@@ -955,14 +974,20 @@ struct MenuButtonsView: View {
         let spacerIndex = needsTrailingSpacer ? options.count - 1 : -1
 
         LazyVGrid(columns: gridColumns, spacing: isCompact ? 4 : 6) {
-            // Regular buttons
-            ForEach(regular, id: \.self) { index in
+            // Regular buttons — the displayed "N." is this button's position
+            // among just the regular (numbered) buttons, not its raw index
+            // into the full options array. Those differ whenever a compact
+            // item (e.g. << on page 2+) sits earlier in that array: without
+            // this, the first real button on page 2 would show "2." instead
+            // of "1.", silently offset by however many compact items
+            // precede it — inconsistent with the on-screen list above it.
+            ForEach(Array(regular.enumerated()), id: \.element) { displayPos, index in
                 let option = options[index]
                 if index == spacerIndex {
                     Color.clear
                         .frame(minHeight: buttonMinHeight)
                 }
-                regularButton(option: option, index: index)
+                regularButton(option: option, index: index, fallbackDisplayNumber: displayPos + 1)
             }
 
             // Compact nav cell (↩ ⏮ ? ⏭ ↪) — single cell, bottom right
@@ -983,18 +1008,25 @@ struct MenuButtonsView: View {
         }
     }
 
-    /// A standard full-width button
+    /// A standard full-width button. `index` is the real position in the
+    /// full options array (used for selection/undo-redo targeting).
+    /// `fallbackDisplayNumber` (the clean 1-based count among just the
+    /// regular buttons on this page — see the ForEach comment in body) is
+    /// shown unless the option carries its own explicit displayNumber (set
+    /// by a caller whose printed reference list needs to match a stable,
+    /// pagination-independent number instead).
     @ViewBuilder
-    private func regularButton(option: MenuOption, index: Int) -> some View {
+    private func regularButton(option: MenuOption, index: Int, fallbackDisplayNumber: Int) -> some View {
         let isUndoTarget = undoTargetIndex == index
         let isRedoTarget = redoTargetIndex == index
+        let shownNumber = option.displayNumber ?? fallbackDisplayNumber
         Button(action: {
             if !option.isDisabled {
                 onSelect(index + 1)
             }
         }) {
             HStack(spacing: 4) {
-                Text("\(index + 1).")
+                Text("\(shownNumber).")
                     .font(.system(size: 11 * scale, design: .monospaced))
                     .foregroundColor(buttonNumberColor(option))
 

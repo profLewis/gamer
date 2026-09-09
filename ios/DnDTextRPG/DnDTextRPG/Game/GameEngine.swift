@@ -185,8 +185,13 @@ class GameEngine: ObservableObject {
     /// icon even in Just DM Mode. Without this, isJustDMActive hides the
     /// entire menu-button area and close icon (TerminalView), leaving the
     /// victory screen with printed text and no way back to the main menu.
+    /// Also forced whenever closeHandler is nil and no tap-to-continue is
+    /// pending — a genuinely orphaned screen (e.g. one that cleared the
+    /// terminal and printed content but never reached its own showMenu/
+    /// closeHandler setup) — so the emergency-exit X icon is never hidden
+    /// behind Just DM Mode on top of already having no closeHandler.
     var forceInteractiveControls: Bool {
-        gameState == .victory || gameState == .gameOver
+        gameState == .victory || gameState == .gameOver || (closeHandler == nil && !awaitingContinue)
     }
 
     // MARK: - Game State
@@ -633,6 +638,15 @@ class GameEngine: ObservableObject {
         textLongPressHandler = nil
         closeHandler = nil
         rerollHandler = nil
+        // Reset menuHandler too — every legitimate screen sets its own right
+        // after printing content, so this never matters in normal flow. It
+        // matters if some future guard-return happens between clearTerminal()
+        // and that setup: the screen would otherwise show blank/stale
+        // content with the PREVIOUS screen's menuHandler still wired to
+        // whatever buttons happen to be on screen — silently misdirecting
+        // taps instead of failing safely. handleMenuChoice's fallback
+        // recovers from the nil case instead.
+        menuHandler = nil
         suppressAutoScroll = true
         scrollLocked = false
         swipeLeftHandler = nil
@@ -1396,7 +1410,13 @@ class GameEngine: ObservableObject {
             } else {
                 isDefault = idx == (hasBack ? 1 : 0)
             }
-            return MenuOption(text, isDefault: isDefault, tint: Self.autoTint(text))
+            // Content items (m >= 0) get an explicit displayNumber — m is
+            // already this item's true position in the full, unpaginated
+            // allOptions array, so this stays correct (and matches a
+            // caller's own printed "N. ..." reference list) no matter which
+            // page it lands on, unlike a fresh per-page count.
+            let displayNumber = m >= 0 ? m + 1 : nil
+            return MenuOption(text, isDefault: isDefault, tint: Self.autoTint(text), displayNumber: displayNumber)
         }
         showMenuOptions(menuOpts)
 
@@ -1604,12 +1624,46 @@ class GameEngine: ObservableObject {
 
         if let handler = menuHandler {
             handler(choice)
+        } else {
+            // Buttons are visible (we passed the guard above) but nothing is
+            // wired to handle them — an orphaned screen. Recover instead of
+            // silently doing nothing.
+            recoverFromOrphanedScreen()
         }
 
         // Clear pressed state after handler runs (handler sets new menu)
         DispatchQueue.main.async {
             self.pressedMenuIndex = nil
         }
+    }
+
+    /// Last-resort recovery for a screen that ended up with visible menu
+    /// buttons but no menuHandler/closeHandler to act on them — e.g. a
+    /// future guard-return between clearTerminal() and a screen's own
+    /// showMenu setup. Returns to a known-good state rather than leaving
+    /// the player stuck.
+    private func recoverFromOrphanedScreen() {
+        clearTerminal()
+        printTitle("Hmm...")
+        print("  That screen didn't load correctly.", color: .yellow)
+        print("")
+        if dungeon != nil && !party.isEmpty {
+            showMenu(["Return to Game", "Main Menu"])
+            menuHandler = { [weak self] choice in
+                guard let self = self else { return }
+                if choice == 1 {
+                    self.gameState = .exploring
+                    self.currentCombat = nil
+                    self.showExplorationView()
+                } else {
+                    self.resetGame()
+                }
+            }
+        } else {
+            showMenu(["Main Menu"])
+            menuHandler = { [weak self] _ in self?.resetGame() }
+        }
+        closeHandler = { [weak self] in self?.resetGame() }
     }
 
     private var suppressMenuUntil: Date = .distantPast
@@ -9029,18 +9083,17 @@ class GameEngine: ObservableObject {
             dateFormatter.dateStyle = .medium
 
             var options: [String] = []
-            for entry in entries {
+            for (i, entry) in entries.enumerated() {
                 let outcomeTag = entry.outcome == .victory ? "W" : "L"
                 let outcomeColor: TerminalColor = entry.outcome == .victory ? .yellow : .red
 
-                // No manual numbering here — the matching button below
-                // already carries its own number, correctly relative to
-                // whichever page it's on. A hand-written absolute index
-                // would only match the button's number on page 1; beyond
-                // that they'd silently diverge. The dungeon name (shared
-                // with the button text) is what ties a block to its button.
+                // This absolute index matches the button's own displayNumber
+                // (see showPaginatedMenu) regardless of which page the entry
+                // lands on — the two numbering schemes used to diverge past
+                // page 1 because the button counted only visible items on
+                // its own page; now both use this same stable, global index.
                 let name = String(entry.dungeonName.prefix(20))
-                let headerText = "\(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts"
+                let headerText = "\(i + 1). \(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts"
                 print(headerText, color: outcomeColor)
 
                 let day = entry.gameTimeMinutes / 1440 + 1
@@ -22601,12 +22654,10 @@ class GameEngine: ObservableObject {
         var options: [String] = []
         var defaultIdx: Int? = nil
         for (i, entry) in entries.enumerated() {
-            // No manual numbering — the matching button carries its own
-            // number, correctly relative to whichever page it's on; a
-            // hand-written absolute index would only match on page 1. The
-            // character name (shared with the button text) ties this block
-            // to its button instead.
-            print("  \(entry.characterName) — \(entry.race) \(entry.characterClass) L\(entry.level)", color: .brightGreen, bold: true)
+            // This absolute index matches the button's own displayNumber
+            // (see showPaginatedMenu) regardless of which page the entry
+            // lands on.
+            print("  \(i + 1). \(entry.characterName) — \(entry.race) \(entry.characterClass) L\(entry.level)", color: .brightGreen, bold: true)
             print("     Score: \(entry.score)  ·  \(entry.gold)gp  ·  \(entry.dungeonName) (Lv\(entry.dungeonLevel))  ·  \(dateFormatter.string(from: entry.date))", color: .dimGreen)
             options.append(entry.characterName)
             if let defaultCharacterId = defaultCharacterId, entry.linkedCharacterId == defaultCharacterId {

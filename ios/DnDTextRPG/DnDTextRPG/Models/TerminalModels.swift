@@ -84,16 +84,25 @@ struct MenuOption: Identifiable {
     let isAlert: Bool  // Flashing red button for urgent actions (e.g. multiplayer invite)
     let tint: MenuTint
     let isCompactNav: Bool  // Compact navigation symbol (⏮, ⏭, ?) — grouped into one cell
+    /// Explicit 1-based number to display on the button, overriding the
+    /// view's own auto-numbering (which counts only visible regular buttons
+    /// on the current page, restarting each page). Set this when a caller
+    /// prints its own reference list of the full, unpaginated item set (e.g.
+    /// "3. Bram — Fighter") — matching this to the button's displayed
+    /// number keeps the two in sync regardless of which page an item lands
+    /// on. Leave nil for ordinary menus, which don't need this.
+    var displayNumber: Int? = nil
 
     static let maxButtonLength = 22
 
-    init(_ text: String, isDefault: Bool = false, isDisabled: Bool = false, isAlert: Bool = false, tint: MenuTint = .normal, compact: Bool = false) {
+    init(_ text: String, isDefault: Bool = false, isDisabled: Bool = false, isAlert: Bool = false, tint: MenuTint = .normal, compact: Bool = false, displayNumber: Int? = nil) {
         self.text = Self.trimToFit(text)
         self.isDefault = isDefault
         self.isDisabled = isDisabled
         self.isAlert = isAlert
         self.tint = tint
         self.isCompactNav = compact
+        self.displayNumber = displayNumber
     }
 
     /// Trim text to fit button width, cutting at a word boundary when possible
