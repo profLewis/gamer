@@ -170,11 +170,14 @@ class Room: Identifiable, ObservableObject, Codable {
     @Published var npc: DungeonNPC?         // NPC present in this room
     @Published var secured: Set<Direction>  // Barred/secured exits
     @Published var merchant: Merchant?      // Shopkeeper present in this room (shop/armoury rooms)
+    @Published var riddleIndex: Int?        // Index into RiddleData.all, nil = no riddle challenge here
+    @Published var riddleResolved: Bool = false  // Solved OR given up on (button hidden either way)
 
     enum CodingKeys: String, CodingKey {
         case id, x, y, roomType, name, roomDescription, exits, visited, cleared
         case encounter, treasure, isLocked, searchedFor, trapTriggered
         case hiddenItems, hiddenGold, droppedItems, npc, secured, merchant
+        case riddleIndex, riddleResolved
     }
 
     init(id: Int, x: Int, y: Int, type: RoomType) {
@@ -198,6 +201,8 @@ class Room: Identifiable, ObservableObject, Codable {
         self.npc = nil
         self.secured = []
         self.merchant = nil
+        self.riddleIndex = nil
+        self.riddleResolved = false
     }
 
     required init(from decoder: Decoder) throws {
@@ -224,6 +229,8 @@ class Room: Identifiable, ObservableObject, Codable {
         npc = try container.decodeIfPresent(DungeonNPC.self, forKey: .npc)
         secured = try container.decodeIfPresent(Set<Direction>.self, forKey: .secured) ?? []
         merchant = try container.decodeIfPresent(Merchant.self, forKey: .merchant)
+        riddleIndex = try container.decodeIfPresent(Int.self, forKey: .riddleIndex)
+        riddleResolved = try container.decodeIfPresent(Bool.self, forKey: .riddleResolved) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -248,6 +255,8 @@ class Room: Identifiable, ObservableObject, Codable {
         try container.encodeIfPresent(npc, forKey: .npc)
         try container.encode(secured, forKey: .secured)
         try container.encodeIfPresent(merchant, forKey: .merchant)
+        try container.encodeIfPresent(riddleIndex, forKey: .riddleIndex)
+        try container.encode(riddleResolved, forKey: .riddleResolved)
     }
 
     static func generateName(for type: RoomType) -> String {
@@ -616,6 +625,14 @@ class Dungeon: ObservableObject, Codable {
                 armouryRoom.roomDescription = armouryMerchantVariant
             } else {
                 armouryRoom.roomDescription = armouryPlainVariants.randomElement()!
+            }
+        }
+
+        // Riddle challenges — libraries and shrines occasionally pose one,
+        // offering a bonus reward for a correct answer.
+        for room in rooms.values where room.roomType == .library || room.roomType == .shrine {
+            if Int.random(in: 1...100) <= 35 {
+                room.riddleIndex = Int.random(in: 0..<RiddleData.all.count)
             }
         }
 

@@ -12876,6 +12876,11 @@ class GameEngine: ObservableObject {
             actions.append { [weak self] in if self?.torchLit == true { self?.visitShop() } }
         }
 
+        if let idx = room.riddleIndex, !room.riddleResolved, (room.cleared || room.encounter == nil) {
+            menuOpts.append(MenuOption("Solve Riddle"))
+            actions.append { [weak self] in if self?.torchLit == true { self?.presentRiddle(index: idx, room: room) } }
+        }
+
         // Talk to NPC — shown on the D-pad (SE corner) rather than in menu buttons
         // Without a torch, NPCs are harder to find (only show if already spoken to)
         if let npc = room.npc, npcsEnabled, (torchLit || npc.hasBeenTalkedTo) {
@@ -16327,6 +16332,68 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             self.shopEngine.openShop(character: character, dungeonLevel: dungeon.level, merchant: merchant) { [weak self] in
                 self?.showExplorationView()
+            }
+        }
+    }
+
+    /// Presents a classic riddle (public-domain folklore/mythology, multiple
+    /// choice so the answer is never ambiguous) with a bonus reward for a
+    /// correct answer. Two wrong attempts and the challenge is spent — no
+    /// other penalty, and it never blocks progression, only a bonus prize.
+    func presentRiddle(index: Int, room: Room, attemptsUsed: Int = 0) {
+        guard index >= 0 && index < RiddleData.all.count else { return }
+        let riddle = RiddleData.all[index]
+        let (options, correctIndex) = riddle.shuffled()
+
+        clearTerminal()
+        printTitle("A Riddle")
+        print("")
+        printWrapped("\"\(riddle.question)\"", indent: 2, color: .yellow)
+        print("")
+
+        showMenu(options + ["< Leave it"])
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == options.count + 1 {
+                self.print("")
+                self.print("  You leave the riddle unanswered — perhaps another time.", color: .dimGreen)
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in self?.showExplorationView() }
+                return
+            }
+            guard choice >= 1 && choice <= options.count else { return }
+            if choice - 1 == correctIndex {
+                room.riddleResolved = true
+                let level = self.dungeon?.level ?? 1
+                let gold = Dice.rollSum(2, d: 6) * level
+                let reward = level >= 3 ? ItemCatalog.greaterHealingPotion() : ItemCatalog.healingPotion()
+                self.print("")
+                self.print("  Correct! \"\(riddle.correctAnswer)\"", color: .brightGreen, bold: true)
+                self.printWrapped("  (\(riddle.source))", indent: 2, color: .dimGreen)
+                self.print("")
+                self.print("  You find \(gold) gold and \(reward.name) left as a reward for the wise.", color: .yellow)
+                self.logEvent("Solved a riddle for \(gold) gold and \(reward.name)", category: "EXPLORE")
+                self.logMultiplayerAction("Solved a riddle — found \(gold) gold and \(reward.name)")
+                self.showGoldPickupMenu(gold: gold, source: "Riddle reward", narrative: nil) { [weak self] in
+                    guard let self = self else { return }
+                    self.showItemPickupMenu(item: reward, source: "Riddle reward", narrative: nil) { [weak self] in
+                        self?.showExplorationView()
+                    }
+                }
+            } else {
+                let attempts = attemptsUsed + 1
+                if attempts >= 2 {
+                    room.riddleResolved = true
+                    self.print("")
+                    self.print("  Wrong. The moment passes — the riddle's answer was \"\(riddle.correctAnswer)\".", color: .red)
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in self?.showExplorationView() }
+                } else {
+                    self.print("")
+                    self.print("  Not quite. Try again.", color: .red)
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in self?.presentRiddle(index: index, room: room, attemptsUsed: attempts) }
+                }
             }
         }
     }
