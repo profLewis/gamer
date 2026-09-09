@@ -957,7 +957,7 @@ class Dungeon: ObservableObject, Codable {
         ("E", "Entry"), ("=", "Hall"), ("#", "Room"),
         ("$", "Loot"), ("+", "Shrine"), ("L", "Library"),
         ("B", "Boss"), ("A", "Armoury"), ("P", "Prison"),
-        ("S", "Shop"), ("M", "Merchant"), ("G", "Gym"), ("X", "Secured"), ("K", "Locked")
+        ("S", "Shop"), ("M", "Merchant"), ("G", "Gym"), ("N", "NPC"), ("X", "Secured"), ("K", "Locked")
     ]
 
     static func mapLegendRowCount(maxSymbols: Int) -> Int {
@@ -1088,7 +1088,9 @@ class Dungeon: ObservableObject, Codable {
                     } else if room.trainer != nil {
                         roomRow += "[G]"
                     } else if room.npc != nil && !(room.npc?.hasBeenTalkedTo ?? true) {
-                        roomRow += "[?]"
+                        // "N" not "?" — "?" is the map's own Help symbol,
+                        // and doubling it up for "NPC here" read as confusing.
+                        roomRow += "[N]"
                     } else {
                         roomRow += "[\(room.roomType.symbol)]"
                     }
@@ -1145,7 +1147,7 @@ class Dungeon: ObservableObject, Codable {
         if !current.cleared && current.encounter != nil { hereSymbols.append(("!", "Danger")) }
         if current.merchant != nil { hereSymbols.append(("M", "Merchant")) }
         if current.trainer != nil { hereSymbols.append(("G", "Gym")) }
-        if current.npc != nil && !(current.npc?.hasBeenTalkedTo ?? true) { hereSymbols.append(("?", "NPC")) }
+        if current.npc != nil && !(current.npc?.hasBeenTalkedTo ?? true) { hereSymbols.append(("N", "NPC")) }
         let hereText = "@ here: " + hereSymbols.map { "\($0.symbol)=\($0.label)" }.joined(separator: " ")
         let hereLine = "| \(hereText)".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|"
         lines.append(hereLine)

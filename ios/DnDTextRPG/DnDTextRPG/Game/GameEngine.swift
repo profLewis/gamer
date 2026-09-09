@@ -1490,7 +1490,7 @@ class GameEngine: ObservableObject {
             self.dpadListenHandler = nil
             self.currentMenuOptions = options.enumerated().map { index, text in
                 let tint = Self.autoTint(text)
-                let compact = text == "?" || text == "?\u{0338}" || text == "<<" || text == ">>"
+                let compact = text == "?" || text == "?\u{0338}" || text == "<<" || text == ">>" || text == "< Back"
                 return MenuOption(text, isDefault: index == defaultIndex, tint: tint, compact: compact)
             }
             self.awaitingTextInput = false
@@ -1514,7 +1514,7 @@ class GameEngine: ObservableObject {
             self.dpadSearchHandler = nil
             self.dpadListenHandler = nil
             self.currentMenuOptions = options.map { opt in
-                if !opt.isCompactNav && (opt.text == "?" || opt.text == "?\u{0338}" || opt.text == "<<" || opt.text == ">>") {
+                if !opt.isCompactNav && (opt.text == "?" || opt.text == "?\u{0338}" || opt.text == "<<" || opt.text == ">>" || opt.text == "< Back") {
                     return MenuOption(opt.text, isDefault: opt.isDefault, isDisabled: opt.isDisabled, isAlert: opt.isAlert, tint: opt.tint, compact: true)
                 }
                 return opt
@@ -1793,7 +1793,7 @@ class GameEngine: ObservableObject {
         runOnMain {
             self.directionExits = exits
             self.currentMenuOptions = options.map { opt in
-                if !opt.isCompactNav && (opt.text == "?" || opt.text == "?\u{0338}" || opt.text == "<<" || opt.text == ">>") {
+                if !opt.isCompactNav && (opt.text == "?" || opt.text == "?\u{0338}" || opt.text == "<<" || opt.text == ">>" || opt.text == "< Back") {
                     return MenuOption(opt.text, isDefault: opt.isDefault, isDisabled: opt.isDisabled, isAlert: opt.isAlert, tint: opt.tint, compact: true)
                 }
                 return opt
@@ -1823,7 +1823,7 @@ class GameEngine: ObservableObject {
             self.directionExits = [:]
             self.securedExits = []
             self.currentMenuOptions = options.enumerated().map { index, text in
-                let compact = text == "?" || text == "?\u{0338}" || text == "<<" || text == ">>"
+                let compact = text == "?" || text == "?\u{0338}" || text == "<<" || text == ">>" || text == "< Back"
                 return MenuOption(text, isDefault: index == 0, tint: Self.autoTint(text), compact: compact)
             }
             self.awaitingTextInput = true
@@ -7436,7 +7436,7 @@ class GameEngine: ObservableObject {
         print("")
 
         let menuOpts = [MenuOption("Reset", tint: .danger),
-                        MenuOption("Cancel", tint: .navigation),
+                        MenuOption("< Back"),
                         MenuOption("?", tint: .navigation, compact: true)]
         showMenuOptions(menuOpts)
         closeHandler = { [weak self] in self?.confirmResetToDefaults() }
@@ -7755,7 +7755,7 @@ class GameEngine: ObservableObject {
         print("")
 
         let menuOpts = [MenuOption("Yes, Clear Keys", tint: .danger),
-                        MenuOption("Cancel", tint: .navigation)]
+                        MenuOption("< Back")]
         showMenuOptions(menuOpts)
         closeHandler = { [weak self] in self?.showSettings() }
         menuHandler = { [weak self] choice in
@@ -9269,7 +9269,7 @@ class GameEngine: ObservableObject {
             print("  'Copy Key' to back it up.", color: .dimGreen)
             print("")
             var confirmOpts = [MenuOption("Clear Key", tint: .danger), MenuOption("Copy Key First")]
-            confirmOpts.append(MenuOption("Cancel", tint: .navigation))
+            confirmOpts.append(MenuOption("< Back"))
             showMenuOptions(confirmOpts)
             closeHandler = { [weak self] in self?.promptAPIKey() }
             menuHandler = { [weak self] choice in
@@ -9495,7 +9495,7 @@ class GameEngine: ObservableObject {
 
         let opts = [
             MenuOption("Delete Permanently", tint: .danger),
-            MenuOption("Cancel", tint: .navigation)
+            MenuOption("< Back")
         ]
         showMenuOptions(opts)
         closeHandler = { [weak self] in self?.promptAPIKey() }
@@ -10589,7 +10589,7 @@ class GameEngine: ObservableObject {
         printWrapped("Reassign the standard array (\(sorted.map { String($0) }.joined(separator: ", "))) to abilities. Racial bonuses are applied automatically.", indent: 2, color: .dimGreen)
         print("")
 
-        showMenu(["Auto (Optimal)", "Manual Assign", "Cancel"])
+        showMenu(["Auto (Optimal)", "Manual Assign", "< Back"])
         closeHandler = { [weak self] in
             self?.endEditTracking()
             self?.showCharacterReviewCard(index: index)
@@ -10959,7 +10959,7 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        showMenu(["Confirm", "Cancel"])
+        showMenu(["Confirm", "< Back"])
         closeHandler = { [weak self] in self?.showChangePlayerType(index: index) }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
@@ -11043,7 +11043,7 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        showMenu(["Confirm", "Cancel"])
+        showMenu(["Confirm", "< Back"])
         closeHandler = { [weak self] in self?.showChangeRace(index: index) }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
@@ -11118,7 +11118,7 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        showMenu(["Confirm", "Cancel"])
+        showMenu(["Confirm", "< Back"])
         closeHandler = { [weak self] in self?.showChangeClass(index: index) }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
@@ -17388,7 +17388,7 @@ class GameEngine: ObservableObject {
                     }
                     self.print("  Open their inventory or choose someone else.", color: .dimGreen)
                     self.print("")
-                    self.showMenu(["Inventory", "Choose Again", "Cancel"])
+                    self.showMenu(["Inventory", "Choose Again", "< Back"])
                     self.menuHandler = { [weak self] choice in
                         guard let self = self else { return }
                         if choice == 1 {
@@ -18718,7 +18718,7 @@ class GameEngine: ObservableObject {
             print("")
         }
 
-        showMenu(["Confirm", "Cancel"])
+        showMenu(["Confirm", "< Back"])
         closeHandler = { [weak self] in self?.showInGameChangeName(index: index) }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
@@ -18821,7 +18821,7 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        showMenu(["Confirm", "Cancel"])
+        showMenu(["Confirm", "< Back"])
         closeHandler = { [weak self] in self?.showInGameChangeType(index: index) }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
@@ -25195,7 +25195,7 @@ class GameEngine: ObservableObject {
         var menuOpts = [
             MenuOption("Save & Return"),
             MenuOption("Quit Without Saving", tint: .danger),
-            MenuOption("Cancel", tint: .navigation),
+            MenuOption("< Back"),
         ]
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         showMenuOptions(menuOpts)
@@ -25209,7 +25209,7 @@ class GameEngine: ObservableObject {
                 self.resetGame()
             case "Quit Without Saving":
                 self.resetGame()
-            case "Cancel":
+            case "< Back":
                 self.showExplorationView()
             case "?":
                 self.showReturnToMenuHelp()
@@ -25284,7 +25284,7 @@ class GameEngine: ObservableObject {
             print("leaving?", color: .yellow)
             print("")
 
-            showMenu(["Quit+Save", "Quit-Save", "Cancel"])
+            showMenu(["Quit+Save", "Quit-Save", "< Back"])
             menuHandler = { [weak self] choice in
                 guard let self = self else { return }
                 switch choice {
@@ -25739,7 +25739,7 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        showMenu(["Leave Match", "Cancel"])
+        showMenu(["Leave Match", "< Back"])
 
         menuHandler = { [weak self] choice in
             if choice == 1 {
