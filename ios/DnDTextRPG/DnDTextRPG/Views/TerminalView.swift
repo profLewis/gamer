@@ -156,21 +156,31 @@ struct TerminalView: View {
                                 .onChanged { _ in lastManualScrollAt = Date() }
                         )
                         .onChange(of: gameEngine.terminalLines.count) { _ in
+                            // A screen that prints many lines in quick succession (each
+                            // appended line bumps this count separately, since prints are
+                            // now synchronous) queues up several of these force-scrolls,
+                            // including the two delayed re-scrolls below landing up to
+                            // 0.5s later. Without checking recentlyScrolledManually, a
+                            // player who starts scrolling right as a long list (e.g. a
+                            // shop's full stock) finishes rendering had their manual
+                            // scroll repeatedly yanked back — the list looked "stuck",
+                            // unable to actually scroll it away from the forced position.
+                            guard !recentlyScrolledManually else { return }
                             if gameEngine.suppressAutoScroll {
                                 scrollToTop(scrollProxy)
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                    guard gameEngine.suppressAutoScroll else { return }
+                                    guard gameEngine.suppressAutoScroll, !recentlyScrolledManually else { return }
                                     scrollToTop(scrollProxy)
                                 }
                             } else {
                                 scrollToBottom(scrollProxy)
                                 // Delayed re-scrolls for long pages where LazyVStack layout lags
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                    guard !gameEngine.suppressAutoScroll else { return }
+                                    guard !gameEngine.suppressAutoScroll, !recentlyScrolledManually else { return }
                                     scrollToBottom(scrollProxy)
                                 }
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                    guard !gameEngine.suppressAutoScroll else { return }
+                                    guard !gameEngine.suppressAutoScroll, !recentlyScrolledManually else { return }
                                     scrollToBottom(scrollProxy)
                                 }
                             }

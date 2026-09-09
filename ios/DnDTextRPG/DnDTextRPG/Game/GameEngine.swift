@@ -124,15 +124,18 @@ class GameEngine: ObservableObject {
     /// Idle animation prompts (eye blinks, combat hesitation, save menu nags)
     @Published var idlePromptsEnabled: Bool = UserDefaults.standard.bool(forKey: "idlePromptsEnabled")
 
-    /// Blinking terminal cursor next to the "> " prompt when waiting for the
-    /// player (menu/D-pad on screen, or a text/continue prompt). On by default.
+    /// Blinking terminal cursor next to the "> " prompt — only while the
+    /// game specifically expects the player to act in the text/prompt area
+    /// (type something, or tap the text to continue), not for ordinary
+    /// menu/D-pad screens where the buttons themselves are the affordance.
+    /// On by default.
     @Published var blinkingCursorEnabled: Bool = UserDefaults.standard.object(forKey: "blinkingCursorEnabled") == nil ? true : UserDefaults.standard.bool(forKey: "blinkingCursorEnabled")
 
-    /// True whenever there's something on screen for the player to act on
-    /// right now — used to gate the blinking cursor so it doesn't blink
-    /// through animations/transitions where nothing is actually waiting.
+    /// True only when the text/prompt area itself is what the player should
+    /// act on — typing a response, or tapping to continue. Deliberately
+    /// excludes plain menu/D-pad screens (see blinkingCursorEnabled).
     var isWaitingForInput: Bool {
-        !currentMenuOptions.isEmpty || !directionExits.isEmpty || awaitingTextInput || awaitingContinue
+        awaitingTextInput || awaitingContinue
     }
 
     /// When set, shows a dice icon next to the return button in text input for re-rolling suggestions

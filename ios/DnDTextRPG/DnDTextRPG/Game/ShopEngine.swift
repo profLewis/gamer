@@ -57,12 +57,12 @@ class ShopEngine {
         game.clearTerminal()
         game.printTitle(merchant.shopName)
         game.print("")
-        game.print("  \(merchant.name) — \(merchant.tier.rawValue)", color: .dimGreen)
+        game.print("  \(merchant.name) — \(merchant.tier.rawValue)", color: .green)
         game.print("  \(merchant.greeting)", color: .cyan)
         game.print("")
         game.print("  Your gold: \(character.gold)", color: .yellow)
-        game.print("  Carry weight: \(String(format: "%.0f", character.currentWeight))/\(String(format: "%.0f", character.carryCapacity)) lb", color: .dimGreen)
-        game.print("  Stock: \(stock.count) items on the shelves", color: .dimGreen)
+        game.print("  Carry weight: \(String(format: "%.0f", character.currentWeight))/\(String(format: "%.0f", character.carryCapacity)) lb", color: .green)
+        game.print("  Stock: \(stock.count) items on the shelves", color: .green)
         game.print("")
 
         game.showMenu(["Buy", "Sell", "Haggle", "Ask About Rare Goods", "< Leave Shop"])
@@ -91,7 +91,13 @@ class ShopEngine {
         var options: [String] = []
         for item in stock {
             options.append("\(item.name)  \(item.value)gp  \(String(format: "%.1f", item.weight))lb")
-            game.print("  \(item.name): \(item.description)", color: .dimGreen)
+            // Price/weight only ever appeared on the button label above, and
+            // the description used dimGreen — a colour speaker mode treats
+            // as a decorative nav hint and skips. Between the two, nothing
+            // about an item was ever actually read aloud. Folding price and
+            // weight into this line and switching to a readable colour
+            // fixes both at once.
+            game.print("  \(item.name) — \(item.value)gp, \(String(format: "%.1f", item.weight))lb: \(item.description)", color: .green)
             game.print("    \(game.itemUsageHint(item))", color: .yellow)
         }
         game.print("")

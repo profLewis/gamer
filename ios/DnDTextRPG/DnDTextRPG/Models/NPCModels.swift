@@ -276,7 +276,7 @@ enum NPCType: String, CaseIterable, Codable {
         case .madAlchemist: return ["Potions", "Ingredients", "Explosions", "Antidotes"]
         case .oldPriestess: return ["Healing arts", "Blessing", "Undead weakness", "Poison cure"]
         case .ratCatcher: return ["Monster nests", "Secret tunnels", "The big one", "Trapping tricks"]
-        case .gatekeeper: return ["The Boss", "Dangers", "Treasure", "Quest"]
+        case .gatekeeper: return ["The Boss", "Dangers", "Treasure", "Quest", "Merchants"]
         }
     }
 
@@ -992,6 +992,16 @@ enum NPCType: String, CaseIterable, Codable {
                 "Slay the creature that lurks in the deepest chamber and return to tell the tale. I'll reward you with \(questGold) gold for proof of its defeat.",
                 "I've a bounty for the thing below — \(questGold) gold to whoever brings me proof of its demise. Interested?",
                 "The monster below has plagued travellers for too long. End it, and \(questGold) gold is yours. A fair price for dangerous work.",
+            ].randomElement()!
+        case "Merchants":
+            // Not gated by trustworthiness — this is practical, verifiable
+            // advice about the dungeon's own layout, not a claim about the
+            // boss or treasure the Gatekeeper could plausibly lie about.
+            let tier = MerchantTier.forDungeonLevel(dungeonLevel)
+            return [
+                "Aye, there's always at least one shop room somewhere in these halls — look for the [M] on your map, or listen for a room where a merchant's set up stall. An armoury sometimes has one too, if you're lucky. This deep in, expect a \(tier.rawValue) — they'll carry weapons, armour, potions, scrolls, and odds and ends. Deeper levels draw richer stock, and sharper prices.",
+                "Merchants? Always at least one shop room in a dungeon this size — marked [M] if you've a torch lit. Sometimes you'll find one's taken over a spare corner of an armoury instead. A \(tier.rawValue) is what you'd expect at this depth — ask about their rare goods if you want something special, and don't be afraid to haggle.",
+                "Every dungeon worth the name has a shopkeeper somewhere — the [M] on your map gives it away. Weapons, armour, potions, scrolls, trinkets — whatever a \(tier.rawValue) carries, and that grows the deeper you go. Haggle if you've the silver tongue for it.",
             ].randomElement()!
         default:
             return [
