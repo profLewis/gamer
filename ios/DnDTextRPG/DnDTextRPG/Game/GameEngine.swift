@@ -341,6 +341,16 @@ class GameEngine: ObservableObject {
     /// fresh repro every time. Temporary instrumentation, not a fix in
     /// itself — see recoverFromOrphanedScreen().
     private var lastCharCreationBreadcrumb: String = "none"
+    /// Wall-clock start of the current character-creation flow — reset each
+    /// time startCharacterCreation() begins a fresh New Adventure (idx:0).
+    /// Breadcrumbs include elapsed time since this, so a genuine multi-
+    /// second stall between two steps (as opposed to another process
+    /// interfering) shows up directly instead of needing more guesswork.
+    private var charCreationFlowStart: Date = Date()
+    private func setBreadcrumb(_ text: String) {
+        let elapsed = Date().timeIntervalSince(charCreationFlowStart)
+        lastCharCreationBreadcrumb = "[+\(String(format: "%.2f", elapsed))s] \(text)"
+    }
     private var tempCharacterName: String = ""
     private var tempRace: Race?
     private var tempClass: CharacterClass?
@@ -720,7 +730,7 @@ class GameEngine: ObservableObject {
             // armed (as opposed to whatever ran most recently) — with
             // multiple clearTerminal() calls in a chain, multiple watchdogs
             // stack up, and it matters which one actually fired.
-            self.lastCharCreationBreadcrumb = "WATCHDOG(armedAt:\(armedBreadcrumb)) opts:\(self.currentMenuOptions.count) menuH:\(self.menuHandler != nil) closeH:\(self.closeHandler != nil) awaitText:\(self.awaitingTextInput) awaitCont:\(self.awaitingContinue) state:\(self.gameState)"
+            self.setBreadcrumb("WATCHDOG(armedAt:\(armedBreadcrumb)) opts:\(self.currentMenuOptions.count) menuH:\(self.menuHandler != nil) closeH:\(self.closeHandler != nil) awaitText:\(self.awaitingTextInput) awaitCont:\(self.awaitingContinue) state:\(self.gameState)")
             self.recoverFromOrphanedScreen()
         }
     }
@@ -1712,7 +1722,7 @@ class GameEngine: ObservableObject {
         // a downstream function returns without setting its own breadcrumb,
         // this is what recoverFromOrphanedScreen() will show. Overwritten by
         // any more specific breadcrumb the handler itself sets.
-        lastCharCreationBreadcrumb = "handleMenuChoice(choice:\(choice), options:\(currentMenuOptions.map { $0.text }), hasHandler:\(menuHandler != nil))"
+        setBreadcrumb("handleMenuChoice(choice:\(choice), options:\(currentMenuOptions.map { $0.text }), hasHandler:\(menuHandler != nil))")
 
         if let handler = menuHandler {
             handler(choice)
@@ -9806,7 +9816,7 @@ class GameEngine: ObservableObject {
 
     /// Show party roster with options to swap AI/Remote slots before starting
     private func showPartyReview() {
-        lastCharCreationBreadcrumb = "showPartyReview(party:\(party.count))"
+        setBreadcrumb("showPartyReview(party:\(party.count))")
         clearTerminal()
         printTitle("Party Review")
 
@@ -10794,7 +10804,7 @@ class GameEngine: ObservableObject {
 
     /// Ask if this character is human, AI, or remote player, then proceed
     private func chooseCharacterType() {
-        lastCharCreationBreadcrumb = "chooseCharacterType(idx:\(creatingCharacterIndex),total:\(totalCharacters))"
+        setBreadcrumb("chooseCharacterType(idx:\(creatingCharacterIndex),total:\(totalCharacters))")
         // Skip slots pre-assigned as remote — go to party review when done
         if pendingRemoteSlots.contains(creatingCharacterIndex) {
             creatingCharacterIndex += 1
@@ -11434,7 +11444,8 @@ class GameEngine: ObservableObject {
     ]
 
     func startCharacterCreation() {
-        lastCharCreationBreadcrumb = "startCharacterCreation(idx:\(creatingCharacterIndex),total:\(totalCharacters),asAI:\(creatingAsAI),offeredHoF:\(hasOfferedHallOfFameReturn))"
+        if creatingCharacterIndex == 0 { charCreationFlowStart = Date() }
+        setBreadcrumb("startCharacterCreation(idx:\(creatingCharacterIndex),total:\(totalCharacters),asAI:\(creatingAsAI),offeredHoF:\(hasOfferedHallOfFameReturn))")
         // Set this unconditionally, before the early-return Hall of Fame
         // path below — gameState gates background work like the Game
         // Center invite-poll timer (checkForPendingInvites/
@@ -11716,7 +11727,7 @@ class GameEngine: ObservableObject {
 
     /// Fully auto-create a character with random name, race, class, scores, and skills
     func autoCreateCharacter() {
-        lastCharCreationBreadcrumb = "autoCreateCharacter(idx:\(creatingCharacterIndex),total:\(totalCharacters))"
+        setBreadcrumb("autoCreateCharacter(idx:\(creatingCharacterIndex),total:\(totalCharacters))")
         // Random unique name
         tempCharacterName = pickUniqueName()
         // Random race & class
@@ -12097,7 +12108,7 @@ class GameEngine: ObservableObject {
     /// built, then continues character creation exactly as finishCharacterCreation
     /// does — same next-slot/party-review/multiplayer handoff.
     private func loadCharacterFromRoster(_ character: Character) {
-        lastCharCreationBreadcrumb = "loadCharacterFromRoster(\(character.name),idx:\(creatingCharacterIndex),total:\(totalCharacters))"
+        setBreadcrumb("loadCharacterFromRoster(\(character.name),idx:\(creatingCharacterIndex),total:\(totalCharacters))")
         // Avoid two party members with the same display name
         let existingNames = Set(party.map { $0.name.lowercased() })
         if existingNames.contains(character.name.lowercased()) {
@@ -12122,7 +12133,7 @@ class GameEngine: ObservableObject {
 
         let accept: () -> Void = { [weak self] in
             guard let self = self else { return }
-            self.lastCharCreationBreadcrumb = "loadCharacterFromRoster.accept(\(character.name),idx:\(self.creatingCharacterIndex)->\(self.creatingCharacterIndex + 1),total:\(self.totalCharacters),multi:\(self.isMultiplayer))"
+            self.setBreadcrumb("loadCharacterFromRoster.accept(\(character.name),idx:\(self.creatingCharacterIndex)->\(self.creatingCharacterIndex + 1),total:\(self.totalCharacters),multi:\(self.isMultiplayer))")
             self.creatingCharacterIndex += 1
             if self.creatingCharacterIndex < self.totalCharacters {
                 self.chooseCharacterType()
@@ -12134,7 +12145,7 @@ class GameEngine: ObservableObject {
         }
         let goBack: () -> Void = { [weak self] in
             guard let self = self else { return }
-            self.lastCharCreationBreadcrumb = "loadCharacterFromRoster.goBack(\(character.name))"
+            self.setBreadcrumb("loadCharacterFromRoster.goBack(\(character.name))")
             self.party.removeAll { $0.id == character.id }
             self.startCharacterCreation()
         }
@@ -12147,7 +12158,7 @@ class GameEngine: ObservableObject {
     }
 
     func finishCharacterCreation() {
-        lastCharCreationBreadcrumb = "finishCharacterCreation(idx:\(creatingCharacterIndex),total:\(totalCharacters),tempRace:\(tempRace?.rawValue ?? "nil"),tempClass:\(tempClass?.rawValue ?? "nil"))"
+        setBreadcrumb("finishCharacterCreation(idx:\(creatingCharacterIndex),total:\(totalCharacters),tempRace:\(tempRace?.rawValue ?? "nil"),tempClass:\(tempClass?.rawValue ?? "nil"))")
         // Self-heal instead of silently bailing: race/class should always be
         // set by whichever screen led here (autoCreateCharacter, chooseClass,
         // autoAssignAndFinish), but if this is ever reached without them —
@@ -12274,7 +12285,7 @@ class GameEngine: ObservableObject {
 
         let advance: () -> Void = { [weak self] in
             guard let self = self else { return }
-            self.lastCharCreationBreadcrumb = "finishCharacterCreation.advance(idx:\(self.creatingCharacterIndex)->\(self.creatingCharacterIndex + 1),total:\(self.totalCharacters),multi:\(self.isMultiplayer))"
+            self.setBreadcrumb("finishCharacterCreation.advance(idx:\(self.creatingCharacterIndex)->\(self.creatingCharacterIndex + 1),total:\(self.totalCharacters),multi:\(self.isMultiplayer))")
             self.creatingCharacterIndex += 1
             if self.creatingCharacterIndex < self.totalCharacters {
                 self.chooseCharacterType()
@@ -26007,7 +26018,7 @@ class GameEngine: ObservableObject {
 
     /// Called after a character is fully created in multiplayer mode
     func multiplayerCharacterCreated(character: Character) {
-        lastCharCreationBreadcrumb = "multiplayerCharacterCreated(\(character.name),hasState:\(multiplayerState != nil))"
+        setBreadcrumb("multiplayerCharacterCreated(\(character.name),hasState:\(multiplayerState != nil))")
         guard var state = multiplayerState else {
             print("Error: Lost connection to multiplayer match.", color: .red)
             print("Your character was created but could not be saved to the match.", color: .yellow)
