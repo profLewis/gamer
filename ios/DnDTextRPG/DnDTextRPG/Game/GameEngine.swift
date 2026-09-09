@@ -11010,7 +11010,7 @@ class GameEngine: ObservableObject {
             }
             print("")
         }
-        print("Who controls this character?")
+        print("Who controls character \(creatingCharacterIndex + 1) of \(totalCharacters)?")
         print("")
 
         let gcAuth = GameCenterManager.shared.isAuthenticated && totalCharacters >= 2
@@ -12312,12 +12312,15 @@ class GameEngine: ObservableObject {
             character.name = candidate
         }
 
-        party.append(character)
-
+        // Not added to the party yet — only on Accept. Previously this
+        // appended (and printed "joins the party!") right away, before the
+        // player had confirmed anything; "< Back" then had to specifically
+        // un-add it, which was really just working around the character
+        // having been added too early.
         clearTerminal()
         print("")
-        print("  \(character.name) joins the party!", color: .brightGreen, bold: true)
-        print("  Loaded from your Character Roster — Level \(character.level) \(character.race.rawValue) \(character.characterClass.rawValue).", color: .cyan)
+        print("  Add \(character.name) to your party?", color: .brightGreen, bold: true)
+        print("  From your Character Roster — Level \(character.level) \(character.race.rawValue) \(character.characterClass.rawValue).", color: .cyan)
         print("")
         printLines(character.displaySheet())
         print("")
@@ -12325,6 +12328,7 @@ class GameEngine: ObservableObject {
         let accept: () -> Void = { [weak self] in
             guard let self = self else { return }
             self.setBreadcrumb("loadCharacterFromRoster.accept(\(character.name),idx:\(self.creatingCharacterIndex)->\(self.creatingCharacterIndex + 1),total:\(self.totalCharacters),multi:\(self.isMultiplayer))")
+            self.party.append(character)
             self.creatingCharacterIndex += 1
             if self.creatingCharacterIndex < self.totalCharacters {
                 self.chooseCharacterType()
@@ -12337,7 +12341,6 @@ class GameEngine: ObservableObject {
         let goBack: () -> Void = { [weak self] in
             guard let self = self else { return }
             self.setBreadcrumb("loadCharacterFromRoster.goBack(\(character.name))")
-            self.party.removeAll { $0.id == character.id }
             self.startCharacterCreation()
         }
 
