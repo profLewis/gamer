@@ -84,6 +84,11 @@ struct FAQData {
             keywords: ["map", "where am i", "minimap", "layout", "dungeon map"]
         ),
         FAQEntry(
+            question: "How do I get through a locked door?",
+            answer: "Locked doors (KK on the map) need a key, which is always hidden somewhere findable in the dungeon without needing that door — search rooms to turn one up. No key yet? Try Pick the Lock if someone's carrying Thieves' Tools, or Force the Door with a Strength check (better odds with a two-handed weapon equipped). A door's state persists — leave and come back and it's just as you left it. If you're holding the key, long-press the direction again once through to lock it behind you and keep monsters out.",
+            keywords: ["locked door", "key", "lockpick", "pick the lock", "force the door", "thieves tools"]
+        ),
+        FAQEntry(
             question: "How do I find the boss?",
             answer: "The boss lurks in the deepest room of the dungeon. Explore thoroughly — the boss room is usually far from the entrance. You'll get warnings as you approach. Save before entering!",
             keywords: ["boss", "final boss", "find boss", "where is boss", "end boss"]
@@ -237,6 +242,11 @@ struct FAQData {
             question: "How do I level up?",
             answer: "Characters gain XP from defeating monsters, completing objectives, and DM/quest rewards. Level up is automatic once you cross the threshold: 300 XP for Level 2, 900 for Level 3, 2,700 for Level 4, 6,500 for Level 5 (the level cap). Party Status shows your current XP and how much you need for the next level.",
             keywords: ["level up", "xp", "experience", "gain level", "levelling", "threshold", "how much xp"]
+        ),
+        FAQEntry(
+            question: "Does the game get harder as my characters level up?",
+            answer: "Yes — on top of the difficulty you chose at the start, monster HP and accuracy scale up gradually as your party's average level rises, so the challenge keeps pace with your growing power instead of staying flat. Party Status shows a 'Monster strength: +N%' line whenever this is active.",
+            keywords: ["dynamic difficulty", "harder", "scaling", "monster strength", "level up difficulty"]
         ),
         FAQEntry(
             question: "How many party members should I have?",

@@ -12654,10 +12654,13 @@ class GameEngine: ObservableObject {
             self.printTitle("Exploration Help")
             self.print("")
             self.print("  THE MAP", color: .cyan, bold: true)
-            self.printWrapped("@ is your party. Rooms: $ Loot, ! Danger, S Shop, + Shrine. XX = secured door.", indent: 2, color: .green)
+            self.printWrapped("@ is your party. Rooms: $ Loot, ! Danger, S Shop, + Shrine. XX = secured door, KK = locked door.", indent: 2, color: .green)
             self.print("")
             self.print("  DIRECTIONS", color: .cyan, bold: true)
             self.printWrapped("Tap N/S/E/W to move. Long-press a direction to secure/unsecure that door.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  LOCKED DOORS", color: .yellow, bold: true)
+            self.printWrapped("Some doors need a key, hidden somewhere findable in the dungeon. No key? Try Pick the Lock (Thieves' Tools) or Force the Door (Strength). Holding the key, long-press the direction again to lock it once through — handy for keeping monsters out.", indent: 2, color: .yellow)
             self.print("")
             self.print("  BUTTONS", color: .cyan, bold: true)
             self.printWrapped("Search looks for hidden items. Listen reveals what's beyond exits. Rest (centre) heals — hold for long rest.", indent: 2, color: .dimGreen)
@@ -12817,7 +12820,7 @@ class GameEngine: ObservableObject {
         }
 
         if torchLit {
-            let exitList = room.exits.keys.map { $0.rawValue }.joined(separator: ", ")
+            let exitList = room.exits.keys.map { room.isLockedShut($0) ? "\($0.rawValue) (locked)" : $0.rawValue }.joined(separator: ", ")
             if !exitList.isEmpty {
                 print("Exits: \(exitList)", color: .dimGreen)
             }
@@ -12902,8 +12905,12 @@ class GameEngine: ObservableObject {
             for direction in Direction.allCases {
                 let hasExit = room.exits[direction] != nil
                 let isSecured = room.secured.contains(direction)
+                let isLocked = room.isLockedShut(direction)
+                // Barricaded doors are disabled until long-pressed open; locked
+                // doors stay tappable (tapping opens the key/pick/force screen)
+                // but show the same "can't just walk through" icon.
                 exits[direction] = hasExit && !isSecured
-                if hasExit && isSecured { secured.insert(direction) }
+                if hasExit && (isSecured || isLocked) { secured.insert(direction) }
             }
         } else {
             // Torch off: show all directions as available (uncertain) — grey on D-pad
@@ -12975,6 +12982,28 @@ class GameEngine: ObservableObject {
         directionLongPressHandler = { [weak self] direction in
             guard let self = self, let room = self.dungeon?.currentRoom else { return }
             guard room.exits[direction] != nil else { return }
+
+            // Locked-but-shut doors are handled by tapping (opens the door
+            // interaction screen); a locked-but-open door can be relocked by
+            // long-pressing again, if the party still holds the matching key.
+            if let lockId = room.doorLockIds[direction] {
+                if room.isLockedShut(direction) { return }
+                guard self.party.flatMap({ $0.inventory }).contains(where: { $0.keyForDoorId == lockId }) else {
+                    self.explorationStatusMessage = ("You'd need the key to lock this again.", .dimGreen)
+                    self.showExplorationView()
+                    return
+                }
+                room.openedLocks.remove(direction)
+                if let neighborId = room.exits[direction], let neighbor = self.dungeon?.rooms[neighborId] {
+                    neighbor.openedLocks.remove(direction.opposite)
+                }
+                self.advanceTime(5)
+                self.logEvent("Locked the \(direction.rawValue) door in \(room.name) again", category: "EXPLORE")
+                self.explorationStatusMessage = ("Locked \(direction.rawValue.lowercased()) door again. 🔒", .cyan)
+                self.showExplorationView()
+                return
+            }
+
             if room.secured.contains(direction) {
                 // Unsecure
                 room.secured.remove(direction)
@@ -13284,6 +13313,12 @@ class GameEngine: ObservableObject {
     func move(_ direction: Direction) {
         guard let dungeon = dungeon, let room = dungeon.currentRoom else { return }
 
+        // Locked doors need a key, lockpicking, or force before they'll budge
+        if room.isLockedShut(direction) {
+            showLockedDoor(direction: direction, room: room)
+            return
+        }
+
         // Cannot move through barricaded doors — must unsecure first
         if room.secured.contains(direction) {
             print("  That door is barricaded! Unsecure it first.", color: .yellow)
@@ -13315,6 +13350,95 @@ class GameEngine: ObservableObject {
             }
         }
         showExplorationView()
+    }
+
+    // MARK: - Locked Doors
+
+    private func showLockedDoor(direction: Direction, room: Room) {
+        guard let lockId = room.doorLockIds[direction] else { showExplorationView(); return }
+        clearTerminal()
+        printTitle("Locked Door")
+        print("  The door to the \(direction.rawValue.lowercased()) is locked tight.", color: .yellow)
+        print("")
+
+        let matchingKey = party.flatMap { $0.inventory }.first(where: { $0.keyForDoorId == lockId })
+        let hasThievesTools = party.contains { $0.inventory.contains { $0.name == "Thieves' Tools" } }
+
+        var options: [String] = []
+        if let key = matchingKey { options.append("Use \(key.name)") }
+        if hasThievesTools { options.append("Pick the Lock") }
+        options.append("Force the Door")
+        options.append("< Go Back")
+
+        if matchingKey == nil {
+            print("  You don't have a key that fits. Somewhere in the dungeon, one probably does.", color: .dimGreen)
+            print("")
+        }
+
+        showMenu(options)
+        closeHandler = { [weak self] in self?.showExplorationView() }
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1 && choice <= options.count else { return }
+            switch options[choice - 1] {
+            case let opt where opt.hasPrefix("Use "):
+                self.unlockDoor(direction: direction, room: room, method: "with the key")
+            case "Pick the Lock":
+                self.attemptLockpick(direction: direction, room: room)
+            case "Force the Door":
+                self.attemptForceDoor(direction: direction, room: room)
+            default:
+                self.showExplorationView()
+            }
+        }
+    }
+
+    private func unlockDoor(direction: Direction, room: Room, method: String) {
+        room.openedLocks.insert(direction)
+        if let neighborId = room.exits[direction], let neighbor = dungeon?.rooms[neighborId] {
+            neighbor.openedLocks.insert(direction.opposite)
+        }
+        advanceTime(5)
+        print("")
+        print("  The door swings open \(method).", color: .brightGreen)
+        print("  Long-press \(direction.rawValue) again to lock it once you're through, if you're holding the key.", color: .dimGreen)
+        logEvent("Unlocked a door to the \(direction.rawValue) in \(room.name) (\(method))", category: "EXPLORE")
+        waitForContinue()
+        inputHandler = { [weak self] _ in self?.move(direction) }
+    }
+
+    private func attemptLockpick(direction: Direction, room: Room) {
+        let bestTools = party.map { $0.skillModifier(for: .sleightOfHand) }.max() ?? 0
+        let roll = Dice.d20()
+        let dc = 12 + (dungeon?.level ?? 1)
+        print("")
+        print("  Sleight of Hand: d20[\(roll)] + \(bestTools) vs DC \(dc)", color: .dimGreen)
+        if roll + bestTools >= dc {
+            unlockDoor(direction: direction, room: room, method: "with a click of the lockpicks")
+        } else {
+            advanceTime(5)
+            print("  The pick slips — no luck this time.", color: .yellow)
+            waitForContinue()
+            inputHandler = { [weak self] _ in self?.showLockedDoor(direction: direction, room: room) }
+        }
+    }
+
+    private func attemptForceDoor(direction: Direction, room: Room) {
+        let bestStr = party.map { $0.abilityScores.modifier(for: .strength) }.max() ?? 0
+        let heavyWeaponBonus = party.contains { $0.equippedWeapon?.weaponStats?.isTwoHanded == true } ? 2 : 0
+        let roll = Dice.d20()
+        let dc = 13 + (dungeon?.level ?? 1)
+        print("")
+        print("  Strength check: d20[\(roll)] + \(bestStr + heavyWeaponBonus) vs DC \(dc)", color: .dimGreen)
+        if roll + bestStr + heavyWeaponBonus >= dc {
+            print("  The door splinters open with a crash!", color: .brightGreen)
+            SoundManager.shared.playHit()
+            unlockDoor(direction: direction, room: room, method: "by force")
+        } else {
+            advanceTime(5)
+            print("  You throw your weight against it, but the door holds.", color: .yellow)
+            waitForContinue()
+            inputHandler = { [weak self] _ in self?.showLockedDoor(direction: direction, room: room) }
+        }
     }
 
     private func triggerTrap(in room: Room) {
@@ -13739,8 +13863,9 @@ class GameEngine: ObservableObject {
         for direction in Direction.allCases {
             let hasExit = room.exits[direction] != nil
             let isSecured = room.secured.contains(direction)
+            let isLocked = room.isLockedShut(direction)
             exits[direction] = hasExit && !isSecured
-            if hasExit && isSecured { secured.insert(direction) }
+            if hasExit && (isSecured || isLocked) { secured.insert(direction) }
         }
         DispatchQueue.main.async { self.securedExits = secured }
 

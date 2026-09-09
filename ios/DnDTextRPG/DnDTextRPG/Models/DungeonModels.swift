@@ -173,12 +173,22 @@ class Room: Identifiable, ObservableObject, Codable {
     @Published var riddleIndex: Int?        // Index into RiddleData.all, nil = no riddle challenge here
     @Published var riddleResolved: Bool = false  // Solved OR given up on (button hidden either way)
     @Published var trainer: Trainer?        // Training gym present in this room
+    /// Doors with a lock mechanism — direction → a lock id shared by both
+    /// rooms on either side of that door. This entry is permanent (the lock
+    /// mechanism doesn't disappear once picked); whether it's currently open
+    /// is tracked separately in openedLocks, so a door unlocked with a key
+    /// can be locked again later. A key's Item.keyForDoorId matching this id
+    /// opens it. Persists as part of the room, so state survives leaving and
+    /// returning.
+    @Published var doorLockIds: [Direction: UUID] = [:]
+    /// Which locked doors (see doorLockIds) are currently open.
+    @Published var openedLocks: Set<Direction> = []
 
     enum CodingKeys: String, CodingKey {
         case id, x, y, roomType, name, roomDescription, exits, visited, cleared
         case encounter, treasure, isLocked, searchedFor, trapTriggered
         case hiddenItems, hiddenGold, droppedItems, npc, secured, merchant, trainer
-        case riddleIndex, riddleResolved
+        case riddleIndex, riddleResolved, doorLockIds, openedLocks
     }
 
     init(id: Int, x: Int, y: Int, type: RoomType) {
@@ -205,6 +215,8 @@ class Room: Identifiable, ObservableObject, Codable {
         self.riddleIndex = nil
         self.riddleResolved = false
         self.trainer = nil
+        self.doorLockIds = [:]
+        self.openedLocks = []
     }
 
     required init(from decoder: Decoder) throws {
@@ -234,6 +246,8 @@ class Room: Identifiable, ObservableObject, Codable {
         riddleIndex = try container.decodeIfPresent(Int.self, forKey: .riddleIndex)
         riddleResolved = try container.decodeIfPresent(Bool.self, forKey: .riddleResolved) ?? false
         trainer = try container.decodeIfPresent(Trainer.self, forKey: .trainer)
+        doorLockIds = try container.decodeIfPresent([Direction: UUID].self, forKey: .doorLockIds) ?? [:]
+        openedLocks = try container.decodeIfPresent(Set<Direction>.self, forKey: .openedLocks) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -261,6 +275,8 @@ class Room: Identifiable, ObservableObject, Codable {
         try container.encodeIfPresent(riddleIndex, forKey: .riddleIndex)
         try container.encode(riddleResolved, forKey: .riddleResolved)
         try container.encodeIfPresent(trainer, forKey: .trainer)
+        try container.encode(doorLockIds, forKey: .doorLockIds)
+        try container.encode(openedLocks, forKey: .openedLocks)
     }
 
     static func generateName(for type: RoomType) -> String {
@@ -327,6 +343,11 @@ class Room: Identifiable, ObservableObject, Codable {
         }
     }
 
+    /// True if this exit has a lock mechanism and it's currently shut.
+    func isLockedShut(_ direction: Direction) -> Bool {
+        doorLockIds[direction] != nil && !openedLocks.contains(direction)
+    }
+
     func describe() -> String {
         var desc = "\(name)\n\n\(roomDescription)"
 
@@ -338,7 +359,7 @@ class Room: Identifiable, ObservableObject, Codable {
             desc += "\n\nYou see treasure on the ground."
         }
 
-        let exitList = exits.keys.map { $0.rawValue }.joined(separator: ", ")
+        let exitList = exits.keys.map { isLockedShut($0) ? "\($0.rawValue) (locked)" : $0.rawValue }.joined(separator: ", ")
         if !exitList.isEmpty {
             desc += "\n\nExits: \(exitList)"
         }
@@ -672,6 +693,38 @@ class Dungeon: ObservableObject, Codable {
             }
         }
 
+        // Locked doors — a rare obstacle needing a key, lockpicking, or force.
+        // Generation is a flood fill with no cycles, so a room's exit toward
+        // a higher room id always leads to a "child" subtree with exactly one
+        // way in; locking that door gates everything beyond it. The matching
+        // key is always placed in a lower-id room, which is guaranteed to be
+        // outside that subtree (every room in it was created afterward, so
+        // has a higher id) — so the key is always reachable without needing
+        // the lock at all. Lockpicking/forcing (see GameEngine) work
+        // regardless of whether the key was ever found.
+        let maxLocks = min(3, 1 + level / 2)
+        var lockedCount = 0
+        for room in rooms.values.shuffled() {
+            guard lockedCount < maxLocks else { break }
+            guard room.roomType != .entrance else { continue }
+            guard let (direction, childId) = room.exits.first(where: { dir, id in
+                id > room.id && rooms[id]?.roomType != .boss && room.doorLockIds[dir] == nil
+            }), let childRoom = rooms[childId] else { continue }
+            guard Int.random(in: 1...100) <= 20 else { continue }
+
+            let lockId = UUID()
+            room.doorLockIds[direction] = lockId
+            childRoom.doorLockIds[direction.opposite] = lockId
+
+            let keyCandidates = rooms.values.filter {
+                $0.id < childId && $0.roomType != .entrance && $0.roomType != .boss && $0.id != room.id
+            }
+            let keyRoom = keyCandidates.randomElement() ?? room
+            keyRoom.hiddenItems.append(ItemCatalog.key(forDoorId: lockId))
+
+            lockedCount += 1
+        }
+
         // Spawn NPCs in ~30-40% of non-boss, non-entrance rooms (max 6)
         let npcCandidates = rooms.values.filter {
             $0.roomType != .entrance && $0.roomType != .boss && $0.encounter == nil
@@ -896,20 +949,22 @@ class Dungeon: ObservableObject, Codable {
                         roomRow += "[\(room.roomType.symbol)]"
                     }
 
-                    // East corridor (XX = secured/barred from either side)
+                    // East corridor (XX = secured/barred, KK = locked door)
                     if let eastId = room.exits[.east] {
                         let eastRoom = rooms[eastId]
                         let barred = room.secured.contains(.east) || (eastRoom?.secured.contains(.west) ?? false)
-                        roomRow += barred ? "XX" : "--"
+                        let locked = room.isLockedShut(.east)
+                        roomRow += locked ? "KK" : (barred ? "XX" : "--")
                     } else {
                         roomRow += "  "
                     }
 
-                    // South corridor (X = secured/barred from either side)
+                    // South corridor (X = secured/barred, K = locked door)
                     if let southId = room.exits[.south] {
                         let southRoom = rooms[southId]
                         let barred = room.secured.contains(.south) || (southRoom?.secured.contains(.north) ?? false)
-                        corridorRow += barred ? " X   " : " |   "
+                        let locked = room.isLockedShut(.south)
+                        corridorRow += locked ? " K   " : (barred ? " X   " : " |   ")
                     } else {
                         corridorRow += "     "
                     }
@@ -967,9 +1022,12 @@ class Dungeon: ObservableObject, Codable {
             if room.trainer != nil { visibleSymbols.insert("G") }
         }
 
-        // Check if any secured doors are visible
+        // Check if any secured or locked doors are visible
         if visibleRooms.contains(where: { !$0.secured.isEmpty }) {
             visibleSymbols.insert("X")
+        }
+        if visibleRooms.contains(where: { room in room.doorLockIds.keys.contains(where: { room.isLockedShut($0) }) }) {
+            visibleSymbols.insert("K")
         }
 
         let allKeyEntries: [(symbol: String, label: String)] = [
@@ -977,7 +1035,7 @@ class Dungeon: ObservableObject, Codable {
             ("E", "Entry"), ("=", "Hall"), ("#", "Room"),
             ("$", "Loot"), ("+", "Shrine"), ("L", "Library"),
             ("B", "Boss"), ("A", "Armoury"), ("P", "Prison"),
-            ("S", "Shop"), ("M", "Merchant"), ("G", "Gym"), ("X", "Secured")
+            ("S", "Shop"), ("M", "Merchant"), ("G", "Gym"), ("X", "Secured"), ("K", "Locked")
         ]
         let activeEntries = allKeyEntries.filter { visibleSymbols.contains($0.symbol) }
 

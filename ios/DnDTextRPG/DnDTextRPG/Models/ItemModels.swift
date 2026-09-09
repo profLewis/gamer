@@ -62,6 +62,10 @@ struct Item: Codable, Identifiable, Equatable {
     /// Torch remaining life in minutes (nil = not a torch). Fresh torch = 720 (12 hours).
     var torchLife: Int?
 
+    /// If set, this item is a key that unlocks the door(s) sharing this id
+    /// (Room.doorLockIds). nil = not a key.
+    var keyForDoorId: UUID? = nil
+
     static let torchFullLife = 720  // 12 hours in minutes
 
     var isTorch: Bool { name.lowercased().contains("torch") }
@@ -271,6 +275,18 @@ struct ItemCatalog {
         Item(id: UUID(), name: "Whetstone", description: "Use it on your equipped weapon to sharpen the edge — a temporary +1 to attack and damage rolls.",
              type: .misc, weight: 0.5, value: 5,
              weaponStats: nil, armorStats: nil, potionStats: nil)
+    }
+
+    private static let keyFlavorNames = ["Rusty Key", "Bronze Key", "Iron Key", "Ornate Key", "Tarnished Key", "Small Brass Key"]
+
+    /// Creates a key matching a specific locked door (Room.doorLockIds).
+    static func key(forDoorId lockId: UUID) -> Item {
+        let name = keyFlavorNames.randomElement()!
+        var item = Item(id: UUID(), name: name, description: "An old key. It might fit a lock somewhere in this dungeon.",
+                         type: .misc, weight: 0.1, value: 0,
+                         weaponStats: nil, armorStats: nil, potionStats: nil)
+        item.keyForDoorId = lockId
+        return item
     }
 
     // MARK: Starting Equipment

@@ -42,6 +42,7 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS and macOS, wit
 - Encounters and traps scaled by dungeon level
 - Treasure, equipment, and potions throughout; shop rooms always have a merchant, and armouries sometimes do too
 - Multi-level progression — defeat the boss to descend deeper
+- **Locked doors** — occasionally gate a passage; open them with a matching key (findable elsewhere in the dungeon), by picking the lock (Thieves' Tools), or by forcing it (Strength check). Door state persists — leave and come back and it's exactly as you left it — and holding the key, you can lock it again behind you to keep monsters out
 
 ### Merchants
 - **4 tiers**, scaling with dungeon depth: Wandering Peddler, General Store, Trading Post, and Hyperstore
