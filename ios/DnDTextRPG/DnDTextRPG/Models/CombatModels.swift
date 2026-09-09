@@ -16,7 +16,7 @@ struct Monster: Identifiable, Codable {
     var currentHP: Int
     var maxHP: Int
     var armorClass: Int
-    let attackBonus: Int
+    var attackBonus: Int
     let damage: String
     let challengeRating: Double
     let experiencePoints: Int

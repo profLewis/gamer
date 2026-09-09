@@ -12353,6 +12353,19 @@ class GameEngine: ObservableObject {
     /// Stored difficulty scale from custom level input (affects monster HP/damage)
     var difficultyScale: Double = 1.0
 
+    /// How much stronger the party has grown since Level 1, recomputed live
+    /// from current party levels every time it's read — so the dungeon keeps
+    /// pace with the explorers' actual growing skill over the course of an
+    /// adventure, not just the difficulty picked once at the start. Applied
+    /// in startCombat() on top of difficultyScale.
+    var partySkillMultiplier: Double {
+        guard !party.isEmpty else { return 1.0 }
+        let avgLevel = Double(party.map { $0.level }.reduce(0, +)) / Double(party.count)
+        // Level 1 = baseline (1.0x). Each level above 1 adds ~8% monster
+        // toughness, capped so even a full level-5 party isn't overwhelmed.
+        return min(1.4, 1.0 + (avgLevel - 1.0) * 0.08)
+    }
+
     func selectDifficulty(dungeonName: String) {
         clearTerminal()
         printTitle("Adventure Awaits!")
@@ -16569,6 +16582,10 @@ class GameEngine: ObservableObject {
         let roomsVisited = dungeon?.rooms.values.filter { $0.visited }.count ?? 0
         let totalRooms = dungeon?.rooms.count ?? 0
         print("  Explored: \(roomsVisited)/\(totalRooms) rooms", color: .cyan)
+        if partySkillMultiplier > 1.0 {
+            let pct = Int(((partySkillMultiplier - 1.0) * 100).rounded())
+            print("  Monster strength: +\(pct)% (your party has grown stronger)", color: .yellow)
+        }
 
         // Torch status
         if torchLit, let holderId = torchHolderId {
@@ -16709,7 +16726,10 @@ class GameEngine: ObservableObject {
             self.printWrapped("Map + each character's HP, gold, XP. Green HP = healthy, yellow = wounded, red = critical.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  BUTTONS", color: .cyan, bold: true)
-            self.printWrapped("Party Review — edit characters and view stat cards. Adventure Log — event timeline. Settings — game settings. Cure Poison — when poisoned.", indent: 2, color: .dimGreen)
+            self.printWrapped("Party Review — edit characters and view stat cards. Save to Roster — persist a character's progress for future adventures. Adventure Log — event timeline. Settings — game settings. Cure Poison — when poisoned.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  MONSTER STRENGTH", color: .cyan, bold: true)
+            self.printWrapped("Monsters scale up a little as your party's average level rises, on top of your chosen difficulty — the dungeon keeps pace with your growing skill instead of staying static.", indent: 2, color: .dimGreen)
             self.print("")
         }
     }
@@ -20414,12 +20434,25 @@ class GameEngine: ObservableObject {
         }()
         balanced.balanceAC(partyAvgAttackBonus: avgAttackBonus)
 
-        // Apply difficulty scale to monster HP (custom difficulty levels)
-        if difficultyScale != 1.0 {
+        // Apply difficulty scale (custom difficulty levels) and the dynamic
+        // party-skill multiplier to monster HP. The skill multiplier also
+        // nudges attack bonus up — a growing party should face monsters that
+        // hit a bit harder too, not just soak more damage — but only when
+        // it's pushing difficulty UP, so the initial Easy/Medium/Hard choice
+        // still only affects HP as before.
+        let skillMultiplier = partySkillMultiplier
+        let hpScale = difficultyScale * skillMultiplier
+        if hpScale != 1.0 {
             for i in balanced.monsters.indices {
-                let scaledHP = max(1, Int(Double(balanced.monsters[i].maxHP) * difficultyScale))
+                let scaledHP = max(1, Int(Double(balanced.monsters[i].maxHP) * hpScale))
                 balanced.monsters[i].maxHP = scaledHP
                 balanced.monsters[i].currentHP = scaledHP
+            }
+        }
+        if skillMultiplier > 1.0 {
+            let attackBonusBoost = Int(((skillMultiplier - 1.0) * 5).rounded())
+            for i in balanced.monsters.indices {
+                balanced.monsters[i].attackBonus += attackBonusBoost
             }
         }
 

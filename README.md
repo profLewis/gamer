@@ -28,6 +28,7 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS and macOS, wit
 - Creative actions via the AI DM
 - Monsters grouped by type with numbered targeting
 - **Poison** — venomous creatures can poison party members (CON save to recover)
+- **Dynamic Difficulty** — monster HP and accuracy scale up gradually as your party's average level rises, on top of your chosen difficulty, so the challenge keeps pace with your growing skill (shown on Party Status)
 
 ### Spellcasting
 - **Wizard**: Fire Bolt, Ray of Frost, Magic Missile, Burning Hands, Sleep
