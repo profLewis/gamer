@@ -945,13 +945,14 @@ class Dungeon: ObservableObject, Codable {
         return (true, "You move \(direction.rawValue).\n\n\(nextRoom.describe())")
     }
 
-    /// The full fixed legend — always shown in its entirety (never filtered
-    /// to "symbols currently visible") so the map's line count, and
-    /// therefore its on-screen size, never depends on room content or the
-    /// torch being lit or unlit. A content-dependent legend used to make
-    /// the box visibly resize both room-to-room and whenever the torch
-    /// toggled, since the unlit map never showed a legend at all.
-    private static let mapLegendEntries: [(symbol: String, label: String)] = [
+    /// All possible legend symbols, in a fixed order. Which of these are
+    /// shown is filtered down to what's actually present on screen (see
+    /// mapLegendLines), but the BLOCK HEIGHT never depends on that filtered
+    /// count — it's always sized for `legendMaxSymbols` slots regardless of
+    /// how many end up active, so the map's line count — and therefore its
+    /// on-screen size — never depends on room content, the torch being lit
+    /// or unlit, or how many distinct symbol types happen to be nearby.
+    static let mapLegendEntries: [(symbol: String, label: String)] = [
         ("@", "You"), ("!", "Danger"), (".", "Empty"),
         ("E", "Entry"), ("=", "Hall"), ("#", "Room"),
         ("$", "Loot"), ("+", "Shrine"), ("L", "Library"),
@@ -959,36 +960,48 @@ class Dungeon: ObservableObject, Codable {
         ("S", "Shop"), ("M", "Merchant"), ("G", "Gym"), ("X", "Secured"), ("K", "Locked")
     ]
 
-    private static var mapLegendRowCount: Int { (mapLegendEntries.count + 2) / 3 }
+    static func mapLegendRowCount(maxSymbols: Int) -> Int {
+        (max(1, maxSymbols) + 2) / 3
+    }
 
     /// Builds the fixed-size legend block (separator + packed rows), used
     /// identically by both the lit and unlit branches of getMapDisplay.
-    private func mapLegendLines(border: String) -> [String] {
+    /// Only symbols in `activeSymbols` are shown (so the legend stays
+    /// relevant to what's actually on screen), but the row count — and so
+    /// the block's height — is always determined by `maxSymbols` alone,
+    /// padding with blank rows when fewer than that are active.
+    private func mapLegendLines(border: String, activeSymbols: Set<String>, maxSymbols: Int) -> [String] {
+        let capped = max(1, maxSymbols)
+        let entries = Array(Self.mapLegendEntries.filter { activeSymbols.contains($0.symbol) }.prefix(capped))
+        let rowCount = Self.mapLegendRowCount(maxSymbols: capped)
         var lines: [String] = ["+\(border)+"]
-        var row = ""
-        for (i, entry) in Self.mapLegendEntries.enumerated() {
-            let item = "\(entry.symbol)=\(entry.label)"
-            row = row.isEmpty ? item : row + "  \(item)"
-            if (i + 1) % 3 == 0 || i == Self.mapLegendEntries.count - 1 {
-                lines.append("| \(row)".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|")
-                row = ""
+        var entryIdx = 0
+        for _ in 0..<rowCount {
+            var row = ""
+            for _ in 0..<3 {
+                guard entryIdx < entries.count else { break }
+                let entry = entries[entryIdx]
+                let item = "\(entry.symbol)=\(entry.label)"
+                row = row.isEmpty ? item : row + "  \(item)"
+                entryIdx += 1
             }
+            lines.append("| \(row)".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|")
         }
         return lines
     }
 
     /// Calculate how many terminal lines a map with the given radius will produce
-    func mapLineCount(visibilityRadius: Int, torchLit: Bool, compact: Bool = false, verticalRadius: Int? = nil) -> Int {
+    func mapLineCount(visibilityRadius: Int, torchLit: Bool, compact: Bool = false, verticalRadius: Int? = nil, legendMaxSymbols: Int = mapLegendEntries.count) -> Int {
         let vRadius = verticalRadius ?? visibilityRadius
         let headerLines = compact ? 1 : 3  // just top border (compact) vs top + MAP + separator
         let gridLines = (2 * vRadius + 1) + (2 * vRadius)  // room rows + corridor rows
         let hereLine = 1  // always reserved so the box size never depends on room content — see getMapDisplay
         // compact: just bottom border; full: separator + fixed legend rows + bottom border
-        let legendLines = compact ? 1 : (1 + Self.mapLegendRowCount + 1)
+        let legendLines = compact ? 1 : (1 + Self.mapLegendRowCount(maxSymbols: legendMaxSymbols) + 1)
         return headerLines + gridLines + hereLine + legendLines
     }
 
-    func getMapDisplay(visibilityRadius: Int = 3, torchLit: Bool = true, compact: Bool = false, verticalRadius: Int? = nil) -> [String] {
+    func getMapDisplay(visibilityRadius: Int = 3, torchLit: Bool = true, compact: Bool = false, verticalRadius: Int? = nil, legendMaxSymbols: Int = mapLegendEntries.count) -> [String] {
         guard let current = rooms[currentRoomId] else { return ["No map available."] }
 
         // Torch off: no direction info — you can't see the passages. Sized
@@ -1026,7 +1039,9 @@ class Dungeon: ObservableObject, Codable {
             }
             let hereLine = "| @ here: torch unlit".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|"
             lines.append(hereLine)
-            if !compact { lines.append(contentsOf: mapLegendLines(border: border)) }
+            // No room info without a torch — the only symbol that's actually
+            // relevant is "@" itself.
+            if !compact { lines.append(contentsOf: mapLegendLines(border: border, activeSymbols: ["@"], maxSymbols: legendMaxSymbols)) }
             lines.append("+\(border)+")
             return lines
         }
@@ -1135,10 +1150,31 @@ class Dungeon: ObservableObject, Codable {
         let hereLine = "| \(hereText)".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|"
         lines.append(hereLine)
 
-        // Always the full fixed legend (see mapLegendLines) — not filtered to
-        // symbols currently visible — so the box height never depends on
-        // room content, matching the unlit branch exactly at the same radius.
-        if !compact { lines.append(contentsOf: mapLegendLines(border: border)) }
+        // Filtered to symbols actually present in the viewport — but the
+        // BLOCK'S HEIGHT is fixed by legendMaxSymbols regardless (see
+        // mapLegendLines), so it never changes size room-to-room or when
+        // the torch toggles, even though its contents do.
+        var visibleSymbols = Set<String>()
+        visibleSymbols.insert("@") // current room is always shown
+        for room in visibleRooms {
+            if room.id == currentRoomId {
+                // already added @
+            } else if !room.cleared && room.encounter != nil {
+                visibleSymbols.insert("!")
+            } else {
+                visibleSymbols.insert(room.roomType.symbol)
+            }
+            visibleSymbols.insert(room.roomType.symbol)
+            if room.merchant != nil { visibleSymbols.insert("M") }
+            if room.trainer != nil { visibleSymbols.insert("G") }
+        }
+        if visibleRooms.contains(where: { !$0.secured.isEmpty }) {
+            visibleSymbols.insert("X")
+        }
+        if visibleRooms.contains(where: { room in room.doorLockIds.keys.contains(where: { room.isLockedShut($0) }) }) {
+            visibleSymbols.insert("K")
+        }
+        if !compact { lines.append(contentsOf: mapLegendLines(border: border, activeSymbols: visibleSymbols, maxSymbols: legendMaxSymbols)) }
         lines.append("+\(border)+")
 
         return lines

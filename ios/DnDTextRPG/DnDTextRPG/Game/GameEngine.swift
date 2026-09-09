@@ -745,12 +745,43 @@ class GameEngine: ObservableObject {
     /// (e.g. it fully returned to exploration on a changed room), that's
     /// left alone.
     private func runPreservingDirectionExits(_ action: () -> Void) {
+        // Preserves the WHOLE D-pad configuration, not just the direction
+        // arrows — showMenu()/showMenuOptions() (called somewhere inside
+        // most actions this wraps, e.g. a "nothing found" result screen)
+        // unconditionally nils out dpadSearchHandler/dpadListenHandler/
+        // dpadTorchHandler/dpadNPCHandler/dpadCenterHandler right alongside
+        // directionExits. Restoring only directionExits left the N/S/E/W
+        // arrows back but the corner icon buttons (search/listen/torch/NPC)
+        // silently gone — dead until the next full exploration re-render —
+        // which is what made the search icon look like it "used itself up"
+        // after one tap. All of this is safe to restore verbatim: every
+        // handler here is a closure that reads live state when invoked, not
+        // a snapshot, so putting the old references back just means the
+        // same buttons work again, not that they act on stale data.
         let exits = directionExits
         let secured = securedExits
+        let centerLabel = dpadCenterLabel
+        let centerHandler = dpadCenterHandler
+        let centerLongPress = dpadCenterLongPressHandler
+        let npcLabel = dpadNPCLabel
+        let npcHandler = dpadNPCHandler
+        let torchLabel = dpadTorchLabel
+        let torchHandler = dpadTorchHandler
+        let searchHandler = dpadSearchHandler
+        let listenHandler = dpadListenHandler
         action()
         if directionExits.isEmpty {
             directionExits = exits
             securedExits = secured
+            dpadCenterLabel = centerLabel
+            dpadCenterHandler = centerHandler
+            dpadCenterLongPressHandler = centerLongPress
+            dpadNPCLabel = npcLabel
+            dpadNPCHandler = npcHandler
+            dpadTorchLabel = torchLabel
+            dpadTorchHandler = torchHandler
+            dpadSearchHandler = searchHandler
+            dpadListenHandler = listenHandler
         }
     }
 
@@ -1820,6 +1851,22 @@ class GameEngine: ObservableObject {
         let destination = autoReturnDestination ?? { [weak self] in self?.showExplorationView() }
         autoReturnDestination = nil
         closeHandler = destination
+        // If nothing is currently visible or tappable (no D-pad, no menu
+        // buttons — e.g. a dark/blind search run from a screen that never
+        // had a D-pad to begin with), the player would otherwise be looking
+        // at a totally empty control area with no way to tell it isn't
+        // stuck, for the whole delay until this timer fires. Turn on the
+        // same tap-to-continue affordance waitForContinue() uses so there's
+        // always something visible and immediately actionable — closeHandler
+        // is cleared on tap so the timer's own fire later becomes a no-op
+        // instead of calling destination() a second time.
+        if currentMenuOptions.isEmpty && directionExits.isEmpty {
+            awaitingContinue = true
+            inputHandler = { [weak self] _ in
+                self?.closeHandler = nil
+                destination()
+            }
+        }
         Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self = self, self.closeHandler != nil else { return }
@@ -1832,7 +1879,7 @@ class GameEngine: ObservableObject {
     func printExplorationMap() {
         guard let dungeon = dungeon else { return }
         let (radius, verticalRadius, compact) = bestMapRadius()
-        let mapLines = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: verticalRadius)
+        let mapLines = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: verticalRadius, legendMaxSymbols: mapLegendMaxSymbols)
         printLines(mapLines, color: torchMapColor, size: mapFontSize)
     }
 
@@ -1965,8 +2012,14 @@ class GameEngine: ObservableObject {
             let option = currentMenuOptions[choice - 1]
             if option.isDisabled && !torchLit {
                 switch option.text {
-                case "Search Room": darkSearch(); return
-                case "Scavenge": searchRoom(); return
+                // Wrapped the same way the D-pad's own Search/Listen corner
+                // icons are: darkSearch()/searchRoom() print a result and
+                // just set an autoReturn() timer rather than immediately
+                // showing a menu again, which left the whole control box
+                // (D-pad + buttons) empty until that timer eventually fired
+                // — this restores it right away instead.
+                case "Search Room": runPreservingDirectionExits { darkSearch() }; return
+                case "Scavenge": runPreservingDirectionExits { searchRoom() }; return
                 default: break
                 }
             }
@@ -2589,7 +2642,18 @@ class GameEngine: ObservableObject {
 
     func handleDirectionChoice(_ direction: Direction) {
         stopIdleAnimations()
-        DispatchQueue.main.async {
+        // Must be synchronous (runOnMain), not DispatchQueue.main.async: the
+        // old async wipe was queued to run on a LATER turn of the run loop,
+        // but directionHandler below runs synchronously and typically ends
+        // by calling showExplorationView() — which itself synchronously
+        // repopulates currentMenuOptions/directionExits for the new room.
+        // The deferred wipe then ran AFTER that, clobbering the freshly
+        // rendered screen back to empty and leaving the whole control box
+        // (D-pad + buttons) gone until something else happened to redraw —
+        // most noticeable moving in the dark, where nothing else nudges a
+        // redraw afterward. Doing this synchronously first, before
+        // directionHandler runs, means there's nothing left to race.
+        runOnMain {
             self.currentMenuOptions = []
             self.directionExits = [:]
             self.securedExits = []
@@ -3321,14 +3385,17 @@ class GameEngine: ObservableObject {
             }
         }
 
-        // Kept deliberately short: just New Adventure and Continue Adventure.
-        // Continue Adventure opens the game Hall of Fame (past tales), which
-        // has its own "Manage Saves" entry for actual save management (this
-        // also covers in-progress adventures, which never get a Hall of Fame
-        // entry) — Character Saves live the same way, one level inside New
-        // Adventure's character selection where they're relevant.
+        // Continue Adventure goes straight to the save-game list — tap an
+        // entry and it loads immediately, ordered most-recently-saved
+        // first (see SaveGameManager.listSlots). This used to open the
+        // Hall of Fame (past completed tales, sorted by score) instead,
+        // which had no direct "load this" action on an entry — reliving a
+        // tale required first noticing the separate pinned "Manage Saves"
+        // button. The Hall of Fame itself is still reachable — it's now a
+        // pinned option on this same save-list screen, and via the "hall
+        // of fame" chat command.
         menuOpts.append(MenuOption("Continue Adventure"))
-        actions.append { [weak self] in self?.showHallOfFame() }
+        actions.append { [weak self] in self?.showLoadGameMenu(returnTo: .mainMenu) }
 
         menuOpts.append(MenuOption("?", tint: .navigation))
         actions.append { [weak self] in self?.showPlayHelp() }
@@ -3361,7 +3428,7 @@ class GameEngine: ObservableObject {
             self.printWrapped("Start a fresh adventure. Pick your party size, then create each character — or load one from the Character Hall of Fame (defaults to your most recent hero, if you have one). Long-press for a quick start with a random party.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  CONTINUE ADVENTURE", color: .cyan, bold: true)
-            self.printWrapped("Opens the Hall of Fame — the greatest (and most tragic) completed adventures. Tap a numbered entry to read its tale; some have a linked save you can relive. Tap 'Manage Saves' there to resume an adventure still in progress or manage your saves.", indent: 2, color: .dimGreen)
+            self.printWrapped("Lists your saved games, most recently saved first — tap one to load it immediately. 'Manage Saves' renames or deletes saves; 'Hall of Fame' revisits your greatest (and most tragic) completed tales.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  CHARACTER SAVES", color: .cyan, bold: true)
             self.printWrapped("Found inside New Adventure's character selection (the Character Hall of Fame screen) — 'Manage Saves' there browses and deletes your full Character Roster, not just Hall-of-Famers. Save a character any time from Party Review or Party Status.", indent: 2, color: .dimGreen)
@@ -5773,6 +5840,20 @@ class GameEngine: ObservableObject {
     var gameTimeLimit: Int {  // 0 = off, value in game-minutes
         get { UserDefaults.standard.integer(forKey: "gameTimeLimit") }
         set { UserDefaults.standard.set(newValue, forKey: "gameTimeLimit") }
+    }
+
+    /// Max distinct symbol types shown in the map key at once. The key is
+    /// filtered to symbols actually present in the viewport, but the block's
+    /// HEIGHT is always fixed at this many slots (see mapLegendLines) so the
+    /// map never resizes based on how many symbol types happen to be nearby.
+    var mapLegendMaxSymbols: Int {
+        get {
+            let val = UserDefaults.standard.integer(forKey: "map_legend_max_symbols")
+            return val > 0 ? min(val, Dungeon.mapLegendEntries.count) : 6
+        }
+        set {
+            UserDefaults.standard.set(min(max(newValue, 3), Dungeon.mapLegendEntries.count), forKey: "map_legend_max_symbols")
+        }
     }
 
     var maxButtonsPerScreen: Int {
@@ -8833,7 +8914,7 @@ class GameEngine: ObservableObject {
         if let dungeon = dungeon {
             let previewLabel = mapPreviewTorchOn ? "TORCH ON" : "TORCH OFF"
             print("  PREVIEW (\(previewLabel)):", color: .cyan, bold: true)
-            let previewMap = dungeon.getMapDisplay(visibilityRadius: mapRadius, torchLit: mapPreviewTorchOn)
+            let previewMap = dungeon.getMapDisplay(visibilityRadius: mapRadius, torchLit: mapPreviewTorchOn, legendMaxSymbols: mapLegendMaxSymbols)
             printLines(previewMap, color: mapPreviewTorchOn ? .dimGreen : .red, size: mapFontSize)
             print("")
         }
@@ -8843,9 +8924,18 @@ class GameEngine: ObservableObject {
         var menuOpts = opts.map { (label, val) -> String in
             val == current ? "\(label) <--" : label
         }
+        let torchToggleIndex: Int? = dungeon != nil ? menuOpts.count + 1 : nil
         if dungeon != nil {
             menuOpts.append(mapPreviewTorchOn ? "Torch Off" : "Torch On")
         }
+        // Cycles the fixed number of key slots shown in the map legend —
+        // filtered to symbols actually present, but always this many rows
+        // regardless (see Dungeon.getMapDisplay), so the box stays the same
+        // size no matter what's nearby or whether the torch is lit.
+        let legendSteps = [3, 6, 9, Dungeon.mapLegendEntries.count]
+        let legendIndex = menuOpts.count + 1
+        let legendLabel = mapLegendMaxSymbols >= Dungeon.mapLegendEntries.count ? "Legend: All" : "Legend: \(mapLegendMaxSymbols)"
+        menuOpts.append(legendLabel)
         showMenu(menuOpts)
 
         closeHandler = { [weak self] in self?.showGameplaySettings() }
@@ -8855,8 +8945,13 @@ class GameEngine: ObservableObject {
                 self.recordSettingChange(screen: "s:gameplay", key: "map_radius", name: "Map")
                 self.mapRadius = choice
                 self.showMapRadiusMenu()
-            } else if dungeon != nil && choice == 4 {
+            } else if let torchToggleIndex = torchToggleIndex, choice == torchToggleIndex {
                 self.mapPreviewTorchOn.toggle()
+                self.showMapRadiusMenu()
+            } else if choice == legendIndex {
+                let currentIdx = legendSteps.firstIndex(where: { $0 >= self.mapLegendMaxSymbols }) ?? 0
+                self.mapLegendMaxSymbols = legendSteps[(currentIdx + 1) % legendSteps.count]
+                self.recordSettingChange(screen: "s:gameplay", key: "map_legend_max_symbols", name: "Map Legend")
                 self.showMapRadiusMenu()
             }
         }
@@ -11041,7 +11136,7 @@ class GameEngine: ObservableObject {
         let gcAuth = GameCenterManager.shared.isAuthenticated && totalCharacters >= 2
         if hasHuman {
             let controlWords = gcAuth ? "Computer or Remote" : "Computer"
-            print("  (You already control \(party.first(where: { !$0.isComputerControlled })?.name ?? "a character") — this slot must be \(controlWords).)", color: .dimGreen)
+            print("  (You already control \(party.first(where: { !$0.isComputerControlled })?.name ?? "a character") — the slot for the next adventurer must be \(controlWords).)", color: .dimGreen)
             print("")
         }
         print("Who controls character \(creatingCharacterIndex + 1) of \(totalCharacters)?")
@@ -11051,9 +11146,11 @@ class GameEngine: ObservableObject {
         if !hasHuman { opts.append("Human Player") }
         opts.append("Computer (AI)")
         if gcAuth { opts.append("Remote Player") }
-        let computerIndex = opts.firstIndex(of: "Computer (AI)")! + 1
+        // showMenu's defaultIndex is 0-based (unlike menuHandler's 1-based
+        // choice), so this must NOT have the +1 menuHandler uses.
+        let computerDefaultIndex = opts.firstIndex(of: "Computer (AI)")!
 
-        showMenu(opts, defaultIndex: computerIndex)
+        showMenu(opts, defaultIndex: computerDefaultIndex)
 
         closeHandler = { [weak self] in
             guard let self = self else { return }
@@ -13300,7 +13397,7 @@ class GameEngine: ObservableObject {
 
         // Dynamically size the map to fill screen without scrolling
         let (radius, verticalRadius, compact) = bestMapRadius()
-        let mapLines = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: verticalRadius)
+        let mapLines = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: verticalRadius, legendMaxSymbols: mapLegendMaxSymbols)
         printLines(mapLines, color: torchMapColor, size: mapFontSize)
         if !torchLit {
             if partyHasTorch() {
@@ -13917,10 +14014,13 @@ class GameEngine: ObservableObject {
             return
         }
 
-        // Cannot move through barricaded doors — must unsecure first
+        // Cannot move through barricaded doors — must unsecure first. Falls
+        // through to showExplorationView() below (not an early return) —
+        // handleDirectionChoice() already wiped the control box before
+        // calling here, and nothing else in this branch was restoring it.
         if room.secured.contains(direction) {
-            print("  That door is barricaded! Unsecure it first.", color: .yellow)
-            print("  (Long-press the direction or use Secure from Actions)", color: .dimGreen)
+            explorationStatusMessage = ("That door is barricaded! Long-press the direction or use Secure from Actions to unsecure it first.", .yellow)
+            showExplorationView()
             return
         }
 
@@ -14470,7 +14570,7 @@ class GameEngine: ObservableObject {
 
         // Same layout as exploration view — map, room info, party status
         let (radius, verticalRadius, compact) = bestMapRadius()
-        let mapLines = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: verticalRadius)
+        let mapLines = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: verticalRadius, legendMaxSymbols: mapLegendMaxSymbols)
         printLines(mapLines, color: torchMapColor, size: mapFontSize)
         if !torchLit {
             if partyHasTorch() {
@@ -14632,6 +14732,7 @@ class GameEngine: ObservableObject {
         guard let room = dungeon?.currentRoom else { return }
 
         clearTerminal()
+        SoundManager.shared.playSearch()
 
         // Show map at top
         if let dungeon = dungeon {
@@ -24033,7 +24134,7 @@ class GameEngine: ObservableObject {
             print("No saved games found.", color: .yellow)
             print("")
 
-            closeHandler = { [weak self] in
+            let backAction: () -> Void = { [weak self] in
                 switch origin {
                 case .mainMenu:
                     self?.clearTerminal()
@@ -24042,6 +24143,15 @@ class GameEngine: ObservableObject {
                     self?.showExplorationView()
                 case .settings:
                     self?.showSaveSettings()
+                }
+            }
+            closeHandler = backAction
+            // Reachable even with no in-progress saves — completed tales
+            // still live in the Hall of Fame.
+            if origin == .mainMenu {
+                showMenu(["Hall of Fame", "< Back"])
+                menuHandler = { [weak self] choice in
+                    if choice == 1 { self?.showHallOfFame() } else { backAction() }
                 }
             }
             return
@@ -24079,6 +24189,10 @@ class GameEngine: ObservableObject {
             }
         }
         options.append("Manage Saves")
+        // Only from the main-menu "Continue Adventure" entry point — the
+        // Hall of Fame's completed tales aren't as relevant mid-game.
+        let showHoF = origin == .mainMenu
+        if showHoF { options.append("Hall of Fame") }
 
         showMenu(options)
 
@@ -24095,7 +24209,11 @@ class GameEngine: ObservableObject {
         }
 
         menuHandler = { [weak self] choice in
-            if choice == options.count {
+            if showHoF && choice == options.count {
+                self?.showHallOfFame()
+                return
+            }
+            if choice == slots.count + 1 {
                 self?.showManageSavesMenu(returnTo: origin)
                 return
             }
@@ -25742,7 +25860,7 @@ class GameEngine: ObservableObject {
             print("")
 
             // Show map for spatial context
-            let mapLines = state.dungeon.getMapDisplay(visibilityRadius: state.torchLit ? mapRadius : 0, torchLit: state.torchLit)
+            let mapLines = state.dungeon.getMapDisplay(visibilityRadius: state.torchLit ? mapRadius : 0, torchLit: state.torchLit, legendMaxSymbols: mapLegendMaxSymbols)
             printLines(mapLines, color: state.torchLit ? .brightGreen : .gray, size: mapFontSize)
             print("")
 
@@ -25799,7 +25917,7 @@ class GameEngine: ObservableObject {
             // Exploration catch-up
 
             // Show map
-            let mapLines = state.dungeon.getMapDisplay(visibilityRadius: state.torchLit ? mapRadius : 0, torchLit: state.torchLit)
+            let mapLines = state.dungeon.getMapDisplay(visibilityRadius: state.torchLit ? mapRadius : 0, torchLit: state.torchLit, legendMaxSymbols: mapLegendMaxSymbols)
             printLines(mapLines, color: state.torchLit ? .brightGreen : .gray, size: mapFontSize)
             print("")
 
@@ -26407,7 +26525,7 @@ class GameEngine: ObservableObject {
 
                     // Always show map for spatial context
                     if let dungeon = self.dungeon {
-                        let mapLines = dungeon.getMapDisplay(visibilityRadius: self.effectiveMapRadius(), torchLit: self.torchLit)
+                        let mapLines = dungeon.getMapDisplay(visibilityRadius: self.effectiveMapRadius(), torchLit: self.torchLit, legendMaxSymbols: self.mapLegendMaxSymbols)
                         printLines(mapLines, color: self.torchMapColor, size: self.mapFontSize)
                         print("")
                     }
@@ -26520,7 +26638,7 @@ class GameEngine: ObservableObject {
 
         // Always show map
         if let dungeon = self.dungeon {
-            let mapLines = dungeon.getMapDisplay(visibilityRadius: effectiveMapRadius(), torchLit: torchLit)
+            let mapLines = dungeon.getMapDisplay(visibilityRadius: effectiveMapRadius(), torchLit: torchLit, legendMaxSymbols: mapLegendMaxSymbols)
             printLines(mapLines, color: torchMapColor, size: mapFontSize)
             print("")
         }
@@ -26675,7 +26793,7 @@ class GameEngine: ObservableObject {
 
                     // Show map
                     if let dungeon = self.dungeon {
-                        let mapLines = dungeon.getMapDisplay(visibilityRadius: self.effectiveMapRadius(), torchLit: freshState.torchLit)
+                        let mapLines = dungeon.getMapDisplay(visibilityRadius: self.effectiveMapRadius(), torchLit: freshState.torchLit, legendMaxSymbols: self.mapLegendMaxSymbols)
                         printLines(mapLines, color: freshState.torchLit ? .brightGreen : .gray, size: self.mapFontSize)
                         print("")
                     }
@@ -27214,7 +27332,7 @@ class GameEngine: ObservableObject {
                                  "display map", "look at map", "open map"]
             if mapWords.contains(lower) || (lower.contains("show") && lower.contains("map")) {
                 if let dungeon = self.dungeon {
-                    let mapLines = dungeon.getMapDisplay(visibilityRadius: self.effectiveMapRadius(), torchLit: self.torchLit)
+                    let mapLines = dungeon.getMapDisplay(visibilityRadius: self.effectiveMapRadius(), torchLit: self.torchLit, legendMaxSymbols: self.mapLegendMaxSymbols)
                     let roomName = dungeon.currentRoom?.name ?? "the dungeon"
                     let exits = dungeon.currentRoom?.exits.keys.map { $0.rawValue }.joined(separator: ", ") ?? ""
                     self.clearTerminal()

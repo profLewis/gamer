@@ -498,6 +498,30 @@ class SoundManager {
         ])
     }
 
+    // MARK: - Search Foley Sound
+
+    /// Searching a room — rustling through debris, a knocked-over object,
+    /// a dropped thing thudding to the floor. Chaotic and physical rather
+    /// than musical, unlike most other cues here.
+    func playSearch() {
+        playSequence([
+            (900, 0.04, 0.25, .noise),    // rustle
+            (0, 0.02, 0, .sine),
+            (1300, 0.05, 0.3, .noise),    // rustle, digging in
+            (0, 0.03, 0, .sine),
+            (700, 0.04, 0.22, .noise),    // rustle
+            (160, 0.05, 0.3, .square),    // knock — bumped something
+            (0, 0.04, 0, .sine),
+            (1100, 0.05, 0.28, .noise),   // more rummaging
+            (0, 0.03, 0, .sine),
+            (600, 0.04, 0.2, .noise),     // rustle
+            (110, 0.09, 0.35, .triangle), // thud — something drops/breaks
+            (0, 0.05, 0, .sine),
+            (1500, 0.03, 0.18, .noise),   // final rustle
+            (950, 0.04, 0.15, .noise),
+        ])
+    }
+
     /// Quit / farewell — gentle descending melody
     func playQuit() {
         playSequence([
