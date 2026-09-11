@@ -157,49 +157,14 @@ class ShopEngine {
 
         let stockItems = self.stock
 
-        let buyItem: (Int) -> Void = { [weak self] idx in
-            guard let self = self, let game = self.game else { return }
-            guard idx >= 0 && idx < stockItems.count else { return }
-            let item = stockItems[idx]
-
-            guard character.gold >= item.value else {
-                game.print("")
-                game.print("  \"You haven't got enough gold for that, friend.\"", color: .red)
-                game.waitForContinue()
-                game.inputHandler = { [weak self] _ in
-                    self?.showBuyMenu(completion: completion)
-                }
-                return
-            }
-
-            if let reason = character.carryBlockReason(for: item) {
-                game.print("")
-                game.print("  \"\(reason)\"", color: .red)
-                game.waitForContinue()
-                game.inputHandler = { [weak self] _ in
-                    self?.showBuyMenu(completion: completion)
-                }
-                return
-            }
-
-            character.gold -= item.value
-            let newItem = item.newInstance()
-            _ = character.addItem(newItem)
-            game.logEvent("\(character.name) bought \(newItem.name) for \(item.value) gold from \(self.merchant?.name ?? "a merchant")", category: "SHOP")
-
-            game.print("")
-            game.print("  Purchased \(newItem.name) for \(item.value) gold.", color: .brightGreen)
-            game.print("  Gold remaining: \(character.gold)", color: .yellow)
-
-            game.waitForContinue()
-            game.inputHandler = { [weak self] _ in
-                self?.showBuyMenu(completion: completion)
-            }
+        let selectItem: (Int) -> Void = { [weak self] idx in
+            guard let self = self, idx >= 0 && idx < stockItems.count else { return }
+            self.showBuyConfirm(item: stockItems[idx], completion: completion)
         }
 
         game.setBreadcrumb("ShopEngine.showBuyMenu.beforeShowPaginated(opts:\(options.count))")
         game.showPaginatedMenuOptions(options, pinned: ["?", "< Back"], handler: { idx in
-            buyItem(idx)
+            selectItem(idx)
         }, pinnedHandler: { [weak self] choice in
             guard let self = self, let game = self.game else { return }
             if choice == 0 {
@@ -217,7 +182,66 @@ class ShopEngine {
         })
         game.textLongPressHandler = { lineIndex in
             guard let idx = itemLineRanges.firstIndex(where: { $0.contains(lineIndex) }) else { return }
-            buyItem(idx)
+            selectItem(idx)
+        }
+    }
+
+    /// Confirmation step before actually buying `item` — shows what it
+    /// costs and weighs, and your gold/carry weight/item count now versus
+    /// after the purchase, so nothing about the transaction is a surprise.
+    /// An item you can't afford or can't carry is refused here with the
+    /// specific reason instead of a confirm prompt for an impossible buy.
+    private func showBuyConfirm(item: Item, completion: @escaping () -> Void) {
+        guard let game = game, let character = character else { return }
+
+        guard character.gold >= item.value else {
+            game.clearTerminal()
+            game.print("")
+            game.print("  \"You haven't got enough gold for that, friend.\"", color: .red)
+            game.print("  \(item.name) costs \(item.value)gp — you have \(character.gold)gp.", color: .dimGreen)
+            game.waitForContinue()
+            game.inputHandler = { [weak self] _ in self?.showBuyMenu(completion: completion) }
+            return
+        }
+        if let reason = character.carryBlockReason(for: item) {
+            game.clearTerminal()
+            game.print("")
+            game.print("  \"\(reason)\"", color: .red)
+            game.waitForContinue()
+            game.inputHandler = { [weak self] _ in self?.showBuyMenu(completion: completion) }
+            return
+        }
+
+        game.clearTerminal()
+        game.printTitle("Buy \(item.name)?")
+        game.print("")
+        game.print("  Price: \(item.value)gp   Weight: \(String(format: "%.1f", item.weight))lb", color: .brightGreen, bold: true)
+        game.printWrapped("  \(item.description)", indent: 2, color: .dimGreen)
+        game.print("")
+        game.print("  Gold: \(character.gold) → \(character.gold - item.value)", color: .yellow)
+        let newWeight = character.currentWeight + item.weight
+        game.print("  Carry: \(String(format: "%.0f", character.currentWeight))/\(String(format: "%.0f", character.carryCapacity))lb → \(String(format: "%.0f", newWeight))/\(String(format: "%.0f", character.carryCapacity))lb", color: .yellow)
+        game.print("  Items: \(character.inventory.count)/\(Character.maxInventorySlots) → \(character.inventory.count + 1)/\(Character.maxInventorySlots)", color: .yellow)
+        game.print("")
+
+        game.showMenu(["Buy", "< Cancel"])
+        let backToList: () -> Void = { [weak self] in self?.showBuyMenu(completion: completion) }
+        game.closeHandler = backToList
+        game.menuHandler = { [weak self] choice in
+            guard let self = self, let game = self.game, let character = self.character else { return }
+            guard choice == 1 else { backToList(); return }
+
+            character.gold -= item.value
+            let newItem = item.newInstance()
+            _ = character.addItem(newItem)
+            game.logEvent("\(character.name) bought \(newItem.name) for \(item.value) gold from \(self.merchant?.name ?? "a merchant")", category: "SHOP")
+
+            game.print("")
+            game.print("  Purchased \(newItem.name) for \(item.value) gold.", color: .brightGreen)
+            game.print("  Gold remaining: \(character.gold)", color: .yellow)
+
+            game.waitForContinue()
+            game.inputHandler = { _ in backToList() }
         }
     }
 
