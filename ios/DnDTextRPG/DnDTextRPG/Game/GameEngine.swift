@@ -11070,16 +11070,10 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("Change Voice", isDisabled: inGame))
         actions.append { [weak self] in self?.showCharacterVoiceEdit(index: index) }
 
-        // Not disabled in-game — saving progress mid-adventure is safe and
-        // is exactly when you'd want to (e.g. after a level-up).
-        menuOpts.append(MenuOption("Save to Roster", tint: .cyan))
-        actions.append { [weak self] in
-            guard let self = self else { return }
-            self.saveCharacterToRoster(char)
-            self.print("")
-            self.waitForContinue()
-            self.inputHandler = { [weak self] _ in self?.showCharacterReviewCard(index: index) }
-        }
+        // Not disabled in-game — saving/loading roster progress mid-adventure
+        // is safe and is exactly when you'd want to (e.g. after a level-up).
+        menuOpts.append(MenuOption("Roster", tint: .cyan))
+        actions.append { [weak self] in self?.showRosterMenu(index: index) }
 
         menuOpts.append(MenuOption("?", tint: .navigation))
         actions.append { [weak self] in self?.showCharacterReviewCardHelp(index: index, inGame: inGame) }
@@ -11116,8 +11110,179 @@ class GameEngine: ObservableObject {
             self.printWrapped("Change Scores: Reassign ability scores (STR, DEX, CON, INT, WIS, CHA) using the standard array.", indent: 2, color: .dimGreen)
             self.printWrapped("Change Skills: Choose new skill proficiencies from your class list.", indent: 2, color: .dimGreen)
             self.printWrapped("Change Voice: Customise the character's speech voice.", indent: 2, color: .dimGreen)
+            self.printWrapped("Roster: Save this character's progress to your Character Roster, or load saved details back onto them — the whole character, or just one part (race/class, ability scores, or skills).", indent: 2, color: .dimGreen)
             self.print("")
         }
+    }
+
+    // MARK: - Character Roster (Save/Load, Party Review)
+
+    private enum RosterLoadCategory: CaseIterable {
+        case all, raceClass, abilityScores, skills
+
+        var label: String {
+            switch self {
+            case .all: return "Load All"
+            case .raceClass: return "Race & Class only"
+            case .abilityScores: return "Ability Scores only"
+            case .skills: return "Skills only"
+            }
+        }
+    }
+
+    private func showRosterMenu(index: Int) {
+        guard index < party.count else { showPartyReview(); return }
+        let char = party[index]
+
+        clearTerminal()
+        printTitle("Character Roster")
+        print("")
+        print("  \(char.name) — Level \(char.level) \(char.race.rawValue) \(char.characterClass.rawValue)", color: .cyan)
+        print("")
+        printWrapped("Save this character's current progress to your roster, or load saved details back onto them from a roster character.", indent: 2, color: .dimGreen)
+        print("")
+
+        showPaginatedMenu(["Save to Roster", "Load from Roster"], pinned: ["?", "< Back"], pinnedHandler: { [weak self] pIdx in
+            guard let self = self else { return }
+            if pIdx == 0 {
+                self.showRosterMenuHelp(index: index)
+            } else {
+                self.showCharacterReviewCard(index: index)
+            }
+        }, handler: { [weak self] idx in
+            guard let self = self else { return }
+            if idx == 0 {
+                self.saveCharacterToRoster(char)
+                self.print("")
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in self?.showRosterMenu(index: index) }
+            } else {
+                self.showRosterLoadPicker(index: index)
+            }
+        })
+        closeHandler = { [weak self] in self?.showCharacterReviewCard(index: index) }
+    }
+
+    private func showRosterMenuHelp(index: Int) {
+        showInlineHelp {
+            self.printTitle("Character Roster — Help")
+            self.print("")
+            self.printWrapped("Save to Roster: store this character's current level, gear, and gold so a future adventure can start with them again.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("Load from Roster: pick a character you've previously saved, then choose how much of it to copy onto this one — everything, or just race/class, ability scores, or skills. Everything else about this character (name, level, HP, gear, inventory) is left as-is.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
+    }
+
+    private func showRosterLoadPicker(index: Int) {
+        guard index < party.count else { showPartyReview(); return }
+        let records = CharacterLibraryManager.shared.listCharacters()
+
+        clearTerminal()
+        printTitle("Load from Roster")
+        print("")
+
+        guard !records.isEmpty else {
+            printWrapped("Your Character Roster is empty — nothing saved yet.", indent: 2, color: .yellow)
+            print("")
+            waitForContinue()
+            inputHandler = { [weak self] _ in self?.showRosterMenu(index: index) }
+            closeHandler = { [weak self] in self?.showRosterMenu(index: index) }
+            return
+        }
+
+        printWrapped("Choose a saved character to load from:", indent: 2, color: .dimGreen)
+        print("")
+
+        let opts = records.map { "\($0.character.name) — L\($0.character.level) \($0.character.race.rawValue) \($0.character.characterClass.rawValue)" }
+        showPaginatedMenu(opts, pinned: ["?", "< Back"], pinnedHandler: { [weak self] pIdx in
+            guard let self = self else { return }
+            if pIdx == 0 {
+                self.showRosterMenuHelp(index: index)
+            } else {
+                self.showRosterMenu(index: index)
+            }
+        }, handler: { [weak self] idx in
+            guard let self = self, idx < records.count else { return }
+            self.showRosterLoadCategoryPicker(index: index, source: records[idx].character)
+        })
+        closeHandler = { [weak self] in self?.showRosterMenu(index: index) }
+    }
+
+    private func showRosterLoadCategoryPicker(index: Int, source: Character) {
+        guard index < party.count else { showPartyReview(); return }
+        let char = party[index]
+
+        clearTerminal()
+        printTitle("Load from \(source.name)")
+        print("")
+        print("  Onto: \(char.name)", color: .cyan)
+        print("")
+        printWrapped("What should be loaded? \"Load All\" is usually what you want — the others let you take just one part (e.g. only the ability scores) and leave the rest of \(char.name) alone.", indent: 2, color: .dimGreen)
+        print("")
+
+        let opts = RosterLoadCategory.allCases.map { $0.label }
+        showPaginatedMenu(opts, pinned: ["?", "< Back"], pinnedHandler: { [weak self] pIdx in
+            guard let self = self else { return }
+            if pIdx == 0 {
+                self.showRosterMenuHelp(index: index)
+            } else {
+                self.showRosterLoadPicker(index: index)
+            }
+        }, handler: { [weak self] idx in
+            guard let self = self, idx < RosterLoadCategory.allCases.count else { return }
+            let category = RosterLoadCategory.allCases[idx]
+            self.applyRosterLoad(source: source, into: char, category: category)
+            self.showRosterLoadConfirmation(index: index, sourceName: source.name, category: category)
+        })
+        closeHandler = { [weak self] in self?.showRosterLoadPicker(index: index) }
+    }
+
+    private func applyRosterLoad(source: Character, into char: Character, category: RosterLoadCategory) {
+        switch category {
+        case .all:
+            char.race = source.race
+            char.characterClass = source.characterClass
+            char.abilityScores = source.abilityScores
+            char.skillProficiencies = source.skillProficiencies
+            char.level = source.level
+            char.maxHP = source.maxHP
+            char.currentHP = source.currentHP
+            char.tempHP = source.tempHP
+            char.experiencePoints = source.experiencePoints
+            char.gold = source.gold
+            char.inventory = source.inventory
+            char.equippedWeapon = source.equippedWeapon
+            char.equippedArmor = source.equippedArmor
+            char.equippedShield = source.equippedShield
+            char.knownSpells = source.knownSpells
+            char.spellSlots = source.spellSlots
+        case .raceClass:
+            char.race = source.race
+            char.characterClass = source.characterClass
+        case .abilityScores:
+            char.abilityScores = source.abilityScores
+        case .skills:
+            char.skillProficiencies = source.skillProficiencies
+        }
+        char.syncRobotPrefix()
+    }
+
+    private func showRosterLoadConfirmation(index: Int, sourceName: String, category: RosterLoadCategory) {
+        guard index < party.count else { showPartyReview(); return }
+        let char = party[index]
+
+        clearTerminal()
+        printTitle("Roster Load Complete")
+        print("")
+        print("  Loaded \(category.label.replacingOccurrences(of: " only", with: "").lowercased()) from \(sourceName) onto \(char.name).", color: .brightGreen)
+        print("")
+        printLines(char.displaySheet())
+        print("")
+
+        showMenu(["Continue"])
+        menuHandler = { [weak self] _ in self?.showCharacterReviewCard(index: index) }
+        closeHandler = { [weak self] in self?.showCharacterReviewCard(index: index) }
     }
 
     // MARK: - Edit Ability Scores (Party Review)
