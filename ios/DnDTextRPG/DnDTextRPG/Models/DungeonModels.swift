@@ -1019,7 +1019,8 @@ class Dungeon: ObservableObject, Codable {
             let viewMinY = current.y - vRadius
             let viewMaxY = current.y + vRadius
 
-            let mapWidth = min((viewMaxX - viewMinX + 1) * 5 + 3, 40)
+            let cols = viewMaxX - viewMinX + 1
+            let mapWidth = min(cols * 5 + 3, 40)
             let border = String(repeating: "-", count: max(mapWidth, 26))
 
             var lines: [String] = []
@@ -1028,8 +1029,13 @@ class Dungeon: ObservableObject, Codable {
                 lines.append("| MAP".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|")
                 lines.append("+\(border)+")
             }
+            // See the torch-lit branch below for why this centers @ instead
+            // of leaving it left-of-centre at small radii.
+            let naturalContentWidth = 1 + cols * 5
+            let gridSlack = max(0, border.count - naturalContentWidth)
+            let gridLeadPad = String(repeating: " ", count: gridSlack / 2)
             for y in viewMinY...viewMaxY {
-                var roomRow = "| "
+                var roomRow = "| " + gridLeadPad
                 for x in viewMinX...viewMaxX {
                     roomRow += (x == current.x && y == current.y) ? "[@]  " : "     "
                 }
@@ -1066,7 +1072,8 @@ class Dungeon: ObservableObject, Codable {
         // Each room cell is 5 chars wide, corridor rows are 1 char tall
         var lines: [String] = []
 
-        let mapWidth = min((viewMaxX - viewMinX + 1) * 5 + 3, 40)
+        let cols = viewMaxX - viewMinX + 1
+        let mapWidth = min(cols * 5 + 3, 40)
         let border = String(repeating: "-", count: max(mapWidth, 26))
         lines.append("+\(border)+")
         if !compact {
@@ -1074,11 +1081,21 @@ class Dungeon: ObservableObject, Codable {
             lines.append("+\(border)+")
         }
 
+        // At small radii the box has a fixed minimum width (26) wider than
+        // the grid actually needs — without this, @ (centered within the
+        // grid's own narrower span) ends up left-of-centre in the box,
+        // since padding(toLength:) below only ever adds space on the
+        // right. Split the slack evenly so the grid — and @ — sits in the
+        // middle of the box instead.
+        let naturalContentWidth = 1 + cols * 5  // leading space + cells, before the closing border
+        let gridSlack = max(0, border.count - naturalContentWidth)
+        let gridLeadPad = String(repeating: " ", count: gridSlack / 2)
+
         for y in viewMinY...viewMaxY {
             // Room row
-            var roomRow = "| "
+            var roomRow = "| " + gridLeadPad
             // Vertical corridor row (below this room row)
-            var corridorRow = "| "
+            var corridorRow = "| " + gridLeadPad
 
             for x in viewMinX...viewMaxX {
                 if let room = visibleRooms.first(where: { $0.x == x && $0.y == y }) {
