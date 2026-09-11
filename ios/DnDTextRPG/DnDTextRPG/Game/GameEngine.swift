@@ -10327,13 +10327,29 @@ class GameEngine: ObservableObject {
             }
         }
 
-        showMenu(["Enter the Dungeon"])
-        menuHandler = { [weak self] _ in
-            self?.loadGame(save)
+        let backToTale: () -> Void = { [weak self] in self?.showAdventureTale(tale) }
+        showMenu(["Enter the Dungeon", "?", "< Back"])
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1:
+                self.loadGame(save)
+            case 2:
+                self.showInlineHelp {
+                    self.printTitle("Enter the Dungeon — Help")
+                    self.print("")
+                    self.print("  ENTER THE DUNGEON", color: .cyan, bold: true)
+                    self.printWrapped("Loads \(heroList)'s save and drops you back into \(tale.dungeonName) right where this save point left off.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  < BACK", color: .cyan, bold: true)
+                    self.printWrapped("Doesn't load anything — returns to this adventure's tale.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default:
+                backToTale()
+            }
         }
-        closeHandler = { [weak self] in
-            self?.showAdventureTale(tale)
-        }
+        closeHandler = backToTale
     }
 
     // MARK: - New Game
