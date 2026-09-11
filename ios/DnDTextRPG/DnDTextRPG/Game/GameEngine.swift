@@ -276,6 +276,12 @@ class GameEngine: ObservableObject {
     var isMultiplayer: Bool = false
     var multiplayerState: MultiplayerMatchState?
     private var pendingRemoteSlots: Set<Int> = []  // Character slot indices assigned to remote players
+    /// Party indices the player explicitly chose — built by hand (Human
+    /// creation) or loaded from the Character Roster — as opposed to
+    /// auto-generated (Computer (AI), or the whole party via the dice/reroll
+    /// button in Party Review). Party Review's reroll only regenerates
+    /// auto-generated slots, never one of these.
+    private var explicitlyChosenSlots: Set<Int> = []
     private var pendingReplacementCharacterId: UUID?  // Placeholder char to replace when remote player customises
     private var pendingInviteMatch: GKTurnBasedMatch?  // Cached invite for main menu button
     private var pendingRemoteCharacterId: UUID?  // AI char being converted to remote in local-to-multiplayer flow
@@ -3675,6 +3681,7 @@ class GameEngine: ObservableObject {
                 self.creatingCharacterIndex = 0
                 self.party = []
                 self.pendingRemoteSlots.removeAll()
+                self.explicitlyChosenSlots.removeAll()
                 self.pendingRemoteSlots.insert(count - 1) // last slot = remote
                 self.isMultiplayer = true
                 self.chooseCharacterType()
@@ -10145,37 +10152,60 @@ class GameEngine: ObservableObject {
 
         // Hint about continuing/reliving the adventure
         let hasSave = tale.saveGameId != nil && SaveGameManager.shared.load(id: tale.saveGameId!) != nil
+        let label: String
+        switch tale.outcome {
+        case .victory: label = "⚔ Relive"
+        case .defeat: label = "⚔ Rewrite"
+        case nil: label = "▶ Continue"
+        }
         if hasSave {
             switch tale.outcome {
-            case .victory: printWrapped("Long-press the title to relive this legendary quest...", indent: 4, color: .dimGreen)
-            case .defeat: printWrapped("Long-press the title to rewrite history — pick up one room before the fall...", indent: 4, color: .dimGreen)
-            case nil: printWrapped("Long-press the title to continue this adventure...", indent: 4, color: .dimGreen)
+            case .victory: printWrapped("Tap the title, or \(label), to relive this legendary quest...", indent: 4, color: .dimGreen)
+            case .defeat: printWrapped("Tap the title, or \(label), to rewrite history — pick up one room before the fall...", indent: 4, color: .dimGreen)
+            case nil: printWrapped("Tap the title, or \(label), to continue this adventure...", indent: 4, color: .dimGreen)
             }
             print("")
         }
         print("")
 
-        // Always offer a way back, plus Relive/Rewrite/Continue when a save is linked
+        // Always offer a way back and help, plus Relive/Rewrite/Continue
+        // when a save is linked. "?" and "< Back" share the compact nav
+        // cell (see isCompactPinnedNavText) so they read consistently with
+        // every other screen: nav/back on the left, help in the middle.
         if hasSave {
-            let label: String
-            switch tale.outcome {
-            case .victory: label = "⚔ Relive"
-            case .defeat: label = "⚔ Rewrite"
-            case nil: label = "▶ Continue"
-            }
-            showMenuOptions([MenuOption(label), MenuOption("< Back", tint: .navigation)])
-            menuHandler = { [weak self] choice in
-                guard let self = self else { return }
-                if choice == 1 {
-                    self.showLoadTransition(tale)
-                } else {
-                    SpeechEngine.shared.stop()
-                    backTarget()
-                }
-            }
+            showMenuOptions([MenuOption(label), MenuOption("?", tint: .navigation, compact: true), MenuOption("< Back", tint: .navigation, compact: true)])
         } else {
-            showMenuOptions([MenuOption("< Back", tint: .navigation)])
-            menuHandler = { _ in
+            showMenuOptions([MenuOption("?", tint: .navigation, compact: true), MenuOption("< Back", tint: .navigation, compact: true)])
+        }
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= self.currentMenuOptions.count else { return }
+            switch self.currentMenuOptions[choice - 1].text {
+            case let text where text == label:
+                self.showLoadTransition(tale)
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("Adventure Tale — Help")
+                    self.print("")
+                    self.print("  \(label.uppercased())", color: .cyan, bold: true)
+                    switch tale.outcome {
+                    case .victory:
+                        self.printWrapped("Loads this adventure's most recent save point and lets you play on from there, as if the victory hadn't happened yet.", indent: 2, color: .dimGreen)
+                    case .defeat:
+                        self.printWrapped("Loads the save point just before the fall, so you can try to avoid the mistake that ended the run.", indent: 2, color: .dimGreen)
+                    case nil:
+                        self.printWrapped("Loads this adventure's most recent save point and picks up right where you left off.", indent: 2, color: .dimGreen)
+                    }
+                    self.print("")
+                    self.print("  TAP THE TITLE", color: .cyan, bold: true)
+                    self.printWrapped("Same shortcut as the \(label) button above — tap the boxed title near the top of the screen.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    if tales.count > 1 {
+                        self.print("  SWIPE", color: .cyan, bold: true)
+                        self.printWrapped("Swipe left or right to browse other adventures' tales.", indent: 2, color: .dimGreen)
+                        self.print("")
+                    }
+                }
+            default:
                 SpeechEngine.shared.stop()
                 backTarget()
             }
@@ -10186,11 +10216,15 @@ class GameEngine: ObservableObject {
             backTarget()
         }
 
-        // Long-press title (first few lines) to load the save
+        // Tap title (its exact printed lines — see printTitle/titleLineIndices,
+        // which precisely tracks them regardless of how much ASCII art or
+        // other content precedes it, e.g. the trophy/skull header above)
+        // to load the save. Despite the name, this is wired to a plain tap,
+        // not an actual long-press — see textTapEnabled in TerminalView.
         if hasSave {
             textLongPressHandler = { [weak self] lineIndex in
-                guard lineIndex < 10 else { return }  // title area only
-                self?.showLoadTransition(tale)
+                guard let self = self, self.titleLineIndices.contains(lineIndex) else { return }
+                self.showLoadTransition(tale)
             }
         }
 
@@ -10347,6 +10381,7 @@ class GameEngine: ObservableObject {
             self.creatingCharacterIndex = 0
             self.party = []
             self.pendingRemoteSlots.removeAll()
+            self.explicitlyChosenSlots.removeAll()
             self.isMultiplayer = false
             self.chooseCharacterType()
         }
@@ -10366,15 +10401,28 @@ class GameEngine: ObservableObject {
         return available.randomElement() ?? "Adventurer \(party.count + 1)"
     }
 
-    /// Create a fully random party and present for confirmation
-    private func createRandomParty(count: Int? = nil, allAI: Bool = false, presetRemote: Bool = false) {
+    /// Create a fully random party and present for confirmation.
+    /// - preserveExplicit: when true (Party Review's dice/reroll button),
+    ///   any slot the player explicitly chose — built by hand or loaded
+    ///   from the Character Roster (see explicitlyChosenSlots) — is kept
+    ///   exactly as-is; only the auto-generated slots get rerolled. When
+    ///   false (the default — Quick Start, Surprise Me, an initial
+    ///   multiplayer party), every slot is freshly generated.
+    private func createRandomParty(count: Int? = nil, allAI: Bool = false, presetRemote: Bool = false, preserveExplicit: Bool = false) {
         let count = count ?? Int.random(in: 1...4)
+        let preserved: [Int: Character] = preserveExplicit
+            ? Dictionary(uniqueKeysWithValues: explicitlyChosenSlots.compactMap { i in i < party.count ? (i, party[i]) : nil })
+            : [:]
         party = []
         creatingCharacterIndex = 0
         totalCharacters = count
         pendingRemoteSlots.removeAll()
 
         for i in 0..<count {
+            if let keep = preserved[i] {
+                party.append(keep)
+                continue
+            }
             let name = pickUniqueName()
             let race = Race.allCases.randomElement()!
             let charClass = CharacterClass.allCases.randomElement()!
@@ -10518,7 +10566,7 @@ class GameEngine: ObservableObject {
             }
             let savedRemote = self.pendingRemoteSlots
             let partyCount = self.party.count
-            self.createRandomParty(count: partyCount, allAI: true, presetRemote: !savedRemote.isEmpty)
+            self.createRandomParty(count: partyCount, allAI: true, presetRemote: !savedRemote.isEmpty, preserveExplicit: true)
         }
 
         // Undo — restore previous party
@@ -11387,7 +11435,7 @@ class GameEngine: ObservableObject {
             self.print("  BUTTONS", color: .cyan, bold: true)
             self.printWrapped("Character Names — tap a character to view their full card and edit options (type, race, class, ability scores, skills, voice).", indent: 2, color: .dimGreen)
             self.printWrapped("Rest — short rest to recover HP. Long-press for a long rest (restores more HP and resources).", indent: 2, color: .dimGreen)
-            self.printWrapped("Random Party — re-roll the entire party with random characters (dice icon).", indent: 2, color: .dimGreen)
+            self.printWrapped("Random Party (dice icon) — re-rolls only the auto-generated characters. Anyone you built by hand or loaded from the Character Roster is left untouched.", indent: 2, color: .dimGreen)
             self.printWrapped("Begin Adventure / Start Matchmaker — proceed to name your dungeon, choose difficulty, and begin exploring.", indent: 2, color: .dimGreen)
             self.print("")
 
@@ -11470,7 +11518,20 @@ class GameEngine: ObservableObject {
         // it was to go back and downgrade an earlier slot to Robot/Remote —
         // this way the constraint is enforced up front, before Accept, by
         // simply never presenting the invalid choice.
-        let gcAuth = GameCenterManager.shared.isAuthenticated && totalCharacters >= 2
+        // Remote is only ever a real option when Multiplayer is on in
+        // Settings — with it off, Game Centre auth is irrelevant here.
+        let gcAuth = multiplayerEnabled && GameCenterManager.shared.isAuthenticated && totalCharacters >= 2
+
+        // With a human already seated and no Remote option available,
+        // Computer (AI) is the only possible choice — asking is just an
+        // extra tap for a foregone conclusion, so assign it directly
+        // instead of showing a one-option menu.
+        if hasHuman && !gcAuth {
+            creatingAsAI = true
+            autoCreateCharacter()
+            return
+        }
+
         if hasHuman {
             let controlWords = gcAuth ? "Computer or Remote" : "Computer"
             print("  (You already control \(party.first(where: { !$0.isComputerControlled })?.name ?? "a character") — the slot for the next adventurer must be \(controlWords).)", color: .dimGreen)
@@ -12801,6 +12862,9 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             self.setBreadcrumb("loadCharacterFromRoster.accept(\(character.name),idx:\(self.creatingCharacterIndex)->\(self.creatingCharacterIndex + 1),total:\(self.totalCharacters),multi:\(self.isMultiplayer))")
             self.party.append(character)
+            // Explicitly loaded from the roster — Party Review's reroll
+            // must never overwrite it.
+            self.explicitlyChosenSlots.insert(self.party.count - 1)
             self.creatingCharacterIndex += 1
             if self.creatingCharacterIndex < self.totalCharacters {
                 self.chooseCharacterType()
@@ -12816,10 +12880,24 @@ class GameEngine: ObservableObject {
             self.startCharacterCreation()
         }
 
-        showMenu(["Accept", "< Back"])
+        showMenu(["Accept", "?", "< Back"])
         closeHandler = goBack
-        menuHandler = { choice in
-            if choice == 1 { accept() } else { goBack() }
+        menuHandler = { [weak self] choice in
+            switch choice {
+            case 1: accept()
+            case 2:
+                self?.showInlineHelp {
+                    self?.printTitle("Add to Party — Help")
+                    self?.print("")
+                    self?.print("  ACCEPT", color: .cyan, bold: true)
+                    self?.printWrapped("Adds \(character.name), with the level, gear, and gold shown above, to this party slot and moves on to the next step.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                    self?.print("  < BACK", color: .cyan, bold: true)
+                    self?.printWrapped("Doesn't add \(character.name) — returns to the character creation choices for this slot.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                }
+            default: goBack()
+            }
         }
     }
 
@@ -12893,6 +12971,9 @@ class GameEngine: ObservableObject {
 
         if creatingAsAI { character.markAsAI() }
         party.append(character)
+        // Hand-built (not Computer (AI)) — Party Review's reroll must
+        // never overwrite a character the player explicitly built.
+        if !creatingAsAI { explicitlyChosenSlots.insert(party.count - 1) }
 
         clearTerminal()
         print("")
@@ -24582,6 +24663,21 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// A single row in the unified Continue Adventure list. Most rows are a
+    /// real, loadable save slot — but a Hall of Fame entry recorded before
+    /// adventures got linked saves (or whose linked save has since been
+    /// trimmed/deleted) has no slot to attach to. It still gets a row here,
+    /// styled and reached exactly the same way as everything else — it just
+    /// has no save to relive/continue from, so tapping it skips straight to
+    /// the tale instead of a save-detail screen. This is what actually
+    /// fixes "old Hall of Fame entries behave differently": previously they
+    /// were entirely absent from this list whenever they had no (surviving)
+    /// linked save, and only reachable via the separate Hall of Fame screen.
+    private enum AdventureRow {
+        case slot(SaveSlot)
+        case orphanHof(HallOfFameEntry)
+    }
+
     private func showLoadGameMenu(returnTo origin: LoadGameOrigin) {
         clearTerminal()
         printTitle("Continue Adventure")
@@ -24599,9 +24695,28 @@ class GameEngine: ObservableObject {
         }
         closeHandler = backAction
 
-        var slots = SaveGameManager.shared.listSlots()
+        let slots = SaveGameManager.shared.listSlots()
+        let allHofEntries = HallOfFameManager.shared.listEntries()
 
-        if slots.isEmpty {
+        // Every entry — an adventure still in progress, one that's been
+        // recorded in the Hall of Fame with a surviving linked save, or a
+        // Hall of Fame entry with no (surviving) save at all — is the exact
+        // same kind of row here. A slot whose latest save happens to be
+        // linked from a completed Hall of Fame entry is simply shown in
+        // that entry's own style (outcome tag + score) instead of PLAYING;
+        // there's no separate "kind" of list item, no separate screen to
+        // visit, and no different behaviour depending on which one it is.
+        let hofBySaveId: [UUID: HallOfFameEntry] = Dictionary(
+            allHofEntries.compactMap { entry in entry.saveGameId.map { ($0, entry) } },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let orphanHofEntries = allHofEntries.filter { entry in
+            entry.saveGameId == nil || SaveGameManager.shared.load(id: entry.saveGameId!) == nil
+        }
+
+        var rows: [AdventureRow] = slots.map { .slot($0) } + orphanHofEntries.map { .orphanHof($0) }
+
+        if rows.isEmpty {
             print("  No saved games or adventures recorded yet.", color: .yellow)
             print("")
             showMenu(["< Back"])
@@ -24609,42 +24724,49 @@ class GameEngine: ObservableObject {
             return
         }
 
-        // Every entry — an adventure still in progress, or one that's
-        // already been recorded in the Hall of Fame — is the exact same
-        // kind of row here and goes through the exact same
-        // showSaveSlotDetail() on tap. A slot whose latest save happens to
-        // be linked from a completed Hall of Fame entry is simply shown in
-        // that entry's own style (outcome tag + score) instead of PLAYING —
-        // there's no separate "kind" of list item, no separate screen to
-        // visit, and no different behaviour depending on which one it is.
-        let hofBySaveId: [UUID: HallOfFameEntry] = Dictionary(
-            HallOfFameManager.shared.listEntries().compactMap { entry in entry.saveGameId.map { ($0, entry) } },
-            uniquingKeysWith: { first, _ in first }
-        )
+        func rowDate(_ row: AdventureRow) -> Date {
+            switch row {
+            case .slot(let s): return s.latest.savedAt
+            case .orphanHof(let e): return e.date
+            }
+        }
+        func rowScore(_ row: AdventureRow) -> Int? {
+            switch row {
+            case .slot(let s): return hofBySaveId[s.latest.id]?.score
+            case .orphanHof(let e): return e.score
+            }
+        }
+        func rowName(_ row: AdventureRow) -> String {
+            switch row {
+            case .slot(let s): return s.slotName
+            case .orphanHof(let e): return e.partyNames.first ?? e.dungeonName
+            }
+        }
+        func rowLevel(_ row: AdventureRow) -> Int {
+            switch row {
+            case .slot(let s): return s.latest.dungeonLevel
+            case .orphanHof(let e): return e.dungeonLevel
+            }
+        }
 
-        // listSlots() already comes back date-desc, which is the .date
-        // order, so only re-sort for the other modes (see Settings > List
-        // Order).
         switch listSortMode {
         case .date:
-            break
+            rows.sort { rowDate($0) > rowDate($1) }
         case .points:
-            // In-progress saves have no score yet — they sort after every
+            // Rows with no score yet (in-progress saves) sort after every
             // completed (scored) adventure, most recent first among themselves.
-            slots.sort { a, b in
-                let scoreA = hofBySaveId[a.latest.id]?.score
-                let scoreB = hofBySaveId[b.latest.id]?.score
-                switch (scoreA, scoreB) {
+            rows.sort { a, b in
+                switch (rowScore(a), rowScore(b)) {
                 case let (sa?, sb?): return sa > sb
-                case (nil, nil): return a.latest.savedAt > b.latest.savedAt
+                case (nil, nil): return rowDate(a) > rowDate(b)
                 case (_?, nil): return true
                 case (nil, _?): return false
                 }
             }
         case .name:
-            slots.sort { $0.slotName.localizedCaseInsensitiveCompare($1.slotName) == .orderedAscending }
+            rows.sort { rowName($0).localizedCaseInsensitiveCompare(rowName($1)) == .orderedAscending }
         case .level:
-            slots.sort { $0.latest.dungeonLevel > $1.latest.dungeonLevel }
+            rows.sort { rowLevel($0) > rowLevel($1) }
         }
 
         let dateFormatter = DateFormatter()
@@ -24657,41 +24779,71 @@ class GameEngine: ObservableObject {
         // text length) so tapping the printed text, not just the button,
         // can open the right entry.
         var entryLineRanges: [Range<Int>] = []
-        for (i, slot) in slots.enumerated() {
+        for (i, row) in rows.enumerated() {
             let lineStart = terminalLines.count
-            let save = slot.latest
-            let day = save.gameTimeMinutes / 1440 + 1
-            let bpInfo = slot.breakpointCount > 1 ? " (\(slot.breakpointCount) saves)" : ""
 
-            if let entry = hofBySaveId[save.id] {
+            switch row {
+            case .slot(let slot):
+                let save = slot.latest
+                let day = save.gameTimeMinutes / 1440 + 1
+                let bpInfo = slot.breakpointCount > 1 ? " (\(slot.breakpointCount) saves)" : ""
+
+                if let entry = hofBySaveId[save.id] {
+                    let outcomeTag = entry.outcome == .victory ? "W" : "L"
+                    let outcomeColor: TerminalColor = entry.outcome == .victory ? .yellow : .red
+                    let name = String(entry.dungeonName.prefix(20))
+                    print("\(i + 1). \(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts\(bpInfo)", color: outcomeColor, bold: true)
+                    printWrapped(entry.partyDescription, indent: 3, color: .dimGreen)
+                    printWrapped("Gold:\(entry.goldCollected) Slain:\(entry.monstersSlain) Rooms:\(entry.roomsExplored)/\(entry.totalRooms) Day \(day)", indent: 3, color: .dimGreen)
+                } else {
+                    let gold = save.party.reduce(0) { $0 + $1.gold }
+                    let roomsExplored = save.dungeon.rooms.values.filter { $0.visited }.count
+                    let totalRooms = save.dungeon.rooms.count
+                    print("\(i + 1). \(save.dungeonName) Lv.\(save.dungeonLevel) PLAYING\(bpInfo)", color: .cyan, bold: true)
+                    printWrapped(save.partyDescription, indent: 3, color: .dimGreen)
+                    printWrapped("Gold:\(gold) Slain:\(save.monstersSlain) Rooms:\(roomsExplored)/\(totalRooms) Day \(day)", indent: 3, color: .dimGreen)
+                }
+                print("   \(dateFormatter.string(from: save.savedAt))", color: .dimGreen)
+                print("")
+
+                let parts = slot.slotName.components(separatedBy: " — ")
+                let charName = parts.first ?? slot.slotName
+                let location = save.dungeonName
+                let maxLen = 20
+                if charName.count + location.count + 3 <= maxLen {
+                    options.append("\(charName) · \(location)")
+                } else {
+                    let locBudget = max(4, maxLen - charName.count - 3)
+                    options.append("\(charName) · \(location.prefix(locBudget))")
+                }
+
+            case .orphanHof(let entry):
+                // Same Hall-of-Fame row style as a linked slot above — this
+                // entry just predates (or outlived) per-adventure saves, so
+                // there's nothing to load. "Read Tale" still works, styled
+                // and accessed identically.
+                let day = entry.gameTimeMinutes / 1440 + 1
                 let outcomeTag = entry.outcome == .victory ? "W" : "L"
                 let outcomeColor: TerminalColor = entry.outcome == .victory ? .yellow : .red
                 let name = String(entry.dungeonName.prefix(20))
-                print("\(i + 1). \(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts\(bpInfo)", color: outcomeColor, bold: true)
+                print("\(i + 1). \(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts (no save)", color: outcomeColor, bold: true)
                 printWrapped(entry.partyDescription, indent: 3, color: .dimGreen)
                 printWrapped("Gold:\(entry.goldCollected) Slain:\(entry.monstersSlain) Rooms:\(entry.roomsExplored)/\(entry.totalRooms) Day \(day)", indent: 3, color: .dimGreen)
-            } else {
-                let gold = save.party.reduce(0) { $0 + $1.gold }
-                let roomsExplored = save.dungeon.rooms.values.filter { $0.visited }.count
-                let totalRooms = save.dungeon.rooms.count
-                print("\(i + 1). \(save.dungeonName) Lv.\(save.dungeonLevel) PLAYING\(bpInfo)", color: .cyan, bold: true)
-                printWrapped(save.partyDescription, indent: 3, color: .dimGreen)
-                printWrapped("Gold:\(gold) Slain:\(save.monstersSlain) Rooms:\(roomsExplored)/\(totalRooms) Day \(day)", indent: 3, color: .dimGreen)
-            }
-            print("   \(dateFormatter.string(from: save.savedAt))", color: .dimGreen)
-            print("")
-            entryLineRanges.append(lineStart..<terminalLines.count)
+                print("   \(dateFormatter.string(from: entry.date))", color: .dimGreen)
+                print("")
 
-            let parts = slot.slotName.components(separatedBy: " — ")
-            let charName = parts.first ?? slot.slotName
-            let location = save.dungeonName
-            let maxLen = 20
-            if charName.count + location.count + 3 <= maxLen {
-                options.append("\(charName) · \(location)")
-            } else {
-                let locBudget = max(4, maxLen - charName.count - 3)
-                options.append("\(charName) · \(location.prefix(locBudget))")
+                let charName = entry.partyNames.first ?? "Hero"
+                let location = entry.dungeonName
+                let maxLen = 20
+                if charName.count + location.count + 3 <= maxLen {
+                    options.append("\(charName) · \(location)")
+                } else {
+                    let locBudget = max(4, maxLen - charName.count - 3)
+                    options.append("\(charName) · \(location.prefix(locBudget))")
+                }
             }
+
+            entryLineRanges.append(lineStart..<terminalLines.count)
         }
 
         // Was a plain showMenu() with every slot as its own button plus
@@ -24701,16 +24853,32 @@ class GameEngine: ObservableObject {
         // separate screen re-listing the exact same slots) is gone too —
         // tapping an entry now goes to showSaveSlotDetail(), which shows its
         // save points, a "Read Tale" narrative, AND a "Manage" (rename/copy/
-        // delete) button, so there's one place to find any entry.
-        showPaginatedMenuOptions(options, pinned: ["< Back"], handler: { [weak self] idx in
-            guard let self = self, idx >= 0 && idx < slots.count else { return }
-            self.showSaveSlotDetail(slot: slots[idx], returnTo: origin)
+        // delete) button, so there's one place to find any entry. A row with
+        // no save (see AdventureRow.orphanHof) skips straight to the tale,
+        // since there's no save-detail to show.
+        let openRow: (AdventureRow) -> Void = { [weak self] row in
+            guard let self = self else { return }
+            switch row {
+            case .slot(let slot):
+                self.showSaveSlotDetail(slot: slot, returnTo: origin)
+            case .orphanHof(let entry):
+                let backToList: () -> Void = { [weak self] in self?.showLoadGameMenu(returnTo: origin) }
+                self.showAdventureTale(AdventureTaleData(hof: entry), onBack: backToList)
+            }
+        }
+
+        showPaginatedMenuOptions(options, pinned: ["< Back"], handler: { idx in
+            guard idx >= 0 && idx < rows.count else { return }
+            openRow(rows[idx])
         }, pinnedHandler: { _ in backAction() })
 
-        // Long-press → load latest save directly (skip the slot detail screen)
+        // Long-press → load latest save directly (skip the slot detail
+        // screen); no-op for a row with no save.
         menuLongPressHandler = { [weak self] choice in
-            guard let self = self, choice >= 1, choice <= slots.count else { return }
-            self.loadGame(slots[choice - 1].latest)
+            guard choice >= 1, choice <= rows.count else { return }
+            if case .slot(let slot) = rows[choice - 1] {
+                self?.loadGame(slot.latest)
+            }
         }
 
         // Tap the printed entry text itself (not just its numbered button)
@@ -24718,9 +24886,9 @@ class GameEngine: ObservableObject {
         // textLongPressHandler drives a plain tap gesture on the terminal
         // text (see textTapEnabled), so the descriptive block above each
         // button is a live target too, not just inert decoration.
-        textLongPressHandler = { [weak self] lineIndex in
-            guard let self = self, let idx = entryLineRanges.firstIndex(where: { $0.contains(lineIndex) }) else { return }
-            self.showSaveSlotDetail(slot: slots[idx], returnTo: origin)
+        textLongPressHandler = { lineIndex in
+            guard let idx = entryLineRanges.firstIndex(where: { $0.contains(lineIndex) }) else { return }
+            openRow(rows[idx])
         }
     }
 
