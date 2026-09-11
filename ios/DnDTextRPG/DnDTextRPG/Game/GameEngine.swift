@@ -6745,6 +6745,10 @@ class GameEngine: ObservableObject {
             self.printWrapped("How Continue Adventure and Hall of Fame sort their lists: by date, points, name, or dungeon level.", indent: 2, color: .dimGreen)
             self.print("")
 
+            self.print("  ROBOT PREFIX", color: .cyan, bold: true)
+            self.printWrapped("Whether Computer (AI)-controlled party members get an \"R. \" name prefix — a nod to the robot characters in Isaac Asimov's novels (I, Robot; the Robot series).", indent: 2, color: .dimGreen)
+            self.print("")
+
             #if os(iOS)
             self.print("  KEYBOARD", color: .cyan, bold: true)
             self.printWrapped("Choose between the Game Keyboard (no globe or microphone buttons) and the standard iOS Keyboard.", indent: 2, color: .dimGreen)
