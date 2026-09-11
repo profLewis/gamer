@@ -3878,7 +3878,7 @@ class GameEngine: ObservableObject {
             { $0.showGalleryAndLore() },
         ]
 
-        showPaginatedMenu(helpTopics, pinned: ["?"], defaultIndex: currentHelpTopic >= 0 ? currentHelpTopic : nil) { [weak self] idx in
+        showPaginatedMenu(helpTopics, pinned: ["?", "< Back"], defaultIndex: currentHelpTopic >= 0 ? currentHelpTopic : nil) { [weak self] idx in
             guard let self = self, idx >= 0 && idx < helpActions.count else { return }
             if idx == self.currentHelpTopic {
                 // Same topic re-pressed — flash the text as feedback
@@ -3889,17 +3889,17 @@ class GameEngine: ObservableObject {
             helpActions[idx](self)
         }
 
-        // Wrap menuHandler to intercept pinned ? button
+        // Wrap menuHandler to intercept pinned ?/< Back buttons
         let originalHandler = menuHandler
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
-            // Check if the tapped option is "?"
             let idx = choice - 1
-            if idx >= 0 && idx < self.currentMenuOptions.count && self.currentMenuOptions[idx].text == "?" {
-                self.showHowToPlayHelp()
-                return
+            guard idx >= 0 && idx < self.currentMenuOptions.count else { originalHandler?(choice); return }
+            switch self.currentMenuOptions[idx].text {
+            case "?": self.showHowToPlayHelp()
+            case "< Back": self.closeHandler?()
+            default: originalHandler?(choice)
             }
-            originalHandler?(choice)
         }
 
         closeHandler = { [weak self] in
@@ -4022,7 +4022,7 @@ class GameEngine: ObservableObject {
         print("  Red — destructive (delete, drop)", color: .red)
         print("")
 
-        showMenu(["DM Settings", "Accessibility", "Gameplay", "?"])
+        showMenu(["DM Settings", "Accessibility", "Gameplay", "?", "< Back"])
         closeHandler = { [weak self] in self?.showHowToPlay() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
@@ -4038,6 +4038,8 @@ class GameEngine: ObservableObject {
                 self.closeHandler = { [weak self] in self?.showHelpGettingStarted() }
             case 4:
                 self.showGettingStartedHelp()
+            case 5:
+                self.showHowToPlay()
             default: break
             }
         }
@@ -5583,7 +5585,7 @@ class GameEngine: ObservableObject {
 
         closeHandler = { [weak self] in self?.showNameLore() }
 
-        showPaginatedMenuOptions(menuNames, pinned: ["?"], handler: { [weak self] idx in
+        showPaginatedMenuOptions(menuNames, pinned: ["?", "< Back"], handler: { [weak self] idx in
             guard let self = self else { return }
             // Last item in menuNames (before Help) is "Browse Selection"
             if idx == menuNames.count - 1 {
@@ -5594,8 +5596,8 @@ class GameEngine: ObservableObject {
             let cluster = clusterOrder[idx]
             let sources = Array(clusterSources[cluster] ?? [])
             self.showNameLoreClusterList(category: category, sources: sources, clusterName: cluster)
-        }, pinnedHandler: { [weak self] _ in
-            self?.showNameLoreHelp(category: category)
+        }, pinnedHandler: { [weak self] choice in
+            if choice == 0 { self?.showNameLoreHelp(category: category) } else { self?.showNameLore() }
         })
     }
 
@@ -5631,14 +5633,18 @@ class GameEngine: ObservableObject {
 
         closeHandler = { [weak self] in self?.showNameLoreList(category: category) }
 
-        showPaginatedMenuOptions(menuNames, pinned: ["?"], handler: { [weak self] idx in
+        showPaginatedMenuOptions(menuNames, pinned: ["?", "< Back"], handler: { [weak self] idx in
             guard let self = self, idx >= 0 && idx < filtered.count else { return }
             let selected = filtered[idx]
             if let fullIdx = allEntries.firstIndex(where: { $0.name == selected.name && $0.source == selected.source }) {
                 self.showNameCard(allEntries, index: fullIdx)
             }
-        }, pinnedHandler: { [weak self] _ in
-            self?.showNameLoreHelp(category: category)
+        }, pinnedHandler: { [weak self] choice in
+            if choice == 0 {
+                self?.showNameLoreHelp(category: category)
+            } else {
+                self?.showNameLoreList(category: category)
+            }
         })
     }
 
@@ -6345,15 +6351,17 @@ class GameEngine: ObservableObject {
         var menuOpts = ["DM Settings", "Accessibility", "Mood", "Gameplay", "Saving"].map { MenuOption($0) }
         menuOpts.append(MenuOption("Reset", tint: .danger))
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(menuOpts)
 
         installSettingUndoRedo(screen: "s:main") { [weak self] in self?.showSettings() }
 
-        closeHandler = { [weak self] in
+        let backToMain: () -> Void = { [weak self] in
             self?.clearAllSettingStacks()
             self?.clearTerminal()
             self?.showMainMenu()
         }
+        closeHandler = backToMain
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             let text = menuOpts[choice - 1].text
@@ -6365,6 +6373,7 @@ class GameEngine: ObservableObject {
             case "Saving": self.showSaveSettings()
             case "Reset": self.confirmResetToDefaults()
             case "?": self.showSettingsHelp()
+            case "< Back": backToMain()
             default: break
             }
         }
@@ -6492,6 +6501,7 @@ class GameEngine: ObservableObject {
 
         var menuOpts = options.map { MenuOption($0) }
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(menuOpts)
         closeHandler = { [weak self] in self?.showSettings() }
         installSettingUndoRedo(screen: "s:access") { [weak self] in self?.showAccessibilityMenu() }
@@ -6500,6 +6510,10 @@ class GameEngine: ObservableObject {
             let text = menuOpts[choice - 1].text
             if text == "?" {
                 self.showAccessibilityHelp()
+                return
+            }
+            if text == "< Back" {
+                self.showSettings()
                 return
             }
             switch text {
@@ -6690,7 +6704,7 @@ class GameEngine: ObservableObject {
         ]
         options.append(undoRedoEnabled ? "Undo/Redo Off" : "Undo/Redo On")
 
-        showPaginatedMenu(options, page: page, pinned: ["?"]) { [weak self] idx in
+        showPaginatedMenu(options, page: page, pinned: ["?", "< Back"]) { [weak self] idx in
             guard let self = self else { return }
             guard idx >= 0 && idx < options.count else { return }
             let currentPage = self.paginatedPage
@@ -6771,16 +6785,17 @@ class GameEngine: ObservableObject {
                 self.showGameplaySettings(page: currentPage)
             }
         }
-        // Wrap menuHandler to intercept pinned ? button
+        // Wrap menuHandler to intercept pinned ?/< Back buttons
         let originalHandler = menuHandler
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             let idx = choice - 1
-            if idx >= 0 && idx < self.currentMenuOptions.count && self.currentMenuOptions[idx].text == "?" {
-                self.showGameplaySettingsHelp()
-                return
+            guard idx >= 0 && idx < self.currentMenuOptions.count else { originalHandler?(choice); return }
+            switch self.currentMenuOptions[idx].text {
+            case "?": self.showGameplaySettingsHelp()
+            case "< Back": self.showSettings()
+            default: originalHandler?(choice)
             }
-            originalHandler?(choice)
         }
         closeHandler = { [weak self] in self?.showSettings() }
         installSettingUndoRedo(screen: "s:gameplay") { [weak self] in self?.showGameplaySettings(page: self?.paginatedPage ?? 0) }
@@ -7540,11 +7555,16 @@ class GameEngine: ObservableObject {
 
         var menuOpts = options.map { MenuOption($0) }
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(menuOpts)
         closeHandler = { [weak self] in self?.showSettings() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == menuOpts.count {
+                self.showSettings()
+                return
+            }
+            if choice == menuOpts.count - 1 {
                 self.showDMSettingsHelp()
                 return
             }
@@ -7899,7 +7919,7 @@ class GameEngine: ObservableObject {
         allOptions.append(selectedCount == changed.count ? "Deselect All" : "Select All")
         allOptions.append("Apply Reset")
 
-        showPaginatedMenu(allOptions, page: page, pinned: ["?"]) { [weak self] idx in
+        showPaginatedMenu(allOptions, page: page, pinned: ["?", "< Back"]) { [weak self] idx in
             guard let self = self else { return }
             guard idx >= 0 && idx < allOptions.count else { return }
             let currentPage = self.paginatedPage
@@ -7921,12 +7941,14 @@ class GameEngine: ObservableObject {
             }
         }
 
-        // Intercept ? for help
+        // Intercept ?/< Back
         let originalHandler = menuHandler
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             let idx = choice - 1
-            if idx >= 0 && idx < self.currentMenuOptions.count && self.currentMenuOptions[idx].text == "?" {
+            guard idx >= 0 && idx < self.currentMenuOptions.count else { originalHandler?(choice); return }
+            switch self.currentMenuOptions[idx].text {
+            case "?":
                 self.showInlineHelp {
                     self.printTitle("Review Changes Help")
                     self.print("")
@@ -7940,9 +7962,11 @@ class GameEngine: ObservableObject {
                     self.printWrapped("Resets the selected settings to their defaults. Unselected settings keep their current values. API keys and saved games are never affected.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
-                return
+            case "< Back":
+                self.confirmResetToDefaults()
+            default:
+                originalHandler?(choice)
             }
-            originalHandler?(choice)
         }
         closeHandler = { [weak self] in self?.confirmResetToDefaults() }
     }
@@ -8134,14 +8158,16 @@ class GameEngine: ObservableObject {
         }
         var menuOpts = options.map { MenuOption($0) }
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(menuOpts)
 
-        closeHandler = { [weak self] in
+        let backToSettings: () -> Void = { [weak self] in
             guard let self = self else { return }
             SoundManager.shared.stopMusic()
             self.playCurrentMusic()
             self.showSettings()
         }
+        closeHandler = backToSettings
         installSettingUndoRedo(screen: "s:mood") { [weak self] in self?.showMusicSettings() }
 
         menuHandler = { [weak self] choice in
@@ -8149,6 +8175,10 @@ class GameEngine: ObservableObject {
             let text = menuOpts[choice - 1].text
             if text == "?" {
                 self.showMusicSettingsHelp()
+                return
+            }
+            if text == "< Back" {
+                backToSettings()
                 return
             }
             switch text {
@@ -8325,13 +8355,19 @@ class GameEngine: ObservableObject {
             options.append(MenuOption(label, isDefault: isSelected))
         }
         options.append(MenuOption("?", tint: .navigation, compact: true))
+        options.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(options)
 
         let appleOffset = dm.isAppleModelAvailable ? 1 : 0
-        let helpIndex = options.count  // 1-based choice for ?
+        let helpIndex = options.count - 1  // 1-based choice for ?
+        let backIndex = options.count      // 1-based choice for < Back
 
         closeHandler = { [weak self] in self?.showDMSettingsSubMenu() }
         menuHandler = { [weak self] choice in
+            if choice == backIndex {
+                self?.showDMSettingsSubMenu()
+                return
+            }
             if choice == helpIndex {
                 self?.showInlineHelp {
                     self?.printTitle("AI Provider Help")
@@ -8416,12 +8452,17 @@ class GameEngine: ObservableObject {
             MenuOption(level.displayName, isDefault: level == currentLevel)
         }
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(menuOpts)
 
         closeHandler = { [weak self] in self?.showDMSettingsSubMenu() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == menuOpts.count {
+                self.showDMSettingsSubMenu()
+                return
+            }
+            if choice == menuOpts.count - 1 {
                 self.showInlineHelp {
                     self.printTitle("Ad-lib Level Help")
                     self.print("")
@@ -9297,12 +9338,14 @@ class GameEngine: ObservableObject {
         options.append(MenuOption("▼", isDisabled: selectedIndex >= steps.count - 1))
         options.append(MenuOption("Set", tint: .navigation))
         options.append(MenuOption("?", tint: .navigation, compact: true))
+        options.append(MenuOption("< Back", tint: .navigation, compact: true))
 
         showMenuOptions(options)
-        closeHandler = { [weak self] in
+        let backToDMSettings: () -> Void = { [weak self] in
             self?.stopLogRollerTimer()
             self?.showDMSettingsSubMenu()
         }
+        closeHandler = backToDMSettings
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             self.stopLogRollerTimer()
@@ -9320,6 +9363,8 @@ class GameEngine: ObservableObject {
                 let val = steps[selectedIndex]
                 self.dmLogContextSize = (val == 0 || val >= 2048) ? Int.max : val
                 self.showDMSettingsSubMenu()
+            case 5: // Back
+                backToDMSettings()
             case 4: // Help
                 self.showInlineHelp {
                     self.printTitle("Log Context Help")
@@ -9659,11 +9704,17 @@ class GameEngine: ObservableObject {
             return MenuOption(text)
         }
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(menuOpts)
 
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == menuOpts.count {
+                self.closeHandler = nil
+                self.showDMSettingsSubMenu()
+                return
+            }
+            if choice == menuOpts.count - 1 {
                 // Help
                 self.showInlineHelp {
                     self.printTitle("API Key Help")
@@ -12598,11 +12649,15 @@ class GameEngine: ObservableObject {
         print("Choose how to generate ability scores:")
         print("")
 
-        showMenu(["Auto", "Standard Array", "Roll 4d6", "?"])
+        showMenu(["Auto", "Standard Array", "Roll 4d6", "?", "< Back"])
         closeHandler = { [weak self] in self?.chooseClass() }
 
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
+            if choice == 5 {
+                self.chooseClass()
+                return
+            }
             if choice == 4 {
                 self.showAbilityScoreHelp()
                 return
@@ -14061,6 +14116,15 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Whether the CURRENT room is visible right now — either because the
+    /// party's own torch is lit, or because the room itself is torchlit
+    /// (wall-mounted torches). Gates room-local description/exits/NPC/loot
+    /// visibility. Broader visibility (map radius) stays keyed on `torchLit`
+    /// alone — a lit passage doesn't grant sight into neighbouring rooms.
+    var roomIsLit: Bool {
+        torchLit || (dungeon?.currentRoom?.isTorchlit ?? false)
+    }
+
     func showExplorationView() {
         guard let dungeon = dungeon, let room = dungeon.currentRoom else { return }
 
@@ -14089,10 +14153,13 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        // Room description — dim when torch is off
-        if torchLit {
+        // Room description — dim when the room itself isn't lit
+        if roomIsLit {
             print(room.name, color: .brightGreen, bold: true)
             printWrapped(room.roomDescription)
+            if room.isTorchlit && !torchLit {
+                print("Wall-mounted torches keep this passage lit.", color: .yellow)
+            }
         } else {
             print(room.name, color: .dimGreen, bold: true)
             print("It's too dark to see clearly...", color: .gray)
@@ -14101,24 +14168,24 @@ class GameEngine: ObservableObject {
         if !room.cleared && room.encounter != nil {
             print("You sense danger here...", color: .red)
         }
-        // NPC presence — harder to notice without a torch
+        // NPC presence — harder to notice without light
         if let npc = room.npc, npcsEnabled {
-            if torchLit {
+            if roomIsLit {
                 print("A \(npc.type.rawValue) is here.", color: .cyan)
             } else if Bool.random() {
                 // 50% chance to notice NPC in the dark
                 print("You hear someone nearby...", color: .cyan)
             }
         }
-        if torchLit && !room.treasure.isEmpty && room.cleared {
+        if roomIsLit && !room.treasure.isEmpty && room.cleared {
             print("You see treasure on the ground.", color: .yellow)
         }
-        if torchLit && !room.droppedItems.isEmpty {
+        if roomIsLit && !room.droppedItems.isEmpty {
             let names = room.droppedItems.map { $0.name }.joined(separator: ", ")
             print("Items on the floor: \(names)", color: .yellow)
         }
 
-        if torchLit {
+        if roomIsLit {
             let exitList = room.exits.keys.map { room.isLockedShut($0) ? "\($0.rawValue) (locked)" : $0.rawValue }.joined(separator: ", ")
             if !exitList.isEmpty {
                 print("Exits: \(exitList)", color: .dimGreen)
@@ -14164,7 +14231,7 @@ class GameEngine: ObservableObject {
 
         // Check for encounter — darkness gives a chance to sneak past
         if !room.cleared, let encounter = room.encounter {
-            if !torchLit && Int.random(in: 1...100) <= 30 {
+            if !roomIsLit && Int.random(in: 1...100) <= 30 {
                 room.cleared = true
                 room.encounter = nil
                 logEvent("Sneaked past enemies in \(room.name) (darkness)", category: "EXPLORE")
@@ -14173,7 +14240,7 @@ class GameEngine: ObservableObject {
                 showExplorationView()
                 return
             }
-            if !torchLit {
+            if !roomIsLit {
                 print("You stumble in the dark!", color: .red)
                 print("")
             }
@@ -14200,7 +14267,7 @@ class GameEngine: ObservableObject {
         // Build direction exits for the D-pad
         var exits: [Direction: Bool] = [:]
         var secured: Set<Direction> = []
-        if torchLit {
+        if roomIsLit {
             for direction in Direction.allCases {
                 let hasExit = room.exits[direction] != nil
                 let isSecured = room.secured.contains(direction)
@@ -15386,6 +15453,10 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showActionsHelp() }
 
+        // Back to exploration
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        actions.append { [weak self] in self?.showExplorationView() }
+
         showMenuWithDirections(menuOpts, exits: exits)
 
         directionHandler = { [weak self] direction in
@@ -16238,6 +16309,10 @@ class GameEngine: ObservableObject {
         // Help
         options.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showNPCHelp() }
+
+        // Back to exploration
+        options.append(MenuOption("< Back", tint: .navigation, compact: true))
+        actions.append { [weak self] in self?.showExplorationView() }
 
         showMenuOptions(options)
         closeHandler = { [weak self] in
