@@ -5852,6 +5852,34 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// How Continue Adventure and Hall of Fame order their lists.
+    enum ListSortMode: String, CaseIterable {
+        case date       // most recent first (default)
+        case points     // highest score first — in-progress saves have no
+                        // score yet, so they sort after every scored one
+        case name       // adventure/character name, A-Z
+        case level      // highest dungeon level first
+
+        var label: String {
+            switch self {
+            case .date: return "Date"
+            case .points: return "Points"
+            case .name: return "Name"
+            case .level: return "Level"
+            }
+        }
+    }
+
+    var listSortMode: ListSortMode {
+        get {
+            guard let raw = UserDefaults.standard.string(forKey: "list_sort_mode") else { return .date }
+            return ListSortMode(rawValue: raw) ?? .date
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: "list_sort_mode")
+        }
+    }
+
     var npcsEnabled: Bool {
         get {
             if UserDefaults.standard.object(forKey: "npcs_enabled") == nil { return true }
@@ -6425,7 +6453,12 @@ class GameEngine: ObservableObject {
         printWrapped("Show labelled Undo/Redo buttons when you change settings or edit characters. The label shows what will be reverted.", indent: 2, color: .dimGreen)
         print("")
 
-        // Grouped: Interface (5) → Features (5) → System (3)
+        print("LIST ORDER:", color: .cyan, bold: true)
+        print("  \(listSortMode.label)", color: .brightGreen)
+        printWrapped("How Continue Adventure and Hall of Fame sort their lists — by date, points, name, or dungeon level.", indent: 2, color: .dimGreen)
+        print("")
+
+        // Grouped: Interface (5) → Features (5) → System (4)
         var options = [
             // Page 1 — Interface
             "Map Radius", useArrowNavigation ? "Use Swipe" : "Use Buttons",
@@ -6437,7 +6470,7 @@ class GameEngine: ObservableObject {
             multipleShopsEnabled ? "Multi-Shop Off" : "Multi-Shop On",
             blinkingCursorEnabled ? "Cursor Off" : "Cursor On",
             // Page 3 — System
-            "Log Limit",
+            "Log Limit", "List Order",
         ]
         options.append(undoRedoEnabled ? "Undo/Redo Off" : "Undo/Redo On")
 
@@ -6482,6 +6515,8 @@ class GameEngine: ObservableObject {
                 self.showGameplaySettings(page: currentPage)
             } else if selected == "Log Limit" {
                 self.showLogLimitMenu()
+            } else if selected == "List Order" {
+                self.showListSortMenu()
             } else if selected == "Time Limit" {
                 self.showTimeLimitMenu()
             } else if selected.hasPrefix("Idle") {
@@ -6572,6 +6607,10 @@ class GameEngine: ObservableObject {
             self.printWrapped("When enabled, venomous creatures can poison your party. Cure with antidotes, potions, or rest at a shrine.", indent: 2, color: .dimGreen)
             self.print("")
 
+            self.print("  LIST ORDER", color: .cyan, bold: true)
+            self.printWrapped("How Continue Adventure and Hall of Fame sort their lists: by date, points, name, or dungeon level.", indent: 2, color: .dimGreen)
+            self.print("")
+
             #if os(iOS)
             self.print("  KEYBOARD", color: .cyan, bold: true)
             self.printWrapped("Choose between the Game Keyboard (no globe or microphone buttons) and the standard iOS Keyboard.", indent: 2, color: .dimGreen)
@@ -6619,6 +6658,33 @@ class GameEngine: ObservableObject {
             let values = [0, 50, 100, 200]
             if choice > 0 && choice <= values.count {
                 self.adventureLogLimit = values[choice - 1]
+            }
+            self.showGameplaySettings()
+        }
+    }
+
+    private func showListSortMenu() {
+        clearTerminal()
+        printTitle("List Order")
+        printWrapped("How Continue Adventure and Hall of Fame sort their lists.", indent: 2, color: .dimGreen)
+        print("")
+        print("  Current: \(listSortMode.label)", color: .brightGreen)
+        print("")
+        print("  Date — most recently saved/recorded first", color: .dimGreen)
+        print("  Points — highest score first (in-progress saves sort last)", color: .dimGreen)
+        print("  Name — adventure name, A-Z", color: .dimGreen)
+        print("  Level — highest dungeon level first", color: .dimGreen)
+        print("")
+
+        let modes = ListSortMode.allCases
+        let options = modes.map { $0.label }
+        showMenu(options)
+        closeHandler = { [weak self] in self?.showGameplaySettings() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice > 0 && choice <= modes.count {
+                self.recordSettingChange(screen: "s:gameplay", key: "list_sort_mode", name: "List Order")
+                self.listSortMode = modes[choice - 1]
             }
             self.showGameplaySettings()
         }
@@ -9623,8 +9689,22 @@ class GameEngine: ObservableObject {
         print("")
         printTitle("Hall of Fame")
 
-        let entries = HallOfFameManager.shared.listEntries()
+        var entries = HallOfFameManager.shared.listEntries()
         let manager = HallOfFameManager.shared
+
+        // listEntries() already comes back points-desc, which is the
+        // .points order, so only re-sort for the other modes (see
+        // Settings > List Order).
+        switch listSortMode {
+        case .points:
+            break
+        case .date:
+            entries.sort { $0.date > $1.date }
+        case .name:
+            entries.sort { $0.dungeonName.localizedCaseInsensitiveCompare($1.dungeonName) == .orderedAscending }
+        case .level:
+            entries.sort { $0.dungeonLevel > $1.dungeonLevel }
+        }
 
         // Summary stats
         print("  Victories: \(manager.totalVictories())  Defeats: \(manager.totalDefeats())  Total Runs: \(manager.totalRuns())", color: .cyan)
@@ -24519,7 +24599,7 @@ class GameEngine: ObservableObject {
         }
         closeHandler = backAction
 
-        let slots = SaveGameManager.shared.listSlots()
+        var slots = SaveGameManager.shared.listSlots()
 
         if slots.isEmpty {
             print("  No saved games or adventures recorded yet.", color: .yellow)
@@ -24541,6 +24621,31 @@ class GameEngine: ObservableObject {
             HallOfFameManager.shared.listEntries().compactMap { entry in entry.saveGameId.map { ($0, entry) } },
             uniquingKeysWith: { first, _ in first }
         )
+
+        // listSlots() already comes back date-desc, which is the .date
+        // order, so only re-sort for the other modes (see Settings > List
+        // Order).
+        switch listSortMode {
+        case .date:
+            break
+        case .points:
+            // In-progress saves have no score yet — they sort after every
+            // completed (scored) adventure, most recent first among themselves.
+            slots.sort { a, b in
+                let scoreA = hofBySaveId[a.latest.id]?.score
+                let scoreB = hofBySaveId[b.latest.id]?.score
+                switch (scoreA, scoreB) {
+                case let (sa?, sb?): return sa > sb
+                case (nil, nil): return a.latest.savedAt > b.latest.savedAt
+                case (_?, nil): return true
+                case (nil, _?): return false
+                }
+            }
+        case .name:
+            slots.sort { $0.slotName.localizedCaseInsensitiveCompare($1.slotName) == .orderedAscending }
+        case .level:
+            slots.sort { $0.latest.dungeonLevel > $1.latest.dungeonLevel }
+        }
 
         let dateFormatter = DateFormatter()
         dateFormatter.dateStyle = .medium
