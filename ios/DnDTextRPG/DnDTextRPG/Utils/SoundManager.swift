@@ -29,6 +29,7 @@ class SoundManager {
         case exploration
         case combat
         case chat
+        case shop
     }
 
     private init() {
@@ -609,8 +610,9 @@ class SoundManager {
         currentMusic = type
         musicPlaying = true
 
-        // Combat music louder, chat music quieter
-        musicNode.volume = type == .combat ? 0.7 : type == .chat ? 0.3 : 0.4
+        // Combat music louder, chat/shop music quieter (shop is meant to be
+        // unobtrusive background musak, not something you'd actually listen to)
+        musicNode.volume = type == .combat ? 0.7 : type == .chat ? 0.3 : type == .shop ? 0.22 : 0.4
 
         musicQueue.async { [weak self] in
             guard let self = self else { return }
@@ -658,6 +660,8 @@ class SoundManager {
             melodies = [combatMelody, combatMelody2, combatMelody3]
         case .chat:
             melodies = [chatMelody, chatMelody2, chatMelody3]
+        case .shop:
+            melodies = [shopMelody, shopMelody2]
         }
         if preference >= 1 && preference <= melodies.count {
             return melodies[preference - 1]()
@@ -1392,6 +1396,59 @@ class SoundManager {
             step(0.7, drone: d, melody: m(311), extra: d2),             // Eb4
             step(1.3, drone: d, melody: m(262)),                          // C4
             rest(1.2),
+        ]
+    }
+
+    // MARK: - Shop Music — "The Bazaar Loop" (musak)
+    // Deliberately bland, cheerful, and repetitive — C major, soft sine,
+    // no drone tension, evenly-spaced quarter notes. Elevator music.
+
+    private func shopMelody() -> [MusicStep] {
+        let m = { (f: Double) -> (Double, Float, Waveform) in (f, 0.07, .sine) }
+        let pad = { (f: Double) -> (Double, Float, Waveform) in (f, 0.03, .sine) }
+
+        return [
+            // C - E - G - E
+            step(0.4, melody: m(262), extra: pad(392)),   // C4 + G4 pad
+            step(0.4, melody: m(330)),                      // E4
+            step(0.4, melody: m(392), extra: pad(262)),   // G4 + C4 pad
+            step(0.4, melody: m(330)),                      // E4
+            // F - A - C - A
+            step(0.4, melody: m(349), extra: pad(440)),   // F4 + A4 pad
+            step(0.4, melody: m(440)),                      // A4
+            step(0.4, melody: m(523), extra: pad(349)),   // C5 + F4 pad
+            step(0.4, melody: m(440)),                      // A4
+            // G - B - D - B
+            step(0.4, melody: m(392), extra: pad(494)),   // G4 + B4 pad
+            step(0.4, melody: m(494)),                      // B4
+            step(0.4, melody: m(587), extra: pad(392)),   // D5 + G4 pad
+            step(0.4, melody: m(494)),                      // B4
+            // Resolve back to C
+            step(0.6, melody: m(523), extra: pad(392)),   // C5 + G4 pad
+            step(0.6, melody: m(392)),                      // G4
+            rest(0.4),
+        ]
+    }
+
+    private func shopMelody2() -> [MusicStep] {
+        let m = { (f: Double) -> (Double, Float, Waveform) in (f, 0.065, .sine) }
+        let pad = { (f: Double) -> (Double, Float, Waveform) in (f, 0.03, .triangle) }
+
+        return [
+            // Gentle waltz-ish saunter, F major
+            step(0.5, melody: m(349), extra: pad(262)),   // F4 + C4 pad
+            step(0.3, melody: m(440)),                      // A4
+            step(0.3, melody: m(523)),                      // C5
+            step(0.5, melody: m(440), extra: pad(349)),   // A4 + F4 pad
+            rest(0.2),
+            step(0.5, melody: m(392), extra: pad(294)),   // G4 + D4 pad
+            step(0.3, melody: m(494)),                      // B4
+            step(0.3, melody: m(587)),                      // D5
+            step(0.5, melody: m(494), extra: pad(392)),   // B4 + G4 pad
+            rest(0.2),
+            step(0.6, melody: m(440), extra: pad(349)),   // A4 + F4 pad
+            step(0.8, melody: m(349)),                      // F4 resolve
+            rest(0.5),
         ]
     }
 }

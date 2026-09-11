@@ -6159,6 +6159,11 @@ class GameEngine: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: "combat_melody") }
     }
 
+    var shopMelodyChoice: Int {
+        get { UserDefaults.standard.integer(forKey: "shop_melody") }
+        set { UserDefaults.standard.set(newValue, forKey: "shop_melody") }
+    }
+
     var chatMelodyChoice: Int {
         get { UserDefaults.standard.integer(forKey: "chat_melody") }
         set { UserDefaults.standard.set(newValue, forKey: "chat_melody") }

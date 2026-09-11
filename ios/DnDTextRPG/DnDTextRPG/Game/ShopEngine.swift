@@ -21,6 +21,11 @@ class ShopEngine {
     /// main menu after buying/selling) — reset in openShop().
     private var hasShownOneAtATimeQuip = false
 
+    /// What happened this visit — feeds the farewell line when leaving
+    /// (see showFarewell). Reset in openShop().
+    private var itemsBoughtThisVisit: [String] = []
+    private var itemsSoldThisVisit: [String] = []
+
     /// Only one party member ever visits a merchant at once (see
     /// GameEngine.visitShop's pickCharacter picker) — this occasionally
     /// has the merchant say so, to make the rule feel like an in-world
@@ -64,8 +69,11 @@ class ShopEngine {
         self.merchant = merchant
         self.stock = ItemCatalog.shopStock(forLevel: dungeonLevel)
         self.hasShownOneAtATimeQuip = false
+        self.itemsBoughtThisVisit = []
+        self.itemsSoldThisVisit = []
         game?.setBreadcrumb("ShopEngine.openShop(\(merchant.name),lvl:\(dungeonLevel),stock:\(stock.count))")
         game?.logEvent("Visited \(merchant.name) at \(merchant.shopName)", category: "SHOP")
+        if let game = game, game.musicEnabled { SoundManager.shared.startMusic(.shop, preference: game.shopMelodyChoice) }
         showShopMain(completion: completion)
     }
 
@@ -118,7 +126,7 @@ class ShopEngine {
                     game.print("")
                 }
             default:
-                self.maybeOfferAdvice(completion: completion)
+                self.showFarewell(completion: completion)
             }
         }
     }
@@ -237,6 +245,7 @@ class ShopEngine {
             game.logEvent("\(character.name) bought \(newItem.name) for \(item.value) gold from \(self.merchant?.name ?? "a merchant")", category: "SHOP")
 
             game.print("")
+            self.itemsBoughtThisVisit.append(newItem.name)
             game.print("  Purchased \(newItem.name) for \(item.value) gold.", color: .brightGreen)
             game.print("  Gold remaining: \(character.gold)", color: .yellow)
 
@@ -301,6 +310,7 @@ class ShopEngine {
             game.logEvent("\(character.name) sold \(item.name) for \(sellValue) gold to \(self.merchant?.name ?? "a merchant")", category: "SHOP")
 
             game.print("")
+            self.itemsSoldThisVisit.append(item.name)
             game.print("  Sold \(item.name) for \(sellValue) gold.", color: .brightGreen)
             game.print("  Gold: \(character.gold)", color: .yellow)
 
@@ -456,6 +466,7 @@ class ShopEngine {
                     } else {
                         game.print("  \"A fair price, no haggling needed.\" \(merchant.name) hands over the \(newItem.name).", color: .brightGreen)
                     }
+                    self.itemsBoughtThisVisit.append(newItem.name)
                     game.print("  Purchased \(newItem.name) for \(offer) gold.", color: .yellow)
                     game.logEvent("\(character.name) bought \(item.name) for \(offer) gold with \(merchant.name)", category: "SHOP")
                 }
@@ -495,6 +506,7 @@ class ShopEngine {
                         character.gold -= offer
                         let newItem = item.newInstance()
                         _ = character.addItem(newItem)
+                        self.itemsBoughtThisVisit.append(newItem.name)
                         game.print("  Purchased \(newItem.name) for \(offer) gold (haggled down from \(item.value)).", color: .yellow)
                         game.logEvent("\(character.name) haggled \(item.name) down to \(offer) gold (from \(item.value)) with \(merchant.name)", category: "SHOP")
                     }
@@ -621,6 +633,7 @@ class ShopEngine {
         let newItem = item.newInstance()
         _ = character.addItem(newItem)
         game.logEvent("\(character.name) bought under-the-counter \(newItem.name) for \(price) gold from \(merchant?.name ?? "a merchant")", category: "SHOP")
+        self.itemsBoughtThisVisit.append(newItem.name)
         game.print("  You purchase the \(newItem.name) for \(price) gold.", color: .brightGreen)
         game.waitForContinue()
         game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
@@ -746,10 +759,82 @@ class ShopEngine {
         }
     }
 
-    // MARK: - Advice
+    // MARK: - Farewell
+
+    /// Always narrates a goodbye tailored to what happened this visit
+    /// (bought/sold/neither), then — 25% of the time, once per visit —
+    /// tacks on a piece of unsolicited advice, then hands off to
+    /// `completion` (which returns to exploration). Restores exploration
+    /// music before completion, since the shop's own musak (started in
+    /// openShop) would otherwise just keep playing.
+    private func showFarewell(completion: @escaping () -> Void) {
+        guard let game = game, let merchant = merchant else { completion(); return }
+
+        let bought = !itemsBoughtThisVisit.isEmpty
+        let sold = !itemsSoldThisVisit.isEmpty
+        let summary = visitSummary()
+
+        game.print("")
+        if !summary.isEmpty {
+            game.print("  \(summary)", color: .dimGreen)
+        }
+
+        let situation: String
+        if bought || sold {
+            situation = "The player is leaving your shop after this visit: \(summary) React in character with a brief farewell that acknowledges what they bought or sold, and says you hope to see them again."
+        } else {
+            situation = "The player is leaving your shop without buying or selling anything this visit. React in character with a brief, good-natured farewell."
+        }
+
+        self.narrate(situation: situation, offline: merchant.offlineFarewellLine(bought: bought, sold: sold), color: .cyan) { [weak self] in
+            self?.maybeOfferAdvice(completion: completion)
+        }
+    }
+
+    /// e.g. "You bought a Longsword and a Healing Potion, and sold an old
+    /// Torch." Empty string if nothing happened this visit.
+    private func visitSummary() -> String {
+        var parts: [String] = []
+        if !itemsBoughtThisVisit.isEmpty {
+            parts.append("bought \(Self.listNames(itemsBoughtThisVisit))")
+        }
+        if !itemsSoldThisVisit.isEmpty {
+            parts.append("sold \(Self.listNames(itemsSoldThisVisit))")
+        }
+        guard !parts.isEmpty else { return "" }
+        return "You " + parts.joined(separator: ", and ") + "."
+    }
+
+    /// "a Sword", "a Sword and a Torch", "a Sword, a Torch, and 2 Potions"
+    /// — groups duplicate names ("Potion" x2 -> "2 Potions") rather than
+    /// repeating each instance.
+    private static func listNames(_ names: [String]) -> String {
+        var counts: [String: Int] = [:]
+        var order: [String] = []
+        for name in names {
+            if counts[name] == nil { order.append(name) }
+            counts[name, default: 0] += 1
+        }
+        let items = order.map { name -> String in
+            let count = counts[name] ?? 1
+            if count > 1 { return "\(count) \(name)s" }
+            let article = "AEIOU".contains(name.first ?? " ") ? "an" : "a"
+            return "\(article) \(name)"
+        }
+        switch items.count {
+        case 1: return items[0]
+        case 2: return "\(items[0]) and \(items[1])"
+        default: return items.dropLast().joined(separator: ", ") + ", and " + items.last!
+        }
+    }
 
     private func maybeOfferAdvice(completion: @escaping () -> Void) {
         guard let game = game, var merchant = merchant else { completion(); return }
+        defer {
+            // Whatever happens above, leaving the shop always restores
+            // exploration music in place of its musak.
+            if game.musicEnabled { SoundManager.shared.startMusic(.exploration, preference: game.explorationMelodyChoice) }
+        }
         guard !merchant.hasOfferedAdviceThisVisit, Int.random(in: 1...100) <= 25 else {
             completion()
             return

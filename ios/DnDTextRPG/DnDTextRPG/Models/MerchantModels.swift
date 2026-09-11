@@ -189,4 +189,22 @@ struct Merchant: Codable, Equatable {
     func offlineRareGoodsNoneLine() -> String {
         "\(name) shrugs. \"Nothing special today, adventurer — check back after I've restocked.\""
     }
+
+    /// A goodbye line as the player leaves the shop, tailored to whether
+    /// anything was actually bought or sold this visit.
+    func offlineFarewellLine(bought: Bool, sold: Bool) -> String {
+        if bought && sold {
+            return ["\"Pleasure doing business both ways! Come back soon, adventurer.\"",
+                    "\(name) waves. \"Buying and selling both — now that's how it's done. Safe travels.\""].randomElement()!
+        } else if bought {
+            return ["\"" + catchphrase.trimmingCharacters(in: CharacterSet(charactersIn: "\"")) + " Enjoy your purchase, and mind the dark corners out there.\"",
+                    "\(name) grins. \"A pleasure! Come back when your purse is full again.\""].randomElement()!
+        } else if sold {
+            return ["\"Thanks for thinking of me. Every little bit helps.\" \(name) pockets the coin.",
+                    "\(name) nods. \"Good trading with you. Safe travels, adventurer.\""].randomElement()!
+        } else {
+            return ["\"Nothing today? No matter — I'll be here.\" \(name) shrugs amiably.",
+                    "\(name) waves you off. \"Come back anytime, coin or no coin.\""].randomElement()!
+        }
+    }
 }
