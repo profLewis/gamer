@@ -186,20 +186,133 @@ class HallOfFameManager {
         let minutes: Int
     }
 
-    /// Re-seed if existing entries lack save game links (migration)
-    func reseedIfNeeded() {
-        let entries = listEntries()
-        // Only reseed the default 10 entries — user-created ones won't have saveGameId
-        guard !entries.isEmpty else { return }
-        // If any seed entry already has a save, we've already migrated
-        guard !entries.contains(where: { $0.saveGameId != nil }) else { return }
-        // Delete old seed entries and re-create with saves
-        for entry in entries {
-            let fileName = "\(entry.id.uuidString).json"
-            let fileURL = hallDirectory.appendingPathComponent(fileName)
-            try? FileManager.default.removeItem(at: fileURL)
+    // MARK: - Repair Orphan Entries (no linked save, or the save no longer exists)
+
+    /// Every entry should be loadable/continuable from Continue Adventure
+    /// (see GameEngine.showLoadGameMenu) — without this, an entry that
+    /// predates the saveGameId link (everything from before 2026-09-08,
+    /// which for most players is most or all of their Hall of Fame) shows
+    /// as an unloadable "(no save)" dead end forever. Runs once per entry
+    /// — one with a valid saveGameId is skipped — so it's cheap to call on
+    /// every launch and heals entries the moment they're next seen. This
+    /// replaces the old reseedIfNeeded(), which only ever fixed the
+    /// pre-seeded demo entries, and only if EVERY entry lacked a save — a
+    /// single real entry from actual play (linked automatically since
+    /// 2026-09-08) permanently blocked it from ever running again.
+    ///
+    /// The original dungeon layout from that run is gone — there was never
+    /// enough data saved to reconstruct it — so this generates a fresh one
+    /// at the same name/level instead. The party is reconstructed member-
+    /// by-member from partyDescription ("Name (Class)", comma-separated):
+    /// an exact Character Roster name match keeps that character's real
+    /// level/gear/gold; anything unmatched (most entries, since the
+    /// Roster is newer than the Hall of Fame) gets a freshly built
+    /// character of the right name/class instead. Either way, the result
+    /// is a real, loadable SaveGame — and since showAdventureTale's
+    /// narrative is generated from an entry's own stats (not read back out
+    /// of the save itself), every repaired entry gets a proper tale the
+    /// same way any other Hall of Fame entry does, regardless of how many
+    /// other saves or breakpoints exist elsewhere.
+    func repairOrphanEntries() {
+        for entry in listEntries() {
+            guard entry.saveGameId == nil || SaveGameManager.shared.load(id: entry.saveGameId!) == nil else { continue }
+            guard let save = buildRepairSave(for: entry) else { continue }
+            try? SaveGameManager.shared.save(save)
+            var updated = entry
+            updated.saveGameId = save.id
+            updateEntry(updated)
         }
-        seedIfEmpty()
+    }
+
+    private func buildRepairSave(for entry: HallOfFameEntry) -> SaveGame? {
+        let party = buildRepairParty(for: entry)
+        guard !party.isEmpty else { return nil }
+
+        let dungeon = Dungeon(name: entry.dungeonName, level: entry.dungeonLevel)
+        simulateExploration(dungeon: dungeon, roomsExplored: entry.roomsExplored, isDefeat: entry.outcome == .defeat)
+
+        let partyDesc = party.map { "\($0.name) (\($0.characterClass.rawValue))" }.joined(separator: ", ")
+        return SaveGame(
+            id: UUID(), slotId: UUID(), savedAt: entry.date,
+            slotName: "\(party.first?.name ?? "Hero") — \(entry.dungeonName)",
+            partyDescription: partyDesc, dungeonName: entry.dungeonName, dungeonLevel: entry.dungeonLevel,
+            party: party, dungeon: dungeon, gameState: .exploring,
+            gameTimeMinutes: entry.gameTimeMinutes,
+            adventureLog: buildRepairLog(entry),
+            dmChatLog: nil, torchLit: true, torchTurnsRemaining: 30,
+            partyChatLog: nil,
+            monstersSlain: entry.monstersSlain, combatsWon: entry.combatsWon
+        )
+    }
+
+    private func buildRepairParty(for entry: HallOfFameEntry) -> [Character] {
+        let members = entry.partyDescription
+            .components(separatedBy: ", ")
+            .filter { !$0.isEmpty }
+        guard !members.isEmpty else { return [] }
+
+        let roster = CharacterLibraryManager.shared.listCharacters()
+        let goldEach = entry.goldCollected / max(members.count, 1)
+
+        return members.enumerated().map { (i, member) in
+            let name = member.components(separatedBy: " (").first ?? member
+            var className = ""
+            if let openParen = member.lastIndex(of: "("), let closeParen = member.lastIndex(of: ")"), openParen < closeParen {
+                className = String(member[member.index(after: openParen)..<closeParen])
+            }
+            let charClass = CharacterClass.allCases.first(where: { $0.rawValue == className }) ?? .fighter
+
+            if let record = roster.first(where: { $0.character.name == name }) {
+                let character = record.character
+                character.prepareForNewAdventure()
+                return character
+            }
+
+            let race = Race.allCases.randomElement() ?? .human
+            let scores = typicalScores(for: charClass)
+            let character = Character(name: name, race: race, characterClass: charClass,
+                                       abilityScores: scores, isComputerControlled: i > 0)
+            character.gold = goldEach
+
+            let equipOptions = ItemCatalog.startingEquipmentOptions(for: charClass)
+            if let (_, items) = equipOptions.first {
+                for item in items { character.inventory.append(item) }
+                if let weapon = character.inventory.first(where: { $0.type == .weapon }) { character.equipWeapon(weapon) }
+                if let armor = character.inventory.first(where: { $0.type == .armor }) { character.equipArmor(armor) }
+                if let shield = character.inventory.first(where: { $0.type == .shield }) { character.equipShield(shield) }
+            }
+
+            if entry.dungeonLevel > 1 {
+                character.level = entry.dungeonLevel
+                let conMod = scores.modifier(for: .constitution)
+                let hpPerLevel = (charClass.startingHP / 2 + 1) + conMod
+                character.maxHP += hpPerLevel * (entry.dungeonLevel - 1)
+                character.currentHP = character.maxHP
+            }
+
+            return character
+        }
+    }
+
+    /// Same style as buildSeedLog, but reads only this one entry's own
+    /// stats — safe to run for any number of entries/save slots without
+    /// them influencing each other's description.
+    private func buildRepairLog(_ entry: HallOfFameEntry) -> [String] {
+        var log: [String] = []
+        log.append("The party entered \(entry.dungeonName).")
+        if entry.monstersSlain > 0 {
+            log.append("Slew \(entry.monstersSlain) creature\(entry.monstersSlain == 1 ? "" : "s") in \(entry.combatsWon) battle\(entry.combatsWon == 1 ? "" : "s").")
+        }
+        log.append("Explored \(entry.roomsExplored) of \(entry.totalRooms) rooms.")
+        if entry.goldCollected > 0 {
+            log.append("Collected \(entry.goldCollected) gold pieces.")
+        }
+        if entry.outcome == .victory {
+            log.append("The dungeon boss was defeated!")
+        } else {
+            log.append("The party fell to the dungeon's horrors...")
+        }
+        return log
     }
 
     func seedIfEmpty() {

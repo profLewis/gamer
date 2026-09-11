@@ -3244,7 +3244,7 @@ class GameEngine: ObservableObject {
         GameCenterManager.shared.authenticatePlayer()
         GameCenterManager.shared.turnBasedDelegate = self
         HallOfFameManager.shared.seedIfEmpty()
-        HallOfFameManager.shared.reseedIfNeeded()
+        HallOfFameManager.shared.repairOrphanEntries()
         seedCharacterRosterIfEmpty()
         // Sync sound settings from UserDefaults
         SoundManager.shared.battleSoundsEnabled = battleSoundsEnabled
