@@ -269,6 +269,7 @@ struct TerminalView: View {
                                     torchOff: !gameEngine.torchLit,
                                     npcLabel: gameEngine.dpadNPCLabel,
                                     onNPCTap: gameEngine.dpadNPCHandler,
+                                    onTeleportTap: gameEngine.dpadTeleportHandler,
                                     torchLabel: gameEngine.dpadTorchLabel,
                                     onTorchTap: gameEngine.dpadTorchHandler,
                                     onSearchTap: gameEngine.dpadSearchHandler,
@@ -1318,6 +1319,7 @@ struct DirectionPadView: View {
     var torchOff: Bool = false
     var npcLabel: String? = nil
     var onNPCTap: (() -> Void)? = nil
+    var onTeleportTap: (() -> Void)? = nil
     var torchLabel: String? = nil
     var onTorchTap: (() -> Void)? = nil
     var onSearchTap: (() -> Void)? = nil
@@ -1331,6 +1333,7 @@ struct DirectionPadView: View {
     let securedAmber = Color(red: 0.8, green: 0.6, blue: 0.1)
 
     private let npcCyan = Color(red: 0.2, green: 0.7, blue: 0.9)
+    private let teleportPurple = Color(red: 0.65, green: 0.4, blue: 0.9)
     private let torchBlue = Color(red: 0.3, green: 0.55, blue: 0.95)
     private let searchAmber = Color(red: 0.8, green: 0.6, blue: 0.2)
     private let listenAmber = Color(red: 0.8, green: 0.6, blue: 0.2)
@@ -1401,7 +1404,14 @@ struct DirectionPadView: View {
             HStack(spacing: 4) {
                 cornerIconButton(systemName: torchLabel == "Douse" ? "flame.fill" : "flame", color: torchBlue, action: onTorchTap)
                 dirButton(.south)
-                cornerIconButton(systemName: "scroll", color: npcCyan, action: (npcLabel != nil) ? onNPCTap : nil)
+                // Same SE slot doubles as the teleport pad icon — NPC wins
+                // on the rare room that somehow has both (see
+                // GameEngine.dpadTeleportHandler).
+                if npcLabel != nil {
+                    cornerIconButton(systemName: "scroll", color: npcCyan, action: onNPCTap)
+                } else {
+                    cornerIconButton(systemName: "target", color: teleportPurple, action: onTeleportTap)
+                }
             }
         }
     }

@@ -443,6 +443,12 @@ class GameEngine: ObservableObject {
     var dpadCenterLongPressHandler: (() -> Void)?
     @Published var dpadNPCLabel: String? = nil
     var dpadNPCHandler: (() -> Void)?
+    /// Roundel-target icon in the same SE corner slot as the NPC scroll
+    /// icon — shown instead of it when the room has an active teleport
+    /// pad and no NPC to talk to (NPC takes priority on the rare room
+    /// that somehow has both). Not a numbered menu button (see
+    /// showExplorationView, where "Use Teleport Pad" used to be listed).
+    var dpadTeleportHandler: (() -> Void)?
     /// "Douse" or "Illuminate" — quick torch toggle shown as a blue icon in
     /// the D-pad's NW corner, mirroring the NPC icon's SE corner.
     @Published var dpadTorchLabel: String? = nil
@@ -807,6 +813,7 @@ class GameEngine: ObservableObject {
         let centerLongPress = dpadCenterLongPressHandler
         let npcLabel = dpadNPCLabel
         let npcHandler = dpadNPCHandler
+        let teleportHandler = dpadTeleportHandler
         let torchLabel = dpadTorchLabel
         let torchHandler = dpadTorchHandler
         let searchHandler = dpadSearchHandler
@@ -820,6 +827,7 @@ class GameEngine: ObservableObject {
             dpadCenterLongPressHandler = centerLongPress
             dpadNPCLabel = npcLabel
             dpadNPCHandler = npcHandler
+            dpadTeleportHandler = teleportHandler
             dpadTorchLabel = torchLabel
             dpadTorchHandler = torchHandler
             dpadSearchHandler = searchHandler
@@ -1512,6 +1520,7 @@ class GameEngine: ObservableObject {
             self.dpadCenterLongPressHandler = nil
             self.dpadNPCLabel = nil
             self.dpadNPCHandler = nil
+            self.dpadTeleportHandler = nil
             self.dpadTorchLabel = nil
             self.dpadTorchHandler = nil
             self.dpadSearchHandler = nil
@@ -1537,6 +1546,7 @@ class GameEngine: ObservableObject {
             self.dpadCenterLongPressHandler = nil
             self.dpadNPCLabel = nil
             self.dpadNPCHandler = nil
+            self.dpadTeleportHandler = nil
             self.dpadTorchLabel = nil
             self.dpadTorchHandler = nil
             self.dpadSearchHandler = nil
@@ -6019,6 +6029,20 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// On by default. Dungeon generation places teleport pads regardless
+    /// (a layout decision, same as how NPCs always generate even when
+    /// npcsEnabled is off) — this only gates whether the D-pad icon shows
+    /// and whether stepping onto one actually works.
+    var teleportPadsEnabled: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: "teleport_pads_enabled") == nil { return true }
+            return UserDefaults.standard.bool(forKey: "teleport_pads_enabled")
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "teleport_pads_enabled")
+        }
+    }
+
     /// Whether AI/Computer-controlled characters get an "R. " name prefix
     /// (a nod to the robot characters in Asimov's novels). On by default.
     /// Character.syncRobotPrefix() reads this same key directly, since
@@ -6631,7 +6655,12 @@ class GameEngine: ObservableObject {
         printWrapped("How item and carry weight are displayed.", indent: 2, color: .dimGreen)
         print("")
 
-        // Grouped: Interface (5) → Features (5) → System (6)
+        print("TELEPORT PADS:", color: .cyan, bold: true)
+        print("  \(teleportPadsEnabled ? "On" : "Off")", color: teleportPadsEnabled ? .brightGreen : .red)
+        printWrapped("Whether the D-pad's teleport icon appears in rooms with an active pad.", indent: 2, color: .dimGreen)
+        print("")
+
+        // Grouped: Interface (5) → Features (6) → System (6)
         var options = [
             // Page 1 — Interface
             "Map Radius", useArrowNavigation ? "Use Swipe" : "Use Buttons",
@@ -6642,6 +6671,7 @@ class GameEngine: ObservableObject {
             idlePromptsEnabled ? "Idle Off" : "Idle On",
             multipleShopsEnabled ? "Multi-Shop Off" : "Multi-Shop On",
             blinkingCursorEnabled ? "Cursor Off" : "Cursor On",
+            teleportPadsEnabled ? "Teleport Off" : "Teleport On",
             // Page 3 — System
             "Log Limit", "List Order",
             robotPrefixEnabled ? "Robot Prefix Off" : "Robot Prefix On",
@@ -6687,6 +6717,10 @@ class GameEngine: ObservableObject {
             } else if selected.hasPrefix("Multi") {
                 self.recordSettingChange(screen: "s:gameplay", key: "multiplayer_enabled", name: "Multi")
                 self.multiplayerEnabled.toggle()
+                self.showGameplaySettings(page: currentPage)
+            } else if selected.hasPrefix("Teleport") {
+                self.recordSettingChange(screen: "s:gameplay", key: "teleport_pads_enabled", name: "Teleport")
+                self.teleportPadsEnabled.toggle()
                 self.showGameplaySettings(page: currentPage)
             } else if selected == "Log Limit" {
                 self.showLogLimitMenu()
@@ -6800,6 +6834,10 @@ class GameEngine: ObservableObject {
 
             self.print("  UNITS", color: .cyan, bold: true)
             self.printWrapped("Imperial (lb) or Metric (kg) for item and carry weight.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  TELEPORT PADS", color: .cyan, bold: true)
+            self.printWrapped("Whether the D-pad's purple target icon appears in rooms with an active teleport pad.", indent: 2, color: .dimGreen)
             self.print("")
 
             #if os(iOS)
@@ -13909,6 +13947,9 @@ class GameEngine: ObservableObject {
             self.printWrapped("Search looks for hidden items. Listen reveals what's beyond exits. Rest (centre) heals — hold for long rest.", indent: 2, color: .dimGreen)
             self.printWrapped("Search/Listen results auto-continue after a delay (Settings > Info Timeout) — tap the result text to continue immediately instead of waiting.", indent: 2, color: .dimGreen)
             self.print("")
+            self.print("  TELEPORT PAD", color: .cyan, bold: true)
+            self.printWrapped("A purple target icon (bottom-right corner, where the NPC scroll icon normally sits) appears when the room has an active teleport pad — tap it to instantly travel to its linked room. Toggle in Settings > Gameplay.", indent: 2, color: .dimGreen)
+            self.print("")
             self.print("  CHAT", color: .cyan, bold: true)
             self.printWrapped("Type at the > prompt to chat with the DM. Tap ✕ to leave chat.", indent: 2, color: .dimGreen)
             self.print("")
@@ -14194,11 +14235,6 @@ class GameEngine: ObservableObject {
             actions.append { [weak self] in if self?.torchLit == true { self?.presentRiddle(index: idx, room: room) } }
         }
 
-        if let destId = room.teleportDestinationRoomId, let destRoom = dungeon.rooms[destId], (room.cleared || room.encounter == nil) {
-            menuOpts.append(MenuOption("Use Teleport Pad"))
-            actions.append { [weak self] in if self?.torchLit == true { self?.useTeleportPad(from: room, to: destRoom) } }
-        }
-
         if let vMethod = room.verticalMethod, let vDestId = room.verticalDestinationRoomId,
            let vDestRoom = dungeon.rooms[vDestId], (room.cleared || room.encounter == nil) {
             let label: String
@@ -14236,6 +14272,25 @@ class GameEngine: ObservableObject {
             DispatchQueue.main.async {
                 self.dpadNPCLabel = nil
                 self.dpadNPCHandler = nil
+            }
+        }
+
+        // Teleport pad — roundel-target icon sharing the D-pad's SE corner
+        // slot with the NPC scroll icon (see dpadTeleportHandler; NPC wins
+        // if a room somehow has both). Always set both branches, same
+        // reasoning as NPC above — otherwise a stale teleport icon from a
+        // previous room lingers into one with no pad.
+        if teleportPadsEnabled, let destId = room.teleportDestinationRoomId, let destRoom = dungeon.rooms[destId],
+           (room.cleared || room.encounter == nil) {
+            DispatchQueue.main.async {
+                self.dpadTeleportHandler = { [weak self] in
+                    guard let self = self, self.torchLit else { return }
+                    self.useTeleportPad(from: room, to: destRoom)
+                }
+            }
+        } else {
+            DispatchQueue.main.async {
+                self.dpadTeleportHandler = nil
             }
         }
 
