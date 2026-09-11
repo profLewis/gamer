@@ -17,6 +17,20 @@ class ShopEngine {
     private var stock: [Item] = []
     private var character: Character?
     private var merchant: Merchant?
+    /// Shown at most once per shop visit (not on every trip back to the
+    /// main menu after buying/selling) — reset in openShop().
+    private var hasShownOneAtATimeQuip = false
+
+    /// Only one party member ever visits a merchant at once (see
+    /// GameEngine.visitShop's pickCharacter picker) — this occasionally
+    /// has the merchant say so, to make the rule feel like an in-world
+    /// choice by the merchant rather than an unexplained limitation.
+    private static let oneAtATimeQuips: [String] = [
+        "\"One at a time, if you please — no crowding my stall.\"",
+        "\"Tell the rest of your party to wait outside. This aisle's not built for a crowd.\"",
+        "\"I deal with one customer at a time, thank you. Bad for the till otherwise.\"",
+        "\"Your friends can browse when you're done. One in the shop's plenty.\"",
+    ]
 
     /// Mundane-but-uncommon items offered as "rare goods" — deliberately not
     /// part of the regular tiered stock rotation.
@@ -45,6 +59,7 @@ class ShopEngine {
         self.character = character
         self.merchant = merchant
         self.stock = ItemCatalog.shopStock(forLevel: dungeonLevel)
+        self.hasShownOneAtATimeQuip = false
         game?.setBreadcrumb("ShopEngine.openShop(\(merchant.name),lvl:\(dungeonLevel),stock:\(stock.count))")
         game?.logEvent("Visited \(merchant.name) at \(merchant.shopName)", category: "SHOP")
         showShopMain(completion: completion)
@@ -60,6 +75,12 @@ class ShopEngine {
         game.print("")
         game.print("  \(merchant.name) — \(merchant.tier.rawValue)", color: .green)
         game.print("  \(merchant.greeting)", color: .cyan)
+        if !hasShownOneAtATimeQuip {
+            hasShownOneAtATimeQuip = true
+            if Int.random(in: 1...100) <= 35, let quip = Self.oneAtATimeQuips.randomElement() {
+                game.print("  \(quip)", color: .cyan)
+            }
+        }
         game.print("")
         game.print("  Your gold: \(character.gold)", color: .yellow)
         game.print("  Carry weight: \(String(format: "%.0f", character.currentWeight))/\(String(format: "%.0f", character.carryCapacity)) lb", color: .green)
