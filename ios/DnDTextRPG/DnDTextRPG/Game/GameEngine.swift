@@ -601,7 +601,7 @@ class GameEngine: ObservableObject {
     }
 
     /// Log a multiplayer action visible to remote players in catch-up
-    private func logMultiplayerAction(_ description: String) {
+    func logMultiplayerAction(_ description: String) {
         guard isMultiplayer else { return }
         let playerName = GKLocalPlayer.local.displayName
         multiplayerState?.addAction(playerName: playerName, description: description)
@@ -17090,7 +17090,7 @@ class GameEngine: ObservableObject {
 
     // MARK: - Inventory
 
-    private func pickCharacter(title: String, cancelLabel: String = "Done", from candidates: [Character]? = nil, onBack: (() -> Void)? = nil, action: @escaping (Character) -> Void) {
+    func pickCharacter(title: String, cancelLabel: String = "Done", from candidates: [Character]? = nil, onBack: (() -> Void)? = nil, action: @escaping (Character) -> Void) {
         let chars = candidates ?? party
         if chars.count == 1 {
             action(chars[0])

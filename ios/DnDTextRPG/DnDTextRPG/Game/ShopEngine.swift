@@ -249,8 +249,133 @@ class ShopEngine {
             game.print("  Purchased \(newItem.name) for \(item.value) gold.", color: .brightGreen)
             game.print("  Gold remaining: \(character.gold)", color: .yellow)
 
+            self.showPostPurchaseOptions(item: newItem, buyer: character, completion: completion)
+        }
+    }
+
+    /// Right after a successful purchase — what to do with it. Equippable
+    /// gear offers "Equip Now", potions offer "Drink Now", and (party size
+    /// permitting) any item can be handed to a teammate as a present. Skips
+    /// straight past to the plain "keep browsing" continue if none of that
+    /// applies (a key, a gem, a scroll, solo party).
+    private func showPostPurchaseOptions(item: Item, buyer: Character, completion: @escaping () -> Void) {
+        guard let game = game else { return }
+        let backToList: () -> Void = { [weak self] in self?.showBuyMenu(completion: completion) }
+
+        let canEquip: Bool = [.weapon, .armor, .shield].contains(item.type)
+        let canDrink = item.type == .potion
+        let canGift = party.count > 1
+
+        var options: [String] = []
+        if canEquip { options.append("Equip Now") }
+        if canDrink { options.append("Drink Now") }
+        if canGift { options.append("Give as a Present") }
+        options.append(options.isEmpty ? "Continue" : "Keep It For Later")
+
+        guard options.count > 1 else {
+            // Nothing applicable — same as before, just wait and return.
             game.waitForContinue()
             game.inputHandler = { _ in backToList() }
+            return
+        }
+
+        game.print("")
+        game.print("  What would you like to do with it?", color: .cyan)
+        game.showMenu(options)
+        game.closeHandler = backToList
+        game.menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= options.count else { return }
+            switch options[choice - 1] {
+            case "Equip Now":
+                self.equipNow(item: item, buyer: buyer, completion: completion)
+            case "Drink Now":
+                self.drinkNow(item: item, buyer: buyer, completion: completion)
+            case "Give as a Present":
+                self.giveAsPresent(item: item, from: buyer, completion: completion)
+            default:
+                game.waitForContinue()
+                game.inputHandler = { _ in backToList() }
+            }
+        }
+    }
+
+    /// Access to the full party — ShopEngine only ever deals with the one
+    /// visiting character otherwise, but gifting needs everyone else.
+    private var party: [Character] { game?.party ?? [] }
+
+    private func equipNow(item: Item, buyer: Character, completion: @escaping () -> Void) {
+        guard let game = game else { return }
+        switch item.type {
+        case .weapon: buyer.equipWeapon(item)
+        case .armor: buyer.equipArmor(item)
+        case .shield: buyer.equipShield(item)
+        default: break
+        }
+        game.print("")
+        game.print("  \(buyer.name) equips the \(item.name).", color: .brightGreen)
+        game.logMultiplayerAction("\(buyer.name) equips \(item.name)")
+        game.waitForContinue()
+        game.inputHandler = { [weak self] _ in self?.showBuyMenu(completion: completion) }
+    }
+
+    private func drinkNow(item: Item, buyer: Character, completion: @escaping () -> Void) {
+        guard let game = game else { return }
+        buyer.removeItem(item)
+        game.print("")
+        let isAntidote = item.name.lowercased().contains("antidote")
+        if isAntidote {
+            if buyer.isPoisoned {
+                buyer.curePoison()
+                game.print("  \(buyer.name) drinks the antidote! Poison cured!", color: .brightGreen)
+            } else {
+                game.print("  \(buyer.name) drinks the antidote. (Not poisoned — no effect.)", color: .dimGreen)
+            }
+        } else if let healStr = item.potionStats?.healAmount, healStr != "0" {
+            let roll = Dice.rollDamage(healStr)
+            let amount = max(1, roll.total)
+            buyer.heal(amount)
+            game.print("  \(buyer.name) drinks \(item.name)! Restored \(amount) HP! (\(buyer.currentHP)/\(buyer.maxHP))", color: .brightGreen)
+        } else {
+            game.print("  \(buyer.name) drinks \(item.name).", color: .dimGreen)
+        }
+        game.logMultiplayerAction("\(buyer.name) drinks \(item.name)")
+        game.waitForContinue()
+        game.inputHandler = { [weak self] _ in self?.showBuyMenu(completion: completion) }
+    }
+
+    /// Something clever, per request: the recipient's reaction is flavoured
+    /// by their relationship to gifts in general — always warm, sometimes
+    /// a little playful about it — rather than a flat "item transferred."
+    private static let giftReactions: [String] = [
+        "\"For me? You shouldn't have.\" %@ grins and stows it away.",
+        "%@'s eyes light up. \"Now THIS is what I call a party.\"",
+        "\"Aw, you remembered.\" %@ takes it with a genuine smile.",
+        "%@ inspects it, nods approvingly. \"Good taste. I'll put it to use.\"",
+        "\"I owe you one,\" says %@, pocketing the gift.",
+    ]
+
+    private func giveAsPresent(item: Item, from buyer: Character, completion: @escaping () -> Void) {
+        guard let game = game else { return }
+        let recipients = party.filter { $0.id != buyer.id }
+        let backToList: () -> Void = { [weak self] in self?.showBuyMenu(completion: completion) }
+        game.pickCharacter(title: "Give the \(item.name) to whom?", cancelLabel: "Never Mind", from: recipients, onBack: backToList) { [weak self] recipient in
+            guard let self = self, let game = self.game else { return }
+            guard recipient.canCarry(item) else {
+                game.print("")
+                game.print("  \(recipient.name) can't carry anything more right now.", color: .red)
+                game.waitForContinue()
+                game.inputHandler = { [weak self] _ in self?.showBuyMenu(completion: completion) }
+                return
+            }
+            buyer.removeItem(item)
+            _ = recipient.addItem(item)
+            game.print("")
+            game.print("  \(buyer.name) hands the \(item.name) to \(recipient.name).", color: .brightGreen)
+            let reaction = String(format: Self.giftReactions.randomElement()!, recipient.name)
+            game.print("  \(reaction)", color: .cyan)
+            game.logMultiplayerAction("\(buyer.name) gives \(item.name) to \(recipient.name)")
+            game.waitForContinue()
+            game.inputHandler = { [weak self] _ in self?.showBuyMenu(completion: completion) }
         }
     }
 
