@@ -14300,17 +14300,17 @@ class GameEngine: ObservableObject {
         // armoury-room merchants mentioned in the room text but unreachable.
         if room.merchant != nil, (room.cleared || room.encounter == nil) {
             menuOpts.append(MenuOption("Visit Merchant"))
-            actions.append { [weak self] in if self?.torchLit == true { self?.visitShop() } }
+            actions.append { [weak self] in if self?.roomIsLit == true { self?.visitShop() } }
         }
 
         if room.trainer != nil, (room.cleared || room.encounter == nil) {
             menuOpts.append(MenuOption("Visit Gym"))
-            actions.append { [weak self] in if self?.torchLit == true { self?.visitGym() } }
+            actions.append { [weak self] in if self?.roomIsLit == true { self?.visitGym() } }
         }
 
         if let idx = room.riddleIndex, !room.riddleResolved, (room.cleared || room.encounter == nil) {
             menuOpts.append(MenuOption("Solve Riddle"))
-            actions.append { [weak self] in if self?.torchLit == true { self?.presentRiddle(index: idx, room: room) } }
+            actions.append { [weak self] in if self?.roomIsLit == true { self?.presentRiddle(index: idx, room: room) } }
         }
 
         if let vMethod = room.verticalMethod, let vDestId = room.verticalDestinationRoomId,
@@ -14330,7 +14330,7 @@ class GameEngine: ObservableObject {
             }
             menuOpts.append(MenuOption(label, isDisabled: !met))
             actions.append { [weak self] in
-                guard let self = self, self.torchLit, met else { return }
+                guard let self = self, self.roomIsLit, met else { return }
                 self.useVerticalConnection(method: vMethod, from: room, to: vDestRoom)
             }
         }
@@ -14340,7 +14340,7 @@ class GameEngine: ObservableObject {
         // Always set both branches (not just the truthy one) — otherwise a
         // stale NPC icon from a previous room lingers into rooms with no NPC,
         // since neither this render pass nor showMenuWithDirections clears it.
-        if let npc = room.npc, npcsEnabled, (torchLit || npc.hasBeenTalkedTo) {
+        if let npc = room.npc, npcsEnabled, (roomIsLit || npc.hasBeenTalkedTo) {
             let talkLabel = npc.hasBeenTalkedTo ? "Talk" : "Speak to \(npc.type.rawValue.components(separatedBy: " ").last ?? "Stranger")"
             DispatchQueue.main.async {
                 self.dpadNPCLabel = talkLabel
@@ -14362,7 +14362,7 @@ class GameEngine: ObservableObject {
            (room.cleared || room.encounter == nil) {
             DispatchQueue.main.async {
                 self.dpadTeleportHandler = { [weak self] in
-                    guard let self = self, self.torchLit else { return }
+                    guard let self = self, self.roomIsLit else { return }
                     self.useTeleportPad(from: room, to: destRoom)
                 }
             }
@@ -15502,6 +15502,18 @@ class GameEngine: ObservableObject {
         if let dungeon = dungeon {
             printExplorationMap()
             print("")
+        }
+
+        // Wall-mounted torches in a torchlit passage are visible, not hidden —
+        // taking a spare one is guaranteed, no perception roll needed.
+        if room.isTorchlit, let torchIdx = room.hiddenItems.firstIndex(where: { $0.name == "Torch" }) {
+            let item = room.hiddenItems.remove(at: torchIdx)
+            advanceTime(15)
+            let searchNarrative = "You search the torchlit \(room.name.lowercased())...\n  ...and take a spare torch from its wall bracket!"
+            showItemPickupMenu(item: item, source: "Wall bracket", narrative: searchNarrative) { [weak self] in
+                self?.showExplorationView()
+            }
+            return
         }
 
         let hasHiddenLoot = !room.hiddenItems.isEmpty || room.hiddenGold > 0

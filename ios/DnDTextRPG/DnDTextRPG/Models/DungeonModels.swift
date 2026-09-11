@@ -197,6 +197,12 @@ class Room: Identifiable, ObservableObject, Codable {
     /// or "levitation" (needs an available spell slot). nil if no vertical
     /// connection here.
     @Published var verticalMethod: String? = nil
+    /// Wall-mounted torches keep this passage lit on their own — its
+    /// description, exits, and contents are visible even with no torch of
+    /// your own (see GameEngine's roomIsLit), and searching it always
+    /// turns up spare torches to take. Only ever set on .corridor rooms
+    /// (see Dungeon.generateDungeon()'s room creation).
+    @Published var isTorchlit: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case id, x, y, roomType, name, roomDescription, exits, visited, cleared
@@ -205,6 +211,7 @@ class Room: Identifiable, ObservableObject, Codable {
         case riddleIndex, riddleResolved, doorLockIds, openedLocks
         case teleportDestinationRoomId
         case verticalDestinationRoomId, verticalMethod
+        case isTorchlit
     }
 
     init(id: Int, x: Int, y: Int, type: RoomType) {
@@ -236,6 +243,7 @@ class Room: Identifiable, ObservableObject, Codable {
         self.teleportDestinationRoomId = nil
         self.verticalDestinationRoomId = nil
         self.verticalMethod = nil
+        self.isTorchlit = false
     }
 
     required init(from decoder: Decoder) throws {
@@ -270,6 +278,7 @@ class Room: Identifiable, ObservableObject, Codable {
         teleportDestinationRoomId = try container.decodeIfPresent(Int.self, forKey: .teleportDestinationRoomId)
         verticalDestinationRoomId = try container.decodeIfPresent(Int.self, forKey: .verticalDestinationRoomId)
         verticalMethod = try container.decodeIfPresent(String.self, forKey: .verticalMethod)
+        isTorchlit = try container.decodeIfPresent(Bool.self, forKey: .isTorchlit) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -300,6 +309,7 @@ class Room: Identifiable, ObservableObject, Codable {
         try container.encode(doorLockIds, forKey: .doorLockIds)
         try container.encode(openedLocks, forKey: .openedLocks)
         try container.encodeIfPresent(teleportDestinationRoomId, forKey: .teleportDestinationRoomId)
+        try container.encode(isTorchlit, forKey: .isTorchlit)
     }
 
     static func generateName(for type: RoomType) -> String {
@@ -484,6 +494,20 @@ class Room: Identifiable, ObservableObject, Codable {
 
         return (items, gold)
     }
+
+    /// About 30% of corridors have wall-mounted torches that keep them lit
+    /// on their own — see the isTorchlit property. Corridors already have a
+    /// small independent chance of a torch as ordinary loot
+    /// (generateHiddenLoot); a torchlit one gets a couple more guaranteed
+    /// ones on top, since "there are lit torches here" should mean you can
+    /// actually take one, not just that the room looks nice.
+    static func rollIsTorchlit(roomType: RoomType) -> Bool {
+        roomType == .corridor && Int.random(in: 1...100) <= 30
+    }
+
+    static func torchlitBonusItems() -> [Item] {
+        (0..<Int.random(in: 1...2)).map { _ in ItemCatalog.torch() }
+    }
 }
 
 // MARK: - Dungeon
@@ -622,6 +646,10 @@ class Dungeon: ObservableObject, Codable {
                     let hiddenLoot = Room.generateHiddenLoot(roomType: roomType, level: level)
                     newRoom.hiddenItems = hiddenLoot.items
                     newRoom.hiddenGold = hiddenLoot.gold
+                    newRoom.isTorchlit = Room.rollIsTorchlit(roomType: roomType)
+                    if newRoom.isTorchlit {
+                        newRoom.hiddenItems.append(contentsOf: Room.torchlitBonusItems())
+                    }
 
                     rooms[roomId] = newRoom
                     frontier.append((newX, newY))
@@ -874,6 +902,10 @@ class Dungeon: ObservableObject, Codable {
             let hiddenLoot = Room.generateHiddenLoot(roomType: roomType, level: level)
             newRoom.hiddenItems = hiddenLoot.items
             newRoom.hiddenGold = hiddenLoot.gold
+            newRoom.isTorchlit = Room.rollIsTorchlit(roomType: roomType)
+            if newRoom.isTorchlit {
+                newRoom.hiddenItems.append(contentsOf: Room.torchlitBonusItems())
+            }
 
             rooms[nextRoomId] = newRoom
             nextRoomId += 1
@@ -1178,6 +1210,9 @@ class Dungeon: ObservableObject, Codable {
         } else if let label = hereLabels[current.roomType.symbol] {
             hereSymbols.append((current.roomType.symbol, label))
         }
+        // Only worth flagging when it's actually doing something — if the
+        // party's own torch is already lit, wall-mounted torches are redundant info.
+        if current.isTorchlit && !torchLit { hereSymbols.append(("T", "Torchlit")) }
         if !current.cleared && current.encounter != nil { hereSymbols.append(("!", "Danger")) }
         if current.trainer != nil { hereSymbols.append(("G", "Gym")) }
         if current.npc != nil && !(current.npc?.hasBeenTalkedTo ?? true) { hereSymbols.append(("N", "NPC")) }
