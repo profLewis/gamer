@@ -25688,7 +25688,12 @@ class GameEngine: ObservableObject {
     private func askForNewSlotName() {
         let rawDefault = "\(party.first?.name ?? "Unknown") — \(dungeon?.name ?? "Dungeon")"
         let defaultName = String(rawDefault.prefix(Self.maxSlotNameLength))
-        promptTextWithMenu("Enter a name, or use default:", options: [defaultName])
+        // Explicit "Quit Without Saving" alongside the default-name button
+        // — without it, a player who's never saved before had no way to
+        // reach that option at all (X here only cancels back to the game,
+        // it doesn't quit, and there's no active slot yet to route them
+        // through the main Save/Quit screen's own Quit-Save button).
+        promptTextWithMenu("Enter a name, or use default:", options: [defaultName, "Quit Without Saving"])
 
         closeHandler = { [weak self] in
             self?.showExplorationView()
@@ -25699,6 +25704,8 @@ class GameEngine: ObservableObject {
                 let slotName = self.uniqueSlotName(defaultName)
                 let slotId = UUID()
                 self.performSave(slotId: slotId, slotName: slotName)
+            } else if choice == 2 {
+                self.confirmQuitWithoutSaving()
             }
         }
 
@@ -25748,7 +25755,7 @@ class GameEngine: ObservableObject {
 
     private func showOverwriteSlotMenu(slots: [SaveSlot]) {
         print("All \(SaveGameManager.maxSlots) adventure slots are full.", color: .yellow)
-        print("Choose an adventure to replace:", color: .cyan)
+        print("Choose an adventure to replace, or quit without saving:", color: .cyan)
         print("")
 
         let dateFormatter = DateFormatter()
@@ -25763,37 +25770,55 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        let options = slots.map { "Replace: \($0.slotName)" }
+        // A full slot list must never leave "quit without saving" as the
+        // only unreachable option — replacing a save is a much bigger
+        // commitment than just walking away from this run unsaved.
+        var options = slots.map { "Replace: \($0.slotName)" }
+        let quitIndex = options.count
+        options.append("Quit Without Saving")
+        options.append("?")
+        options.append("< Back")
 
         showMenu(options)
         closeHandler = { [weak self] in self?.showExplorationView() }
 
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
-            guard choice > 0 && choice <= slots.count else { return }
-            let selected = slots[choice - 1]
+            let idx = choice - 1
+            guard idx >= 0 && idx < options.count else { return }
+            if idx < slots.count {
+                let selected = slots[idx]
 
-            self.clearTerminal()
-            self.print("Replace slot:", color: .yellow, bold: true)
-            self.print("  \(selected.slotName) (\(selected.breakpointCount) saves)", color: .yellow)
-            self.print("  \(selected.latest.partyDescription)", color: .dimGreen)
-            self.print("")
+                self.clearTerminal()
+                self.print("Replace slot:", color: .yellow, bold: true)
+                self.print("  \(selected.slotName) (\(selected.breakpointCount) saves)", color: .yellow)
+                self.print("  \(selected.latest.partyDescription)", color: .dimGreen)
+                self.print("")
 
-            self.showMenu(["Yes, Replace", "Different Slot"])
-            self.closeHandler = { [weak self] in self?.showExplorationView() }
-            self.menuHandler = { [weak self] confirm in
-                guard let self = self else { return }
-                switch confirm {
-                case 1:
-                    SaveGameManager.shared.deleteSlot(slotId: selected.slotId)
-                    self.askForNewSlotName()
-                case 2:
-                    self.clearTerminal()
-                    self.printTitle("Save/Quit")
-                    self.showOverwriteSlotMenu(slots: slots)
-                default:
-                    self.showExplorationView()
+                self.showMenu(["Yes, Replace", "Different Slot", "Quit Without Saving"])
+                self.closeHandler = { [weak self] in self?.showExplorationView() }
+                self.menuHandler = { [weak self] confirm in
+                    guard let self = self else { return }
+                    switch confirm {
+                    case 1:
+                        SaveGameManager.shared.deleteSlot(slotId: selected.slotId)
+                        self.askForNewSlotName()
+                    case 2:
+                        self.clearTerminal()
+                        self.printTitle("Save/Quit")
+                        self.showOverwriteSlotMenu(slots: slots)
+                    case 3:
+                        self.confirmQuitWithoutSaving()
+                    default:
+                        self.showExplorationView()
+                    }
                 }
+            } else if idx == quitIndex {
+                self.confirmQuitWithoutSaving()
+            } else if idx == quitIndex + 1 {
+                self.showSaveHelp()
+            } else {
+                self.showExplorationView()
             }
         }
     }

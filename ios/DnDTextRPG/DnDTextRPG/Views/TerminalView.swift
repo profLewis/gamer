@@ -117,32 +117,12 @@ struct TerminalView: View {
                         }
                         .background(terminalBackground)
 
-                        // Resize control — a drag handle was fiddly to grab
-                        // precisely and felt jumpy against the scroll
-                        // gestures right next to it. Tapping instead cycles
-                        // through the same fixed sizes as Settings > Gameplay
-                        // > Map Radius > Panel Size (kept in sync with
-                        // GameEngine.showMapRadiusMenu's panelSteps) — no
-                        // gesture to fumble, and the current size is always
-                        // legible right on the button.
-                        Button(action: {
-                            let steps: [CGFloat] = [0, 120, 180, 260, 340]
-                            let currentIdx = steps.firstIndex(where: { $0 >= gameEngine.mapPanelHeight }) ?? 0
-                            gameEngine.mapPanelHeight = steps[(currentIdx + 1) % steps.count]
-                        }) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "arrow.up.and.down.text.horizontal")
-                                    .font(.system(size: 9))
-                                Text(gameEngine.mapPanelHeight > 0 ? "Panel: \(Int(gameEngine.mapPanelHeight))pt" : "Panel: Auto")
-                                    .font(.system(size: 9, design: .monospaced))
-                            }
-                            .foregroundColor(terminalDarkGreen)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 18)
-                        }
-                        .buttonStyle(.plain)
-                        .background(terminalBackground)
-
+                        // No on-screen resize control here — a drag handle
+                        // was fiddly against the nearby scroll gestures, and
+                        // even a plain tap-to-cycle button was still visual
+                        // clutter sitting on every screen with a map. Sizing
+                        // lives entirely in Settings > Gameplay > Map Radius
+                        // > Panel Size instead, out of the way until wanted.
                         Rectangle()
                             .fill(terminalDarkGreen.opacity(0.4))
                             .frame(height: 1)
