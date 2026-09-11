@@ -40,6 +40,12 @@ class GameEngine: ObservableObject {
     // MARK: - Published Properties
 
     @Published var terminalLines: [TerminalLine] = []
+    /// The dungeon map, when one is showing — kept separate from
+    /// terminalLines so TerminalView can pin it in its own fixed pane at
+    /// the top of the screen instead of it living at the top of the
+    /// scrolling text, where enough button rows below could push it (or
+    /// scrolling-to-bottom after new text) out of view. See printMap().
+    @Published var pinnedMapLines: [TerminalLine] = []
     @Published var currentMenuOptions: [MenuOption] = []
     @Published var directionExits: [Direction: Bool] = [:]  // direction -> enabled
     @Published var securedExits: Set<Direction> = []  // directions that are barred
@@ -653,6 +659,22 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Like printLines, but for the dungeon map specifically — goes to the
+    /// pinned map pane (see pinnedMapLines) instead of the scrolling
+    /// terminal text, so it stays on screen regardless of how much text or
+    /// how many button rows follow it. Replaces (not appends), since a map
+    /// redraw always represents the current room, not a running log.
+    func printMap(_ lines: [String], color: TerminalColor = .green, size: CGFloat = 14) {
+        let maxLen = lines.map { $0.count }.max() ?? 0
+        let mapped = lines.map { line -> TerminalLine in
+            let padded = maxLen > 0 ? line.padding(toLength: maxLen, withPad: " ", startingAt: 0) : line
+            return TerminalLine(padded, color: color, size: size)
+        }
+        runOnMain {
+            self.pinnedMapLines = mapped
+        }
+    }
+
     /// IDs of characters the local player directly controls
     private var localControlledCharIds: Set<UUID> {
         if isMultiplayer, let state = multiplayerState, let myID = localPlayerID,
@@ -891,6 +913,7 @@ class GameEngine: ObservableObject {
         undoRedoFeedback = nil
         runOnMain {
             self.terminalLines.removeAll()
+            self.pinnedMapLines.removeAll()
             // Same reasoning as menuHandler above: if a guard-return ever
             // happens between clearTerminal() and a screen's own showMenu
             // call, this stops the PREVIOUS screen's buttons (now bound to
@@ -2063,7 +2086,7 @@ class GameEngine: ObservableObject {
         guard let dungeon = dungeon else { return }
         let (radius, verticalRadius, compact) = bestMapRadius()
         let mapLines = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: verticalRadius, legendMaxSymbols: mapLegendMaxSymbols)
-        printLines(mapLines, color: torchMapColor, size: mapFontSize)
+        printMap(mapLines, color: torchMapColor, size: mapFontSize)
     }
 
     /// Fixed-width card position label, e.g. " 3/30" always same length as "30/30"
@@ -14141,7 +14164,7 @@ class GameEngine: ObservableObject {
         // Dynamically size the map to fill screen without scrolling
         let (radius, verticalRadius, compact) = bestMapRadius()
         let mapLines = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: verticalRadius, legendMaxSymbols: mapLegendMaxSymbols)
-        printLines(mapLines, color: torchMapColor, size: mapFontSize)
+        printMap(mapLines, color: torchMapColor, size: mapFontSize)
         if !torchLit {
             if partyHasTorch() {
                 print("  Torch unlit — illuminate it to see further!", color: .yellow)
@@ -15331,7 +15354,7 @@ class GameEngine: ObservableObject {
         // Same layout as exploration view — map, room info, party status
         let (radius, verticalRadius, compact) = bestMapRadius()
         let mapLines = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: verticalRadius, legendMaxSymbols: mapLegendMaxSymbols)
-        printLines(mapLines, color: torchMapColor, size: mapFontSize)
+        printMap(mapLines, color: torchMapColor, size: mapFontSize)
         if !torchLit {
             if partyHasTorch() {
                 print("  Torch unlit — illuminate it to see further!", color: .yellow)
@@ -27131,7 +27154,7 @@ class GameEngine: ObservableObject {
 
             // Show map for spatial context
             let mapLines = state.dungeon.getMapDisplay(visibilityRadius: state.torchLit ? mapRadius : 0, torchLit: state.torchLit, legendMaxSymbols: mapLegendMaxSymbols)
-            printLines(mapLines, color: state.torchLit ? .brightGreen : .gray, size: mapFontSize)
+            printMap(mapLines, color: state.torchLit ? .brightGreen : .gray, size: mapFontSize)
             print("")
 
             // Show recent combat actions
@@ -27188,7 +27211,7 @@ class GameEngine: ObservableObject {
 
             // Show map
             let mapLines = state.dungeon.getMapDisplay(visibilityRadius: state.torchLit ? mapRadius : 0, torchLit: state.torchLit, legendMaxSymbols: mapLegendMaxSymbols)
-            printLines(mapLines, color: state.torchLit ? .brightGreen : .gray, size: mapFontSize)
+            printMap(mapLines, color: state.torchLit ? .brightGreen : .gray, size: mapFontSize)
             print("")
 
             printTitle("Your Turn!")
@@ -27796,7 +27819,7 @@ class GameEngine: ObservableObject {
                     // Always show map for spatial context
                     if let dungeon = self.dungeon {
                         let mapLines = dungeon.getMapDisplay(visibilityRadius: self.effectiveMapRadius(), torchLit: self.torchLit, legendMaxSymbols: self.mapLegendMaxSymbols)
-                        printLines(mapLines, color: self.torchMapColor, size: self.mapFontSize)
+                        printMap(mapLines, color: self.torchMapColor, size: self.mapFontSize)
                         print("")
                     }
 
@@ -27909,7 +27932,7 @@ class GameEngine: ObservableObject {
         // Always show map
         if let dungeon = self.dungeon {
             let mapLines = dungeon.getMapDisplay(visibilityRadius: effectiveMapRadius(), torchLit: torchLit, legendMaxSymbols: mapLegendMaxSymbols)
-            printLines(mapLines, color: torchMapColor, size: mapFontSize)
+            printMap(mapLines, color: torchMapColor, size: mapFontSize)
             print("")
         }
 
@@ -28064,7 +28087,7 @@ class GameEngine: ObservableObject {
                     // Show map
                     if let dungeon = self.dungeon {
                         let mapLines = dungeon.getMapDisplay(visibilityRadius: self.effectiveMapRadius(), torchLit: freshState.torchLit, legendMaxSymbols: self.mapLegendMaxSymbols)
-                        printLines(mapLines, color: freshState.torchLit ? .brightGreen : .gray, size: self.mapFontSize)
+                        printMap(mapLines, color: freshState.torchLit ? .brightGreen : .gray, size: self.mapFontSize)
                         print("")
                     }
 
@@ -28608,7 +28631,7 @@ class GameEngine: ObservableObject {
                     self.clearTerminal()
                     self.printTitle("Map")
                     self.print("")
-                    self.printLines(mapLines, color: self.torchMapColor, size: self.mapFontSize)
+                    self.printMap(mapLines, color: self.torchMapColor, size: self.mapFontSize)
                     self.print("")
                     self.print("  \(roomName)", color: .brightGreen, bold: true)
                     self.print("  Exits: \(exits)", color: .dimGreen)

@@ -85,6 +85,28 @@ struct TerminalView: View {
         GeometryReader { geometry in
             ZStack {
                 VStack(spacing: 0) {
+                    // Pinned map pane — kept separate from the scrolling text
+                    // below (see GameEngine.pinnedMapLines/printMap) so it
+                    // always stays fully visible, instead of living at the
+                    // top of the scrolling text where a screen with several
+                    // button rows (shrinking the text area) or an
+                    // auto-scroll-to-bottom could chop its top rows off.
+                    if !gameEngine.pinnedMapLines.isEmpty {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(gameEngine.pinnedMapLines) { line in
+                                TerminalLineView(line: line, scale: scale)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 8)
+                        .padding(.top, 4)
+                        .padding(.bottom, 2)
+                        .background(terminalBackground)
+                        Rectangle()
+                            .fill(terminalDarkGreen.opacity(0.4))
+                            .frame(height: 1)
+                    }
+
                     // Terminal output area
                     ScrollViewReader { scrollProxy in
                         ScrollView {
