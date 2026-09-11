@@ -1768,11 +1768,14 @@ class GameEngine: ObservableObject {
     /// Auto-assign button tint based on text content
     /// Whether a pinned button is safe to squeeze into the compact <</>>/?
     /// nav cell (which has only 3 physical slots) instead of rendering as
-    /// its own regular button. Only "?" and "< Back" qualify — TerminalView
-    /// prioritises << / >> / Back over "?" if all 4 would ever collide on
-    /// one page, so Back is never the one silently dropped.
+    /// its own regular (numbered) button. "?", "< Back", and "Manage"
+    /// qualify — TerminalView prioritises << / >> / Back over "?"/"Manage"
+    /// if all would ever collide on one page, so Back is never the one
+    /// silently dropped; "Manage" (a secondary, low-frequency action) is
+    /// the one that can go unreached on a page where the cell is already
+    /// full, in favour of the two things that matter more everywhere.
     static func isCompactPinnedNavText(_ text: String) -> Bool {
-        text == "?" || text == "?\u{0338}" || text == "< Back"
+        text == "?" || text == "?\u{0338}" || text == "< Back" || text == "Manage"
     }
 
     static func autoTint(_ text: String) -> MenuTint {
@@ -9628,11 +9631,11 @@ class GameEngine: ObservableObject {
             print("  Complete a dungeon to earn your place!", color: .dimGreen)
             print("")
 
-            showMenu(["Manage Saves", "< Back"])
+            showMenu(["Manage", "< Back"])
             closeHandler = { [weak self] in self?.showMainMenu() }
             menuHandler = { [weak self] choice in
                 guard let self = self else { return }
-                if choice == 1 { self.showLoadGameMenu(returnTo: .mainMenu) } else { self.showMainMenu() }
+                if choice == 1 { self.showHallOfFameManage() } else { self.showMainMenu() }
             }
         } else {
             let dateFormatter = DateFormatter()
@@ -9661,21 +9664,40 @@ class GameEngine: ObservableObject {
                 options.append("\(name) Lv.\(entry.dungeonLevel) \(outcomeTag)")
             }
 
-            printWrapped("Tap an entry to read its tale — the tale screen has a Relive/Rewrite button if a save is linked. 'Manage Saves' browses everything, including adventures still in progress.", indent: 2, color: .dimGreen)
+            printWrapped("Tap an entry to read its tale — the tale screen has a Relive/Rewrite button if a save is linked.", indent: 2, color: .dimGreen)
             print("")
 
-            showPaginatedMenuOptions(options, pinned: ["?", "Manage Saves", "< Back"], handler: { [weak self] idx in
+            // "Manage Saves" lives behind the non-numbered "Manage" button
+            // (see showHallOfFameManage) instead of being pinned with a
+            // number past the end of the list regardless of page, or
+            // appended to the list itself where a long history would bury
+            // it behind however many pages that needs.
+            showPaginatedMenuOptions(options, pinned: ["?", "Manage", "< Back"], handler: { [weak self] idx in
                 guard let self = self, idx >= 0 && idx < entries.count else { return }
                 self.showHallOfFameDetail(entries[idx], entries: entries, index: idx)
             }, pinnedHandler: { [weak self] choice in
                 guard let self = self else { return }
                 switch choice {
                 case 0: self.showHallOfFameHelp()
-                case 1: self.showLoadGameMenu(returnTo: .mainMenu)
+                case 1: self.showHallOfFameManage()
                 default: self.showMainMenu()
                 }
             })
             closeHandler = { [weak self] in self?.showMainMenu() }
+        }
+    }
+
+    /// Secondary-actions sub-screen for the (game) Hall of Fame, reached via
+    /// its non-numbered "Manage" button.
+    private func showHallOfFameManage() {
+        clearTerminal()
+        printTitle("Manage")
+        print("")
+        showMenu(["Manage Saves", "< Back"])
+        closeHandler = { [weak self] in self?.showHallOfFame() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 { self.showLoadGameMenu(returnTo: .mainMenu) } else { self.showHallOfFame() }
         }
     }
 
@@ -23591,11 +23613,7 @@ class GameEngine: ObservableObject {
         let entries = CharacterHallOfFameManager.shared.listEntries()
         let backTarget = onBack ?? { [weak self] in self?.showPlayMenu() }
         let manageAction: () -> Void = { [weak self] in
-            self?.showCharacterRoster(loadHandler: loadHandler, onBack: { self?.showCharacterHallOfFame(loadHandler: loadHandler, onBack: onBack, createNewHandler: createNewHandler) })
-        }
-        var pinnedOptions = ["Manage Saves", "< Back"]
-        if let createNewHandler = createNewHandler {
-            pinnedOptions.insert("Create New", at: 0)
+            self?.showCharacterHallOfFameManage(loadHandler: loadHandler, onBack: onBack, createNewHandler: createNewHandler, defaultCharacterId: defaultCharacterId)
         }
 
         if entries.isEmpty {
@@ -23603,12 +23621,9 @@ class GameEngine: ObservableObject {
             print("")
             print("  Every survivor of a victorious adventure is inducted here, with their level, gear, and gold saved to your Character Roster.", color: .dimGreen)
             print("")
-            showMenu(pinnedOptions)
+            showMenu(["Manage", "< Back"])
             menuHandler = { choice in
-                let text = pinnedOptions[choice - 1]
-                if text == "Create New" { createNewHandler?() }
-                else if text == "Manage Saves" { manageAction() }
-                else { backTarget() }
+                if choice == 1 { manageAction() } else { backTarget() }
             }
             closeHandler = backTarget
             return
@@ -23632,7 +23647,14 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        showPaginatedMenuOptions(options, pinned: pinnedOptions, defaultIndex: defaultIdx, handler: { [weak self] idx in
+        // "Create New"/"Manage Saves" live behind the non-numbered "Manage"
+        // button (see showCharacterHallOfFameManage) rather than either
+        // (a) pinned buttons numbered past the end of the list regardless
+        // of page, which used to collide/renumber confusingly, or (b)
+        // appended to the list itself, which would bury them at the end of
+        // however many pages a long roster needs. "Manage" is always one
+        // tap away on every page instead.
+        showPaginatedMenuOptions(options, pinned: ["Manage", "< Back"], defaultIndex: defaultIdx, handler: { [weak self] idx in
             guard let self = self, idx >= 0 && idx < entries.count else { return }
             guard let linkedId = entries[idx].linkedCharacterId,
                   let record = CharacterLibraryManager.shared.listCharacters().first(where: { $0.character.id == linkedId }) else {
@@ -23647,12 +23669,43 @@ class GameEngine: ObservableObject {
                 self.showCharacterRosterActions(record: record, loadHandler: nil, onBack: { self.showCharacterHallOfFame(onBack: onBack) })
             }
         }, pinnedHandler: { choice in
-            let text = pinnedOptions[choice]
-            if text == "Create New" { createNewHandler?() }
-            else if text == "Manage Saves" { manageAction() }
-            else { backTarget() }
+            if choice == 0 { manageAction() } else { backTarget() }
         })
         closeHandler = backTarget
+    }
+
+    /// Secondary-actions sub-screen for the Character Hall of Fame, reached
+    /// via its non-numbered "Manage" button — keeps "Create New"/"Manage
+    /// Saves" off the roster's own numbering entirely, and always one tap
+    /// away regardless of how many pages the roster itself needs.
+    private func showCharacterHallOfFameManage(loadHandler: ((Character) -> Void)?, onBack: (() -> Void)?,
+                                                createNewHandler: (() -> Void)?, defaultCharacterId: UUID?) {
+        let backToList: () -> Void = { [weak self] in
+            self?.showCharacterHallOfFame(loadHandler: loadHandler, onBack: onBack, createNewHandler: createNewHandler, defaultCharacterId: defaultCharacterId)
+        }
+
+        clearTerminal()
+        printTitle("Manage")
+        print("")
+
+        var opts: [String] = []
+        if createNewHandler != nil { opts.append("Create New") }
+        opts.append("Manage Saves")
+        opts.append("< Back")
+
+        showMenu(opts)
+        closeHandler = backToList
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= opts.count else { return }
+            switch opts[choice - 1] {
+            case "Create New":
+                createNewHandler?()
+            case "Manage Saves":
+                self.showCharacterRoster(loadHandler: loadHandler, onBack: backToList)
+            default:
+                backToList()
+            }
+        }
     }
 
     private func recordHallOfFame(outcome: RunOutcome) {
