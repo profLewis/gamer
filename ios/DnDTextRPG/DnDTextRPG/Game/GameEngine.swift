@@ -1769,11 +1769,13 @@ class GameEngine: ObservableObject {
     /// Whether a pinned button is safe to squeeze into the compact <</>>/?
     /// nav cell (which has only 3 physical slots) instead of rendering as
     /// its own regular (numbered) button. "?", "< Back", and "Manage"
-    /// qualify — TerminalView prioritises << / >> / Back over "?"/"Manage"
-    /// if all would ever collide on one page, so Back is never the one
-    /// silently dropped; "Manage" (a secondary, low-frequency action) is
-    /// the one that can go unreached on a page where the cell is already
-    /// full, in favour of the two things that matter more everywhere.
+    /// qualify. TerminalView gives << / < Back / ? / >> fixed, consistent
+    /// slots (leave/back on the left, ? in the middle, >> on the right);
+    /// << and "< Back" share the left slot and are never both shown at
+    /// once — << wins when both would apply, since paging back to page 0
+    /// already gets you out. "Manage" is the one that can go unreached on a
+    /// page where the cell is already full, in favour of the things that
+    /// matter more everywhere.
     static func isCompactPinnedNavText(_ text: String) -> Bool {
         text == "?" || text == "?\u{0338}" || text == "< Back" || text == "Manage"
     }
@@ -6465,6 +6467,15 @@ class GameEngine: ObservableObject {
                 self.recordSettingChange(screen: "s:gameplay", key: "poison_enabled", name: "Poison")
                 self.poisonEnabled.toggle()
                 self.showGameplaySettings(page: currentPage)
+            } else if selected.hasPrefix("Multi-Shop") {
+                // Must be checked before the plain "Multi" (multiplayer)
+                // branch below — "Multi-Shop On/Off" also starts with
+                // "Multi", so it was always matching that branch first and
+                // toggling multiplayerEnabled instead of multipleShopsEnabled
+                // whenever this button was tapped.
+                self.recordSettingChange(screen: "s:gameplay", key: "multiple_shops_enabled", name: "Multi-Shop")
+                self.multipleShopsEnabled.toggle()
+                self.showGameplaySettings(page: currentPage)
             } else if selected.hasPrefix("Multi") {
                 self.recordSettingChange(screen: "s:gameplay", key: "multiplayer_enabled", name: "Multi")
                 self.multiplayerEnabled.toggle()
@@ -6487,10 +6498,6 @@ class GameEngine: ObservableObject {
                 self.recordSettingChange(screen: "s:gameplay", key: "blinkingCursorEnabled", name: "Cursor")
                 self.blinkingCursorEnabled.toggle()
                 UserDefaults.standard.set(self.blinkingCursorEnabled, forKey: "blinkingCursorEnabled")
-                self.showGameplaySettings(page: currentPage)
-            } else if selected.hasPrefix("Multi-Shop") {
-                self.recordSettingChange(screen: "s:gameplay", key: "multiple_shops_enabled", name: "Multi-Shop")
-                self.multipleShopsEnabled.toggle()
                 self.showGameplaySettings(page: currentPage)
             } else if selected.hasPrefix("Undo/Redo") {
                 self.recordSettingChange(screen: "s:gameplay", key: "undoRedoEnabled", name: "Undo/Redo")
@@ -9674,7 +9681,8 @@ class GameEngine: ObservableObject {
             // it behind however many pages that needs.
             showPaginatedMenuOptions(options, pinned: ["?", "Manage", "< Back"], handler: { [weak self] idx in
                 guard let self = self, idx >= 0 && idx < entries.count else { return }
-                self.showHallOfFameDetail(entries[idx], entries: entries, index: idx)
+                let tales = entries.map { AdventureTaleData(hof: $0) }
+                self.showAdventureTale(tales[idx], tales: tales, index: idx)
             }, pinnedHandler: { [weak self] choice in
                 guard let self = self else { return }
                 switch choice {
@@ -9805,9 +9813,11 @@ class GameEngine: ObservableObject {
                 self?.showTaleSelector(entries: entries, selectedIndex: next)
             case "Surprise Me":
                 let rand = Int.random(in: 0..<count)
-                self?.showHallOfFameDetail(entries[rand], entries: entries, index: rand)
+                let tales = entries.map { AdventureTaleData(hof: $0) }
+                self?.showAdventureTale(tales[rand], tales: tales, index: rand)
             case "Read Tale":
-                self?.showHallOfFameDetail(entries[selectedIndex], entries: entries, index: selectedIndex)
+                let tales = entries.map { AdventureTaleData(hof: $0) }
+                self?.showAdventureTale(tales[selectedIndex], tales: tales, index: selectedIndex)
             default:
                 self?.showHallOfFame()
             }
@@ -9836,35 +9846,91 @@ class GameEngine: ObservableObject {
 
     /// Generate an exciting narrative summary of a Hall of Fame entry
     /// When entries/index provided, enables swipe navigation between tales
+    /// Everything showAdventureTale() needs to narrate an adventure — built
+    /// either from a completed HallOfFameEntry, or directly from an
+    /// in-progress SaveGame (outcome nil in that case). This is what makes
+    /// the exact same narrative screen, with the exact same style, apply to
+    /// every save equally — a still-unfolding adventure and a completed one
+    /// differ only in outcome being nil vs set, not in which screen or
+    /// wording shows up.
+    private struct AdventureTaleData {
+        let dungeonName: String
+        let dungeonLevel: Int
+        let partyNames: [String]
+        let partyDescription: String
+        let outcome: RunOutcome?  // nil = still in progress
+        let goldCollected: Int
+        let monstersSlain: Int
+        let combatsWon: Int
+        let roomsExplored: Int
+        let totalRooms: Int
+        let gameTimeMinutes: Int
+        let date: Date
+        let score: Int?  // nil when outcome is nil — no final score yet
+        let saveGameId: UUID?
+
+        init(hof entry: HallOfFameEntry) {
+            dungeonName = entry.dungeonName
+            dungeonLevel = entry.dungeonLevel
+            partyNames = entry.partyNames
+            partyDescription = entry.partyDescription
+            outcome = entry.outcome
+            goldCollected = entry.goldCollected
+            monstersSlain = entry.monstersSlain
+            combatsWon = entry.combatsWon
+            roomsExplored = entry.roomsExplored
+            totalRooms = entry.totalRooms
+            gameTimeMinutes = entry.gameTimeMinutes
+            date = entry.date
+            score = entry.score
+            saveGameId = entry.saveGameId
+        }
+
+        init(inProgress save: SaveGame) {
+            dungeonName = save.dungeonName
+            dungeonLevel = save.dungeonLevel
+            partyNames = save.party.map { $0.name }
+            partyDescription = save.partyDescription
+            outcome = nil
+            goldCollected = save.party.reduce(0) { $0 + $1.gold }
+            monstersSlain = save.monstersSlain
+            combatsWon = save.combatsWon
+            roomsExplored = save.dungeon.rooms.values.filter { $0.visited }.count
+            totalRooms = save.dungeon.rooms.count
+            gameTimeMinutes = save.gameTimeMinutes
+            date = save.savedAt
+            score = nil
+            saveGameId = save.id
+        }
+    }
+
     /// - onBack: where "< Back"/closeHandler go — defaults to the standalone
-    ///   Hall of Fame screen; showHallOfFameEntryChoice (reached from the
-    ///   unified Continue Adventure list) passes its own so backing out
-    ///   returns there instead.
-    private func showHallOfFameDetail(_ entry: HallOfFameEntry, entries: [HallOfFameEntry] = [], index: Int = 0, onBack: (() -> Void)? = nil) {
+    ///   Hall of Fame screen.
+    private func showAdventureTale(_ tale: AdventureTaleData, tales: [AdventureTaleData] = [], index: Int = 0, onBack: (() -> Void)? = nil) {
         let backTarget = onBack ?? { [weak self] in self?.showHallOfFame() }
         clearTerminal()
 
-        let isVictory = entry.outcome == .victory
-
-        // Show appropriate header art
-        if isVictory {
-            printLines(asciiTrophy, color: .yellow)
-        } else {
-            printLines(asciiSkull, color: .red)
+        // Show appropriate header art — neither trophy nor skull fits an
+        // adventure that hasn't ended yet.
+        switch tale.outcome {
+        case .victory: printLines(asciiTrophy, color: .yellow)
+        case .defeat: printLines(asciiSkull, color: .red)
+        case nil: break
         }
         print("")
 
         // Title
-        let titleColor: TerminalColor = isVictory ? .yellow : .red
-        printTitle(entry.dungeonName)
-        print("  Level \(entry.dungeonLevel) — \(isVictory ? "VICTORY" : "DEFEAT")", color: titleColor, bold: true)
+        let titleColor: TerminalColor = tale.outcome == .victory ? .yellow : (tale.outcome == .defeat ? .red : .cyan)
+        let statusWord = tale.outcome == .victory ? "VICTORY" : (tale.outcome == .defeat ? "DEFEAT" : "IN PROGRESS")
+        printTitle(tale.dungeonName)
+        print("  Level \(tale.dungeonLevel) — \(statusWord)", color: titleColor, bold: true)
         print("")
 
         // The party
         print("  THE PARTY", color: .cyan, bold: true)
 
         // Parse class from partyDescription and show art side-by-side
-        let members = entry.partyDescription.components(separatedBy: ", ")
+        let members = tale.partyDescription.components(separatedBy: ", ")
         var partyClasses: [CharacterClass] = []
         for member in members {
             // Format: "Name (Class)"
@@ -9910,33 +9976,33 @@ class GameEngine: ObservableObject {
         print("  THE TALE", color: .cyan, bold: true)
         print("")
 
-        let day = entry.gameTimeMinutes / 1440 + 1
-        let hours = (entry.gameTimeMinutes % 1440) / 60
-        let explorationPct = entry.totalRooms > 0 ? (entry.roomsExplored * 100 / entry.totalRooms) : 0
+        let day = tale.gameTimeMinutes / 1440 + 1
+        let hours = (tale.gameTimeMinutes % 1440) / 60
+        let explorationPct = tale.totalRooms > 0 ? (tale.roomsExplored * 100 / tale.totalRooms) : 0
 
         // Opening
-        let partySize = entry.partyNames.count
-        let firstNames = entry.partyNames.map { $0.components(separatedBy: " ").first ?? $0 }
+        let partySize = tale.partyNames.count
+        let firstNames = tale.partyNames.map { $0.components(separatedBy: " ").first ?? $0 }
         let heroList = firstNames.count <= 2
             ? firstNames.joined(separator: " and ")
             : firstNames.dropLast().joined(separator: ", ") + ", and " + (firstNames.last ?? "")
 
-        printWrapped("On a \(day > 1 ? "fateful" : "bold") day, \(heroList) \(partySize == 1 ? "descended" : "descended together") into the depths of \(entry.dungeonName).", indent: 4, color: .green)
+        printWrapped("On a \(day > 1 ? "fateful" : "bold") day, \(heroList) \(partySize == 1 ? "descended" : "descended together") into the depths of \(tale.dungeonName).", indent: 4, color: .green)
         print("")
 
         // Combat narrative
-        if entry.monstersSlain > 0 {
+        if tale.monstersSlain > 0 {
             let combatWord: String
-            if entry.monstersSlain >= 15 { combatWord = "carved a bloody path through" }
-            else if entry.monstersSlain >= 8 { combatWord = "fought valiantly against" }
+            if tale.monstersSlain >= 15 { combatWord = "carved a bloody path through" }
+            else if tale.monstersSlain >= 8 { combatWord = "fought valiantly against" }
             else { combatWord = "clashed with" }
 
-            printWrapped("They \(combatWord) \(entry.monstersSlain) creature\(entry.monstersSlain == 1 ? "" : "s"), winning \(entry.combatsWon) battle\(entry.combatsWon == 1 ? "" : "s") in the darkness below.", indent: 4, color: .green)
+            printWrapped("They \(combatWord) \(tale.monstersSlain) creature\(tale.monstersSlain == 1 ? "" : "s"), winning \(tale.combatsWon) battle\(tale.combatsWon == 1 ? "" : "s") in the darkness below.", indent: 4, color: .green)
             print("")
         }
 
         // Show a random monster they might have faced
-        let possibleMonsters = MonsterType.forLevel(entry.dungeonLevel)
+        let possibleMonsters = MonsterType.forLevel(tale.dungeonLevel)
         if let monster = possibleMonsters.randomElement() {
             print("", color: .dimGreen)
             let art = monster.asciiArt
@@ -9949,67 +10015,79 @@ class GameEngine: ObservableObject {
 
         // Exploration
         if explorationPct == 100 {
-            printWrapped("Every chamber was explored, every corridor mapped — \(entry.roomsExplored) rooms laid bare.", indent: 4, color: .green)
+            printWrapped("Every chamber was explored, every corridor mapped — \(tale.roomsExplored) rooms laid bare.", indent: 4, color: .green)
         } else if explorationPct >= 75 {
-            printWrapped("They explored \(entry.roomsExplored) of \(entry.totalRooms) rooms, leaving few corners unsearched.", indent: 4, color: .green)
+            printWrapped("They explored \(tale.roomsExplored) of \(tale.totalRooms) rooms, leaving few corners unsearched.", indent: 4, color: .green)
         } else {
-            printWrapped("They ventured through \(entry.roomsExplored) of \(entry.totalRooms) rooms before fate intervened.", indent: 4, color: .green)
+            printWrapped("They ventured through \(tale.roomsExplored) of \(tale.totalRooms) rooms before fate intervened.", indent: 4, color: .green)
         }
         print("")
 
         // Treasure
-        if entry.goldCollected > 0 {
+        if tale.goldCollected > 0 {
             let treasureWord: String
-            if entry.goldCollected >= 300 { treasureWord = "amassed a king's ransom of" }
-            else if entry.goldCollected >= 100 { treasureWord = "gathered a respectable hoard of" }
+            if tale.goldCollected >= 300 { treasureWord = "amassed a king's ransom of" }
+            else if tale.goldCollected >= 100 { treasureWord = "gathered a respectable hoard of" }
             else { treasureWord = "scraped together" }
-            printWrapped("\(treasureWord) \(entry.goldCollected) gold pieces.", indent: 4, color: .yellow)
+            printWrapped("\(treasureWord) \(tale.goldCollected) gold pieces.", indent: 4, color: .yellow)
             print("")
         }
 
         // Duration
-        printWrapped("The adventure lasted \(day > 1 ? "\(day) days" : "\(hours) hours") in the depths.", indent: 4, color: .dimGreen)
+        printWrapped("The adventure \(tale.outcome == nil ? "has lasted" : "lasted") \(day > 1 ? "\(day) days" : "\(hours) hours") in the depths\(tale.outcome == nil ? " so far" : "").", indent: 4, color: .dimGreen)
         print("")
 
         // Ending
-        if isVictory {
+        switch tale.outcome {
+        case .victory:
             printLines(asciiSwords, color: .yellow)
             print("")
-            printWrapped("Against all odds, they emerged triumphant! The dungeon boss fell, and \(entry.dungeonName) was conquered. Their names echo in the halls of legend.", indent: 4, color: .yellow)
-        } else {
+            printWrapped("Against all odds, they emerged triumphant! The dungeon boss fell, and \(tale.dungeonName) was conquered. Their names echo in the halls of legend.", indent: 4, color: .yellow)
+            print("")
+        case .defeat:
             printWrapped("But the darkness proved too strong. One by one, they fell... Their sacrifice is remembered, even if their quest ended in shadow.", indent: 4, color: .red)
+            print("")
+        case nil:
+            printWrapped("Their story is still being written — the ending has yet to unfold.", indent: 4, color: .cyan)
+            print("")
         }
-        print("")
 
         // Score
-        print("  FINAL SCORE: \(entry.score) points", color: isVictory ? .yellow : .red, bold: true)
-        print("")
+        if let score = tale.score {
+            print("  FINAL SCORE: \(score) points", color: tale.outcome == .victory ? .yellow : .red, bold: true)
+            print("")
+        }
 
         let dateFormatter = DateFormatter()
         dateFormatter.dateStyle = .long
-        print("  Recorded: \(dateFormatter.string(from: entry.date))", color: .dimGreen)
+        print("  \(tale.outcome == nil ? "Last saved" : "Recorded"): \(dateFormatter.string(from: tale.date))", color: .dimGreen)
         print("")
 
-        // Hint about reliving the adventure
-        let hasSave = entry.saveGameId != nil && SaveGameManager.shared.load(id: entry.saveGameId!) != nil
+        // Hint about continuing/reliving the adventure
+        let hasSave = tale.saveGameId != nil && SaveGameManager.shared.load(id: tale.saveGameId!) != nil
         if hasSave {
-            if isVictory {
-                printWrapped("Long-press the title to relive this legendary quest...", indent: 4, color: .dimGreen)
-            } else {
-                printWrapped("Long-press the title to rewrite history — pick up one room before the fall...", indent: 4, color: .dimGreen)
+            switch tale.outcome {
+            case .victory: printWrapped("Long-press the title to relive this legendary quest...", indent: 4, color: .dimGreen)
+            case .defeat: printWrapped("Long-press the title to rewrite history — pick up one room before the fall...", indent: 4, color: .dimGreen)
+            case nil: printWrapped("Long-press the title to continue this adventure...", indent: 4, color: .dimGreen)
             }
             print("")
         }
         print("")
 
-        // Always offer a way back, plus Relive/Rewrite when a save is linked
+        // Always offer a way back, plus Relive/Rewrite/Continue when a save is linked
         if hasSave {
-            let label = isVictory ? "⚔ Relive" : "⚔ Rewrite"
+            let label: String
+            switch tale.outcome {
+            case .victory: label = "⚔ Relive"
+            case .defeat: label = "⚔ Rewrite"
+            case nil: label = "▶ Continue"
+            }
             showMenuOptions([MenuOption(label), MenuOption("< Back", tint: .navigation)])
             menuHandler = { [weak self] choice in
                 guard let self = self else { return }
                 if choice == 1 {
-                    self.loadHallOfFameSave(entry)
+                    self.showLoadTransition(tale)
                 } else {
                     SpeechEngine.shared.stop()
                     backTarget()
@@ -10032,54 +10110,56 @@ class GameEngine: ObservableObject {
         if hasSave {
             textLongPressHandler = { [weak self] lineIndex in
                 guard lineIndex < 10 else { return }  // title area only
-                self?.loadHallOfFameSave(entry)
+                self?.showLoadTransition(tale)
             }
         }
 
         // Swipe navigation between tales
-        let count = entries.count
+        let count = tales.count
         if count > 1 {
             cardPositionLabel = cardLabel(index + 1, of: count)
             swipeLeftHandler = { [weak self] in
                 SpeechEngine.shared.stop()
                 let next = (index + 1) % count
-                self?.showHallOfFameDetail(entries[next], entries: entries, index: next, onBack: onBack)
+                self?.showAdventureTale(tales[next], tales: tales, index: next, onBack: onBack)
             }
             swipeRightHandler = { [weak self] in
                 SpeechEngine.shared.stop()
                 let prev = (index - 1 + count) % count
-                self?.showHallOfFameDetail(entries[prev], entries: entries, index: prev, onBack: onBack)
+                self?.showAdventureTale(tales[prev], tales: tales, index: prev, onBack: onBack)
             }
             swipeRandomHandler = { [weak self] in
                 SpeechEngine.shared.stop()
                 let r = Int.random(in: 0..<count)
-                self?.showHallOfFameDetail(entries[r], entries: entries, index: r, onBack: onBack)
+                self?.showAdventureTale(tales[r], tales: tales, index: r, onBack: onBack)
             }
         }
 
         // If DM voice is on, narrate the tale
         if SpeechEngine.shared.isEnabled {
-            let heroList = entry.partyNames.map { $0.components(separatedBy: " ").first ?? $0 }.joined(separator: ", ")
-            var narration = "\(heroList) entered \(entry.dungeonName). "
-            if entry.monstersSlain > 0 {
-                narration += "They slew \(entry.monstersSlain) creatures and won \(entry.combatsWon) battles. "
+            let heroList = tale.partyNames.map { $0.components(separatedBy: " ").first ?? $0 }.joined(separator: ", ")
+            var narration = "\(heroList) entered \(tale.dungeonName). "
+            if tale.monstersSlain > 0 {
+                narration += "They slew \(tale.monstersSlain) creatures and won \(tale.combatsWon) battles. "
             }
-            narration += "They explored \(entry.roomsExplored) of \(entry.totalRooms) rooms. "
-            if entry.goldCollected > 0 {
-                narration += "They collected \(entry.goldCollected) gold. "
+            narration += "They explored \(tale.roomsExplored) of \(tale.totalRooms) rooms. "
+            if tale.goldCollected > 0 {
+                narration += "They collected \(tale.goldCollected) gold. "
             }
-            if isVictory {
-                narration += "Against all odds, they emerged triumphant!"
-            } else {
-                narration += "But the darkness proved too strong, and they fell."
+            switch tale.outcome {
+            case .victory: narration += "Against all odds, they emerged triumphant!"
+            case .defeat: narration += "But the darkness proved too strong, and they fell."
+            case nil: narration += "Their story continues..."
             }
             SpeechEngine.shared.speak(narration)
         }
     }
 
-    /// Load a save game linked to a Hall of Fame entry with dramatic narration
-    private func loadHallOfFameSave(_ entry: HallOfFameEntry) {
-        guard let saveId = entry.saveGameId,
+    /// Dramatic transition screen before actually loading the tale's linked
+    /// save — the exact wording depends on outcome (Relive a victory,
+    /// Rewrite a defeat, or just resume an adventure still in progress).
+    private func showLoadTransition(_ tale: AdventureTaleData) {
+        guard let saveId = tale.saveGameId,
               let save = SaveGameManager.shared.load(id: saveId) else {
             print("The scroll of this adventure has been lost to time...", color: .red)
             return
@@ -10089,8 +10169,7 @@ class GameEngine: ObservableObject {
         textLongPressHandler = nil
         clearTerminal()
 
-        let isVictory = entry.outcome == .victory
-        let heroNames = entry.partyNames.map { $0.components(separatedBy: " ").first ?? $0 }
+        let heroNames = tale.partyNames.map { $0.components(separatedBy: " ").first ?? $0 }
         let heroList = heroNames.count <= 2
             ? heroNames.joined(separator: " and ")
             : heroNames.dropLast().joined(separator: ", ") + " and " + (heroNames.last ?? "")
@@ -10099,18 +10178,23 @@ class GameEngine: ObservableObject {
         printLines(asciiSwords, color: .cyan)
         print("")
 
-        if isVictory {
+        switch tale.outcome {
+        case .victory:
             printTitle("Reliving a Legend")
             print("")
-            printWrapped("The ancient scrolls speak of \(heroList), who once conquered the depths of \(entry.dungeonName)...", indent: 4, color: .yellow)
+            printWrapped("The ancient scrolls speak of \(heroList), who once conquered the depths of \(tale.dungeonName)...", indent: 4, color: .yellow)
             print("")
             printWrapped("Now the dungeon stirs again. The torches are relit. The monsters have returned. Can you match the deeds of these legendary heroes?", indent: 4, color: .green)
-        } else {
+        case .defeat:
             printTitle("Rewriting History")
             print("")
-            printWrapped("The chronicles record a tragedy — \(heroList) fell in the depths of \(entry.dungeonName), one room from their fate...", indent: 4, color: .red)
+            printWrapped("The chronicles record a tragedy — \(heroList) fell in the depths of \(tale.dungeonName), one room from their fate...", indent: 4, color: .red)
             print("")
             printWrapped("But the Fates have granted a second chance. The party stands once more, battered but alive, in the room before the fall. This time, perhaps, the story ends differently.", indent: 4, color: .green)
+        case nil:
+            printTitle("Returning to the Depths")
+            print("")
+            printWrapped("\(heroList) pause at the threshold of \(tale.dungeonName), gathering their resolve before pressing onward once more...", indent: 4, color: .cyan)
         }
 
         print("")
@@ -10119,10 +10203,13 @@ class GameEngine: ObservableObject {
 
         // Narrate if DM voice is on
         if SpeechEngine.shared.isEnabled {
-            if isVictory {
-                SpeechEngine.shared.speak("The legends speak of \(heroList). Can you match their deeds in \(entry.dungeonName)?")
-            } else {
-                SpeechEngine.shared.speak("\(heroList) fell in \(entry.dungeonName). The Fates grant a second chance. Rewrite history.")
+            switch tale.outcome {
+            case .victory:
+                SpeechEngine.shared.speak("The legends speak of \(heroList). Can you match their deeds in \(tale.dungeonName)?")
+            case .defeat:
+                SpeechEngine.shared.speak("\(heroList) fell in \(tale.dungeonName). The Fates grant a second chance. Rewrite history.")
+            case nil:
+                SpeechEngine.shared.speak("Returning to \(tale.dungeonName). The adventure continues.")
             }
         }
 
@@ -10131,7 +10218,7 @@ class GameEngine: ObservableObject {
             self?.loadGame(save)
         }
         closeHandler = { [weak self] in
-            self?.showHallOfFameDetail(entry)
+            self?.showAdventureTale(tale)
         }
     }
 
@@ -24415,22 +24502,6 @@ class GameEngine: ObservableObject {
         }
     }
 
-    /// One row of the unified Continue Adventure list — either an
-    /// in-progress save slot or a completed Hall of Fame tale, shown
-    /// together (sorted most-recent-first) so there's one list to check
-    /// instead of a separate Hall of Fame screen to also remember to visit.
-    private enum LoadListItem {
-        case slot(SaveSlot)
-        case hof(HallOfFameEntry)
-
-        var sortDate: Date {
-            switch self {
-            case .slot(let s): return s.latest.savedAt
-            case .hof(let e): return e.date
-            }
-        }
-    }
-
     private func showLoadGameMenu(returnTo origin: LoadGameOrigin) {
         clearTerminal()
         printTitle("Continue Adventure")
@@ -24449,13 +24520,8 @@ class GameEngine: ObservableObject {
         closeHandler = backAction
 
         let slots = SaveGameManager.shared.listSlots()
-        // Completed tales only make sense from the main-menu entry point —
-        // mid-game (Settings/Save menu), only your own resumable saves
-        // matter. No longer a separate "Hall of Fame" screen to visit for
-        // this — its entries are folded straight into this same list.
-        let hofEntries = origin == .mainMenu ? HallOfFameManager.shared.listEntries() : []
 
-        if slots.isEmpty && hofEntries.isEmpty {
+        if slots.isEmpty {
             print("  No saved games or adventures recorded yet.", color: .yellow)
             print("")
             showMenu(["< Back"])
@@ -24463,51 +24529,63 @@ class GameEngine: ObservableObject {
             return
         }
 
-        var items: [LoadListItem] = slots.map { .slot($0) } + hofEntries.map { .hof($0) }
-        items.sort { $0.sortDate > $1.sortDate }
+        // Every entry — an adventure still in progress, or one that's
+        // already been recorded in the Hall of Fame — is the exact same
+        // kind of row here and goes through the exact same
+        // showSaveSlotDetail() on tap. A slot whose latest save happens to
+        // be linked from a completed Hall of Fame entry is simply shown in
+        // that entry's own style (outcome tag + score) instead of PLAYING —
+        // there's no separate "kind" of list item, no separate screen to
+        // visit, and no different behaviour depending on which one it is.
+        let hofBySaveId: [UUID: HallOfFameEntry] = Dictionary(
+            HallOfFameManager.shared.listEntries().compactMap { entry in entry.saveGameId.map { ($0, entry) } },
+            uniquingKeysWith: { first, _ in first }
+        )
 
         let dateFormatter = DateFormatter()
         dateFormatter.dateStyle = .medium
         dateFormatter.timeStyle = .short
 
         var options: [String] = []
-        for (i, item) in items.enumerated() {
-            switch item {
-            case .slot(let slot):
-                let save = slot.latest
-                let day = save.gameTimeMinutes / 1440 + 1
+        // Exact printed-line range per entry (not a guessed fixed count —
+        // printWrapped can span more than one terminal line depending on
+        // text length) so tapping the printed text, not just the button,
+        // can open the right entry.
+        var entryLineRanges: [Range<Int>] = []
+        for (i, slot) in slots.enumerated() {
+            let lineStart = terminalLines.count
+            let save = slot.latest
+            let day = save.gameTimeMinutes / 1440 + 1
+            let bpInfo = slot.breakpointCount > 1 ? " (\(slot.breakpointCount) saves)" : ""
+
+            if let entry = hofBySaveId[save.id] {
+                let outcomeTag = entry.outcome == .victory ? "W" : "L"
+                let outcomeColor: TerminalColor = entry.outcome == .victory ? .yellow : .red
+                let name = String(entry.dungeonName.prefix(20))
+                print("\(i + 1). \(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts\(bpInfo)", color: outcomeColor, bold: true)
+                printWrapped(entry.partyDescription, indent: 3, color: .dimGreen)
+                printWrapped("Gold:\(entry.goldCollected) Slain:\(entry.monstersSlain) Rooms:\(entry.roomsExplored)/\(entry.totalRooms) Day \(day)", indent: 3, color: .dimGreen)
+            } else {
                 let gold = save.party.reduce(0) { $0 + $1.gold }
                 let roomsExplored = save.dungeon.rooms.values.filter { $0.visited }.count
                 let totalRooms = save.dungeon.rooms.count
-                let bpInfo = slot.breakpointCount > 1 ? " (\(slot.breakpointCount) saves)" : ""
                 print("\(i + 1). \(save.dungeonName) Lv.\(save.dungeonLevel) PLAYING\(bpInfo)", color: .cyan, bold: true)
                 printWrapped(save.partyDescription, indent: 3, color: .dimGreen)
                 printWrapped("Gold:\(gold) Slain:\(save.monstersSlain) Rooms:\(roomsExplored)/\(totalRooms) Day \(day)", indent: 3, color: .dimGreen)
-                print("   \(dateFormatter.string(from: save.savedAt))", color: .dimGreen)
-                print("")
+            }
+            print("   \(dateFormatter.string(from: save.savedAt))", color: .dimGreen)
+            print("")
+            entryLineRanges.append(lineStart..<terminalLines.count)
 
-                let parts = slot.slotName.components(separatedBy: " — ")
-                let charName = parts.first ?? slot.slotName
-                let location = save.dungeonName
-                let maxLen = 20
-                if charName.count + location.count + 3 <= maxLen {
-                    options.append("\(charName) · \(location)")
-                } else {
-                    let locBudget = max(4, maxLen - charName.count - 3)
-                    options.append("\(charName) · \(location.prefix(locBudget))")
-                }
-            case .hof(let entry):
-                let outcomeTag = entry.outcome == .victory ? "W" : "L"
-                let outcomeColor: TerminalColor = entry.outcome == .victory ? .yellow : .red
-                let day = entry.gameTimeMinutes / 1440 + 1
-                let name = String(entry.dungeonName.prefix(20))
-                print("\(i + 1). \(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts", color: outcomeColor, bold: true)
-                printWrapped(entry.partyDescription, indent: 3, color: .dimGreen)
-                printWrapped("Gold:\(entry.goldCollected) Slain:\(entry.monstersSlain) Rooms:\(entry.roomsExplored)/\(entry.totalRooms) Day \(day)", indent: 3, color: .dimGreen)
-                print("   \(dateFormatter.string(from: entry.date))", color: .dimGreen)
-                print("")
-
-                options.append("\(name) Lv.\(entry.dungeonLevel) \(outcomeTag)")
+            let parts = slot.slotName.components(separatedBy: " — ")
+            let charName = parts.first ?? slot.slotName
+            let location = save.dungeonName
+            let maxLen = 20
+            if charName.count + location.count + 3 <= maxLen {
+                options.append("\(charName) · \(location)")
+            } else {
+                let locBudget = max(4, maxLen - charName.count - 3)
+                options.append("\(charName) · \(location.prefix(locBudget))")
             }
         }
 
@@ -24516,71 +24594,37 @@ class GameEngine: ObservableObject {
         // entirely, so a long save history just kept growing the button list
         // past the configured limit instead of paging. "Manage Saves" (a
         // separate screen re-listing the exact same slots) is gone too —
-        // tapping a slot now goes to showSaveSlotDetail(), which shows its
-        // save points AND has its own "Manage" (rename/copy/delete) button,
-        // so there's one place to find a slot rather than two.
+        // tapping an entry now goes to showSaveSlotDetail(), which shows its
+        // save points, a "Read Tale" narrative, AND a "Manage" (rename/copy/
+        // delete) button, so there's one place to find any entry.
         showPaginatedMenuOptions(options, pinned: ["< Back"], handler: { [weak self] idx in
-            guard let self = self, idx >= 0 && idx < items.count else { return }
-            switch items[idx] {
-            case .slot(let slot):
-                self.showSaveSlotDetail(slot: slot, returnTo: origin)
-            case .hof(let entry):
-                self.showHallOfFameEntryChoice(entry, entries: hofEntries, returnTo: origin)
-            }
+            guard let self = self, idx >= 0 && idx < slots.count else { return }
+            self.showSaveSlotDetail(slot: slots[idx], returnTo: origin)
         }, pinnedHandler: { _ in backAction() })
 
-        // Long-press a save slot → load latest directly (skip the slot
-        // detail screen); Hall of Fame entries have no equivalent shortcut.
+        // Long-press → load latest save directly (skip the slot detail screen)
         menuLongPressHandler = { [weak self] choice in
-            guard let self = self, choice >= 1, choice <= items.count else { return }
-            if case .slot(let slot) = items[choice - 1] { self.loadGame(slot.latest) }
+            guard let self = self, choice >= 1, choice <= slots.count else { return }
+            self.loadGame(slots[choice - 1].latest)
+        }
+
+        // Tap the printed entry text itself (not just its numbered button)
+        // to open the same detail screen — despite the name,
+        // textLongPressHandler drives a plain tap gesture on the terminal
+        // text (see textTapEnabled), so the descriptive block above each
+        // button is a live target too, not just inert decoration.
+        textLongPressHandler = { [weak self] lineIndex in
+            guard let self = self, let idx = entryLineRanges.firstIndex(where: { $0.contains(lineIndex) }) else { return }
+            self.showSaveSlotDetail(slot: slots[idx], returnTo: origin)
         }
     }
 
-    /// Tapping a Hall of Fame entry from the unified Continue Adventure
-    /// list used to drop straight into the full narrative (showHallOfFameDetail)
-    /// with the actual "load this game" action (Relive/Rewrite) buried at
-    /// the bottom, behind however long the tale is — unlike a save slot,
-    /// which offers its load action immediately. This puts them on equal
-    /// footing: a linked save gets a quick peer choice between continuing
-    /// and reading the tale, right away. No linked save means nothing to
-    /// continue, so it goes straight to the tale as before.
-    private func showHallOfFameEntryChoice(_ entry: HallOfFameEntry, entries: [HallOfFameEntry], returnTo origin: LoadGameOrigin) {
-        let hofIdx = entries.firstIndex(where: { $0.id == entry.id }) ?? 0
-        let backToList: () -> Void = { [weak self] in self?.showLoadGameMenu(returnTo: origin) }
-        let hasSave = entry.saveGameId != nil && SaveGameManager.shared.load(id: entry.saveGameId!) != nil
-        guard hasSave else {
-            showHallOfFameDetail(entry, entries: entries, index: hofIdx, onBack: backToList)
-            return
-        }
-
-        clearTerminal()
-        let isVictory = entry.outcome == .victory
-        printTitle(entry.dungeonName)
-        print("  Level \(entry.dungeonLevel) — \(isVictory ? "VICTORY" : "DEFEAT")", color: isVictory ? .yellow : .red, bold: true)
-        print("  \(entry.partyDescription)", color: .dimGreen)
-        print("")
-
-        let continueLabel = isVictory ? "Continue (Relive)" : "Continue (Rewrite)"
-        showMenu([continueLabel, "Read the Tale", "< Back"])
-        closeHandler = backToList
-        menuHandler = { [weak self] choice in
-            guard let self = self else { return }
-            switch choice {
-            case 1: self.loadHallOfFameSave(entry)
-            case 2:
-                self.showHallOfFameDetail(entry, entries: entries, index: hofIdx, onBack: { [weak self] in
-                    self?.showHallOfFameEntryChoice(entry, entries: entries, returnTo: origin)
-                })
-            default: backToList()
-            }
-        }
-    }
-
-    /// Shows a save slot's available save points, and a "Manage" button
-    /// (rename/copy/delete — see showSaveSlotManage) for that slot. Always
-    /// shown on tapping a slot, not just when it has more than one save
-    /// point, so there's a single consistent path in from the load list.
+    /// Shows a save slot's available save points, a "Read Tale" narrative
+    /// (see showTaleForSlot — generated the same way whether or not this
+    /// adventure is actually finished), and a "Manage" button (rename/copy/
+    /// delete — see showSaveSlotManage). Always shown on tapping a slot, not
+    /// just when it has more than one save point, so there's a single
+    /// consistent path in from the load list.
     private func showSaveSlotDetail(slot: SaveSlot, returnTo origin: LoadGameOrigin) {
         clearTerminal()
         printTitle(slot.slotName)
@@ -24609,13 +24653,19 @@ class GameEngine: ObservableObject {
             i == 0 ? "Load Latest" : "Load #\(i + 1)"
         }
 
-        showPaginatedMenuOptions(options, pinned: ["Manage", "< Back"], handler: { [weak self] idx in
+        // "Read Tale" is a regular (numbered) pinned button, not squeezed
+        // into the compact </Manage/Back cell — it's a primary action here,
+        // not a secondary one.
+        showPaginatedMenuOptions(options, pinned: ["Read Tale", "Manage", "< Back"], handler: { [weak self] idx in
             guard let self = self, idx >= 0 && idx < breakpoints.count else { return }
             self.loadGame(breakpoints[idx])
         }, pinnedHandler: { [weak self] choice in
             guard let self = self else { return }
-            if choice == 0 { self.showSaveSlotManage(slot: slot, returnTo: origin) }
-            else { self.showLoadGameMenu(returnTo: origin) }
+            switch choice {
+            case 0: self.showTaleForSlot(slot: slot, returnTo: origin)
+            case 1: self.showSaveSlotManage(slot: slot, returnTo: origin)
+            default: self.showLoadGameMenu(returnTo: origin)
+            }
         })
 
         menuLongPressHandler = { [weak self] choice in
@@ -24624,6 +24674,19 @@ class GameEngine: ObservableObject {
         }
 
         closeHandler = { [weak self] in self?.showLoadGameMenu(returnTo: origin) }
+    }
+
+    /// Builds and shows the narrative for a save slot — from its linked
+    /// Hall of Fame entry if the adventure's been completed, or generated
+    /// directly from the save's own stats if it's still in progress. Same
+    /// screen, same style, either way (see AdventureTaleData/showAdventureTale).
+    private func showTaleForSlot(slot: SaveSlot, returnTo origin: LoadGameOrigin) {
+        let backToDetail: () -> Void = { [weak self] in self?.showSaveSlotDetail(slot: slot, returnTo: origin) }
+        if let entry = HallOfFameManager.shared.listEntries().first(where: { $0.saveGameId == slot.latest.id }) {
+            showAdventureTale(AdventureTaleData(hof: entry), onBack: backToDetail)
+        } else {
+            showAdventureTale(AdventureTaleData(inProgress: slot.latest), onBack: backToDetail)
+        }
     }
 
     /// Rename / Copy / Delete for one save slot — reached via the "Manage"
@@ -24639,7 +24702,12 @@ class GameEngine: ObservableObject {
         print("")
 
         let backToDetail: () -> Void = { [weak self] in self?.showSaveSlotDetail(slot: slot, returnTo: origin) }
-        let options = ["Rename", "Copy", "Delete Adventure", "?", "< Back"]
+        // "Delete One Save" only makes sense when there's more than one save
+        // point — with just one, "Delete Adventure" already covers it.
+        let hasMultipleSaves = slot.breakpointCount > 1
+        var options = ["Rename", "Copy"]
+        if hasMultipleSaves { options.append("Delete One Save") }
+        options.append(contentsOf: ["Delete Adventure", "?", "< Back"])
         showMenu(options)
         closeHandler = backToDetail
         menuHandler = { [weak self] choice in
@@ -24649,6 +24717,7 @@ class GameEngine: ObservableObject {
             switch options[choice - 1] {
             case "Rename": self.renameSlot(slot: slot, returnTo: origin, onCancel: backToManage, onDone: backToList)
             case "Copy": self.duplicateSlot(slot: slot, returnTo: origin)
+            case "Delete One Save": self.showBreakpointList(slot: slot, returnTo: origin, onBack: backToManage, onAllDeleted: backToList)
             case "Delete Adventure": self.confirmDeleteSlot(slot: slot, returnTo: origin, onCancel: backToManage, onDone: backToList)
             case "?":
                 self.showInlineHelp {
@@ -24660,6 +24729,11 @@ class GameEngine: ObservableObject {
                     self.print("  COPY", color: .cyan, bold: true)
                     self.printWrapped("Duplicates every save point in this slot into a brand new, independent adventure you can play separately.", indent: 2, color: .dimGreen)
                     self.print("")
+                    if hasMultipleSaves {
+                        self.print("  DELETE ONE SAVE", color: .cyan, bold: true)
+                        self.printWrapped("Removes a single save point from this slot, keeping the rest.", indent: 2, color: .dimGreen)
+                        self.print("")
+                    }
                     self.print("  DELETE ADVENTURE", color: .cyan, bold: true)
                     self.printWrapped("Permanently deletes every save point in this slot. Cannot be undone.", indent: 2, color: .dimGreen)
                     self.print("")
@@ -25139,7 +25213,14 @@ class GameEngine: ObservableObject {
         }
     }
 
-    private func showBreakpointList(slot: SaveSlot, returnTo origin: LoadGameOrigin) {
+    /// - onBack: where closeHandler/"No, Keep It" go — defaults to the
+    ///   Settings-reached flow (showSlotActions); showSaveSlotManage (reached
+    ///   from Continue Adventure) passes its own.
+    /// - onAllDeleted: where to go if the very last save point in the slot
+    ///   gets deleted (nothing left to list) — defaults to the
+    ///   Settings-reached Manage Saves screen.
+    private func showBreakpointList(slot: SaveSlot, returnTo origin: LoadGameOrigin, onBack: (() -> Void)? = nil, onAllDeleted: (() -> Void)? = nil) {
+        let backTarget = onBack ?? { [weak self] in self?.showSlotActions(slot: slot, returnTo: origin) }
         clearTerminal()
         printSubtitle(slot.slotName)
 
@@ -25166,17 +25247,16 @@ class GameEngine: ObservableObject {
 
         showMenu(options)
 
-        closeHandler = { [weak self] in
-            self?.showSlotActions(slot: slot, returnTo: origin)
-        }
+        closeHandler = backTarget
         menuHandler = { [weak self] choice in
             guard choice >= 1 && choice <= options.count else { return }
             let bp = breakpoints[choice - 1]
-            self?.confirmDeleteBreakpoint(bp, slot: slot, isLast: breakpoints.count == 1, returnTo: origin)
+            self?.confirmDeleteBreakpoint(bp, slot: slot, isLast: breakpoints.count == 1, returnTo: origin, onBack: onBack, onAllDeleted: onAllDeleted)
         }
     }
 
-    private func confirmDeleteBreakpoint(_ bp: SaveGame, slot: SaveSlot, isLast: Bool, returnTo origin: LoadGameOrigin) {
+    private func confirmDeleteBreakpoint(_ bp: SaveGame, slot: SaveSlot, isLast: Bool, returnTo origin: LoadGameOrigin, onBack: (() -> Void)? = nil, onAllDeleted: (() -> Void)? = nil) {
+        let allDeletedTarget = onAllDeleted ?? { [weak self] in self?.showManageSavesMenu(returnTo: origin) }
         let dateFormatter = DateFormatter()
         dateFormatter.dateStyle = .medium
         dateFormatter.timeStyle = .short
@@ -25203,7 +25283,7 @@ class GameEngine: ObservableObject {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                     let remaining = SaveGameManager.shared.listBreakpoints(slotId: slot.slotId)
                     if remaining.isEmpty {
-                        self?.showManageSavesMenu(returnTo: origin)
+                        allDeletedTarget()
                     } else {
                         let updated = SaveSlot(
                             slotId: slot.slotId,
@@ -25211,7 +25291,7 @@ class GameEngine: ObservableObject {
                             latest: remaining.first!,
                             breakpointCount: remaining.count
                         )
-                        self?.showBreakpointList(slot: updated, returnTo: origin)
+                        self?.showBreakpointList(slot: updated, returnTo: origin, onBack: onBack, onAllDeleted: onAllDeleted)
                     }
                 }
             } else {
@@ -25223,7 +25303,7 @@ class GameEngine: ObservableObject {
                     latest: remaining.first ?? slot.latest,
                     breakpointCount: remaining.count
                 )
-                self?.showBreakpointList(slot: updated, returnTo: origin)
+                self?.showBreakpointList(slot: updated, returnTo: origin, onBack: onBack, onAllDeleted: onAllDeleted)
             }
         }
     }

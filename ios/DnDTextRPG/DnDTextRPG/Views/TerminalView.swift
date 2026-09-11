@@ -1109,9 +1109,18 @@ struct MenuButtonsView: View {
     }
 
     /// Fixed 3-slot compact nav cell: [slot0 | slot1 | slot2]
-    /// Slot 0 = << > other compact item > empty
+    /// Slot 0 = << > < Back > other compact item > empty
     /// Slot 1 = ? > other compact item > empty
     /// Slot 2 = >> > other compact item > empty
+    ///
+    /// << and "< Back" always land in the same left-hand slot so the cell
+    /// reads consistently everywhere: "leave/go back" on the left, "?" in
+    /// the middle, "next page" on the right. They're never both shown at
+    /// once — on a page where you can still go back within the list (<<
+    /// active), that takes the slot; "< Back" (leave the screen entirely)
+    /// only appears once << is gone, i.e. once you've paged back to the
+    /// first page. Paging back that far is itself a way out, so nothing is
+    /// lost by not showing both at once.
     private enum CompactSlotContent {
         case menuItem(Int) // index into options
         case empty
@@ -1130,18 +1139,18 @@ struct MenuButtonsView: View {
         let otherIndices = indices.filter { !knownIdxs.contains($0) }
         var otherIter = otherIndices.makeIterator()
 
-        // Slot 0: << > other > empty
+        // Slot 0: << > < Back > other > empty — << wins when both are
+        // active, since paging back to page 0 already gets you to where
+        // "< Back" would otherwise be needed.
         let slot0: CompactSlotContent = {
             if let i = backIdx { return .menuItem(i) }
+            if let i = backButtonIdx { return .menuItem(i) }
             if let i = otherIter.next() { return .menuItem(i) }
             return .empty
         }()
-        // Slot 1: < Back > ? > other > empty — Back wins the slot over Help
-        // in the rare case both are pinned alongside active << and >> (only
-        // 3 physical slots exist), since losing your way back matters more
-        // than losing quick access to a help screen.
+        // Slot 1: ? > other > empty — always the help slot, never shared
+        // with Back, so its position is consistent across every screen.
         let slot1: CompactSlotContent = {
-            if let i = backButtonIdx { return .menuItem(i) }
             if let i = helpIdx { return .menuItem(i) }
             if let i = otherIter.next() { return .menuItem(i) }
             return .empty
