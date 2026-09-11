@@ -364,6 +364,13 @@ class GameEngine: ObservableObject {
     // Character creation state
     private var creatingCharacterIndex: Int = 0
     private var totalCharacters: Int = 1
+    /// When set, showCharacterReviewCard's own X/close returns here instead
+    /// of showPartyReview() — used while editing a character that isn't
+    /// really in the party yet (e.g. from the "Add X to your party?" screen
+    /// when loading from the roster during character creation), so backing
+    /// out of editing returns to that screen rather than the full party hub.
+    /// Consumed (set back to nil) the moment it fires.
+    private var characterReviewReturnOverride: (() -> Void)?
     /// One-shot per New Adventure flow — whether we've already offered to
     /// bring back the most recent Character Hall of Fame hero for slot 1.
     private var hasOfferedHallOfFameReturn: Bool = false
@@ -11093,7 +11100,15 @@ class GameEngine: ObservableObject {
 
         showMenuOptions(menuOpts)
 
-        closeHandler = { [weak self] in self?.showPartyReview() }
+        closeHandler = { [weak self] in
+            guard let self = self else { return }
+            if let override = self.characterReviewReturnOverride {
+                self.characterReviewReturnOverride = nil
+                override()
+            } else {
+                self.showPartyReview()
+            }
+        }
         menuHandler = { [weak self] choice in
             guard choice > 0 && choice <= actions.count else { return }
             // Block disabled buttons on normal tap
@@ -12029,7 +12044,7 @@ class GameEngine: ObservableObject {
         // instead of showing a one-option menu.
         if hasHuman && !gcAuth {
             creatingAsAI = true
-            autoCreateCharacter()
+            startAICharacterCreation()
             return
         }
 
@@ -12079,7 +12094,7 @@ class GameEngine: ObservableObject {
                 self.startCharacterCreation()
             case "Computer (AI)":
                 self.creatingAsAI = true
-                self.autoCreateCharacter()
+                self.startAICharacterCreation()
             case "Remote Player":
                 self.inviteRemotePlayer()
             default: break
@@ -12936,6 +12951,48 @@ class GameEngine: ObservableObject {
         finishCharacterCreation()
     }
 
+    /// Entry point for a Computer (AI) slot — offers loading a roster
+    /// character (controlled by the robot instead of you) alongside the
+    /// usual auto-generate, when the roster actually has anything in it.
+    /// creatingAsAI must already be set to true by the caller.
+    private func startAICharacterCreation() {
+        guard !CharacterLibraryManager.shared.listCharacters().isEmpty else {
+            autoCreateCharacter()
+            return
+        }
+
+        clearTerminal()
+        printCharacterCreationProgress()
+        printSubtitle("Computer (AI) Character")
+        printWrapped("Auto-generate a new companion, or load one from your Character Roster? Either way, the robot controls this character.", indent: 2, color: .cyan)
+        print("")
+
+        showMenu(["Auto-Generate", "Load Character", "?", "< Back"])
+        closeHandler = { [weak self] in self?.chooseCharacterType() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1:
+                self.autoCreateCharacter()
+            case 2:
+                self.showCharacterHallOfFame(loadHandler: { [weak self] character in
+                    character.prepareForNewAdventure()
+                    self?.loadCharacterFromRoster(character)
+                }, onBack: { [weak self] in self?.startAICharacterCreation() })
+            case 3:
+                self.showInlineHelp {
+                    self.printTitle("Computer (AI) Character — Help")
+                    self.print("")
+                    self.printWrapped("Auto-Generate: creates a brand new random companion for the robot to control.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Load Character: brings back a hero from your Character Roster — robot-controlled for this adventure, whatever it was last time.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default:
+                self.chooseCharacterType()
+            }
+        }
+    }
+
     /// Fully auto-create a character with random name, race, class, scores, and skills
     func autoCreateCharacter() {
         setBreadcrumb("autoCreateCharacter(idx:\(creatingCharacterIndex),total:\(totalCharacters))")
@@ -13383,6 +13440,15 @@ class GameEngine: ObservableObject {
         let accept: () -> Void = { [weak self] in
             guard let self = self else { return }
             self.setBreadcrumb("loadCharacterFromRoster.accept(\(character.name),idx:\(self.creatingCharacterIndex)->\(self.creatingCharacterIndex + 1),total:\(self.totalCharacters),multi:\(self.isMultiplayer))")
+            // Control type follows the slot being filled, not whatever this
+            // character happened to be last time it was saved — otherwise
+            // loading a once-human hero into a Computer (AI) slot would
+            // silently leave it human-controlled (or vice versa).
+            if self.creatingAsAI {
+                character.markAsAI()
+            } else {
+                character.unmarkAsAI()
+            }
             self.party.append(character)
             // Explicitly loaded from the roster — Party Review's reroll
             // must never overwrite it.
@@ -13402,17 +13468,41 @@ class GameEngine: ObservableObject {
             self.startCharacterCreation()
         }
 
-        showMenu(["Accept", "?", "< Back"])
+        let edit: () -> Void = { [weak self] in
+            guard let self = self else { return }
+            // Not really in the party yet — temporarily add it so the same
+            // edit screen Party Review uses (Change Type/Race/Class/Scores/
+            // Skills/Voice) can be reused verbatim, then remove it again on
+            // the way back to this confirmation screen. Character is a
+            // reference type, so edits made via party[idx] land on this
+            // same `character` instance either way.
+            let idx = self.party.count
+            self.party.append(character)
+            self.characterReviewReturnOverride = { [weak self] in
+                guard let self = self else { return }
+                if let removeIdx = self.party.firstIndex(where: { $0.id == character.id }) {
+                    self.party.remove(at: removeIdx)
+                }
+                self.loadCharacterFromRoster(character)
+            }
+            self.showCharacterReviewCard(index: idx)
+        }
+
+        showMenu(["Accept", "Edit", "?", "< Back"])
         closeHandler = goBack
         menuHandler = { [weak self] choice in
             switch choice {
             case 1: accept()
-            case 2:
+            case 2: edit()
+            case 3:
                 self?.showInlineHelp {
                     self?.printTitle("Add to Party — Help")
                     self?.print("")
                     self?.print("  ACCEPT", color: .cyan, bold: true)
                     self?.printWrapped("Adds \(character.name), with the level, gear, and gold shown above, to this party slot and moves on to the next step.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                    self?.print("  EDIT", color: .cyan, bold: true)
+                    self?.printWrapped("Change \(character.name) before adding them — race, class, ability scores, skills, voice, and control type, same as editing a character in Party Review.", indent: 2, color: .dimGreen)
                     self?.print("")
                     self?.print("  < BACK", color: .cyan, bold: true)
                     self?.printWrapped("Doesn't add \(character.name) — returns to the character creation choices for this slot.", indent: 2, color: .dimGreen)
