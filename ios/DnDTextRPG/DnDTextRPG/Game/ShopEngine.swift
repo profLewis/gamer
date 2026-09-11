@@ -257,8 +257,8 @@ class ShopEngine {
         for item in sellableItems {
             let lineStart = game.terminalLines.count
             let sellValue = max(1, item.value / 2)
-            options.append("\(item.name)  +\(sellValue)gp")
-            game.print("  \(item.name) — sells for \(sellValue)gp: \(item.description)", color: .green)
+            options.append("\(item.name)  +\(sellValue)gp  \(String(format: "%.1f", item.weight))lb")
+            game.print("  \(item.name) — sells for \(sellValue)gp, \(String(format: "%.1f", item.weight))lb: \(item.description)", color: .green)
             itemLineRanges.append(lineStart..<game.terminalLines.count)
         }
 

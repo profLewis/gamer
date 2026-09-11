@@ -1937,6 +1937,15 @@ class GameEngine: ObservableObject {
         swipeLeftHandler = nil
         swipeRightHandler = nil
         swipeRandomHandler = nil
+        // waitForContinue always means "here's what just happened, take a
+        // look" — whatever text was just printed (often appended below an
+        // existing list, e.g. a shop purchase confirmation, rather than
+        // onto a freshly cleared screen) needs to actually be visible.
+        // suppressAutoScroll — true while e.g. a long item list is being
+        // read from the top — forces the view back to the TOP on every new
+        // line instead, which hid that text entirely (and kept fighting
+        // any attempt to scroll down to it) until it was turned off here.
+        suppressAutoScroll = false
         runOnMain {
             self.directionExits = [:]
             self.securedExits = []
@@ -24034,9 +24043,19 @@ class GameEngine: ObservableObject {
             print("")
             print("  Every survivor of a victorious adventure is inducted here, with their level, gear, and gold saved to your Character Roster.", color: .dimGreen)
             print("")
-            showMenu(["Manage", "< Back"])
-            menuHandler = { choice in
-                if choice == 1 { manageAction() } else { backTarget() }
+            showMenu(["Manage", "?", "< Back"])
+            menuHandler = { [weak self] choice in
+                switch choice {
+                case 1: manageAction()
+                case 2:
+                    self?.showInlineHelp {
+                        self?.printTitle("Character Hall of Fame — Help")
+                        self?.print("")
+                        self?.printWrapped("Every character who survives a victorious adventure is inducted here. Tap Manage to create a new roster character or manage existing ones.", indent: 2, color: .dimGreen)
+                        self?.print("")
+                    }
+                default: backTarget()
+                }
             }
             closeHandler = backTarget
             return
@@ -24067,7 +24086,7 @@ class GameEngine: ObservableObject {
         // appended to the list itself, which would bury them at the end of
         // however many pages a long roster needs. "Manage" is always one
         // tap away on every page instead.
-        showPaginatedMenuOptions(options, pinned: ["Manage", "< Back"], defaultIndex: defaultIdx, handler: { [weak self] idx in
+        showPaginatedMenuOptions(options, pinned: ["Manage", "?", "< Back"], defaultIndex: defaultIdx, handler: { [weak self] idx in
             guard let self = self, idx >= 0 && idx < entries.count else { return }
             guard let linkedId = entries[idx].linkedCharacterId,
                   let record = CharacterLibraryManager.shared.listCharacters().first(where: { $0.character.id == linkedId }) else {
@@ -24081,8 +24100,21 @@ class GameEngine: ObservableObject {
             } else {
                 self.showCharacterRosterActions(record: record, loadHandler: nil, onBack: { self.showCharacterHallOfFame(onBack: onBack) })
             }
-        }, pinnedHandler: { choice in
-            if choice == 0 { manageAction() } else { backTarget() }
+        }, pinnedHandler: { [weak self] choice in
+            switch choice {
+            case 0: manageAction()
+            case 1:
+                self?.showInlineHelp {
+                    self?.printTitle("Character Hall of Fame — Help")
+                    self?.print("")
+                    self?.printWrapped("Tap a character to \(loadHandler != nil ? "add them to your party" : "view their card and manage options"). Every survivor of a victorious adventure is inducted here automatically.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                    self?.print("  MANAGE", color: .cyan, bold: true)
+                    self?.printWrapped("Create a new roster character, or manage saved ones.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                }
+            default: backTarget()
+            }
         })
         closeHandler = backTarget
     }
@@ -24205,14 +24237,25 @@ class GameEngine: ObservableObject {
 
         let records = CharacterLibraryManager.shared.listCharacters()
 
+        let helpAction: () -> Void = { [weak self] in
+            self?.showInlineHelp {
+                self?.printTitle("Character Roster — Help")
+                self?.print("")
+                self?.printWrapped("Characters you save (after creating them, or from Party Status during an adventure) appear here, ready to bring into a future party.", indent: 2, color: .dimGreen)
+                self?.print("")
+                self?.printWrapped("Tap one to \(loadHandler != nil ? "add it to your party" : "view its card and manage it (load into party, or delete from the roster)"). ", indent: 2, color: .dimGreen)
+                self?.print("")
+            }
+        }
+
         if records.isEmpty {
             print("  No saved characters yet.", color: .yellow)
             print("")
             print("  Characters you save after creating them (or from Party Status during an adventure) will appear here, ready to bring into a future party.", color: .dimGreen)
             print("")
-            showMenu(["< Back"])
-            menuHandler = { [weak self] _ in
-                (onBack ?? { self?.showPlayMenu() })()
+            showMenu(["?", "< Back"])
+            menuHandler = { [weak self] choice in
+                if choice == 1 { helpAction() } else { (onBack ?? { self?.showPlayMenu() })() }
             }
             closeHandler = onBack ?? { [weak self] in self?.showPlayMenu() }
             return
@@ -24227,11 +24270,11 @@ class GameEngine: ObservableObject {
             options.append("\(c.name) — \(c.race.rawValue) \(c.characterClass.rawValue) L\(c.level)")
         }
 
-        showPaginatedMenuOptions(options, pinned: ["< Back"], handler: { [weak self] idx in
+        showPaginatedMenuOptions(options, pinned: ["?", "< Back"], handler: { [weak self] idx in
             guard let self = self, idx >= 0 && idx < records.count else { return }
             self.showCharacterRosterActions(record: records[idx], loadHandler: loadHandler, onBack: onBack)
-        }, pinnedHandler: { [weak self] _ in
-            (onBack ?? { self?.showPlayMenu() })()
+        }, pinnedHandler: { [weak self] choice in
+            if choice == 0 { helpAction() } else { (onBack ?? { self?.showPlayMenu() })() }
         })
         closeHandler = onBack ?? { [weak self] in self?.showPlayMenu() }
     }
@@ -24251,6 +24294,7 @@ class GameEngine: ObservableObject {
         var options: [String] = []
         if loadHandler != nil { options.append("Load into Party") }
         options.append("Delete from Roster")
+        options.append(contentsOf: ["?", "< Back"])
 
         showMenu(options)
         let backToList: () -> Void = { [weak self] in
@@ -24270,7 +24314,20 @@ class GameEngine: ObservableObject {
                 self.print("  \(c.name) removed from the roster.", color: .yellow)
                 self.waitForContinue()
                 self.inputHandler = { _ in backToList() }
-            default: break
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("\(c.name) — Help")
+                    self.print("")
+                    if loadHandler != nil {
+                        self.print("  LOAD INTO PARTY", color: .cyan, bold: true)
+                        self.printWrapped("Adds \(c.name), with their saved level and gear, to the party you're building.", indent: 2, color: .dimGreen)
+                        self.print("")
+                    }
+                    self.print("  DELETE FROM ROSTER", color: .cyan, bold: true)
+                    self.printWrapped("Permanently removes \(c.name) from your Character Roster. Cannot be undone.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default: backToList()
             }
         }
     }
@@ -25022,10 +25079,24 @@ class GameEngine: ObservableObject {
             }
         }
 
-        showPaginatedMenuOptions(options, pinned: ["< Back"], handler: { idx in
+        showPaginatedMenuOptions(options, pinned: ["?", "< Back"], handler: { idx in
             guard idx >= 0 && idx < rows.count else { return }
             openRow(rows[idx])
-        }, pinnedHandler: { _ in backAction() })
+        }, pinnedHandler: { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 0 {
+                self.showInlineHelp {
+                    self.printTitle("Continue Adventure — Help")
+                    self.print("")
+                    self.printWrapped("Tap an entry's button, or its description text, to see its save points and read its tale. Long-press a numbered button to load that adventure's latest save directly.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("A completed adventure shows its Hall of Fame result (W/L, score); one still in progress shows PLAYING. Either way it's read and continued the same way.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else {
+                backAction()
+            }
+        })
 
         // Long-press → load latest save directly (skip the slot detail
         // screen); no-op for a row with no save.
@@ -25082,16 +25153,30 @@ class GameEngine: ObservableObject {
         }
 
         // "Read Tale" is a regular (numbered) pinned button, not squeezed
-        // into the compact </Manage/Back cell — it's a primary action here,
+        // into the compact ?/Manage/Back cell — it's a primary action here,
         // not a secondary one.
-        showPaginatedMenuOptions(options, pinned: ["Read Tale", "Manage", "< Back"], handler: { [weak self] idx in
+        showPaginatedMenuOptions(options, pinned: ["Read Tale", "?", "Manage", "< Back"], handler: { [weak self] idx in
             guard let self = self, idx >= 0 && idx < breakpoints.count else { return }
             self.loadGame(breakpoints[idx])
         }, pinnedHandler: { [weak self] choice in
             guard let self = self else { return }
             switch choice {
             case 0: self.showTaleForSlot(slot: slot, returnTo: origin)
-            case 1: self.showSaveSlotManage(slot: slot, returnTo: origin)
+            case 1:
+                self.showInlineHelp {
+                    self.printTitle("\(slot.slotName) — Help")
+                    self.print("")
+                    self.print("  LOAD LATEST / LOAD #N", color: .cyan, bold: true)
+                    self.printWrapped("Continue this adventure from that save point. Long-press any of these to load the latest one directly.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  READ TALE", color: .cyan, bold: true)
+                    self.printWrapped("A narrative of this adventure so far — same style whether it's finished or still in progress.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  MANAGE", color: .cyan, bold: true)
+                    self.printWrapped("Rename, copy, or delete this adventure — or delete a single save point.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            case 2: self.showSaveSlotManage(slot: slot, returnTo: origin)
             default: self.showLoadGameMenu(returnTo: origin)
             }
         })
