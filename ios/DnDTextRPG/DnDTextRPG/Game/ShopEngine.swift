@@ -257,6 +257,28 @@ class ShopEngine {
         })
     }
 
+    /// A handful of suggested offers spread across [floor, ceiling], sorted
+    /// ascending for display as buttons — varies each time this prompt is
+    /// shown rather than being the same fixed spread every visit.
+    private func suggestedOffers(floor: Int, ceiling: Int, count: Int = 3) -> [Int] {
+        guard ceiling >= floor else { return [] }
+        let span = ceiling - floor + 1
+        if span <= count { return Array(floor...ceiling) }
+        var values = Set<Int>()
+        let bucketSize = span / count
+        for i in 0..<count {
+            let bucketStart = floor + i * bucketSize
+            let bucketEnd = (i == count - 1) ? ceiling : min(ceiling, bucketStart + bucketSize - 1)
+            if bucketStart <= bucketEnd {
+                values.insert(Int.random(in: bucketStart...bucketEnd))
+            }
+        }
+        while values.count < min(count, span) {
+            values.insert(Int.random(in: floor...ceiling))
+        }
+        return values.sorted()
+    }
+
     /// Prompts for a gold offer on `item`, then resolves it against a
     /// Persuasion check whose difficulty scales with how steep a discount
     /// was asked for (and stiffens slightly on each repeat attempt for the
@@ -277,27 +299,36 @@ class ShopEngine {
         // insultingly low bid no matter the roll — and offering the full
         // asking price isn't haggling at all, so that's rejected too.
         let floor = max(1, item.value / 4)
-        game.promptText("Name your price (\(floor)-\(item.value - 1)gp), or 0 to walk away:")
-        game.closeHandler = { [weak self] in self?.showHaggleMenu(completion: completion) }
-        game.inputHandler = { [weak self] text in
-            guard let self = self, let game = self.game, let character = self.character, let merchant = self.merchant else { return }
-            let trimmed = text.trimmingCharacters(in: .whitespaces)
-            guard let offer = Int(trimmed), offer >= 0 else {
-                game.print("  \"Speak plainly — a number, adventurer.\"", color: .yellow)
-                game.waitForContinue()
-                game.inputHandler = { [weak self] _ in self?.showHaggleOfferPrompt(item: item, attempt: attempt, completion: completion) }
-                return
-            }
+        let ceiling = item.value - 1
+
+        func resolveOffer(_ offer: Int) {
+            guard let game = self.game, let character = self.character, let merchant = self.merchant else { return }
             if offer == 0 {
                 game.print("  You step back from the table.", color: .dimGreen)
                 game.waitForContinue()
                 game.inputHandler = { [weak self] _ in self?.showHaggleMenu(completion: completion) }
                 return
             }
+            // Asking price or more — no haggling needed, just sell it. No
+            // Persuasion check: there's nothing to persuade the merchant of.
             guard offer < item.value else {
-                game.print("  \"That's the asking price, friend — just buy it!\"", color: .yellow)
+                if character.gold >= offer, character.canCarry(item) {
+                    character.gold -= offer
+                    let newItem = item.newInstance()
+                    _ = character.addItem(newItem)
+                    let overpaidBy = offer - item.value
+                    if overpaidBy > 0 {
+                        game.print("  \"Well, aren't you generous.\" \(merchant.name) pockets the extra \(overpaidBy) gold without complaint.", color: .brightGreen)
+                    } else {
+                        game.print("  \"A fair price, no haggling needed.\" \(merchant.name) hands over the \(newItem.name).", color: .brightGreen)
+                    }
+                    game.print("  Purchased \(newItem.name) for \(offer) gold.", color: .yellow)
+                    game.logEvent("Bought \(item.name) for \(offer) gold with \(merchant.name)", category: "SHOP")
+                } else {
+                    game.print("  (You agreed a price of \(offer)gp but couldn't complete the purchase.)", color: .yellow)
+                }
                 game.waitForContinue()
-                game.inputHandler = { [weak self] _ in self?.showHaggleOfferPrompt(item: item, attempt: attempt, completion: completion) }
+                game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
                 return
             }
             guard offer >= floor else {
@@ -351,6 +382,29 @@ class ShopEngine {
                     }
                 }
             }
+        }
+
+        // Offer a few suggested prices as buttons — in ascending order —
+        // so haggling doesn't require typing a number, while still
+        // accepting a typed (or spoken) custom offer too. Varies each
+        // time this prompt is shown.
+        let offers = suggestedOffers(floor: floor, ceiling: ceiling)
+        let options = offers.map { "\($0)gp" }
+        game.promptTextWithMenu("Name your price (\(floor)gp or more — \(item.value)gp or above buys it outright), or 0 to walk away:", options: options)
+        game.closeHandler = { [weak self] in self?.showHaggleMenu(completion: completion) }
+        game.menuHandler = { choice in
+            guard choice >= 1, choice <= offers.count else { return }
+            resolveOffer(offers[choice - 1])
+        }
+        game.inputHandler = { text in
+            let trimmed = text.trimmingCharacters(in: .whitespaces)
+            guard let offer = Int(trimmed), offer >= 0 else {
+                game.print("  \"Speak plainly — a number, adventurer.\"", color: .yellow)
+                game.waitForContinue()
+                game.inputHandler = { [weak self] _ in self?.showHaggleOfferPrompt(item: item, attempt: attempt, completion: completion) }
+                return
+            }
+            resolveOffer(offer)
         }
     }
 

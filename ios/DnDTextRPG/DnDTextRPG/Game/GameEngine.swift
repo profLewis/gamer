@@ -1786,6 +1786,53 @@ class GameEngine: ObservableObject {
         text == "?" || text == "?\u{0338}" || text == "< Back" || text == "Manage"
     }
 
+    /// Parses a spoken number phrase ("eighty", "one hundred and eighty",
+    /// "eighty gold") into its integer value. Returns nil unless the
+    /// ENTIRE string (after dropping a single trailing unit word) is made
+    /// of number words — so ordinary free-text/chat input is never
+    /// misread as a number. See handleTextInput, which normalizes voice
+    /// transcripts before handing them to any numeric prompt.
+    static func parseSpokenNumber(_ text: String) -> Int? {
+        let ones: [String: Int] = [
+            "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+            "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
+            "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+        ]
+        let tens: [String: Int] = [
+            "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
+        ]
+        let scales: [String: Int] = ["hundred": 100, "thousand": 1000]
+        let unitWords: Set<String> = ["gold", "gp", "g", "pieces", "piece", "coins", "coin", "dollars", "dollar"]
+
+        var words = text.lowercased()
+            .replacingOccurrences(of: "-", with: " ")
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+
+        // Drop a single trailing unit word ("eighty gold" -> "eighty").
+        if let last = words.last, unitWords.contains(last) {
+            words.removeLast()
+        }
+        guard !words.isEmpty else { return nil }
+
+        var total = 0
+        var current = 0
+        for word in words {
+            if word == "and" { continue }
+            if let v = ones[word] {
+                current += v
+            } else if let v = tens[word] {
+                current += v
+            } else if let v = scales[word] {
+                current = (current == 0 ? 1 : current) * v
+                if v == 1000 { total += current; current = 0 }
+            } else {
+                return nil  // a non-number word — not a spoken number phrase
+            }
+        }
+        return total + current
+    }
+
     static func autoTint(_ text: String) -> MenuTint {
         // Every "< X" button in this app (Back, Done, Cancel, Leave, Not Now...)
         // is a navigation/dismissal action by convention — tint them all the
@@ -2806,7 +2853,19 @@ class GameEngine: ObservableObject {
 
     func handleTextInput(_ text: String) {
         stopIdleAnimations()
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Voice input often transcribes a number as words ("eighty", "one
+        // hundred and eighty") rather than digits — Apple's speech
+        // recognizer doesn't reliably auto-digitize them. Normalize to
+        // digits so anything downstream parsing with Int(...) (e.g. the
+        // haggle price prompt) still recognizes it as a number. Only
+        // touches text that's entirely a spoken number (plus an optional
+        // trailing unit word like "gold"), so ordinary typed or free-text
+        // input is never altered.
+        if Int(trimmed) == nil, let spoken = Self.parseSpokenNumber(trimmed) {
+            trimmed = String(spoken)
+        }
 
         // Universal mode switch — always works regardless of screen
         let lowerCheck = trimmed.lowercased()
