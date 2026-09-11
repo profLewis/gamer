@@ -231,11 +231,23 @@ enum NPCType: String, CaseIterable, Codable {
     func gatekeeperGreeting(trustworthiness: NPCTrustworthiness) -> String {
         switch trustworthiness {
         case .honest:
-            return "Hold, adventurers. I've stood watch here for many seasons. I can tell you what lurks below — ask, and I'll speak plainly."
+            return [
+                "Hold, adventurers. I've stood watch here for many seasons. I can tell you what lurks below — ask, and I'll speak plainly.",
+                "You've reached the gate. I've buried enough friends who went in unprepared — ask what you need to know, and I'll give it to you straight.",
+                "Another party, is it? Good. I'd rather send you in knowing than not. Ask away — I've no reason to lie to you.",
+            ].randomElement()!
         case .evasive:
-            return "Ah... visitors. The shadows speak of your coming. I know things, yes... but not all truths are easily told."
+            return [
+                "Ah... visitors. The shadows speak of your coming. I know things, yes... but not all truths are easily told.",
+                "Hmm. You want in, I take it. I know more than I let on — most gatekeepers do. Whether I share it depends on how you ask.",
+                "So. Another party seeking the depths. I've watched many pass this gate. What I know, I don't give freely — but I might, in time.",
+            ].randomElement()!
         case .liar:
-            return "Welcome, friends! You're in luck — I know everything about this dungeon. Stick with my advice and you'll be fine. Trust me."
+            return [
+                "Welcome, friends! You're in luck — I know everything about this dungeon. Stick with my advice and you'll be fine. Trust me.",
+                "Ah, perfect timing! I happen to be the foremost expert on what's down there. Ask me anything — I never steer a soul wrong.",
+                "You've come to the right gatekeeper! Others exaggerate the dangers below — I'll tell you the honest, comforting truth. Promise.",
+            ].randomElement()!
         }
     }
 

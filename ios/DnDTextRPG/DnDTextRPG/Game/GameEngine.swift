@@ -15641,10 +15641,15 @@ class GameEngine: ObservableObject {
             room.npc = npc
             recordNPCEncounter(npc.type)
             logEvent("Met \(npc.type.rawValue) in \(room.name)", category: "NPC")
-            // Speak greeting in NPC's voice — mark page as read so auto-read doesn't repeat
+            // Speak the intro (name + description, printed above in dimGreen
+            // — a colour the normal read-aloud pipeline treats as a
+            // decorative nav hint and skips) together with the greeting in
+            // the NPC's voice, then mark the page read so the generic
+            // pipeline doesn't also read the greeting a second time in the
+            // narrator voice.
             if speakerModeOn, let voiceId = npc.voiceIdentifier {
                 speakerHasReadCurrentPage = true
-                SpeechEngine.shared.speakAsNPC(greeting, voiceId: voiceId)
+                SpeechEngine.shared.speakAsNPC("\(npc.type.rawValue). \(npc.type.description) \(greeting)", voiceId: voiceId)
             }
         } else {
             let returnGreetings = [
@@ -15658,7 +15663,7 @@ class GameEngine: ObservableObject {
             if speakerModeOn, let voiceId = npc.voiceIdentifier {
                 speakerHasReadCurrentPage = true
                 let cleanGreet = greet.replacingOccurrences(of: "\"", with: "")
-                SpeechEngine.shared.speakAsNPC(cleanGreet, voiceId: voiceId)
+                SpeechEngine.shared.speakAsNPC("\(npc.type.rawValue). \(npc.type.description) \(cleanGreet)", voiceId: voiceId)
             }
         }
 
@@ -24405,79 +24410,27 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// One row of the unified Continue Adventure list — either an
+    /// in-progress save slot or a completed Hall of Fame tale, shown
+    /// together (sorted most-recent-first) so there's one list to check
+    /// instead of a separate Hall of Fame screen to also remember to visit.
+    private enum LoadListItem {
+        case slot(SaveSlot)
+        case hof(HallOfFameEntry)
+
+        var sortDate: Date {
+            switch self {
+            case .slot(let s): return s.latest.savedAt
+            case .hof(let e): return e.date
+            }
+        }
+    }
+
     private func showLoadGameMenu(returnTo origin: LoadGameOrigin) {
         clearTerminal()
-        printTitle("Load Game")
+        printTitle("Continue Adventure")
 
-        let slots = SaveGameManager.shared.listSlots()
-
-        if slots.isEmpty {
-            print("No saved games found.", color: .yellow)
-            print("")
-
-            let backAction: () -> Void = { [weak self] in
-                switch origin {
-                case .mainMenu:
-                    self?.clearTerminal()
-                    self?.showMainMenu()
-                case .exploration:
-                    self?.showExplorationView()
-                case .settings:
-                    self?.showSaveSettings()
-                }
-            }
-            closeHandler = backAction
-            // Reachable even with no in-progress saves — completed tales
-            // still live in the Hall of Fame.
-            if origin == .mainMenu {
-                showMenu(["Hall of Fame", "< Back"])
-                menuHandler = { [weak self] choice in
-                    if choice == 1 { self?.showHallOfFame() } else { backAction() }
-                }
-            }
-            return
-        }
-
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateStyle = .medium
-        dateFormatter.timeStyle = .short
-
-        for (index, slot) in slots.enumerated() {
-            let save = slot.latest
-            let dateStr = dateFormatter.string(from: save.savedAt)
-            let day = save.gameTimeMinutes / 1440 + 1
-            let hourOfDay = (save.gameTimeMinutes % 1440) / 60
-            let period = hourOfDay >= 12 ? "PM" : "AM"
-            let hour12 = hourOfDay == 0 ? 12 : (hourOfDay > 12 ? hourOfDay - 12 : hourOfDay)
-            let bpInfo = slot.breakpointCount > 1 ? " (\(slot.breakpointCount) saves)" : ""
-            print("\(index + 1). \(slot.slotName)\(bpInfo)", color: .brightGreen)
-            print("   \(save.partyDescription)", color: .dimGreen)
-            print("   \(save.dungeonName) (Lv\(save.dungeonLevel)) Day \(day), \(hour12) \(period)", color: .dimGreen)
-            print("   Saved: \(dateStr)", color: .dimGreen)
-            print("")
-        }
-
-        var options = slots.map { slot -> String in
-            let parts = slot.slotName.components(separatedBy: " — ")
-            let charName = parts.first ?? slot.slotName
-            let location = slot.latest.dungeonName
-            let maxLen = 20
-            if charName.count + location.count + 3 <= maxLen {
-                return "\(charName) · \(location)"
-            } else {
-                let locBudget = max(4, maxLen - charName.count - 3)
-                return "\(charName) · \(location.prefix(locBudget))"
-            }
-        }
-        options.append("Manage Saves")
-        // Only from the main-menu "Continue Adventure" entry point — the
-        // Hall of Fame's completed tales aren't as relevant mid-game.
-        let showHoF = origin == .mainMenu
-        if showHoF { options.append("Hall of Fame") }
-
-        showMenu(options)
-
-        closeHandler = { [weak self] in
+        let backAction: () -> Void = { [weak self] in
             switch origin {
             case .mainMenu:
                 self?.clearTerminal()
@@ -24488,38 +24441,107 @@ class GameEngine: ObservableObject {
                 self?.showSaveSettings()
             }
         }
+        closeHandler = backAction
 
-        menuHandler = { [weak self] choice in
-            if showHoF && choice == options.count {
-                self?.showHallOfFame()
-                return
-            }
-            if choice == slots.count + 1 {
-                self?.showManageSavesMenu(returnTo: origin)
-                return
-            }
+        let slots = SaveGameManager.shared.listSlots()
+        // Completed tales only make sense from the main-menu entry point —
+        // mid-game (Settings/Save menu), only your own resumable saves
+        // matter. No longer a separate "Hall of Fame" screen to visit for
+        // this — its entries are folded straight into this same list.
+        let hofEntries = origin == .mainMenu ? HallOfFameManager.shared.listEntries() : []
 
-            guard choice > 0 && choice <= slots.count else { return }
-            let slot = slots[choice - 1]
+        if slots.isEmpty && hofEntries.isEmpty {
+            print("  No saved games or adventures recorded yet.", color: .yellow)
+            print("")
+            showMenu(["< Back"])
+            menuHandler = { _ in backAction() }
+            return
+        }
 
-            if slot.breakpointCount > 1 {
-                self?.showBreakpointMenu(slot: slot, returnTo: origin)
-            } else {
-                self?.loadGame(slot.latest)
+        var items: [LoadListItem] = slots.map { .slot($0) } + hofEntries.map { .hof($0) }
+        items.sort { $0.sortDate > $1.sortDate }
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .short
+
+        var options: [String] = []
+        for (i, item) in items.enumerated() {
+            switch item {
+            case .slot(let slot):
+                let save = slot.latest
+                let day = save.gameTimeMinutes / 1440 + 1
+                let gold = save.party.reduce(0) { $0 + $1.gold }
+                let roomsExplored = save.dungeon.rooms.values.filter { $0.visited }.count
+                let totalRooms = save.dungeon.rooms.count
+                let bpInfo = slot.breakpointCount > 1 ? " (\(slot.breakpointCount) saves)" : ""
+                print("\(i + 1). \(save.dungeonName) Lv.\(save.dungeonLevel) PLAYING\(bpInfo)", color: .cyan, bold: true)
+                printWrapped(save.partyDescription, indent: 3, color: .dimGreen)
+                printWrapped("Gold:\(gold) Slain:\(save.monstersSlain) Rooms:\(roomsExplored)/\(totalRooms) Day \(day)", indent: 3, color: .dimGreen)
+                print("   \(dateFormatter.string(from: save.savedAt))", color: .dimGreen)
+                print("")
+
+                let parts = slot.slotName.components(separatedBy: " — ")
+                let charName = parts.first ?? slot.slotName
+                let location = save.dungeonName
+                let maxLen = 20
+                if charName.count + location.count + 3 <= maxLen {
+                    options.append("\(charName) · \(location)")
+                } else {
+                    let locBudget = max(4, maxLen - charName.count - 3)
+                    options.append("\(charName) · \(location.prefix(locBudget))")
+                }
+            case .hof(let entry):
+                let outcomeTag = entry.outcome == .victory ? "W" : "L"
+                let outcomeColor: TerminalColor = entry.outcome == .victory ? .yellow : .red
+                let day = entry.gameTimeMinutes / 1440 + 1
+                let name = String(entry.dungeonName.prefix(20))
+                print("\(i + 1). \(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts", color: outcomeColor, bold: true)
+                printWrapped(entry.partyDescription, indent: 3, color: .dimGreen)
+                printWrapped("Gold:\(entry.goldCollected) Slain:\(entry.monstersSlain) Rooms:\(entry.roomsExplored)/\(entry.totalRooms) Day \(day)", indent: 3, color: .dimGreen)
+                print("   \(dateFormatter.string(from: entry.date))", color: .dimGreen)
+                print("")
+
+                options.append("\(name) Lv.\(entry.dungeonLevel) \(outcomeTag)")
             }
         }
 
-        // Long-press → load latest save directly (skip breakpoint menu)
+        // Was a plain showMenu() with every slot as its own button plus
+        // "Manage Saves"/"Hall of Fame" tacked on — ignored maxButtonsPerScreen
+        // entirely, so a long save history just kept growing the button list
+        // past the configured limit instead of paging. "Manage Saves" (a
+        // separate screen re-listing the exact same slots) is gone too —
+        // tapping a slot now goes to showSaveSlotDetail(), which shows its
+        // save points AND has its own "Manage" (rename/copy/delete) button,
+        // so there's one place to find a slot rather than two.
+        showPaginatedMenuOptions(options, pinned: ["< Back"], handler: { [weak self] idx in
+            guard let self = self, idx >= 0 && idx < items.count else { return }
+            switch items[idx] {
+            case .slot(let slot):
+                self.showSaveSlotDetail(slot: slot, returnTo: origin)
+            case .hof(let entry):
+                let hofIdx = hofEntries.firstIndex(where: { $0.id == entry.id }) ?? 0
+                self.showHallOfFameDetail(entry, entries: hofEntries, index: hofIdx)
+            }
+        }, pinnedHandler: { _ in backAction() })
+
+        // Long-press a save slot → load latest directly (skip the slot
+        // detail screen); Hall of Fame entries have no equivalent shortcut.
         menuLongPressHandler = { [weak self] choice in
-            guard choice > 0 && choice <= slots.count else { return }
-            self?.loadGame(slots[choice - 1].latest)
+            guard let self = self, choice >= 1, choice <= items.count else { return }
+            if case .slot(let slot) = items[choice - 1] { self.loadGame(slot.latest) }
         }
     }
 
-    private func showBreakpointMenu(slot: SaveSlot, returnTo origin: LoadGameOrigin) {
+    /// Shows a save slot's available save points, and a "Manage" button
+    /// (rename/copy/delete — see showSaveSlotManage) for that slot. Always
+    /// shown on tapping a slot, not just when it has more than one save
+    /// point, so there's a single consistent path in from the load list.
+    private func showSaveSlotDetail(slot: SaveSlot, returnTo origin: LoadGameOrigin) {
         clearTerminal()
         printTitle(slot.slotName)
-        print("Select a save to load:", color: .cyan)
+        print("  \(slot.latest.partyDescription)", color: .dimGreen)
+        print("  \(slot.latest.dungeonName) (Level \(slot.latest.dungeonLevel))", color: .dimGreen)
         print("")
 
         let breakpoints = SaveGameManager.shared.listBreakpoints(slotId: slot.slotId)
@@ -24543,13 +24565,97 @@ class GameEngine: ObservableObject {
             i == 0 ? "Load Latest" : "Load #\(i + 1)"
         }
 
-        showMenu(options)
+        showPaginatedMenuOptions(options, pinned: ["Manage", "< Back"], handler: { [weak self] idx in
+            guard let self = self, idx >= 0 && idx < breakpoints.count else { return }
+            self.loadGame(breakpoints[idx])
+        }, pinnedHandler: { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 0 { self.showSaveSlotManage(slot: slot, returnTo: origin) }
+            else { self.showLoadGameMenu(returnTo: origin) }
+        })
 
-        closeHandler = { [weak self] in self?.showLoadGameMenu(returnTo: origin) }
-        menuHandler = { [weak self] choice in
+        menuLongPressHandler = { [weak self] choice in
             guard choice > 0 && choice <= breakpoints.count else { return }
             self?.loadGame(breakpoints[choice - 1])
         }
+
+        closeHandler = { [weak self] in self?.showLoadGameMenu(returnTo: origin) }
+    }
+
+    /// Rename / Copy / Delete for one save slot — reached via the "Manage"
+    /// button on showSaveSlotDetail, rather than a separate top-level
+    /// "Manage Saves" screen that re-listed every slot a second time.
+    private func showSaveSlotManage(slot: SaveSlot, returnTo origin: LoadGameOrigin) {
+        clearTerminal()
+        printTitle("Manage")
+        print("  \(slot.slotName)", color: .brightGreen, bold: true)
+        print("  \(slot.latest.partyDescription)", color: .dimGreen)
+        let saveWord = slot.breakpointCount == 1 ? "save" : "saves"
+        print("  \(slot.breakpointCount) \(saveWord)", color: .dimGreen)
+        print("")
+
+        let options = ["Rename", "Copy", "Delete Adventure"]
+        showMenu(options)
+        closeHandler = { [weak self] in self?.showSaveSlotDetail(slot: slot, returnTo: origin) }
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= options.count else { return }
+            let backToManage: () -> Void = { [weak self] in self?.showSaveSlotManage(slot: slot, returnTo: origin) }
+            let backToList: () -> Void = { [weak self] in self?.showLoadGameMenu(returnTo: origin) }
+            switch options[choice - 1] {
+            case "Rename": self.renameSlot(slot: slot, returnTo: origin, onCancel: backToManage, onDone: backToList)
+            case "Copy": self.duplicateSlot(slot: slot, returnTo: origin)
+            case "Delete Adventure": self.confirmDeleteSlot(slot: slot, returnTo: origin, onCancel: backToManage, onDone: backToList)
+            default: break
+            }
+        }
+    }
+
+    /// Copies every save point in `slot` into a brand new, independent slot
+    /// named "<original> (Copy)" (numbered further if that's already taken).
+    private func duplicateSlot(slot: SaveSlot, returnTo origin: LoadGameOrigin) {
+        let breakpoints = SaveGameManager.shared.listBreakpoints(slotId: slot.slotId)
+        guard !breakpoints.isEmpty else {
+            showSaveSlotManage(slot: slot, returnTo: origin)
+            return
+        }
+
+        let existingNames = Set(SaveGameManager.shared.listSlots().map { $0.slotName.lowercased() })
+        var copyName = "\(slot.slotName) (Copy)"
+        var suffix = 2
+        while existingNames.contains(copyName.lowercased()) {
+            copyName = "\(slot.slotName) (Copy \(suffix))"
+            suffix += 1
+        }
+
+        let newSlotId = UUID()
+        for bp in breakpoints {
+            let copy = SaveGame(
+                id: UUID(),
+                slotId: newSlotId,
+                savedAt: bp.savedAt,
+                slotName: copyName,
+                partyDescription: bp.partyDescription,
+                dungeonName: bp.dungeonName,
+                dungeonLevel: bp.dungeonLevel,
+                party: bp.party,
+                dungeon: bp.dungeon,
+                gameState: bp.gameState,
+                gameTimeMinutes: bp.gameTimeMinutes,
+                adventureLog: bp.adventureLog,
+                dmChatLog: bp.dmChatLog,
+                torchLit: bp.torchLit,
+                torchTurnsRemaining: bp.torchTurnsRemaining,
+                partyChatLog: bp.partyChatLog,
+                monstersSlain: bp.monstersSlain,
+                combatsWon: bp.combatsWon
+            )
+            try? SaveGameManager.shared.save(copy)
+        }
+
+        print("")
+        print("  Copied to '\(copyName)'.", color: .brightGreen)
+        waitForContinue()
+        inputHandler = { [weak self] _ in self?.showLoadGameMenu(returnTo: origin) }
     }
 
     private func showManageSavesMenu(returnTo origin: LoadGameOrigin) {
@@ -24908,20 +25014,28 @@ class GameEngine: ObservableObject {
         }
     }
 
-    private func renameSlot(slot: SaveSlot, returnTo origin: LoadGameOrigin) {
+    /// - onCancel/onDone: where to go on an invalid name / a successful
+    ///   rename — defaults to the Settings-reached flow (showSlotActions /
+    ///   showManageSavesMenu); the Continue Adventure-reached flow
+    ///   (showSaveSlotManage) passes its own so renaming returns there
+    ///   instead of to the unrelated Settings screen.
+    private func renameSlot(slot: SaveSlot, returnTo origin: LoadGameOrigin, onCancel: (() -> Void)? = nil, onDone: (() -> Void)? = nil) {
+        let cancelAction: () -> Void = onCancel ?? { [weak self] in self?.showSlotActions(slot: slot, returnTo: origin) }
+        let doneAction: () -> Void = onDone ?? { [weak self] in self?.showManageSavesMenu(returnTo: origin) }
+
         print("")
         promptText("Enter new name for this slot:")
 
         inputHandler = { [weak self] newName in
             guard let self = self else { return }
             if self.isReservedWord(newName) {
-                self.showSlotActions(slot: slot, returnTo: origin)
+                cancelAction()
                 return
             }
             let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
                 self.print("Name cannot be empty.", color: .yellow)
-                self.showSlotActions(slot: slot, returnTo: origin)
+                cancelAction()
                 return
             }
 
@@ -24959,8 +25073,8 @@ class GameEngine: ObservableObject {
 
             self.print("")
             self.print("Renamed to '\(trimmed)'", color: .brightGreen)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.showManageSavesMenu(returnTo: origin)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                doneAction()
             }
         }
     }
@@ -25054,7 +25168,13 @@ class GameEngine: ObservableObject {
         }
     }
 
-    private func confirmDeleteSlot(slot: SaveSlot, returnTo origin: LoadGameOrigin) {
+    /// - onCancel/onDone: see renameSlot's doc — same defaulting pattern so
+    ///   the Continue Adventure-reached flow returns there instead of to
+    ///   the unrelated Settings-based Manage Saves screen.
+    private func confirmDeleteSlot(slot: SaveSlot, returnTo origin: LoadGameOrigin, onCancel: (() -> Void)? = nil, onDone: (() -> Void)? = nil) {
+        let cancelAction: () -> Void = onCancel ?? { [weak self] in self?.showSlotActions(slot: slot, returnTo: origin) }
+        let doneAction: () -> Void = onDone ?? { [weak self] in self?.showManageSavesMenu(returnTo: origin) }
+
         print("")
         let saveWord = slot.breakpointCount == 1 ? "save" : "saves"
         print("Delete '\(slot.slotName)'?", color: .red, bold: true)
@@ -25073,11 +25193,11 @@ class GameEngine: ObservableObject {
                 }
                 self?.print("")
                 self?.print("Adventure deleted.", color: .red)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                    self?.showManageSavesMenu(returnTo: origin)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    doneAction()
                 }
             } else {
-                self?.showSlotActions(slot: slot, returnTo: origin)
+                cancelAction()
             }
         }
     }
