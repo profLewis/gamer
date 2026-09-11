@@ -8404,7 +8404,8 @@ class GameEngine: ObservableObject {
         print("")
 
         let options = [musicEnabled ? "Music Off" : "Music On",
-                       battleSoundsEnabled ? "Sounds Off" : "Sounds On"]
+                       battleSoundsEnabled ? "Sounds Off" : "Sounds On",
+                       "?", "< Back"]
         showMenu(options)
         closeHandler = { [weak self] in self?.showMusicSettings() }
         menuHandler = { [weak self] choice in
@@ -8419,7 +8420,16 @@ class GameEngine: ObservableObject {
                 self.recordSettingChange(screen: "s:mood:switches", key: "battle_sounds_enabled", name: "Sounds")
                 self.battleSoundsEnabled.toggle()
                 self.showMoodSwitches()
-            default: break
+            case 3:
+                self.showInlineHelp {
+                    self.printTitle("Mood Switches — Help")
+                    self.print("")
+                    self.printWrapped("Music: turns background music on or off entirely.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Battle Sounds: turns combat sound effects on or off.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default:
+                self.showMusicSettings()
             }
         }
         installSettingUndoRedo(screen: "s:mood:switches") { [weak self] in self?.showMoodSwitches() }
@@ -26474,12 +26484,27 @@ class GameEngine: ObservableObject {
         }
 
         print("Select a slot to manage:", color: .cyan)
+        options.append("?")
+        options.append("< Back")
         showMenu(options)
 
-        closeHandler = { [weak self] in self?.showLoadGameMenu(returnTo: origin) }
-        menuHandler = { choice in
-            guard choice >= 1 && choice <= actions.count else { return }
-            actions[choice - 1]()
+        let backToLoadGame: () -> Void = { [weak self] in self?.showLoadGameMenu(returnTo: origin) }
+        closeHandler = backToLoadGame
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            guard choice >= 1 && choice <= options.count else { return }
+            if choice <= actions.count {
+                actions[choice - 1]()
+            } else if options[choice - 1] == "?" {
+                self.showInlineHelp {
+                    self.printTitle("Manage Saves — Help")
+                    self.print("")
+                    self.printWrapped("Tap a local save slot or remote game to rename, delete, or otherwise manage it.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else {
+                backToLoadGame()
+            }
         }
     }
 
