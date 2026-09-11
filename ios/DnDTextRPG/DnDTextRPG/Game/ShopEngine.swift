@@ -87,15 +87,34 @@ class ShopEngine {
         game.print("  Stock: \(stock.count) items on the shelves", color: .green)
         game.print("")
 
-        game.showMenu(["Buy", "Sell", "Haggle", "Ask About Rare Goods", "< Leave Shop"])
+        game.showMenu(["Buy", "Sell", "Haggle", "Ask About Rare Goods", "?", "< Leave Shop"])
 
         game.menuHandler = { [weak self] choice in
+            guard let self = self, let game = self.game else { return }
             switch choice {
-            case 1: self?.showBuyMenu(completion: completion)
-            case 2: self?.showSellMenu(completion: completion)
-            case 3: self?.showHaggleMenu(completion: completion)
-            case 4: self?.showRareGoods(completion: completion)
-            default: self?.maybeOfferAdvice(completion: completion)
+            case 1: self.showBuyMenu(completion: completion)
+            case 2: self.showSellMenu(completion: completion)
+            case 3: self.showHaggleMenu(completion: completion)
+            case 4: self.showRareGoods(completion: completion)
+            case 5:
+                game.showInlineHelp {
+                    game.printTitle("\(merchant.shopName) — Help")
+                    game.print("")
+                    game.print("  BUY", color: .cyan, bold: true)
+                    game.printWrapped("Purchase items from the merchant's stock at the listed price.", indent: 2, color: .dimGreen)
+                    game.print("")
+                    game.print("  SELL", color: .cyan, bold: true)
+                    game.printWrapped("Sell items from your inventory for half their value.", indent: 2, color: .dimGreen)
+                    game.print("")
+                    game.print("  HAGGLE", color: .cyan, bold: true)
+                    game.printWrapped("Name your own price on an item in stock — a Persuasion check decides whether the merchant accepts.", indent: 2, color: .dimGreen)
+                    game.print("")
+                    game.print("  ASK ABOUT RARE GOODS", color: .cyan, bold: true)
+                    game.printWrapped("A chance the merchant has something special under the counter, at a premium — also haggleable.", indent: 2, color: .dimGreen)
+                    game.print("")
+                }
+            default:
+                self.maybeOfferAdvice(completion: completion)
             }
         }
     }
@@ -113,7 +132,12 @@ class ShopEngine {
         game.print("")
 
         var options: [String] = []
+        // Exact printed-line range per item (printWrapped-free here, but
+        // itemUsageHint's line can still wrap) so tapping the green
+        // description text, not just the numbered button, buys the item.
+        var itemLineRanges: [Range<Int>] = []
         for item in stock {
+            let lineStart = game.terminalLines.count
             options.append("\(item.name)  \(item.value)gp  \(String(format: "%.1f", item.weight))lb")
             // Price/weight only ever appeared on the button label above, and
             // the description used dimGreen — a colour speaker mode treats
@@ -123,14 +147,14 @@ class ShopEngine {
             // fixes both at once.
             game.print("  \(item.name) — \(item.value)gp, \(String(format: "%.1f", item.weight))lb: \(item.description)", color: .green)
             game.print("    \(game.itemUsageHint(item))", color: .yellow)
+            itemLineRanges.append(lineStart..<game.terminalLines.count)
         }
         game.print("")
 
         let stockItems = self.stock
-        game.setBreadcrumb("ShopEngine.showBuyMenu.beforeShowPaginated(opts:\(options.count))")
-        game.showPaginatedMenuOptions(options, pinned: ["< Back"], handler: { [weak self] idx in
-            guard let self = self, let game = self.game else { return }
 
+        let buyItem: (Int) -> Void = { [weak self] idx in
+            guard let self = self, let game = self.game else { return }
             guard idx >= 0 && idx < stockItems.count else { return }
             let item = stockItems[idx]
 
@@ -167,9 +191,30 @@ class ShopEngine {
             game.inputHandler = { [weak self] _ in
                 self?.showBuyMenu(completion: completion)
             }
-        }, pinnedHandler: { [weak self] _ in
-            self?.showShopMain(completion: completion)
+        }
+
+        game.setBreadcrumb("ShopEngine.showBuyMenu.beforeShowPaginated(opts:\(options.count))")
+        game.showPaginatedMenuOptions(options, pinned: ["?", "< Back"], handler: { idx in
+            buyItem(idx)
+        }, pinnedHandler: { [weak self] choice in
+            guard let self = self, let game = self.game else { return }
+            if choice == 0 {
+                game.showInlineHelp {
+                    game.printTitle("Buy Items — Help")
+                    game.print("")
+                    game.printWrapped("Tap an item's button, or its green description text, to buy it — you'll be shown the price and asked to confirm.", indent: 2, color: .dimGreen)
+                    game.print("")
+                    game.printWrapped("Gold and carry weight are shown at the top; an item you can't afford or can't carry is refused with a reason.", indent: 2, color: .dimGreen)
+                    game.print("")
+                }
+            } else {
+                self.showShopMain(completion: completion)
+            }
         })
+        game.textLongPressHandler = { lineIndex in
+            guard let idx = itemLineRanges.firstIndex(where: { $0.contains(lineIndex) }) else { return }
+            buyItem(idx)
+        }
     }
 
     // MARK: - Sell
@@ -188,22 +233,37 @@ class ShopEngine {
         if sellableItems.isEmpty {
             game.print("  \"You have nothing I want, adventurer.\"", color: .dimGreen)
             game.print("")
-            game.showMenu(["< Back"])
-            game.menuHandler = { [weak self] _ in
-                self?.showShopMain(completion: completion)
+            game.showMenu(["?", "< Back"])
+            game.menuHandler = { [weak self] choice in
+                guard let self = self, let game = self.game else { return }
+                if choice == 1 {
+                    game.showInlineHelp {
+                        game.printTitle("Sell Items — Help")
+                        game.print("")
+                        game.printWrapped("Nothing in your inventory is worth anything to \(self.merchant?.name ?? "this merchant") right now.", indent: 2, color: .dimGreen)
+                        game.print("")
+                    }
+                } else {
+                    self.showShopMain(completion: completion)
+                }
             }
             return
         }
 
         var options: [String] = []
+        // Exact printed-line range per item so tapping the green
+        // description text, not just the numbered button, sells it.
+        var itemLineRanges: [Range<Int>] = []
         for item in sellableItems {
+            let lineStart = game.terminalLines.count
             let sellValue = max(1, item.value / 2)
             options.append("\(item.name)  +\(sellValue)gp")
+            game.print("  \(item.name) — sells for \(sellValue)gp: \(item.description)", color: .green)
+            itemLineRanges.append(lineStart..<game.terminalLines.count)
         }
 
-        game.showPaginatedMenuOptions(options, pinned: ["< Back"], handler: { [weak self] idx in
+        let sellItem: (Int) -> Void = { [weak self] idx in
             guard let self = self, let game = self.game else { return }
-
             guard idx >= 0 && idx < sellableItems.count else { return }
             let item = sellableItems[idx]
             let sellValue = max(1, item.value / 2)
@@ -220,9 +280,27 @@ class ShopEngine {
             game.inputHandler = { [weak self] _ in
                 self?.showSellMenu(completion: completion)
             }
-        }, pinnedHandler: { [weak self] _ in
-            self?.showShopMain(completion: completion)
+        }
+
+        game.showPaginatedMenuOptions(options, pinned: ["?", "< Back"], handler: { idx in
+            sellItem(idx)
+        }, pinnedHandler: { [weak self] choice in
+            guard let self = self, let game = self.game else { return }
+            if choice == 0 {
+                game.showInlineHelp {
+                    game.printTitle("Sell Items — Help")
+                    game.print("")
+                    game.printWrapped("Tap an item's button, or its green description text, to sell it to \(self.merchant?.name ?? "the merchant") for half its value.", indent: 2, color: .dimGreen)
+                    game.print("")
+                }
+            } else {
+                self.showShopMain(completion: completion)
+            }
         })
+        game.textLongPressHandler = { lineIndex in
+            guard let idx = itemLineRanges.firstIndex(where: { $0.contains(lineIndex) }) else { return }
+            sellItem(idx)
+        }
     }
 
     // MARK: - Haggle
@@ -243,18 +321,44 @@ class ShopEngine {
         game.print("")
 
         var options: [String] = []
+        // Exact printed-line range per item so tapping the green
+        // description text, not just the numbered button, starts haggling.
+        var itemLineRanges: [Range<Int>] = []
         for item in stock {
+            let lineStart = game.terminalLines.count
             options.append("Try: \(item.name) (\(item.value)gp)")
+            game.print("  \(item.name) — asking \(item.value)gp: \(item.description)", color: .green)
+            itemLineRanges.append(lineStart..<game.terminalLines.count)
         }
         let stockItems = self.stock
 
-        game.showPaginatedMenuOptions(options, pinned: ["< Back"], handler: { [weak self] idx in
+        let startHaggle: (Int) -> Void = { [weak self] idx in
             guard let self = self else { return }
             guard idx >= 0 && idx < stockItems.count else { return }
             self.showHaggleOfferPrompt(item: stockItems[idx], attempt: 1, completion: completion)
-        }, pinnedHandler: { [weak self] _ in
-            self?.showShopMain(completion: completion)
+        }
+
+        game.showPaginatedMenuOptions(options, pinned: ["?", "< Back"], handler: { idx in
+            startHaggle(idx)
+        }, pinnedHandler: { [weak self] choice in
+            guard let self = self, let game = self.game else { return }
+            if choice == 0 {
+                game.showInlineHelp {
+                    game.printTitle("Haggle — Help")
+                    game.print("")
+                    game.printWrapped("Tap an item's button, or its green description text, then name your price. The merchant accepts or refuses based on a Persuasion check — refused once, you can try again with a better offer.", indent: 2, color: .dimGreen)
+                    game.print("")
+                    game.printWrapped("Offering the asking price or more buys it outright, no negotiation needed.", indent: 2, color: .dimGreen)
+                    game.print("")
+                }
+            } else {
+                self.showShopMain(completion: completion)
+            }
         })
+        game.textLongPressHandler = { lineIndex in
+            guard let idx = itemLineRanges.firstIndex(where: { $0.contains(lineIndex) }) else { return }
+            startHaggle(idx)
+        }
     }
 
     /// A handful of suggested offers spread across [floor, ceiling], sorted
@@ -473,45 +577,102 @@ class ShopEngine {
         game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
     }
 
-    private func haggleRareGood(_ item: Item, price: Int, completion: @escaping () -> Void) {
+    /// Prompts for a gold offer on a rare/under-the-counter good, same shape
+    /// as showHaggleOfferPrompt (buttons + free text/voice, ascending
+    /// suggested prices, retry up to maxHaggleAttempts) — previously this
+    /// was a single blind dice roll with no way to name a price, and a
+    /// failure left "buy at full price or walk away" as the only options,
+    /// which is what actually made it feel like haggling didn't work.
+    /// Rare goods are already a favour, so the discount range is smaller
+    /// (at most ~20%) than an ordinary item's.
+    private func haggleRareGood(_ item: Item, price: Int, attempt: Int = 1, completion: @escaping () -> Void) {
         guard let game = game, let character = character, let merchant = merchant else { return }
-        let persuasionMod = character.skillModifier(for: .persuasion)
-        let roll = Dice.roll(20)
-        let total = roll + persuasionMod
-        // Under-the-counter goods are already a favour — harder to talk down further.
-        let dc = merchant.tier.haggleDC + 3
 
+        game.clearTerminal()
+        printPurseAndCarryLine(character)
         game.print("")
-        game.print("  \(character.name) rolls Persuasion: d20[\(roll)] + \(persuasionMod) = \(total) vs DC \(dc)", color: .dimGreen)
+        game.print("  \(item.name) — under-the-counter price \(price)gp", color: .brightGreen, bold: true)
+        if attempt > 1 {
+            game.print("  Attempt \(attempt) of \(Self.maxHaggleAttempts) — \(merchant.name)'s patience is wearing thin.", color: .yellow)
+        }
+        game.print("")
 
-        if total >= dc {
-            let discount = Double.random(in: 0.10...0.20)
-            // Guarantee a real discount even after rounding — see showHaggleMenu.
-            let newPrice = min(price - 1, max(1, Int((Double(price) * (1 - discount)).rounded())))
-            self.narrate(situation: "The player haggles over the price of the \(item.name) you just showed them under the counter. React in character, agreeing to a lower price of \(newPrice) gold instead of \(price).",
-                         offline: merchant.offlineHaggleSuccessLine(), color: .brightGreen) { [weak self] in
-                self?.buyRareGood(item, price: newPrice, completion: completion)
+        // Harder to talk down than ordinary stock — this is already a favour.
+        let floor = max(1, price - price / 5)
+        let ceiling = price - 1
+
+        func resolveOffer(_ offer: Int) {
+            guard let game = self.game, let character = self.character, let merchant = self.merchant else { return }
+            if offer == 0 {
+                game.print("  You step back from the table.", color: .dimGreen)
+                game.waitForContinue()
+                game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
+                return
             }
-        } else {
-            self.narrate(situation: "The player tries to haggle over the price of the \(item.name) but fails to persuade you. React in character, refusing to lower the price on a rare item.",
-                         offline: merchant.offlineHaggleFailLine(), color: .red) { [weak self] in
-                self?.buyRareGoodsRetry(item, price: price, completion: completion)
+            // Asking price or more — no haggling needed, just sell it.
+            guard offer < price else {
+                self.buyRareGood(item, price: offer, completion: completion)
+                return
+            }
+            guard offer >= floor else {
+                game.print("  \"\(offer) gold? For a piece like this? You insult me.\" \(merchant.name) won't even consider it.", color: .red)
+                let canRetry = attempt < Self.maxHaggleAttempts
+                game.waitForContinue()
+                if canRetry {
+                    game.inputHandler = { [weak self] _ in self?.haggleRareGood(item, price: price, attempt: attempt + 1, completion: completion) }
+                } else {
+                    game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
+                }
+                return
+            }
+
+            let discountPct = Double(price - offer) / Double(price)
+            let persuasionMod = character.skillModifier(for: .persuasion)
+            let roll = Dice.roll(20)
+            let total = roll + persuasionMod
+            // Under-the-counter goods are already a favour — harder to talk
+            // down further than ordinary stock (see showHaggleOfferPrompt).
+            let effectiveDC = merchant.tier.haggleDC + 3 + Int((discountPct * 40).rounded()) + (attempt - 1) * 2
+
+            game.print("")
+            game.print("  \(character.name) offers \(offer)gp and rolls Persuasion: d20[\(roll)] + \(persuasionMod) = \(total) vs DC \(effectiveDC)", color: .cyan)
+
+            if total >= effectiveDC {
+                self.narrate(situation: "The player haggles over the price of the \(item.name) you just showed them under the counter, offering \(offer) gold instead of \(price). React in character, agreeing to the lower price.",
+                             offline: merchant.offlineHaggleSuccessLine(), color: .brightGreen) { [weak self] in
+                    self?.buyRareGood(item, price: offer, completion: completion)
+                }
+            } else {
+                let canRetry = attempt < Self.maxHaggleAttempts
+                self.narrate(situation: "The player offers \(offer) gold for the \(item.name) (asking price \(price)) but fails to persuade you. React in character, refusing that price\(canRetry ? ", but leave room for a better offer" : " and firmly end the negotiation").",
+                             offline: merchant.offlineHaggleFailLine(), color: .red) {
+                    game.waitForContinue()
+                    if canRetry {
+                        game.inputHandler = { [weak self] _ in self?.haggleRareGood(item, price: price, attempt: attempt + 1, completion: completion) }
+                    } else {
+                        game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
+                    }
+                }
             }
         }
-    }
 
-    private func buyRareGoodsRetry(_ item: Item, price: Int, completion: @escaping () -> Void) {
-        guard let game = game else { return }
-        game.showMenu(["Buy it at \(price)gp", "< No thanks"])
-        game.menuHandler = { [weak self] choice in
-            guard let self = self else { return }
-            if choice == 1 {
-                self.buyRareGood(item, price: price, completion: completion)
-            } else {
-                // A plain decline with no new reaction to read — return
-                // straight to the shop instead of an extra "continue" tap.
-                self.showShopMain(completion: completion)
+        let offers = suggestedOffers(floor: floor, ceiling: ceiling)
+        let options = offers.map { "\($0)gp" }
+        game.promptTextWithMenu("Name your price (\(floor)gp or more — \(price)gp or above buys it outright), or 0 to walk away:", options: options)
+        game.closeHandler = { [weak self] in self?.showShopMain(completion: completion) }
+        game.menuHandler = { choice in
+            guard choice >= 1, choice <= offers.count else { return }
+            resolveOffer(offers[choice - 1])
+        }
+        game.inputHandler = { text in
+            let trimmed = text.trimmingCharacters(in: .whitespaces)
+            guard let offer = Int(trimmed), offer >= 0 else {
+                game.print("  \"Speak plainly — a number, adventurer.\"", color: .yellow)
+                game.waitForContinue()
+                game.inputHandler = { [weak self] _ in self?.haggleRareGood(item, price: price, attempt: attempt, completion: completion) }
+                return
             }
+            resolveOffer(offer)
         }
     }
 

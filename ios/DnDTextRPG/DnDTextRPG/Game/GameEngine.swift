@@ -16181,7 +16181,7 @@ class GameEngine: ObservableObject {
         let merchant = npc.merchant ?? Merchant.random(tier: .wanderingPeddler)
 
         // Open the shop with NPC-specific inventory
-        pickCharacter(title: "Who trades with \(merchant.name)?") { [weak self] character in
+        pickCharacter(title: "Who trades with \(merchant.name)?", cancelLabel: "Don't Trade") { [weak self] character in
             guard let self = self else { return }
             self.shopEngine.openShop(character: character, dungeonLevel: dungeon.level, merchant: merchant) { [weak self] in
                 npc.hasTraded = true
@@ -16900,7 +16900,7 @@ class GameEngine: ObservableObject {
 
     // MARK: - Inventory
 
-    private func pickCharacter(title: String, from candidates: [Character]? = nil, onBack: (() -> Void)? = nil, action: @escaping (Character) -> Void) {
+    private func pickCharacter(title: String, cancelLabel: String = "Done", from candidates: [Character]? = nil, onBack: (() -> Void)? = nil, action: @escaping (Character) -> Void) {
         let chars = candidates ?? party
         if chars.count == 1 {
             action(chars[0])
@@ -16918,13 +16918,16 @@ class GameEngine: ObservableObject {
         for char in chars {
             options.append("\(shortName(for: char)) \(char.currentHP)/\(char.maxHP)HP")
         }
-        options.append("Done")
+        options.append(cancelLabel)
 
+        let cancelAction: () -> Void = { [weak self] in
+            if let onBack = onBack { onBack() } else { self?.showExplorationView() }
+        }
         showMenu(options)
-        menuHandler = { [weak self] choice in
-            guard let self = self else { return }
+        closeHandler = cancelAction
+        menuHandler = { choice in
             if choice == options.count {
-                if let onBack = onBack { onBack() } else { self.showExplorationView() }
+                cancelAction()
                 return
             }
             guard choice > 0 && choice <= chars.count else { return }
@@ -17771,7 +17774,7 @@ class GameEngine: ObservableObject {
     func visitShop() {
         guard let dungeon = dungeon, let room = dungeon.currentRoom, let merchant = room.merchant else { return }
 
-        pickCharacter(title: "Who visits \(merchant.name)?") { [weak self] character in
+        pickCharacter(title: "Who visits \(merchant.name)?", cancelLabel: "Don't Enter") { [weak self] character in
             guard let self = self else { return }
             self.shopEngine.openShop(character: character, dungeonLevel: dungeon.level, merchant: merchant) { [weak self] in
                 self?.showExplorationView()
@@ -17796,7 +17799,7 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             switch choice {
             case 1:
-                self.pickCharacter(title: "Who pays the membership?") { [weak self] character in
+                self.pickCharacter(title: "Who pays the membership?", cancelLabel: "Don't Enter") { [weak self] character in
                     guard let self = self else { return }
                     guard character.gold >= trainer.membershipFee else {
                         self.print("")
@@ -17813,7 +17816,7 @@ class GameEngine: ObservableObject {
                     self.inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
                 }
             case 2:
-                self.pickCharacter(title: "Who spars?") { [weak self] character in
+                self.pickCharacter(title: "Who spars?", cancelLabel: "Don't Enter") { [weak self] character in
                     guard let self = self else { return }
                     let mod = character.skillModifier(for: trainer.specialty)
                     let roll = Dice.roll(20)
