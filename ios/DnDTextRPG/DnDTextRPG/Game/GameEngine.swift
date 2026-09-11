@@ -754,6 +754,19 @@ class GameEngine: ObservableObject {
         print("")
     }
 
+    /// Shown at the top of every per-character creation screen (race,
+    /// class, ability scores, skills, equipment) so a multi-character party
+    /// doesn't lose track of which adventurer is currently being built —
+    /// chooseCharacterType/the remote-player screen/the name-entry screen
+    /// already say this themselves as their own subtitle, so this is only
+    /// needed on the screens after that. Silent for a solo party, where
+    /// there's nothing to disambiguate.
+    private func printCharacterCreationProgress() {
+        guard totalCharacters > 1 else { return }
+        print("  Character \(creatingCharacterIndex + 1) of \(totalCharacters)", color: .yellow)
+        print("")
+    }
+
     /// Word-wrap text to fit within maxWidth characters, with optional indent
     func printWrapped(_ text: String, indent: Int = 0, color: TerminalColor = .green, bold: Bool = false, maxWidth: Int = 38) {
         // Detect any extra leading whitespace in the text and fold it into indent
@@ -12781,6 +12794,7 @@ class GameEngine: ObservableObject {
 
     func chooseRace() {
         clearTerminal()
+        printCharacterCreationProgress()
         printSubtitle("Choose Race for \(tempCharacterName)")
 
         let races = Race.allCases
@@ -12807,6 +12821,7 @@ class GameEngine: ObservableObject {
 
     func chooseClass() {
         clearTerminal()
+        printCharacterCreationProgress()
         printSubtitle("Choose Class for \(tempCharacterName)")
 
         let classes = CharacterClass.allCases
@@ -12832,6 +12847,7 @@ class GameEngine: ObservableObject {
 
     func chooseAbilityMethod() {
         clearTerminal()
+        printCharacterCreationProgress()
         printSubtitle("Ability Score Method")
 
         print("Choose how to generate ability scores:")
@@ -12962,6 +12978,7 @@ class GameEngine: ObservableObject {
         // Show result for confirmation
         clearTerminal()
         setBreadcrumb("autoCreateCharacter.afterClear")
+        printCharacterCreationProgress()
         printSubtitle("Auto-Generated Character")
         print("  Name:  \(tempCharacterName)", color: .brightGreen)
         print("  Race:  \(tempRace?.rawValue ?? "?")", color: .green)
@@ -13015,6 +13032,7 @@ class GameEngine: ObservableObject {
         }
 
         clearTerminal()
+        printCharacterCreationProgress()
         print("Scores remaining: \(remainingScores)", color: .brightGreen)
         print("")
         print("Assign score to which ability?")
@@ -13060,6 +13078,7 @@ class GameEngine: ObservableObject {
         guard let charClass = tempClass else { return }
 
         clearTerminal()
+        printCharacterCreationProgress()
         printSubtitle("Choose Skills")
 
         selectedSkills = []
@@ -13107,6 +13126,7 @@ class GameEngine: ObservableObject {
         }
         let remaining = total - selectedSkills.count
         clearTerminal()
+        printCharacterCreationProgress()
         printSubtitle("Choose Skills")
         print("Choose \(total) skills from your class list:")
         print("")
@@ -13134,6 +13154,7 @@ class GameEngine: ObservableObject {
         }
         let remaining = total - selectedSkills.count
         clearTerminal()
+        printCharacterCreationProgress()
         printSubtitle("Choose Skills")
         print("Choose \(total) skills from your class list:")
         print("")
@@ -13196,6 +13217,7 @@ class GameEngine: ObservableObject {
             self.pushSkillSnapshot()
             self.selectedSkills.append(skill)
             self.clearTerminal()
+            self.printCharacterCreationProgress()
             self.printSubtitle("Choose Skills")
             self.print("Choose \(total) skills from your class list:")
             self.print("")
@@ -13244,6 +13266,7 @@ class GameEngine: ObservableObject {
         }
 
         clearTerminal()
+        printCharacterCreationProgress()
         printSubtitle("Choose Skills")
         // Show previously selected skills
         if !selectedSkills.isEmpty {
@@ -13257,6 +13280,7 @@ class GameEngine: ObservableObject {
 
     private func showSkillConfirmation(from available: [Skill]) {
         clearTerminal()
+        printCharacterCreationProgress()
         printSubtitle("Skills Selected")
         print("")
         for skill in selectedSkills {
@@ -13348,6 +13372,7 @@ class GameEngine: ObservableObject {
         // un-add it, which was really just working around the character
         // having been added too early.
         clearTerminal()
+        printCharacterCreationProgress()
         print("")
         print("  Add \(character.name) to your party?", color: .brightGreen, bold: true)
         print("  From your Character Roster — Level \(character.level) \(character.race.rawValue) \(character.characterClass.rawValue).", color: .cyan)
@@ -13473,6 +13498,7 @@ class GameEngine: ObservableObject {
         if !creatingAsAI { explicitlyChosenSlots.insert(party.count - 1) }
 
         clearTerminal()
+        printCharacterCreationProgress()
         print("")
         print("  \(character.name) joins the party!", color: .brightGreen, bold: true)
         print("")
@@ -13557,6 +13583,7 @@ class GameEngine: ObservableObject {
 
     func chooseStartingEquipment(for character: Character) {
         clearTerminal()
+        printCharacterCreationProgress()
         printSubtitle("Starting Equipment for \(character.name)")
 
         let equipOptions = ItemCatalog.startingEquipmentOptions(for: character.characterClass)
