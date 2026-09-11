@@ -50,6 +50,16 @@ struct LogImporterModifier: ViewModifier {
     }
 }
 
+/// Reports the pinned map panel's natural content height, so a drag that
+/// starts from "Auto" sizing (see GameEngine.mapPanelHeight) has a real
+/// baseline to resize from.
+private struct MapPanelHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 struct TerminalView: View {
     @EnvironmentObject var gameEngine: GameEngine
     @ObservedObject private var voiceInput = VoiceInputManager.shared
@@ -63,6 +73,11 @@ struct TerminalView: View {
     private var recentlyScrolledManually: Bool {
         Date().timeIntervalSince(lastManualScrollAt) < 4.0
     }
+    /// Natural (unclamped) height of the pinned map panel's content —
+    /// measured live so a drag starting from "Auto" sizing has a sane
+    /// baseline to resize from instead of jumping to an arbitrary height.
+    @State private var measuredMapPanelHeight: CGFloat = 0
+    @State private var mapPanelDragStartHeight: CGFloat? = nil
     #if os(iOS)
     @State private var showCustomKeyboard: Bool = false
     @State private var keyboardCollapsedAt: Date = .distantPast
@@ -92,7 +107,7 @@ struct TerminalView: View {
                     // button rows (shrinking the text area) or an
                     // auto-scroll-to-bottom could chop its top rows off.
                     if !gameEngine.pinnedMapLines.isEmpty {
-                        VStack(alignment: .leading, spacing: 2) {
+                        let mapContent = VStack(alignment: .leading, spacing: 2) {
                             ForEach(gameEngine.pinnedMapLines) { line in
                                 TerminalLineView(line: line, scale: scale)
                             }
@@ -101,7 +116,58 @@ struct TerminalView: View {
                         .padding(.horizontal, 8)
                         .padding(.top, 4)
                         .padding(.bottom, 2)
+                        .background(
+                            GeometryReader { mapGeo in
+                                Color.clear.preference(key: MapPanelHeightPreferenceKey.self, value: mapGeo.size.height)
+                            }
+                        )
+
+                        Group {
+                            if gameEngine.mapPanelHeight > 0 {
+                                // Fixed size — scroll internally rather than
+                                // ever clip the map or its key/legend.
+                                ScrollView {
+                                    mapContent
+                                }
+                                .frame(height: gameEngine.mapPanelHeight)
+                            } else {
+                                // Auto — sized to fit the whole map + key, no cap.
+                                mapContent
+                            }
+                        }
                         .background(terminalBackground)
+                        .onPreferenceChange(MapPanelHeightPreferenceKey.self) { measuredMapPanelHeight = $0 }
+
+                        // Drag handle — resize the pinned map panel. Settings
+                        // > Gameplay > Map Radius > Panel Size offers the
+                        // same adjustment as a numeric cycle for anyone who'd
+                        // rather not drag.
+                        ZStack {
+                            Capsule()
+                                .fill(terminalDarkGreen.opacity(0.8))
+                                .frame(width: 44, height: 4)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 16)
+                        .background(terminalBackground)
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 2, coordinateSpace: .local)
+                                .onChanged { value in
+                                    if mapPanelDragStartHeight == nil {
+                                        mapPanelDragStartHeight = gameEngine.mapPanelHeight > 0 ? gameEngine.mapPanelHeight : measuredMapPanelHeight
+                                    }
+                                    let base = mapPanelDragStartHeight ?? measuredMapPanelHeight
+                                    let proposed = base + value.translation.height
+                                    let minHeight: CGFloat = 44
+                                    let maxHeight: CGFloat = geometry.size.height * 0.7
+                                    gameEngine.mapPanelHeight = max(minHeight, min(maxHeight, proposed))
+                                }
+                                .onEnded { _ in
+                                    mapPanelDragStartHeight = nil
+                                }
+                        )
+
                         Rectangle()
                             .fill(terminalDarkGreen.opacity(0.4))
                             .frame(height: 1)
