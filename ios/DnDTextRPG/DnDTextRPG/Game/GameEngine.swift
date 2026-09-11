@@ -3755,8 +3755,14 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("Continue Adventure"))
         actions.append { [weak self] in self?.showLoadGameMenu(returnTo: .mainMenu) }
 
-        menuOpts.append(MenuOption("?", tint: .navigation))
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showPlayHelp() }
+
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        actions.append { [weak self] in
+            self?.clearTerminal()
+            self?.showMainMenu()
+        }
 
         showMenuOptions(menuOpts)
 
@@ -6331,6 +6337,18 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// User-adjustable height (points) for the pinned map panel at the top
+    /// of the screen (see TerminalView) — 0 means "Auto" (sized to fit the
+    /// map + key, the original behavior, no cap). A positive value fixes
+    /// the panel to that height and lets it scroll internally if the map
+    /// and key don't both fit — so shrinking it never loses the key, it
+    /// just takes a scroll to see. Adjustable via a drag handle on the
+    /// panel itself, or Settings > Gameplay > Map Radius > Panel Size.
+    var mapPanelHeight: CGFloat {
+        get { CGFloat(UserDefaults.standard.double(forKey: "map_panel_height")) }
+        set { UserDefaults.standard.set(Double(newValue), forKey: "map_panel_height") }
+    }
+
     var maxButtonsPerScreen: Int {
         get {
             let val = UserDefaults.standard.integer(forKey: "maxButtonsPerScreen")
@@ -7594,13 +7612,18 @@ class GameEngine: ObservableObject {
         options.append(hasKeychainBackup ? "Restore API Keys" : "Backup API Keys")
 
         var menuOpts = options.map { MenuOption($0) }
-        menuOpts.append(MenuOption("?", tint: .navigation))
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(menuOpts)
         closeHandler = { [weak self] in self?.showSettings() }
         installSettingUndoRedo(screen: "s:save") { [weak self] in self?.showSaveSettings() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == menuOpts.count {
+                self.showSettings()
+                return
+            }
+            if choice == menuOpts.count - 1 {
                 self.showSaveSettingsHelp()
                 return
             }
@@ -8764,6 +8787,7 @@ class GameEngine: ObservableObject {
         menuOpts.append(allOn ? "All Off" : "All On")
 
         menuOpts.append("?")
+        menuOpts.append("< Back")
 
         closeHandler = { [weak self] in self?.showAccessibilityMenu() }
         showMenu(menuOpts)
@@ -8775,6 +8799,8 @@ class GameEngine: ObservableObject {
                 self.previewPartyVoices()
             } else if selected == "?" {
                 self.showCompanionVoiceHelp()
+            } else if selected == "< Back" {
+                self.showAccessibilityMenu()
             } else if selected == "All On" {
                 speech.adventurerVoicePool = speech.defaultAdventurerPool()
                 self.showAdventurerVoiceSettings()
@@ -9568,6 +9594,17 @@ class GameEngine: ObservableObject {
         let legendIndex = menuOpts.count + 1
         let legendLabel = mapLegendMaxSymbols >= Dungeon.mapLegendEntries.count ? "Legend: All" : "Legend: \(mapLegendMaxSymbols)"
         menuOpts.append(legendLabel)
+
+        // The on-screen pinned map panel's own height — separate from the
+        // map's content size above. "Auto" (0) fits the panel to the map +
+        // key with no cap (original behavior); a fixed size lets the panel
+        // scroll internally instead of ever clipping the key. Also
+        // adjustable by dragging the handle below the panel itself.
+        let panelSteps: [CGFloat] = [0, 120, 180, 260, 340]
+        let panelIndex = menuOpts.count + 1
+        let panelLabel = mapPanelHeight <= 0 ? "Panel: Auto" : "Panel: \(Int(mapPanelHeight))"
+        menuOpts.append(panelLabel)
+
         showMenu(menuOpts)
 
         closeHandler = { [weak self] in self?.showGameplaySettings() }
@@ -9584,6 +9621,11 @@ class GameEngine: ObservableObject {
                 let currentIdx = legendSteps.firstIndex(where: { $0 >= self.mapLegendMaxSymbols }) ?? 0
                 self.mapLegendMaxSymbols = legendSteps[(currentIdx + 1) % legendSteps.count]
                 self.recordSettingChange(screen: "s:gameplay", key: "map_legend_max_symbols", name: "Map Legend")
+                self.showMapRadiusMenu()
+            } else if choice == panelIndex {
+                let currentIdx = panelSteps.firstIndex(where: { $0 >= self.mapPanelHeight }) ?? 0
+                self.mapPanelHeight = panelSteps[(currentIdx + 1) % panelSteps.count]
+                self.recordSettingChange(screen: "s:gameplay", key: "map_panel_height", name: "Map Panel")
                 self.showMapRadiusMenu()
             }
         }
@@ -10788,7 +10830,8 @@ class GameEngine: ObservableObject {
             MenuOption("1 Character"), MenuOption("2 Characters"),
             MenuOption("3 Characters"), MenuOption("4 Characters"),
             MenuOption("Random Party"),
-            MenuOption("?", tint: .navigation),
+            MenuOption("?", tint: .navigation, compact: true),
+            MenuOption("< Back", tint: .navigation, compact: true),
         ])
 
         closeHandler = { [weak self] in
@@ -10797,6 +10840,11 @@ class GameEngine: ObservableObject {
         }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
+            if choice == 7 {
+                self.clearTerminal()
+                self.showPlayMenu()
+                return
+            }
             if choice == 6 {
                 self.showNewGameHelp()
                 return
@@ -10949,6 +10997,15 @@ class GameEngine: ObservableObject {
 
         opts.append("?")
         actions.append { [weak self] in self?.showPartyReviewHelp() }
+
+        opts.append("< Back")
+        actions.append { [weak self] in
+            guard let self = self else { return }
+            let wasMultiplayer = !self.pendingRemoteSlots.isEmpty
+            self.party = []
+            self.pendingRemoteSlots.removeAll()
+            if wasMultiplayer { self.showPlayMenu() } else { self.startNewGame() }
+        }
 
         // Bottom row: Start
         opts.append(hasRemote ? "Start Matchmaker" : "Begin Adventure")
@@ -11183,8 +11240,19 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("Roster", tint: .cyan))
         actions.append { [weak self] in self?.showRosterMenu(index: index) }
 
-        menuOpts.append(MenuOption("?", tint: .navigation))
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showCharacterReviewCardHelp(index: index, inGame: inGame) }
+
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        actions.append { [weak self] in
+            guard let self = self else { return }
+            if let override = self.characterReviewReturnOverride {
+                self.characterReviewReturnOverride = nil
+                override()
+            } else {
+                self.showPartyReview()
+            }
+        }
 
         showMenuOptions(menuOpts)
 
@@ -11739,6 +11807,12 @@ class GameEngine: ObservableObject {
         opts.append("?")
         actions.append { [weak self] in
             self?.showEditCharacterHelp(index: index)
+        }
+
+        opts.append("< Back")
+        actions.append { [weak self] in
+            self?.endEditTracking()
+            self?.showPartyReview()
         }
 
         showMenu(opts)
@@ -13534,8 +13608,8 @@ class GameEngine: ObservableObject {
         }
 
         let unselected = available.filter { !selectedSkills.contains($0) }
-        // Auto first (top-left), then skills, then Help last
-        var skillNames = ["Auto"] + unselected.map { $0.rawValue } + ["?"]
+        // Auto first (top-left), then skills, then Help/Back last
+        var skillNames = ["Auto"] + unselected.map { $0.rawValue } + ["?", "< Back"]
 
         print("Skill \(selectedSkills.count + 1) of \(total):")
         showMenu(skillNames)
@@ -13559,7 +13633,16 @@ class GameEngine: ObservableObject {
                 return
             }
             if choice == skillNames.count {
-                // Help (last)
+                // Back (last)
+                self.clearUndoRedo(for: self.skillsScreenKey)
+                self.undoHandler = nil
+                self.redoHandler = nil
+                self.currentUndoScreen = nil
+                self.chooseAbilityMethod()
+                return
+            }
+            if choice == skillNames.count - 1 {
+                // Help (second-to-last)
                 self.showSkillsHelp()
                 return
             }
@@ -13700,11 +13783,21 @@ class GameEngine: ObservableObject {
     /// does — same next-slot/party-review/multiplayer handoff.
     private func loadCharacterFromRoster(_ character: Character) {
         setBreadcrumb("loadCharacterFromRoster(\(character.name),idx:\(creatingCharacterIndex),total:\(totalCharacters))")
-        // A roster character can predate the Robot Prefix setting, or the
-        // setting can have changed since it was saved — re-sync before the
-        // duplicate-name check below so it's checked against the name
-        // that'll actually be shown.
-        character.syncRobotPrefix()
+        // Control type follows the slot being filled, not whatever this
+        // character happened to be last time it was saved — so a stale
+        // "R. " prefix from once being Robot-controlled is ignored, and the
+        // name is assigned fresh based on what this slot actually is (this
+        // also covers the plain Robot-Prefix-setting-changed-since-save
+        // case markAsAI()/unmarkAsAI() → syncRobotPrefix() always handles).
+        // Applied here, before the "Add to party?" preview below, so the
+        // preview itself never shows a misleading prefix — and NOT
+        // reapplied later at Accept, since by then Edit may have let the
+        // player deliberately choose a different type for this character.
+        if creatingAsAI {
+            character.markAsAI()
+        } else {
+            character.unmarkAsAI()
+        }
         // Avoid two party members with the same display name
         let existingNames = Set(party.map { $0.name.lowercased() })
         if existingNames.contains(character.name.lowercased()) {
@@ -13734,15 +13827,11 @@ class GameEngine: ObservableObject {
         let accept: () -> Void = { [weak self] in
             guard let self = self else { return }
             self.setBreadcrumb("loadCharacterFromRoster.accept(\(character.name),idx:\(self.creatingCharacterIndex)->\(self.creatingCharacterIndex + 1),total:\(self.totalCharacters),multi:\(self.isMultiplayer))")
-            // Control type follows the slot being filled, not whatever this
-            // character happened to be last time it was saved — otherwise
-            // loading a once-human hero into a Computer (AI) slot would
-            // silently leave it human-controlled (or vice versa).
-            if self.creatingAsAI {
-                character.markAsAI()
-            } else {
-                character.unmarkAsAI()
-            }
+            // Control type was already normalized to the slot's type up
+            // front (see top of loadCharacterFromRoster) — not redone here,
+            // since Edit may have since let the player deliberately choose
+            // a different type for this character, which re-forcing the
+            // slot's original assumption at Accept time would silently undo.
             self.party.append(character)
             // Explicitly loaded from the roster — Party Review's reroll
             // must never overwrite it.
@@ -14401,6 +14490,7 @@ class GameEngine: ObservableObject {
         if !adventureUndoStack.isEmpty { opts.append("Undo") }
         if !adventureRedoStack.isEmpty { opts.append("Redo") }
         opts.append("?")
+        opts.append("< Back")
 
         showMenu(opts)
 
@@ -14449,6 +14539,11 @@ class GameEngine: ObservableObject {
                 }
             case "?":
                 self.showReadyToBeginHelp(dungeonName: dungeonName, level: level)
+            case "< Back":
+                self.adventureUndoStack.removeAll()
+                self.adventureRedoStack.removeAll()
+                self.clearTerminal()
+                self.startNewGame()
             default: break
             }
         }
@@ -15019,7 +15114,7 @@ class GameEngine: ObservableObject {
         actions.append { [weak self] in self?.showPartyStatus() }
 
         // --- Bottom row: Help ---
-        menuOpts.append(MenuOption("?", tint: .navigation))
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showExplorationHelp() }
 
         // --- Multiplayer ---
@@ -16675,6 +16770,9 @@ class GameEngine: ObservableObject {
         options.append("?")
         actions.append { [weak self] in self?.showSecureHelp() }
 
+        options.append("< Back")
+        actions.append { [weak self] in self?.showExplorationView() }
+
         showMenu(options)
 
         closeHandler = { [weak self] in self?.showExplorationView() }
@@ -17979,8 +18077,20 @@ class GameEngine: ObservableObject {
         }
 
         // Help
-        menuOpts.append(MenuOption("?"))
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showInventoryHelp(character: character, onBack: onBack, fromDM: fromDM) }
+
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        let backTarget = onBack
+        actions.append { [weak self] in
+            guard let self = self else { return }
+            self.closeHandler = nil
+            if let backTarget = backTarget {
+                backTarget()
+            } else {
+                self.showExplorationView()
+            }
+        }
 
         // Cluster buttons by colour: normal first, then amber, then cyan
         let paired = zip(menuOpts, actions).map { ($0, $1) }
@@ -18357,8 +18467,14 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("Give Item", isDisabled: character.inventory.isEmpty || !hasOthers))
         actions.append { [weak self] in self?.showGiveItemMenu(character: character, onBack: onBack, fromDM: fromDM) }
 
-        menuOpts.append(MenuOption("?", tint: .navigation))
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showPackHelp(character: character, onBack: onBack, fromDM: fromDM) }
+
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        actions.append { [weak self] in
+            self?.closeHandler = nil
+            self?.showInventoryFor(character, onBack: onBack, fromDM: fromDM)
+        }
 
         showMenuOptions(menuOpts)
         closeHandler = { [weak self] in
@@ -18543,8 +18659,14 @@ class GameEngine: ObservableObject {
             }
         }
 
-        menuOpts.append(MenuOption("?", tint: .navigation))
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showEquipmentHelp(character: character, onBack: onBack, fromDM: fromDM) }
+
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        actions.append { [weak self] in
+            self?.closeHandler = nil
+            self?.showInventoryFor(character, onBack: onBack, fromDM: fromDM)
+        }
 
         showMenuOptions(menuOpts)
         closeHandler = { [weak self] in
@@ -18990,7 +19112,7 @@ class GameEngine: ObservableObject {
         print("")
 
         // Build menu
-        var menuOpts = ["Party Review", "Save to Roster", "Adventure Log", "Settings", "?"]
+        var menuOpts = ["Party Review", "Save to Roster", "Adventure Log", "Settings", "?", "< Back"]
         let hasPoisoned = party.contains(where: { $0.isPoisoned })
         if hasPoisoned {
             menuOpts.insert("Cure Poison", at: 0)
@@ -19497,8 +19619,23 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("Rest", tint: .amber))
         actions.append { [weak self] in self?.rest() }
 
-        menuOpts.append(MenuOption("?", tint: .navigation))
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showPartyReviewHelp() }
+
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        actions.append { [weak self] in
+            guard let self = self else { return }
+            // Enforce at least one local (human) player
+            if !self.party.contains(where: { !$0.isComputerControlled }) {
+                self.print("")
+                self.print("  At least one character must be Local (You)!", color: .red)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    self.showInGamePartyReview()
+                }
+                return
+            }
+            self.showPartyStatus()
+        }
 
         showMenuOptions(menuOpts)
 
@@ -19583,6 +19720,12 @@ class GameEngine: ObservableObject {
             self?.showInGameEditHelp(index: index)
         }
 
+        opts.append("< Back")
+        actions.append { [weak self] in
+            self?.endEditTracking()
+            self?.showInGamePartyReview()
+        }
+
         showMenu(opts)
 
         // Restore undo/redo handlers after showMenu (which clears awaitingTextInput)
@@ -19654,12 +19797,17 @@ class GameEngine: ObservableObject {
         let classes = CharacterClass.allCases.filter { $0 != oldClass }
         var opts = classes.map { $0.rawValue }
         opts.append("?")
+        opts.append("< Back")
         showMenu(opts)
 
         closeHandler = { [weak self] in self?.showInGameEditCharacter(index: index) }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == opts.count {
+                self.showInGameEditCharacter(index: index)
+                return
+            }
+            if choice == opts.count - 1 {
                 self.showRetrainHelp(index: index)
                 return
             }
@@ -20015,7 +20163,10 @@ class GameEngine: ObservableObject {
         opts.append("Local (You)")
         typeLabels.append("Local (You)")
 
-        let gcAuth = GameCenterManager.shared.isAuthenticated && party.count >= 2
+        // Remote option — only offered while Multiplayer is actually
+        // switched on in Settings, matching showChangePlayerType (the
+        // pre-adventure equivalent of this screen).
+        let gcAuth = multiplayerEnabled && GameCenterManager.shared.isAuthenticated && party.count >= 2
         if gcAuth && (hasHumanElsewhere || !char.isComputerControlled) {
             opts.append("Remote Player")
             typeLabels.append("Remote Player")
@@ -20028,13 +20179,18 @@ class GameEngine: ObservableObject {
         }
 
         opts.append("?")
+        opts.append("< Back")
 
         showMenu(opts)
 
         closeHandler = { [weak self] in self?.showInGameEditCharacter(index: index) }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
-            if choice == opts.count && opts.last == "?" {
+            if choice == opts.count {
+                self.showInGameEditCharacter(index: index)
+                return
+            }
+            if choice == opts.count - 1 {
                 self.showChangeTypeHelp(index: index)
                 return
             }
@@ -20364,6 +20520,7 @@ class GameEngine: ObservableObject {
             options.append("Illuminate")
         }
         options.append("?")
+        options.append("< Back")
 
         showMenu(options)
         closeHandler = { [weak self] in self?.showExplorationView() }
@@ -25200,6 +25357,7 @@ class GameEngine: ObservableObject {
                 options.append("Main Menu")     // 4
             }
             options.append("?")
+            options.append("< Back")
 
             showMenu(options)
             closeHandler = { [weak self] in
