@@ -364,13 +364,40 @@ class GameEngine: ObservableObject {
     // Character creation state
     private var creatingCharacterIndex: Int = 0
     private var totalCharacters: Int = 1
-    /// When set, showCharacterReviewCard's own X/close returns here instead
-    /// of showPartyReview() — used while editing a character that isn't
-    /// really in the party yet (e.g. from the "Add X to your party?" screen
-    /// when loading from the roster during character creation), so backing
-    /// out of editing returns to that screen rather than the full party hub.
-    /// Consumed (set back to nil) the moment it fires.
+    /// When set, overrides where "back" goes for the current character-edit
+    /// detour. Two uses: (1) showCharacterReviewCard's own X/close returns
+    /// here instead of showPartyReview() — used while editing a character
+    /// that isn't really in the party yet (e.g. from the "Add X to your
+    /// party?" screen when loading from the roster during character
+    /// creation), so backing out of editing returns to that screen rather
+    /// than the full party hub; (2) the shared sub-screens Change Type/
+    /// Race/Class/Voice (showChangePlayerType, showChangeRace,
+    /// showChangeClass, showCharacterVoiceEdit, and their confirm screens)
+    /// hardcode showEditCharacter(index:) as their own "done" destination,
+    /// since that's who originally called them from Party Status — but
+    /// showCharacterReviewCard (Party Review's own, different edit hub)
+    /// calls the exact same shared sub-screens, so it sets this override
+    /// first so "back" from one of them returns to IT instead of silently
+    /// dropping the player onto the unrelated showEditCharacter screen. See
+    /// returnFromCharacterEditSubscreen(index:). Consumed (set back to nil)
+    /// the moment it fires.
     private var characterReviewReturnOverride: (() -> Void)?
+
+    /// Shared "done editing, go back" destination for showChangePlayerType/
+    /// showChangeRace/showChangeClass/showCharacterVoiceEdit and their
+    /// confirm screens — these are reached both from showEditCharacter
+    /// (Party Status's edit hub) and from showCharacterReviewCard (Party
+    /// Review's edit hub), so they can't just hardcode one destination.
+    /// Honors characterReviewReturnOverride when the caller set one,
+    /// otherwise falls back to the original showEditCharacter behavior.
+    private func returnFromCharacterEditSubscreen(index: Int) {
+        if let override = characterReviewReturnOverride {
+            characterReviewReturnOverride = nil
+            override()
+        } else {
+            showEditCharacter(index: index)
+        }
+    }
     /// One-shot per New Adventure flow — whether we've already offered to
     /// bring back the most recent Character Hall of Fame hero for slot 1.
     private var hasOfferedHallOfFameReturn: Bool = false
@@ -8966,7 +8993,7 @@ class GameEngine: ObservableObject {
             print("  Text-to-speech is not available", color: .red)
             print("  on this device.", color: .red)
             print("")
-            closeHandler = { [weak self] in self?.showEditCharacter(index: index) }
+            closeHandler = { [weak self] in self?.returnFromCharacterEditSubscreen(index: index) }
             return
         }
 
@@ -8992,7 +9019,7 @@ class GameEngine: ObservableObject {
         }
 
         showMenu(options)
-        closeHandler = { [weak self] in self?.showEditCharacter(index: index) }
+        closeHandler = { [weak self] in self?.returnFromCharacterEditSubscreen(index: index) }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             let selected = options[choice - 1]
@@ -11214,17 +11241,23 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("Change Name", isDisabled: inGame))
         actions.append { [weak self] in self?.showChangeName(index: index) }
 
+        // Change Type/Race/Class/Voice are shared with showEditCharacter
+        // (Party Status's own edit hub) and hardcode returning there when
+        // done — set characterReviewReturnOverride first so "back" from
+        // one of them returns HERE instead (see returnFromCharacterEditSubscreen).
+        let returnHere: () -> Void = { [weak self] in self?.characterReviewReturnOverride = { [weak self] in self?.showCharacterReviewCard(index: index) } }
+
         // Only show Change Type when there are multiple party members
         if party.count > 1 {
             menuOpts.append(MenuOption("Change Type", isDisabled: inGame))
-            actions.append { [weak self] in self?.showChangePlayerType(index: index) }
+            actions.append { [weak self] in returnHere(); self?.showChangePlayerType(index: index) }
         }
 
         menuOpts.append(MenuOption("Change Race", isDisabled: inGame))
-        actions.append { [weak self] in self?.showChangeRace(index: index) }
+        actions.append { [weak self] in returnHere(); self?.showChangeRace(index: index) }
 
         menuOpts.append(MenuOption("Change Class", isDisabled: inGame))
-        actions.append { [weak self] in self?.showChangeClass(index: index) }
+        actions.append { [weak self] in returnHere(); self?.showChangeClass(index: index) }
 
         menuOpts.append(MenuOption("Change Scores", isDisabled: inGame))
         actions.append { [weak self] in self?.showEditAbilityScores(index: index) }
@@ -11233,7 +11266,7 @@ class GameEngine: ObservableObject {
         actions.append { [weak self] in self?.showEditSkills(index: index) }
 
         menuOpts.append(MenuOption("Change Voice", isDisabled: inGame))
-        actions.append { [weak self] in self?.showCharacterVoiceEdit(index: index) }
+        actions.append { [weak self] in returnHere(); self?.showCharacterVoiceEdit(index: index) }
 
         // Not disabled in-game — saving/loading roster progress mid-adventure
         // is safe and is exactly when you'd want to (e.g. after a level-up).
@@ -11892,13 +11925,13 @@ class GameEngine: ObservableObject {
             printWrapped("\(char.name) is your party's only Local character — at least one must stay Local. Set someone else Local first if you want to change this one.", indent: 2, color: .yellow)
             print("")
             showMenu(["Set Someone Else Local", "?", "< Back"])
-            closeHandler = { [weak self] in self?.showEditCharacter(index: index) }
+            closeHandler = { [weak self] in self?.returnFromCharacterEditSubscreen(index: index) }
             menuHandler = { [weak self] choice in
                 guard let self = self else { return }
                 switch choice {
                 case 1: self.showSwapLocalPicker(returnToIndex: index)
                 case 2: self.showEditCharacterHelp(index: index)
-                default: self.showEditCharacter(index: index)
+                default: self.returnFromCharacterEditSubscreen(index: index)
                 }
             }
             return
@@ -11931,14 +11964,14 @@ class GameEngine: ObservableObject {
 
         showMenu(opts)
 
-        closeHandler = { [weak self] in self?.showEditCharacter(index: index) }
+        closeHandler = { [weak self] in self?.returnFromCharacterEditSubscreen(index: index) }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             guard choice > 0 && choice <= typeLabels.count else { return }
             let newType = typeLabels[choice - 1]
             // No change? Go back
             if newType == currentType {
-                self.showEditCharacter(index: index)
+                self.returnFromCharacterEditSubscreen(index: index)
                 return
             }
             self.confirmChangeType(index: index, newType: newType, currentType: currentType)
@@ -12024,7 +12057,7 @@ class GameEngine: ObservableObject {
                 default: break
                 }
             }
-            self.showEditCharacter(index: index)
+            self.returnFromCharacterEditSubscreen(index: index)
         }
     }
 
@@ -12115,13 +12148,13 @@ class GameEngine: ObservableObject {
         let races = Race.allCases
         showMenu(races.map { $0.rawValue })
 
-        closeHandler = { [weak self] in self?.showEditCharacter(index: index) }
+        closeHandler = { [weak self] in self?.returnFromCharacterEditSubscreen(index: index) }
         menuHandler = { [weak self] choice in
             guard let self = self, choice >= 1 && choice <= races.count else { return }
             let newRace = races[choice - 1]
             let char = self.party[index]
             if newRace == char.race {
-                self.showEditCharacter(index: index)
+                self.returnFromCharacterEditSubscreen(index: index)
                 return
             }
             self.confirmChangeRace(index: index, newRace: newRace)
@@ -12183,7 +12216,7 @@ class GameEngine: ObservableObject {
                 }
                 char.recalculateMaxHP()
             }
-            self.showEditCharacter(index: index)
+            self.returnFromCharacterEditSubscreen(index: index)
         }
     }
 
@@ -12197,13 +12230,13 @@ class GameEngine: ObservableObject {
         let classes = CharacterClass.allCases
         showMenu(classes.map { $0.rawValue })
 
-        closeHandler = { [weak self] in self?.showEditCharacter(index: index) }
+        closeHandler = { [weak self] in self?.returnFromCharacterEditSubscreen(index: index) }
         menuHandler = { [weak self] choice in
             guard let self = self, choice >= 1 && choice <= classes.count else { return }
             let newClass = classes[choice - 1]
             let char = self.party[index]
             if newClass == char.characterClass {
-                self.showEditCharacter(index: index)
+                self.returnFromCharacterEditSubscreen(index: index)
                 return
             }
             self.confirmChangeClass(index: index, newClass: newClass)
@@ -12246,7 +12279,7 @@ class GameEngine: ObservableObject {
                 self.pushEditSnapshot(index: index)
                 self.applyClassChange(index: index, newClass: newClass)
             }
-            self.showEditCharacter(index: index)
+            self.returnFromCharacterEditSubscreen(index: index)
         }
     }
 
@@ -13335,8 +13368,25 @@ class GameEngine: ObservableObject {
         printWrapped("Auto-generate a new companion, or load one from your Character Roster? Either way, the robot controls this character.", indent: 2, color: .cyan)
         print("")
 
+        // Going back to chooseCharacterType() directly would be a no-op
+        // whenever Computer (AI) is this slot's only possible type (no
+        // Remote available, party already has its Local member) — it would
+        // just immediately re-decide "only Computer is possible" and land
+        // right back on this same screen, making < Back/X look broken.
+        // Instead, go back a character like every other screen in this flow.
+        let goBack: () -> Void = { [weak self] in
+            guard let self = self else { return }
+            if self.creatingCharacterIndex > 0 {
+                self.creatingCharacterIndex -= 1
+                self.party.removeLast()
+                self.chooseCharacterType()
+            } else {
+                self.startNewGame()
+            }
+        }
+
         showMenu(["Auto-Generate", "Load Character", "?", "< Back"])
-        closeHandler = { [weak self] in self?.chooseCharacterType() }
+        closeHandler = goBack
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             switch choice {
@@ -13356,7 +13406,7 @@ class GameEngine: ObservableObject {
                     self.print("")
                 }
             default:
-                self.chooseCharacterType()
+                goBack()
             }
         }
     }
