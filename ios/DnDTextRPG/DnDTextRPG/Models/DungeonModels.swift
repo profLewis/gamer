@@ -1157,9 +1157,16 @@ class Dungeon: ObservableObject, Codable {
         // line count — and therefore @'s position — never depends on what's
         // in the room.
         var hereSymbols: [(symbol: String, label: String)] = []
+        // "Room"/"Hall"/"Empty" are the default, unremarkable room types —
+        // most of the dungeon is one of these, so flagging "you're in a
+        // Room" here is just noise, not information (unlike the legend
+        // below, which is a key to the whole grid and rightly lists every
+        // symbol that can appear on it, generic ones included). Only the
+        // genuinely notable types are worth calling out for the room
+        // you're actually standing in.
         let hereLabels: [String: String] = [
-            "E": "Entry", "=": "Hall", "#": "Room", "$": "Loot", "!": "Trap", "+": "Shrine",
-            "L": "Library", "B": "Boss", "A": "Armoury", "P": "Prison", ".": "Empty"
+            "E": "Entry", "$": "Loot", "!": "Trap", "+": "Shrine",
+            "L": "Library", "B": "Boss", "A": "Armoury", "P": "Prison",
         ]
         // A merchant IS the shop — "M" on its own tells you everything "S"
         // would have (a dedicated shop room always has a merchant; an
