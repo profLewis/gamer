@@ -26063,9 +26063,18 @@ class GameEngine: ObservableObject {
         autoReturn(after: 1.0)
     }
 
+    // These three screens (reached from the Save menu's "Quit+Save"/
+    // "Quit-Save", and the X-icon's just-saved shortcut) all say, in their
+    // own on-screen text, that they take you to the main menu — but used
+    // to call performQuit() (exit(0), closing the app entirely), directly
+    // contradicting that promise. Fixed to actually do what they say:
+    // "quit" here means leave this adventure for the app's main menu, same
+    // as confirmExitToMainMenu's "Quit Without Saving" — never closes the
+    // app. The only action that still does that is the main menu's own
+    // Quit (see quitApp()/performQuit()).
     private func confirmQuitAndSave(slotId: UUID, slotName: String) {
         clearTerminal()
-        printTitle("Save & Quit")
+        printTitle("Save & Return to Menu")
         print("")
         print("Your adventure will be saved and", color: .yellow)
         print("you'll return to the main menu.", color: .yellow)
@@ -26073,13 +26082,13 @@ class GameEngine: ObservableObject {
         print("Save: \(slotName)", color: .dimGreen)
         print("")
 
-        showMenu(["Yes, Save & Quit", "No, Keep Playing"], defaultIndex: 1)
+        showMenu(["Yes, Save & Return", "No, Keep Playing"], defaultIndex: 1)
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == 1 {
                 self.performSave(slotId: slotId, slotName: slotName)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    self.performQuit()
+                    self.resetGame()
                 }
             } else {
                 self.showExplorationView()
@@ -26089,18 +26098,18 @@ class GameEngine: ObservableObject {
 
     private func confirmQuitAfterRecentSave(slotId: UUID, slotName: String) {
         clearTerminal()
-        printTitle("Quit?")
+        printTitle("Return to Main Menu?")
         print("")
         print("Game was saved moments ago.", color: .green)
         print("  \(slotName)", color: .dimGreen)
         print("")
 
-        showMenu(["Quit", "Keep Playing", "Save Again"], defaultIndex: 1)
+        showMenu(["Main Menu", "Keep Playing", "Save Again"], defaultIndex: 1)
         closeHandler = { [weak self] in self?.showExplorationView() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             switch choice {
-            case 1: self.performQuit()
+            case 1: self.resetGame()
             case 3: self.showSaveMenu()
             default: self.showExplorationView()
             }
@@ -26109,15 +26118,15 @@ class GameEngine: ObservableObject {
 
     private func confirmQuitWithoutSaving() {
         clearTerminal()
-        print("Quit Without Saving?", color: .yellow, bold: true)
+        print("Return to Main Menu Without Saving?", color: .yellow, bold: true)
         print("")
-        print("Unsaved progress will be lost.", color: .red)
+        print("Unsaved progress will be lost. The app stays open — this takes you to the main menu.", color: .red)
         print("")
 
-        showMenu(["Yes, Quit", "No, Stay"])
+        showMenu(["Yes, Return to Menu", "No, Stay"])
         menuHandler = { [weak self] choice in
             if choice == 1 {
-                self?.performQuit()
+                self?.resetGame()
             } else {
                 self?.showExplorationView()
             }
@@ -26126,17 +26135,18 @@ class GameEngine: ObservableObject {
 
     func confirmExitToMainMenu() {
         clearTerminal()
-        print("Return to Main Menu?", color: .yellow, bold: true)
+        print("Leave This Adventure?", color: .yellow, bold: true)
         print("")
-        print("Unsaved progress will be lost.", color: .red)
-        printWrapped("Save & Return saves your game first so you can continue later.", indent: 2, color: .dimGreen)
+        printWrapped("Both options take you to the app's main menu — the app stays open either way.", indent: 2, color: .dimGreen)
+        printWrapped("Save & Return saves your game first, so you can continue later. Quit Without Saving discards anything since your last save.", indent: 2, color: .dimGreen)
         print("")
 
-        // "Quit" here previously read as ambiguous with actually exiting the
-        // app (that's the separate performQuit()/exit(0) flow, reachable
-        // from the main menu) — this one only returns to the main menu,
-        // discarding unsaved progress. Spelled out so it can't be confused
-        // for the real quit-the-app action.
+        // Neither option here closes the app — see showReturnToMenuHelp
+        // and the note on performQuit() for where the actual app-exit
+        // action lives (only the main menu's own Quit, and the Save menu's
+        // Quit+Save/Quit-Save, which now share this same "leave the
+        // adventure" meaning but go one step further and close the app —
+        // see confirmQuitAndSave/confirmQuitWithoutSaving).
         var menuOpts = [
             MenuOption("Save & Return"),
             MenuOption("Quit Without Saving", tint: .danger),
@@ -26165,15 +26175,15 @@ class GameEngine: ObservableObject {
 
     private func showReturnToMenuHelp() {
         showInlineHelp {
-            self.printTitle("Return to Menu — Help")
+            self.printTitle("Leave Adventure — Help")
             self.print("")
 
             self.print("  SAVE & RETURN", color: .cyan, bold: true)
-            self.printWrapped("Saves your game to the current slot, then returns to the main menu. You can continue this adventure later from the main menu.", indent: 2, color: .dimGreen)
+            self.printWrapped("Saves your game to the current slot, then returns to the main menu. You can continue this adventure later from there.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  QUIT WITHOUT SAVING", color: .cyan, bold: true)
-            self.printWrapped("Returns to the main menu without saving. Any unsaved progress since your last save will be lost. This does not close the app — for that, use Quit from the main menu.", indent: 2, color: .dimGreen)
+            self.printWrapped("Also returns to the main menu, but discards anything since your last save. Neither option here closes the app — for that, use Quit from the main menu itself, or Quit+Save/Quit-Save from the Save menu.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  CANCEL", color: .cyan, bold: true)
