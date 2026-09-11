@@ -9836,7 +9836,12 @@ class GameEngine: ObservableObject {
 
     /// Generate an exciting narrative summary of a Hall of Fame entry
     /// When entries/index provided, enables swipe navigation between tales
-    private func showHallOfFameDetail(_ entry: HallOfFameEntry, entries: [HallOfFameEntry] = [], index: Int = 0) {
+    /// - onBack: where "< Back"/closeHandler go — defaults to the standalone
+    ///   Hall of Fame screen; showHallOfFameEntryChoice (reached from the
+    ///   unified Continue Adventure list) passes its own so backing out
+    ///   returns there instead.
+    private func showHallOfFameDetail(_ entry: HallOfFameEntry, entries: [HallOfFameEntry] = [], index: Int = 0, onBack: (() -> Void)? = nil) {
+        let backTarget = onBack ?? { [weak self] in self?.showHallOfFame() }
         clearTerminal()
 
         let isVictory = entry.outcome == .victory
@@ -10007,20 +10012,20 @@ class GameEngine: ObservableObject {
                     self.loadHallOfFameSave(entry)
                 } else {
                     SpeechEngine.shared.stop()
-                    self.showHallOfFame()
+                    backTarget()
                 }
             }
         } else {
             showMenuOptions([MenuOption("< Back", tint: .navigation)])
-            menuHandler = { [weak self] _ in
+            menuHandler = { _ in
                 SpeechEngine.shared.stop()
-                self?.showHallOfFame()
+                backTarget()
             }
         }
 
-        closeHandler = { [weak self] in
+        closeHandler = {
             SpeechEngine.shared.stop()
-            self?.showHallOfFame()
+            backTarget()
         }
 
         // Long-press title (first few lines) to load the save
@@ -10038,17 +10043,17 @@ class GameEngine: ObservableObject {
             swipeLeftHandler = { [weak self] in
                 SpeechEngine.shared.stop()
                 let next = (index + 1) % count
-                self?.showHallOfFameDetail(entries[next], entries: entries, index: next)
+                self?.showHallOfFameDetail(entries[next], entries: entries, index: next, onBack: onBack)
             }
             swipeRightHandler = { [weak self] in
                 SpeechEngine.shared.stop()
                 let prev = (index - 1 + count) % count
-                self?.showHallOfFameDetail(entries[prev], entries: entries, index: prev)
+                self?.showHallOfFameDetail(entries[prev], entries: entries, index: prev, onBack: onBack)
             }
             swipeRandomHandler = { [weak self] in
                 SpeechEngine.shared.stop()
                 let r = Int.random(in: 0..<count)
-                self?.showHallOfFameDetail(entries[r], entries: entries, index: r)
+                self?.showHallOfFameDetail(entries[r], entries: entries, index: r, onBack: onBack)
             }
         }
 
@@ -24520,8 +24525,7 @@ class GameEngine: ObservableObject {
             case .slot(let slot):
                 self.showSaveSlotDetail(slot: slot, returnTo: origin)
             case .hof(let entry):
-                let hofIdx = hofEntries.firstIndex(where: { $0.id == entry.id }) ?? 0
-                self.showHallOfFameDetail(entry, entries: hofEntries, index: hofIdx)
+                self.showHallOfFameEntryChoice(entry, entries: hofEntries, returnTo: origin)
             }
         }, pinnedHandler: { _ in backAction() })
 
@@ -24530,6 +24534,46 @@ class GameEngine: ObservableObject {
         menuLongPressHandler = { [weak self] choice in
             guard let self = self, choice >= 1, choice <= items.count else { return }
             if case .slot(let slot) = items[choice - 1] { self.loadGame(slot.latest) }
+        }
+    }
+
+    /// Tapping a Hall of Fame entry from the unified Continue Adventure
+    /// list used to drop straight into the full narrative (showHallOfFameDetail)
+    /// with the actual "load this game" action (Relive/Rewrite) buried at
+    /// the bottom, behind however long the tale is — unlike a save slot,
+    /// which offers its load action immediately. This puts them on equal
+    /// footing: a linked save gets a quick peer choice between continuing
+    /// and reading the tale, right away. No linked save means nothing to
+    /// continue, so it goes straight to the tale as before.
+    private func showHallOfFameEntryChoice(_ entry: HallOfFameEntry, entries: [HallOfFameEntry], returnTo origin: LoadGameOrigin) {
+        let hofIdx = entries.firstIndex(where: { $0.id == entry.id }) ?? 0
+        let backToList: () -> Void = { [weak self] in self?.showLoadGameMenu(returnTo: origin) }
+        let hasSave = entry.saveGameId != nil && SaveGameManager.shared.load(id: entry.saveGameId!) != nil
+        guard hasSave else {
+            showHallOfFameDetail(entry, entries: entries, index: hofIdx, onBack: backToList)
+            return
+        }
+
+        clearTerminal()
+        let isVictory = entry.outcome == .victory
+        printTitle(entry.dungeonName)
+        print("  Level \(entry.dungeonLevel) — \(isVictory ? "VICTORY" : "DEFEAT")", color: isVictory ? .yellow : .red, bold: true)
+        print("  \(entry.partyDescription)", color: .dimGreen)
+        print("")
+
+        let continueLabel = isVictory ? "Continue (Relive)" : "Continue (Rewrite)"
+        showMenu([continueLabel, "Read the Tale", "< Back"])
+        closeHandler = backToList
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1: self.loadHallOfFameSave(entry)
+            case 2:
+                self.showHallOfFameDetail(entry, entries: entries, index: hofIdx, onBack: { [weak self] in
+                    self?.showHallOfFameEntryChoice(entry, entries: entries, returnTo: origin)
+                })
+            default: backToList()
+            }
         }
     }
 
@@ -24594,9 +24638,10 @@ class GameEngine: ObservableObject {
         print("  \(slot.breakpointCount) \(saveWord)", color: .dimGreen)
         print("")
 
-        let options = ["Rename", "Copy", "Delete Adventure"]
+        let backToDetail: () -> Void = { [weak self] in self?.showSaveSlotDetail(slot: slot, returnTo: origin) }
+        let options = ["Rename", "Copy", "Delete Adventure", "?", "< Back"]
         showMenu(options)
-        closeHandler = { [weak self] in self?.showSaveSlotDetail(slot: slot, returnTo: origin) }
+        closeHandler = backToDetail
         menuHandler = { [weak self] choice in
             guard let self = self, choice >= 1, choice <= options.count else { return }
             let backToManage: () -> Void = { [weak self] in self?.showSaveSlotManage(slot: slot, returnTo: origin) }
@@ -24605,6 +24650,21 @@ class GameEngine: ObservableObject {
             case "Rename": self.renameSlot(slot: slot, returnTo: origin, onCancel: backToManage, onDone: backToList)
             case "Copy": self.duplicateSlot(slot: slot, returnTo: origin)
             case "Delete Adventure": self.confirmDeleteSlot(slot: slot, returnTo: origin, onCancel: backToManage, onDone: backToList)
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("Manage — Help")
+                    self.print("")
+                    self.print("  RENAME", color: .cyan, bold: true)
+                    self.printWrapped("Change this adventure's display name. Renames every save point in this slot.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  COPY", color: .cyan, bold: true)
+                    self.printWrapped("Duplicates every save point in this slot into a brand new, independent adventure you can play separately.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  DELETE ADVENTURE", color: .cyan, bold: true)
+                    self.printWrapped("Permanently deletes every save point in this slot. Cannot be undone.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            case "< Back": backToDetail()
             default: break
             }
         }
