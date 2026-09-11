@@ -496,6 +496,27 @@ class GameEngine: ObservableObject {
         reservedWords.contains(text.lowercased().trimmingCharacters(in: .whitespaces))
     }
 
+    /// Settings > Gameplay > Auto-Capitalize Names — on by default. Applied
+    /// wherever a character's name is finalized (creation, Change Name).
+    var autoCapitalizeNames: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: "auto_capitalize_names") == nil { return true }
+            return UserDefaults.standard.bool(forKey: "auto_capitalize_names")
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "auto_capitalize_names") }
+    }
+
+    /// Ensures each word of `name` starts with a capital letter, without
+    /// touching anything else about it — so intentional internal caps
+    /// (e.g. "McTavish", "O'Brien") survive. No-op when the setting is off.
+    private func applyInitialCaps(_ name: String) -> String {
+        guard autoCapitalizeNames else { return name }
+        return name.split(separator: " ", omittingEmptySubsequences: false).map { word -> String in
+            guard let first = word.first else { return String(word) }
+            return first.uppercased() + word.dropFirst()
+        }.joined(separator: " ")
+    }
+
     private func isNameAppropriate(_ name: String) -> Bool {
         let lower = name.lowercased()
         // Reject reserved navigation words and shortcuts
@@ -6068,6 +6089,16 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// When a remote player never joins (declines/ignores the invite) or
+    /// quits mid-game, automatically continue as a local game with their
+    /// character AI-controlled instead of showing a manual "Continue as
+    /// Local Game?" prompt each time. Off by default — only relevant, and
+    /// only shown in Settings, while Multiplayer is enabled.
+    var degradeRemoteToRobot: Bool {
+        get { UserDefaults.standard.bool(forKey: "degrade_remote_to_robot") }
+        set { UserDefaults.standard.set(newValue, forKey: "degrade_remote_to_robot") }
+    }
+
     /// How Continue Adventure and Hall of Fame order their lists.
     enum ListSortMode: String, CaseIterable {
         case date       // most recent first (default)
@@ -6716,6 +6747,13 @@ class GameEngine: ObservableObject {
         printWrapped("When enabled, you can invite remote players to control party members via Game Centre.", indent: 2, color: .dimGreen)
         print("")
 
+        if multiplayerEnabled {
+            print("DEGRADE REMOTE→ROBOT:", color: .cyan, bold: true)
+            print("  \(degradeRemoteToRobot ? "Enabled" : "Disabled")", color: degradeRemoteToRobot ? .brightGreen : .red)
+            printWrapped("When enabled, a remote player who never joins or leaves mid-game is switched to AI control automatically. When disabled (default), you'll see a \"Continue as Local Game?\" prompt each time instead.", indent: 2, color: .dimGreen)
+            print("")
+        }
+
         print("ADVENTURE LOG:", color: .cyan, bold: true)
         let logLimitText = adventureLogLimit == 0 ? "Show All" : "Last \(adventureLogLimit)"
         print("  \(logLimitText)", color: .brightGreen)
@@ -6763,14 +6801,22 @@ class GameEngine: ObservableObject {
         printWrapped("Whether the D-pad's teleport icon appears in rooms with an active pad.", indent: 2, color: .dimGreen)
         print("")
 
-        // Grouped: Interface (5) → Features (6) → System (6)
+        // Grouped: Interface (5) → Features (6/7) → System (6)
         var options = [
             // Page 1 — Interface
             "Map Radius", useArrowNavigation ? "Use Swipe" : "Use Buttons",
             "Info Timeout", "Button Limit", "Long Press",
             // Page 2 — Features
             npcsEnabled ? "NPCs Off" : "NPCs On", poisonEnabled ? "Poison Off" : "Poison On",
-            multiplayerEnabled ? "Multi Off" : "Multi On", "Time Limit",
+            multiplayerEnabled ? "Multi Off" : "Multi On",
+        ]
+        // Only meaningful (and only shown) while Multiplayer is on — sits
+        // right next to the Multi toggle that gates it.
+        if multiplayerEnabled {
+            options.append(degradeRemoteToRobot ? "Remote→Robot Off" : "Remote→Robot On")
+        }
+        options.append(contentsOf: [
+            "Time Limit",
             idlePromptsEnabled ? "Idle Off" : "Idle On",
             multipleShopsEnabled ? "Multi-Shop Off" : "Multi-Shop On",
             blinkingCursorEnabled ? "Cursor Off" : "Cursor On",
@@ -6779,7 +6825,7 @@ class GameEngine: ObservableObject {
             "Log Limit", "List Order",
             robotPrefixEnabled ? "Robot Prefix Off" : "Robot Prefix On",
             useMetricUnits ? "Units: Imperial" : "Units: Metric",
-        ]
+        ])
         options.append(undoRedoEnabled ? "Undo/Redo Off" : "Undo/Redo On")
 
         showPaginatedMenu(options, page: page, pinned: ["?", "< Back"]) { [weak self] idx in
@@ -6820,6 +6866,10 @@ class GameEngine: ObservableObject {
             } else if selected.hasPrefix("Multi") {
                 self.recordSettingChange(screen: "s:gameplay", key: "multiplayer_enabled", name: "Multi")
                 self.multiplayerEnabled.toggle()
+                self.showGameplaySettings(page: currentPage)
+            } else if selected.hasPrefix("Remote→Robot") {
+                self.recordSettingChange(screen: "s:gameplay", key: "degrade_remote_to_robot", name: "Remote→Robot")
+                self.degradeRemoteToRobot.toggle()
                 self.showGameplaySettings(page: currentPage)
             } else if selected.hasPrefix("Teleport") {
                 self.recordSettingChange(screen: "s:gameplay", key: "teleport_pads_enabled", name: "Teleport")
@@ -11757,6 +11807,29 @@ class GameEngine: ObservableObject {
         else if char.isComputerControlled { currentType = "Auto (Robot)" }
         else { currentType = "Local (You)" }
         print("  Current: \(currentType)", color: .yellow)
+
+        // The party always needs at least one Local (human-controlled)
+        // member. If this IS that member, offering Robot/Remote anyway
+        // would silently let the party end up with none — instead of
+        // hiding them with no explanation, say why and offer to hand
+        // Local to someone else first.
+        if currentType == "Local (You)" && !hasHumanElsewhere && party.count > 1 {
+            print("")
+            printWrapped("\(char.name) is your party's only Local character — at least one must stay Local. Set someone else Local first if you want to change this one.", indent: 2, color: .yellow)
+            print("")
+            showMenu(["Set Someone Else Local", "?", "< Back"])
+            closeHandler = { [weak self] in self?.showEditCharacter(index: index) }
+            menuHandler = { [weak self] choice in
+                guard let self = self else { return }
+                switch choice {
+                case 1: self.showSwapLocalPicker(returnToIndex: index)
+                case 2: self.showEditCharacterHelp(index: index)
+                default: self.showEditCharacter(index: index)
+                }
+            }
+            return
+        }
+
         print("  Who controls this character?", color: .cyan)
         print("")
 
@@ -11773,8 +11846,10 @@ class GameEngine: ObservableObject {
             typeLabels.append("Auto (Robot)")
         }
 
-        // Remote option
-        let gcAuth = GameCenterManager.shared.isAuthenticated && party.count >= 2
+        // Remote option — only offered while Multiplayer is actually
+        // switched on in Settings; without it, Remote isn't a real choice
+        // no matter how many other Local members exist.
+        let gcAuth = multiplayerEnabled && GameCenterManager.shared.isAuthenticated && party.count >= 2
         if gcAuth && hasHumanElsewhere {
             opts.append("Remote Player")
             typeLabels.append("Remote Player")
@@ -11793,6 +11868,43 @@ class GameEngine: ObservableObject {
                 return
             }
             self.confirmChangeType(index: index, newType: newType, currentType: currentType)
+        }
+    }
+
+    /// Reached only when the character at `returnToIndex` is the party's
+    /// sole Local member and the player wants to change it to something
+    /// else — hand Local to a different party member first, then return to
+    /// finish the original change now that it's actually possible.
+    private func showSwapLocalPicker(returnToIndex: Int) {
+        guard returnToIndex < party.count else { showPartyReview(); return }
+        let others = party.enumerated().filter { $0.offset != returnToIndex }
+
+        clearTerminal()
+        printTitle("Set Someone Else Local")
+        print("")
+        printWrapped("Pick who becomes Local (human-controlled) instead:", indent: 2, color: .dimGreen)
+        print("")
+
+        let opts = others.map { offset, c -> String in
+            let tag = pendingRemoteSlots.contains(offset) ? "Remote" : (c.isComputerControlled ? "Robot" : "Local")
+            return "\(c.name) (\(tag))"
+        }
+        showMenu(opts + ["?", "< Back"])
+        closeHandler = { [weak self] in self?.showChangePlayerType(index: returnToIndex) }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice >= 1 && choice <= others.count {
+                let (offset, chosen) = others[choice - 1]
+                self.pushEditSnapshot(index: offset)
+                self.pendingRemoteSlots.remove(offset)
+                chosen.unmarkAsAI()
+                if self.pendingRemoteSlots.isEmpty { self.isMultiplayer = false }
+                self.showChangePlayerType(index: returnToIndex)
+            } else if choice == others.count + 1 {
+                self.showEditCharacterHelp(index: returnToIndex)
+            } else {
+                self.showChangePlayerType(index: returnToIndex)
+            }
         }
     }
 
@@ -12661,6 +12773,17 @@ class GameEngine: ObservableObject {
             party = state.party
         }
         print("")
+
+        // Settings > Gameplay > Remote→Robot — skip the manual prompt and
+        // just carry on as a local game instead of asking every time.
+        if degradeRemoteToRobot {
+            print("  Continuing as a local game...", color: .dimGreen)
+            print("")
+            waitForContinue()
+            inputHandler = { [weak self] _ in self?.convertToLocalGame() }
+            return
+        }
+
         print("  You can continue as a local game", color: .dimGreen)
         print("  with AI companions.", color: .dimGreen)
         print("")
@@ -12956,7 +13079,7 @@ class GameEngine: ObservableObject {
                 self.autoCreateCharacter()
                 return
             }
-            let cleanName = name
+            let cleanName = self.applyInitialCaps(name)
             if !self.isNameAppropriate(cleanName) {
                 self.print("That name is not befitting of an adventurer. Try again.", color: .yellow)
                 self.print("")
@@ -19356,26 +19479,28 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        var opts: [String] = []
+        var menuOpts: [MenuOption] = []
         var actions: [() -> Void] = []
 
         for (i, char) in party.enumerated() {
             let shortN = shortName(for: char)
-            opts.append(shortN)
+            menuOpts.append(MenuOption(shortN, isDefault: i == 0))
             actions.append { [weak self] in
                 self?.showInGameEditCharacter(index: i)
             }
         }
 
-        // Rest button (long-press = fast long rest)
-        let restIdx = opts.count
-        opts.append("Rest")
+        // Rest button (long-press = fast long rest) — tinted apart from the
+        // character buttons above so it reads as an action, not another
+        // party member to tap into.
+        let restIdx = menuOpts.count
+        menuOpts.append(MenuOption("Rest", tint: .amber))
         actions.append { [weak self] in self?.rest() }
 
-        opts.append("?")
+        menuOpts.append(MenuOption("?", tint: .navigation))
         actions.append { [weak self] in self?.showPartyReviewHelp() }
 
-        showMenu(opts)
+        showMenuOptions(menuOpts)
 
         closeHandler = { [weak self] in
             guard let self = self else { return }
@@ -19812,7 +19937,7 @@ class GameEngine: ObservableObject {
                 self.showInGameEditCharacter(index: index)
                 return
             }
-            self.confirmChangeName(index: index, newName: trimmed)
+            self.confirmChangeName(index: index, newName: self.applyInitialCaps(trimmed))
         }
 
         // Dice icon → new random suggestions
@@ -27491,6 +27616,17 @@ class GameEngine: ObservableObject {
                 print("")
                 print("  \(charName) will be AI-controlled.", color: .dimGreen)
                 print("")
+
+                // Settings > Gameplay > Remote→Robot — skip the manual
+                // prompt and just carry on as a local game.
+                if degradeRemoteToRobot {
+                    print("  Continuing as a local game...", color: .dimGreen)
+                    print("")
+                    waitForContinue()
+                    inputHandler = { [weak self] _ in self?.convertToLocalGame() }
+                    return
+                }
+
                 print("  You can continue as a local game", color: .dimGreen)
                 print("  with AI companions.", color: .dimGreen)
                 print("")
@@ -29992,6 +30128,16 @@ class GameEngine: ObservableObject {
 
         // If we have game state, offer to continue as local game
         if let state = multiplayerState, !state.party.isEmpty, state.phase == .exploring || state.phase == .combat {
+            // Settings > Gameplay > Remote→Robot — skip the manual prompt
+            // and just carry on as a local game instead of asking every time.
+            if degradeRemoteToRobot {
+                print("Continuing as a local game...", color: .dimGreen)
+                print("")
+                waitForContinue()
+                inputHandler = { [weak self] _ in self?.convertToLocalGame() }
+                return
+            }
+
             print("You can continue this adventure", color: .yellow)
             print("as a local game. Other players'", color: .yellow)
             print("characters will become AI.", color: .yellow)
@@ -30026,6 +30172,17 @@ class GameEngine: ObservableObject {
         print("\(characterName) will now be controlled", color: .dimGreen)
         print("by the AI.", color: .dimGreen)
         print("")
+
+        // Settings > Gameplay > Remote→Robot — skip the manual prompt and
+        // just carry on as a local game instead of asking every time.
+        if degradeRemoteToRobot {
+            print("Continuing as a local game...", color: .dimGreen)
+            print("")
+            waitForContinue()
+            inputHandler = { [weak self] _ in self?.convertToLocalGame() }
+            return
+        }
+
         print("You can continue as a local game", color: .dimGreen)
         print("or return to the main menu.", color: .dimGreen)
         print("")
