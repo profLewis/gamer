@@ -660,6 +660,24 @@ class Character: ObservableObject, Identifiable, Codable {
         currentWeight + item.weight <= carryCapacity && inventory.count < Character.maxInventorySlots
     }
 
+    /// Why canCarry(_:) would refuse this item, in words — the two checks
+    /// it makes (weight, item-slot count) are independent, so a message
+    /// that always blames weight is wrong (and confusing) whenever it's
+    /// actually the slot cap that's hit, which carries no visible number
+    /// anywhere else on screen. nil if the item CAN be carried.
+    func carryBlockReason(for item: Item) -> String? {
+        let overWeight = currentWeight + item.weight > carryCapacity
+        let overSlots = inventory.count >= Character.maxInventorySlots
+        if overWeight && overSlots {
+            return "You're carrying too much, and too many separate items — drop or store something first."
+        } else if overWeight {
+            return "That's too heavy to carry right now — drop or store something first."
+        } else if overSlots {
+            return "Your pack is full (\(Character.maxInventorySlots) items max) — drop or store something first, even if you've got the weight to spare."
+        }
+        return nil
+    }
+
     /// Recalculate maxHP based on current class and CON (for class/race changes)
     func recalculateMaxHP() {
         let conMod = abilityScores.modifier(for: .constitution)

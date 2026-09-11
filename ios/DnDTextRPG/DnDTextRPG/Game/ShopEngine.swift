@@ -52,7 +52,11 @@ class ShopEngine {
     /// to know while deciding whether you can afford or carry something.
     private func printPurseAndCarryLine(_ character: Character) {
         guard let game = game else { return }
-        game.print("  Gold: \(character.gold)  |  Carrying: \(String(format: "%.0f", character.currentWeight))/\(String(format: "%.0f", character.carryCapacity))lb (\(character.inventory.count) items)", color: .yellow)
+        // Item count needs its own visible cap (Character.maxInventorySlots)
+        // — without it, a refusal to carry something well within the
+        // weight limit reads as a bug, since nothing on screen hints that
+        // item SLOTS are a separate, independent cap from weight.
+        game.print("  Gold: \(character.gold)  |  Carrying: \(String(format: "%.0f", character.currentWeight))/\(String(format: "%.0f", character.carryCapacity))lb (\(character.inventory.count)/\(Character.maxInventorySlots) items)", color: .yellow)
     }
 
     func openShop(character: Character, dungeonLevel: Int, merchant: Merchant, completion: @escaping () -> Void) {
@@ -83,7 +87,7 @@ class ShopEngine {
         }
         game.print("")
         game.print("  Your gold: \(character.gold)", color: .yellow)
-        game.print("  Carry weight: \(String(format: "%.0f", character.currentWeight))/\(String(format: "%.0f", character.carryCapacity)) lb", color: .green)
+        game.print("  Carry weight: \(String(format: "%.0f", character.currentWeight))/\(String(format: "%.0f", character.carryCapacity)) lb  (\(character.inventory.count)/\(Character.maxInventorySlots) items)", color: .green)
         game.print("  Stock: \(stock.count) items on the shelves", color: .green)
         game.print("")
 
@@ -168,9 +172,9 @@ class ShopEngine {
                 return
             }
 
-            guard character.canCarry(item) else {
+            if let reason = character.carryBlockReason(for: item) {
                 game.print("")
-                game.print("  \"You can barely stand as it is! Lighten your load first.\"", color: .red)
+                game.print("  \"\(reason)\"", color: .red)
                 game.waitForContinue()
                 game.inputHandler = { [weak self] _ in
                     self?.showBuyMenu(completion: completion)
@@ -416,7 +420,9 @@ class ShopEngine {
             // Asking price or more — no haggling needed, just sell it. No
             // Persuasion check: there's nothing to persuade the merchant of.
             guard offer < item.value else {
-                if character.gold >= offer, character.canCarry(item) {
+                if let reason = character.gold < offer ? "You don't have \(offer) gold." : character.carryBlockReason(for: item) {
+                    game.print("  (You agreed a price of \(offer)gp, but: \(reason))", color: .yellow)
+                } else {
                     character.gold -= offer
                     let newItem = item.newInstance()
                     _ = character.addItem(newItem)
@@ -428,8 +434,6 @@ class ShopEngine {
                     }
                     game.print("  Purchased \(newItem.name) for \(offer) gold.", color: .yellow)
                     game.logEvent("\(character.name) bought \(item.name) for \(offer) gold with \(merchant.name)", category: "SHOP")
-                } else {
-                    game.print("  (You agreed a price of \(offer)gp but couldn't complete the purchase.)", color: .yellow)
                 }
                 game.waitForContinue()
                 game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
@@ -461,14 +465,14 @@ class ShopEngine {
             if total >= effectiveDC {
                 self.narrate(situation: "The player offers \(offer) gold for a \(item.name) (asking price \(item.value)) and makes a successful Persuasion check. React in character, agreeing to the price.",
                              offline: merchant.offlineHaggleSuccessLine(), color: .brightGreen) {
-                    if character.gold >= offer, character.canCarry(item) {
+                    if let reason = character.gold < offer ? "You don't have \(offer) gold." : character.carryBlockReason(for: item) {
+                        game.print("  (You agreed a price of \(offer)gp, but: \(reason))", color: .yellow)
+                    } else {
                         character.gold -= offer
                         let newItem = item.newInstance()
                         _ = character.addItem(newItem)
                         game.print("  Purchased \(newItem.name) for \(offer) gold (haggled down from \(item.value)).", color: .yellow)
                         game.logEvent("\(character.name) haggled \(item.name) down to \(offer) gold (from \(item.value)) with \(merchant.name)", category: "SHOP")
-                    } else {
-                        game.print("  (You agreed a price of \(offer)gp but couldn't complete the purchase.)", color: .yellow)
                     }
                     game.waitForContinue()
                     game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
@@ -583,8 +587,8 @@ class ShopEngine {
             game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
             return
         }
-        guard character.canCarry(item) else {
-            game.print("  \"You can barely stand as it is! Lighten your load first.\"", color: .red)
+        if let reason = character.carryBlockReason(for: item) {
+            game.print("  \"\(reason)\"", color: .red)
             game.waitForContinue()
             game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
             return
