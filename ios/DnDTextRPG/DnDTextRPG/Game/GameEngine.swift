@@ -6036,6 +6036,36 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Imperial (lb) by default; Metric (kg) when on. Item.weight and
+    /// Character.carryCapacity are always stored in pounds regardless —
+    /// this only controls how weight is displayed. See formatWeight(_:)
+    /// and formatWeightPair(_:_:).
+    var useMetricUnits: Bool {
+        get { UserDefaults.standard.bool(forKey: "use_metric_units") }
+        set { UserDefaults.standard.set(newValue, forKey: "use_metric_units") }
+    }
+
+    private static let lbPerKg = 0.45359237
+
+    /// Formats a single weight (stored in pounds) per the Units setting.
+    func formatWeight(_ lb: Double) -> String {
+        if useMetricUnits {
+            return String(format: "%.1fkg", lb * Self.lbPerKg)
+        } else {
+            return "\(Int(lb.rounded()))lb"
+        }
+    }
+
+    /// Formats a "current/max" weight pair (e.g. carry weight) with a
+    /// single shared unit suffix, per the Units setting.
+    func formatWeightPair(_ current: Double, _ max: Double) -> String {
+        if useMetricUnits {
+            return String(format: "%.1f/%.1fkg", current * Self.lbPerKg, max * Self.lbPerKg)
+        } else {
+            return "\(Int(current.rounded()))/\(Int(max.rounded()))lb"
+        }
+    }
+
     var poisonEnabled: Bool {
         get {
             if UserDefaults.standard.object(forKey: "poison_enabled") == nil { return true }
@@ -6596,7 +6626,12 @@ class GameEngine: ObservableObject {
         printWrapped("Whether Computer (AI)-controlled party members get an \"R. \" name prefix — a nod to the robot characters in Isaac Asimov's novels.", indent: 2, color: .dimGreen)
         print("")
 
-        // Grouped: Interface (5) → Features (5) → System (5)
+        print("UNITS:", color: .cyan, bold: true)
+        print("  \(useMetricUnits ? "Metric (kg)" : "Imperial (lb)")", color: .brightGreen)
+        printWrapped("How item and carry weight are displayed.", indent: 2, color: .dimGreen)
+        print("")
+
+        // Grouped: Interface (5) → Features (5) → System (6)
         var options = [
             // Page 1 — Interface
             "Map Radius", useArrowNavigation ? "Use Swipe" : "Use Buttons",
@@ -6610,6 +6645,7 @@ class GameEngine: ObservableObject {
             // Page 3 — System
             "Log Limit", "List Order",
             robotPrefixEnabled ? "Robot Prefix Off" : "Robot Prefix On",
+            useMetricUnits ? "Units: Imperial" : "Units: Metric",
         ]
         options.append(undoRedoEnabled ? "Undo/Redo Off" : "Undo/Redo On")
 
@@ -6659,6 +6695,10 @@ class GameEngine: ObservableObject {
             } else if selected.hasPrefix("Robot Prefix") {
                 self.recordSettingChange(screen: "s:gameplay", key: "robot_prefix_enabled", name: "Robot Prefix")
                 self.robotPrefixEnabled.toggle()
+                self.showGameplaySettings(page: currentPage)
+            } else if selected.hasPrefix("Units:") {
+                self.recordSettingChange(screen: "s:gameplay", key: "use_metric_units", name: "Units")
+                self.useMetricUnits.toggle()
                 self.showGameplaySettings(page: currentPage)
             } else if selected == "Time Limit" {
                 self.showTimeLimitMenu()
@@ -6756,6 +6796,10 @@ class GameEngine: ObservableObject {
 
             self.print("  ROBOT PREFIX", color: .cyan, bold: true)
             self.printWrapped("Whether Computer (AI)-controlled party members get an \"R. \" name prefix — a nod to the robot characters in Isaac Asimov's novels (I, Robot; the Robot series).", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  UNITS", color: .cyan, bold: true)
+            self.printWrapped("Imperial (lb) or Metric (kg) for item and carry weight.", indent: 2, color: .dimGreen)
             self.print("")
 
             #if os(iOS)
@@ -13226,13 +13270,13 @@ class GameEngine: ObservableObject {
         let equipOptions = ItemCatalog.startingEquipmentOptions(for: character.characterClass)
 
         print("Choose your starting equipment:", color: .cyan)
-        print("  Carry capacity: \(String(format: "%.0f", character.carryCapacity)) lb", color: .dimGreen)
+        print("  Carry capacity: \(formatWeight(character.carryCapacity))", color: .dimGreen)
         print("")
 
         for (i, (name, items)) in equipOptions.enumerated() {
             print("  Option \(i + 1): \(name)", color: .brightGreen)
             for item in items {
-                print("    - \(item.name) (\(String(format: "%.1f", item.weight))lb)", color: .dimGreen)
+                print("    - \(item.name) (\(formatWeight(item.weight)))", color: .dimGreen)
             }
             print("")
         }
@@ -13240,7 +13284,7 @@ class GameEngine: ObservableObject {
         var menuOptions: [String] = []
         for (name, items) in equipOptions {
             let totalWeight = items.reduce(0.0) { $0 + $1.weight }
-            menuOptions.append("\(name) (\(String(format: "%.0f", totalWeight)) lb)")
+            menuOptions.append("\(name) (\(formatWeight(totalWeight)))")
         }
 
         showMenu(menuOptions)
@@ -15944,7 +15988,7 @@ class GameEngine: ObservableObject {
             let roll = Int.random(in: 1...100)
             if roll <= 40 {
                 foundItem = Item(id: UUID(), name: "Ink & Parchment", description: "Valuable writing supplies.",
-                                 type: .misc, weight: 0.5, value: 15, weaponStats: nil, armorStats: nil, potionStats: nil)
+                                 type: .misc, weight: 1.0, value: 15, weaponStats: nil, armorStats: nil, potionStats: nil)
                 flavourText = "You salvage some ink and usable parchment from the shelves."
             } else {
                 flavourText = "The books are too damaged to salvage, but the knowledge lingers."
@@ -16530,7 +16574,7 @@ class GameEngine: ObservableObject {
             } else if treasureItem.type == .gem {
                 let gemItem = Item(id: UUID(), name: treasureItem.name,
                                    description: "A precious gem worth \(treasureItem.value)gp.",
-                                   type: .gem, weight: 0.1, value: treasureItem.value,
+                                   type: .gem, weight: 1.0, value: treasureItem.value,
                                    weaponStats: nil, armorStats: nil, potionStats: nil)
                 pickableItems.append(gemItem)
                 print("  \(treasureItem.name) (\(treasureItem.value)gp)", color: .brightGreen)
@@ -16632,7 +16676,7 @@ class GameEngine: ObservableObject {
                 } else if treasureItem.type == .gem {
                     let gemItem = Item(id: UUID(), name: treasureItem.name,
                                        description: "A precious gem worth \(treasureItem.value)gp.",
-                                       type: .gem, weight: 0.1, value: treasureItem.value,
+                                       type: .gem, weight: 1.0, value: treasureItem.value,
                                        weaponStats: nil, armorStats: nil, potionStats: nil)
                     pickableItems.append(gemItem)
                     print("  You feel something smooth — a gem!", color: .brightGreen)
@@ -16701,7 +16745,7 @@ class GameEngine: ObservableObject {
         if let ps = item.potionStats {
             print("  Effect: \(ps.effect)", color: .dimGreen)
         }
-        print("  Weight: \(String(format: "%.1f", item.weight))lb  Value: \(item.value)gp", color: .dimGreen)
+        print("  Weight: \(formatWeight(item.weight))  Value: \(item.value)gp", color: .dimGreen)
         print("")
 
         if party.count > 1 {
@@ -17095,7 +17139,7 @@ class GameEngine: ObservableObject {
         let invName = character.isComputerControlled && !isRemoteChar && !character.name.hasPrefix("R.") ? "R. \(character.name)" : character.name
         printTitle("Inventory — \(invName)", color: .orange)
 
-        print("  Carry Weight: \(String(format: "%.0f", character.currentWeight)) / \(String(format: "%.0f", character.carryCapacity)) lb", color: character.isEncumbered ? .red : .cyan)
+        print("  Carry Weight: \(formatWeightPair(character.currentWeight, character.carryCapacity))", color: character.isEncumbered ? .red : .cyan)
         print("  Gold: \(character.gold)", color: .yellow)
         // Torch status — show who holds the lit torch
         if torchLit, let holderId = torchHolderId {
@@ -17156,7 +17200,7 @@ class GameEngine: ObservableObject {
                 } else {
                     torchInfo = ""
                 }
-                print("    \(tag) \(item.name)\(torchInfo) — \(String(format: "%.1f", item.weight))lb, \(item.value)gp", color: .green)
+                print("    \(tag) \(item.name)\(torchInfo) — \(formatWeight(item.weight)), \(item.value)gp", color: .green)
             }
         }
         print("")
@@ -17402,7 +17446,7 @@ class GameEngine: ObservableObject {
         let items = character.inventory
         var options: [String] = []
         for item in items {
-            options.append("\(item.name) (\(String(format: "%.1f", item.weight))lb)")
+            options.append("\(item.name) (\(formatWeight(item.weight)))")
         }
 
         closeHandler = { [weak self] in self?.showPackMenu(character: character, onBack: onBack, fromDM: fromDM) }
@@ -17791,7 +17835,7 @@ class GameEngine: ObservableObject {
 
         var options: [String] = []
         for item in character.inventory {
-            options.append("\(item.name) (\(String(format: "%.1f", item.weight))lb)")
+            options.append("\(item.name) (\(formatWeight(item.weight)))")
         }
 
         closeHandler = { [weak self] in self?.showPackMenu(character: character, onBack: onBack, fromDM: fromDM) }

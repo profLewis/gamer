@@ -218,21 +218,21 @@ struct ItemCatalog {
 
     static func healingPotion() -> Item {
         Item(id: UUID(), name: "Potion of Healing", description: "Restores 2d4+2 hit points.",
-             type: .potion, weight: 0.5, value: 50,
+             type: .potion, weight: 1.0, value: 50,
              weaponStats: nil, armorStats: nil,
              potionStats: PotionStats(healAmount: "2d4+2", effect: "Restores 2d4+2 HP"))
     }
 
     static func greaterHealingPotion() -> Item {
         Item(id: UUID(), name: "Potion of Greater Healing", description: "Restores 4d4+4 hit points.",
-             type: .potion, weight: 0.5, value: 150,
+             type: .potion, weight: 1.0, value: 150,
              weaponStats: nil, armorStats: nil,
              potionStats: PotionStats(healAmount: "4d4+4", effect: "Restores 4d4+4 HP"))
     }
 
     static func antidote() -> Item {
         Item(id: UUID(), name: "Antidote", description: "Cures poison instantly. Herbalists and clerics make the best use of these.",
-             type: .potion, weight: 0.2, value: 30,
+             type: .potion, weight: 1.0, value: 30,
              weaponStats: nil, armorStats: nil,
              potionStats: PotionStats(healAmount: "0", effect: "Cures poison"))
     }
@@ -273,7 +273,7 @@ struct ItemCatalog {
 
     static func whetstone() -> Item {
         Item(id: UUID(), name: "Whetstone", description: "Use it on your equipped weapon to sharpen the edge — a temporary +1 to attack and damage rolls.",
-             type: .misc, weight: 0.5, value: 5,
+             type: .misc, weight: 1.0, value: 5,
              weaponStats: nil, armorStats: nil, potionStats: nil)
     }
 
@@ -283,7 +283,7 @@ struct ItemCatalog {
     static func key(forDoorId lockId: UUID) -> Item {
         let name = keyFlavorNames.randomElement()!
         var item = Item(id: UUID(), name: name, description: "An old key. It might fit a lock somewhere in this dungeon.",
-                         type: .misc, weight: 0.1, value: 0,
+                         type: .misc, weight: 1.0, value: 0,
                          weaponStats: nil, armorStats: nil, potionStats: nil)
         item.keyForDoorId = lockId
         return item

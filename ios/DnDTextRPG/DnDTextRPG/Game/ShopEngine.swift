@@ -56,7 +56,7 @@ class ShopEngine {
         // — without it, a refusal to carry something well within the
         // weight limit reads as a bug, since nothing on screen hints that
         // item SLOTS are a separate, independent cap from weight.
-        game.print("  Gold: \(character.gold)  |  Carrying: \(String(format: "%.0f", character.currentWeight))/\(String(format: "%.0f", character.carryCapacity))lb (\(character.inventory.count)/\(Character.maxInventorySlots) items)", color: .yellow)
+        game.print("  Gold: \(character.gold)  |  Carrying: \(game.formatWeightPair(character.currentWeight, character.carryCapacity)) (\(character.inventory.count)/\(Character.maxInventorySlots) items)", color: .yellow)
     }
 
     func openShop(character: Character, dungeonLevel: Int, merchant: Merchant, completion: @escaping () -> Void) {
@@ -87,7 +87,7 @@ class ShopEngine {
         }
         game.print("")
         game.print("  Your gold: \(character.gold)", color: .yellow)
-        game.print("  Carry weight: \(String(format: "%.0f", character.currentWeight))/\(String(format: "%.0f", character.carryCapacity)) lb  (\(character.inventory.count)/\(Character.maxInventorySlots) items)", color: .green)
+        game.print("  Carry weight: \(game.formatWeightPair(character.currentWeight, character.carryCapacity))  (\(character.inventory.count)/\(Character.maxInventorySlots) items)", color: .green)
         game.print("  Stock: \(stock.count) items on the shelves", color: .green)
         game.print("")
 
@@ -142,14 +142,14 @@ class ShopEngine {
         var itemLineRanges: [Range<Int>] = []
         for item in stock {
             let lineStart = game.terminalLines.count
-            options.append("\(item.name)  \(item.value)gp  \(String(format: "%.1f", item.weight))lb")
+            options.append("\(item.name)  \(item.value)gp  \(game.formatWeight(item.weight))")
             // Price/weight only ever appeared on the button label above, and
             // the description used dimGreen — a colour speaker mode treats
             // as a decorative nav hint and skips. Between the two, nothing
             // about an item was ever actually read aloud. Folding price and
             // weight into this line and switching to a readable colour
             // fixes both at once.
-            game.print("  \(item.name) — \(item.value)gp, \(String(format: "%.1f", item.weight))lb: \(item.description)", color: .green)
+            game.print("  \(item.name) — \(item.value)gp, \(game.formatWeight(item.weight)): \(item.description)", color: .green)
             game.print("    \(game.itemUsageHint(item))", color: .yellow)
             itemLineRanges.append(lineStart..<game.terminalLines.count)
         }
@@ -215,12 +215,12 @@ class ShopEngine {
         game.clearTerminal()
         game.printTitle("Buy \(item.name)?")
         game.print("")
-        game.print("  Price: \(item.value)gp   Weight: \(String(format: "%.1f", item.weight))lb", color: .brightGreen, bold: true)
+        game.print("  Price: \(item.value)gp   Weight: \(game.formatWeight(item.weight))", color: .brightGreen, bold: true)
         game.printWrapped("  \(item.description)", indent: 2, color: .dimGreen)
         game.print("")
         game.print("  Gold: \(character.gold) → \(character.gold - item.value)", color: .yellow)
         let newWeight = character.currentWeight + item.weight
-        game.print("  Carry: \(String(format: "%.0f", character.currentWeight))/\(String(format: "%.0f", character.carryCapacity))lb → \(String(format: "%.0f", newWeight))/\(String(format: "%.0f", character.carryCapacity))lb", color: .yellow)
+        game.print("  Carry: \(game.formatWeightPair(character.currentWeight, character.carryCapacity)) → \(game.formatWeightPair(newWeight, character.carryCapacity))", color: .yellow)
         game.print("  Items: \(character.inventory.count)/\(Character.maxInventorySlots) → \(character.inventory.count + 1)/\(Character.maxInventorySlots)", color: .yellow)
         game.print("")
 
@@ -285,8 +285,8 @@ class ShopEngine {
         for item in sellableItems {
             let lineStart = game.terminalLines.count
             let sellValue = max(1, item.value / 2)
-            options.append("\(item.name)  +\(sellValue)gp  \(String(format: "%.1f", item.weight))lb")
-            game.print("  \(item.name) — sells for \(sellValue)gp, \(String(format: "%.1f", item.weight))lb: \(item.description)", color: .green)
+            options.append("\(item.name)  +\(sellValue)gp  \(game.formatWeight(item.weight))")
+            game.print("  \(item.name) — sells for \(sellValue)gp, \(game.formatWeight(item.weight)): \(item.description)", color: .green)
             itemLineRanges.append(lineStart..<game.terminalLines.count)
         }
 
