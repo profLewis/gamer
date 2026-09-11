@@ -236,31 +236,47 @@ class ShopEngine {
         let backToList: () -> Void = { [weak self] in self?.showBuyMenu(completion: completion) }
         game.closeHandler = backToList
         game.menuHandler = { [weak self] choice in
-            guard let self = self, let game = self.game, let character = self.character else { return }
+            guard let self = self, let character = self.character else { return }
             guard choice == 1 else { backToList(); return }
-
-            character.gold -= item.value
-            let newItem = item.newInstance()
-            _ = character.addItem(newItem)
-            game.logEvent("\(character.name) bought \(newItem.name) for \(item.value) gold from \(self.merchant?.name ?? "a merchant")", category: "SHOP")
-
-            game.print("")
-            self.itemsBoughtThisVisit.append(newItem.name)
-            game.print("  Purchased \(newItem.name) for \(item.value) gold.", color: .brightGreen)
-            game.print("  Gold remaining: \(character.gold)", color: .yellow)
-
-            self.showPostPurchaseOptions(item: newItem, buyer: character, completion: completion)
+            self.completePurchase(item: item, price: item.value, buyer: character,
+                                   lines: [("  Purchased \(item.name) for \(item.value) gold.", .brightGreen),
+                                           ("  Gold remaining: \(character.gold - item.value)", .yellow)],
+                                   returnTo: backToList, completion: completion)
         }
+    }
+
+    /// Completes a purchase of `item` at `price` for `buyer` — deducts
+    /// gold, adds the item to inventory, logs the sale, tracks it for the
+    /// farewell summary, prints `lines`, then offers post-purchase options
+    /// (equip/drink/gift). The single place every purchase path (Buy,
+    /// Haggle, Rare Goods, Rare Goods Haggle) funnels through once its own
+    /// gold/carry checks have passed — previously only a plain Buy offered
+    /// equip/drink/gift afterward, and each path duplicated the
+    /// deduct/add/log/track steps with slightly different wording, which
+    /// is what made haggling feel like several different, inconsistent
+    /// systems instead of one.
+    private func completePurchase(item: Item, price: Int, buyer: Character, lines: [(String, TerminalColor)], returnTo: @escaping () -> Void, completion: @escaping () -> Void) {
+        guard let game = game else { return }
+        buyer.gold -= price
+        let newItem = item.newInstance()
+        _ = buyer.addItem(newItem)
+        itemsBoughtThisVisit.append(newItem.name)
+        game.logEvent("\(buyer.name) bought \(newItem.name) for \(price) gold from \(merchant?.name ?? "a merchant")", category: "SHOP")
+        game.print("")
+        for (text, color) in lines { game.print(text, color: color) }
+        showPostPurchaseOptions(item: newItem, buyer: buyer, returnTo: returnTo, completion: completion)
     }
 
     /// Right after a successful purchase — what to do with it. Equippable
     /// gear offers "Equip Now", potions offer "Drink Now", and (party size
     /// permitting) any item can be handed to a teammate as a present. Skips
     /// straight past to the plain "keep browsing" continue if none of that
-    /// applies (a key, a gem, a scroll, solo party).
-    private func showPostPurchaseOptions(item: Item, buyer: Character, completion: @escaping () -> Void) {
+    /// applies (a key, a gem, a scroll, solo party). `returnTo` is wherever
+    /// the purchase happened (Buy list, Haggle list, or the shop's main
+    /// menu for rare goods) — where "keep it for later" (or finishing
+    /// equip/drink/gift) goes back to.
+    private func showPostPurchaseOptions(item: Item, buyer: Character, returnTo: @escaping () -> Void, completion: @escaping () -> Void) {
         guard let game = game else { return }
-        let backToList: () -> Void = { [weak self] in self?.showBuyMenu(completion: completion) }
 
         let canEquip: Bool = [.weapon, .armor, .shield].contains(item.type)
         let canDrink = item.type == .potion
@@ -275,26 +291,26 @@ class ShopEngine {
         guard options.count > 1 else {
             // Nothing applicable — same as before, just wait and return.
             game.waitForContinue()
-            game.inputHandler = { _ in backToList() }
+            game.inputHandler = { _ in returnTo() }
             return
         }
 
         game.print("")
         game.print("  What would you like to do with it?", color: .cyan)
         game.showMenu(options)
-        game.closeHandler = backToList
+        game.closeHandler = returnTo
         game.menuHandler = { [weak self] choice in
             guard let self = self, choice >= 1, choice <= options.count else { return }
             switch options[choice - 1] {
             case "Equip Now":
-                self.equipNow(item: item, buyer: buyer, completion: completion)
+                self.equipNow(item: item, buyer: buyer, returnTo: returnTo)
             case "Drink Now":
-                self.drinkNow(item: item, buyer: buyer, completion: completion)
+                self.drinkNow(item: item, buyer: buyer, returnTo: returnTo)
             case "Give as a Present":
-                self.giveAsPresent(item: item, from: buyer, completion: completion)
+                self.giveAsPresent(item: item, from: buyer, returnTo: returnTo)
             default:
                 game.waitForContinue()
-                game.inputHandler = { _ in backToList() }
+                game.inputHandler = { _ in returnTo() }
             }
         }
     }
@@ -303,7 +319,7 @@ class ShopEngine {
     /// visiting character otherwise, but gifting needs everyone else.
     private var party: [Character] { game?.party ?? [] }
 
-    private func equipNow(item: Item, buyer: Character, completion: @escaping () -> Void) {
+    private func equipNow(item: Item, buyer: Character, returnTo: @escaping () -> Void) {
         guard let game = game else { return }
         switch item.type {
         case .weapon: buyer.equipWeapon(item)
@@ -315,10 +331,10 @@ class ShopEngine {
         game.print("  \(buyer.name) equips the \(item.name).", color: .brightGreen)
         game.logMultiplayerAction("\(buyer.name) equips \(item.name)")
         game.waitForContinue()
-        game.inputHandler = { [weak self] _ in self?.showBuyMenu(completion: completion) }
+        game.inputHandler = { _ in returnTo() }
     }
 
-    private func drinkNow(item: Item, buyer: Character, completion: @escaping () -> Void) {
+    private func drinkNow(item: Item, buyer: Character, returnTo: @escaping () -> Void) {
         guard let game = game else { return }
         buyer.removeItem(item)
         game.print("")
@@ -340,7 +356,7 @@ class ShopEngine {
         }
         game.logMultiplayerAction("\(buyer.name) drinks \(item.name)")
         game.waitForContinue()
-        game.inputHandler = { [weak self] _ in self?.showBuyMenu(completion: completion) }
+        game.inputHandler = { _ in returnTo() }
     }
 
     /// Something clever, per request: the recipient's reaction is flavoured
@@ -354,17 +370,16 @@ class ShopEngine {
         "\"I owe you one,\" says %@, pocketing the gift.",
     ]
 
-    private func giveAsPresent(item: Item, from buyer: Character, completion: @escaping () -> Void) {
+    private func giveAsPresent(item: Item, from buyer: Character, returnTo: @escaping () -> Void) {
         guard let game = game else { return }
         let recipients = party.filter { $0.id != buyer.id }
-        let backToList: () -> Void = { [weak self] in self?.showBuyMenu(completion: completion) }
-        game.pickCharacter(title: "Give the \(item.name) to whom?", cancelLabel: "Never Mind", from: recipients, onBack: backToList) { [weak self] recipient in
+        game.pickCharacter(title: "Give the \(item.name) to whom?", cancelLabel: "Never Mind", from: recipients, onBack: returnTo) { [weak self] recipient in
             guard let self = self, let game = self.game else { return }
             guard recipient.canCarry(item) else {
                 game.print("")
                 game.print("  \(recipient.name) can't carry anything more right now.", color: .red)
                 game.waitForContinue()
-                game.inputHandler = { [weak self] _ in self?.showBuyMenu(completion: completion) }
+                game.inputHandler = { _ in returnTo() }
                 return
             }
             buyer.removeItem(item)
@@ -375,7 +390,7 @@ class ShopEngine {
             game.print("  \(reaction)", color: .cyan)
             game.logMultiplayerAction("\(buyer.name) gives \(item.name) to \(recipient.name)")
             game.waitForContinue()
-            game.inputHandler = { [weak self] _ in self?.showBuyMenu(completion: completion) }
+            game.inputHandler = { _ in returnTo() }
         }
     }
 
@@ -498,7 +513,11 @@ class ShopEngine {
         let startHaggle: (Int) -> Void = { [weak self] idx in
             guard let self = self else { return }
             guard idx >= 0 && idx < stockItems.count else { return }
-            self.showHaggleOfferPrompt(item: stockItems[idx], attempt: 1, completion: completion)
+            let item = stockItems[idx]
+            self.showNegotiation(item: item, askingPrice: item.value, attempt: 1, isRareGood: false,
+                                  backAction: { self.showHaggleMenu(completion: completion) },
+                                  returnTo: { self.showShopMain(completion: completion) },
+                                  completion: completion)
         }
 
         game.showPaginatedMenuOptions(options, pinned: ["?", "< Back"], handler: { idx in
@@ -546,17 +565,27 @@ class ShopEngine {
         return values.sorted()
     }
 
-    /// Prompts for a gold offer on `item`, then resolves it against a
-    /// Persuasion check whose difficulty scales with how steep a discount
-    /// was asked for (and stiffens slightly on each repeat attempt for the
-    /// same item, capped at maxHaggleAttempts).
-    private func showHaggleOfferPrompt(item: Item, attempt: Int, completion: @escaping () -> Void) {
+    /// The one negotiation mechanism in the shop — used for both regular
+    /// stock (Haggle) and under-the-counter rare goods (Ask About Rare
+    /// Goods > Haggle). Previously these were two separate, near-identical
+    /// implementations that had drifted slightly apart (different outright-
+    /// accept flavour, different follow-up after a purchase completes) —
+    /// reconciled into one function parametrized by `isRareGood`, which
+    /// only affects the floor (rare goods are already a favour, so the max
+    /// discount is smaller) and the Persuasion DC (+3 harder). Everything
+    /// else — buttons, retry flow, wording, and what happens on success —
+    /// is now identical regardless of which kind of item you're haggling
+    /// over.
+    private func showNegotiation(item: Item, askingPrice: Int, attempt: Int, isRareGood: Bool,
+                                  backAction: @escaping () -> Void, returnTo: @escaping () -> Void,
+                                  completion: @escaping () -> Void) {
         guard let game = game, let character = character, let merchant = merchant else { return }
 
         game.clearTerminal()
         printPurseAndCarryLine(character)
         game.print("")
-        game.print("  \(item.name) — asking price \(item.value)gp", color: .brightGreen, bold: true)
+        let priceLabel = isRareGood ? "under-the-counter price" : "asking price"
+        game.print("  \(item.name) — \(priceLabel) \(askingPrice)gp", color: .brightGreen, bold: true)
         if attempt > 1 {
             game.print("  Attempt \(attempt) of \(Self.maxHaggleAttempts) — \(merchant.name)'s patience is wearing thin.", color: .yellow)
         }
@@ -564,91 +593,82 @@ class ShopEngine {
 
         // A floor keeps offers sane — the merchant won't entertain an
         // insultingly low bid no matter the roll — and offering the full
-        // asking price isn't haggling at all, so that's rejected too.
-        let floor = max(1, item.value / 4)
-        let ceiling = item.value - 1
+        // asking price isn't haggling at all, so that's rejected too. Rare
+        // goods are already a favour, so their floor allows less of a
+        // discount than ordinary stock.
+        let floor = isRareGood ? max(1, askingPrice - askingPrice / 5) : max(1, askingPrice / 4)
+        let ceiling = askingPrice - 1
+        let retry: () -> Void = { [weak self] in
+            self?.showNegotiation(item: item, askingPrice: askingPrice, attempt: attempt + 1, isRareGood: isRareGood,
+                                   backAction: backAction, returnTo: returnTo, completion: completion)
+        }
 
         func resolveOffer(_ offer: Int) {
             guard let game = self.game, let character = self.character, let merchant = self.merchant else { return }
             if offer == 0 {
                 game.print("  You step back from the table.", color: .dimGreen)
                 game.waitForContinue()
-                game.inputHandler = { [weak self] _ in self?.showHaggleMenu(completion: completion) }
+                game.inputHandler = { _ in backAction() }
                 return
             }
             // Asking price or more — no haggling needed, just sell it. No
             // Persuasion check: there's nothing to persuade the merchant of.
-            guard offer < item.value else {
+            guard offer < askingPrice else {
                 if let reason = character.gold < offer ? "You don't have \(offer) gold." : character.carryBlockReason(for: item) {
                     game.print("  (You agreed a price of \(offer)gp, but: \(reason))", color: .yellow)
+                    game.waitForContinue()
+                    game.inputHandler = { _ in returnTo() }
                 } else {
-                    character.gold -= offer
-                    let newItem = item.newInstance()
-                    _ = character.addItem(newItem)
-                    let overpaidBy = offer - item.value
-                    if overpaidBy > 0 {
-                        game.print("  \"Well, aren't you generous.\" \(merchant.name) pockets the extra \(overpaidBy) gold without complaint.", color: .brightGreen)
-                    } else {
-                        game.print("  \"A fair price, no haggling needed.\" \(merchant.name) hands over the \(newItem.name).", color: .brightGreen)
-                    }
-                    self.itemsBoughtThisVisit.append(newItem.name)
-                    game.print("  Purchased \(newItem.name) for \(offer) gold.", color: .yellow)
-                    game.logEvent("\(character.name) bought \(item.name) for \(offer) gold with \(merchant.name)", category: "SHOP")
+                    let overpaidBy = offer - askingPrice
+                    let flavor: String = overpaidBy > 0
+                        ? "  \"Well, aren't you generous.\" \(merchant.name) pockets the extra \(overpaidBy) gold without complaint."
+                        : "  \"A fair price, no haggling needed.\" \(merchant.name) hands over the \(item.name)."
+                    self.completePurchase(item: item, price: offer, buyer: character,
+                                           lines: [(flavor, .brightGreen), ("  Purchased \(item.name) for \(offer) gold.", .yellow)],
+                                           returnTo: returnTo, completion: completion)
                 }
-                game.waitForContinue()
-                game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
                 return
             }
             guard offer >= floor else {
                 game.print("  \"\(offer) gold? You insult me.\" \(merchant.name) won't even consider it.", color: .red)
                 let canRetry = attempt < Self.maxHaggleAttempts
                 game.waitForContinue()
-                if canRetry {
-                    game.inputHandler = { [weak self] _ in self?.showHaggleOfferPrompt(item: item, attempt: attempt + 1, completion: completion) }
-                } else {
-                    game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
-                }
+                game.inputHandler = { _ in canRetry ? retry() : returnTo() }
                 return
             }
 
-            let discountPct = Double(item.value - offer) / Double(item.value)
+            let discountPct = Double(askingPrice - offer) / Double(askingPrice)
             let persuasionMod = character.skillModifier(for: .persuasion)
             let roll = Dice.roll(20)
             let total = roll + persuasionMod
             // Steeper asks need a better roll; each repeat attempt on this
-            // same item also stiffens the merchant's resolve a little.
-            let effectiveDC = merchant.tier.haggleDC + Int((discountPct * 40).rounded()) + (attempt - 1) * 2
+            // same item also stiffens the merchant's resolve a little; rare
+            // goods are harder to talk down further still.
+            let effectiveDC = merchant.tier.haggleDC + (isRareGood ? 3 : 0) + Int((discountPct * 40).rounded()) + (attempt - 1) * 2
 
             game.print("")
             game.print("  \(character.name) offers \(offer)gp and rolls Persuasion: d20[\(roll)] + \(persuasionMod) = \(total) vs DC \(effectiveDC)", color: .cyan)
 
             if total >= effectiveDC {
-                self.narrate(situation: "The player offers \(offer) gold for a \(item.name) (asking price \(item.value)) and makes a successful Persuasion check. React in character, agreeing to the price.",
+                self.narrate(situation: "The player offers \(offer) gold for a \(item.name) (asking price \(askingPrice)) and makes a successful Persuasion check. React in character, agreeing to the price.",
                              offline: merchant.offlineHaggleSuccessLine(), color: .brightGreen) {
                     if let reason = character.gold < offer ? "You don't have \(offer) gold." : character.carryBlockReason(for: item) {
                         game.print("  (You agreed a price of \(offer)gp, but: \(reason))", color: .yellow)
+                        game.waitForContinue()
+                        game.inputHandler = { _ in returnTo() }
                     } else {
-                        character.gold -= offer
-                        let newItem = item.newInstance()
-                        _ = character.addItem(newItem)
-                        self.itemsBoughtThisVisit.append(newItem.name)
-                        game.print("  Purchased \(newItem.name) for \(offer) gold (haggled down from \(item.value)).", color: .yellow)
-                        game.logEvent("\(character.name) haggled \(item.name) down to \(offer) gold (from \(item.value)) with \(merchant.name)", category: "SHOP")
+                        self.completePurchase(item: item, price: offer, buyer: character,
+                                               lines: [("  Purchased \(item.name) for \(offer) gold (haggled down from \(askingPrice)).", .yellow)],
+                                               returnTo: returnTo, completion: completion)
                     }
-                    game.waitForContinue()
-                    game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
                 }
             } else {
                 let canRetry = attempt < Self.maxHaggleAttempts
-                self.narrate(situation: "The player offers \(offer) gold for a \(item.name) (asking price \(item.value)) but fails the Persuasion check. React in character, refusing that price\(canRetry ? ", but leave room for a better offer" : " and firmly end the negotiation").",
+                self.narrate(situation: "The player offers \(offer) gold for a \(item.name) (asking price \(askingPrice)) but fails the Persuasion check. React in character, refusing that price\(canRetry ? ", but leave room for a better offer" : " and firmly end the negotiation").",
                              offline: merchant.offlineHaggleFailLine(), color: .red) {
                     game.logEvent("\(character.name) offered \(offer) gold for \(item.name) with \(merchant.name) — refused", category: "SHOP")
                     game.waitForContinue()
-                    if canRetry {
-                        game.inputHandler = { [weak self] _ in self?.showHaggleOfferPrompt(item: item, attempt: attempt + 1, completion: completion) }
-                    } else {
-                        game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
-                    }
+                    game.inputHandler = { _ in canRetry ? retry() : returnTo() }
                 }
             }
         }
@@ -659,9 +679,8 @@ class ShopEngine {
         // time this prompt is shown; ">>" re-rolls a fresh batch on demand.
         let offers = suggestedOffers(floor: floor, ceiling: ceiling)
         let options = offers.map { "\($0)gp" } + [">>", "?", "< Back"]
-        game.promptTextWithMenu("Name your price (\(floor)gp or more — \(item.value)gp or above buys it outright), or 0 to walk away:", options: options)
-        let backToHaggleMenu: () -> Void = { [weak self] in self?.showHaggleMenu(completion: completion) }
-        game.closeHandler = backToHaggleMenu
+        game.promptTextWithMenu("Name your price (\(floor)gp or more — \(askingPrice)gp or above buys it outright), or 0 to walk away:", options: options)
+        game.closeHandler = backAction
         game.menuHandler = { [weak self] choice in
             if choice >= 1 && choice <= offers.count {
                 resolveOffer(offers[choice - 1])
@@ -669,7 +688,8 @@ class ShopEngine {
             }
             switch choice - offers.count {
             case 1:
-                self?.showHaggleOfferPrompt(item: item, attempt: attempt, completion: completion)
+                self?.showNegotiation(item: item, askingPrice: askingPrice, attempt: attempt, isRareGood: isRareGood,
+                                       backAction: backAction, returnTo: returnTo, completion: completion)
             case 2:
                 guard let game = self?.game else { return }
                 game.showInlineHelp {
@@ -677,13 +697,13 @@ class ShopEngine {
                     game.print("")
                     game.printWrapped("Tap a suggested price, or type (or speak) your own. \">>\" shows a fresh set of suggestions.", indent: 2, color: .dimGreen)
                     game.print("")
-                    game.printWrapped("Offering \(item.value)gp or more buys it outright. Below \(floor)gp is refused outright as insulting. Anything in between is a Persuasion check — the lower you go, the harder it is to land.", indent: 2, color: .dimGreen)
+                    game.printWrapped("Offering \(askingPrice)gp or more buys it outright. Below \(floor)gp is refused outright as insulting. Anything in between is a Persuasion check — the lower you go, the harder it is to land.", indent: 2, color: .dimGreen)
                     game.print("")
                     game.printWrapped("0 walks away from the item entirely.", indent: 2, color: .dimGreen)
                     game.print("")
                 }
             default:
-                backToHaggleMenu()
+                backAction()
             }
         }
         game.inputHandler = { text in
@@ -691,7 +711,10 @@ class ShopEngine {
             guard let offer = Int(trimmed), offer >= 0 else {
                 game.print("  \"Speak plainly — a number, adventurer.\"", color: .yellow)
                 game.waitForContinue()
-                game.inputHandler = { [weak self] _ in self?.showHaggleOfferPrompt(item: item, attempt: attempt, completion: completion) }
+                game.inputHandler = { [weak self] _ in
+                    self?.showNegotiation(item: item, askingPrice: askingPrice, attempt: attempt, isRareGood: isRareGood,
+                                           backAction: backAction, returnTo: returnTo, completion: completion)
+                }
                 return
             }
             resolveOffer(offer)
@@ -721,7 +744,10 @@ class ShopEngine {
                     case 1:
                         self.buyRareGood(rareItem, price: price, completion: completion)
                     case 2:
-                        self.haggleRareGood(rareItem, price: price, completion: completion)
+                        self.showNegotiation(item: rareItem, askingPrice: price, attempt: 1, isRareGood: true,
+                                              backAction: { self.showShopMain(completion: completion) },
+                                              returnTo: { self.showShopMain(completion: completion) },
+                                              completion: completion)
                     default:
                         // A plain decline with no new reaction to read —
                         // return straight to the shop instead of making the
@@ -754,134 +780,10 @@ class ShopEngine {
             game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
             return
         }
-        character.gold -= price
-        let newItem = item.newInstance()
-        _ = character.addItem(newItem)
-        game.logEvent("\(character.name) bought under-the-counter \(newItem.name) for \(price) gold from \(merchant?.name ?? "a merchant")", category: "SHOP")
-        self.itemsBoughtThisVisit.append(newItem.name)
-        game.print("  You purchase the \(newItem.name) for \(price) gold.", color: .brightGreen)
-        game.waitForContinue()
-        game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
-    }
-
-    /// Prompts for a gold offer on a rare/under-the-counter good, same shape
-    /// as showHaggleOfferPrompt (buttons + free text/voice, ascending
-    /// suggested prices, retry up to maxHaggleAttempts) — previously this
-    /// was a single blind dice roll with no way to name a price, and a
-    /// failure left "buy at full price or walk away" as the only options,
-    /// which is what actually made it feel like haggling didn't work.
-    /// Rare goods are already a favour, so the discount range is smaller
-    /// (at most ~20%) than an ordinary item's.
-    private func haggleRareGood(_ item: Item, price: Int, attempt: Int = 1, completion: @escaping () -> Void) {
-        guard let game = game, let character = character, let merchant = merchant else { return }
-
-        game.clearTerminal()
-        printPurseAndCarryLine(character)
-        game.print("")
-        game.print("  \(item.name) — under-the-counter price \(price)gp", color: .brightGreen, bold: true)
-        if attempt > 1 {
-            game.print("  Attempt \(attempt) of \(Self.maxHaggleAttempts) — \(merchant.name)'s patience is wearing thin.", color: .yellow)
-        }
-        game.print("")
-
-        // Harder to talk down than ordinary stock — this is already a favour.
-        let floor = max(1, price - price / 5)
-        let ceiling = price - 1
-
-        func resolveOffer(_ offer: Int) {
-            guard let game = self.game, let character = self.character, let merchant = self.merchant else { return }
-            if offer == 0 {
-                game.print("  You step back from the table.", color: .dimGreen)
-                game.waitForContinue()
-                game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
-                return
-            }
-            // Asking price or more — no haggling needed, just sell it.
-            guard offer < price else {
-                self.buyRareGood(item, price: offer, completion: completion)
-                return
-            }
-            guard offer >= floor else {
-                game.print("  \"\(offer) gold? For a piece like this? You insult me.\" \(merchant.name) won't even consider it.", color: .red)
-                let canRetry = attempt < Self.maxHaggleAttempts
-                game.waitForContinue()
-                if canRetry {
-                    game.inputHandler = { [weak self] _ in self?.haggleRareGood(item, price: price, attempt: attempt + 1, completion: completion) }
-                } else {
-                    game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
-                }
-                return
-            }
-
-            let discountPct = Double(price - offer) / Double(price)
-            let persuasionMod = character.skillModifier(for: .persuasion)
-            let roll = Dice.roll(20)
-            let total = roll + persuasionMod
-            // Under-the-counter goods are already a favour — harder to talk
-            // down further than ordinary stock (see showHaggleOfferPrompt).
-            let effectiveDC = merchant.tier.haggleDC + 3 + Int((discountPct * 40).rounded()) + (attempt - 1) * 2
-
-            game.print("")
-            game.print("  \(character.name) offers \(offer)gp and rolls Persuasion: d20[\(roll)] + \(persuasionMod) = \(total) vs DC \(effectiveDC)", color: .cyan)
-
-            if total >= effectiveDC {
-                self.narrate(situation: "The player haggles over the price of the \(item.name) you just showed them under the counter, offering \(offer) gold instead of \(price). React in character, agreeing to the lower price.",
-                             offline: merchant.offlineHaggleSuccessLine(), color: .brightGreen) { [weak self] in
-                    self?.buyRareGood(item, price: offer, completion: completion)
-                }
-            } else {
-                let canRetry = attempt < Self.maxHaggleAttempts
-                self.narrate(situation: "The player offers \(offer) gold for the \(item.name) (asking price \(price)) but fails to persuade you. React in character, refusing that price\(canRetry ? ", but leave room for a better offer" : " and firmly end the negotiation").",
-                             offline: merchant.offlineHaggleFailLine(), color: .red) {
-                    game.waitForContinue()
-                    if canRetry {
-                        game.inputHandler = { [weak self] _ in self?.haggleRareGood(item, price: price, attempt: attempt + 1, completion: completion) }
-                    } else {
-                        game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
-                    }
-                }
-            }
-        }
-
-        let offers = suggestedOffers(floor: floor, ceiling: ceiling)
-        let options = offers.map { "\($0)gp" } + [">>", "?", "< Back"]
-        game.promptTextWithMenu("Name your price (\(floor)gp or more — \(price)gp or above buys it outright), or 0 to walk away:", options: options)
-        let backToShop: () -> Void = { [weak self] in self?.showShopMain(completion: completion) }
-        game.closeHandler = backToShop
-        game.menuHandler = { [weak self] choice in
-            if choice >= 1 && choice <= offers.count {
-                resolveOffer(offers[choice - 1])
-                return
-            }
-            switch choice - offers.count {
-            case 1:
-                self?.haggleRareGood(item, price: price, attempt: attempt, completion: completion)
-            case 2:
-                guard let game = self?.game else { return }
-                game.showInlineHelp {
-                    game.printTitle("Name Your Price — Help")
-                    game.print("")
-                    game.printWrapped("Tap a suggested price, or type (or speak) your own. \">>\" shows a fresh set of suggestions.", indent: 2, color: .dimGreen)
-                    game.print("")
-                    game.printWrapped("Offering \(price)gp or more buys it outright. Below \(floor)gp is refused outright as insulting. Anything in between is a Persuasion check — the lower you go, the harder it is to land.", indent: 2, color: .dimGreen)
-                    game.print("")
-                    game.printWrapped("0 walks away from the item entirely.", indent: 2, color: .dimGreen)
-                    game.print("")
-                }
-            default:
-                backToShop()
-            }
-        }
-        game.inputHandler = { text in
-            let trimmed = text.trimmingCharacters(in: .whitespaces)
-            guard let offer = Int(trimmed), offer >= 0 else {
-                game.print("  \"Speak plainly — a number, adventurer.\"", color: .yellow)
-                game.waitForContinue()
-                game.inputHandler = { [weak self] _ in self?.haggleRareGood(item, price: price, attempt: attempt, completion: completion) }
-                return
-            }
-            resolveOffer(offer)
-        }
+        let returnTo: () -> Void = { [weak self] in self?.showShopMain(completion: completion) }
+        completePurchase(item: item, price: price, buyer: character,
+                          lines: [("  You purchase the \(item.name) for \(price) gold.", .brightGreen)],
+                          returnTo: returnTo, completion: completion)
     }
 
     // MARK: - Farewell
