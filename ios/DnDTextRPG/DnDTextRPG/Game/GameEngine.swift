@@ -3427,12 +3427,47 @@ class GameEngine: ObservableObject {
         menuOptions.append(MenuOption("Settings"))
         actions.append { [weak self] in self?.showSettings() }
 
+        // Compact nav cell (bottom-right) — just "?" here. Nothing to page
+        // through and nothing above this screen to go back to, so the left
+        // and right slots of the cell stay empty; this is still the one
+        // small addition that keeps the main menu consistent with every
+        // other screen's nav cell rather than a special case.
+        menuOptions.append(MenuOption("?", tint: .navigation, compact: true))
+        actions.append { [weak self] in self?.showMainMenuHelp() }
+
         showMenuOptions(menuOptions)
 
         closeHandler = { [weak self] in self?.quitApp() }
         menuHandler = { choice in
             guard choice >= 1 && choice <= actions.count else { return }
             actions[choice - 1]()
+        }
+    }
+
+    private func showMainMenuHelp() {
+        let hasActiveGame = dungeon != nil && !party.isEmpty
+        showInlineHelp {
+            self.printTitle("Main Menu — Help")
+            self.print("")
+            if hasActiveGame {
+                self.print("  CONTINUE QUEST", color: .cyan, bold: true)
+                self.printWrapped("Jumps straight back into your adventure in progress.", indent: 2, color: .dimGreen)
+                self.print("")
+            }
+            self.print("  PLAY", color: .cyan, bold: true)
+            self.printWrapped("Start a new adventure, load a save, or continue one from here.", indent: 2, color: .dimGreen)
+            self.print("")
+            if self.pendingInviteMatch != nil {
+                self.print("  REQUESTS", color: .cyan, bold: true)
+                self.printWrapped("A multiplayer turn or invite is waiting for you — tap to jump straight to it.", indent: 2, color: .dimGreen)
+                self.print("")
+            }
+            self.print("  HOW TO PLAY", color: .cyan, bold: true)
+            self.printWrapped("Rules, controls, and tips — covers exploration, combat, the DM, and more.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  SETTINGS", color: .cyan, bold: true)
+            self.printWrapped("Gameplay, sound, accessibility, AI/DM, and save options.", indent: 2, color: .dimGreen)
+            self.print("")
         }
     }
 
@@ -19947,18 +19982,32 @@ class GameEngine: ObservableObject {
 
         print("")
 
-        showMenu(["Export Log", "Import Log"])
+        let back = onBack ?? { [weak self] in self?.showPartyStatus() }
+        showMenu(["Export Log", "Import Log", "?", "< Back"])
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             switch choice {
             case 1: self.prepareLogExport()
             case 2: self.showLogImporter = true
+            case 3:
+                self.showInlineHelp {
+                    self.printTitle("Adventure Log — Help")
+                    self.print("")
+                    self.printWrapped("A running record of everything that's happened this adventure — combat, loot, level-ups, traps, chat, and party events, colour-coded by type.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  EXPORT LOG", color: .cyan, bold: true)
+                    self.printWrapped("Saves the full log (not just what's shown here) as a text file you can share or keep.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  IMPORT LOG", color: .cyan, bold: true)
+                    self.printWrapped("Loads a previously exported log file back in — handy for keeping a record across devices.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("Settings > Gameplay lets you cap how many recent events are displayed if the log gets long.", indent: 2, color: .dimGreen)
+                }
+            case 4: back()
             default: break
             }
         }
-        closeHandler = onBack ?? { [weak self] in
-            self?.showPartyStatus()
-        }
+        closeHandler = back
     }
 
     /// Builds the exportable text and flips the flag TerminalView watches to
@@ -26631,7 +26680,7 @@ class GameEngine: ObservableObject {
             print("leaving?", color: .yellow)
             print("")
 
-            showMenu(["Quit+Save", "Quit-Save", "< Back"])
+            showMenu(["Quit+Save", "Quit-Save", "?", "< Back"])
             menuHandler = { [weak self] choice in
                 guard let self = self else { return }
                 switch choice {
@@ -26639,6 +26688,19 @@ class GameEngine: ObservableObject {
                     self.showSaveMenu()
                 case 2:
                     self.performQuit()
+                case 3:
+                    self.showInlineHelp {
+                        self.printTitle("Quit — Help")
+                        self.print("")
+                        self.print("  QUIT+SAVE", color: .cyan, bold: true)
+                        self.printWrapped("Takes you to the Save menu first — pick a slot, then the app closes once it's saved.", indent: 2, color: .dimGreen)
+                        self.print("")
+                        self.print("  QUIT-SAVE", color: .cyan, bold: true)
+                        self.printWrapped("Closes the app immediately WITHOUT saving. Today's progress on this adventure is lost.", indent: 2, color: .yellow)
+                        self.print("")
+                        self.print("  < BACK", color: .cyan, bold: true)
+                        self.printWrapped("Cancels — returns to the Main Menu, app stays open.", indent: 2, color: .dimGreen)
+                    }
                 default:
                     self.showMainMenu()
                 }
