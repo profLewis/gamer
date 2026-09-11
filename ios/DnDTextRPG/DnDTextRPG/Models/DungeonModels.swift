@@ -952,12 +952,15 @@ class Dungeon: ObservableObject, Codable {
     /// how many end up active, so the map's line count — and therefore its
     /// on-screen size — never depends on room content, the torch being lit
     /// or unlit, or how many distinct symbol types happen to be nearby.
+    // "S"/Shop was dropped — a dedicated shop room always has a merchant
+    // (and an armoury sometimes does too), so "M"/Merchant alone already
+    // covers it; showing both was redundant for the same room.
     static let mapLegendEntries: [(symbol: String, label: String)] = [
         ("@", "You"), ("!", "Danger"), (".", "Empty"),
         ("E", "Entry"), ("=", "Hall"), ("#", "Room"),
         ("$", "Loot"), ("+", "Shrine"), ("L", "Library"),
         ("B", "Boss"), ("A", "Armoury"), ("P", "Prison"),
-        ("S", "Shop"), ("M", "Merchant"), ("G", "Gym"), ("N", "NPC"), ("X", "Secured"), ("K", "Locked")
+        ("M", "Merchant"), ("G", "Gym"), ("N", "NPC"), ("X", "Secured"), ("K", "Locked")
     ]
 
     static func mapLegendRowCount(maxSymbols: Int) -> Int {
@@ -1139,13 +1142,19 @@ class Dungeon: ObservableObject, Codable {
         var hereSymbols: [(symbol: String, label: String)] = []
         let hereLabels: [String: String] = [
             "E": "Entry", "=": "Hall", "#": "Room", "$": "Loot", "!": "Trap", "+": "Shrine",
-            "L": "Library", "B": "Boss", "A": "Armoury", "P": "Prison", "S": "Shop", ".": "Empty"
+            "L": "Library", "B": "Boss", "A": "Armoury", "P": "Prison", ".": "Empty"
         ]
-        if let label = hereLabels[current.roomType.symbol] {
+        // A merchant IS the shop — "M" on its own tells you everything "S"
+        // would have (a dedicated shop room always has a merchant; an
+        // armoury sometimes does too), so don't also list the room's base
+        // type when there's a merchant here — matches the grid glyph below,
+        // which already shows [M] instead of [S]/[A] for the same reason.
+        if current.merchant != nil {
+            hereSymbols.append(("M", "Merchant"))
+        } else if let label = hereLabels[current.roomType.symbol] {
             hereSymbols.append((current.roomType.symbol, label))
         }
         if !current.cleared && current.encounter != nil { hereSymbols.append(("!", "Danger")) }
-        if current.merchant != nil { hereSymbols.append(("M", "Merchant")) }
         if current.trainer != nil { hereSymbols.append(("G", "Gym")) }
         if current.npc != nil && !(current.npc?.hasBeenTalkedTo ?? true) { hereSymbols.append(("N", "NPC")) }
         let hereText = "@ here: " + hereSymbols.map { "\($0.symbol)=\($0.label)" }.joined(separator: " ")
@@ -1163,11 +1172,13 @@ class Dungeon: ObservableObject, Codable {
                 // already added @
             } else if !room.cleared && room.encounter != nil {
                 visibleSymbols.insert("!")
+            } else if room.merchant != nil {
+                // "M" alone, not also the room's base type — see the @ here:
+                // line above for why.
+                visibleSymbols.insert("M")
             } else {
                 visibleSymbols.insert(room.roomType.symbol)
             }
-            visibleSymbols.insert(room.roomType.symbol)
-            if room.merchant != nil { visibleSymbols.insert("M") }
             if room.trainer != nil { visibleSymbols.insert("G") }
         }
         if visibleRooms.contains(where: { !$0.secured.isEmpty }) {

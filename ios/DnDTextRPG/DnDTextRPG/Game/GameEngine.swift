@@ -1869,6 +1869,13 @@ class GameEngine: ObservableObject {
 
     func promptText(_ prompt: String) {
         print(prompt, color: .green)
+        // A fresh prompt is a new screen state — a tap/swipe target left
+        // over from whatever was on screen before (e.g. "tap the green
+        // text to buy" on a shop list) must not still be live here.
+        textLongPressHandler = nil
+        swipeLeftHandler = nil
+        swipeRightHandler = nil
+        swipeRandomHandler = nil
         runOnMain {
             self.directionExits = [:]
             self.securedExits = []
@@ -1882,6 +1889,10 @@ class GameEngine: ObservableObject {
     /// Show both a text input prompt and menu buttons simultaneously
     func promptTextWithMenu(_ prompt: String, options: [String]) {
         print(prompt, color: .green)
+        textLongPressHandler = nil
+        swipeLeftHandler = nil
+        swipeRightHandler = nil
+        swipeRandomHandler = nil
         runOnMain {
             self.directionExits = [:]
             self.securedExits = []
@@ -1896,6 +1907,19 @@ class GameEngine: ObservableObject {
     }
 
     func waitForContinue() {
+        // Same reasoning as promptText — waitForContinue is meant to be a
+        // clean "tap anywhere to continue" state (see TerminalView's
+        // awaitingContinue branch), which only renders when textTapEnabled
+        // is false. Leaving a previous screen's textLongPressHandler set
+        // (e.g. buying an item in the shop list, which appends the
+        // confirmation onto the same screen rather than clearing it first)
+        // kept textTapEnabled on, so tapping to continue silently re-ran
+        // the stale handler against the wrong line numbers instead —
+        // "broken scrolling," only escapable via the X/close icon.
+        textLongPressHandler = nil
+        swipeLeftHandler = nil
+        swipeRightHandler = nil
+        swipeRandomHandler = nil
         runOnMain {
             self.directionExits = [:]
             self.securedExits = []

@@ -181,7 +181,7 @@ class ShopEngine {
             character.gold -= item.value
             let newItem = item.newInstance()
             _ = character.addItem(newItem)
-            game.logEvent("Bought \(newItem.name) for \(item.value) gold from \(self.merchant?.name ?? "a merchant")", category: "SHOP")
+            game.logEvent("\(character.name) bought \(newItem.name) for \(item.value) gold from \(self.merchant?.name ?? "a merchant")", category: "SHOP")
 
             game.print("")
             game.print("  Purchased \(newItem.name) for \(item.value) gold.", color: .brightGreen)
@@ -270,7 +270,7 @@ class ShopEngine {
 
             character.removeItem(item)
             character.gold += sellValue
-            game.logEvent("Sold \(item.name) for \(sellValue) gold to \(self.merchant?.name ?? "a merchant")", category: "SHOP")
+            game.logEvent("\(character.name) sold \(item.name) for \(sellValue) gold to \(self.merchant?.name ?? "a merchant")", category: "SHOP")
 
             game.print("")
             game.print("  Sold \(item.name) for \(sellValue) gold.", color: .brightGreen)
@@ -427,7 +427,7 @@ class ShopEngine {
                         game.print("  \"A fair price, no haggling needed.\" \(merchant.name) hands over the \(newItem.name).", color: .brightGreen)
                     }
                     game.print("  Purchased \(newItem.name) for \(offer) gold.", color: .yellow)
-                    game.logEvent("Bought \(item.name) for \(offer) gold with \(merchant.name)", category: "SHOP")
+                    game.logEvent("\(character.name) bought \(item.name) for \(offer) gold with \(merchant.name)", category: "SHOP")
                 } else {
                     game.print("  (You agreed a price of \(offer)gp but couldn't complete the purchase.)", color: .yellow)
                 }
@@ -466,7 +466,7 @@ class ShopEngine {
                         let newItem = item.newInstance()
                         _ = character.addItem(newItem)
                         game.print("  Purchased \(newItem.name) for \(offer) gold (haggled down from \(item.value)).", color: .yellow)
-                        game.logEvent("Haggled \(item.name) down to \(offer) gold (from \(item.value)) with \(merchant.name)", category: "SHOP")
+                        game.logEvent("\(character.name) haggled \(item.name) down to \(offer) gold (from \(item.value)) with \(merchant.name)", category: "SHOP")
                     } else {
                         game.print("  (You agreed a price of \(offer)gp but couldn't complete the purchase.)", color: .yellow)
                     }
@@ -477,7 +477,7 @@ class ShopEngine {
                 let canRetry = attempt < Self.maxHaggleAttempts
                 self.narrate(situation: "The player offers \(offer) gold for a \(item.name) (asking price \(item.value)) but fails the Persuasion check. React in character, refusing that price\(canRetry ? ", but leave room for a better offer" : " and firmly end the negotiation").",
                              offline: merchant.offlineHaggleFailLine(), color: .red) {
-                    game.logEvent("Offered \(offer) gold for \(item.name) with \(merchant.name) — refused", category: "SHOP")
+                    game.logEvent("\(character.name) offered \(offer) gold for \(item.name) with \(merchant.name) — refused", category: "SHOP")
                     game.waitForContinue()
                     if canRetry {
                         game.inputHandler = { [weak self] _ in self?.showHaggleOfferPrompt(item: item, attempt: attempt + 1, completion: completion) }
@@ -571,7 +571,7 @@ class ShopEngine {
         character.gold -= price
         let newItem = item.newInstance()
         _ = character.addItem(newItem)
-        game.logEvent("Bought under-the-counter \(newItem.name) for \(price) gold from \(merchant?.name ?? "a merchant")", category: "SHOP")
+        game.logEvent("\(character.name) bought under-the-counter \(newItem.name) for \(price) gold from \(merchant?.name ?? "a merchant")", category: "SHOP")
         game.print("  You purchase the \(newItem.name) for \(price) gold.", color: .brightGreen)
         game.waitForContinue()
         game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
