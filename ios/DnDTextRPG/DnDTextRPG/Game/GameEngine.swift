@@ -11104,6 +11104,9 @@ class GameEngine: ObservableObject {
         var menuOpts: [MenuOption] = []
         var actions: [() -> Void] = []
 
+        menuOpts.append(MenuOption("Change Name", isDisabled: inGame))
+        actions.append { [weak self] in self?.showChangeName(index: index) }
+
         // Only show Change Type when there are multiple party members
         if party.count > 1 {
             menuOpts.append(MenuOption("Change Type", isDisabled: inGame))
@@ -11167,6 +11170,7 @@ class GameEngine: ObservableObject {
                 self.printWrapped("Your adventure is underway! Edit buttons are greyed out to prevent accidental changes. If you really need to make a change, long-press the button to override.", indent: 2, color: .yellow)
                 self.print("")
             }
+            self.printWrapped("Change Name: Rename this character.", indent: 2, color: .dimGreen)
             self.printWrapped("Change Type: Switch between Local (you control), Auto (robot), or Remote (multiplayer) control.", indent: 2, color: .dimGreen)
             self.printWrapped("Change Race: Change the character's race (Elf, Dwarf, etc.).", indent: 2, color: .dimGreen)
             self.printWrapped("Change Class: Change the character's class (Fighter, Wizard, etc.).", indent: 2, color: .dimGreen)
@@ -11181,7 +11185,7 @@ class GameEngine: ObservableObject {
     // MARK: - Character Roster (Save/Load, Party Review)
 
     private enum RosterLoadCategory: CaseIterable {
-        case all, raceClass, abilityScores, skills
+        case all, raceClass, abilityScores, skills, name
 
         var label: String {
             switch self {
@@ -11189,6 +11193,18 @@ class GameEngine: ObservableObject {
             case .raceClass: return "Race & Class only"
             case .abilityScores: return "Ability Scores only"
             case .skills: return "Skills only"
+            case .name: return "Name only"
+            }
+        }
+
+        /// Phrase for the "Loaded ___ from X onto Y" confirmation line.
+        var confirmationPhrase: String {
+            switch self {
+            case .all: return "everything"
+            case .raceClass: return "race & class"
+            case .abilityScores: return "ability scores"
+            case .skills: return "skills"
+            case .name: return "the name"
             }
         }
     }
@@ -11232,7 +11248,7 @@ class GameEngine: ObservableObject {
             self.print("")
             self.printWrapped("Save to Roster: store this character's current level, gear, and gold so a future adventure can start with them again.", indent: 2, color: .dimGreen)
             self.print("")
-            self.printWrapped("Load from Roster: pick a character you've previously saved, then choose how much of it to copy onto this one — everything, or just race/class, ability scores, or skills. Everything else about this character (name, level, HP, gear, inventory) is left as-is.", indent: 2, color: .dimGreen)
+            self.printWrapped("Load from Roster: pick a character you've previously saved, then choose how much of it to copy onto this one — everything, or just race/class, ability scores, skills, or name. \"Load All\" asks separately whether to also take the name — everything else about this character not covered by your choice is left as-is.", indent: 2, color: .dimGreen)
             self.print("")
         }
     }
@@ -11295,13 +11311,53 @@ class GameEngine: ObservableObject {
         }, handler: { [weak self] idx in
             guard let self = self, idx < RosterLoadCategory.allCases.count else { return }
             let category = RosterLoadCategory.allCases[idx]
-            self.applyRosterLoad(source: source, into: char, category: category)
-            self.showRosterLoadConfirmation(index: index, sourceName: source.name, category: category)
+            if category == .all {
+                // "Load All" doesn't say what to do about the name up
+                // front — ask, rather than silently keeping or overwriting it.
+                self.showRosterLoadNamePrompt(index: index, source: source)
+            } else {
+                self.applyRosterLoad(source: source, into: char, category: category)
+                self.showRosterLoadConfirmation(index: index, sourceName: source.name, category: category)
+            }
         })
         closeHandler = { [weak self] in self?.showRosterLoadPicker(index: index) }
     }
 
-    private func applyRosterLoad(source: Character, into char: Character, category: RosterLoadCategory) {
+    private func showRosterLoadNamePrompt(index: Int, source: Character) {
+        guard index < party.count else { showPartyReview(); return }
+        let char = party[index]
+
+        clearTerminal()
+        printTitle("Load All from \(source.name)")
+        print("")
+        printWrapped("This copies everything from \(source.name) onto \(char.name) — level, gear, scores, skills, the works.", indent: 2, color: .dimGreen)
+        print("")
+        printWrapped("Also use \(source.name)'s name, or keep \(char.name)?", indent: 2, color: .cyan)
+        print("")
+
+        showMenu(["Use \"\(source.name)\"", "Keep \"\(char.name)\"", "?", "< Back"])
+        closeHandler = { [weak self] in self?.showRosterLoadCategoryPicker(index: index, source: source) }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1:
+                self.applyRosterLoad(source: source, into: char, category: .all, includeName: true)
+                self.showRosterLoadConfirmation(index: index, sourceName: source.name, category: .all, includeName: true)
+            case 2:
+                self.applyRosterLoad(source: source, into: char, category: .all, includeName: false)
+                self.showRosterLoadConfirmation(index: index, sourceName: source.name, category: .all, includeName: false)
+            case 3:
+                self.showRosterMenuHelp(index: index)
+            default:
+                self.showRosterLoadCategoryPicker(index: index, source: source)
+            }
+        }
+    }
+
+    private func applyRosterLoad(source: Character, into char: Character, category: RosterLoadCategory, includeName: Bool = false) {
+        if includeName {
+            char.name = uniqueName(source.name, excluding: char.id)
+        }
         switch category {
         case .all:
             char.race = source.race
@@ -11327,18 +11383,21 @@ class GameEngine: ObservableObject {
             char.abilityScores = source.abilityScores
         case .skills:
             char.skillProficiencies = source.skillProficiencies
+        case .name:
+            char.name = uniqueName(source.name, excluding: char.id)
         }
         char.syncRobotPrefix()
     }
 
-    private func showRosterLoadConfirmation(index: Int, sourceName: String, category: RosterLoadCategory) {
+    private func showRosterLoadConfirmation(index: Int, sourceName: String, category: RosterLoadCategory, includeName: Bool = false) {
         guard index < party.count else { showPartyReview(); return }
         let char = party[index]
 
         clearTerminal()
         printTitle("Roster Load Complete")
         print("")
-        print("  Loaded \(category.label.replacingOccurrences(of: " only", with: "").lowercased()) from \(sourceName) onto \(char.name).", color: .brightGreen)
+        let nameNote = (category == .all && includeName) ? " (including the name)" : ""
+        print("  Loaded \(category.confirmationPhrase) from \(sourceName) onto \(char.name)\(nameNote).", color: .brightGreen)
         print("")
         printLines(char.displaySheet())
         print("")
@@ -11780,6 +11839,83 @@ class GameEngine: ObservableObject {
                 }
             }
             self.showEditCharacter(index: index)
+        }
+    }
+
+    /// Party members' current names, lowercased, for duplicate checks —
+    /// excluding the given character itself (so renaming to the same name
+    /// it already has, or reassigning a name during a roster load, doesn't
+    /// false-positive against itself).
+    private func otherPartyNames(excluding charId: UUID) -> Set<String> {
+        Set(party.filter { $0.id != charId }.map { $0.name.lowercased() })
+    }
+
+    /// Deduplicates `name` against other party members (excluding the
+    /// character keeping id `charId`) by appending " (2)", " (3)", etc. —
+    /// same pattern used when loading a roster character into a fresh slot.
+    private func uniqueName(_ name: String, excluding charId: UUID) -> String {
+        let existing = otherPartyNames(excluding: charId)
+        guard existing.contains(name.lowercased()) else { return name }
+        var suffix = 2
+        var candidate = "\(name) (\(suffix))"
+        while existing.contains(candidate.lowercased()) {
+            suffix += 1
+            candidate = "\(name) (\(suffix))"
+        }
+        return candidate
+    }
+
+    private func showChangeName(index: Int, error: String? = nil) {
+        guard index < party.count else { showPartyReview(); return }
+        let char = party[index]
+
+        if editingCharacterIndex != index {
+            beginEditTracking(index: index, inGame: false)
+        }
+
+        clearTerminal()
+        printTitle("Change Name — \(char.name)")
+        print("")
+        if let error = error {
+            print("  \(error)", color: .yellow)
+            print("")
+        }
+        printWrapped("Enter a new name for \(char.name):", indent: 2, color: .dimGreen)
+        print("")
+
+        promptTextWithMenu("Name:", options: ["< Back"])
+        closeHandler = { [weak self] in
+            self?.endEditTracking()
+            self?.showCharacterReviewCard(index: index)
+        }
+        menuHandler = { [weak self] _ in
+            self?.endEditTracking()
+            self?.showCharacterReviewCard(index: index)
+        }
+        inputHandler = { [weak self] name in
+            guard let self = self else { return }
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                self.showChangeName(index: index, error: "Name can't be empty. Try again.")
+                return
+            }
+            if self.isReservedWord(trimmed) {
+                self.showChangeName(index: index, error: "That name isn't available. Try something else.")
+                return
+            }
+            if !self.isNameAppropriate(trimmed) {
+                self.showChangeName(index: index, error: "That name is not befitting of an adventurer. Try again.")
+                return
+            }
+            if self.otherPartyNames(excluding: char.id).contains(trimmed.lowercased()) {
+                self.showChangeName(index: index, error: "Another character in the party already has that name.")
+                return
+            }
+            self.pushEditSnapshot(index: index)
+            char.name = trimmed
+            char.syncRobotPrefix()
+            self.endEditTracking()
+            self.showCharacterReviewCard(index: index)
         }
     }
 
