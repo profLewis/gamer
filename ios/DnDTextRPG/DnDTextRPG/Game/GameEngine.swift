@@ -13475,7 +13475,19 @@ class GameEngine: ObservableObject {
         // below, so a second icon doing the same thing was pure redundancy.
         showMenu(["Accept", "Reroll"])
         setBreadcrumb("autoCreateCharacter.afterShowMenu")
-        closeHandler = { [weak self] in self?.startCharacterCreation() }
+        // autoCreateCharacter() is shared by two different entry points —
+        // the human name-entry screen's "Random" shortcut, and the true
+        // Computer (AI) path via startAICharacterCreation() — closing
+        // needs to go back to whichever one actually led here, not always
+        // the human name-entry screen.
+        closeHandler = { [weak self] in
+            guard let self = self else { return }
+            if self.creatingAsAI {
+                self.startAICharacterCreation()
+            } else {
+                self.startCharacterCreation()
+            }
+        }
         menuHandler = { [weak self] choice in
             switch choice {
             case 1: self?.finishCharacterCreation()
@@ -13898,7 +13910,15 @@ class GameEngine: ObservableObject {
         let goBack: () -> Void = { [weak self] in
             guard let self = self else { return }
             self.setBreadcrumb("loadCharacterFromRoster.goBack(\(character.name))")
-            self.startCharacterCreation()
+            // This screen is reached from two different places — the human
+            // name-entry screen's "Load Character" button, and the
+            // Computer (AI) path's own "Load Character" button — back
+            // needs to return to whichever one actually led here.
+            if self.creatingAsAI {
+                self.startAICharacterCreation()
+            } else {
+                self.startCharacterCreation()
+            }
         }
 
         let edit: () -> Void = { [weak self] in
