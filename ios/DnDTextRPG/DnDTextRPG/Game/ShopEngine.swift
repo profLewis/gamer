@@ -491,14 +491,35 @@ class ShopEngine {
         // Offer a few suggested prices as buttons — in ascending order —
         // so haggling doesn't require typing a number, while still
         // accepting a typed (or spoken) custom offer too. Varies each
-        // time this prompt is shown.
+        // time this prompt is shown; ">>" re-rolls a fresh batch on demand.
         let offers = suggestedOffers(floor: floor, ceiling: ceiling)
-        let options = offers.map { "\($0)gp" }
+        let options = offers.map { "\($0)gp" } + [">>", "?", "< Back"]
         game.promptTextWithMenu("Name your price (\(floor)gp or more — \(item.value)gp or above buys it outright), or 0 to walk away:", options: options)
-        game.closeHandler = { [weak self] in self?.showHaggleMenu(completion: completion) }
-        game.menuHandler = { choice in
-            guard choice >= 1, choice <= offers.count else { return }
-            resolveOffer(offers[choice - 1])
+        let backToHaggleMenu: () -> Void = { [weak self] in self?.showHaggleMenu(completion: completion) }
+        game.closeHandler = backToHaggleMenu
+        game.menuHandler = { [weak self] choice in
+            if choice >= 1 && choice <= offers.count {
+                resolveOffer(offers[choice - 1])
+                return
+            }
+            switch choice - offers.count {
+            case 1:
+                self?.showHaggleOfferPrompt(item: item, attempt: attempt, completion: completion)
+            case 2:
+                guard let game = self?.game else { return }
+                game.showInlineHelp {
+                    game.printTitle("Name Your Price — Help")
+                    game.print("")
+                    game.printWrapped("Tap a suggested price, or type (or speak) your own. \">>\" shows a fresh set of suggestions.", indent: 2, color: .dimGreen)
+                    game.print("")
+                    game.printWrapped("Offering \(item.value)gp or more buys it outright. Below \(floor)gp is refused outright as insulting. Anything in between is a Persuasion check — the lower you go, the harder it is to land.", indent: 2, color: .dimGreen)
+                    game.print("")
+                    game.printWrapped("0 walks away from the item entirely.", indent: 2, color: .dimGreen)
+                    game.print("")
+                }
+            default:
+                backToHaggleMenu()
+            }
         }
         game.inputHandler = { text in
             let trimmed = text.trimmingCharacters(in: .whitespaces)
@@ -657,12 +678,33 @@ class ShopEngine {
         }
 
         let offers = suggestedOffers(floor: floor, ceiling: ceiling)
-        let options = offers.map { "\($0)gp" }
+        let options = offers.map { "\($0)gp" } + [">>", "?", "< Back"]
         game.promptTextWithMenu("Name your price (\(floor)gp or more — \(price)gp or above buys it outright), or 0 to walk away:", options: options)
-        game.closeHandler = { [weak self] in self?.showShopMain(completion: completion) }
-        game.menuHandler = { choice in
-            guard choice >= 1, choice <= offers.count else { return }
-            resolveOffer(offers[choice - 1])
+        let backToShop: () -> Void = { [weak self] in self?.showShopMain(completion: completion) }
+        game.closeHandler = backToShop
+        game.menuHandler = { [weak self] choice in
+            if choice >= 1 && choice <= offers.count {
+                resolveOffer(offers[choice - 1])
+                return
+            }
+            switch choice - offers.count {
+            case 1:
+                self?.haggleRareGood(item, price: price, attempt: attempt, completion: completion)
+            case 2:
+                guard let game = self?.game else { return }
+                game.showInlineHelp {
+                    game.printTitle("Name Your Price — Help")
+                    game.print("")
+                    game.printWrapped("Tap a suggested price, or type (or speak) your own. \">>\" shows a fresh set of suggestions.", indent: 2, color: .dimGreen)
+                    game.print("")
+                    game.printWrapped("Offering \(price)gp or more buys it outright. Below \(floor)gp is refused outright as insulting. Anything in between is a Persuasion check — the lower you go, the harder it is to land.", indent: 2, color: .dimGreen)
+                    game.print("")
+                    game.printWrapped("0 walks away from the item entirely.", indent: 2, color: .dimGreen)
+                    game.print("")
+                }
+            default:
+                backToShop()
+            }
         }
         game.inputHandler = { text in
             let trimmed = text.trimmingCharacters(in: .whitespaces)

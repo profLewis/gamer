@@ -189,7 +189,24 @@ class GameEngine: ObservableObject {
 
     /// Long-press handler for terminal text lines — maps line index to action
     var textLongPressHandler: ((Int) -> Void)? {
-        didSet { DispatchQueue.main.async { self.textTapEnabled = self.textLongPressHandler != nil } }
+        didSet {
+            // Synchronous when already on main (matches runOnMain) —
+            // dispatching async here let a same-tick change to
+            // awaitingContinue/currentMenuOptions render BEFORE this
+            // caught up, so TerminalView's textTapEnabled check (which
+            // comes first) kept routing taps to a now-nil handler — a
+            // silent no-op — instead of falling through to the intended
+            // "tap anywhere to continue"/menu branch. Concretely: buying
+            // a shop item set textLongPressHandler = nil then immediately
+            // called waitForContinue(), and the stale-true window meant
+            // the very next tap needed the X icon instead of continuing.
+            let newValue = textLongPressHandler != nil
+            if Thread.isMainThread {
+                textTapEnabled = newValue
+            } else {
+                DispatchQueue.main.async { self.textTapEnabled = newValue }
+            }
+        }
     }
     @Published var textTapEnabled: Bool = false
     @Published var gameState: GameState = .mainMenu
@@ -5993,6 +6010,23 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Whether AI/Computer-controlled characters get an "R. " name prefix
+    /// (a nod to the robot characters in Asimov's novels). On by default.
+    /// Character.syncRobotPrefix() reads this same key directly, since
+    /// Character has no reference back to GameEngine.
+    var robotPrefixEnabled: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: "robot_prefix_enabled") == nil { return true }
+            return UserDefaults.standard.bool(forKey: "robot_prefix_enabled")
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "robot_prefix_enabled")
+            // Apply immediately to whoever's already in the party, rather
+            // than waiting for the next save/roster load to catch up.
+            for char in party { char.syncRobotPrefix() }
+        }
+    }
+
     var poisonEnabled: Bool {
         get {
             if UserDefaults.standard.object(forKey: "poison_enabled") == nil { return true }
@@ -6548,7 +6582,12 @@ class GameEngine: ObservableObject {
         printWrapped("How Continue Adventure and Hall of Fame sort their lists — by date, points, name, or dungeon level.", indent: 2, color: .dimGreen)
         print("")
 
-        // Grouped: Interface (5) → Features (5) → System (4)
+        print("ROBOT PREFIX:", color: .cyan, bold: true)
+        print("  \(robotPrefixEnabled ? "On" : "Off")", color: robotPrefixEnabled ? .brightGreen : .red)
+        printWrapped("Whether Computer (AI)-controlled party members get an \"R. \" name prefix — a nod to the robot characters in Isaac Asimov's novels.", indent: 2, color: .dimGreen)
+        print("")
+
+        // Grouped: Interface (5) → Features (5) → System (5)
         var options = [
             // Page 1 — Interface
             "Map Radius", useArrowNavigation ? "Use Swipe" : "Use Buttons",
@@ -6561,6 +6600,7 @@ class GameEngine: ObservableObject {
             blinkingCursorEnabled ? "Cursor Off" : "Cursor On",
             // Page 3 — System
             "Log Limit", "List Order",
+            robotPrefixEnabled ? "Robot Prefix Off" : "Robot Prefix On",
         ]
         options.append(undoRedoEnabled ? "Undo/Redo Off" : "Undo/Redo On")
 
@@ -6607,6 +6647,10 @@ class GameEngine: ObservableObject {
                 self.showLogLimitMenu()
             } else if selected == "List Order" {
                 self.showListSortMenu()
+            } else if selected.hasPrefix("Robot Prefix") {
+                self.recordSettingChange(screen: "s:gameplay", key: "robot_prefix_enabled", name: "Robot Prefix")
+                self.robotPrefixEnabled.toggle()
+                self.showGameplaySettings(page: currentPage)
             } else if selected == "Time Limit" {
                 self.showTimeLimitMenu()
             } else if selected.hasPrefix("Idle") {
@@ -12932,6 +12976,11 @@ class GameEngine: ObservableObject {
     /// does — same next-slot/party-review/multiplayer handoff.
     private func loadCharacterFromRoster(_ character: Character) {
         setBreadcrumb("loadCharacterFromRoster(\(character.name),idx:\(creatingCharacterIndex),total:\(totalCharacters))")
+        // A roster character can predate the Robot Prefix setting, or the
+        // setting can have changed since it was saved — re-sync before the
+        // duplicate-name check below so it's checked against the name
+        // that'll actually be shown.
+        character.syncRobotPrefix()
         // Avoid two party members with the same display name
         let existingNames = Set(party.map { $0.name.lowercased() })
         if existingNames.contains(character.name.lowercased()) {
@@ -25748,6 +25797,10 @@ class GameEngine: ObservableObject {
 
     private func loadGame(_ save: SaveGame) {
         party = save.party
+        // A save can predate the Robot Prefix setting, or the setting can
+        // have changed since it was made — re-sync every loaded character's
+        // "R. " prefix against isComputerControlled and the current setting.
+        for char in party { char.syncRobotPrefix() }
         dungeon = save.dungeon
         currentCombat = nil
         gameState = .exploring

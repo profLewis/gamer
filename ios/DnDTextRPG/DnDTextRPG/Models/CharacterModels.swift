@@ -673,15 +673,32 @@ class Character: ObservableObject, Identifiable, Codable {
     /// Mark as computer-controlled and add "R." prefix (Asimov convention)
     func markAsAI() {
         isComputerControlled = true
-        if !name.hasPrefix("R. ") {
-            name = "R. " + name
-        }
+        syncRobotPrefix()
     }
 
     /// Remove computer control and "R." prefix
     func unmarkAsAI() {
         isComputerControlled = false
-        if name.hasPrefix("R. ") {
+        syncRobotPrefix()
+    }
+
+    /// Adds or removes the "R. " robot prefix (Asimov convention) so it
+    /// always matches isComputerControlled and the "Robot Prefix" setting
+    /// (Settings > Gameplay, on by default). Call this after loading a
+    /// character from anywhere — a save, the Character Roster — since
+    /// older data can predate the setting, or the setting can have been
+    /// toggled since that character was last saved; without re-syncing,
+    /// a loaded character's name and its actual control state can drift
+    /// out of sync (an AI character with no "R. ", or a human one with a
+    /// stale "R. " left over from before you took control).
+    func syncRobotPrefix() {
+        let enabled = UserDefaults.standard.object(forKey: "robot_prefix_enabled") == nil
+            ? true : UserDefaults.standard.bool(forKey: "robot_prefix_enabled")
+        let shouldHavePrefix = isComputerControlled && enabled
+        let hasPrefix = name.hasPrefix("R. ")
+        if shouldHavePrefix && !hasPrefix {
+            name = "R. " + name
+        } else if !shouldHavePrefix && hasPrefix {
             name = String(name.dropFirst(3))
         }
     }
