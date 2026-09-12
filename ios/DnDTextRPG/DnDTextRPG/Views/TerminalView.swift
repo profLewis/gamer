@@ -214,7 +214,7 @@ struct TerminalView: View {
                         // ever taller than the space actually available (a
                         // small landscape column, a long Map
                         // Length, larger text scale...).
-                        .frame(height: (CGFloat(gameEngine.mapOnlyLineCount) - 0.5) * (gameEngine.mapFontSize * scale * 1.3 + 2))
+                        .frame(height: (CGFloat(gameEngine.mapOnlyLineCount) - (isLandscape ? 0.0 : 0.5)) * (gameEngine.mapFontSize * scale * 1.3 + 2))
                         .background(terminalBackground)
                         .contentShape(Rectangle())
                         .onLongPressGesture(minimumDuration: 0.5) {
