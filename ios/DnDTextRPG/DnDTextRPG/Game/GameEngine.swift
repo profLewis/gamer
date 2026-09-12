@@ -23342,6 +23342,7 @@ class GameEngine: ObservableObject {
         }
 
         currentCombat = Combat(party: party, encounter: balanced)
+        isHandlingCombatVictory = false
         if self.musicEnabled { SoundManager.shared.startMusic(.combat, preference: self.combatMelodyChoice) }
         SoundManager.shared.playBattleStart()
         checkTorchBlowout()
@@ -24808,7 +24809,21 @@ class GameEngine: ObservableObject {
     /// Characters eligible for combat loot (those who actually fought); nil = whole party
     private var combatLootEligible: [Character]?
 
+    /// Guards against handleCombatVictory() running twice for the same
+    /// fight — several independent paths call it (the per-turn check in
+    /// runCombatTurn(), and separate "ask the DM in combat" flows that hold
+    /// their own local reference to the same Combat and can each decide
+    /// independently that it's over), and currentCombat alone wasn't a
+    /// reliable guard: it's only nilled out partway through this function,
+    /// so a second call arriving before that point would still see it
+    /// non-nil and re-roll/re-show the loot a second time. Reset whenever a
+    /// new combat actually starts (startCombat(), and multiplayer combat
+    /// catch-up), never inside this function itself.
+    private var isHandlingCombatVictory = false
+
     func handleCombatVictory() {
+        guard !isHandlingCombatVictory else { return }
+        isHandlingCombatVictory = true
         cancelCombatIdleTimer()
         combatHesitating = false
         guard let combat = currentCombat else { return }
@@ -28265,6 +28280,7 @@ class GameEngine: ObservableObject {
         case .combat:
             if let combat = state.combat {
                 currentCombat = combat
+                isHandlingCombatVictory = false
                 gameState = .combat
                 multiplayerCombatTurn()
             } else {
