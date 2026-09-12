@@ -856,6 +856,15 @@ class GameEngine: ObservableObject {
     /// how many button rows follow it. Replaces (not appends), since a map
     /// redraw always represents the current room, not a running log.
     func printMap(_ lines: [String], color: TerminalColor = .green, size: CGFloat = 14) {
+        // Drop the non-compact header (top border, "| MAP" title, separator
+        // — always exactly these 3 lines; see getMapDisplay) since every
+        // caller here renders the pinned panel, whose own box already makes
+        // "this is the map" obvious — that header was pure dead weight,
+        // taking up scroll-visible space for no information. The grid
+        // itself, its "@ here: ..." line, the legend, and the closing
+        // border all still follow untouched (see mapOnlyLineCount, which
+        // sizes the panel to show only up to the end of "@ here: ...").
+        let lines = lines.count > 4 ? Array(lines.dropFirst(3)) : lines
         let maxLen = lines.map { $0.count }.max() ?? 0
         let mapped = lines.map { line -> TerminalLine in
             let padded = maxLen > 0 ? line.padding(toLength: maxLen, withPad: " ", startingAt: 0) : line
@@ -15355,8 +15364,13 @@ class GameEngine: ObservableObject {
     /// panel's default height.
     var mapOnlyLineCount: Int {
         let (radius, verticalRadius, _) = bestMapRadius()
-        guard radius > 0, let dungeon = dungeon else { return 0 }
-        return dungeon.mapLineCount(visibilityRadius: radius, torchLit: torchLit, compact: true, verticalRadius: verticalRadius, legendMaxSymbols: mapLegendMaxSymbols)
+        guard radius > 0, dungeon != nil else { return 0 }
+        // Matches exactly what printMap actually leaves on screen after
+        // stripping the 3-line header (see printMap): room rows + corridor
+        // rows between them, plus the single "@ here: ..." line. No header
+        // (stripped), no legend/closing border (left below the fold).
+        let gridLines = (2 * verticalRadius + 1) + (2 * verticalRadius)
+        return gridLines + 1
     }
 
     /// Redraws the full exploration screen: map + room description + party + menu
