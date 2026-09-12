@@ -4534,6 +4534,8 @@ class GameEngine: ObservableObject {
         print("  - Swipe left to go back", color: .dimGreen)
         print("  - Swipe right to continue", color: .dimGreen)
         print("")
+        printWrapped("On a \"tap to continue\" screen, tapping most of the screen advances — but drag anywhere in the rightmost sliver of the screen to scroll back up through the text instead.", indent: 2, color: .dimGreen)
+        print("")
         print("THE ✕ ICON", color: .cyan, bold: true)
         printWrapped("Top-right corner, on almost every screen. It's your universal way out — one tap always takes you back up a level, never forward — but what exactly that means depends on where you are:", indent: 2, color: .dimGreen)
         printWrapped("• Most screens: cancels this screen and returns to whatever led you here (same as picking a \"< Back\"/\"< Cancel\" button, where one exists).", indent: 4, color: .dimGreen)
