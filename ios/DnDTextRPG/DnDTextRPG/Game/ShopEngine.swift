@@ -306,8 +306,7 @@ class ShopEngine {
 
         guard options.count > 1 else {
             // Nothing applicable — same as before, just wait and return.
-            game.waitForContinue()
-            game.inputHandler = { _ in returnTo() }
+            game.waitForContinueWithTimeout { returnTo() }
             return
         }
 
@@ -325,8 +324,9 @@ class ShopEngine {
             case "Give as a Present":
                 self.giveAsPresent(item: item, from: buyer, returnTo: returnTo)
             default:
-                game.waitForContinue()
-                game.inputHandler = { _ in returnTo() }
+                game.print("")
+                game.print("  \(buyer.name) tucks the \(item.name) away for later.", color: .dimGreen)
+                game.waitForContinueWithTimeout { returnTo() }
             }
         }
     }
@@ -346,8 +346,7 @@ class ShopEngine {
         game.print("")
         game.print("  \(buyer.name) equips the \(item.name).", color: .brightGreen)
         game.logMultiplayerAction("\(buyer.name) equips \(item.name)")
-        game.waitForContinue()
-        game.inputHandler = { _ in returnTo() }
+        game.waitForContinueWithTimeout { returnTo() }
     }
 
     private func drinkNow(item: Item, buyer: Character, returnTo: @escaping () -> Void) {
@@ -371,8 +370,7 @@ class ShopEngine {
             game.print("  \(buyer.name) drinks \(item.name).", color: .dimGreen)
         }
         game.logMultiplayerAction("\(buyer.name) drinks \(item.name)")
-        game.waitForContinue()
-        game.inputHandler = { _ in returnTo() }
+        game.waitForContinueWithTimeout { returnTo() }
     }
 
     /// Something clever, per request: the recipient's reaction is flavoured
@@ -394,8 +392,7 @@ class ShopEngine {
             guard recipient.canCarry(item) else {
                 game.print("")
                 game.print("  \(recipient.name) can't carry anything more right now.", color: .red)
-                game.waitForContinue()
-                game.inputHandler = { _ in returnTo() }
+                game.waitForContinueWithTimeout { returnTo() }
                 return
             }
             buyer.removeItem(item)
@@ -405,8 +402,7 @@ class ShopEngine {
             let reaction = String(format: Self.giftReactions.randomElement()!, recipient.name)
             game.print("  \(reaction)", color: .cyan)
             game.logMultiplayerAction("\(buyer.name) gives \(item.name) to \(recipient.name)")
-            game.waitForContinue()
-            game.inputHandler = { _ in returnTo() }
+            game.waitForContinueWithTimeout { returnTo() }
         }
     }
 
