@@ -3991,10 +3991,10 @@ class GameEngine: ObservableObject {
         // match the actual button positions below (multiplayer matches can
         // insert between them) and the button labels already self-explain.
         print("  Continue Adventure", color: .brightGreen, bold: true)
-        print("     Long-press to jump straight into your latest save", color: .dimGreen)
+        printWrapped("Long-press to jump straight into your latest save", indent: 5, color: .dimGreen)
         print("")
         print("  New Adventure", color: .brightGreen, bold: true)
-        print("     Long-press for quick start", color: .dimGreen)
+        printWrapped("Long-press for quick start", indent: 5, color: .dimGreen)
         print("")
 
         // Show multiplayer matches
@@ -4037,9 +4037,9 @@ class GameEngine: ObservableObject {
                 default:
                     statusColor = .dimGreen; isBold = false
                 }
-                print("  \(playerStr)", color: .cyan, bold: isBold)
+                printWrapped(playerStr, indent: 2, color: .cyan, bold: isBold)
                 if !info.isEmpty {
-                    print("     \(info)", color: .dimGreen)
+                    printWrapped(info, indent: 5, color: .dimGreen)
                 }
                 let statusTag: String
                 switch status {
@@ -4049,7 +4049,7 @@ class GameEngine: ObservableObject {
                 case "waiting": statusTag = "Waiting for partner..."
                 default: statusTag = "[\(status)]"
                 }
-                print("     \(statusTag)", color: statusColor, bold: status == "your turn")
+                printWrapped(statusTag, indent: 5, color: statusColor, bold: status == "your turn")
                 print("")
             }
         }
@@ -4060,8 +4060,7 @@ class GameEngine: ObservableObject {
         }
 
         if multiplayerEnabled {
-            print("  Remote players: set up in New Adventure", color: .dimGreen)
-            print("  or change Robot→Remote in Party Status.", color: .dimGreen)
+            printWrapped("Remote players: set up in New Adventure, or change Robot→Remote in Party Status.", indent: 2, color: .dimGreen)
             print("")
         }
 
