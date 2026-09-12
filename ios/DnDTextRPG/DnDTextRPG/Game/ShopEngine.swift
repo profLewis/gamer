@@ -64,6 +64,22 @@ class ShopEngine {
         game.print("  Gold: \(character.gold)  |  Carrying: \(game.formatWeightPair(character.currentWeight, character.carryCapacity)) (\(character.inventory.count)/\(Character.maxInventorySlots) items)", color: .yellow)
     }
 
+    /// Builds a buy/sell list button label as "Name  <price>  <weight>" —
+    /// MenuOption's own trimToFit hard-cuts from the END once a button's
+    /// text passes its length cap, which silently chopped the price/weight
+    /// off a long item name instead of the name itself. Reserves room for
+    /// the price/weight suffix first and shortens just the name to fit
+    /// what's left, so both are always visible.
+    private func shopButtonLabel(name: String, priceLabel: String, weight: String) -> String {
+        let suffix = "  \(priceLabel)  \(weight)"
+        let maxLength = MenuOption.maxButtonLength
+        guard name.count + suffix.count > maxLength else { return name + suffix }
+        let available = maxLength - suffix.count
+        guard available > 3 else { return String(name.prefix(max(1, maxLength - 1))) + "…" + suffix }
+        let trimmedName = String(name.prefix(available - 1)) + "…"
+        return trimmedName + suffix
+    }
+
     func openShop(character: Character, dungeonLevel: Int, merchant: Merchant, completion: @escaping () -> Void) {
         self.character = character
         self.merchant = merchant
@@ -150,7 +166,7 @@ class ShopEngine {
         var itemLineRanges: [Range<Int>] = []
         for item in stock {
             let lineStart = game.terminalLines.count
-            options.append("\(item.name)  \(item.value)gp  \(game.formatWeight(item.weight))")
+            options.append(shopButtonLabel(name: item.name, priceLabel: "\(item.value)gp", weight: game.formatWeight(item.weight)))
             // Price/weight only ever appeared on the button label above, and
             // the description used dimGreen — a colour speaker mode treats
             // as a decorative nav hint and skips. Between the two, nothing
@@ -434,7 +450,7 @@ class ShopEngine {
         for item in sellableItems {
             let lineStart = game.terminalLines.count
             let sellValue = max(1, item.value / 2)
-            options.append("\(item.name)  +\(sellValue)gp  \(game.formatWeight(item.weight))")
+            options.append(shopButtonLabel(name: item.name, priceLabel: "+\(sellValue)gp", weight: game.formatWeight(item.weight)))
             game.print("  \(item.name) — sells for \(sellValue)gp, \(game.formatWeight(item.weight)): \(item.description)", color: .green)
             itemLineRanges.append(lineStart..<game.terminalLines.count)
         }
