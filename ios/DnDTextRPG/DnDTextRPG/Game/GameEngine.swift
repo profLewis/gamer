@@ -15429,6 +15429,7 @@ class GameEngine: ObservableObject {
 
     func showExplorationView() {
         guard let dungeon = dungeon, let room = dungeon.currentRoom else { return }
+        checkForMonsterRespawn(room: room)
 
         // Just DM mode — route to conversational exploration
         if isJustDMActive {
@@ -16825,6 +16826,28 @@ class GameEngine: ObservableObject {
         }
         let verb = names.count == 1 ? "lies" : "lie"
         return "\(parts.joined(separator: ", ")) \(verb) dead here."
+    }
+
+    /// Zombies left standing after a fight (see Room.respawnEligibleMonsterNames
+    /// — a per-zombie coin flip at the kill) have a chance to claw back up on
+    /// a later visit to a cleared room. Rolled fresh every entry rather than
+    /// once, so a room you keep passing through stays a real, recurring
+    /// risk instead of a one-time gotcha. Fresh (undamaged) zombies, since
+    /// what's actually still moving is the reanimated husk, not the original.
+    private func checkForMonsterRespawn(room: Room) {
+        guard room.cleared, room.encounter == nil, !room.respawnEligibleMonsterNames.isEmpty else { return }
+        guard Int.random(in: 1...100) <= 12 else { return }
+
+        let names = room.respawnEligibleMonsterNames
+        let monsters = names.map { Monster.create(.zombie, customName: $0) }
+        room.encounter = Encounter(monsters: monsters, difficulty: .easy)
+        room.cleared = false
+        room.respawnEligibleMonsterNames = []
+        room.defeatedMonsterNames = []
+        let summary = defeatedMonsterSummary(names).replacingOccurrences(of: " lie dead here.", with: "")
+            .replacingOccurrences(of: " lies dead here.", with: "")
+        explorationStatusMessage = ("The \(summary.lowercased()) you left for dead claw their way upright again!", .red)
+        logEvent("Zombie respawn in \(room.name): \(names.joined(separator: ", "))", category: "EXPLORE")
     }
 
     private func showActionsMenu() {
@@ -25980,6 +26003,13 @@ class GameEngine: ObservableObject {
         // Room.defeatedMonsterNames and showExplorationView()).
         dungeon?.currentRoom?.cleared = true
         dungeon?.currentRoom?.defeatedMonsterNames = combat.encounter.monsters.map { $0.name }
+        // Zombies don't reliably stay down — unless the killing blow happens
+        // to finish one for good (a coin-flip per zombie here), it's left
+        // eligible to claw back up on a later visit (see
+        // checkForMonsterRespawn, called from showExplorationView).
+        dungeon?.currentRoom?.respawnEligibleMonsterNames = combat.encounter.monsters
+            .filter { $0.name.localizedCaseInsensitiveContains("zombie") && Int.random(in: 1...100) > 50 }
+            .map { $0.name }
         dungeon?.currentRoom?.encounter = nil
 
         // Chance for NPC to appear in cleared room (15%)

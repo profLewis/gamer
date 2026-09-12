@@ -174,6 +174,13 @@ class Room: Identifiable, ObservableObject, Codable {
     /// "monsters wander in" respawn), so a description never lingers past
     /// the point it's no longer accurate.
     @Published var defeatedMonsterNames: [String] = []
+    /// Zombies specifically: names of defeated zombies whose killing blow
+    /// didn't happen to finish them for good (see handleCombatVictory's
+    /// zombie-destruction roll) — they can claw back up on a later visit
+    /// unless the party goes out of its way to destroy them properly.
+    /// Cleared once a fresh encounter is placed here (respawned, or the
+    /// room is otherwise repopulated) so it never lingers past relevance.
+    @Published var respawnEligibleMonsterNames: [String] = []
     @Published var npc: DungeonNPC?         // NPC present in this room
     @Published var secured: Set<Direction>  // Barred/secured exits
     @Published var merchant: Merchant?      // Shopkeeper present in this room (shop/armoury rooms)
@@ -226,7 +233,7 @@ class Room: Identifiable, ObservableObject, Codable {
         case id, x, y, roomType, name, roomDescription, exits, visited, cleared
         case encounter, treasure, isLocked, searchedFor, trapTriggered
         case hiddenItems, hiddenGold, droppedItems, npc, secured, merchant, trainer
-        case defeatedMonsterNames
+        case defeatedMonsterNames, respawnEligibleMonsterNames
         case riddleIndex, riddleResolved, doorLockIds, openedLocks
         case teleportDestinationRoomId
         case verticalDestinationRoomId, verticalMethod, verticalDirection, verticalRopeHintRoomName
@@ -252,6 +259,7 @@ class Room: Identifiable, ObservableObject, Codable {
         self.hiddenGold = 0
         self.droppedItems = []
         self.defeatedMonsterNames = []
+        self.respawnEligibleMonsterNames = []
         self.npc = nil
         self.secured = []
         self.merchant = nil
@@ -290,6 +298,7 @@ class Room: Identifiable, ObservableObject, Codable {
         hiddenGold = try container.decodeIfPresent(Int.self, forKey: .hiddenGold) ?? 0
         droppedItems = try container.decodeIfPresent([Item].self, forKey: .droppedItems) ?? []
         defeatedMonsterNames = try container.decodeIfPresent([String].self, forKey: .defeatedMonsterNames) ?? []
+        respawnEligibleMonsterNames = try container.decodeIfPresent([String].self, forKey: .respawnEligibleMonsterNames) ?? []
         npc = try container.decodeIfPresent(DungeonNPC.self, forKey: .npc)
         secured = try container.decodeIfPresent(Set<Direction>.self, forKey: .secured) ?? []
         merchant = try container.decodeIfPresent(Merchant.self, forKey: .merchant)
@@ -326,6 +335,7 @@ class Room: Identifiable, ObservableObject, Codable {
         try container.encode(hiddenGold, forKey: .hiddenGold)
         try container.encode(droppedItems, forKey: .droppedItems)
         try container.encode(defeatedMonsterNames, forKey: .defeatedMonsterNames)
+        try container.encode(respawnEligibleMonsterNames, forKey: .respawnEligibleMonsterNames)
         try container.encodeIfPresent(npc, forKey: .npc)
         try container.encode(secured, forKey: .secured)
         try container.encodeIfPresent(merchant, forKey: .merchant)
