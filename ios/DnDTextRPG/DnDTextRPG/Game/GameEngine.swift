@@ -1451,7 +1451,7 @@ class GameEngine: ObservableObject {
             let dmKeys = ["DM Provider", "DM Creativity", "DM Log Context"]
             let accessKeys = ["Display Size", "DM Voice", "Companion Voices", "Voice Menus", "Hit Animations"]
             let moodKeys = ["Music", "Sound FX", "Menu Tune", "Explore Tune", "Combat Tune", "Chat Tune"]
-            let gameKeys = ["Button Limit", "Card Navigation", "Map Radius", "NPCs", "Multiplayer",
+            let gameKeys = ["Button Limit", "Card Navigation", "Map Length", "NPCs", "Multiplayer",
                            "Long Press", "Info Timeout", "Time Limit", "Log Limit", "Undo/Redo",
                            "Idle"]
             let saveKeys = ["Autosave"]
@@ -7284,7 +7284,7 @@ class GameEngine: ObservableObject {
         // Grouped: Interface (5) → Features (6/7) → System (6)
         var options = [
             // Page 1 — Interface
-            "Map Radius", useArrowNavigation ? "Use Swipe" : "Use Buttons",
+            "Map Length", useArrowNavigation ? "Use Swipe" : "Use Buttons",
             "Info Timeout", "Button Limit", "Long Press",
             // Page 2 — Features
             npcsEnabled ? "NPCs Off" : "NPCs On", poisonEnabled ? "Poison Off" : "Poison On",
@@ -7313,7 +7313,7 @@ class GameEngine: ObservableObject {
             guard idx >= 0 && idx < options.count else { return }
             let currentPage = self.paginatedPage
             let selected = options[idx]
-            if selected == "Map Radius" {
+            if selected == "Map Length" {
                 self.showMapRadiusMenu()
             } else if selected.hasPrefix("Use") {
                 self.recordSettingChange(screen: "s:gameplay", key: "useArrowNavigation", name: "Nav")
@@ -8500,7 +8500,7 @@ class GameEngine: ObservableObject {
         add("fontSizeSetting", "Display Size", current: fontSizeSetting.displayName, dflt: FontSizeSetting.defaultSetting.displayName)
         add("maxButtonsPerScreen", "Button Limit", current: "\(maxButtonsPerScreen)", dflt: "6")
         add("useArrowNavigation", "Card Navigation", current: useArrowNavigation ? "Buttons" : "Swipe", dflt: "Swipe")
-        add("map_radius", "Map Radius", current: "\(mapRadius)", dflt: "1")
+        add("map_radius", "Map Length", current: "\(mapRadius)", dflt: "1")
         add("npcs_enabled", "NPCs", current: npcsEnabled ? "On" : "Off", dflt: "Off")
         add("multiple_shops_enabled", "Multi-Shop", current: multipleShopsEnabled ? "On" : "Off", dflt: "On")
         add("multiplayer_enabled", "Multiplayer", current: multiplayerEnabled ? "On" : "Off", dflt: "Off")
@@ -10108,8 +10108,10 @@ class GameEngine: ObservableObject {
 
     func showMapRadiusMenu() {
         clearTerminal()
-        printTitle("Map Radius")
-        print("  How far you can see on the minimap.", color: .dimGreen)
+        printTitle("Map Length")
+        print("  How far you can see up/down the minimap.", color: .dimGreen)
+        print("  Width isn't part of this — the map already widens on its", color: .dimGreen)
+        print("  own to use the available screen width.", color: .dimGreen)
         print("  Without a torch, visibility drops to 1.", color: .dimGreen)
         print("  Larger values may cause scrolling.", color: .dimGreen)
         print("")
@@ -10123,17 +10125,20 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        // Show map preview if in a dungeon
+        // Show map preview if in a dungeon — matches the actual in-game
+        // rendering (bestMapRadius()), so the auto-widened width shows here
+        // too rather than a narrower symmetric-radius preview.
         if let dungeon = dungeon {
             let previewLabel = mapPreviewTorchOn ? "TORCH ON" : "TORCH OFF"
             print("  PREVIEW (\(previewLabel)):", color: .cyan, bold: true)
-            let previewMap = dungeon.getMapDisplay(visibilityRadius: mapRadius, torchLit: mapPreviewTorchOn, legendMaxSymbols: mapLegendMaxSymbols, hasTrapSense: partyHasTrapSense)
+            let (previewRadius, previewVertical, previewCompact) = bestMapRadius()
+            let previewMap = dungeon.getMapDisplay(visibilityRadius: previewRadius, torchLit: mapPreviewTorchOn, compact: previewCompact, verticalRadius: previewVertical, legendMaxSymbols: mapLegendMaxSymbols, hasTrapSense: partyHasTrapSense)
             printLines(previewMap, color: mapPreviewTorchOn ? .dimGreen : .red, size: mapFontSize)
             print("")
         }
 
         let current = mapRadius
-        let opts = [("1 Compact", 1), ("2 Normal", 2), ("3 Wide", 3)]
+        let opts = [("1 Short", 1), ("2 Normal", 2), ("3 Long", 3)]
         var menuOpts = opts.map { (label, val) -> String in
             val == current ? "\(label) <--" : label
         }
@@ -15346,11 +15351,14 @@ class GameEngine: ObservableObject {
         // small fixed size whenever the torch went out, instead of just
         // going dark in place at the same size.
         guard mapRadius > 0 else { return (0, 0, false) }
-        // Portrait gives the map a full-width band above the text — widen
-        // just the horizontal radius there so it actually uses that width
-        // instead of a narrow strip with blank space either side. Landscape
-        // already gets its own (narrower) left column, so stays as-is.
-        let horizontalRadius = isLandscapeOrientation ? mapRadius : min(mapRadius + 2, 5)
+        // The "Map Length" setting only ever governs vertical rows (how far
+        // up/down you can see) — width is handled automatically here instead,
+        // widening to use whatever screen space is actually available rather
+        // than staying tied 1:1 to the length setting. Portrait gets the map
+        // as a full-width band, so widens generously; landscape gives it its
+        // own narrower column (map | icons | text), so widens more modestly
+        // to avoid overflowing that column.
+        let horizontalRadius = isLandscapeOrientation ? min(mapRadius + 1, 4) : min(mapRadius + 2, 5)
         return (horizontalRadius, mapRadius, mapRadius > 1)
     }
 

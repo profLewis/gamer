@@ -176,15 +176,19 @@ struct TerminalView: View {
                             .frame(height: 1)
                     }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(width: isLandscape ? geometry.size.width / 3 : nil, alignment: .leading)
+                    .frame(maxWidth: isLandscape ? nil : .infinity, alignment: .leading)
                     .padding(.top, isLandscape ? 20 * scale : 0)
 
                     // Landscape puts the D-pad/icon grid as its own middle
-                    // column (map | icons | text, three equal-width sections)
-                    // instead of below the text — portrait keeps it below
-                    // (see the "Direction pad + menu buttons" block further
-                    // down, which skips the D-pad in landscape to avoid
-                    // showing it twice).
+                    // column — exactly three equal columns (map | icons |
+                    // text), each pinned to a hard third of the width so the
+                    // D-pad's own fixed-size buttons can't throw off how
+                    // HStack would otherwise divide the space (which read as
+                    // a 4th, oddly-sized column) — instead of below the text
+                    // as portrait does (see the "Direction pad + menu
+                    // buttons" block further down, which skips the D-pad in
+                    // landscape to avoid showing it twice).
                     if isLandscape, (!gameEngine.isJustDMActive || gameEngine.forceInteractiveControls),
                        !gameEngine.directionExits.isEmpty {
                         DirectionPadView(exits: gameEngine.directionExits, secured: gameEngine.securedExits, scale: scale,
@@ -205,7 +209,7 @@ struct TerminalView: View {
                             onSearchTap: gameEngine.dpadSearchHandler,
                             onListenTap: gameEngine.dpadListenHandler
                         )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .frame(width: geometry.size.width / 3, alignment: .top)
                         .padding(.top, 20 * scale)
                     }
 
@@ -373,7 +377,8 @@ struct TerminalView: View {
                             }
                         }
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(width: isLandscape ? geometry.size.width / 3 : nil)
+                    .frame(maxWidth: isLandscape ? nil : .infinity)
                     .background(terminalBackground)
                     #if !os(tvOS)
                     // tvOS has no touch/swipe input (remote + focus engine
