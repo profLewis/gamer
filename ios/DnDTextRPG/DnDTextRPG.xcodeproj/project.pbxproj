@@ -33,7 +33,7 @@
 		2BDCC0373C714C3CBFE4DDA9 /* CharacterLibraryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 007C1A2621AF46D19020E969 /* CharacterLibraryModels.swift */; };
 		51BE9453556E4524AD580E78 /* QuestModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A93BA868281843B09A57821C /* QuestModels.swift */; };
 		5290AC73A279C70731B29DE4 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0060E8428D7BAA48D7F6F41A /* Foundation.framework */; };
-		64D90970CCC0A3DBDF1EAAB1 /* DnDTextRPGWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 59942E297723A646362ADF21 /* DnDTextRPGWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		64D90970CCC0A3DBDF1EAAB1 /* DnDTextRPGWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 59942E297723A646362ADF21 /* DnDTextRPGWatch.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A1B2C3D4E5F6A7B800112234 /* StateSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800112233 /* StateSnapshot.swift */; };
 		A1B2C3D4E5F6A7B800112236 /* StateDiff.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800112235 /* StateDiff.swift */; };
 		A1B2C3D4E5F6A7B800112238 /* StateSnapshotManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800112237 /* StateSnapshotManager.swift */; };
@@ -423,13 +423,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = "";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 25;
+				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = 74SY6DZ377;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.timbaloo.dnd.textrpg;
-				MARKETING_VERSION = 2.5;
+				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.timbaloo.dnd.textrpg.watchkitapp;
 				PRODUCT_NAME = DnDTextRPGWatch;
 				SDKROOT = watchos;
@@ -573,7 +573,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = DnDTextRPG/DnDTextRPG.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 25;
+				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -590,7 +590,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.5;
+				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.timbaloo.dnd.textrpg;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator appletvos appletvsimulator macosx";
@@ -610,7 +610,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = DnDTextRPG/DnDTextRPG.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 25;
+				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -627,7 +627,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.5;
+				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.timbaloo.dnd.textrpg;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator appletvos appletvsimulator macosx";
@@ -645,13 +645,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = "";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 25;
+				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = 74SY6DZ377;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.timbaloo.dnd.textrpg;
-				MARKETING_VERSION = 2.5;
+				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.timbaloo.dnd.textrpg.watchkitapp;
 				PRODUCT_NAME = DnDTextRPGWatch;
 				SDKROOT = watchos;
