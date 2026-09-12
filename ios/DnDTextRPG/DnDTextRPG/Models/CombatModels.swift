@@ -1019,6 +1019,10 @@ final class Combat: ObservableObject {
     @Published var currentTurnIndex: Int
     @Published var state: CombatState
     @Published var combatLog: [String]
+    /// Set once handleCombatVictory() has actually granted this combat's loot —
+    /// guards against awarding it twice when a multiplayer catch-up resyncs
+    /// state for a fight that was already resolved on another device.
+    @Published var lootAwarded: Bool = false
 
     var currentCombatant: TurnOrderEntry? {
         guard currentTurnIndex >= 0 && currentTurnIndex < turnOrder.count else { return nil }
@@ -1586,7 +1590,7 @@ final class Combat: ObservableObject {
 
 extension Combat: Codable {
     enum CodingKeys: String, CodingKey {
-        case encounter, turnOrder, currentTurnIndex, state, combatLog, partyCharacterIds
+        case encounter, turnOrder, currentTurnIndex, state, combatLog, partyCharacterIds, lootAwarded
     }
 
     convenience init(from decoder: Decoder) throws {
@@ -1597,6 +1601,7 @@ extension Combat: Codable {
         self.currentTurnIndex = try container.decode(Int.self, forKey: .currentTurnIndex)
         self.state = try container.decode(CombatState.self, forKey: .state)
         self.combatLog = try container.decode([String].self, forKey: .combatLog)
+        self.lootAwarded = try container.decodeIfPresent(Bool.self, forKey: .lootAwarded) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1608,6 +1613,7 @@ extension Combat: Codable {
         try container.encode(combatLog, forKey: .combatLog)
         let ids = party.map { $0.id }
         try container.encode(ids, forKey: .partyCharacterIds)
+        try container.encode(lootAwarded, forKey: .lootAwarded)
     }
 
     /// Re-link party references after decoding from match data

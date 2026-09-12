@@ -4010,8 +4010,13 @@ class GameEngine: ObservableObject {
                 self.createRandomParty(count: 2, allAI: true)
             case "Continue Adventure":
                 // Long-press → skip the save list entirely and load the
-                // single most recently saved slot directly.
-                if let mostRecent = SaveGameManager.shared.listSlots().max(by: { $0.latest.savedAt < $1.latest.savedAt }) {
+                // single most recently saved slot directly. Skips any slot
+                // whose save has no characters in it — a defunct/corrupted
+                // save (performAutosave() now guards against writing one,
+                // but an older one could already exist on this device) —
+                // rather than silently loading a scenario with nobody in it.
+                let candidates = SaveGameManager.shared.listSlots().filter { !$0.latest.party.isEmpty }
+                if let mostRecent = candidates.max(by: { $0.latest.savedAt < $1.latest.savedAt }) {
                     self.loadGame(mostRecent.latest)
                 }
             default:
@@ -6635,6 +6640,11 @@ class GameEngine: ObservableObject {
 
     private func performAutosave() {
         guard let dungeon = dungeon else { return }
+        // Never persist a party-less save — if this ever fired at a moment
+        // party was transiently empty, it would silently corrupt this slot
+        // (and, worse, "load the most recent save across every slot"
+        // shortcuts) with an adventure that has no characters in it.
+        guard !party.isEmpty else { return }
 
         let partyDesc = party.map { "\($0.name) (\($0.characterClass.rawValue))" }.joined(separator: ", ")
 
@@ -14883,7 +14893,7 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        var opts = ["Enter the Dungeon", "Difficulty", "Rename"]
+        var opts = ["Enter the Dungeon", "Difficulty", "Rename Dungeon"]
         if !adventureUndoStack.isEmpty { opts.append("Undo") }
         if !adventureRedoStack.isEmpty { opts.append("Redo") }
         opts.append("?")
@@ -14912,7 +14922,7 @@ class GameEngine: ObservableObject {
                 self.adventureUndoStack.append((dungeonName, level))
                 self.adventureRedoStack.removeAll()
                 self.changeDifficultyInline(currentName: dungeonName, currentLevel: level)
-            case "Rename":
+            case "Rename Dungeon":
                 self.adventureUndoStack.append((dungeonName, level))
                 self.adventureRedoStack.removeAll()
                 self.changeDungeonNameInline(currentName: dungeonName, currentLevel: level)
@@ -24894,6 +24904,12 @@ class GameEngine: ObservableObject {
         cancelCombatIdleTimer()
         combatHesitating = false
         guard let combat = currentCombat else { return }
+        // combat.lootAwarded (unlike isHandlingCombatVictory) survives a
+        // multiplayer catch-up resync, which resets isHandlingCombatVictory
+        // to false and re-enters this function for a fight that was already
+        // resolved and looted on another device.
+        guard !combat.lootAwarded else { return }
+        combat.lootAwarded = true
         SoundManager.shared.playVictory()
         advanceTime(30)
 
@@ -27412,21 +27428,21 @@ class GameEngine: ObservableObject {
     // Quit (see quitApp()/performQuit()).
     private func confirmQuitAndSave(slotId: UUID, slotName: String) {
         clearTerminal()
-        printTitle("Save & Return to Menu")
+        printTitle("Save & Quit")
         print("")
         print("Your adventure will be saved and", color: .yellow)
-        print("you'll return to the main menu.", color: .yellow)
+        print("the app will close.", color: .yellow)
         print("")
         print("Save: \(slotName)", color: .dimGreen)
         print("")
 
-        showMenu(["Yes, Save & Return", "No, Keep Playing"], defaultIndex: 1)
+        showMenu(["Yes, Save & Quit", "No, Keep Playing"], defaultIndex: 1)
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == 1 {
                 self.performSave(slotId: slotId, slotName: slotName)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    self.resetGame()
+                    self.performQuit()
                 }
             } else {
                 self.showExplorationView()
@@ -27436,18 +27452,18 @@ class GameEngine: ObservableObject {
 
     private func confirmQuitAfterRecentSave(slotId: UUID, slotName: String) {
         clearTerminal()
-        printTitle("Return to Main Menu?")
+        printTitle("Quit App?")
         print("")
         print("Game was saved moments ago.", color: .green)
         print("  \(slotName)", color: .dimGreen)
         print("")
 
-        showMenu(["Main Menu", "Keep Playing", "Save Again"], defaultIndex: 1)
+        showMenu(["Quit App", "Keep Playing", "Save Again"], defaultIndex: 1)
         closeHandler = { [weak self] in self?.showExplorationView() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             switch choice {
-            case 1: self.resetGame()
+            case 1: self.performQuit()
             case 3: self.showSaveMenu()
             default: self.showExplorationView()
             }
@@ -27456,15 +27472,15 @@ class GameEngine: ObservableObject {
 
     private func confirmQuitWithoutSaving() {
         clearTerminal()
-        print("Return to Main Menu Without Saving?", color: .yellow, bold: true)
+        print("Quit Without Saving?", color: .yellow, bold: true)
         print("")
-        print("Unsaved progress will be lost. The app stays open — this takes you to the main menu.", color: .red)
+        print("Unsaved progress will be lost. The app will close.", color: .red)
         print("")
 
-        showMenu(["Yes, Return to Menu", "No, Stay"])
+        showMenu(["Yes, Quit", "No, Stay"])
         menuHandler = { [weak self] choice in
             if choice == 1 {
-                self?.resetGame()
+                self?.performQuit()
             } else {
                 self?.showExplorationView()
             }
@@ -27475,18 +27491,14 @@ class GameEngine: ObservableObject {
         clearTerminal()
         print("Leave This Adventure?", color: .yellow, bold: true)
         print("")
-        printWrapped("Both options take you to the app's main menu — the app stays open either way.", indent: 2, color: .dimGreen)
-        printWrapped("Save & Return saves your game first, so you can continue later. Quit Without Saving discards anything since your last save.", indent: 2, color: .dimGreen)
+        printWrapped("Both options close the app.", indent: 2, color: .dimGreen)
+        printWrapped("Save & Quit saves your game first, so you can continue later. Quit Without Saving discards anything since your last save.", indent: 2, color: .dimGreen)
         print("")
 
-        // Neither option here closes the app — see showReturnToMenuHelp
-        // and the note on performQuit() for where the actual app-exit
-        // action lives (only the main menu's own Quit, and the Save menu's
-        // Quit+Save/Quit-Save, which now share this same "leave the
-        // adventure" meaning but go one step further and close the app —
-        // see confirmQuitAndSave/confirmQuitWithoutSaving).
+        // Both options here close the app via performQuit() — see the
+        // note on performQuit() for where the actual app-exit action lives.
         var menuOpts = [
-            MenuOption("Save & Return"),
+            MenuOption("Save & Quit"),
             MenuOption("Quit Without Saving", tint: .danger),
             MenuOption("< Back"),
         ]
@@ -27497,11 +27509,11 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             let text = menuOpts[choice - 1].text
             switch text {
-            case "Save & Return":
+            case "Save & Quit":
                 self.performQuickSave()
-                self.resetGame()
+                self.performQuit()
             case "Quit Without Saving":
-                self.resetGame()
+                self.performQuit()
             case "< Back":
                 self.showExplorationView()
             case "?":
@@ -27516,12 +27528,12 @@ class GameEngine: ObservableObject {
             self.printTitle("Leave Adventure — Help")
             self.print("")
 
-            self.print("  SAVE & RETURN", color: .cyan, bold: true)
-            self.printWrapped("Saves your game to the current slot, then returns to the main menu. You can continue this adventure later from there.", indent: 2, color: .dimGreen)
+            self.print("  SAVE & QUIT", color: .cyan, bold: true)
+            self.printWrapped("Saves your game to the current slot, then closes the app. You can continue this adventure later from the main menu.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  QUIT WITHOUT SAVING", color: .cyan, bold: true)
-            self.printWrapped("Also returns to the main menu, but discards anything since your last save. Neither option here closes the app — for that, use Quit from the main menu itself, or Quit+Save/Quit-Save from the Save menu.", indent: 2, color: .dimGreen)
+            self.printWrapped("Also closes the app, but discards anything since your last save.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  CANCEL", color: .cyan, bold: true)
