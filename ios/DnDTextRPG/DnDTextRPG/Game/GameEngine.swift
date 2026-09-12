@@ -151,6 +151,14 @@ class GameEngine: ObservableObject {
     @Published var prefillInputText: String? = nil
     @Published var awaitingTextInput: Bool = false
     @Published var awaitingContinue: Bool = false
+    /// When true alongside awaitingContinue, the WHOLE screen is tappable to
+    /// continue (see TerminalView) — appropriate for a short, one-shot
+    /// result (rest, trap...) with nothing worth scrolling to reread.
+    /// Combat reports leave this false: tap-to-continue there is a narrow
+    /// right-edge strip instead, because full-width taps made it impossible
+    /// to scroll up mid-fight to reread an earlier round. See
+    /// waitForContinue(fullScreenTap:).
+    @Published var fullScreenTapToContinue: Bool = false
     @Published var chatInputMode: Bool = false
     @Published var isHoldingScreen: Bool = false
 
@@ -1251,6 +1259,7 @@ class GameEngine: ObservableObject {
         lastSafeRebuildAction = nil
         awaitingTextInput = false
         awaitingContinue = false
+        fullScreenTapToContinue = false
         suppressAutoScroll = true
         scrollLocked = false
         swipeLeftHandler = nil
@@ -1913,6 +1922,7 @@ class GameEngine: ObservableObject {
             self.currentMenuOptions = self.withForwardOption(mapped)
             self.awaitingTextInput = false
             self.awaitingContinue = false
+            self.fullScreenTapToContinue = false
             self.autoReadIfSpeakerMode()
         }
     }
@@ -1941,6 +1951,7 @@ class GameEngine: ObservableObject {
             self.currentMenuOptions = self.withForwardOption(mapped)
             self.awaitingTextInput = false
             self.awaitingContinue = false
+            self.fullScreenTapToContinue = false
             self.autoReadIfSpeakerMode()
         }
     }
@@ -2278,6 +2289,7 @@ class GameEngine: ObservableObject {
             self.currentMenuOptions = self.withForwardOption(mapped)
             self.awaitingTextInput = false
             self.awaitingContinue = false
+            self.fullScreenTapToContinue = false
             self.autoReadIfSpeakerMode()
         }
     }
@@ -2297,6 +2309,7 @@ class GameEngine: ObservableObject {
             self.currentMenuOptions = []
             self.awaitingTextInput = true
             self.awaitingContinue = false
+            self.fullScreenTapToContinue = false
             self.autoReadIfSpeakerMode()
         }
     }
@@ -2318,11 +2331,12 @@ class GameEngine: ObservableObject {
             self.currentMenuOptions = self.withForwardOption(mapped)
             self.awaitingTextInput = true
             self.awaitingContinue = false
+            self.fullScreenTapToContinue = false
             self.autoReadIfSpeakerMode()
         }
     }
 
-    func waitForContinue() {
+    func waitForContinue(fullScreenTap: Bool = false) {
         // Same reasoning as promptText — waitForContinue is meant to be a
         // clean "tap anywhere to continue" state (see TerminalView's
         // awaitingContinue branch), which only renders when textTapEnabled
@@ -2351,14 +2365,15 @@ class GameEngine: ObservableObject {
             self.currentMenuOptions = []
             self.awaitingTextInput = false
             self.awaitingContinue = true
+            self.fullScreenTapToContinue = fullScreenTap
             self.autoReadIfSpeakerMode()
         }
         resetIdleTimer()
     }
 
     /// Wait for continue with auto-timeout — taps to continue immediately, or auto-continues after delay
-    func waitForContinueWithTimeout(multiplier: Double = 2.0, action: @escaping () -> Void) {
-        waitForContinue()
+    func waitForContinueWithTimeout(multiplier: Double = 2.0, fullScreenTap: Bool = false, action: @escaping () -> Void) {
+        waitForContinue(fullScreenTap: fullScreenTap)
 
         // Single-fire guard — without it, a tap landing at (or just before)
         // the exact moment the timer's dispatched block runs can fire
@@ -3566,6 +3581,7 @@ class GameEngine: ObservableObject {
     func handleContinue() {
         guard awaitingContinue else { return }
         awaitingContinue = false
+        fullScreenTapToContinue = false
         stopIdleAnimations()
         if let handler = inputHandler {
             inputHandler = nil
@@ -16567,8 +16583,10 @@ class GameEngine: ObservableObject {
             // the trap out loud when Voice Menus is on (built into
             // waitForContinue already) and auto-advances after a delay
             // instead of waiting indefinitely on a tap — this screen only
-            // had the corner ✕ icon as a way off it otherwise.
-            waitForContinueWithTimeout { [weak self] in
+            // had the corner ✕ icon as a way off it otherwise. fullScreenTap
+            // makes the whole screen tappable too, since there's nothing here
+            // worth scrolling back to reread.
+            waitForContinueWithTimeout(multiplier: 4.0, fullScreenTap: true) { [weak self] in
                 self?.showExplorationView()
             }
             return
@@ -16594,8 +16612,10 @@ class GameEngine: ObservableObject {
         // trap out loud when Voice Menus is on (built into waitForContinue
         // already) and auto-advances after a delay instead of waiting
         // indefinitely on a tap — this screen only had the corner ✕ icon as
-        // a way off it otherwise.
-        waitForContinueWithTimeout { [weak self] in
+        // a way off it otherwise. fullScreenTap makes the whole screen
+        // tappable too, since there's nothing here worth scrolling back to
+        // reread.
+        waitForContinueWithTimeout(multiplier: 4.0, fullScreenTap: true) { [weak self] in
             self?.showExplorationView()
         }
     }
@@ -22293,7 +22313,10 @@ class GameEngine: ObservableObject {
                 self.logEvent("Ambushed during rest! \(ambushLog.joined(separator: ", "))", category: "COMBAT")
                 self.print("")
                 self.print("  Find somewhere safe to rest — barricade all doors first!", color: .dimGreen)
-                self.waitForContinue()
+                // Full-screen tap (there's nothing here worth scrolling back to
+                // reread), but no auto-timeout — an ambush shouldn't force the
+                // player into combat unattended.
+                self.waitForContinue(fullScreenTap: true)
                 self.inputHandler = { [weak self] _ in
                     guard let self = self else { return }
                     if let room = self.dungeon?.currentRoom {
@@ -22303,8 +22326,12 @@ class GameEngine: ObservableObject {
                     self.showExplorationView()
                 }
             } else {
-                self.waitForContinue()
-                self.inputHandler = { [weak self] _ in
+                // waitForContinueWithTimeout (not plain waitForContinue): reads
+                // the rest summary out loud when Voice Menus is on (built into
+                // waitForContinue already) and auto-advances after a delay, with
+                // the whole screen tappable too — this screen only had the
+                // corner ✕ icon as a way off it otherwise.
+                self.waitForContinueWithTimeout(multiplier: 4.0, fullScreenTap: true) { [weak self] in
                     if self?.musicEnabled == true { SoundManager.shared.startMusic(.exploration, preference: self?.explorationMelodyChoice ?? 0) }
                     self?.showExplorationView()
                 }

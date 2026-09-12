@@ -259,6 +259,16 @@ struct TerminalView: View {
                                             .onTapGesture {
                                                 gameEngine.textLongPressHandler?(index)
                                             }
+                                    } else if gameEngine.awaitingContinue && gameEngine.fullScreenTapToContinue {
+                                        // Short, one-shot result screens (rest/trap/etc.) — nothing here
+                                        // is worth scrolling back to reread, so the whole line is tappable
+                                        // to continue, unlike the narrow-strip-only behavior below.
+                                        TerminalLineView(line: line, scale: scale)
+                                            .id(line.id)
+                                            .contentShape(Rectangle())
+                                            .onTapGesture {
+                                                gameEngine.handleContinue()
+                                            }
                                     } else if gameEngine.swipeLeftHandler != nil || gameEngine.awaitingContinue {
                                         // Card mode / "Press to continue" screens (victory/level-up/
                                         // defeat/combat reports/etc.) — advancing used to be a tap
