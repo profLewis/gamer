@@ -61,7 +61,7 @@ struct TerminalView: View {
     /// to reread what happened without being yanked back down.
     @State private var lastManualScrollAt: Date = .distantPast
     private var recentlyScrolledManually: Bool {
-        Date().timeIntervalSince(lastManualScrollAt) < 4.0
+        Date().timeIntervalSince(lastManualScrollAt) < 8.0
     }
     #if os(iOS)
     @State private var showCustomKeyboard: Bool = false
@@ -249,7 +249,7 @@ struct TerminalView: View {
                                 showCustomKeyboard = false
                                 #endif
                                 // Re-scroll after keyboard appears
-                                guard !gameEngine.suppressAutoScroll else { return }
+                                guard !gameEngine.suppressAutoScroll, !recentlyScrolledManually else { return }
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                     scrollToBottom(scrollProxy)
                                 }
@@ -257,14 +257,18 @@ struct TerminalView: View {
                         }
                         .onChange(of: gameEngine.awaitingTextInput) { awaiting in
                             if awaiting {
-                                guard !gameEngine.suppressAutoScroll else { return }
+                                guard !gameEngine.suppressAutoScroll, !recentlyScrolledManually else { return }
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                     scrollToBottom(scrollProxy)
                                 }
                             }
                         }
                         .onChange(of: gameEngine.currentMenuOptions.count) { _ in
-                            guard !gameEngine.suppressAutoScroll else { return }
+                            // Combat redraws its menu (new attack options) after nearly
+                            // every turn, so without the manual-scroll check, scrolling
+                            // up mid-combat to reread a report got yanked back to the
+                            // bottom on the very next turn — effectively unscrollable.
+                            guard !gameEngine.suppressAutoScroll, !recentlyScrolledManually else { return }
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                                 scrollToBottom(scrollProxy)
                             }

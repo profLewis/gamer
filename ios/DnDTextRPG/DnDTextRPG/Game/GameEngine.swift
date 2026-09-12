@@ -122,10 +122,8 @@ class GameEngine: ObservableObject {
     /// here are simply invented to suit each one; new asset keys should get
     /// an entry added alongside wherever they're first assigned.
     static let poseNames: [String: String] = [
-        "DragonCastle": "The Watcher's Keep",
         "DragonGuard": "Warden of the Hall",
         "VictoryScene": "Spoils of Victory",
-        "dragon_castle": "The Watcher's Keep",
         "dragon_flapping": "Wings Through the Archive",
     ]
 
@@ -15304,6 +15302,10 @@ class GameEngine: ObservableObject {
         }
         print("")
 
+        if dungeon.hasVerticalConnections {
+            print("Floor \(dungeon.currentFloor)", color: .dimGreen)
+        }
+
         // Room description — dim when the room itself isn't lit
         if roomIsLit {
             print(room.name, color: .brightGreen, bold: true)
@@ -15471,17 +15473,18 @@ class GameEngine: ObservableObject {
 
         if let vMethod = room.verticalMethod, let vDestId = room.verticalDestinationRoomId,
            let vDestRoom = dungeon.rooms[vDestId], (room.cleared || room.encounter == nil) {
+            let goingDown = room.verticalDirection == "down"
             let label: String
             let met: Bool
             switch vMethod {
             case "stairs":
-                label = "Take the Stairs"
+                label = goingDown ? "Descend the Stairs" : "Climb the Stairs"
                 met = true
             case "rope":
-                label = "Climb the Rope"
+                label = goingDown ? "Climb Down the Rope" : "Climb Up the Rope"
                 met = party.flatMap { $0.inventory }.contains { $0.name.hasPrefix("Rope") }
             default: // "levitation"
-                label = "Levitate"
+                label = goingDown ? "Levitate Down" : "Levitate Up"
                 met = party.contains { $0.spellSlots.level1Current > 0 || $0.spellSlots.level2Current > 0 }
             }
             menuOpts.append(MenuOption(label, isDisabled: !met))
@@ -15988,14 +15991,17 @@ class GameEngine: ObservableObject {
     private func useVerticalConnection(method: String, from room: Room, to destination: Room) {
         guard let dungeon = dungeon else { return }
         dungeon.currentRoomId = destination.id
+        let goingDown = room.verticalDirection == "down"
+        dungeon.currentFloor += goingDown ? 1 : -1
         advanceTime(10)
         tickTorch()
         checkTorchEvent()
 
+        let dirWord = goingDown ? "down" : "up"
         switch method {
         case "rope":
-            explorationStatusMessage = ("You climb the rope through the hole into another level...", .cyan)
-            logEvent("Climbed via rope from \(room.name) to \(destination.name)", category: "EXPLORE")
+            explorationStatusMessage = ("You climb \(dirWord) the rope through the hole to Floor \(dungeon.currentFloor)...", .cyan)
+            logEvent("Climbed via rope \(dirWord) from \(room.name) to \(destination.name) (Floor \(dungeon.currentFloor))", category: "EXPLORE")
         case "levitation":
             // Spend a slot from whichever caster has one — this is what
             // "casts" the levitation, not a specific known spell (the
@@ -16009,17 +16015,17 @@ class GameEngine: ObservableObject {
             if Int.random(in: 1...100) <= 10, let unlucky = party.filter({ $0.isConscious }).randomElement() {
                 let bump = Dice.roll(4)
                 unlucky.currentHP = max(1, unlucky.currentHP - bump)
-                explorationStatusMessage = ("You levitate smoothly — until \(unlucky.name) bumps the ceiling! (-\(bump) HP)", .yellow)
+                explorationStatusMessage = ("You levitate \(dirWord) — until \(unlucky.name) bumps the ceiling! (-\(bump) HP) Now on Floor \(dungeon.currentFloor).", .yellow)
                 logEvent("\(unlucky.name) bumped the ceiling while levitating (-\(bump) HP)", category: "EXPLORE")
             } else {
-                explorationStatusMessage = ("You levitate gently between floors, minding the ceiling...", .cyan)
+                explorationStatusMessage = ("You levitate \(dirWord) to Floor \(dungeon.currentFloor), minding the ceiling...", .cyan)
             }
-            logEvent("Levitated from \(room.name) to \(destination.name)", category: "EXPLORE")
+            logEvent("Levitated \(dirWord) from \(room.name) to \(destination.name) (Floor \(dungeon.currentFloor))", category: "EXPLORE")
         default: // "stairs"
-            explorationStatusMessage = ("You take the stairs to another level...", .cyan)
-            logEvent("Took the stairs from \(room.name) to \(destination.name)", category: "EXPLORE")
+            explorationStatusMessage = ("You take the stairs \(dirWord) to Floor \(dungeon.currentFloor)...", .cyan)
+            logEvent("Took the stairs \(dirWord) from \(room.name) to \(destination.name) (Floor \(dungeon.currentFloor))", category: "EXPLORE")
         }
-        logMultiplayerAction("The party moved to another floor via \(method)")
+        logMultiplayerAction("The party moved \(dirWord) to Floor \(dungeon.currentFloor) via \(method)")
         autosaveIfNeeded()
         showExplorationView()
     }
@@ -23958,8 +23964,9 @@ class GameEngine: ObservableObject {
         let fumbled = Int.random(in: 1...100) <= 15
         if fumbled {
             character.removeItem(newWeapon)
+            dungeon?.currentRoom?.droppedItems.append(newWeapon)
             print("  \(character.name) fumbles drawing \(newWeapon.name) — it slips free and clatters to the floor!", color: .yellow, bold: true)
-            print("  (\(newWeapon.name) is lost.)", color: .dimGreen)
+            print("  (\(newWeapon.name) can be found with a search once the fight is over.)", color: .dimGreen)
             logEvent("\(character.name) fumbled changing to \(newWeapon.name) — dropped it", category: "COMBAT")
             logMultiplayerAction("\(character.name) fumbled switching weapons and dropped \(newWeapon.name)!")
         } else {
@@ -24999,7 +25006,30 @@ class GameEngine: ObservableObject {
 
         let xp = combat.encounter.totalXP
         let rewardParty = fighters.isEmpty ? party : fighters
-        let xpEach = xp / rewardParty.count
+
+        // Split XP by contribution rather than flat — half the pool is a
+        // guaranteed equal base share (so nobody who fought walks away with
+        // nothing), the other half is weighted by an effort score: damage
+        // dealt plus a flat per-turn credit so a healer/support character
+        // taking real turns (buffs, heals) still earns a fair cut even with
+        // little or no damage of their own.
+        let baseShare = xp / 2
+        let bonusPool = xp - baseShare
+        let baseEach = baseShare / rewardParty.count
+        let effortScores: [UUID: Int] = Dictionary(uniqueKeysWithValues: rewardParty.map { char in
+            let dmg = combat.damageDealtByCharacter[char.id] ?? 0
+            let turns = combat.turnsTakenByCharacter[char.id] ?? 0
+            return (char.id, dmg + turns * 8)
+        })
+        let totalEffort = effortScores.values.reduce(0, +)
+        var xpByCharacter: [UUID: Int] = [:]
+        for char in rewardParty {
+            let effort = effortScores[char.id] ?? 0
+            let bonus = totalEffort > 0
+                ? Int((Double(bonusPool) * Double(effort) / Double(totalEffort)).rounded())
+                : bonusPool / rewardParty.count
+            xpByCharacter[char.id] = baseEach + bonus
+        }
 
         let defeated = combat.encounter.monsters.map { $0.name }.joined(separator: ", ")
         logEvent("Victory! Defeated \(defeated) (+\(xp) XP)", category: "COMBAT")
@@ -25023,10 +25053,12 @@ class GameEngine: ObservableObject {
             print("")
         }
 
-        print("Experience gained: \(xp) XP (\(xpEach) each)")
+        print("Experience gained: \(xp) XP")
 
         for char in rewardParty {
-            char.experiencePoints += xpEach
+            let gained = xpByCharacter[char.id] ?? 0
+            char.experiencePoints += gained
+            print("  \(char.name): +\(gained) XP", color: .dimGreen)
             let nextLevel = char.level + 1
             if char.canLevelUp {
                 print("  \(char.name) has enough XP for Level \(nextLevel)!", color: .yellow)

@@ -197,6 +197,11 @@ class Room: Identifiable, ObservableObject, Codable {
     /// or "levitation" (needs an available spell slot). nil if no vertical
     /// connection here.
     @Published var verticalMethod: String? = nil
+    /// "up" or "down" — which way this room's vertical connection goes, from
+    /// this room's own perspective. nil if no vertical connection here. The
+    /// paired room at verticalDestinationRoomId always gets the opposite
+    /// direction, so travelling it and coming back flips consistently.
+    @Published var verticalDirection: String? = nil
     /// Wall-mounted torches keep this passage lit on their own — its
     /// description, exits, and contents are visible even with no torch of
     /// your own (see GameEngine's roomIsLit), and searching it always
@@ -210,7 +215,7 @@ class Room: Identifiable, ObservableObject, Codable {
         case hiddenItems, hiddenGold, droppedItems, npc, secured, merchant, trainer
         case riddleIndex, riddleResolved, doorLockIds, openedLocks
         case teleportDestinationRoomId
-        case verticalDestinationRoomId, verticalMethod
+        case verticalDestinationRoomId, verticalMethod, verticalDirection
         case isTorchlit
     }
 
@@ -243,6 +248,7 @@ class Room: Identifiable, ObservableObject, Codable {
         self.teleportDestinationRoomId = nil
         self.verticalDestinationRoomId = nil
         self.verticalMethod = nil
+        self.verticalDirection = nil
         self.isTorchlit = false
     }
 
@@ -278,6 +284,7 @@ class Room: Identifiable, ObservableObject, Codable {
         teleportDestinationRoomId = try container.decodeIfPresent(Int.self, forKey: .teleportDestinationRoomId)
         verticalDestinationRoomId = try container.decodeIfPresent(Int.self, forKey: .verticalDestinationRoomId)
         verticalMethod = try container.decodeIfPresent(String.self, forKey: .verticalMethod)
+        verticalDirection = try container.decodeIfPresent(String.self, forKey: .verticalDirection)
         isTorchlit = try container.decodeIfPresent(Bool.self, forKey: .isTorchlit) ?? false
     }
 
@@ -309,6 +316,9 @@ class Room: Identifiable, ObservableObject, Codable {
         try container.encode(doorLockIds, forKey: .doorLockIds)
         try container.encode(openedLocks, forKey: .openedLocks)
         try container.encodeIfPresent(teleportDestinationRoomId, forKey: .teleportDestinationRoomId)
+        try container.encodeIfPresent(verticalDestinationRoomId, forKey: .verticalDestinationRoomId)
+        try container.encodeIfPresent(verticalMethod, forKey: .verticalMethod)
+        try container.encodeIfPresent(verticalDirection, forKey: .verticalDirection)
         try container.encode(isTorchlit, forKey: .isTorchlit)
     }
 
@@ -518,6 +528,18 @@ class Dungeon: ObservableObject, Codable {
     @Published var rooms: [Int: Room]
     @Published var currentRoomId: Int
     @Published var previousRoomId: Int?
+    /// Which floor the party is currently on via vertical connections
+    /// (stairs/rope/levitation) — distinct from `level` (the difficulty
+    /// tier). All rooms live in the same flat `rooms` dictionary regardless
+    /// of floor; this is purely a display counter so "Descend the Stairs"
+    /// actually shows a floor number changing, rather than implying a
+    /// second level that never appears anywhere on screen.
+    @Published var currentFloor: Int = 1
+
+    /// True if this dungeon has at least one stairs/rope/levitation link.
+    var hasVerticalConnections: Bool {
+        rooms.values.contains { $0.verticalDestinationRoomId != nil }
+    }
 
     var currentRoom: Room? {
         get { rooms[currentRoomId] }
@@ -535,7 +557,7 @@ class Dungeon: ObservableObject, Codable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, level, rooms, currentRoomId, previousRoomId, nextRoomId
+        case name, level, rooms, currentRoomId, previousRoomId, nextRoomId, currentFloor
     }
 
     init(name: String, level: Int) {
@@ -544,6 +566,7 @@ class Dungeon: ObservableObject, Codable {
         self.rooms = [:]
         self.currentRoomId = 0
         self.previousRoomId = nil
+        self.currentFloor = 1
 
         generateDungeon()
     }
@@ -562,6 +585,7 @@ class Dungeon: ObservableObject, Codable {
         previousRoomId = try? container.decodeIfPresent(Int.self, forKey: .previousRoomId)
         nextRoomId = try container.decodeIfPresent(Int.self, forKey: .nextRoomId)
             ?? (roomsDict.keys.max().map { $0 + 1 } ?? 0)
+        currentFloor = try container.decodeIfPresent(Int.self, forKey: .currentFloor) ?? 1
     }
 
     func encode(to encoder: Encoder) throws {
@@ -573,6 +597,7 @@ class Dungeon: ObservableObject, Codable {
         try container.encode(currentRoomId, forKey: .currentRoomId)
         try container.encodeIfPresent(previousRoomId, forKey: .previousRoomId)
         try container.encode(nextRoomId, forKey: .nextRoomId)
+        try container.encode(currentFloor, forKey: .currentFloor)
     }
 
     /// Next room ID for dynamic expansion
@@ -723,7 +748,7 @@ class Dungeon: ObservableObject, Codable {
             "Rows of rusted weapons stand at attention like silent soldiers. A workbench holds tools for repair and sharpening.",
         ]
         for armouryRoom in rooms.values where armouryRoom.roomType == .armory {
-            if Int.random(in: 1...100) <= 55 {
+            if Int.random(in: 1...100) <= 65 {
                 armouryRoom.merchant = Merchant.random(tier: MerchantTier.forDungeonLevel(level))
                 armouryRoom.roomDescription = armouryMerchantVariant
             } else {
@@ -743,7 +768,7 @@ class Dungeon: ObservableObject, Codable {
         // skill proficiency for a fee or by winning a sparring check.
         let chamberRooms = rooms.values.filter { $0.roomType == .chamber && $0.encounter == nil }
         for room in chamberRooms {
-            if Int.random(in: 1...100) <= 20 {
+            if Int.random(in: 1...100) <= 35 {
                 let specialty = Skill.allCases.randomElement()!
                 room.trainer = Trainer.random(specialty: specialty, dungeonLevel: level)
             }
@@ -777,26 +802,53 @@ class Dungeon: ObservableObject, Codable {
 
         // Vertical connections — a second "floor" reachable via stairs (free,
         // always works), a rope through a hole (needs a Rope item carried),
-        // or a levitation shaft (needs an available spell slot). All are
-        // bidirectional — same two rooms link both ways once the method's
-        // requirement is met. Skipped in small dungeons.
+        // or a levitation shaft (needs an available spell slot). Each pair is
+        // bidirectional (same two rooms link both ways once the method's
+        // requirement is met) and direction-aware — one side is "down" from
+        // there, the other "up" — so labels/flavor text and the map icon can
+        // say which way it goes instead of just "a connection exists".
+        // Scaled by dungeon size rather than a single fixed pair, since one
+        // shortcut in a large dungeon barely registered. Skipped in small
+        // dungeons.
         if numRooms >= 15 {
-            let vCandidates = rooms.values.filter {
-                $0.roomType != .entrance && $0.roomType != .boss && $0.teleportDestinationRoomId == nil
-            }
-            if let roomA = vCandidates.randomElement() {
+            let numVertical = max(1, numRooms / 20)
+            var usedForVertical: Set<Int> = []
+            for i in 0..<numVertical {
+                let vCandidates = rooms.values.filter {
+                    $0.roomType != .entrance && $0.roomType != .boss
+                        && $0.teleportDestinationRoomId == nil
+                        && $0.verticalDestinationRoomId == nil
+                        && !usedForVertical.contains($0.id)
+                }
+                // First connection preferentially starts from a training
+                // room (gym), if one exists — "stairs down/up from the gym"
+                // gives an otherwise-easy-to-miss room a reason to visit.
+                let roomA: Room?
+                if i == 0, let gymRoom = vCandidates.first(where: { $0.trainer != nil }) {
+                    roomA = gymRoom
+                } else {
+                    roomA = vCandidates.randomElement()
+                }
+                guard let roomA = roomA else { break }
+
                 let farEnough = vCandidates.filter {
                     $0.id != roomA.id
                         && (abs($0.x - roomA.x) + abs($0.y - roomA.y)) >= 4
                         && !roomA.exits.values.contains($0.id)
                 }
-                if let roomB = farEnough.randomElement() {
-                    let method = ["stairs", "rope", "levitation"].randomElement()!
-                    roomA.verticalDestinationRoomId = roomB.id
-                    roomA.verticalMethod = method
-                    roomB.verticalDestinationRoomId = roomA.id
-                    roomB.verticalMethod = method
-                }
+                guard let roomB = farEnough.randomElement() else { continue }
+
+                let method = ["stairs", "rope", "levitation"].randomElement()!
+                let aGoesDown = Bool.random()
+                roomA.verticalDestinationRoomId = roomB.id
+                roomA.verticalMethod = method
+                roomA.verticalDirection = aGoesDown ? "down" : "up"
+                roomB.verticalDestinationRoomId = roomA.id
+                roomB.verticalMethod = method
+                roomB.verticalDirection = aGoesDown ? "up" : "down"
+
+                usedForVertical.insert(roomA.id)
+                usedForVertical.insert(roomB.id)
             }
         }
 
@@ -916,14 +968,14 @@ class Dungeon: ObservableObject, Codable {
         let roll = Dice.d100()
         switch roll {
         case 1...20: return .corridor
-        case 21...40: return .chamber
-        case 41...50: return .empty
-        case 51...60: return .treasure
-        case 61...70: return .trap
-        case 71...80: return .armory
-        case 81...85: return .library
-        case 86...90: return .shrine
-        case 91...95: return .prison
+        case 21...45: return .chamber
+        case 46...54: return .empty
+        case 55...63: return .treasure
+        case 64...72: return .trap
+        case 73...85: return .armory
+        case 86...89: return .library
+        case 90...92: return .shrine
+        case 93...95: return .prison
         default: return .chamber
         }
     }
@@ -1281,6 +1333,10 @@ class Dungeon: ObservableObject, Codable {
         if !current.cleared && current.encounter != nil { hereSymbols.append(("!", "Danger")) }
         if current.trainer != nil { hereSymbols.append(("G", "Gym")) }
         if current.npc != nil && !(current.npc?.hasBeenTalkedTo ?? true) { hereSymbols.append(("N", "NPC")) }
+        if current.verticalDestinationRoomId != nil {
+            hereSymbols.append((current.verticalDirection == "down" ? "\u{2193}" : "\u{2191}",
+                                 current.verticalDirection == "down" ? "Stairs Down" : "Stairs Up"))
+        }
         let hereText = "@ here: " + hereSymbols.map { "\($0.symbol)=\($0.label)" }.joined(separator: " ")
         let hereLine = "| \(hereText)".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|"
         lines.append(hereLine)

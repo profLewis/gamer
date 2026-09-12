@@ -1019,6 +1019,16 @@ final class Combat: ObservableObject {
     @Published var currentTurnIndex: Int
     @Published var state: CombatState
     @Published var combatLog: [String]
+    /// Damage each party member has dealt this combat (by character id) —
+    /// used to weight XP by contribution instead of splitting it flat.
+    /// Counts weapon attacks and damaging spells alike; healing/buff/utility
+    /// spells don't add damage but still count toward "took a turn" via
+    /// turnsTaken below.
+    @Published var damageDealtByCharacter: [UUID: Int] = [:]
+    /// Turns each party member has actually acted on (attacked, cast, used
+    /// an item) — a full-support healer can rack up real contribution with
+    /// zero damage, so damage alone isn't the whole picture.
+    @Published var turnsTakenByCharacter: [UUID: Int] = [:]
     /// Set once handleCombatVictory() has actually granted this combat's loot —
     /// guards against awarding it twice when a multiplayer catch-up resyncs
     /// state for a fight that was already resolved on another device.
@@ -1106,6 +1116,7 @@ final class Combat: ObservableObject {
             return nil
         }
 
+        turnsTakenByCharacter[characterId, default: 0] += 1
         var monster = encounter.monsters[monsterIndex]
         let strMod = character.abilityScores.modifier(for: .strength)
         let dexMod = character.abilityScores.modifier(for: .dexterity)
@@ -1174,6 +1185,7 @@ final class Combat: ObservableObject {
             monster.takeDamage(damage)
             encounter.monsters[monsterIndex] = monster
             targetDefeated = !monster.isAlive
+            damageDealtByCharacter[characterId, default: 0] += damage
         }
 
         let report = AttackReport(
@@ -1336,6 +1348,7 @@ final class Combat: ObservableObject {
 
     func castSpell(casterId: UUID, spell: Spell, targetIds: [UUID]) -> SpellReport? {
         guard let caster = party.first(where: { $0.id == casterId }) else { return nil }
+        turnsTakenByCharacter[casterId, default: 0] += 1
 
         // Use spell slot
         if spell.level != .cantrip {
@@ -1505,6 +1518,9 @@ final class Combat: ObservableObject {
         }
 
         combatLog.append("\(caster.name) casts \(spell.name)")
+        if totalDamage > 0 {
+            damageDealtByCharacter[casterId, default: 0] += totalDamage
+        }
 
         return SpellReport(
             casterName: caster.name,
@@ -1591,6 +1607,7 @@ final class Combat: ObservableObject {
 extension Combat: Codable {
     enum CodingKeys: String, CodingKey {
         case encounter, turnOrder, currentTurnIndex, state, combatLog, partyCharacterIds, lootAwarded
+        case damageDealtByCharacter, turnsTakenByCharacter
     }
 
     convenience init(from decoder: Decoder) throws {
@@ -1601,6 +1618,8 @@ extension Combat: Codable {
         self.currentTurnIndex = try container.decode(Int.self, forKey: .currentTurnIndex)
         self.state = try container.decode(CombatState.self, forKey: .state)
         self.combatLog = try container.decode([String].self, forKey: .combatLog)
+        self.damageDealtByCharacter = try container.decodeIfPresent([UUID: Int].self, forKey: .damageDealtByCharacter) ?? [:]
+        self.turnsTakenByCharacter = try container.decodeIfPresent([UUID: Int].self, forKey: .turnsTakenByCharacter) ?? [:]
         self.lootAwarded = try container.decodeIfPresent(Bool.self, forKey: .lootAwarded) ?? false
     }
 
@@ -1614,6 +1633,8 @@ extension Combat: Codable {
         let ids = party.map { $0.id }
         try container.encode(ids, forKey: .partyCharacterIds)
         try container.encode(lootAwarded, forKey: .lootAwarded)
+        try container.encode(damageDealtByCharacter, forKey: .damageDealtByCharacter)
+        try container.encode(turnsTakenByCharacter, forKey: .turnsTakenByCharacter)
     }
 
     /// Re-link party references after decoding from match data
