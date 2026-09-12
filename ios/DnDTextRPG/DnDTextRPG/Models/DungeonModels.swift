@@ -1123,7 +1123,25 @@ class Dungeon: ObservableObject, Codable {
         let gridSlack = max(0, border.count - naturalContentWidth)
         let gridLeadPad = String(repeating: " ", count: gridSlack / 2)
 
+        // Corridors are only ever drawn once, from whichever side happens to
+        // iterate first — the room being drawn's own east/south exits. A
+        // north/west exit is only ever drawn as part of THAT neighbor's own
+        // row, which never renders if that neighbor hasn't been visited yet
+        // (visibleRooms is filtered to .visited). The result: the D-pad
+        // (which checks the current room's own room.exits in every
+        // direction, visited or not) could say a direction is walkable
+        // while the map showed no corridor there at all — patched below,
+        // right after the loop, using these captured coordinates.
+        var currentRoomLineIndex: Int? = nil
+        var currentRoomColumnStart: Int? = nil
+        var priorCorridorLineIndex: Int? = nil
+
         for y in viewMinY...viewMaxY {
+            if y == current.y {
+                priorCorridorLineIndex = y > viewMinY ? lines.count - 1 : nil
+                currentRoomLineIndex = lines.count
+                currentRoomColumnStart = 2 + gridLeadPad.count + (current.x - viewMinX) * 5
+            }
             // Room row
             var roomRow = "| " + gridLeadPad
             // Vertical corridor row (below this room row)
@@ -1179,6 +1197,37 @@ class Dungeon: ObservableObject, Codable {
             if y < viewMaxY {
                 corridorRow = corridorRow.padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|"
                 lines.append(corridorRow)
+            }
+        }
+
+        // Patch in the current room's own west/north exits wherever the
+        // loop above left that slot blank — see the comment above the loop.
+        // Only ever fills in an already-blank slot, so a corridor already
+        // drawn from a visited neighbor's own side is never touched.
+        if let roomLine = currentRoomLineIndex, let colStart = currentRoomColumnStart {
+            if let westId = current.exits[.west], colStart >= 2 {
+                let slot = colStart - 2
+                var chars = Array(lines[roomLine])
+                if slot + 1 < chars.count, chars[slot] == " ", chars[slot + 1] == " " {
+                    let westRoom = rooms[westId]
+                    let barred = current.secured.contains(.west) || (westRoom?.secured.contains(.east) ?? false)
+                    let locked = current.isLockedShut(.west)
+                    let symbol = Array(locked ? "KK" : (barred ? "XX" : "--"))
+                    chars[slot] = symbol[0]
+                    chars[slot + 1] = symbol[1]
+                    lines[roomLine] = String(chars)
+                }
+            }
+            if let northId = current.exits[.north], let corridorLine = priorCorridorLineIndex {
+                let slot = colStart + 1
+                var chars = Array(lines[corridorLine])
+                if slot < chars.count, chars[slot] == " " {
+                    let northRoom = rooms[northId]
+                    let barred = current.secured.contains(.north) || (northRoom?.secured.contains(.south) ?? false)
+                    let locked = current.isLockedShut(.north)
+                    chars[slot] = locked ? "K" : (barred ? "X" : "|")
+                    lines[corridorLine] = String(chars)
+                }
             }
         }
 
