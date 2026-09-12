@@ -987,7 +987,13 @@ struct TerminalView: View {
                     .foregroundColor(terminalGreen.opacity(0.35))
                 Spacer()
             }
-            .frame(width: 44)
+            // Widened from a 44pt sliver (too easy to miss — reported as
+            // "click to continue doesn't work" when really only that tiny
+            // strip did) to roughly the right third of the screen. Still
+            // narrower than full-width on purpose: the left portion stays
+            // completely free of any tap gesture so a scroll drag started
+            // there is never mistaken for a tap.
+            .frame(width: max(140, 200 * scale))
             .contentShape(Rectangle())
             .onTapGesture {
                 if gameEngine.swipeLeftHandler != nil {
