@@ -15365,11 +15365,14 @@ class GameEngine: ObservableObject {
         // The panel's default scroll position skips past the 3-line header
         // (see TerminalView's scroll target), so this only needs to cover
         // what's visible from there: room rows + corridor rows between
-        // them, plus the single "@ here: ..." line. The header sits above
-        // (reachable by scrolling up) and the legend/closing border below
-        // (reachable by scrolling down) — neither counted here.
+        // them, the single "@ here: ..." line, and one more line beyond
+        // that — the legend's own opening border ("+---+"), so the map
+        // reads as a properly closed-off box rather than cutting off
+        // mid-content right after "@ here: ...". The header sits above
+        // (reachable by scrolling up) and the rest of the legend/closing
+        // border below (reachable by scrolling down) — neither counted here.
         let gridLines = (2 * verticalRadius + 1) + (2 * verticalRadius)
-        return gridLines + 1
+        return gridLines + 2
     }
 
     /// Redraws the full exploration screen: map + room description + party + menu
