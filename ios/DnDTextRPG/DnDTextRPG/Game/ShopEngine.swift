@@ -223,8 +223,24 @@ class ShopEngine {
             game.print("")
             game.print("  \"You haven't got enough gold for that, friend.\"", color: .red)
             game.print("  \(item.name) costs \(item.value)gp — you have \(character.gold)gp.", color: .dimGreen)
-            game.waitForContinue()
-            game.inputHandler = { [weak self] _ in self?.showBuyMenu(completion: completion) }
+            game.print("")
+            game.printWrapped("\"...unless you'd like to make an offer?\"", indent: 2, color: .yellow)
+            game.print("")
+            let backToList: () -> Void = { [weak self] in self?.showBuyMenu(completion: completion) }
+            game.showMenu(["Haggle", "Barter", "< No Thanks"])
+            game.closeHandler = backToList
+            game.menuHandler = { [weak self] choice in
+                guard let self = self else { return }
+                switch choice {
+                case 1:
+                    self.showNegotiation(item: item, askingPrice: item.value, attempt: 1, isRareGood: false,
+                                          backAction: backToList, returnTo: backToList, completion: completion)
+                case 2:
+                    self.showBarterMenu(item: item, askingPrice: item.value, backAction: backToList, returnTo: backToList, completion: completion)
+                default:
+                    backToList()
+                }
+            }
             return
         }
         if let reason = character.carryBlockReason(for: item) {
@@ -490,6 +506,95 @@ class ShopEngine {
         game.textLongPressHandler = { lineIndex in
             guard let idx = itemLineRanges.firstIndex(where: { $0.contains(lineIndex) }) else { return }
             sellItem(idx)
+        }
+    }
+
+    // MARK: - Barter
+
+    /// Trade an inventory item (at half its value, same rate Sell uses)
+    /// toward `askingPrice`, topping up with whatever gold is still needed.
+    /// Reached only when gold alone falls short — see showBuyConfirm() and
+    /// the "make an offer" prompt there.
+    private func showBarterMenu(item: Item, askingPrice: Int, backAction: @escaping () -> Void,
+                                 returnTo: @escaping () -> Void, completion: @escaping () -> Void) {
+        guard let game = game, let character = character, let merchant = merchant else { return }
+
+        let sellables = character.inventory.filter { $0.value > 0 }
+        guard !sellables.isEmpty else {
+            game.clearTerminal()
+            game.print("  \"You've nothing on you worth trading in.\"", color: .red)
+            game.waitForContinue()
+            game.inputHandler = { _ in backAction() }
+            return
+        }
+
+        game.clearTerminal()
+        game.printTitle("Barter for \(item.name)")
+        printPurseAndCarryLine(character)
+        game.print("  Asking price: \(askingPrice)gp", color: .brightGreen, bold: true)
+        game.printWrapped("Offer something from your pack (traded in at half value, same as selling) to make up the gap.", indent: 2, color: .dimGreen)
+        game.print("")
+
+        var options: [String] = []
+        var itemLineRanges: [Range<Int>] = []
+        for offered in sellables {
+            let credit = max(1, offered.value / 2)
+            let lineStart = game.terminalLines.count
+            options.append("\(offered.name) (worth \(credit)gp)")
+            game.print("  \(offered.name) — trade-in value \(credit)gp: \(offered.description)", color: .green)
+            itemLineRanges.append(lineStart..<game.terminalLines.count)
+        }
+
+        let tryBarter: (Int) -> Void = { [weak self] idx in
+            guard let self = self, let game = self.game, let character = self.character, let merchant = self.merchant,
+                  idx >= 0, idx < sellables.count else { return }
+            let offeredItem = sellables[idx]
+            let credit = max(1, offeredItem.value / 2)
+            game.print("")
+
+            // Some merchants just aren't in a bartering mood today — coin only.
+            if Int.random(in: 1...100) <= 15 {
+                game.print("  \"\(merchant.name) isn't interested in trade goods today — coin only, I'm afraid.\"", color: .red)
+                game.waitForContinue()
+                game.inputHandler = { _ in backAction() }
+                return
+            }
+
+            let combinedValue = character.gold + credit
+            guard combinedValue >= askingPrice else {
+                game.print("  \"That, plus your coin, still isn't enough.\" (Combined \(combinedValue)gp, need \(askingPrice)gp.)", color: .red)
+                game.waitForContinue()
+                game.inputHandler = { _ in backAction() }
+                return
+            }
+
+            let goldSpent = max(0, askingPrice - credit)
+            character.removeItem(offeredItem)
+            let flavor = goldSpent > 0
+                ? "  \"Deal.\" \(merchant.name) takes your \(offeredItem.name) and \(goldSpent) gold in exchange for \(item.name)."
+                : "  \"Deal.\" \(merchant.name) takes your \(offeredItem.name) in exchange for \(item.name)."
+            self.completePurchase(item: item, price: goldSpent, buyer: character,
+                                  lines: [(flavor, .brightGreen)], returnTo: returnTo, completion: completion)
+        }
+
+        game.showPaginatedMenuOptions(options, pinned: ["?", "< Back"], handler: { idx in
+            tryBarter(idx)
+        }, pinnedHandler: { [weak self] choice in
+            guard let self = self, let game = self.game else { return }
+            if choice == 0 {
+                game.showInlineHelp {
+                    game.printTitle("Barter — Help")
+                    game.print("")
+                    game.printWrapped("Tap an item to offer it in trade — it's valued at half price, same as selling — plus whatever gold you have, toward the asking price. Some merchants occasionally aren't interested in trade goods at all.", indent: 2, color: .dimGreen)
+                    game.print("")
+                }
+            } else {
+                backAction()
+            }
+        })
+        game.textLongPressHandler = { lineIndex in
+            guard let idx = itemLineRanges.firstIndex(where: { $0.contains(lineIndex) }) else { return }
+            tryBarter(idx)
         }
     }
 
