@@ -751,6 +751,13 @@ class Dungeon: ObservableObject, Codable {
             if Int.random(in: 1...100) <= 65 {
                 armouryRoom.merchant = Merchant.random(tier: MerchantTier.forDungeonLevel(level))
                 armouryRoom.roomDescription = armouryMerchantVariant
+                // A merchant here must actually be reachable — the "Visit
+                // Merchant" button stays hidden behind an uncleared
+                // encounter (see showExplorationView()'s gating), so an
+                // armoury that says a merchant has set up shop can't also
+                // be guarded by a monster the room-type roll may have
+                // already assigned before this pass ran.
+                armouryRoom.encounter = nil
             } else {
                 armouryRoom.roomDescription = armouryPlainVariants.randomElement()!
             }
@@ -985,6 +992,11 @@ class Dungeon: ObservableObject, Codable {
         for room in rooms.values {
             guard !room.cleared else { continue }
             guard room.roomType != .entrance && room.roomType != .shrine && room.roomType != .shop else { continue }
+            // An armoury with a merchant must stay reachable, same as a
+            // dedicated shop room — don't hand it a fresh encounter that
+            // would block the "Visit Merchant" button behind a fight the
+            // room's own description never mentioned.
+            guard !(room.roomType == .armory && room.merchant != nil) else { continue }
 
             if room.roomType == .boss {
                 room.encounter = Encounter.generateBoss(level: level)

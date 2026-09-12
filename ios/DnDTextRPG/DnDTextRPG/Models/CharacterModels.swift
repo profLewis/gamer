@@ -376,6 +376,11 @@ class Character: ObservableObject, Identifiable, Codable {
     @Published var hasFledCombat: Bool       // Has fled this combat
     @Published var isDodging: Bool           // Took Dodge action — attackers have disadvantage
 
+    // Familiar — a small companion, currently cosmetic/flavour only (shown
+    // on the character card and in status), earned as a quest reward
+    @Published var familiarName: String?
+    @Published var familiarType: String?
+
     enum CodingKeys: String, CodingKey {
         case id, name, race, characterClass, level, abilityScores
         case currentHP, maxHP, tempHP, skillProficiencies, experiencePoints, gold
@@ -385,6 +390,7 @@ class Character: ObservableObject, Identifiable, Codable {
         case secondWindUsed, rageUsesRemaining, isRaging, huntersMarkActive, weaponSharpenedUses
         case isComputerControlled
         case isPoisoned, poisonDamagePerTurn, poisonTurnsRemaining
+        case familiarName, familiarType
     }
 
     init(name: String, race: Race, characterClass: CharacterClass, abilityScores: AbilityScores, isComputerControlled: Bool = false) {
@@ -425,6 +431,8 @@ class Character: ObservableObject, Identifiable, Codable {
         self.isPlayingDead = false
         self.hasFledCombat = false
         self.isDodging = false
+        self.familiarName = nil
+        self.familiarType = nil
 
         // Calculate starting HP
         let conMod = abilityScores.modifier(for: .constitution)
@@ -472,6 +480,8 @@ class Character: ObservableObject, Identifiable, Codable {
         isPlayingDead = false
         hasFledCombat = false
         isDodging = false
+        familiarName = (try? container.decodeIfPresent(String.self, forKey: .familiarName)) ?? nil
+        familiarType = (try? container.decodeIfPresent(String.self, forKey: .familiarType)) ?? nil
     }
 
     func encode(to encoder: Encoder) throws {
@@ -506,6 +516,8 @@ class Character: ObservableObject, Identifiable, Codable {
         try container.encode(isPoisoned, forKey: .isPoisoned)
         try container.encode(poisonDamagePerTurn, forKey: .poisonDamagePerTurn)
         try container.encode(poisonTurnsRemaining, forKey: .poisonTurnsRemaining)
+        try container.encodeIfPresent(familiarName, forKey: .familiarName)
+        try container.encodeIfPresent(familiarType, forKey: .familiarType)
     }
 
     var proficiencyBonus: Int {

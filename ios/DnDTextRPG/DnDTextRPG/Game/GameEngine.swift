@@ -79,10 +79,13 @@ class GameEngine: ObservableObject {
     // MARK: - Published Properties
 
     /// True if the OS's own screen reader is currently running — VoiceOver,
-    /// on both iOS and macOS (same feature, different API). Used only to
-    /// pick a sensible first-run default for blinkingCursorEnabled below;
-    /// never overrides an explicit choice once the user has made one.
-    private static var systemVoiceOverRunning: Bool {
+    /// on both iOS and macOS (same feature, different API). Used both to
+    /// pick a sensible first-run default for blinkingCursorEnabled below,
+    /// and as a live render-time check in TerminalView — a flashing cursor
+    /// actively fights VoiceOver's own focus semantics, so it's suppressed
+    /// whenever VoiceOver is actually running right now, regardless of the
+    /// toggle (VoiceOver can be turned on well after that toggle was set).
+    static var systemVoiceOverRunning: Bool {
         #if os(macOS)
         return NSWorkspace.shared.isVoiceOverEnabled
         #else
@@ -17560,7 +17563,7 @@ class GameEngine: ObservableObject {
         guard let room = dungeon?.currentRoom, var npc = room.npc, let dungeon = dungeon else { return }
         let totalGold = party.reduce(0) { $0 + $1.gold }
         let quest = SideQuest.random(level: dungeon.level, giverName: npc.type.rawValue,
-                                     monstersSlain: monstersSlain, partyGold: totalGold)
+                                     monstersSlain: monstersSlain, partyGold: totalGold, party: party)
 
         clearTerminal()
         printExplorationMap()
@@ -17645,6 +17648,16 @@ class GameEngine: ObservableObject {
         print("  \(quest.giverName)'s task is done: \(quest.description)", color: .brightGreen, bold: true)
         print("")
 
+        // Instant level-up runs through the normal level-up flow (its own
+        // screen, HP roll, spell/feature grants), so it manages its own
+        // continuation instead of the generic print-and-wait below.
+        if case .instantLevelUp = quest.reward, let recruit = party.filter({ $0.level < 5 }).randomElement() {
+            logEvent("Completed quest from \(quest.giverName): \(quest.description)", category: "QUEST")
+            logMultiplayerAction("Completed a quest: \(quest.description)")
+            showLevelUpScreen(character: recruit) { [weak self] in self?.showExplorationView() }
+            return
+        }
+
         switch quest.reward {
         case .bonusGold(let amount):
             let eligible = party.filter { $0.isConscious }
@@ -17665,6 +17678,51 @@ class GameEngine: ObservableObject {
                 char.currentHP += amount
             }
             print("  The whole party feels hardier: \(quest.reward.description).", color: .yellow)
+        case .newSkill:
+            let candidates = party.filter { $0.skillProficiencies.count < Skill.allCases.count }
+            if let learner = candidates.randomElement(),
+               let skill = Skill.allCases.filter({ !learner.skillProficiencies.contains($0) }).randomElement() {
+                learner.skillProficiencies.insert(skill)
+                print("  \(learner.name) gains proficiency in \(skill.rawValue), free of charge.", color: .yellow)
+            } else {
+                party.first?.gold += 50
+                print("  (Everyone's already well-trained — 50 gold instead.)", color: .yellow)
+            }
+        case .specialSpell:
+            let candidates = party.filter { char in
+                guard let spell = SpellCatalog.specialSpellFor(characterClass: char.characterClass) else { return false }
+                return !char.knownSpells.contains(where: { $0.name == spell.name })
+            }
+            if let learner = candidates.randomElement(), let spell = SpellCatalog.specialSpellFor(characterClass: learner.characterClass) {
+                learner.knownSpells.append(spell)
+                print("  \(learner.name) learns \(spell.name) — \(spell.description)", color: .yellow)
+            } else {
+                party.first?.gold += 50
+                print("  (No one could make use of it — 50 gold instead.)", color: .yellow)
+            }
+        case .instantLevelUp:
+            // No one eligible after all (party changed since offer) — gold instead.
+            party.first?.gold += 50
+            print("  (No one had room to grow — 50 gold instead.)", color: .yellow)
+        case .familiar:
+            let candidates = party.filter { $0.familiarName == nil }
+            if let owner = candidates.randomElement() {
+                let type = SideQuest.familiarTypes.randomElement()!
+                let name = SideQuest.familiarNames.randomElement()!
+                owner.familiarType = type
+                owner.familiarName = name
+                print("  \(owner.name) is joined by \(name) the \(type)!", color: .yellow)
+            } else {
+                party.first?.gold += 50
+                print("  (Everyone already has a familiar — 50 gold instead.)", color: .yellow)
+            }
+        case .certificate(let name):
+            if let recipient = party.filter({ $0.isConscious }).randomElement() ?? party.first {
+                let item = Item(id: UUID(), name: name, description: "A framed certificate — mostly for bragging rights.",
+                                 type: .misc, weight: 0.1, value: 1, weaponStats: nil, armorStats: nil, potionStats: nil)
+                _ = recipient.addItem(item)
+                print("  \(recipient.name) receives a \(name).", color: .yellow)
+            }
         }
         print("")
         logEvent("Completed quest from \(quest.giverName): \(quest.description)", category: "QUEST")
@@ -18630,6 +18688,9 @@ class GameEngine: ObservableObject {
 
         print("  Carry Weight: \(formatWeightPair(character.currentWeight, character.carryCapacity))", color: character.isEncumbered ? .red : .cyan)
         print("  Gold: \(character.gold)", color: .yellow)
+        if let familiarName = character.familiarName, let familiarType = character.familiarType {
+            print("  Familiar: \(familiarName) the \(familiarType)", color: .magenta)
+        }
         // Torch status — show who holds the lit torch
         if torchLit, let holderId = torchHolderId {
             let holderName = party.first(where: { $0.id == holderId }).map { shortName(for: $0) } ?? "?"

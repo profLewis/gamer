@@ -276,6 +276,29 @@ struct SpellCatalog {
               description: "Heal 1d8 + WIS mod HP")
     }
 
+    // MARK: - Special Spells (quest rewards only, not learned via normal level-up)
+
+    static func specialSpellFor(characterClass: CharacterClass) -> Spell? {
+        switch characterClass {
+        case .wizard:
+            return Spell(name: "Fireball", level: .level2, spellType: .savingThrow, target: .allEnemies,
+                         damage: "6d6", damageType: "fire",
+                         savingThrowAbility: "dexterity", halfDamageOnSave: true,
+                         description: "6d6 fire to all enemies (DEX save, half) — a rare technique")
+        case .cleric:
+            return Spell(name: "Greater Heal", level: .level2, spellType: .healing, target: .singleAlly,
+                         healAmount: "3d8", usesCasterMod: true,
+                         description: "Heal 3d8 + WIS mod HP — a rare blessing")
+        case .ranger:
+            return Spell(name: "Conjure Barrage", level: .level2, spellType: .savingThrow, target: .allEnemies,
+                         damage: "3d8", damageType: "force",
+                         savingThrowAbility: "dexterity", halfDamageOnSave: true,
+                         description: "3d8 force to all enemies (DEX save, half) — a rare technique")
+        default:
+            return nil
+        }
+    }
+
     // MARK: - Spell Lists by Class
 
     static func startingSpells(for characterClass: CharacterClass) -> [Spell] {

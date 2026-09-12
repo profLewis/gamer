@@ -400,7 +400,7 @@ struct TerminalView: View {
                             // Blinking cursor block — only while genuinely waiting on the
                             // player (menu/D-pad/text/continue prompt on screen) and the
                             // field is empty, so it doesn't sit next to typed text.
-                            if gameEngine.blinkingCursorEnabled && inputText.isEmpty && gameEngine.isWaitingForInput {
+                            if gameEngine.blinkingCursorEnabled && inputText.isEmpty && gameEngine.isWaitingForInput && !GameEngine.systemVoiceOverRunning {
                                 TimelineView(.periodic(from: .now, by: 0.53)) { context in
                                     let visible = Int(context.date.timeIntervalSinceReferenceDate / 0.53) % 2 == 0
                                     Text("█")
