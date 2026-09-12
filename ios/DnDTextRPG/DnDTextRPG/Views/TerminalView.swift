@@ -1484,7 +1484,7 @@ struct DirectionPadView: View {
                 Image(systemName: systemName)
                     .font(.system(size: 16 * scale))
                     .foregroundColor(color)
-                    .frame(width: max(80, 80 * scale), height: max(44, 34 * scale))
+                    .frame(maxWidth: .infinity, minHeight: max(44, 34 * scale))
                     .background(
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(color.opacity(0.6), lineWidth: 1)
@@ -1496,7 +1496,7 @@ struct DirectionPadView: View {
             }
             .buttonStyle(.plain)
         } else {
-            Color.clear.frame(width: max(80, 80 * scale), height: max(44, 34 * scale))
+            Color.clear.frame(maxWidth: .infinity, minHeight: max(44, 34 * scale))
         }
     }
 
@@ -1528,7 +1528,9 @@ struct DirectionPadView: View {
                             .font(.system(size: 11 * scale, design: .monospaced))
                             .fontWeight(.semibold)
                             .foregroundColor(centerBlue)
-                            .frame(width: max(80, 80 * scale), height: max(44, 34 * scale))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                            .frame(maxWidth: .infinity, minHeight: max(44, 34 * scale))
                             .background(
                                 RoundedRectangle(cornerRadius: 6)
                                     .stroke(centerBlue.opacity(0.6), lineWidth: 1)
@@ -1557,7 +1559,7 @@ struct DirectionPadView: View {
                 if npcLabel != nil {
                     cornerIconButton(systemName: "scroll", color: npcCyan, action: onNPCTap)
                 } else {
-                    Color.clear.frame(width: max(80, 80 * scale), height: max(44, 34 * scale))
+                    Color.clear.frame(maxWidth: .infinity, minHeight: max(44, 34 * scale))
                 }
             }
         }
@@ -1594,7 +1596,9 @@ struct DirectionPadView: View {
                     .font(.system(size: 11 * scale, design: .monospaced))
                     .fontWeight(.semibold)
                     .foregroundColor(textColor)
-                    .frame(width: max(80, 80 * scale), height: max(44, 34 * scale))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .frame(maxWidth: .infinity, minHeight: max(44, 34 * scale))
                     .background(
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(strokeColor, lineWidth: 1)
