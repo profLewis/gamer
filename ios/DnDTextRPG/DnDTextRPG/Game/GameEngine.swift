@@ -116,6 +116,25 @@ class GameEngine: ObservableObject {
     @Published var menuImageName: String? = nil
     /// Name of the dragon GIF to show (nil = hidden)
     @Published var dragonGifName: String? = nil
+
+    /// Display names for the full-screen art/GIF moments (menuImageName/
+    /// dragonGifName) — these assets predate this naming pass, so the names
+    /// here are simply invented to suit each one; new asset keys should get
+    /// an entry added alongside wherever they're first assigned.
+    static let poseNames: [String: String] = [
+        "DragonCastle": "The Watcher's Keep",
+        "DragonGuard": "Warden of the Hall",
+        "VictoryScene": "Spoils of Victory",
+        "dragon_castle": "The Watcher's Keep",
+        "dragon_flapping": "Wings Through the Archive",
+    ]
+
+    /// Caption for whichever full-screen art/GIF moment is currently showing.
+    var currentPoseCaption: String? {
+        if let gif = dragonGifName { return Self.poseNames[gif] }
+        if let img = menuImageName { return Self.poseNames[img] }
+        return nil
+    }
     /// When set, TerminalView prefills the text input field with this value
     @Published var prefillInputText: String? = nil
     @Published var awaitingTextInput: Bool = false
@@ -1005,12 +1024,32 @@ class GameEngine: ObservableObject {
     /// slot comes first instead of the rightmost one (see TerminalView's
     /// compactNavCell "other" fallback) — and isn't already using `>>`.
     private func withForwardOption(_ options: [MenuOption]) -> [MenuOption] {
+        auditCompactNavMiddleSlot(options)
         guard canShowForwardOption else { return options }
         guard !options.contains(where: { $0.text == ">>" }) else { return options }
         guard options.contains(where: { $0.text == "< Back" || $0.text == "<<" }) else { return options }
         guard options.contains(where: { $0.text == "?" || $0.text == "?\u{0338}" }) else { return options }
         return options + [MenuOption("Fwd >", tint: .navigation, compact: true)]
     }
+
+    /// Every 3-bar compact nav cell reserves its middle slot for "?" (help)
+    /// first — see compactNavCell(indices:) in TerminalView.swift. That only
+    /// holds if "?" is actually one of the compact options whenever there
+    /// are 2+ of them; otherwise some other icon (a die, undo/redo, etc.)
+    /// silently claims the middle slot. Debug-only tripwire, not a behavior
+    /// change — catches a screen missing "?" before it ships.
+    #if DEBUG
+    private func auditCompactNavMiddleSlot(_ options: [MenuOption]) {
+        let compactOptions = options.filter { $0.isCompactNav }
+        guard compactOptions.count >= 2 else { return }
+        let hasHelp = compactOptions.contains { $0.text == "?" || $0.text == "?\u{0338}" }
+        guard !hasHelp else { return }
+        let texts = compactOptions.map { $0.text }.joined(separator: ", ")
+        assertionFailure("3-bar nav cell has no \"?\" help button — its middle slot will be claimed by another icon instead: [\(texts)]")
+    }
+    #else
+    private func auditCompactNavMiddleSlot(_ options: [MenuOption]) {}
+    #endif
 
     private func captureScreenSnapshot() -> ScreenSnapshot {
         ScreenSnapshot(
@@ -3689,6 +3728,17 @@ class GameEngine: ObservableObject {
         menuHandler = { choice in
             guard choice >= 1 && choice <= actions.count else { return }
             actions[choice - 1]()
+        }
+        menuLongPressHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= menuOptions.count else { return }
+            guard menuOptions[choice - 1].text == "Play" else { return }
+            // Long-press Play → skip the Play menu and the save list
+            // entirely, straight into the single most recently saved slot
+            // (same shortcut as long-pressing Continue Adventure itself).
+            let candidates = SaveGameManager.shared.listSlots().filter { !$0.latest.party.isEmpty }
+            if let mostRecent = candidates.max(by: { $0.latest.savedAt < $1.latest.savedAt }) {
+                self.loadGame(mostRecent.latest)
+            }
         }
     }
 
@@ -23859,7 +23909,10 @@ class GameEngine: ObservableObject {
     /// performCombatWeaponChange() for what actually happens on selection.
     private func showCombatChangeWeaponMenu(characterId: UUID) {
         guard let character = party.first(where: { $0.id == characterId }) else { return }
-        let weapons = character.inventory.filter { $0.type == .weapon }
+        // Exclude whatever's already equipped — "swapping" to the same
+        // weapon has nothing to show and would still risk the fumble chance
+        // in performCombatWeaponChange() for no reason.
+        let weapons = character.inventory.filter { $0.type == .weapon && $0.id != character.equippedWeapon?.id }
         guard !weapons.isEmpty else { showPlayerCombatMenu(characterId: characterId); return }
 
         clearTerminal()

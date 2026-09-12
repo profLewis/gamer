@@ -585,7 +585,7 @@ class Dungeon: ObservableObject, Codable {
     /// stayed rare (one guaranteed shop room, occasional armoury). Ramping
     /// gradually keeps Medium noticeably lighter than Hard/Brutal.
     private var encounterChance: Double {
-        level <= 1 ? 0.35 : min(0.5, 0.35 + Double(level - 2) * 0.05)
+        level <= 1 ? 0.28 : min(0.42, 0.28 + Double(level - 2) * 0.05)
     }
 
     private func generateDungeon() {
@@ -693,7 +693,7 @@ class Dungeon: ObservableObject, Codable {
         // to GameEngine. Off forces exactly one shop regardless of size.
         let multipleShopsEnabled = UserDefaults.standard.object(forKey: "multiple_shops_enabled") == nil
             || UserDefaults.standard.bool(forKey: "multiple_shops_enabled")
-        let numShops = multipleShopsEnabled ? max(1, numRooms / 15) : 1
+        let numShops = multipleShopsEnabled ? max(1, numRooms / 10) : 1
         for shopIndex in 0..<numShops {
             guard !candidates.isEmpty else { break }
             let shopRoom: Room

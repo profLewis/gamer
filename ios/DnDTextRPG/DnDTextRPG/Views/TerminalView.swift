@@ -173,6 +173,13 @@ struct TerminalView: View {
                                             .offset(x: -6 * scale) // Centre the dragon's head, not the image
                                         Spacer()
                                     }
+                                    if let caption = gameEngine.currentPoseCaption {
+                                        Text(caption)
+                                            .font(.system(size: 11 * scale, design: .monospaced))
+                                            .foregroundColor(.secondary)
+                                            .frame(maxWidth: .infinity)
+                                            .multilineTextAlignment(.center)
+                                    }
                                 }
                                 // Inline image (e.g. main menu portrait)
                                 if let imageName = gameEngine.menuImageName {
@@ -185,6 +192,13 @@ struct TerminalView: View {
                                             .cornerRadius(8)
                                             .opacity(0.85)
                                         Spacer()
+                                    }
+                                    if let caption = gameEngine.currentPoseCaption {
+                                        Text(caption)
+                                            .font(.system(size: 11 * scale, design: .monospaced))
+                                            .foregroundColor(.secondary)
+                                            .frame(maxWidth: .infinity)
+                                            .multilineTextAlignment(.center)
                                     }
                                 }
                             }
