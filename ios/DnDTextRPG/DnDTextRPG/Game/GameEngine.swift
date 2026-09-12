@@ -17658,7 +17658,17 @@ class GameEngine: ObservableObject {
 
     private func showSideQuestComplete(_ quest: SideQuest) {
         clearTerminal()
-        printTitle("Quest Complete!")
+        SoundManager.shared.playLevelUp()
+        DispatchQueue.main.async { [weak self] in self?.dragonGifName = "dragon_flapping" }
+
+        // Big, hard-to-miss fanfare — matches the level-up banner treatment
+        // rather than a quiet one-line confirmation, since a whole quest
+        // (not just one lucky roll) just paid off.
+        printLines([
+            "   ✦ · ✦ · ✦ · ✦ · ✦ · ✦   ",
+            "   Q U E S T   C O M P L E T E !   ",
+            "   ✦ · ✦ · ✦ · ✦ · ✦ · ✦   ",
+        ], color: .yellow)
         print("")
         print("  \(quest.giverName)'s task is done: \(quest.description)", color: .brightGreen, bold: true)
         print("")
@@ -18508,6 +18518,18 @@ class GameEngine: ObservableObject {
         // Use combat-eligible characters if set, otherwise full party
         let eligible = combatLootEligible ?? party
 
+        // A quest that just completed gets its own big celebration screen
+        // once showExplorationView() runs checkAndShowSideQuestCompletion()
+        // — this is only the "getting closer" nudge for a collectGold quest
+        // still in progress.
+        let announceGoldQuestProgress: () -> Void = { [weak self] in
+            guard let self = self, let quest = self.activeQuest, quest.type == .collectGold else { return }
+            let totalGold = self.party.reduce(0) { $0 + $1.gold }
+            let done = min(quest.target, totalGold - quest.startPartyGold)
+            guard done < quest.target else { return }
+            self.print("  ✦ Quest progress: \(done)/\(quest.target) gold gathered", color: .cyan, bold: true)
+        }
+
         var options: [String] = []
         var actions: [() -> Void] = []
 
@@ -18532,6 +18554,7 @@ class GameEngine: ObservableObject {
                 }
                 self.logEvent("Split \(gold) gold equally from \(source.lowercased())", category: "LOOT")
                 self.logMultiplayerAction("Found \(gold) gold (\(source.lowercased()))")
+                announceGoldQuestProgress()
                 self.waitForContinueWithTimeout { onDone() }
             }
 
@@ -18542,6 +18565,7 @@ class GameEngine: ObservableObject {
                     char.gold += gold
                     self?.print("  \(char.name) takes all \(gold) gold.", color: .yellow)
                     self?.logEvent("\(char.name) took \(gold) gold from \(source.lowercased())", category: "LOOT")
+                    announceGoldQuestProgress()
                     self?.waitForContinueWithTimeout { onDone() }
                 }
             }
@@ -18553,6 +18577,7 @@ class GameEngine: ObservableObject {
                 char?.gold += gold
                 self?.print("  \(char?.name ?? "You") pocket\(char == nil ? "" : "s") \(gold) gold pieces.", color: .yellow)
                 self?.logEvent("Picked up \(gold) gold from \(source.lowercased())", category: "LOOT")
+                announceGoldQuestProgress()
                 self?.waitForContinueWithTimeout { onDone() }
             }
         }
@@ -25326,6 +25351,18 @@ class GameEngine: ObservableObject {
 
         print("All enemies defeated!", color: .brightGreen)
         print("")
+
+        // A quest that just completed gets its own big celebration screen
+        // once showExplorationView() runs checkAndShowSideQuestCompletion()
+        // — this is only the "getting closer" nudge for one still in progress.
+        if let quest = activeQuest, quest.type == .defeatMonsters {
+            let done = min(quest.target, monstersSlain - quest.startMonstersSlain)
+            if done < quest.target {
+                print("  ✦ Quest progress: \(done)/\(quest.target) monsters defeated", color: .cyan, bold: true)
+                print("")
+            }
+        }
+
         maybeShowTip()
 
         if !shirkers.isEmpty {
