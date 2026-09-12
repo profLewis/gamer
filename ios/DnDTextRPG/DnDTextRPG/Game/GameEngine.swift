@@ -10713,12 +10713,12 @@ class GameEngine: ObservableObject {
                 // its own page; now both use this same stable, global index.
                 let name = String(entry.dungeonName.prefix(20))
                 let headerText = "\(i + 1). \(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts"
-                print(headerText, color: outcomeColor)
+                printWrapped(headerText, color: outcomeColor)
 
                 let day = entry.gameTimeMinutes / 1440 + 1
                 printWrapped(entry.partyDescription, indent: 3, color: .dimGreen)
                 printWrapped("Gold:\(entry.goldCollected) Slain:\(entry.monstersSlain) Rooms:\(entry.roomsExplored)/\(entry.totalRooms) Day \(day)", indent: 3, color: .dimGreen)
-                print("   \(dateFormatter.string(from: entry.date))", color: .dimGreen)
+                printWrapped(dateFormatter.string(from: entry.date), indent: 3, color: .dimGreen)
                 print("")
                 entryLineRanges.append(lineStart..<terminalLines.count)
 
@@ -27547,18 +27547,18 @@ class GameEngine: ObservableObject {
                     let outcomeTag = entry.outcome == .victory ? "W" : "L"
                     let outcomeColor: TerminalColor = entry.outcome == .victory ? .yellow : .red
                     let name = String(entry.dungeonName.prefix(20))
-                    print("\(i + 1). \(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts\(bpInfo)", color: outcomeColor, bold: true)
+                    printWrapped("\(i + 1). \(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts\(bpInfo)", color: outcomeColor, bold: true)
                     printWrapped(entry.partyDescription, indent: 3, color: .dimGreen)
                     printWrapped("Gold:\(entry.goldCollected) Slain:\(entry.monstersSlain) Rooms:\(entry.roomsExplored)/\(entry.totalRooms) Day \(day)", indent: 3, color: .dimGreen)
                 } else {
                     let gold = save.party.reduce(0) { $0 + $1.gold }
                     let roomsExplored = save.dungeon.rooms.values.filter { $0.visited }.count
                     let totalRooms = save.dungeon.rooms.count
-                    print("\(i + 1). \(save.dungeonName) Lv.\(save.dungeonLevel) PLAYING\(bpInfo)", color: .cyan, bold: true)
+                    printWrapped("\(i + 1). \(save.dungeonName) Lv.\(save.dungeonLevel) PLAYING\(bpInfo)", color: .cyan, bold: true)
                     printWrapped(save.partyDescription, indent: 3, color: .dimGreen)
                     printWrapped("Gold:\(gold) Slain:\(save.monstersSlain) Rooms:\(roomsExplored)/\(totalRooms) Day \(day)", indent: 3, color: .dimGreen)
                 }
-                print("   \(dateFormatter.string(from: save.savedAt))", color: .dimGreen)
+                printWrapped(dateFormatter.string(from: save.savedAt), indent: 3, color: .dimGreen)
                 print("")
 
                 let parts = slot.slotName.components(separatedBy: " — ")
@@ -27581,10 +27581,10 @@ class GameEngine: ObservableObject {
                 let outcomeTag = entry.outcome == .victory ? "W" : "L"
                 let outcomeColor: TerminalColor = entry.outcome == .victory ? .yellow : .red
                 let name = String(entry.dungeonName.prefix(20))
-                print("\(i + 1). \(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts (no save)", color: outcomeColor, bold: true)
+                printWrapped("\(i + 1). \(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts (no save)", color: outcomeColor, bold: true)
                 printWrapped(entry.partyDescription, indent: 3, color: .dimGreen)
                 printWrapped("Gold:\(entry.goldCollected) Slain:\(entry.monstersSlain) Rooms:\(entry.roomsExplored)/\(entry.totalRooms) Day \(day)", indent: 3, color: .dimGreen)
-                print("   \(dateFormatter.string(from: entry.date))", color: .dimGreen)
+                printWrapped(dateFormatter.string(from: entry.date), indent: 3, color: .dimGreen)
                 print("")
 
                 let charName = entry.partyNames.first ?? "Hero"
