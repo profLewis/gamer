@@ -3778,7 +3778,7 @@ class GameEngine: ObservableObject {
                 self.print("")
             }
             self.print("  PLAY", color: .cyan, bold: true)
-            self.printWrapped("Start a new adventure, load a save, or continue one from here.", indent: 2, color: .dimGreen)
+            self.printWrapped("Start a new adventure, load a save, or continue one from here. Long-press Play to jump straight into your most recently played save.", indent: 2, color: .dimGreen)
             self.print("")
             if self.pendingInviteMatch != nil {
                 self.print("  REQUESTS", color: .cyan, bold: true)
