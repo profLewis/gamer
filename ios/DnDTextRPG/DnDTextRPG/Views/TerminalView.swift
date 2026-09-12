@@ -164,10 +164,22 @@ struct TerminalView: View {
                                 mapContent
                             }
                             .onChange(of: gameEngine.pinnedMapLines.first?.id) { _ in
-                                let lines = gameEngine.pinnedMapLines
-                                let target = lines.count > 3 ? lines[3] : lines.first
-                                if let target {
-                                    mapProxy.scrollTo(target.id, anchor: .top)
+                                scrollMapPastHeader(mapProxy)
+                            }
+                            // onChange alone only fires on a subsequent
+                            // change — the very first time this panel
+                            // appears (e.g. right after starting/loading a
+                            // game), pinnedMapLines is already populated
+                            // with no "change" event to catch, so the
+                            // ScrollView sat at its default position (the
+                            // header) instead of skipping past it. A second,
+                            // slightly delayed attempt covers the case where
+                            // this fires before the ScrollView has actually
+                            // laid out its content yet.
+                            .onAppear {
+                                scrollMapPastHeader(mapProxy)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                    scrollMapPastHeader(mapProxy)
                                 }
                             }
                         }
@@ -1066,6 +1078,20 @@ struct TerminalView: View {
             withAnimation {
                 proxy.scrollTo(firstLine.id, anchor: .top)
             }
+        }
+    }
+
+    /// Scrolls the pinned map panel to its first real grid row, skipping
+    /// past the 3-line header (border/"MAP" title/separator — always first
+    /// in pinnedMapLines; see GameEngine.printMap) without animation, so it
+    /// never visibly scrolls INTO place on screen — it should just already
+    /// be there, the same way scrollTo(anchor:.top) on first appearance
+    /// never animates either.
+    private func scrollMapPastHeader(_ proxy: ScrollViewProxy) {
+        let lines = gameEngine.pinnedMapLines
+        let target = lines.count > 3 ? lines[3] : lines.first
+        if let target {
+            proxy.scrollTo(target.id, anchor: .top)
         }
     }
 
