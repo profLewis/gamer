@@ -715,27 +715,14 @@ class ShopEngine {
         // discount than ordinary stock.
         let floor = isRareGood ? max(1, askingPrice - askingPrice / 5) : max(1, askingPrice / 4)
         // Capped at what's actually in the purse — an offer above your own
-        // gold only ever made sense here as a typo or a bug; the "combine
-        // with barter" case is a genuinely different flow (see Barter),
-        // reached separately rather than folded into this one.
+        // gold only ever made sense here as a typo or a bug. Below the
+        // floor, `suggestedOffers` just returns no buttons (still handled
+        // below) rather than blocking the whole screen — a gold total that
+        // can't quite reach the floor is not the same as "definitely
+        // cannot afford anything here," and Barter is always offered as a
+        // button on this same screen regardless, not gated behind a
+        // separate failure state.
         let ceiling = min(askingPrice - 1, character.gold)
-
-        guard ceiling >= floor else {
-            game.print("  You don't even have enough for a lowball offer.", color: .red)
-            game.printWrapped("Care to barter something instead?", indent: 2, color: .dimGreen)
-            game.print("")
-            game.showMenu(["Barter", "< Back"])
-            game.closeHandler = backAction
-            game.menuHandler = { [weak self] choice in
-                guard let self = self else { return }
-                if choice == 1 {
-                    self.showBarterMenu(item: item, askingPrice: askingPrice, backAction: backAction, returnTo: returnTo, completion: completion)
-                } else {
-                    backAction()
-                }
-            }
-            return
-        }
 
         let retry: () -> Void = { [weak self] in
             self?.showNegotiation(item: item, askingPrice: askingPrice, attempt: attempt + 1, isRareGood: isRareGood,
@@ -836,7 +823,15 @@ class ShopEngine {
         // accepting a typed (or spoken) custom offer too. Varies each
         // time this prompt is shown; ">>" re-rolls a fresh batch on demand.
         let offers = suggestedOffers(floor: floor, ceiling: ceiling)
-        let options = offers.map { "\($0)gp" } + [">>", "?", "< Back"]
+        // Barter is always here as its own button — not just a fallback
+        // shown when gold alone falls short — so trading in an item toward
+        // the price is always one tap away, whether or not gold alone
+        // would've been enough.
+        let options = offers.map { "\($0)gp" } + [">>", "Barter", "?", "< Back"]
+        if ceiling < floor {
+            game.print("  Your purse alone won't quite cover a lowball offer here.", color: .yellow)
+            game.print("")
+        }
         game.promptTextWithMenu("Name your price (\(floor)gp or more — \(askingPrice)gp or above buys it outright), or 0 to walk away:", options: options)
         game.closeHandler = backAction
         game.menuHandler = { [weak self] choice in
@@ -849,11 +844,14 @@ class ShopEngine {
                 self?.showNegotiation(item: item, askingPrice: askingPrice, attempt: attempt, isRareGood: isRareGood,
                                        backAction: backAction, returnTo: returnTo, completion: completion)
             case 2:
+                guard let self = self else { return }
+                self.showBarterMenu(item: item, askingPrice: askingPrice, backAction: backAction, returnTo: returnTo, completion: completion)
+            case 3:
                 guard let game = self?.game else { return }
                 game.showInlineHelp {
                     game.printTitle("Name Your Price — Help")
                     game.print("")
-                    game.printWrapped("Tap a suggested price, or type (or speak) your own. \">>\" shows a fresh set of suggestions.", indent: 2, color: .dimGreen)
+                    game.printWrapped("Tap a suggested price, or type (or speak) your own. \">>\" shows a fresh set of suggestions. Barter trades an item in toward the price instead of (or alongside) gold.", indent: 2, color: .dimGreen)
                     game.print("")
                     game.printWrapped("Offering \(askingPrice)gp or more buys it outright. Below \(floor)gp is refused outright as insulting. Anything in between is a Persuasion check — the lower you go, the harder it is to land.", indent: 2, color: .dimGreen)
                     game.print("")

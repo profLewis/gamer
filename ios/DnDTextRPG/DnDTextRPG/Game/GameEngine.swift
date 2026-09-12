@@ -2470,9 +2470,23 @@ class GameEngine: ObservableObject {
     /// future guard-return between clearTerminal() and a screen's own
     /// showMenu setup. Returns to a known-good state rather than leaving
     /// the player stuck.
+    /// Persistent, cross-session record of self-healed "Glitch in the Weave"
+    /// recoveries — recovery is now silent to the player (see
+    /// recoverFromOrphanedScreen()), so this UserDefaults-backed log is the
+    /// only remaining trace of it, for later diagnosis/export.
+    private func logGlitch(_ history: [String]) {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let entry = "[\(timestamp)] \(history.joined(separator: " | "))"
+        var log = UserDefaults.standard.stringArray(forKey: "glitchLog") ?? []
+        log.append(entry)
+        if log.count > 50 { log.removeFirst(log.count - 50) }
+        UserDefaults.standard.set(log, forKey: "glitchLog")
+    }
+
     private func recoverFromOrphanedScreen() {
         let history = breadcrumbHistory
         logEvent("Orphaned screen recovered — history: \(history.joined(separator: " | "))", category: "SYSTEM")
+        logGlitch(history)
 
         // Mid-character-creation, the underlying progress (which slot,
         // who's already in the party) is untouched — only this one
@@ -2512,35 +2526,18 @@ class GameEngine: ObservableObject {
         }
         silentCharCreationRecoveryCount = 0
 
-        clearTerminal()
-        printTitle("A Glitch in the Weave")
-        printWrapped("The scene wavers and refuses to settle — as if the Dungeon Master lost their place in the script. Let's pick up where we left off.", indent: 2, color: .yellow)
-        // Temporary diagnostic — see breadcrumbHistory's comment. Shows the
-        // full sequence of steps leading up to the screen going blank
-        // (not just the last one, which by now is the watchdog's own entry)
-        // so a reproducible dead end self-diagnoses instead of needing
-        // another live repro.
-        for line in history {
-            print("  \(line)", color: .dimGreen)
-        }
-        print("")
+        // Silent recovery — no visible interruption for the player (the
+        // narrative screen and breadcrumb dump this used to show are gone;
+        // see logGlitch() above for where the detail still gets recorded).
+        // Just continue as if nothing happened, same destination logic as
+        // before: back into the game if there's one in progress, else main menu.
         if dungeon != nil && !party.isEmpty {
-            showMenu(["Return to Game", "Main Menu"])
-            menuHandler = { [weak self] choice in
-                guard let self = self else { return }
-                if choice == 1 {
-                    self.gameState = .exploring
-                    self.currentCombat = nil
-                    self.showExplorationView()
-                } else {
-                    self.resetGame()
-                }
-            }
+            gameState = .exploring
+            currentCombat = nil
+            showExplorationView()
         } else {
-            showMenu(["Main Menu"])
-            menuHandler = { [weak self] _ in self?.resetGame() }
+            resetGame()
         }
-        closeHandler = { [weak self] in self?.resetGame() }
     }
 
     private var suppressMenuUntil: Date = .distantPast
@@ -16074,6 +16071,12 @@ class GameEngine: ObservableObject {
     private func useTeleportPad(from room: Room, to destination: Room) {
         guard let dungeon = dungeon else { return }
         dungeon.currentRoomId = destination.id
+        // Normal step-by-step movement (Dungeon.move()) always does this on
+        // arrival — a pad jump skipped both, which is exactly why the map
+        // came up "No map available" on arrival: the destination had never
+        // been marked visited, and nothing around it had ever been revealed.
+        destination.visited = true
+        dungeon.expandIfNeeded(from: destination)
         advanceTime(5)
         tickTorch()
         checkTorchEvent()
@@ -16091,6 +16094,15 @@ class GameEngine: ObservableObject {
     private func useVerticalConnection(method: String, from room: Room, to destination: Room, tookInjuryRisk: Bool = false) {
         guard let dungeon = dungeon else { return }
         dungeon.currentRoomId = destination.id
+        // Same fix as useTeleportPad() — normal movement (Dungeon.move())
+        // always marks the room visited and expands the map around it;
+        // stairs/rope skipped both, which is why arriving on the other
+        // floor showed "No map available" instead of a real (if freshly
+        // revealed) map. Persisted automatically from here on, since
+        // Room.visited/the expanded rooms are part of the normal saved
+        // dungeon state — no separate persistence needed.
+        destination.visited = true
+        dungeon.expandIfNeeded(from: destination)
         let goingDown = room.verticalDirection == "down"
         dungeon.currentFloor += goingDown ? 1 : -1
         advanceTime(10)
@@ -16603,6 +16615,49 @@ class GameEngine: ObservableObject {
 
     // MARK: - Actions Submenu
 
+    /// Quick-access antidote use from the Actions menu — same cure as the
+    /// Inventory > Use Item path, without the detour through it. Auto-picks
+    /// the holder and target when unambiguous, otherwise asks who receives it.
+    private func useAntidoteQuick() {
+        let poisonedMembers = party.filter { $0.isPoisoned }
+        guard !poisonedMembers.isEmpty else { showExplorationView(); return }
+        guard let holder = party.first(where: { char in char.inventory.contains { $0.name.lowercased().contains("antidote") } }),
+              let antidote = holder.inventory.first(where: { $0.name.lowercased().contains("antidote") }) else {
+            showExplorationView()
+            return
+        }
+
+        let applyTo: (Character) -> Void = { [weak self] target in
+            guard let self = self else { return }
+            holder.removeItem(antidote)
+            target.curePoison()
+            self.clearTerminal()
+            self.printExplorationMap()
+            self.print("")
+            self.print("  \(holder.name) administers the antidote to \(target.name).", color: .brightGreen)
+            self.print("  Poison cured!", color: .brightGreen)
+            self.logEvent("\(target.name) cured of poison via Antidote (\(holder.name))", category: "ITEM")
+            self.logMultiplayerAction("\(target.name) cured of poison via antidote")
+            self.waitForContinueWithTimeout { [weak self] in self?.showExplorationView() }
+        }
+
+        if poisonedMembers.count == 1 {
+            applyTo(poisonedMembers[0])
+        } else {
+            clearTerminal()
+            printExplorationMap()
+            print("")
+            printTitle("Use Antidote")
+            print("  Who receives it?", color: .cyan)
+            showMenu(poisonedMembers.map { "\($0.name) (\($0.currentHP)/\($0.maxHP) HP)" })
+            closeHandler = { [weak self] in self?.showExplorationView() }
+            menuHandler = { choice in
+                guard choice >= 1, choice <= poisonedMembers.count else { return }
+                applyTo(poisonedMembers[choice - 1])
+            }
+        }
+    }
+
     private func showActionsMenu() {
         guard let dungeon = dungeon, let room = dungeon.currentRoom else { showExplorationView(); return }
 
@@ -16694,6 +16749,14 @@ class GameEngine: ObservableObject {
             takeTreasureIndex = menuOpts.count
             menuOpts.append(MenuOption("Take Treasure"))
             actions.append { [weak self] in returnToActions(); self?.collectTreasure() }
+        }
+
+        // Use Antidote — direct quick access when poison is actually in
+        // play, rather than a trip through Inventory > Use Item every time.
+        if party.contains(where: { $0.isPoisoned }),
+           party.contains(where: { char in char.inventory.contains { $0.name.lowercased().contains("antidote") } }) {
+            menuOpts.append(MenuOption("Use Antidote", tint: .cyan))
+            actions.append { [weak self] in returnToActions(); self?.useAntidoteQuick() }
         }
 
         // Torch toggle
@@ -19846,8 +19909,17 @@ class GameEngine: ObservableObject {
                 self.print("")
                 guard character.gold >= trainer.lessonFee else {
                     self.print("  \"Coin first, then the lesson.\" (\(character.name) doesn't have \(trainer.lessonFee)gp.)", color: .red)
-                    self.waitForContinue()
-                    self.inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
+                    self.printWrapped("\"...unless you've got something worth trading?\"", indent: 2, color: .yellow)
+                    print("")
+                    self.showMenu(["Barter", "< Back"])
+                    self.menuHandler = { [weak self] choice in
+                        guard let self = self else { return }
+                        if choice == 1 {
+                            self.offerGymBarter(skill: skill, character: character, trainer: trainer, room: room)
+                        } else {
+                            self.showGymTraining(trainer: trainer, room: room)
+                        }
+                    }
                     return
                 }
                 character.gold -= trainer.lessonFee
@@ -19861,6 +19933,55 @@ class GameEngine: ObservableObject {
                 } else {
                     self.attemptGymTraining(skill: skill, character: character, trainer: trainer, room: room)
                 }
+            }
+        }
+    }
+
+    /// Trading an item in (at half value, same rate Sell/shop Barter use)
+    /// toward a lesson fee the character can't afford in gold alone.
+    private func offerGymBarter(skill: Skill, character: Character, trainer: Trainer, room: Room) {
+        let sellables = character.inventory.filter { $0.value > 0 }
+        clearTerminal()
+        printTitle(trainer.gymName)
+        print("  Lesson fee: \(trainer.lessonFee)gp — \(character.name) has \(character.gold)gp.", color: .dimGreen)
+        print("")
+        guard !sellables.isEmpty else {
+            print("  \"Nothing on you worth trading in. Come back when you've got coin.\"", color: .red)
+            waitForContinue()
+            inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
+            return
+        }
+
+        let options = sellables.map { "\($0.name) (worth \(max(1, $0.value / 2))gp)" } + ["< Back"]
+        showMenu(options)
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            guard choice >= 1 && choice <= sellables.count else {
+                self.showGymTraining(trainer: trainer, room: room)
+                return
+            }
+            let offeredItem = sellables[choice - 1]
+            let credit = max(1, offeredItem.value / 2)
+            self.print("")
+            guard character.gold + credit >= trainer.lessonFee else {
+                self.print("  \"That, plus your coin, still isn't enough for the lesson.\"", color: .red)
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
+                return
+            }
+            let goldSpent = max(0, trainer.lessonFee - credit)
+            character.gold -= goldSpent
+            character.removeItem(offeredItem)
+            self.print("  \"Deal.\" \(trainer.name) takes your \(offeredItem.name)\(goldSpent > 0 ? " and \(goldSpent) gold" : "") for the lesson.", color: .brightGreen)
+            if character.skillProficiencies.contains(skill) {
+                let xp = 20
+                character.experiencePoints += xp
+                self.print("  \"You've already got a good handle on that — but keep at it.\" (+\(xp) XP)", color: .yellow)
+                self.advanceTime(30)
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
+            } else {
+                self.attemptGymTraining(skill: skill, character: character, trainer: trainer, room: room)
             }
         }
     }
