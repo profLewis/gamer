@@ -6719,13 +6719,23 @@ class GameEngine: ObservableObject {
 
     /// User-adjustable height (points) for the pinned map panel at the top
     /// of the screen (see TerminalView) — 0 means "Auto" (sized to fit the
-    /// map + key, the original behavior, no cap). A positive value fixes
-    /// the panel to that height and lets it scroll internally if the map
-    /// and key don't both fit — so shrinking it never loses the key, it
-    /// just takes a scroll to see. Adjustable via a drag handle on the
-    /// panel itself, or Settings > Gameplay > Map Radius > Panel Size.
+    /// map + key with no cap, showing the whole thing at once with nothing
+    /// to scroll). A positive value fixes the panel to that height and lets
+    /// it scroll internally for whatever doesn't fit — so shrinking it
+    /// never loses the key, it just takes a scroll to see. Defaults to a
+    /// compact fixed height (rather than Auto) so the map only ever shows
+    /// its immediate, substantive area up front, with the rest (a large
+    /// radius, or the legend) reachable by scrolling instead of pushing the
+    /// text/buttons below it further down the screen. Adjustable via a
+    /// drag handle on the panel itself, or Settings > Gameplay > Map
+    /// Radius > Panel Size (which can still choose Auto explicitly).
     var mapPanelHeight: CGFloat {
-        get { CGFloat(UserDefaults.standard.double(forKey: "map_panel_height")) }
+        get {
+            if let stored = UserDefaults.standard.object(forKey: "map_panel_height") as? Double {
+                return CGFloat(stored)
+            }
+            return 180
+        }
         set { UserDefaults.standard.set(Double(newValue), forKey: "map_panel_height") }
     }
 
