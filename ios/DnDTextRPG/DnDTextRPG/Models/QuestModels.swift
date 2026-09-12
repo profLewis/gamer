@@ -83,15 +83,22 @@ struct SideQuest: Codable {
     static func random(level: Int, giverName: String, monstersSlain: Int, partyGold: Int, party: [Character], dungeon: Dungeon) -> SideQuest {
         let presentRoomTypes = Set(dungeon.rooms.values.map { $0.roomType })
         let availableDestinations = notableRoomTypes.filter { presentRoomTypes.contains($0) }
+        // Monsters that can actually still be fought in this dungeon — a
+        // "defeat N more" quest must never ask for more than physically
+        // exist left to kill.
+        let remainingMonsters = dungeon.rooms.values.filter { !$0.cleared }.reduce(0) { $0 + ($1.encounter?.monsters.count ?? 0) }
 
-        var possibleTypes = SideQuestType.allCases.filter { $0 != .visitRoomType }
+        var possibleTypes = SideQuestType.allCases.filter { $0 != .visitRoomType && $0 != .defeatMonsters }
         if !availableDestinations.isEmpty { possibleTypes.append(.visitRoomType) }
-        let type = possibleTypes.randomElement() ?? .defeatMonsters
+        if remainingMonsters >= 3 { possibleTypes.append(.defeatMonsters) }
+        let type = possibleTypes.randomElement() ?? .collectGold
 
         var targetRoomType: RoomType? = nil
         let target: Int
         switch type {
-        case .defeatMonsters: target = 3 + level
+        case .defeatMonsters:
+            // Leave margin — don't demand literally every remaining monster.
+            target = min(3 + level, max(1, Int(Double(remainingMonsters) * 0.8)))
         case .collectGold: target = (20 + level * 15)
         case .fullyEquipped: target = 1
         case .reachLevel: target = min(5, 2 + level / 2)

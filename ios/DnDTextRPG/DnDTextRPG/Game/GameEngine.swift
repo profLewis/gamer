@@ -17569,6 +17569,31 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Abandoning a quest partway through is a deliberate choice (you lose
+    /// whatever progress you'd made and clear the way for a different NPC
+    /// to offer something new), so it goes through a confirm step rather
+    /// than a single tap — same weight as other one-way actions in the game.
+    private func confirmGiveUpQuest() {
+        guard let quest = activeQuest else { showPartyStatus(); return }
+        clearTerminal()
+        printTitle("Give Up This Quest?")
+        print("")
+        print("  \(quest.giverName): \(quest.description)", color: .yellow)
+        print("")
+        printWrapped("Any progress is lost, and \(quest.giverName) won't offer it again. You'll be free to accept a different quest from someone else.", indent: 2, color: .dimGreen)
+        print("")
+        showMenu(["Yes, Give It Up", "No, Keep It"])
+        closeHandler = { [weak self] in self?.showPartyStatus() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                self.logEvent("Gave up quest: \(quest.description)", category: "QUEST")
+                self.activeQuest = nil
+            }
+            self.showPartyStatus()
+        }
+    }
+
     private func offerSideQuest() {
         guard let room = dungeon?.currentRoom, var npc = room.npc, let dungeon = dungeon else { return }
         let totalGold = party.reduce(0) { $0 + $1.gold }
@@ -19878,6 +19903,9 @@ class GameEngine: ObservableObject {
         if hasPoisoned {
             menuOpts.insert("Cure Poison", at: 0)
         }
+        if activeQuest != nil {
+            menuOpts.insert("Give Up Quest", at: 0)
+        }
 
         showMenu(menuOpts)
 
@@ -19889,6 +19917,8 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             let selected = menuOpts[choice - 1]
             switch selected {
+            case "Give Up Quest":
+                self.confirmGiveUpQuest()
             case "Cure Poison":
                 self.showPoisonInfo(onBack: { self.showPartyStatus() })
             case "Party Review":
@@ -19948,7 +19978,7 @@ class GameEngine: ObservableObject {
             self.printWrapped("Map + each character's HP, gold, XP. Green HP = healthy, yellow = wounded, red = critical.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  BUTTONS", color: .cyan, bold: true)
-            self.printWrapped("Party Review — edit characters and view stat cards. Save to Roster — persist a character's progress for future adventures. Adventure Log — event timeline. Settings — game settings. Cure Poison — when poisoned.", indent: 2, color: .dimGreen)
+            self.printWrapped("Party Review — edit characters and view stat cards. Save to Roster — persist a character's progress for future adventures. Adventure Log — event timeline. Settings — game settings. Cure Poison — when poisoned. Give Up Quest — abandon your current quest (loses progress) so a different NPC can offer you a new one.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  MONSTER STRENGTH", color: .cyan, bold: true)
             self.printWrapped("Monsters scale up a little as your party's average level rises, on top of your chosen difficulty — the dungeon keeps pace with your growing skill instead of staying static.", indent: 2, color: .dimGreen)
