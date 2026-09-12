@@ -265,12 +265,19 @@ class GameEngine: ObservableObject {
     private var paginatedPage: Int = 0
 
     /// Saved state for inline help toggle — press ? to show help, ? again to restore
+    /// Manage Saves multi-select: whether the list is currently in
+    /// checkbox mode, and which slots (by slotId) are checked. Reset
+    /// whenever the list is left (see showLoadGameMenu's backAction).
+    private var manageSaveSelectMode: Bool = false
+    private var manageSaveSelectedSlotIds: Set<UUID> = []
+
     private var savedHelpState: (lines: [TerminalLine], menu: [MenuOption],
                                   menuHandler: ((Int) -> Void)?, closeHandler: (() -> Void)?,
                                   menuLongPressHandler: ((Int) -> Void)?,
                                   textLongPressHandler: ((Int) -> Void)?,
                                   undoHandler: (() -> Void)?, redoHandler: (() -> Void)?,
-                                  undoLabel: String?, redoLabel: String?)?
+                                  undoLabel: String?, redoLabel: String?,
+                                  pinnedMapLines: [TerminalLine])?
 
     /// Whether undo/redo buttons are enabled in settings screens
     var undoRedoEnabled: Bool {
@@ -20470,6 +20477,7 @@ class GameEngine: ObservableObject {
             DispatchQueue.main.async {
                 self.terminalLines = saved.lines
                 self.currentMenuOptions = saved.menu
+                self.pinnedMapLines = saved.pinnedMapLines
             }
             self.menuHandler = saved.menuHandler
             self.closeHandler = saved.closeHandler
@@ -20498,11 +20506,19 @@ class GameEngine: ObservableObject {
                 savedMenuHandler, savedCloseHandler,
                 savedMenuLongPress, savedTextLongPress,
                 savedUndo, savedRedo,
-                savedUndoLabel, savedRedoLabel
+                savedUndoLabel, savedRedoLabel,
+                pinnedMapLines
             )
 
             // Build help text into a fresh line array
             terminalLines.removeAll()
+            // A pinned map above the text would otherwise squeeze a long help
+            // page's scrollable area — help never needs the map, so clear it
+            // for the duration (restored above on close). Also make sure a
+            // stale scrollLocked from whatever screen was showing doesn't
+            // carry over and leave a genuinely long help page unscrollable.
+            pinnedMapLines = []
+            scrollLocked = false
             suppressAutoScroll = true
             // A quest already accepted is easy to forget about mid-adventure
             // — show a reminder of it and its progress before every screen's
@@ -27413,12 +27429,105 @@ class GameEngine: ObservableObject {
             }
         }
 
-        showPaginatedMenuOptions(options, pinned: ["?", "< Back"], handler: { idx in
+        // Multi-select ("Select" pinned button): checkbox-prefix each row,
+        // tapping toggles instead of opening it, "Select All"/"Delete
+        // Selected" appear once at least one is checked. Only .slot rows
+        // are selectable/deletable this way — an orphan Hall of Fame entry
+        // has no save behind it to delete.
+        if manageSaveSelectMode {
+            let selectableSlotIds = rows.compactMap { row -> UUID? in
+                if case .slot(let s) = row { return s.slotId }
+                return nil
+            }
+            let displayOptions = zip(options, rows).map { label, row -> String in
+                if case .slot(let s) = row {
+                    return (manageSaveSelectedSlotIds.contains(s.slotId) ? "[x] " : "[ ] ") + label
+                }
+                return label
+            }
+            var pinned = ["Select All", "?", "< Back"]
+            if !manageSaveSelectedSlotIds.isEmpty {
+                pinned.insert("Delete Selected (\(manageSaveSelectedSlotIds.count))", at: 1)
+            }
+            showPaginatedMenuOptions(displayOptions, pinned: pinned, handler: { [weak self] idx in
+                guard let self = self, idx >= 0 && idx < rows.count else { return }
+                guard case .slot(let slot) = rows[idx] else { return }
+                if self.manageSaveSelectedSlotIds.contains(slot.slotId) {
+                    self.manageSaveSelectedSlotIds.remove(slot.slotId)
+                } else {
+                    self.manageSaveSelectedSlotIds.insert(slot.slotId)
+                }
+                self.showLoadGameMenu(returnTo: origin)
+            }, pinnedHandler: { [weak self] choice in
+                guard let self = self else { return }
+                let chosen = pinned[choice]
+                switch chosen {
+                case "Select All":
+                    if self.manageSaveSelectedSlotIds.count == selectableSlotIds.count {
+                        self.manageSaveSelectedSlotIds.removeAll()
+                    } else {
+                        self.manageSaveSelectedSlotIds = Set(selectableSlotIds)
+                    }
+                    self.showLoadGameMenu(returnTo: origin)
+                case "?":
+                    self.showInlineHelp {
+                        self.printTitle("Select Saves — Help")
+                        self.print("")
+                        self.printWrapped("Tap a row to check/uncheck it. \"Select All\" toggles every selectable row at once. Once at least one is checked, \"Delete Selected\" removes all of them permanently.", indent: 2, color: .dimGreen)
+                        self.print("")
+                    }
+                default:
+                    if chosen.hasPrefix("Delete Selected") {
+                        let count = self.manageSaveSelectedSlotIds.count
+                        self.clearTerminal()
+                        self.printTitle("Delete \(count) Save\(count == 1 ? "" : "s")?")
+                        self.print("")
+                        self.print("  This cannot be undone.", color: .red)
+                        self.print("")
+                        self.showMenu(["Delete Permanently", "< Cancel"])
+                        self.menuHandler = { [weak self] c in
+                            guard let self = self else { return }
+                            if c == 1 {
+                                for id in self.manageSaveSelectedSlotIds {
+                                    SaveGameManager.shared.deleteSlot(slotId: id)
+                                }
+                                self.manageSaveSelectedSlotIds.removeAll()
+                                self.manageSaveSelectMode = false
+                            }
+                            self.showLoadGameMenu(returnTo: origin)
+                        }
+                    } else {
+                        self.manageSaveSelectMode = false
+                        self.manageSaveSelectedSlotIds.removeAll()
+                        self.showLoadGameMenu(returnTo: origin)
+                    }
+                }
+            })
+            closeHandler = { [weak self] in
+                guard let self = self else { return }
+                self.manageSaveSelectMode = false
+                self.manageSaveSelectedSlotIds.removeAll()
+                backAction()
+            }
+            return
+        }
+
+        var pinnedButtons = ["?", "< Back"]
+        if rows.contains(where: { if case .slot = $0 { return true }; return false }) {
+            pinnedButtons.insert("Select", at: 0)
+        }
+        showPaginatedMenuOptions(options, pinned: pinnedButtons, handler: { idx in
             guard idx >= 0 && idx < rows.count else { return }
             openRow(rows[idx])
         }, pinnedHandler: { [weak self] choice in
             guard let self = self else { return }
-            if choice == 0 {
+            let chosen = pinnedButtons[choice]
+            if chosen == "Select" {
+                self.manageSaveSelectMode = true
+                self.showLoadGameMenu(returnTo: origin)
+                return
+            }
+            if choice == (pinnedButtons.firstIndex(of: "?") ?? -1) {
                 self.showInlineHelp {
                     self.printTitle("Continue Adventure — Help")
                     self.print("")
