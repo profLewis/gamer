@@ -15488,6 +15488,16 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("Actions"))
         actions.append { [weak self] in self?.showActionsMenu() }
 
+        // Self-heal a stale invalid combination from before Dungeon.generateDungeon()
+        // stopped letting an armoury's merchant chance and its room-type encounter
+        // roll independently — a room whose text promises a merchant should never
+        // stay blocked behind an uncleared fight the description never mentioned.
+        // Runs every time this room's menu builds, so it also repairs dungeons
+        // already generated (or saved) before that fix existed, not just new ones.
+        if room.merchant != nil, room.encounter != nil, !room.cleared {
+            room.encounter = nil
+        }
+
         // Merchant present in the room itself (shop room, or an armoury a merchant
         // has set up shop in) — was previously gated on `.shop` only, which left
         // armoury-room merchants mentioned in the room text but unreachable.
@@ -17563,7 +17573,7 @@ class GameEngine: ObservableObject {
         guard let room = dungeon?.currentRoom, var npc = room.npc, let dungeon = dungeon else { return }
         let totalGold = party.reduce(0) { $0 + $1.gold }
         let quest = SideQuest.random(level: dungeon.level, giverName: npc.type.rawValue,
-                                     monstersSlain: monstersSlain, partyGold: totalGold, party: party)
+                                     monstersSlain: monstersSlain, partyGold: totalGold, party: party, dungeon: dungeon)
 
         clearTerminal()
         printExplorationMap()
@@ -17608,6 +17618,9 @@ class GameEngine: ObservableObject {
         case .reachLevel:
             let best = party.map { $0.level }.max() ?? 0
             return "Progress: highest level is \(best) (need \(quest.target))"
+        case .visitRoomType:
+            let found = dungeon?.rooms.values.contains { $0.roomType == quest.targetRoomType && $0.visited } ?? false
+            return found ? "Progress: found it!" : "Progress: not found yet"
         }
     }
 
@@ -17628,6 +17641,8 @@ class GameEngine: ObservableObject {
             return active.allSatisfy { $0.equippedWeapon != nil && $0.equippedArmor != nil && $0.equippedShield != nil }
         case .reachLevel:
             return party.contains { $0.level >= quest.target }
+        case .visitRoomType:
+            return dungeon?.rooms.values.contains { $0.roomType == quest.targetRoomType && $0.visited } ?? false
         }
     }
 
