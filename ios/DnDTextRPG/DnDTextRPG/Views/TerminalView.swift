@@ -139,7 +139,20 @@ struct TerminalView: View {
                     Group {
                     if !gameEngine.pinnedMapLines.isEmpty {
                         let mapContent = VStack(alignment: .leading, spacing: 2) {
-                            ForEach(gameEngine.pinnedMapLines) { line in
+                            ForEach(Array(gameEngine.pinnedMapLines.enumerated()), id: \.element.id) { index, line in
+                                // Landscape's panel is half a line taller than
+                                // portrait's (see its .frame(height:) below) —
+                                // this half-line spacer is what the initial
+                                // scroll actually targets there (see
+                                // scrollMapPastHeader), so the extra height
+                                // shows as breathing room above the grid
+                                // instead of just extra blank space at the
+                                // bottom.
+                                if isLandscape && index == 3 {
+                                    Color.clear
+                                        .frame(height: (gameEngine.mapFontSize * scale * 1.3 + 2) / 2)
+                                        .id("landscapeMapHalfLineSpacer")
+                                }
                                 TerminalLineView(line: line, scale: scale)
                             }
                         }
@@ -186,7 +199,7 @@ struct TerminalView: View {
                                 mapContent
                             }
                             .onChange(of: gameEngine.pinnedMapLines.first?.id) { _ in
-                                scrollMapPastHeader(mapProxy)
+                                scrollMapPastHeader(mapProxy, isLandscape: isLandscape)
                             }
                             // onChange alone only fires on a subsequent
                             // change — the very first time this panel
@@ -199,9 +212,9 @@ struct TerminalView: View {
                             // this fires before the ScrollView has actually
                             // laid out its content yet.
                             .onAppear {
-                                scrollMapPastHeader(mapProxy)
+                                scrollMapPastHeader(mapProxy, isLandscape: isLandscape)
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                    scrollMapPastHeader(mapProxy)
+                                    scrollMapPastHeader(mapProxy, isLandscape: isLandscape)
                                 }
                             }
                         }
@@ -1078,8 +1091,16 @@ struct TerminalView: View {
     /// never visibly scrolls INTO place on screen — it should just already
     /// be there, the same way scrollTo(anchor:.top) on first appearance
     /// never animates either.
-    private func scrollMapPastHeader(_ proxy: ScrollViewProxy) {
+    private func scrollMapPastHeader(_ proxy: ScrollViewProxy, isLandscape: Bool) {
         let lines = gameEngine.pinnedMapLines
+        // Landscape targets the half-line spacer injected just before the
+        // first grid row (see mapContent) instead of the row itself, so its
+        // taller panel shows a half-line of breathing room above the grid
+        // rather than just extra blank space at the bottom.
+        if isLandscape, lines.count > 3 {
+            proxy.scrollTo("landscapeMapHalfLineSpacer", anchor: .top)
+            return
+        }
         let target = lines.count > 3 ? lines[3] : lines.first
         if let target {
             proxy.scrollTo(target.id, anchor: .top)
