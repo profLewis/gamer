@@ -739,28 +739,20 @@ class Dungeon: ObservableObject, Codable {
             candidates.removeAll { $0.id == shopRoom.id }
         }
 
-        // Armoury rooms have a chance of a merchant having set up shop there too
-        // (matches the "a merchant has set up shop here" flavour text — keep the
-        // text and the mechanic in sync so it's never just narrative dressing).
+        // Armoury rooms (forges included — same room type) always double as
+        // a merchant shop now, same as a dedicated .shop room, rather than
+        // just sometimes — matches the "a merchant has set up shop here"
+        // flavour text, which used to only sometimes be true.
         let armouryMerchantVariant = "Swords, shields, and helms line the walls. A forge in the corner is cold but could be relit. A merchant has set up shop here."
-        let armouryPlainVariants = [
-            "Weapon racks and armour stands fill this room. Most have been picked clean, but some items remain.",
-            "Rows of rusted weapons stand at attention like silent soldiers. A workbench holds tools for repair and sharpening.",
-        ]
         for armouryRoom in rooms.values where armouryRoom.roomType == .armory {
-            if Int.random(in: 1...100) <= 65 {
-                armouryRoom.merchant = Merchant.random(tier: MerchantTier.forDungeonLevel(level))
-                armouryRoom.roomDescription = armouryMerchantVariant
-                // A merchant here must actually be reachable — the "Visit
-                // Merchant" button stays hidden behind an uncleared
-                // encounter (see showExplorationView()'s gating), so an
-                // armoury that says a merchant has set up shop can't also
-                // be guarded by a monster the room-type roll may have
-                // already assigned before this pass ran.
-                armouryRoom.encounter = nil
-            } else {
-                armouryRoom.roomDescription = armouryPlainVariants.randomElement()!
-            }
+            armouryRoom.merchant = Merchant.random(tier: MerchantTier.forDungeonLevel(level))
+            armouryRoom.roomDescription = armouryMerchantVariant
+            // A merchant here must actually be reachable — the "Visit
+            // Merchant" button stays hidden behind an uncleared encounter
+            // (see showExplorationView()'s gating), so an armoury that says
+            // a merchant has set up shop can't also be guarded by a monster
+            // the room-type roll may have already assigned before this pass ran.
+            armouryRoom.encounter = nil
         }
 
         // Riddle challenges — libraries and shrines occasionally pose one,

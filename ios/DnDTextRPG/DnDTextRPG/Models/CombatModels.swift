@@ -1024,6 +1024,11 @@ final class Combat: ObservableObject {
     /// Counts weapon attacks and damaging spells alike; healing/buff/utility
     /// spells don't add damage but still count toward "took a turn" via
     /// turnsTaken below.
+    /// Set true whenever "Ask the DM" mid-combat ad-libs a reward (gold or
+    /// items) for this fight — the standard end-of-combat monster loot roll
+    /// in handleCombatVictory() skips itself when this is true, so the same
+    /// fight's spoils aren't granted twice from two independent sources.
+    @Published var adLibLootGranted: Bool = false
     @Published var damageDealtByCharacter: [UUID: Int] = [:]
     /// Turns each party member has actually acted on (attacked, cast, used
     /// an item) — a full-support healer can rack up real contribution with
@@ -1607,7 +1612,7 @@ final class Combat: ObservableObject {
 extension Combat: Codable {
     enum CodingKeys: String, CodingKey {
         case encounter, turnOrder, currentTurnIndex, state, combatLog, partyCharacterIds, lootAwarded
-        case damageDealtByCharacter, turnsTakenByCharacter
+        case damageDealtByCharacter, turnsTakenByCharacter, adLibLootGranted
     }
 
     convenience init(from decoder: Decoder) throws {
@@ -1621,6 +1626,7 @@ extension Combat: Codable {
         self.damageDealtByCharacter = try container.decodeIfPresent([UUID: Int].self, forKey: .damageDealtByCharacter) ?? [:]
         self.turnsTakenByCharacter = try container.decodeIfPresent([UUID: Int].self, forKey: .turnsTakenByCharacter) ?? [:]
         self.lootAwarded = try container.decodeIfPresent(Bool.self, forKey: .lootAwarded) ?? false
+        self.adLibLootGranted = try container.decodeIfPresent(Bool.self, forKey: .adLibLootGranted) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1635,6 +1641,7 @@ extension Combat: Codable {
         try container.encode(lootAwarded, forKey: .lootAwarded)
         try container.encode(damageDealtByCharacter, forKey: .damageDealtByCharacter)
         try container.encode(turnsTakenByCharacter, forKey: .turnsTakenByCharacter)
+        try container.encode(adLibLootGranted, forKey: .adLibLootGranted)
     }
 
     /// Re-link party references after decoding from match data

@@ -79,18 +79,36 @@ struct TerminalView: View {
 
     private var scale: CGFloat { gameEngine.fontScale }
 
-
+    /// Wraps the map panel + scrolling text as an HStack (map | text side by
+    /// side) in landscape, or the original VStack (map above text) otherwise
+    /// — a generic axis switch so neither child's own content needs to
+    /// change between orientations.
+    @ViewBuilder
+    private func adaptiveMapTextStack<Content: View>(isLandscape: Bool, @ViewBuilder content: () -> Content) -> some View {
+        if isLandscape {
+            HStack(alignment: .top, spacing: 0) { content() }
+        } else {
+            VStack(spacing: 0) { content() }
+        }
+    }
 
     var body: some View {
         GeometryReader { geometry in
+            let isLandscape = geometry.size.width > geometry.size.height
             ZStack {
                 VStack(spacing: 0) {
+                    adaptiveMapTextStack(isLandscape: isLandscape) {
                     // Pinned map pane — kept separate from the scrolling text
                     // below (see GameEngine.pinnedMapLines/printMap) so it
                     // always stays fully visible, instead of living at the
                     // top of the scrolling text where a screen with several
                     // button rows (shrinking the text area) or an
                     // auto-scroll-to-bottom could chop its top rows off.
+                    // In landscape, the map becomes its own left column
+                    // instead of a full-width band above the text, offset
+                    // down slightly so it starts below where the text
+                    // column's first (title) line sits, not flush at the top.
+                    Group {
                     if !gameEngine.pinnedMapLines.isEmpty {
                         let mapContent = VStack(alignment: .leading, spacing: 2) {
                             ForEach(gameEngine.pinnedMapLines) { line in
@@ -127,6 +145,8 @@ struct TerminalView: View {
                             .fill(terminalDarkGreen.opacity(0.4))
                             .frame(height: 1)
                     }
+                    }
+                    .padding(.top, isLandscape ? 20 * scale : 0)
 
                     // Terminal output area
                     ScrollViewReader { scrollProxy in
@@ -311,6 +331,7 @@ struct TerminalView: View {
                             isInputFocused = false
                         }
                     }, perform: {})
+                    } // end adaptiveMapTextStack
 
                     // Direction pad + menu buttons (hidden in Just DM mode, except on
                     // victory/defeat milestone screens — see forceInteractiveControls)

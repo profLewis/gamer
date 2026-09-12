@@ -23185,10 +23185,12 @@ class GameEngine: ObservableObject {
                             self.party.first?.gold += result.bonusGold
                             self.print("  [+\(result.bonusGold) gold!]", color: .yellow, bold: true)
                             self.logEvent("DM awarded \(result.bonusGold) gold in combat", category: "DM")
+                            combat.adLibLootGranted = true
                             tookAction = true
                         }
                         for itemName in result.droppedItems {
                             self.applyDMDropItem(itemName)
+                            combat.adLibLootGranted = true
                             tookAction = true
                         }
                         for itemName in result.equippedItems {
@@ -23205,6 +23207,7 @@ class GameEngine: ObservableObject {
                                     _ = c.addItem(item)
                                     self.print("  [Received: \(item.name)!]", color: .brightGreen, bold: true)
                                     self.logEvent("DM gave \(c.name) \(item.name)", category: "DM")
+                                    combat.adLibLootGranted = true
                                 } else {
                                     self.print("  [Too heavy to carry: \(item.name)]", color: .yellow)
                                 }
@@ -25396,20 +25399,25 @@ class GameEngine: ObservableObject {
             }
         }
 
-        // Generate loot from defeated monsters
+        // Generate loot from defeated monsters — skipped if "Ask the DM"
+        // already ad-libbed a reward for this fight (see
+        // Combat.adLibLootGranted), so the same combat's spoils aren't
+        // granted twice from two independent sources.
         var lootGold = 0
         var lootItems: [Item] = []
-        for monster in combat.encounter.monsters {
-            if let loot = monster.type.rollLoot() {
-                if loot.type == .gold {
-                    lootGold += loot.value
-                    print("  \(monster.name) dropped \(loot.value) gold", color: .yellow)
-                    logMultiplayerAction("\(monster.name) dropped \(loot.value) gold")
-                } else if loot.type == .potion || loot.type == .item {
-                    if let item = resolveItemByName(loot.name) {
-                        lootItems.append(item)
-                        print("  \(monster.name) dropped \(loot.name)!", color: .brightGreen)
-                        logMultiplayerAction("\(monster.name) dropped \(loot.name)!")
+        if !combat.adLibLootGranted {
+            for monster in combat.encounter.monsters {
+                if let loot = monster.type.rollLoot() {
+                    if loot.type == .gold {
+                        lootGold += loot.value
+                        print("  \(monster.name) dropped \(loot.value) gold", color: .yellow)
+                        logMultiplayerAction("\(monster.name) dropped \(loot.value) gold")
+                    } else if loot.type == .potion || loot.type == .item {
+                        if let item = resolveItemByName(loot.name) {
+                            lootItems.append(item)
+                            print("  \(monster.name) dropped \(loot.name)!", color: .brightGreen)
+                            logMultiplayerAction("\(monster.name) dropped \(loot.name)!")
+                        }
                     }
                 }
             }
