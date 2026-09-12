@@ -422,7 +422,7 @@ struct TerminalView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .background(terminalBackground)
-                    .overlay(alignment: .trailing) { tapToAdvanceStrip }
+                    .overlay(alignment: .leading) { tapToAdvanceStrip }
                     #if !os(tvOS)
                     // tvOS has no touch/swipe input (remote + focus engine
                     // instead) — swipe-left/right card navigation doesn't apply.
@@ -970,37 +970,26 @@ struct TerminalView: View {
     }
 
     /// Tap-to-advance zone for card mode / "Press to continue" screens
-    /// (victory, level-up, combat reports...) — a narrow strip on the right
-    /// edge instead of the whole line being tappable, so the rest of the
-    /// text stays free for ordinary scroll drags (a full-width tap target
-    /// made it impossible to scroll up mid-combat to reread a report: any
-    /// tap meant to start a scroll just advanced to the next screen
-    /// instead). A faint chevron marks it as tappable without being
-    /// visually loud.
+    /// (victory, level-up, combat reports...) — the left 5/6 of the width is
+    /// tappable to advance; the right 1/6 is deliberately left with no
+    /// gesture at all, so a scroll drag started there is never mistaken for
+    /// a tap. Went through a 44pt right-edge sliver, then a wider-but-still-
+    /// right-edge strip, before landing here — no visual marker (a faint
+    /// chevron was tried and explicitly not wanted).
     @ViewBuilder
     private var tapToAdvanceStrip: some View {
         if gameEngine.swipeLeftHandler != nil || gameEngine.awaitingContinue {
-            VStack {
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13 * scale))
-                    .foregroundColor(terminalGreen.opacity(0.35))
-                Spacer()
-            }
-            // Widened from a 44pt sliver (too easy to miss — reported as
-            // "click to continue doesn't work" when really only that tiny
-            // strip did) to roughly the right third of the screen. Still
-            // narrower than full-width on purpose: the left portion stays
-            // completely free of any tap gesture so a scroll drag started
-            // there is never mistaken for a tap.
-            .frame(width: max(140, 200 * scale))
-            .contentShape(Rectangle())
-            .onTapGesture {
-                if gameEngine.swipeLeftHandler != nil {
-                    gameEngine.swipeLeftHandler?()
-                } else {
-                    gameEngine.handleContinue()
-                }
+            GeometryReader { geo in
+                Color.clear
+                    .frame(width: geo.size.width * 5 / 6)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        if gameEngine.swipeLeftHandler != nil {
+                            gameEngine.swipeLeftHandler?()
+                        } else {
+                            gameEngine.handleContinue()
+                        }
+                    }
             }
         }
     }
