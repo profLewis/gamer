@@ -11358,8 +11358,11 @@ class GameEngine: ObservableObject {
             if wasMultiplayer { self.showPlayMenu() } else { self.startNewGame() }
         }
 
-        // Bottom row: Start
-        opts.append(hasRemote ? "Start Matchmaker" : "Begin Adventure")
+        // Bottom row: Start — "Begin Adventure" over-promised instant play;
+        // tapping it actually leads to two more screens first (name the
+        // dungeon, then choose difficulty) before gameplay starts. "Name
+        // Dungeon" says what actually happens next.
+        opts.append(hasRemote ? "Start Matchmaker" : "Name Dungeon")
         actions.append { [weak self] in
             guard let self = self else { return }
             if hasRemote { self.createMultiplayerMatch() } else { self.startAdventure() }
@@ -12666,11 +12669,11 @@ class GameEngine: ObservableObject {
             self.printWrapped("Character Names — tap a character to view their full card and edit options (type, race, class, ability scores, skills, voice).", indent: 2, color: .dimGreen)
             self.printWrapped("Rest — short rest to recover HP. Long-press for a long rest (restores more HP and resources).", indent: 2, color: .dimGreen)
             self.printWrapped("Random Party (dice icon) — re-rolls only the auto-generated characters. Anyone you built by hand or loaded from the Character Roster is left untouched.", indent: 2, color: .dimGreen)
-            self.printWrapped("Begin Adventure / Start Matchmaker — proceed to name your dungeon, choose difficulty, and begin exploring.", indent: 2, color: .dimGreen)
+            self.printWrapped("Name Dungeon / Start Matchmaker — proceed to name your dungeon, choose difficulty, and begin exploring.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  WHAT NEXT", color: .cyan, bold: true)
-            self.printWrapped("Edit your party until you're happy, then tap Begin Adventure to name your dungeon, choose difficulty, and start exploring!", indent: 2, color: .dimGreen)
+            self.printWrapped("Edit your party until you're happy, then tap Name Dungeon to name it, choose difficulty, and start exploring!", indent: 2, color: .dimGreen)
             self.print("")
         }
     }
@@ -15387,7 +15390,12 @@ class GameEngine: ObservableObject {
         // has set up shop in) — was previously gated on `.shop` only, which left
         // armoury-room merchants mentioned in the room text but unreachable.
         if room.merchant != nil, (room.cleared || room.encounter == nil) {
-            menuOpts.append(MenuOption("Visit Merchant"))
+            // Distinct tint so it reads as an unmistakable "there's a
+            // merchant here" signal rather than blending into the regular
+            // green action buttons — a merchant genuinely present in the
+            // room (guaranteed for .shop, and text-synced for .armory —
+            // see Dungeon.generateDungeon) should never be easy to miss.
+            menuOpts.append(MenuOption("Visit Merchant", tint: .cyan))
             actions.append { [weak self] in if self?.roomIsLit == true { self?.visitShop() } }
         }
 
