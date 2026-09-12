@@ -454,7 +454,13 @@ struct TerminalView: View {
                     }, perform: {})
                     #endif
                     } // end adaptiveMapTextStack — map + text, left half in landscape
-                    .frame(maxWidth: isLandscape ? .infinity : nil, alignment: .leading)
+                    // maxHeight: .infinity is required in landscape — without
+                    // it, this HStack cell only got its ideal/intrinsic
+                    // height instead of the full available height, starving
+                    // the text ScrollView inside down to a sliver (reading
+                    // as "the combat window doesn't scroll" — there was
+                    // barely any visible height for it to scroll within).
+                    .frame(maxWidth: isLandscape ? .infinity : nil, maxHeight: isLandscape ? .infinity : nil, alignment: .leading)
 
                     // Button row + input bar + custom keyboard — right half
                     // in landscape (see the HStack/VStack split below), full
