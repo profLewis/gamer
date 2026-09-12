@@ -259,19 +259,26 @@ struct TerminalView: View {
                                             .onTapGesture {
                                                 gameEngine.textLongPressHandler?(index)
                                             }
-                                    } else if gameEngine.awaitingContinue && gameEngine.fullScreenTapToContinue {
-                                        // Short, one-shot result screens (rest/trap/etc.) — nothing here
-                                        // is worth scrolling back to reread, so the whole line is tappable
-                                        // to continue, unlike the narrow-strip-only behavior below.
+                                    } else if (gameEngine.awaitingContinue && gameEngine.fullScreenTapToContinue) || (gameEngine.swipeLeftHandler != nil && gameEngine.currentCombat == nil) {
+                                        // Short one-shot result screens (rest/trap/NPC results/etc.) and
+                                        // out-of-combat card browsers (monster/NPC detail, character
+                                        // cards, tale reader...) — nothing here is worth scrolling back to
+                                        // reread, so the whole line is tappable to continue/advance,
+                                        // unlike the narrow-strip-only behavior below (which stays reserved
+                                        // for live combat, where scrolling back up mid-fight to reread an
+                                        // earlier round actually matters).
                                         TerminalLineView(line: line, scale: scale)
                                             .id(line.id)
                                             .contentShape(Rectangle())
                                             .onTapGesture {
-                                                gameEngine.handleContinue()
+                                                if gameEngine.awaitingContinue {
+                                                    gameEngine.handleContinue()
+                                                } else {
+                                                    gameEngine.swipeLeftHandler?()
+                                                }
                                             }
                                     } else if gameEngine.swipeLeftHandler != nil || gameEngine.awaitingContinue {
-                                        // Card mode / "Press to continue" screens (victory/level-up/
-                                        // defeat/combat reports/etc.) — advancing used to be a tap
+                                        // Live combat only from here down — advancing used to be a tap
                                         // ANYWHERE on the line, full width, which made it impossible to
                                         // scroll back up to reread a combat report: any tap meant to
                                         // start a scroll just advanced instead. The tap-to-advance zone
