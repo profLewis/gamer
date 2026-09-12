@@ -160,11 +160,17 @@ struct TerminalView: View {
                                 }
                             }
                         }
-                        // Landscape ignores the portrait-tuned Panel Size —
-                        // a screen that's short on height needs its own small
-                        // fixed panel, not whatever (possibly much taller, or
-                        // uncapped Auto) size was set for portrait.
-                        .frame(height: isLandscape ? 120 : (gameEngine.mapPanelHeight > 0 ? gameEngine.mapPanelHeight : nil))
+                        // Always auto-sized to the actual content height now
+                        // — the fixed Panel Size steps (120/180/260/340) were
+                        // originally calibrated to leave room for the key
+                        // rows, but the key is permanently hidden on this
+                        // panel now (see bestMapRadius's compact: true), so a
+                        // fixed height just settled on a box with blank space
+                        // where the key used to be. Still wrapped in a real
+                        // ScrollView above so it stays reachable rather than
+                        // clipped if it's ever taller than the space actually
+                        // available (a small landscape column, a long Map
+                        // Length, larger text scale...).
                         .background(terminalBackground)
                         .contentShape(Rectangle())
                         .onLongPressGesture(minimumDuration: 0.5) {

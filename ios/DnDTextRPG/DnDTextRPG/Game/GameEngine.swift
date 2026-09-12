@@ -6761,28 +6761,6 @@ class GameEngine: ObservableObject {
         }
     }
 
-    /// User-adjustable height (points) for the pinned map panel at the top
-    /// of the screen (see TerminalView) — 0 means "Auto" (sized to fit the
-    /// map + key with no cap, showing the whole thing at once with nothing
-    /// to scroll). A positive value fixes the panel to that height and lets
-    /// it scroll internally for whatever doesn't fit — so shrinking it
-    /// never loses the key, it just takes a scroll to see. Defaults to a
-    /// compact fixed height (rather than Auto) so the map only ever shows
-    /// its immediate, substantive area up front, with the rest (a large
-    /// radius, or the legend) reachable by scrolling instead of pushing the
-    /// text/buttons below it further down the screen. Adjustable via a
-    /// drag handle on the panel itself, or Settings > Gameplay > Map
-    /// Radius > Panel Size (which can still choose Auto explicitly).
-    var mapPanelHeight: CGFloat {
-        get {
-            if let stored = UserDefaults.standard.object(forKey: "map_panel_height") as? Double {
-                return CGFloat(stored)
-            }
-            return 180
-        }
-        set { UserDefaults.standard.set(Double(newValue), forKey: "map_panel_height") }
-    }
-
     var maxButtonsPerScreen: Int {
         get {
             let val = UserDefaults.standard.integer(forKey: "maxButtonsPerScreen")
@@ -10155,16 +10133,6 @@ class GameEngine: ObservableObject {
         let legendLabel = mapLegendMaxSymbols >= Dungeon.mapLegendEntries.count ? "Legend: All" : "Legend: \(mapLegendMaxSymbols)"
         menuOpts.append(MenuOption(legendLabel))
 
-        // The on-screen pinned map panel's own height — separate from the
-        // map's content size above. "Auto" (0) fits the panel to the map +
-        // key with no cap (original behavior); a fixed size lets the panel
-        // scroll internally instead of ever clipping the key. Also
-        // adjustable by dragging the handle below the panel itself.
-        let panelSteps: [CGFloat] = [0, 120, 180, 260, 340]
-        let panelIndex = menuOpts.count + 1
-        let panelLabel = mapPanelHeight <= 0 ? "Panel: Auto" : "Panel: \(Int(mapPanelHeight))"
-        menuOpts.append(MenuOption(panelLabel))
-
         // Standard 3-bar nav pair — this screen was missing them entirely.
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         let helpIndex = menuOpts.count
@@ -10187,11 +10155,6 @@ class GameEngine: ObservableObject {
                 let currentIdx = legendSteps.firstIndex(where: { $0 >= self.mapLegendMaxSymbols }) ?? 0
                 self.mapLegendMaxSymbols = legendSteps[(currentIdx + 1) % legendSteps.count]
                 self.recordSettingChange(screen: "s:gameplay", key: "map_legend_max_symbols", name: "Map Legend")
-                self.showMapRadiusMenu()
-            } else if choice == panelIndex {
-                let currentIdx = panelSteps.firstIndex(where: { $0 >= self.mapPanelHeight }) ?? 0
-                self.mapPanelHeight = panelSteps[(currentIdx + 1) % panelSteps.count]
-                self.recordSettingChange(screen: "s:gameplay", key: "map_panel_height", name: "Map Panel")
                 self.showMapRadiusMenu()
             } else if choice == helpIndex {
                 self.showGameplaySettingsHelp()
