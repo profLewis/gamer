@@ -335,6 +335,10 @@ class GameEngine: ObservableObject {
     private var monstersSlain: Int = 0
     private var combatsWon: Int = 0
 
+    /// The one active side quest, if any — an NPC won't offer another while
+    /// this is set (see talkToNPC()'s "Ask for a Quest" gating).
+    @Published var activeQuest: SideQuest? = nil
+
     // Save slot tracking
     private var activeSlotId: UUID?
     private var activeSlotName: String?
@@ -6725,7 +6729,8 @@ class GameEngine: ObservableObject {
             torchTurnsRemaining: torchTurnsRemaining,
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
-            combatsWon: combatsWon
+            combatsWon: combatsWon,
+            activeQuest: activeQuest
         )
 
         try? SaveGameManager.shared.save(saveGame)
@@ -15289,6 +15294,9 @@ class GameEngine: ObservableObject {
             self.print("  TRUSTWORTHINESS", color: .cyan, bold: true)
             self.printWrapped("Gatekeeper offers quests. Others vary — watch their wording for clues.", indent: 2, color: .dimGreen)
             self.print("")
+            self.print("  ASK FOR A QUEST", color: .cyan, bold: true)
+            self.printWrapped("Some NPCs have a task for you — only one quest can be active at a time. Check progress any time on the Party Status screen.", indent: 2, color: .dimGreen)
+            self.print("")
         }
     }
 
@@ -15309,6 +15317,8 @@ class GameEngine: ObservableObject {
             showJustDMExploration()
             return
         }
+
+        guard !checkAndShowSideQuestCompletion() else { return }
 
         SpeechEngine.shared.stop()
         clearTerminal()
@@ -17513,6 +17523,20 @@ class GameEngine: ObservableObject {
             }
         }
 
+        // Side quest offer — any NPC but the Gatekeeper (who has their own
+        // separate "slay the boss" quest), decided once per NPC and only
+        // shown while no other quest is active (one at a time).
+        if npc.type != .gatekeeper, !npc.sideQuestOffered {
+            if npc.willOfferSideQuest == nil {
+                npc.willOfferSideQuest = Int.random(in: 1...100) <= 45
+                room.npc = npc
+            }
+            if npc.willOfferSideQuest == true, activeQuest == nil {
+                options.append(MenuOption("Ask for a Quest", tint: .cyan))
+                actions.append { [weak self] in self?.offerSideQuest() }
+            }
+        }
+
         // Help
         options.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showNPCHelp() }
@@ -17530,6 +17554,123 @@ class GameEngine: ObservableObject {
                 actions[choice - 1]()
             }
         }
+    }
+
+    private func offerSideQuest() {
+        guard let room = dungeon?.currentRoom, var npc = room.npc, let dungeon = dungeon else { return }
+        let totalGold = party.reduce(0) { $0 + $1.gold }
+        let quest = SideQuest.random(level: dungeon.level, giverName: npc.type.rawValue,
+                                     monstersSlain: monstersSlain, partyGold: totalGold)
+
+        clearTerminal()
+        printExplorationMap()
+        print("")
+        printTitle("A Quest?")
+        print("")
+        printWrapped("\"I have a task for you, if you're willing: \(quest.description). Do this and I'll see you rewarded with \(quest.reward.description).\"", indent: 2, color: .yellow)
+        print("")
+
+        showMenu(["Accept", "Decline"])
+        closeHandler = { [weak self] in self?.talkToNPC() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            npc.sideQuestOffered = true
+            room.npc = npc
+            if choice == 1 {
+                self.activeQuest = quest
+                self.print("  Quest accepted: \(quest.description)", color: .brightGreen)
+                self.logEvent("Accepted quest from \(quest.giverName): \(quest.description)", category: "QUEST")
+                self.waitForContinueWithTimeout { self.talkToNPC() }
+            } else {
+                self.talkToNPC()
+            }
+        }
+    }
+
+    /// Human-readable progress line for the active quest — shown in Party
+    /// Status so a quest accepted a while ago isn't forgotten.
+    private func sideQuestProgressDescription(_ quest: SideQuest) -> String {
+        switch quest.type {
+        case .defeatMonsters:
+            let done = min(quest.target, monstersSlain - quest.startMonstersSlain)
+            return "Progress: \(done)/\(quest.target) monsters defeated"
+        case .collectGold:
+            let totalGold = party.reduce(0) { $0 + $1.gold }
+            let done = min(quest.target, totalGold - quest.startPartyGold)
+            return "Progress: \(done)/\(quest.target) gold gathered"
+        case .fullyEquipped:
+            let active = party.filter { $0.isConscious }
+            let equipped = active.filter { $0.equippedWeapon != nil && $0.equippedArmor != nil && $0.equippedShield != nil }.count
+            return "Progress: \(equipped)/\(active.count) fully armed"
+        case .reachLevel:
+            let best = party.map { $0.level }.max() ?? 0
+            return "Progress: highest level is \(best) (need \(quest.target))"
+        }
+    }
+
+    /// True if the active quest's condition is currently met. Absolute
+    /// checks (fullyEquipped/reachLevel) read live state directly;
+    /// cumulative checks (defeatMonsters/collectGold) measure the change
+    /// since the quest's own start baseline.
+    private func isSideQuestComplete(_ quest: SideQuest) -> Bool {
+        switch quest.type {
+        case .defeatMonsters:
+            return monstersSlain - quest.startMonstersSlain >= quest.target
+        case .collectGold:
+            let totalGold = party.reduce(0) { $0 + $1.gold }
+            return totalGold - quest.startPartyGold >= quest.target
+        case .fullyEquipped:
+            let active = party.filter { $0.isConscious }
+            guard !active.isEmpty else { return false }
+            return active.allSatisfy { $0.equippedWeapon != nil && $0.equippedArmor != nil && $0.equippedShield != nil }
+        case .reachLevel:
+            return party.contains { $0.level >= quest.target }
+        }
+    }
+
+    /// Checks the active quest and, if complete, clears it and shows the
+    /// completion screen. Returns true when it did — callers (mainly
+    /// showExplorationView()) should skip their own render in that case.
+    private func checkAndShowSideQuestCompletion() -> Bool {
+        guard let quest = activeQuest, isSideQuestComplete(quest) else { return false }
+        activeQuest = nil
+        showSideQuestComplete(quest)
+        return true
+    }
+
+    private func showSideQuestComplete(_ quest: SideQuest) {
+        clearTerminal()
+        printTitle("Quest Complete!")
+        print("")
+        print("  \(quest.giverName)'s task is done: \(quest.description)", color: .brightGreen, bold: true)
+        print("")
+
+        switch quest.reward {
+        case .bonusGold(let amount):
+            let eligible = party.filter { $0.isConscious }
+            let recipients = eligible.isEmpty ? party : eligible
+            let each = max(1, amount / recipients.count)
+            for char in recipients { char.gold += each }
+            print("  The party is rewarded with \(amount) gold (\(each) each).", color: .yellow)
+        case .titleSuffix(let suffix):
+            if let honoree = party.filter({ $0.isConscious }).randomElement() ?? party.first {
+                if !honoree.name.hasSuffix(suffix) {
+                    honoree.name = "\(honoree.name) \(suffix)"
+                }
+                print("  \(honoree.name) is honored with \(quest.reward.description)!", color: .yellow)
+            }
+        case .maxHPBoost(let amount):
+            for char in party {
+                char.maxHP += amount
+                char.currentHP += amount
+            }
+            print("  The whole party feels hardier: \(quest.reward.description).", color: .yellow)
+        }
+        print("")
+        logEvent("Completed quest from \(quest.giverName): \(quest.description)", category: "QUEST")
+        logMultiplayerAction("Completed a quest: \(quest.description)")
+
+        waitForContinueWithTimeout { [weak self] in self?.showExplorationView() }
     }
 
     private func askNPCAbout(topic: String) {
@@ -19546,6 +19687,15 @@ class GameEngine: ObservableObject {
             print("  Monster strength: +\(pct)% (your party has grown stronger)", color: .yellow)
         }
 
+        // Active quest — the only place besides the offer/completion
+        // screens where progress is visible, so a player who accepted a
+        // quest and moved on has somewhere to check back in.
+        if let quest = activeQuest {
+            print("")
+            print("  QUEST from \(quest.giverName): \(quest.description)", color: .cyan, bold: true)
+            print("    \(sideQuestProgressDescription(quest))", color: .dimGreen)
+        }
+
         // Torch status
         if torchLit, let holderId = torchHolderId {
             let holderName = party.first(where: { $0.id == holderId }).map { shortName(for: $0) } ?? "?"
@@ -19757,6 +19907,14 @@ class GameEngine: ObservableObject {
             // Build help text into a fresh line array
             terminalLines.removeAll()
             suppressAutoScroll = true
+            // A quest already accepted is easy to forget about mid-adventure
+            // — show a reminder of it and its progress before every screen's
+            // own help content, rather than only on Party Status.
+            if let quest = activeQuest {
+                print("  QUEST from \(quest.giverName): \(quest.description)", color: .cyan, bold: true)
+                print("  \(sideQuestProgressDescription(quest))", color: .dimGreen)
+                print("")
+            }
             helpBuilder()
             printInputHelp()
             let helpLines = terminalLines
@@ -25701,7 +25859,8 @@ class GameEngine: ObservableObject {
                 dmChatLog: chatEntries, torchLit: torchLit,
                 torchTurnsRemaining: torchTurnsRemaining,
                 partyChatLog: partyChatLog.suffix(20).map { $0 },
-                monstersSlain: monstersSlain, combatsWon: combatsWon
+                monstersSlain: monstersSlain, combatsWon: combatsWon,
+                activeQuest: activeQuest
             )
             try? SaveGameManager.shared.save(hofSave)
             linkedSaveId = saveId
@@ -26340,7 +26499,8 @@ class GameEngine: ObservableObject {
             torchTurnsRemaining: torchTurnsRemaining,
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
-            combatsWon: combatsWon
+            combatsWon: combatsWon,
+            activeQuest: activeQuest
         )
 
         do {
@@ -26387,7 +26547,8 @@ class GameEngine: ObservableObject {
             torchTurnsRemaining: torchTurnsRemaining,
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
-            combatsWon: combatsWon
+            combatsWon: combatsWon,
+            activeQuest: activeQuest
         )
 
         do {
@@ -26845,7 +27006,8 @@ class GameEngine: ObservableObject {
                 torchTurnsRemaining: bp.torchTurnsRemaining,
                 partyChatLog: bp.partyChatLog,
                 monstersSlain: bp.monstersSlain,
-                combatsWon: bp.combatsWon
+                combatsWon: bp.combatsWon,
+                activeQuest: bp.activeQuest
             )
             try? SaveGameManager.shared.save(copy)
         }
@@ -27291,7 +27453,8 @@ class GameEngine: ObservableObject {
                     torchTurnsRemaining: bp.torchTurnsRemaining,
                     partyChatLog: bp.partyChatLog,
                     monstersSlain: bp.monstersSlain,
-                    combatsWon: bp.combatsWon
+                    combatsWon: bp.combatsWon,
+                    activeQuest: bp.activeQuest
                 )
                 SaveGameManager.shared.delete(id: bp.id)
                 try? SaveGameManager.shared.save(renamed)
@@ -27481,6 +27644,7 @@ class GameEngine: ObservableObject {
         adventureLog = save.adventureLog
         monstersSlain = save.monstersSlain
         combatsWon = save.combatsWon
+        activeQuest = save.activeQuest
         // Restore torch state — if not saved, auto-light if anyone has a torch
         if let savedTorchLit = save.torchLit {
             torchLit = savedTorchLit
@@ -27688,6 +27852,7 @@ class GameEngine: ObservableObject {
         adventureLog = []
         monstersSlain = 0
         combatsWon = 0
+        activeQuest = nil
         activeSlotId = nil
         activeSlotName = nil
         torchLit = false

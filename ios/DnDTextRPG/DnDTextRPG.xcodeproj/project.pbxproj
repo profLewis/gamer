@@ -36,6 +36,7 @@
 		E6F7A8B9C0D1E2F300667790 /* NPCModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F7A8B9C0D1E2F300667789 /* NPCModels.swift */; };
 		0AC4F9C5695C427481E81514 /* MerchantModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B0C527A53D24F0394605EEB /* MerchantModels.swift */; };
 		1CA4F6973F3B4A66A93CB2BB /* RiddleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 541BA8B56DAA46E2A3777688 /* RiddleData.swift */; };
+		51BE9453556E4524AD580E78 /* QuestModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A93BA868281843B09A57821C /* QuestModels.swift */; };
 		D5391060BEFC4EB7BD601FD7 /* TrainerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE80F5BBC8094E138B838B35 /* TrainerModels.swift */; };
 		2BDCC0373C714C3CBFE4DDA9 /* CharacterLibraryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 007C1A2621AF46D19020E969 /* CharacterLibraryModels.swift */; };
 		AA00000000000000000004 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000003 /* Localizable.xcstrings */; };
@@ -76,6 +77,7 @@
 		E6F7A8B9C0D1E2F300667789 /* NPCModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NPCModels.swift; sourceTree = "<group>"; };
 		4B0C527A53D24F0394605EEB /* MerchantModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MerchantModels.swift; sourceTree = "<group>"; };
 		541BA8B56DAA46E2A3777688 /* RiddleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RiddleData.swift; sourceTree = "<group>"; };
+		A93BA868281843B09A57821C /* QuestModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuestModels.swift; sourceTree = "<group>"; };
 		FE80F5BBC8094E138B838B35 /* TrainerModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrainerModels.swift; sourceTree = "<group>"; };
 		007C1A2621AF46D19020E969 /* CharacterLibraryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CharacterLibraryModels.swift; sourceTree = "<group>"; };
 		D18E1F342F3DF78F0076A164 /* DnDTextRPG.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DnDTextRPG.entitlements; sourceTree = "<group>"; };
@@ -159,6 +161,7 @@
 				E6F7A8B9C0D1E2F300667789 /* NPCModels.swift */,
 				4B0C527A53D24F0394605EEB /* MerchantModels.swift */,
 				541BA8B56DAA46E2A3777688 /* RiddleData.swift */,
+				A93BA868281843B09A57821C /* QuestModels.swift */,
 				FE80F5BBC8094E138B838B35 /* TrainerModels.swift */,
 				007C1A2621AF46D19020E969 /* CharacterLibraryModels.swift */,
 			);
@@ -290,6 +293,7 @@
 				E6F7A8B9C0D1E2F300667790 /* NPCModels.swift in Sources */,
 				0AC4F9C5695C427481E81514 /* MerchantModels.swift in Sources */,
 				1CA4F6973F3B4A66A93CB2BB /* RiddleData.swift in Sources */,
+				51BE9453556E4524AD580E78 /* QuestModels.swift in Sources */,
 				D5391060BEFC4EB7BD601FD7 /* TrainerModels.swift in Sources */,
 				2BDCC0373C714C3CBFE4DDA9 /* CharacterLibraryModels.swift in Sources */,
 				BB00000000000000000002 /* GameKeyboardView.swift in Sources */,

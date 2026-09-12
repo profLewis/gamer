@@ -47,6 +47,9 @@ struct SaveGame: Codable, Identifiable {
     // Run stats
     let monstersSlain: Int
     let combatsWon: Int
+
+    // Active side quest, if any
+    let activeQuest: SideQuest?
 }
 
 // MARK: - Save Slot (grouped view)

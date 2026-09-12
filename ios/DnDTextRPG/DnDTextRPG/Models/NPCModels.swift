@@ -1093,6 +1093,11 @@ struct DungeonNPC: Codable {
     var questGold: Int = 0
     var questAccepted: Bool = false
 
+    // Side quest offer (any non-gatekeeper NPC) — decided once on first
+    // meeting and cached, so re-visiting doesn't re-roll a fresh chance.
+    var willOfferSideQuest: Bool? = nil
+    var sideQuestOffered: Bool = false
+
     /// Track how many times the player has asked about each topic
     var timesAsked: [String: Int] = [:]
 

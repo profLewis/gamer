@@ -241,7 +241,8 @@ class HallOfFameManager {
             adventureLog: buildRepairLog(entry),
             dmChatLog: nil, torchLit: true, torchTurnsRemaining: 30,
             partyChatLog: nil,
-            monstersSlain: entry.monstersSlain, combatsWon: entry.combatsWon
+            monstersSlain: entry.monstersSlain, combatsWon: entry.combatsWon,
+            activeQuest: nil
         )
     }
 
@@ -398,7 +399,8 @@ class HallOfFameManager {
                 adventureLog: buildSeedLog(seed),
                 dmChatLog: nil, torchLit: true, torchTurnsRemaining: 30,
                 partyChatLog: nil,
-                monstersSlain: seed.slain, combatsWon: seed.combats
+                monstersSlain: seed.slain, combatsWon: seed.combats,
+                activeQuest: nil
             )
             try? SaveGameManager.shared.save(save)
 
