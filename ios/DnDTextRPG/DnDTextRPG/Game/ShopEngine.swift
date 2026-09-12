@@ -653,7 +653,7 @@ class ShopEngine {
         var itemLineRanges: [Range<Int>] = []
         for item in stock {
             let lineStart = game.terminalLines.count
-            options.append("Try: \(item.name) (\(item.value)gp)")
+            options.append("\(item.name) (\(item.value)gp)")
             game.print("  \(item.name) — asking \(item.value)gp: \(item.description)", color: .green)
             itemLineRanges.append(lineStart..<game.terminalLines.count)
         }
