@@ -11,6 +11,12 @@
       "idiom" : "tv",
       "platform" : "tvos",
       "size" : "1280x768"
+    },
+    {
+      "filename" : "AppIcon.png",
+      "idiom" : "mac",
+      "scale" : "2x",
+      "size" : "512x512"
     }
   ],
   "info" : {
