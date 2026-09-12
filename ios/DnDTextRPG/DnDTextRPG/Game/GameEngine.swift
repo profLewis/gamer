@@ -11262,6 +11262,13 @@ class GameEngine: ObservableObject {
             }
             SpeechEngine.shared.speak(narration)
         }
+
+        // Also read the tale's full printed text aloud if the general
+        // "read screen aloud" accessibility mode is on (independent of the
+        // DM Voice narration above, which is a separate, shorter summary).
+        // Ducks music automatically the same way any other spoken screen
+        // does — see SpeechEngine's own duck/unduckMusic calls.
+        autoReadIfSpeakerMode()
     }
 
     /// Dramatic transition screen before actually loading the tale's linked

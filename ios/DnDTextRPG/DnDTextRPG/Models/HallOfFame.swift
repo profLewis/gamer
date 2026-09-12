@@ -232,8 +232,16 @@ class HallOfFameManager {
         simulateExploration(dungeon: dungeon, roomsExplored: entry.roomsExplored, isDefeat: entry.outcome == .defeat)
 
         let partyDesc = party.map { "\($0.name) (\($0.characterClass.rawValue))" }.joined(separator: ", ")
+        // Stamped with the CURRENT date, not entry.date — SaveGameManager
+        // trims the oldest slots once past its 10-slot cap, so a repaired
+        // save backdated to the original (often weeks-old) entry date would
+        // be first in line to be silently re-deleted the very next time
+        // ANY save happens, the moment the player has 10+ real slots. The
+        // whole point of repair is to give a genuinely continuable save
+        // right now, not one immediately vulnerable to the same trim that
+        // likely orphaned it in the first place.
         return SaveGame(
-            id: UUID(), slotId: UUID(), savedAt: entry.date,
+            id: UUID(), slotId: UUID(), savedAt: Date(),
             slotName: "\(party.first?.name ?? "Hero") — \(entry.dungeonName)",
             partyDescription: partyDesc, dungeonName: entry.dungeonName, dungeonLevel: entry.dungeonLevel,
             party: party, dungeon: dungeon, gameState: .exploring,
@@ -247,9 +255,19 @@ class HallOfFameManager {
     }
 
     private func buildRepairParty(for entry: HallOfFameEntry) -> [Character] {
-        let members = entry.partyDescription
+        var members = entry.partyDescription
             .components(separatedBy: ", ")
             .filter { !$0.isEmpty }
+        // partyDescription can be empty or unparseable on a genuinely old
+        // entry (predates it being a reliable, always-populated field) —
+        // without a fallback, that permanently skips repair for this entry
+        // every single launch, since nothing about the failure changes
+        // next time. partyNames is guaranteed non-empty for any real entry,
+        // so fall back to it (class-less, so everyone repairs as a
+        // Fighter) rather than leaving the entry orphaned forever.
+        if members.isEmpty {
+            members = entry.partyNames.map { "\($0) (\(CharacterClass.fighter.rawValue))" }
+        }
         guard !members.isEmpty else { return [] }
 
         let roster = CharacterLibraryManager.shared.listCharacters()
