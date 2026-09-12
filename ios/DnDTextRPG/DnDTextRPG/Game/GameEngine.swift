@@ -18546,7 +18546,7 @@ class GameEngine: ObservableObject {
         }
 
         // Open the shop with NPC-specific inventory
-        pickCharacter(title: "Who trades with \(merchant.name)?", cancelLabel: "Don't Trade") { [weak self] character in
+        pickCharacter(title: "Who trades with \(merchant.name)?", cancelLabel: "Don't Trade", showGold: true) { [weak self] character in
             guard let self = self else { return }
             self.shopEngine.openShop(character: character, dungeonLevel: dungeon.level, merchant: merchant) { [weak self] in
                 npc.hasTraded = true
@@ -18636,7 +18636,7 @@ class GameEngine: ObservableObject {
                 self.inputHandler = { [weak self] _ in self?.talkToNPC() }
                 return
             }
-            self.pickCharacter(title: "Who buys the \(item.name)?", onBack: { [weak self] in self?.talkToNPC() }) { [weak self] character in
+            self.pickCharacter(title: "Who buys the \(item.name)?", onBack: { [weak self] in self?.talkToNPC() }, showGold: true) { [weak self] character in
                 guard let self = self else { return }
                 guard character.gold >= price else {
                     self.print("")
@@ -18705,7 +18705,7 @@ class GameEngine: ObservableObject {
         let brokenCount = party.reduce(0) { $0 + $1.inventory.filter { $0.broken }.count }
         let cost = brokenCount > 0 ? brokenCount * costPerWeapon : costPerWeapon
 
-        pickCharacter(title: "Who pays for repairs?") { [weak self] character in
+        pickCharacter(title: "Who pays for repairs?", showGold: true) { [weak self] character in
             guard let self = self else { return }
 
             self.clearTerminal()
@@ -19301,7 +19301,7 @@ class GameEngine: ObservableObject {
 
     // MARK: - Inventory
 
-    func pickCharacter(title: String, cancelLabel: String = "Done", from candidates: [Character]? = nil, onBack: (() -> Void)? = nil, action: @escaping (Character) -> Void) {
+    func pickCharacter(title: String, cancelLabel: String = "Done", from candidates: [Character]? = nil, onBack: (() -> Void)? = nil, showGold: Bool = false, action: @escaping (Character) -> Void) {
         let chars = candidates ?? party
         if chars.count == 1 {
             action(chars[0])
@@ -19317,7 +19317,12 @@ class GameEngine: ObservableObject {
 
         var options: [String] = []
         for char in chars {
-            options.append("\(shortName(for: char)) \(char.currentHP)/\(char.maxHP)HP")
+            // Gold, not HP, is what matters when the question is "who pays"
+            // (shop, gym membership...) — HP is the right stat everywhere
+            // else (combat targeting, healing...), so this only swaps for
+            // callers that explicitly ask for it.
+            let stat = showGold ? "\(char.gold)gp" : "\(char.currentHP)/\(char.maxHP)HP"
+            options.append("\(shortName(for: char)) \(stat)")
         }
         options.append(cancelLabel)
 
@@ -20218,7 +20223,7 @@ class GameEngine: ObservableObject {
     func visitShop() {
         guard let dungeon = dungeon, let room = dungeon.currentRoom, let merchant = room.merchant else { return }
 
-        pickCharacter(title: "Who visits \(merchant.name)?", cancelLabel: "Don't Enter") { [weak self] character in
+        pickCharacter(title: "Who visits \(merchant.name)?", cancelLabel: "Don't Enter", showGold: true) { [weak self] character in
             guard let self = self else { return }
             self.shopEngine.openShop(character: character, dungeonLevel: dungeon.level, merchant: merchant) { [weak self] in
                 self?.showExplorationView()
@@ -20243,7 +20248,7 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             switch choice {
             case 1:
-                self.pickCharacter(title: "Who pays the membership?", cancelLabel: "Don't Enter") { [weak self] character in
+                self.pickCharacter(title: "Who pays the membership?", cancelLabel: "Don't Enter", showGold: true) { [weak self] character in
                     guard let self = self else { return }
                     guard character.gold >= trainer.membershipFee else {
                         self.print("")
