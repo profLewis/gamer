@@ -773,6 +773,10 @@ class Dungeon: ObservableObject, Codable {
             // a merchant has set up shop can't also be guarded by a monster
             // the room-type roll may have already assigned before this pass ran.
             armouryRoom.encounter = nil
+            // The flavour text names a merchant — give it an actual face:
+            // the Dwarven Smith is the only NPC type that prefers armouries,
+            // so this guarantees "Ask to Trade" has someone to ask.
+            armouryRoom.npc = DungeonNPC(type: .dwarvenSmith)
         }
 
         // Riddle challenges — libraries and shrines occasionally pose one,
@@ -925,7 +929,7 @@ class Dungeon: ObservableObject, Codable {
 
         // Spawn NPCs in ~30-40% of non-boss, non-entrance rooms (max 6)
         let npcCandidates = rooms.values.filter {
-            $0.roomType != .entrance && $0.roomType != .boss && $0.encounter == nil
+            $0.roomType != .entrance && $0.roomType != .boss && $0.encounter == nil && $0.npc == nil
         }.shuffled()
         let maxNPCs = min(6, max(2, npcCandidates.count / 3))
         var npcCount = 0
@@ -1132,7 +1136,20 @@ class Dungeon: ObservableObject, Codable {
         return headerLines + gridLines + hereLine + legendLines
     }
 
-    func getMapDisplay(visibilityRadius: Int = 3, torchLit: Bool = true, compact: Bool = false, verticalRadius: Int? = nil, legendMaxSymbols: Int = mapLegendEntries.count, hasTrapSense: Bool = false) -> [String] {
+    /// How far (in room-grid units) the current room is from the furthest
+    /// visited room on any side — the radius needed to fit every explored
+    /// room on this floor in one getMapDisplay call, for the "hold to see
+    /// the whole map" overlay.
+    var exploredRadius: Int {
+        guard let current = rooms[currentRoomId] else { return 0 }
+        let visited = rooms.values.filter { $0.visited }
+        guard !visited.isEmpty else { return 0 }
+        let dx = visited.map { abs($0.x - current.x) }.max() ?? 0
+        let dy = visited.map { abs($0.y - current.y) }.max() ?? 0
+        return max(dx, dy)
+    }
+
+    func getMapDisplay(visibilityRadius: Int = 3, torchLit: Bool = true, compact: Bool = false, verticalRadius: Int? = nil, legendMaxSymbols: Int = mapLegendEntries.count, hasTrapSense: Bool = false, capWidth: Bool = true) -> [String] {
         guard let current = rooms[currentRoomId] else { return ["No map available."] }
 
         // Torch off: no direction info — you can't see the passages. Sized
@@ -1148,7 +1165,7 @@ class Dungeon: ObservableObject, Codable {
             let viewMaxY = current.y + vRadius
 
             let cols = viewMaxX - viewMinX + 1
-            let mapWidth = min(cols * 5 + 3, 40)
+            let mapWidth = capWidth ? min(cols * 5 + 3, 40) : cols * 5 + 3
             let border = String(repeating: "-", count: max(mapWidth, 26))
 
             var lines: [String] = []
@@ -1201,7 +1218,7 @@ class Dungeon: ObservableObject, Codable {
         var lines: [String] = []
 
         let cols = viewMaxX - viewMinX + 1
-        let mapWidth = min(cols * 5 + 3, 40)
+        let mapWidth = capWidth ? min(cols * 5 + 3, 40) : cols * 5 + 3
         let border = String(repeating: "-", count: max(mapWidth, 26))
         lines.append("+\(border)+")
         if !compact {

@@ -111,6 +111,12 @@ class GameEngine: ObservableObject {
     /// scrolling text, where enough button rows below could push it (or
     /// scrolling-to-bottom after new text) out of view. See printMap().
     @Published var pinnedMapLines: [TerminalLine] = []
+    /// Easter egg: holding the map pane open shows the WHOLE explored floor
+    /// (not just the normal radius-limited viewport) in a pannable overlay,
+    /// with a Recentre button to snap back to the player's position — like
+    /// Google Maps' recentre control.
+    @Published var mapOverlayVisible: Bool = false
+    @Published var mapOverlayLines: [TerminalLine] = []
     @Published var currentMenuOptions: [MenuOption] = []
     @Published var directionExits: [Direction: Bool] = [:]  // direction -> enabled
     @Published var securedExits: Set<Direction> = []  // directions that are barred
@@ -820,6 +826,28 @@ class GameEngine: ObservableObject {
         runOnMain {
             self.pinnedMapLines = mapped
         }
+    }
+
+    /// Easter egg triggered by long-pressing the map pane — shows the whole
+    /// explored floor at once (uncapped width, radius sized to fit every
+    /// visited room), scrollable/pannable, instead of just the normal
+    /// radius-limited viewport centered on the player.
+    func showExpandedMapOverlay() {
+        guard let dungeon = dungeon else { return }
+        let lines = dungeon.getMapDisplay(visibilityRadius: max(3, dungeon.exploredRadius), torchLit: torchLit,
+                                           legendMaxSymbols: mapLegendMaxSymbols, hasTrapSense: partyHasTrapSense, capWidth: false)
+        let maxLen = lines.map { $0.count }.max() ?? 0
+        mapOverlayLines = lines.map { line in
+            let padded = maxLen > 0 ? line.padding(toLength: maxLen, withPad: " ", startingAt: 0) : line
+            return TerminalLine(padded, color: torchMapColor, size: mapFontSize)
+        }
+        mapOverlayVisible = true
+    }
+
+    /// "Recentre" — dismiss the full-map overlay back to the normal pinned
+    /// viewport, same as Google Maps' recentre control.
+    func recentreMap() {
+        mapOverlayVisible = false
     }
 
     /// IDs of characters the local player directly controls
@@ -6624,7 +6652,7 @@ class GameEngine: ObservableObject {
         switch type {
         case "menu": names = ["Random", "The Dungeon Awaits", "Forgotten Throne", "Cathedral of Bones"]
         case "exploration": names = ["Random", "Into the Depths", "Whispering Corridors", "The Descent", "Forgotten Halls"]
-        case "combat": names = ["Random", "Blades of Fury", "Shields and Steel", "Dragon's Wrath"]
+        case "combat": names = ["Random", "Blades of Fury", "Shields and Steel", "Dragon's Wrath", "Blood and Thunder"]
         case "chat": names = ["Random", "Whispered Council", "Flickering Shadows", "Candlelit Murmurs"]
         default: names = ["Random"]
         }
@@ -8754,7 +8782,7 @@ class GameEngine: ObservableObject {
                 self.showMusicSettings()
             case "Combat Tune":
                 self.recordSettingChange(screen: "s:mood", key: "combat_melody", name: "Combat")
-                self.combatMelodyChoice = (self.combatMelodyChoice + 1) % 4
+                self.combatMelodyChoice = (self.combatMelodyChoice + 1) % 5
                 SoundManager.shared.stopMusic()
                 SoundManager.shared.startMusic(.combat, preference: self.combatMelodyChoice)
                 self.showMusicSettings()
@@ -15530,6 +15558,13 @@ class GameEngine: ObservableObject {
             room.encounter = nil
         }
 
+        // Same self-heal for the NPC side: an armoury whose text says a
+        // merchant has set up shop should have someone standing there to
+        // trade with, even in a dungeon generated/saved before this existed.
+        if room.roomType == .armory, room.merchant != nil, room.npc == nil {
+            room.npc = DungeonNPC(type: .dwarvenSmith)
+        }
+
         // Merchant present in the room itself (shop room, or an armoury a merchant
         // has set up shop in) — was previously gated on `.shop` only, which left
         // armoury-room merchants mentioned in the room text but unreachable.
@@ -16081,22 +16116,42 @@ class GameEngine: ObservableObject {
     /// Step through a teleport pad — see Dungeon.generateDungeon()'s
     /// placement (single-way or bidirectional) and Room.teleportDestinationRoomId.
     private func useTeleportPad(from room: Room, to destination: Room) {
-        guard let dungeon = dungeon else { return }
-        dungeon.currentRoomId = destination.id
-        // Normal step-by-step movement (Dungeon.move()) always does this on
-        // arrival — a pad jump skipped both, which is exactly why the map
-        // came up "No map available" on arrival: the destination had never
-        // been marked visited, and nothing around it had ever been revealed.
-        destination.visited = true
-        dungeon.expandIfNeeded(from: destination)
-        advanceTime(5)
-        tickTorch()
-        checkTorchEvent()
-        logEvent("Teleported from \(room.name) to \(destination.name)", category: "EXPLORE")
-        logMultiplayerAction("The party stepped through a teleport pad into \(destination.name)")
-        explorationStatusMessage = ("The pad hums, and the room shifts around you...", .cyan)
-        autosaveIfNeeded()
-        showExplorationView()
+        guard dungeon != nil else { return }
+        SoundManager.shared.playTeleport()
+        clearTerminal()
+        printTitle("Teleport Pad")
+        print("")
+        // A brief spinning-glyph "beam" effect — the pad visibly winds up
+        // before the jump instead of the room just silently changing.
+        let spinFrames = ["/", "-", "\\", "|", "/", "-", "\\", "|"]
+        for (i, glyph) in spinFrames.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.08) { [weak self] in
+                guard let self = self else { return }
+                self.clearTerminal()
+                self.printTitle("Teleport Pad")
+                self.print("")
+                self.printLines(["      .-\"\"\"-.", "     /  \(glyph) \(glyph) \\", "    | \(glyph)  \(glyph)  \(glyph) |", "     \\  \(glyph) \(glyph) /", "      '-...-'"], color: .cyan)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(spinFrames.count) * 0.08) { [weak self] in
+            guard let self = self, let dungeon = self.dungeon else { return }
+            dungeon.currentRoomId = destination.id
+            // Normal step-by-step movement (Dungeon.move()) always does this
+            // on arrival — a pad jump skipped both, which is exactly why the
+            // map came up "No map available" on arrival: the destination had
+            // never been marked visited, and nothing around it had ever been
+            // revealed.
+            destination.visited = true
+            dungeon.expandIfNeeded(from: destination)
+            self.advanceTime(5)
+            self.tickTorch()
+            self.checkTorchEvent()
+            self.logEvent("Teleported from \(room.name) to \(destination.name)", category: "EXPLORE")
+            self.logMultiplayerAction("The party stepped through a teleport pad into \(destination.name)")
+            self.explorationStatusMessage = ("The pad hums, and the room shifts around you...", .cyan)
+            self.autosaveIfNeeded()
+            self.showExplorationView()
+        }
     }
 
     /// Move between floors via stairs, a rope-climbed hole, or levitation
@@ -16116,7 +16171,10 @@ class GameEngine: ObservableObject {
         destination.visited = true
         dungeon.expandIfNeeded(from: destination)
         let goingDown = room.verticalDirection == "down"
-        dungeon.currentFloor += goingDown ? 1 : -1
+        // Climbing up must increase the floor number, down must decrease it
+        // (floor 1 -> up -> floor 2, floor 1 -> down -> floor 0) — this was
+        // previously inverted.
+        dungeon.currentFloor += goingDown ? -1 : 1
         advanceTime(10)
         tickTorch()
         checkTorchEvent()
@@ -16138,8 +16196,30 @@ class GameEngine: ObservableObject {
                 }
                 logEvent("Jumped down without a rope from \(room.name) to \(destination.name) (Floor \(dungeon.currentFloor))", category: "EXPLORE")
             } else {
-                explorationStatusMessage = ("You climb \(dirWord) the rope through the hole to Floor \(dungeon.currentFloor)...", .cyan)
-                logEvent("Climbed via rope \(dirWord) from \(room.name) to \(destination.name) (Floor \(dungeon.currentFloor))", category: "EXPLORE")
+                // A rope actually bears the party's weight here (unlike the
+                // no-rope jump-down above) — the heavier the party is loaded,
+                // the more likely it snaps under them.
+                let totalWeight = party.reduce(0.0) { $0 + $1.currentWeight }
+                let totalCapacity = party.reduce(0.0) { $0 + $1.carryCapacity }
+                let loadRatio = totalCapacity > 0 ? totalWeight / totalCapacity : 0
+                let breakChance = min(50, max(5, Int(loadRatio * 60)))
+                if Int.random(in: 1...100) <= breakChance {
+                    for member in party {
+                        if let idx = member.inventory.firstIndex(where: { $0.name.hasPrefix("Rope") }) {
+                            member.inventory.remove(at: idx)
+                            break
+                        }
+                    }
+                    let injury = Dice.roll(6)
+                    let unlucky = party.filter({ $0.isConscious }).randomElement()
+                    unlucky?.currentHP = max(1, (unlucky?.currentHP ?? injury) - injury)
+                    let who = unlucky?.name ?? "Someone"
+                    explorationStatusMessage = ("The rope snaps under the party's load! \(who) tumbles the last few feet to Floor \(dungeon.currentFloor). (-\(injury) HP) The rope is ruined.", .red)
+                    logEvent("Rope broke under the party's weight while climbing \(dirWord) (-\(injury) HP to \(who))", category: "EXPLORE")
+                } else {
+                    explorationStatusMessage = ("You climb \(dirWord) the rope through the hole to Floor \(dungeon.currentFloor)...", .cyan)
+                    logEvent("Climbed via rope \(dirWord) from \(room.name) to \(destination.name) (Floor \(dungeon.currentFloor))", category: "EXPLORE")
+                }
             }
         case "levitation":
             // Spend a slot from whichever caster has one — this is what
@@ -18196,7 +18276,17 @@ class GameEngine: ObservableObject {
 
     private func tradeWithNPC() {
         guard let room = dungeon?.currentRoom, var npc = room.npc, let dungeon = dungeon else { return }
-        let merchant = npc.merchant ?? Merchant.random(tier: .wanderingPeddler)
+        let merchant: Merchant
+        if let existing = npc.merchant {
+            merchant = existing
+        } else {
+            // Generate once and persist immediately — otherwise this
+            // Wandering Trader would get a brand new name/stock every
+            // single visit instead of being remembered as the same person.
+            merchant = Merchant.random(tier: .wanderingPeddler)
+            npc.merchant = merchant
+            room.npc = npc
+        }
 
         // Open the shop with NPC-specific inventory
         pickCharacter(title: "Who trades with \(merchant.name)?", cancelLabel: "Don't Trade") { [weak self] character in

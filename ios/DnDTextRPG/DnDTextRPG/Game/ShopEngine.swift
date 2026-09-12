@@ -83,7 +83,16 @@ class ShopEngine {
     func openShop(character: Character, dungeonLevel: Int, merchant: Merchant, completion: @escaping () -> Void) {
         self.character = character
         self.merchant = merchant
-        self.stock = ItemCatalog.shopStock(forLevel: dungeonLevel)
+        // Roll stock once per merchant and remember it from then on — a
+        // merchant who's shown you an item shouldn't have a different (or
+        // no) selection if you leave and come back later.
+        if merchant.stock.isEmpty {
+            self.stock = ItemCatalog.shopStock(forLevel: dungeonLevel)
+            self.merchant?.stock = self.stock
+            syncMerchantToRoom()
+        } else {
+            self.stock = merchant.stock
+        }
         self.hasShownOneAtATimeQuip = false
         self.itemsBoughtThisVisit = []
         self.itemsSoldThisVisit = []
@@ -91,6 +100,22 @@ class ShopEngine {
         game?.logEvent("Visited \(merchant.name) at \(merchant.shopName)", category: "SHOP")
         if let game = game, game.musicEnabled { SoundManager.shared.startMusic(.shop, preference: game.shopMelodyChoice) }
         showShopMain(completion: completion)
+    }
+
+    /// ShopEngine holds its own copy of the merchant struct while the visit
+    /// is open — write any changes (stock, rare goods revealed) back to the
+    /// room so they're remembered on the next visit, and actually saved.
+    /// Covers both a room's own shop/armoury merchant AND a Wandering
+    /// Trader NPC's merchant (a Merchant nested inside room.npc rather than
+    /// on the room directly).
+    private func syncMerchantToRoom() {
+        guard let merchant = self.merchant, let room = game?.dungeon?.currentRoom else { return }
+        if room.merchant != nil {
+            room.merchant = merchant
+        } else if var npc = room.npc, npc.merchant != nil {
+            npc.merchant = merchant
+            room.npc = npc
+        }
     }
 
     // MARK: - Main Menu
@@ -294,6 +319,13 @@ class ShopEngine {
         _ = buyer.addItem(newItem)
         itemsBoughtThisVisit.append(newItem.name)
         game.logEvent("\(buyer.name) bought \(newItem.name) for \(price) gold from \(merchant?.name ?? "a merchant")", category: "SHOP")
+        // If this was the remembered "under the counter" item (bought via
+        // haggling/barter rather than the direct "Buy it" path — that one
+        // clears it itself), it's no longer on offer.
+        if merchant?.rareGoodsOffered.contains(where: { $0.name == item.name }) == true {
+            merchant?.rareGoodsOffered = []
+            syncMerchantToRoom()
+        }
         game.print("")
         for (text, color) in lines { game.print(text, color: color) }
         showPostPurchaseOptions(item: newItem, buyer: buyer, returnTo: returnTo, completion: completion)
@@ -809,11 +841,41 @@ class ShopEngine {
                 }
             } else {
                 let canRetry = attempt < Self.maxHaggleAttempts
-                self.narrate(situation: "The player offers \(offer) gold for a \(item.name) (asking price \(askingPrice)) but fails the Persuasion check. React in character, refusing that price\(canRetry ? ", but leave room for a better offer" : " and firmly end the negotiation").",
-                             offline: merchant.offlineHaggleFailLine(), color: .red) {
-                    game.logEvent("\(character.name) offered \(offer) gold for \(item.name) with \(merchant.name) — refused", category: "SHOP")
-                    game.waitForContinue()
-                    game.inputHandler = { _ in canRetry ? retry() : returnTo() }
+                // A near-miss (within 5 of the DC) gets a real counter-offer
+                // instead of a flat refusal — the merchant meets partway,
+                // and the player gets an explicit button to accept it,
+                // rather than only ever being able to accept their OWN offer.
+                let nearMiss = total >= effectiveDC - 5 && offer < askingPrice - 1
+                if nearMiss {
+                    let counter = min(askingPrice - 1, offer + max(1, (askingPrice - offer) / 2))
+                    self.narrate(situation: "The player offers \(offer) gold for a \(item.name) (asking price \(askingPrice)) and narrowly fails the Persuasion check. Instead of a flat refusal, counter with a price of \(counter) gold. React in character, meeting the player partway.",
+                                 offline: merchant.offlineHaggleCounterLine(), color: .yellow) {
+                        game.print("  \(merchant.name) offers \(counter)gp instead.", color: .yellow)
+                        game.showMenu(["Accept \(counter)gp", canRetry ? "Try Again" : "< Back"])
+                        game.menuHandler = { [weak self] choice in
+                            guard let self = self, let game = self.game, let character = self.character else { return }
+                            if choice == 1 {
+                                if let reason = character.gold < counter ? "You don't have \(counter) gold." : character.carryBlockReason(for: item) {
+                                    game.print("  (You agreed a price of \(counter)gp, but: \(reason))", color: .yellow)
+                                    game.waitForContinue()
+                                    game.inputHandler = { _ in returnTo() }
+                                } else {
+                                    self.completePurchase(item: item, price: counter, buyer: character,
+                                                           lines: [("  Purchased \(item.name) for \(counter) gold (merchant's counter-offer).", .yellow)],
+                                                           returnTo: returnTo, completion: completion)
+                                }
+                            } else {
+                                canRetry ? retry() : returnTo()
+                            }
+                        }
+                    }
+                } else {
+                    self.narrate(situation: "The player offers \(offer) gold for a \(item.name) (asking price \(askingPrice)) but fails the Persuasion check. React in character, refusing that price\(canRetry ? ", but leave room for a better offer" : " and firmly end the negotiation").",
+                                 offline: merchant.offlineHaggleFailLine(), color: .red) {
+                        game.logEvent("\(character.name) offered \(offer) gold for \(item.name) with \(merchant.name) — refused", category: "SHOP")
+                        game.waitForContinue()
+                        game.inputHandler = { _ in canRetry ? retry() : returnTo() }
+                    }
                 }
             }
         }
@@ -886,9 +948,18 @@ class ShopEngine {
         game.printTitle("Under the Counter")
         if let character = character { printPurseAndCarryLine(character) }
 
+        // Once revealed, a rare item stays remembered (same item, same
+        // price) across this and future visits until actually bought —
+        // "let me check" shouldn't turn up something different, or nothing
+        // at all, next time you ask.
+        let alreadyOffered = merchant.rareGoodsOffered.first
         let roll = Int.random(in: 1...100)
-        if roll <= merchant.tier.rareGoodsChance, let rareItem = Self.rareGoodsPool.randomElement() {
+        if let rareItem = alreadyOffered ?? (roll <= merchant.tier.rareGoodsChance ? Self.rareGoodsPool.randomElement() : nil) {
             let price = max(1, Int((Double(rareItem.value) * merchant.tier.rareGoodsMarkup).rounded()))
+            if alreadyOffered == nil {
+                self.merchant?.rareGoodsOffered = [rareItem]
+                syncMerchantToRoom()
+            }
             self.narrate(situation: "The player asks if you have anything special or rare hidden away. You do — reveal a \(rareItem.name) from under the counter, offered at a premium price. React in character, making it feel like a small secret.",
                          offline: merchant.offlineRareGoodsFoundLine(), color: .cyan) {
                 game.print("")
@@ -936,6 +1007,9 @@ class ShopEngine {
             game.inputHandler = { [weak self] _ in self?.showShopMain(completion: completion) }
             return
         }
+        // Bought — no longer remembered as "on offer" for next time.
+        self.merchant?.rareGoodsOffered = []
+        syncMerchantToRoom()
         let returnTo: () -> Void = { [weak self] in self?.showShopMain(completion: completion) }
         completePurchase(item: item, price: price, buyer: character,
                           lines: [("  You purchase the \(item.name) for \(price) gold.", .brightGreen)],

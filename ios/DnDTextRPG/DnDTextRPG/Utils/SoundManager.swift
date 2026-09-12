@@ -523,6 +523,30 @@ class SoundManager {
         ])
     }
 
+    /// Teleport pad activating — a rising sci-fi warble (fast ascending
+    /// arpeggio with a bit of a shimmer/wobble) followed by a soft
+    /// dissolve down, in the spirit of a classic "beaming out" cue.
+    func playTeleport() {
+        playSequence([
+            (220, 0.03, 0.18, .sine),
+            (277, 0.03, 0.2, .sine),
+            (330, 0.03, 0.22, .sine),
+            (415, 0.03, 0.24, .sine),
+            (523, 0.03, 0.26, .sine),
+            (659, 0.03, 0.28, .sine),
+            (784, 0.03, 0.3, .sine),
+            (1047, 0.05, 0.3, .sine),
+            (880, 0.03, 0.22, .sine),
+            (1047, 0.03, 0.24, .sine),
+            (932, 0.03, 0.2, .sine),
+            (1175, 0.06, 0.22, .sine),
+            (1568, 0.09, 0.18, .sine),
+            (1319, 0.08, 0.14, .sine),
+            (988, 0.1, 0.1, .sine),
+            (660, 0.14, 0.06, .sine),
+        ])
+    }
+
     /// Quit / farewell — gentle descending melody
     func playQuit() {
         playSequence([
@@ -657,7 +681,7 @@ class SoundManager {
         case .exploration:
             melodies = [explorationMelody, explorationMelody2, explorationMelody3, explorationMelody4]
         case .combat:
-            melodies = [combatMelody, combatMelody2, combatMelody3]
+            melodies = [combatMelody, combatMelody2, combatMelody3, combatMelody4]
         case .chat:
             melodies = [chatMelody, chatMelody2, chatMelody3]
         case .shop:
@@ -1279,6 +1303,105 @@ class SoundManager {
             step(t, drone: b(73.4), melody: M(330), extra: H(294)),      // D2 + E4 + D4
             step(t, drone: b(73.4), melody: M(294), extra: p(200)),       // D2 + D4
             step(t, drone: b(73.4), extra: p(80)),                         // kick turnaround
+        ]
+    }
+
+    // MARK: - Combat Music 4 — "Blood and Thunder"
+    // C# minor, the fastest/most frantic of the four — a driving double-time
+    // pulse under a rapid, urgent melody, for players who want combat to
+    // feel more relentless than the other three tracks.
+
+    private func combatMelody4() -> [MusicStep] {
+        let m = { (f: Double) -> (Double, Float, Waveform) in (f, 0.10, .square) }
+        let b = { (f: Double) -> (Double, Float, Waveform) in (f, 0.08, .square) }
+        let h = { (f: Double) -> (Double, Float, Waveform) in (f, 0.05, .triangle) }
+        let p = { (f: Double) -> (Double, Float, Waveform) in (f, 0.03, .noise) }
+        let M = { (f: Double) -> (Double, Float, Waveform) in (f, 0.14, .square) }
+        let H = { (f: Double) -> (Double, Float, Waveform) in (f, 0.08, .triangle) }
+
+        let t: Double = 0.09  // fastest of the four — relentless double-time pulse
+
+        return [
+            // === SECTION A: Relentless charge ===
+
+            // Bar 1 — hammering C#minor bass, driving kick on every beat
+            step(t, drone: b(69.3), melody: m(277), extra: p(80)),         // C#2 + C#4 + kick
+            step(t, drone: b(69.3), extra: p(80)),                          // kick
+            step(t, drone: b(69.3), melody: m(329), extra: p(200)),        // C#2 + E4 + snare
+            step(t, drone: b(69.3), extra: p(80)),                          // kick
+            step(t, drone: b(69.3), melody: m(415), extra: p(80)),         // C#2 + G#4 + kick
+            step(t, drone: b(69.3), extra: p(80)),                          // kick
+            step(t, drone: b(69.3), melody: m(466), extra: p(200)),        // C#2 + A#4 + snare
+            step(t, drone: b(69.3), extra: p(80)),                          // kick
+
+            // Bar 2 — climbing over shifting bass, no let-up
+            step(t, drone: b(61.7), melody: m(466), extra: p(80)),         // B1 + A#4
+            step(t, drone: b(61.7), melody: m(494), extra: h(370)),        // B1 + B4 + F#4
+            step(t, drone: b(61.7), melody: m(554), extra: p(200)),        // B1 + C#5 + snare
+            step(t, drone: b(61.7), extra: p(80)),                          // kick
+            step(t, drone: b(69.3), melody: m(622), extra: p(80)),         // C#2 + D#5
+            step(t, drone: b(69.3), melody: m(554), extra: h(415)),        // C#2 + C#5 + G#4
+            step(t * 2, drone: b(69.3), melody: m(494), extra: p(200)),   // C#2 + B4 held
+
+            // Bar 3 — grinding descent
+            step(t, drone: b(77.8), extra: p(80)),                          // D#2 + kick
+            step(t, drone: b(77.8), melody: m(554), extra: h(466)),        // D#2 + C#5 + A#4
+            step(t, drone: b(77.8), extra: p(200)),                        // snare
+            step(t, drone: b(77.8), melody: m(494)),                       // D#2 + B4
+            step(t, drone: b(87.3), melody: m(466), extra: p(80)),         // F2 + A#4 + kick
+            step(t, drone: b(87.3), melody: m(415), extra: h(329)),        // F2 + G#4 + E4
+            step(t, drone: b(87.3), extra: p(200)),                        // snare
+            step(t, drone: b(87.3), melody: m(370)),                       // F2 + F#4
+
+            // Bar 4 — tension and slam resolve
+            step(t, drone: b(92.5), melody: m(466), extra: p(80)),         // F#2 + A#4 + kick
+            step(t, drone: b(92.5), melody: m(415)),                       // F#2 + G#4
+            step(t, drone: b(92.5), melody: m(370), extra: p(200)),        // F#2 + F#4 + snare
+            step(t, drone: b(92.5), melody: m(329), extra: h(277)),        // F#2 + E4 + C#4
+            step(t * 2, drone: b(69.3), melody: m(277), extra: p(80)),    // C#2 + C#4 resolve
+            rest(t),
+            step(t, extra: p(200)),                                          // snare fill
+
+            // === SECTION B: Full assault ===
+
+            // Bar 5 — screaming lead over pounding fifths
+            step(t, drone: b(69.3), melody: M(554), extra: p(80)),         // C#2 + C#5
+            step(t, drone: b(69.3), melody: M(554), extra: H(415)),       // C#2 + C#5 + G#4
+            step(t, drone: b(69.3), extra: p(200)),                        // snare
+            step(t, drone: b(69.3), melody: M(622), extra: H(415)),       // C#2 + D#5 + G#4
+            step(t, drone: b(77.8), melody: M(659), extra: p(80)),         // D#2 + E5(!)
+            step(t, drone: b(77.8), melody: M(740), extra: H(554)),       // D#2 + F#5 + C#5
+            step(t, drone: b(77.8), extra: p(200)),                        // snare
+            step(t, drone: b(77.8), melody: M(659)),                       // D#2 + E5
+
+            // Bar 6 — peak fury, rapid triplet feel
+            step(t, drone: b(87.3), melody: M(831), extra: p(80)),         // F2 + G#5
+            step(t, drone: b(87.3), melody: M(740)),                       // F2 + F#5
+            step(t, drone: b(87.3), melody: M(659), extra: p(200)),        // F2 + E5
+            step(t, drone: b(87.3), melody: M(622), extra: H(494)),       // F2 + D#5 + B4
+            step(t, drone: b(92.5), extra: p(80)),                         // F#2 + kick
+            step(t, drone: b(92.5), melody: M(622), extra: H(415)),       // F#2 + D#5 + G#4
+            step(t * 2, drone: b(69.3), melody: M(554), extra: p(200)),  // C#2 + C#5 held
+
+            // Bar 7 — hammering call and response
+            step(t, drone: b(69.3), melody: m(277), extra: p(80)),
+            step(t, drone: b(69.3), melody: m(415)),
+            step(t, drone: b(69.3), melody: m(554), extra: p(200)),
+            step(t, drone: b(69.3)),
+            step(t, drone: b(77.8), melody: m(329), extra: p(80)),
+            step(t, drone: b(77.8), melody: m(494)),
+            step(t, drone: b(77.8), melody: m(659), extra: p(200)),
+            step(t, drone: b(77.8)),
+
+            // Bar 8 — final barrage + turnaround
+            step(t, drone: b(87.3), melody: M(622), extra: p(80)),
+            step(t, drone: b(87.3), melody: M(554), extra: H(415)),
+            step(t, drone: b(92.5), melody: M(554), extra: p(200)),
+            step(t, drone: b(92.5), melody: M(466), extra: H(370)),
+            step(t, drone: b(69.3), melody: M(370), extra: p(80)),
+            step(t, drone: b(69.3), melody: M(329), extra: H(277)),
+            step(t, drone: b(69.3), melody: M(277), extra: p(200)),
+            step(t, drone: b(69.3), extra: p(80)),
         ]
     }
 

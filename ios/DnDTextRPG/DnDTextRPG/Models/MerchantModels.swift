@@ -76,7 +76,12 @@ struct Merchant: Codable, Equatable {
     /// One-line persona summary handed to the DM as context for bargaining/advice/rare-goods narration.
     var personaBlurb: String
 
-    /// Extra "under the counter" items rolled this visit — not part of the regular stock list.
+    /// Regular buy-list, rolled once and remembered from then on — a merchant
+    /// who's shown you a Chain Mail shouldn't have a different (or no)
+    /// Chain Mail if you leave and come back later.
+    var stock: [Item] = []
+    /// Rare "under the counter" item(s), remembered the same way once
+    /// actually revealed — cleared again once bought.
     var rareGoodsOffered: [Item] = []
     var hasOfferedAdviceThisVisit: Bool = false
 
@@ -182,6 +187,11 @@ struct Merchant: Codable, Equatable {
         ["\"" + "Nice try. " + catchphrase.trimmingCharacters(in: CharacterSet(charactersIn: "\"")) + "\"",
          "\(name) crosses their arms. \"The price is the price.\"",
          "\"I like you,\" says \(name), \"but not that much.\""].randomElement()!
+    }
+    func offlineHaggleCounterLine() -> String {
+        ["\(name) rubs their chin. \"Not quite — but let's meet partway.\"",
+         "\"" + "You're close. " + catchphrase.trimmingCharacters(in: CharacterSet(charactersIn: "\"")) + " Here's my counter.\"",
+         "\(name) taps the counter. \"Tell you what — I'll do it for this instead.\""].randomElement()!
     }
     func offlineRareGoodsFoundLine() -> String {
         "\(name) glances around, then reaches under the counter. \"Don't tell my usual suppliers I still have this.\""

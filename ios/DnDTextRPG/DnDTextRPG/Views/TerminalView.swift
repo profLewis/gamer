@@ -134,6 +134,10 @@ struct TerminalView: View {
                             }
                         }
                         .background(terminalBackground)
+                        .contentShape(Rectangle())
+                        .onLongPressGesture(minimumDuration: 0.5) {
+                            gameEngine.showExpandedMapOverlay()
+                        }
 
                         // No on-screen resize control here — a drag handle
                         // was fiddly against the nearby scroll gestures, and
@@ -776,6 +780,42 @@ struct TerminalView: View {
                 gameEngine.importAdventureLog(from: text)
             }
         })
+        .overlay {
+            if gameEngine.mapOverlayVisible {
+                fullMapOverlay
+            }
+        }
+    }
+
+    /// Easter egg: the whole explored floor, pannable in both directions,
+    /// with a Recentre button — shown by long-pressing the pinned map pane.
+    private var fullMapOverlay: some View {
+        ZStack(alignment: .topTrailing) {
+            terminalBackground.opacity(0.98).ignoresSafeArea()
+            ScrollView([.horizontal, .vertical], showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(gameEngine.mapOverlayLines) { line in
+                        TerminalLineView(line: line, scale: scale)
+                    }
+                }
+                .padding(16)
+            }
+            Button(action: { gameEngine.recentreMap() }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "location.fill")
+                    Text("Recentre")
+                        .font(.system(size: 13 * scale, design: .monospaced))
+                        .fontWeight(.semibold)
+                }
+                .foregroundColor(.black)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(Color.green))
+            }
+            .buttonStyle(.plain)
+            .padding(16)
+        }
+        .transition(.opacity)
     }
 
     // MARK: - Shortcut Positions (for button underlines)
@@ -1449,17 +1489,18 @@ struct DirectionPadView: View {
             // row's [Torch | South | NPC] so the whole pad reads as three
             // symmetric rows.
             HStack(spacing: 4) {
-                cornerIconButton(systemName: "sparkle.magnifyingglass", color: searchAmber, action: onSearchTap)
-                dirButton(.north)
-                // A room with both an NPC and a teleport pad would otherwise
-                // lose the pad entirely (NPC keeps priority on the shared SE
-                // slot below) — Listen isn't tied to this specific room the
-                // way a pad is, so it steps aside here instead.
-                if onTeleportTap != nil, npcLabel != nil {
+                // Teleport pad always lives here (top-left/NW) — a fixed,
+                // predictable spot rather than bouncing between corners
+                // depending on whether an NPC also happens to be in the
+                // room. Search Room is still reachable as a full menu
+                // button, so bumping its shortcut icon here costs nothing.
+                if onTeleportTap != nil {
                     cornerIconButton(systemName: "target", color: teleportPurple, action: onTeleportTap)
                 } else {
-                    cornerIconButton(systemName: "ear", color: listenAmber, action: onListenTap)
+                    cornerIconButton(systemName: "sparkle.magnifyingglass", color: searchAmber, action: onSearchTap)
                 }
+                dirButton(.north)
+                cornerIconButton(systemName: "ear", color: listenAmber, action: onListenTap)
             }
             // West + Center + East
             HStack(spacing: 4) {
@@ -1494,13 +1535,12 @@ struct DirectionPadView: View {
             HStack(spacing: 4) {
                 cornerIconButton(systemName: torchLabel == "Douse" ? "flame.fill" : "flame", color: torchBlue, action: onTorchTap)
                 dirButton(.south)
-                // Same SE slot doubles as the teleport pad icon — NPC keeps
-                // priority here on the rare room that has both, but the pad
-                // isn't lost: it takes over the NE Listen slot above instead.
+                // Teleport now has its own fixed NW slot above, so this
+                // corner is simply NPC-or-nothing again.
                 if npcLabel != nil {
                     cornerIconButton(systemName: "scroll", color: npcCyan, action: onNPCTap)
                 } else {
-                    cornerIconButton(systemName: "target", color: teleportPurple, action: onTeleportTap)
+                    Color.clear.frame(width: max(80, 80 * scale), height: max(44, 34 * scale))
                 }
             }
         }
