@@ -96,11 +96,27 @@ struct TerminalView: View {
     /// — a generic axis switch so neither child's own content needs to
     /// change between orientations.
     @ViewBuilder
+    /// Map above text, always — landscape used to make this an HStack (map
+    /// as its own column) as part of a 3-column map|icons|text split, but
+    /// that fought the D-pad's own fixed-size buttons for space and left the
+    /// map too narrow for its own minimum content width. Landscape now
+    /// splits the screen in half instead (see body): this whole map+text
+    /// stack occupies the left half exactly as portrait shows it full-width,
+    /// while the D-pad/buttons/input occupy the right half.
     private func adaptiveMapTextStack<Content: View>(isLandscape: Bool, @ViewBuilder content: () -> Content) -> some View {
-        if isLandscape {
-            HStack(alignment: .top, spacing: 0) { content() }
-        } else {
-            VStack(spacing: 0) { content() }
+        VStack(spacing: 0) { content() }
+    }
+
+    /// The screen's two main regions — (A) map+text, (B) D-pad/buttons/
+    /// input — side by side as an even 50/50 split in landscape, or stacked
+    /// full-width as portrait always has.
+    private func topLevelStack<Content: View>(isLandscape: Bool, @ViewBuilder content: () -> Content) -> some View {
+        Group {
+            if isLandscape {
+                HStack(alignment: .top, spacing: 0) { content() }
+            } else {
+                VStack(spacing: 0) { content() }
+            }
         }
     }
 
@@ -108,7 +124,7 @@ struct TerminalView: View {
         GeometryReader { geometry in
             let isLandscape = geometry.size.width > geometry.size.height
             ZStack {
-                VStack(spacing: 0) {
+                topLevelStack(isLandscape: isLandscape) {
                     adaptiveMapTextStack(isLandscape: isLandscape) {
                     // Pinned map pane — kept separate from the scrolling text
                     // below (see GameEngine.pinnedMapLines/printMap) so it
@@ -216,53 +232,7 @@ struct TerminalView: View {
                             .frame(height: 1)
                     }
                     }
-                    .frame(width: isLandscape ? geometry.size.width / 3 : nil, alignment: .leading)
-                    .frame(maxWidth: isLandscape ? nil : .infinity, alignment: .leading)
-                    .padding(.top, isLandscape ? 20 * scale : 0)
-
-                    // Landscape puts the D-pad/icon grid as its own middle
-                    // column — exactly three equal columns (map | icons |
-                    // text), each pinned to a hard third of the width so the
-                    // D-pad's own fixed-size buttons can't throw off how
-                    // HStack would otherwise divide the space (which read as
-                    // a 4th, oddly-sized column) — instead of below the text
-                    // as portrait does (see the "Direction pad + menu
-                    // buttons" block further down, which skips the D-pad in
-                    // landscape to avoid showing it twice).
-                    if isLandscape, (!gameEngine.isJustDMActive || gameEngine.forceInteractiveControls),
-                       !gameEngine.directionExits.isEmpty {
-                        // The pad's normal cell size (max(80, 80*scale) —
-                        // ~240pt across 3 columns plus inter-cell spacing)
-                        // doesn't reliably fit a landscape third on most
-                        // iPhones — it was overflowing its column (reading as
-                        // "the icon grid doesn't show", since the overflow
-                        // spills outside the column's visible bounds rather
-                        // than clipping in place). Shrink cells to whatever
-                        // this column can actually fit instead.
-                        let columnWidth = geometry.size.width / 3
-                        let dpadCellWidth = max(44, (columnWidth - 16 - 8) / 3)
-                        DirectionPadView(exits: gameEngine.directionExits, secured: gameEngine.securedExits, scale: scale,
-                            cellWidth: dpadCellWidth,
-                            onSelect: { direction in
-                                gameEngine.handleDirectionChoice(direction)
-                            },
-                            onLongPress: gameEngine.directionLongPressHandler,
-                            centerLabel: gameEngine.dpadCenterLabel,
-                            onCenterTap: gameEngine.dpadCenterHandler,
-                            onCenterLongPress: gameEngine.dpadCenterLongPressHandler,
-                            longPressDuration: gameEngine.longPressDuration,
-                            torchOff: !gameEngine.torchLit,
-                            npcLabel: gameEngine.dpadNPCLabel,
-                            onNPCTap: gameEngine.dpadNPCHandler,
-                            onTeleportTap: gameEngine.dpadTeleportHandler,
-                            torchLabel: gameEngine.dpadTorchLabel,
-                            onTorchTap: gameEngine.dpadTorchHandler,
-                            onSearchTap: gameEngine.dpadSearchHandler,
-                            onListenTap: gameEngine.dpadListenHandler
-                        )
-                        .frame(width: columnWidth, alignment: .top)
-                        .padding(.top, 20 * scale)
-                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     // Terminal output area
                     ScrollViewReader { scrollProxy in
@@ -428,8 +398,7 @@ struct TerminalView: View {
                             }
                         }
                     }
-                    .frame(width: isLandscape ? geometry.size.width / 3 : nil)
-                    .frame(maxWidth: isLandscape ? nil : .infinity)
+                    .frame(maxWidth: .infinity)
                     .background(terminalBackground)
                     #if !os(tvOS)
                     // tvOS has no touch/swipe input (remote + focus engine
@@ -471,24 +440,20 @@ struct TerminalView: View {
                         }
                     }, perform: {})
                     #endif
-                    } // end adaptiveMapTextStack
+                    } // end adaptiveMapTextStack — map + text, left half in landscape
+                    .frame(maxWidth: isLandscape ? .infinity : nil, alignment: .leading)
 
-                    // Everything below (button row, input bar, custom
-                    // keyboard) capped to at most a third of the screen's
-                    // height in landscape — that trio was otherwise free to
-                    // grow as tall as its content wanted, which on a short
-                    // landscape screen crowded out the map/icons/text row
-                    // above it far more than intended.
+                    // Button row + input bar + custom keyboard — right half
+                    // in landscape (see the HStack/VStack split below), full
+                    // width below the map+text in portrait.
                     VStack(spacing: 0) {
                     // Direction pad + menu buttons (hidden in Just DM mode, except on
                     // victory/defeat milestone screens — see forceInteractiveControls).
-                    // In landscape the D-pad already showed above as its own middle
-                    // column (map | icons | text) — only the button row belongs here.
                     if (!gameEngine.isJustDMActive || gameEngine.forceInteractiveControls),
-                       (!isLandscape && !gameEngine.directionExits.isEmpty) || !gameEngine.currentMenuOptions.isEmpty {
+                       !gameEngine.directionExits.isEmpty || !gameEngine.currentMenuOptions.isEmpty {
                         VStack(spacing: 12) {
-                            // Direction D-pad (portrait only — see above for landscape)
-                            if !isLandscape, !gameEngine.directionExits.isEmpty {
+                            // Direction D-pad (when exploring)
+                            if !gameEngine.directionExits.isEmpty {
                                 DirectionPadView(exits: gameEngine.directionExits, secured: gameEngine.securedExits, scale: scale,
                                     onSelect: { direction in
                                         gameEngine.handleDirectionChoice(direction)
@@ -854,8 +819,8 @@ struct TerminalView: View {
                         .transition(.move(edge: .bottom))
                     }
                     #endif
-                    } // end button row/input bar/keyboard height cap
-                    .frame(maxHeight: isLandscape ? geometry.size.height / 3 : nil, alignment: .top)
+                    } // end button row/input bar/keyboard — right half in landscape
+                    .frame(maxWidth: isLandscape ? .infinity : nil, alignment: .top)
                 }
                 .background(terminalBackground)
 
