@@ -15508,17 +15508,26 @@ class GameEngine: ObservableObject {
             // room (guaranteed for .shop, and text-synced for .armory —
             // see Dungeon.generateDungeon) should never be easy to miss.
             menuOpts.append(MenuOption("Visit Merchant", tint: .cyan))
-            actions.append { [weak self] in if self?.roomIsLit == true { self?.visitShop() } }
+            actions.append { [weak self] in
+                guard let self = self else { return }
+                if self.roomIsLit { self.visitShop() } else { self.attemptInTheDark("the merchant's wares") { self.visitShop() } }
+            }
         }
 
         if room.trainer != nil, (room.cleared || room.encounter == nil) {
             menuOpts.append(MenuOption("Visit Gym"))
-            actions.append { [weak self] in if self?.roomIsLit == true { self?.visitGym() } }
+            actions.append { [weak self] in
+                guard let self = self else { return }
+                if self.roomIsLit { self.visitGym() } else { self.attemptInTheDark("the gym") { self.visitGym() } }
+            }
         }
 
         if let idx = room.riddleIndex, !room.riddleResolved, (room.cleared || room.encounter == nil) {
             menuOpts.append(MenuOption("Solve Riddle"))
-            actions.append { [weak self] in if self?.roomIsLit == true { self?.presentRiddle(index: idx, room: room) } }
+            actions.append { [weak self] in
+                guard let self = self else { return }
+                if self.roomIsLit { self.presentRiddle(index: idx, room: room) } else { self.attemptInTheDark("the inscription") { self.presentRiddle(index: idx, room: room) } }
+            }
         }
 
         if let vMethod = room.verticalMethod, let vDestId = room.verticalDestinationRoomId,
@@ -16819,6 +16828,24 @@ class GameEngine: ObservableObject {
     }
 
     /// Easter egg: fumbling search in the dark (long-press disabled Search Room)
+    /// Visit Merchant/Gym/Solve Riddle all require roomIsLit — previously a
+    /// silent no-op with no torch, which read as the button simply not
+    /// working. Now gives feedback either way, with a real (if reduced)
+    /// chance of fumbling your way there anyway rather than an outright block.
+    private func attemptInTheDark(_ what: String, action: @escaping () -> Void) {
+        clearTerminal()
+        printWrapped("It's too dark to make out \(what) clearly...", indent: 2, color: .gray)
+        print("")
+        advanceTime(5)
+        if Int.random(in: 1...100) <= 35 {
+            print("  You feel your way there anyway.", color: .dimGreen)
+            waitForContinueWithTimeout { action() }
+        } else {
+            print("  You can't quite manage it in the dark. Light a torch and try again.", color: .yellow)
+            waitForContinueWithTimeout { [weak self] in self?.showExplorationView() }
+        }
+    }
+
     private func darkSearch() {
         guard let room = dungeon?.currentRoom else { return }
 
