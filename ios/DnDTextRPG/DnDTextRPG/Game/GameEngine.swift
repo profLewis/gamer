@@ -3933,6 +3933,9 @@ class GameEngine: ObservableObject {
         // Summary info — no numbering here, since it doesn't necessarily
         // match the actual button positions below (multiplayer matches can
         // insert between them) and the button labels already self-explain.
+        print("  Continue Adventure", color: .brightGreen, bold: true)
+        print("     Long-press to jump straight into your latest save", color: .dimGreen)
+        print("")
         print("  New Adventure", color: .brightGreen, bold: true)
         print("     Long-press for quick start", color: .dimGreen)
         print("")
@@ -4009,7 +4012,13 @@ class GameEngine: ObservableObject {
         var menuOpts: [MenuOption] = []
         var actions: [() -> Void] = []
 
-        menuOpts.append(MenuOption("New Adventure", isDefault: true))
+        // Continue Adventure first — resuming an existing adventure is the
+        // more common action than starting a fresh one, so it's button 1
+        // (and the default) rather than New Adventure.
+        menuOpts.append(MenuOption("Continue Adventure", isDefault: true))
+        actions.append { [weak self] in self?.showLoadGameMenu(returnTo: .mainMenu) }
+
+        menuOpts.append(MenuOption("New Adventure"))
         actions.append { [weak self] in self?.startNewGame() }
 
         // Multiplayer match buttons
@@ -4053,10 +4062,8 @@ class GameEngine: ObservableObject {
         // tale required first noticing the separate pinned "Manage Saves"
         // button. The Hall of Fame itself is still reachable — it's now a
         // pinned option on this same save-list screen, and via the "hall
-        // of fame" chat command.
-        menuOpts.append(MenuOption("Continue Adventure"))
-        actions.append { [weak self] in self?.showLoadGameMenu(returnTo: .mainMenu) }
-
+        // of fame" chat command. (Continue Adventure itself is added above,
+        // ahead of New Adventure.)
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showPlayHelp() }
 
