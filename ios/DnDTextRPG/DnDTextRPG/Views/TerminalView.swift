@@ -176,7 +176,38 @@ struct TerminalView: View {
                             .frame(height: 1)
                     }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, isLandscape ? 20 * scale : 0)
+
+                    // Landscape puts the D-pad/icon grid as its own middle
+                    // column (map | icons | text, three equal-width sections)
+                    // instead of below the text — portrait keeps it below
+                    // (see the "Direction pad + menu buttons" block further
+                    // down, which skips the D-pad in landscape to avoid
+                    // showing it twice).
+                    if isLandscape, (!gameEngine.isJustDMActive || gameEngine.forceInteractiveControls),
+                       !gameEngine.directionExits.isEmpty {
+                        DirectionPadView(exits: gameEngine.directionExits, secured: gameEngine.securedExits, scale: scale,
+                            onSelect: { direction in
+                                gameEngine.handleDirectionChoice(direction)
+                            },
+                            onLongPress: gameEngine.directionLongPressHandler,
+                            centerLabel: gameEngine.dpadCenterLabel,
+                            onCenterTap: gameEngine.dpadCenterHandler,
+                            onCenterLongPress: gameEngine.dpadCenterLongPressHandler,
+                            longPressDuration: gameEngine.longPressDuration,
+                            torchOff: !gameEngine.torchLit,
+                            npcLabel: gameEngine.dpadNPCLabel,
+                            onNPCTap: gameEngine.dpadNPCHandler,
+                            onTeleportTap: gameEngine.dpadTeleportHandler,
+                            torchLabel: gameEngine.dpadTorchLabel,
+                            onTorchTap: gameEngine.dpadTorchHandler,
+                            onSearchTap: gameEngine.dpadSearchHandler,
+                            onListenTap: gameEngine.dpadListenHandler
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .padding(.top, 20 * scale)
+                    }
 
                     // Terminal output area
                     ScrollViewReader { scrollProxy in
@@ -342,6 +373,7 @@ struct TerminalView: View {
                             }
                         }
                     }
+                    .frame(maxWidth: .infinity)
                     .background(terminalBackground)
                     #if !os(tvOS)
                     // tvOS has no touch/swipe input (remote + focus engine
@@ -386,11 +418,14 @@ struct TerminalView: View {
                     } // end adaptiveMapTextStack
 
                     // Direction pad + menu buttons (hidden in Just DM mode, except on
-                    // victory/defeat milestone screens — see forceInteractiveControls)
-                    if (!gameEngine.isJustDMActive || gameEngine.forceInteractiveControls), !gameEngine.directionExits.isEmpty || !gameEngine.currentMenuOptions.isEmpty {
+                    // victory/defeat milestone screens — see forceInteractiveControls).
+                    // In landscape the D-pad already showed above as its own middle
+                    // column (map | icons | text) — only the button row belongs here.
+                    if (!gameEngine.isJustDMActive || gameEngine.forceInteractiveControls),
+                       (!isLandscape && !gameEngine.directionExits.isEmpty) || !gameEngine.currentMenuOptions.isEmpty {
                         VStack(spacing: 12) {
-                            // Direction D-pad (when exploring)
-                            if !gameEngine.directionExits.isEmpty {
+                            // Direction D-pad (portrait only — see above for landscape)
+                            if !isLandscape, !gameEngine.directionExits.isEmpty {
                                 DirectionPadView(exits: gameEngine.directionExits, secured: gameEngine.securedExits, scale: scale,
                                     onSelect: { direction in
                                         gameEngine.handleDirectionChoice(direction)
