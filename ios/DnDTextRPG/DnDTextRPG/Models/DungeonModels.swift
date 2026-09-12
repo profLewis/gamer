@@ -760,7 +760,7 @@ class Dungeon: ObservableObject, Codable {
         // offering a bonus reward for a correct answer.
         for room in rooms.values where room.roomType == .library || room.roomType == .shrine {
             if Int.random(in: 1...100) <= 35 {
-                room.riddleIndex = Int.random(in: 0..<RiddleData.all.count)
+                room.riddleIndex = RiddleData.nextIndex()
             }
         }
 

@@ -12484,17 +12484,33 @@ class GameEngine: ObservableObject {
             print("  \(error)", color: .yellow)
             print("")
         }
-        printWrapped("Enter a new name for \(char.name):", indent: 2, color: .dimGreen)
+
+        // Show suggestions as buttons — same pattern as the in-game Change
+        // Name screen (showInGameChangeName), just wired to this screen's
+        // own validation/callbacks.
+        let existingNames = Set(party.map { $0.name.lowercased() })
+        let available = suggestedNames.filter { !existingNames.contains($0.lowercased()) }
+        let suggestionList = Array(available.shuffled().prefix(4))
+
+        print("  Type a name, or pick a suggestion:", color: .dimGreen)
         print("")
 
-        promptTextWithMenu("Name:", options: ["< Back"])
+        var menuOpts = suggestionList.map { String($0) }
+        menuOpts.append("< Back")
+
+        promptTextWithMenu("", options: menuOpts)
         closeHandler = { [weak self] in
             self?.endEditTracking()
             self?.showCharacterReviewCard(index: index)
         }
-        menuHandler = { [weak self] _ in
-            self?.endEditTracking()
-            self?.showCharacterReviewCard(index: index)
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice >= 1 && choice <= suggestionList.count {
+                self.applyChangedName(index: index, newName: suggestionList[choice - 1])
+            } else {
+                self.endEditTracking()
+                self.showCharacterReviewCard(index: index)
+            }
         }
         inputHandler = { [weak self] name in
             guard let self = self else { return }
@@ -12503,24 +12519,35 @@ class GameEngine: ObservableObject {
                 self.showChangeName(index: index, error: "Name can't be empty. Try again.")
                 return
             }
-            if self.isReservedWord(trimmed) {
-                self.showChangeName(index: index, error: "That name isn't available. Try something else.")
-                return
-            }
-            if !self.isNameAppropriate(trimmed) {
-                self.showChangeName(index: index, error: "That name is not befitting of an adventurer. Try again.")
-                return
-            }
-            if self.otherPartyNames(excluding: char.id).contains(trimmed.lowercased()) {
-                self.showChangeName(index: index, error: "Another character in the party already has that name.")
-                return
-            }
-            self.pushEditSnapshot(index: index)
-            char.name = trimmed
-            char.syncRobotPrefix()
-            self.endEditTracking()
-            self.showCharacterReviewCard(index: index)
+            self.applyChangedName(index: index, newName: trimmed)
         }
+
+        // Dice icon → new random suggestions
+        rerollHandler = { [weak self] in
+            self?.showChangeName(index: index)
+        }
+    }
+
+    private func applyChangedName(index: Int, newName: String) {
+        guard index < party.count else { showPartyReview(); return }
+        let char = party[index]
+        if isReservedWord(newName) {
+            showChangeName(index: index, error: "That name isn't available. Try something else.")
+            return
+        }
+        if !isNameAppropriate(newName) {
+            showChangeName(index: index, error: "That name is not befitting of an adventurer. Try again.")
+            return
+        }
+        if otherPartyNames(excluding: char.id).contains(newName.lowercased()) {
+            showChangeName(index: index, error: "Another character in the party already has that name.")
+            return
+        }
+        pushEditSnapshot(index: index)
+        char.name = newName
+        char.syncRobotPrefix()
+        endEditTracking()
+        showCharacterReviewCard(index: index)
     }
 
     private func showChangeRace(index: Int) {
@@ -19371,7 +19398,7 @@ class GameEngine: ObservableObject {
             self.print("  It clicks right away — a natural fit.", color: .cyan)
             grantGymSkill(skill, to: character, trainer: trainer, room: room)
         case 41...70:
-            let riddle = RiddleData.all.randomElement()!
+            let riddle = RiddleData.all[RiddleData.nextIndex()]
             presentGymRiddle(riddle, skill: skill, character: character, trainer: trainer, room: room)
         default:
             pendingBattleTrainedSkills[character.id, default: []].append((skill, trainer.gymName))
