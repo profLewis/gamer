@@ -10674,7 +10674,9 @@ class GameEngine: ObservableObject {
             dateFormatter.dateStyle = .medium
 
             var options: [String] = []
+            var entryLineRanges: [Range<Int>] = []
             for (i, entry) in entries.enumerated() {
+                let lineStart = terminalLines.count
                 let outcomeTag = entry.outcome == .victory ? "W" : "L"
                 let outcomeColor: TerminalColor = entry.outcome == .victory ? .yellow : .red
 
@@ -10692,22 +10694,27 @@ class GameEngine: ObservableObject {
                 printWrapped("Gold:\(entry.goldCollected) Slain:\(entry.monstersSlain) Rooms:\(entry.roomsExplored)/\(entry.totalRooms) Day \(day)", indent: 3, color: .dimGreen)
                 print("   \(dateFormatter.string(from: entry.date))", color: .dimGreen)
                 print("")
+                entryLineRanges.append(lineStart..<terminalLines.count)
 
                 options.append("\(name) Lv.\(entry.dungeonLevel) \(outcomeTag)")
             }
 
-            printWrapped("Tap an entry to read its tale — the tale screen has a Relive/Rewrite button if a save is linked.", indent: 2, color: .dimGreen)
+            printWrapped("Tap an entry (its button or its text) to read its tale — the tale screen has a Relive/Rewrite button if a save is linked. Long-press a numbered button to jump straight into that adventure if it has one.", indent: 2, color: .dimGreen)
             print("")
+
+            let tales = entries.map { AdventureTaleData(hof: $0) }
+            let openTale: (Int) -> Void = { [weak self] idx in
+                guard let self = self, idx >= 0 && idx < tales.count else { return }
+                self.showAdventureTale(tales[idx], tales: tales, index: idx)
+            }
 
             // "Manage Saves" lives behind the non-numbered "Manage" button
             // (see showHallOfFameManage) instead of being pinned with a
             // number past the end of the list regardless of page, or
             // appended to the list itself where a long history would bury
             // it behind however many pages that needs.
-            showPaginatedMenuOptions(options, pinned: ["?", "Manage", "< Back"], handler: { [weak self] idx in
-                guard let self = self, idx >= 0 && idx < entries.count else { return }
-                let tales = entries.map { AdventureTaleData(hof: $0) }
-                self.showAdventureTale(tales[idx], tales: tales, index: idx)
+            showPaginatedMenuOptions(options, pinned: ["?", "Manage", "< Back"], handler: { idx in
+                openTale(idx)
             }, pinnedHandler: { [weak self] choice in
                 guard let self = self else { return }
                 switch choice {
@@ -10717,6 +10724,24 @@ class GameEngine: ObservableObject {
                 }
             })
             closeHandler = { [weak self] in self?.showMainMenu() }
+
+            // Tap the printed entry text itself (not just its numbered
+            // button) to open the same tale — matches Continue Adventure's
+            // equivalent convenience.
+            textLongPressHandler = { lineIndex in
+                guard let idx = entryLineRanges.firstIndex(where: { $0.contains(lineIndex) }) else { return }
+                openTale(idx)
+            }
+
+            // Long-press a numbered button → jump straight into that
+            // adventure (skip the tale-reading screen) if a save is linked;
+            // no-op otherwise — matches Continue Adventure's equivalent.
+            menuLongPressHandler = { [weak self] choice in
+                guard let self = self, choice >= 1, choice <= tales.count else { return }
+                let tale = tales[choice - 1]
+                guard tale.saveGameId != nil, SaveGameManager.shared.load(id: tale.saveGameId!) != nil else { return }
+                self.showLoadTransition(tale)
+            }
         }
     }
 
@@ -10726,11 +10751,17 @@ class GameEngine: ObservableObject {
         clearTerminal()
         printTitle("Manage")
         print("")
-        showMenu(["Manage Saves", "< Back"])
+        showMenu(["Manage Saves", "Select & Delete Saves", "< Back"])
         closeHandler = { [weak self] in self?.showHallOfFame() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
-            if choice == 1 { self.showLoadGameMenu(returnTo: .mainMenu) } else { self.showHallOfFame() }
+            switch choice {
+            case 1: self.showLoadGameMenu(returnTo: .mainMenu)
+            case 2:
+                self.manageSaveSelectMode = true
+                self.showLoadGameMenu(returnTo: .mainMenu)
+            default: self.showHallOfFame()
+            }
         }
     }
 
@@ -27512,21 +27543,16 @@ class GameEngine: ObservableObject {
             return
         }
 
-        var pinnedButtons = ["?", "< Back"]
-        if rows.contains(where: { if case .slot = $0 { return true }; return false }) {
-            pinnedButtons.insert("Select", at: 0)
-        }
+        // "Select" (multi-delete) deliberately isn't a pinned button here —
+        // this screen already has enough buttons on it; reach select mode
+        // via Hall of Fame's "Manage" sub-screen instead (one extra tap,
+        // for an action used far less often than just continuing/reading).
+        let pinnedButtons = ["?", "< Back"]
         showPaginatedMenuOptions(options, pinned: pinnedButtons, handler: { idx in
             guard idx >= 0 && idx < rows.count else { return }
             openRow(rows[idx])
         }, pinnedHandler: { [weak self] choice in
             guard let self = self else { return }
-            let chosen = pinnedButtons[choice]
-            if chosen == "Select" {
-                self.manageSaveSelectMode = true
-                self.showLoadGameMenu(returnTo: origin)
-                return
-            }
             if choice == (pinnedButtons.firstIndex(of: "?") ?? -1) {
                 self.showInlineHelp {
                     self.printTitle("Continue Adventure — Help")

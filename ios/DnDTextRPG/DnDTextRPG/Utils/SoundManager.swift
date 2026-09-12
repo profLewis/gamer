@@ -674,6 +674,15 @@ class SoundManager {
     }
 
     private func melodyFor(_ type: MusicType, preference: Int = 0) -> [MusicStep] {
+        // Combat's default (preference 0 / "Random") now plays the new,
+        // faster/more dramatic track every time rather than a 1-in-4
+        // chance of it alongside the three older ones — a straight
+        // addition to the random pool made the requested change nearly
+        // unnoticeable in practice. The three original tracks are still
+        // reachable by name via Settings > Music > Combat Tune.
+        if type == .combat && preference == 0 {
+            return combatMelody4()
+        }
         let melodies: [() -> [MusicStep]]
         switch type {
         case .menu:
