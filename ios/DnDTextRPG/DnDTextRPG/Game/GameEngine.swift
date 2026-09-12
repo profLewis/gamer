@@ -17,6 +17,10 @@ import UIKit
 #endif
 
 /// Plain-text document wrapper for exporting/importing the adventure log.
+/// FileDocument/.fileExporter aren't available on tvOS (no user-facing file
+/// system) — guarded out there; the export/import menu options themselves
+/// are also hidden on tvOS (see showLogExporter's call sites).
+#if !os(tvOS)
 struct LogFileDocument: FileDocument {
     static var readableContentTypes: [UTType] { [.plainText] }
     var text: String
@@ -37,6 +41,7 @@ struct LogFileDocument: FileDocument {
         FileWrapper(regularFileWithContents: Data(text.utf8))
     }
 }
+#endif
 
 /// A recently-left screen's full render/interaction state, captured by
 /// GameEngine.clearTerminal() and restored by goForwardInHistory() when

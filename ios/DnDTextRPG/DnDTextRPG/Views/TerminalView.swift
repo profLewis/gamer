@@ -37,6 +37,9 @@ func computeMenuShortcuts(for options: [MenuOption], excluding: Set<Swift.Charac
 /// doesn't expose a way to force the system picker to open on its "Browse"
 /// tab instead of "Recents" (no initialDirectory on this fileImporter
 /// overload) — that choice belongs to the system UI, not the app.
+// .fileExporter/.fileImporter (and FileDocument, see GameEngine.LogFileDocument)
+// aren't available on tvOS — no user-facing file system there.
+#if !os(tvOS)
 struct LogImporterModifier: ViewModifier {
     @Binding var isPresented: Bool
     let onCompletion: (Result<URL, Error>) -> Void
@@ -49,6 +52,7 @@ struct LogImporterModifier: ViewModifier {
         )
     }
 }
+#endif
 
 struct TerminalView: View {
     @EnvironmentObject var gameEngine: GameEngine
@@ -232,10 +236,15 @@ struct TerminalView: View {
                             .animation(.easeInOut(duration: 0.12), value: gameEngine.textFlashOpacity)
                         }
                         .scrollDisabled(gameEngine.scrollLocked)
+                        #if !os(tvOS)
+                        // tvOS has no touch/drag input (remote + focus engine
+                        // instead) — this only tracks manual scroll drags to
+                        // pause auto-scroll-to-bottom, which doesn't apply there.
                         .simultaneousGesture(
                             DragGesture(minimumDistance: 6)
                                 .onChanged { _ in lastManualScrollAt = Date() }
                         )
+                        #endif
                         .onChange(of: gameEngine.terminalLines.count) { _ in
                             // A screen that prints many lines in quick succession (each
                             // appended line bumps this count separately, since prints are
@@ -299,6 +308,9 @@ struct TerminalView: View {
                         }
                     }
                     .background(terminalBackground)
+                    #if !os(tvOS)
+                    // tvOS has no touch/swipe input (remote + focus engine
+                    // instead) — swipe-left/right card navigation doesn't apply.
                     .gesture(
                         DragGesture(minimumDistance: 20, coordinateSpace: .global)
                             .onEnded { value in
@@ -335,6 +347,7 @@ struct TerminalView: View {
                             isInputFocused = false
                         }
                     }, perform: {})
+                    #endif
                     } // end adaptiveMapTextStack
 
                     // Direction pad + menu buttons (hidden in Just DM mode, except on
@@ -391,6 +404,7 @@ struct TerminalView: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(Color.black.opacity(0.95))
+                        #if !os(tvOS)
                         .gesture(
                             DragGesture(minimumDistance: 20, coordinateSpace: .global)
                                 .onEnded { value in
@@ -413,6 +427,7 @@ struct TerminalView: View {
                                     }
                                 }
                         )
+                        #endif
                     }
 
                     // Standard input bar — always visible
@@ -766,6 +781,7 @@ struct TerminalView: View {
                 gameEngine.prefillInputText = nil
             }
         }
+        #if !os(tvOS)
         .fileExporter(isPresented: $gameEngine.showLogExporter,
                       document: LogFileDocument(text: gameEngine.pendingLogExportText),
                       contentType: .plainText,
@@ -780,6 +796,7 @@ struct TerminalView: View {
                 gameEngine.importAdventureLog(from: text)
             }
         })
+        #endif
         .overlay {
             if gameEngine.mapOverlayVisible {
                 fullMapOverlay
@@ -1661,7 +1678,7 @@ struct AnimatedGIFView: UIViewRepresentable {
 
     func updateUIView(_ uiView: UIView, context: Context) {}
 }
-#else
+#elseif os(macOS)
 struct AnimatedGIFView: NSViewRepresentable {
     let gifName: String
 
@@ -1687,6 +1704,14 @@ struct AnimatedGIFView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {}
+}
+#else
+// tvOS/watchOS: no UIViewRepresentable/NSViewRepresentable GIF playback here —
+// this is purely decorative (the main menu dragon), so a plain empty view is
+// a fine stand-in rather than pulling in a whole animated-image dependency.
+struct AnimatedGIFView: View {
+    let gifName: String
+    var body: some View { EmptyView() }
 }
 #endif
 

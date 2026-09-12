@@ -6,7 +6,9 @@
 //
 
 import Foundation
+#if canImport(FoundationModels)
 import FoundationModels
+#endif
 
 // MARK: - AI Provider
 
@@ -264,14 +266,17 @@ class DMEngine {
 
     /// Whether the Apple on-device Foundation Model is available
     var isAppleModelAvailable: Bool {
+        #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
             return SystemLanguageModel.default.availability == .available
         }
+        #endif
         return false
     }
 
     /// Ask the Apple on-device model
     private func askAppleModel(userMessage: String, context: DMContext, completion: @escaping (String?) -> Void) {
+        #if canImport(FoundationModels)
         guard #available(iOS 26.0, *) else {
             completion(nil)
             return
@@ -313,6 +318,9 @@ class DMEngine {
                 }
             }
         }
+        #else
+        completion(nil)
+        #endif
     }
 
     /// Compact system prompt for the Apple on-device model — see askAppleModel().

@@ -5,8 +5,9 @@
 //  Speech recognition for voice input in chat
 //
 
-import Speech
 import AVFoundation
+#if !os(tvOS)
+import Speech
 
 class VoiceInputManager: ObservableObject {
     static let shared = VoiceInputManager()
@@ -152,3 +153,33 @@ class VoiceInputManager: ObservableObject {
         }
     }
 }
+
+#else
+
+/// tvOS has no Speech framework / dictation model like this — the remote
+/// has no microphone-driven text input in this form. Same public surface
+/// as the real manager, permanently unavailable, so call sites don't need
+/// their own platform checks.
+class VoiceInputManager: ObservableObject {
+    static let shared = VoiceInputManager()
+
+    @Published var isListening = false
+    @Published var transcript = ""
+
+    private init() {}
+
+    var isAvailable: Bool { false }
+    var isAuthorised: Bool { false }
+
+    func requestAuthorisation(completion: @escaping (Bool) -> Void) {
+        completion(false)
+    }
+
+    func startListening(onTranscript: @escaping (String) -> Void, onComplete: @escaping (String) -> Void) {
+        onComplete("")
+    }
+
+    func stopListening() {}
+}
+
+#endif
