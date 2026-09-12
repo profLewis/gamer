@@ -145,32 +145,35 @@ struct TerminalView: View {
                         // Length (which re-renders this same pinnedMapLines),
                         // could otherwise leave the panel scrolled to wherever
                         // it happened to be for the PREVIOUS content — always
-                        // re-centre on the player's own "@" row instead,
-                        // falling back to the top border line if it can't be
-                        // found (shouldn't happen — @ is always on the map).
+                        // re-centre on the top border line whenever content
+                        // changes (new room, new Map Length...) — the panel's
+                        // own height below is calculated to match exactly the
+                        // map's own rows, so anchoring at the top means the
+                        // map fills the panel precisely (with @ falling
+                        // naturally in the middle, same as the grid itself is
+                        // always centred on the player) and the key/legend
+                        // that follows sits just below the fold, reachable by
+                        // scrolling down instead of showing by default.
                         ScrollViewReader { mapProxy in
                             ScrollView {
                                 mapContent
                             }
                             .onChange(of: gameEngine.pinnedMapLines.first?.id) { _ in
-                                if let homeLine = gameEngine.pinnedMapLines.first(where: { $0.text.contains("@") }) {
-                                    mapProxy.scrollTo(homeLine.id, anchor: .center)
-                                } else if let first = gameEngine.pinnedMapLines.first {
+                                if let first = gameEngine.pinnedMapLines.first {
                                     mapProxy.scrollTo(first.id, anchor: .top)
                                 }
                             }
                         }
-                        // Always auto-sized to the actual content height now
-                        // — the fixed Panel Size steps (120/180/260/340) were
-                        // originally calibrated to leave room for the key
-                        // rows, but the key is permanently hidden on this
-                        // panel now (see bestMapRadius's compact: true), so a
-                        // fixed height just settled on a box with blank space
-                        // where the key used to be. Still wrapped in a real
-                        // ScrollView above so it stays reachable rather than
-                        // clipped if it's ever taller than the space actually
-                        // available (a small landscape column, a long Map
+                        // Height clipped to just the map's own rows (not the
+                        // key/legend that follows in the same content) — see
+                        // GameEngine.mapOnlyLineCount. The key is still
+                        // there, just scrolled past the visible area by
+                        // default. Still wrapped in a real ScrollView above
+                        // so it stays reachable rather than clipped if it's
+                        // ever taller than the space actually available (a
+                        // small landscape column, a long Map
                         // Length, larger text scale...).
+                        .frame(height: CGFloat(gameEngine.mapOnlyLineCount) * (gameEngine.mapFontSize * scale * 1.3 + 2))
                         .background(terminalBackground)
                         .contentShape(Rectangle())
                         .onLongPressGesture(minimumDuration: 0.5) {

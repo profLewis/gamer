@@ -15340,10 +15340,23 @@ class GameEngine: ObservableObject {
         let horizontalRadius = isLandscapeOrientation ? min(verticalRadius + 1, 4) : min(mapRadius + 2, 5)
         // Key/legend always hidden on the small pinned map, regardless of
         // Map Length — it used to only hide once Length went above 1, so the
-        // default (1) showed a key most players never saw once they'd
-        // turned it up. The full key is still available in the expanded map
-        // overlay (long-press the map), which doesn't go through here.
-        return (horizontalRadius, verticalRadius, true)
+        // The key/legend IS part of this content (compact: false) — it's
+        // just not visible by default. The panel's own height (see
+        // mapOnlyLineCount / TerminalView) is clipped to just the map's own
+        // rows, so the key sits right below the visible area, reachable by
+        // scrolling down rather than being left out of the content entirely.
+        return (horizontalRadius, verticalRadius, false)
+    }
+
+    /// Row count of just the map box itself (border/title/grid), excluding
+    /// the key/legend that follows it in the same scrollable content — used
+    /// to size the pinned map panel so only the map is visible by default,
+    /// with the key reachable by scrolling down instead of eating into the
+    /// panel's default height.
+    var mapOnlyLineCount: Int {
+        let (radius, verticalRadius, _) = bestMapRadius()
+        guard radius > 0, let dungeon = dungeon else { return 0 }
+        return dungeon.mapLineCount(visibilityRadius: radius, torchLit: torchLit, compact: true, verticalRadius: verticalRadius, legendMaxSymbols: mapLegendMaxSymbols)
     }
 
     /// Redraws the full exploration screen: map + room description + party + menu
@@ -15992,21 +16005,12 @@ class GameEngine: ObservableObject {
     /// Map colour based on torch state and remaining life.
     /// Flickers on activation (first few turns), steady for most, dims over last 10%.
     var torchMapColor: TerminalColor {
+        // Lit is lit — always green, full stop. A flicker-to-gray warning
+        // for low torch life used to live here too, but that read as the
+        // map randomly going gray/broken even while genuinely illuminated;
+        // the "Torch flickering... (N rooms left)" text already covers that
+        // warning without messing with the map's own colour.
         guard torchLit else { return .gray }
-        let life = torchTurnsRemaining
-        let full = Item.torchFullLife  // 720
-        let threshold = full / 10      // 72 min = last 10%
-
-        if life <= 0 { return .gray }
-        if life <= threshold / 2 {
-            // Very low — flicker between gray and dimGreen
-            return Bool.random() ? .dimGreen : .gray
-        }
-        if life <= threshold {
-            // Last 10% — dimGreen, occasional flicker to gray
-            return Int.random(in: 1...4) == 1 ? .gray : .dimGreen
-        }
-        // Steady burn — bright green
         return .brightGreen
     }
 
