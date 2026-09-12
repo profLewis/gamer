@@ -16563,8 +16563,12 @@ class GameEngine: ObservableObject {
             print("")
             logEvent("Trap: \(trap.name) disarmed by \(userName) with Thieves' Tools", category: "TRAP")
             logMultiplayerAction("\(userName) disarmed \(trap.name) with Thieves' Tools — no damage")
-            waitForContinue()
-            inputHandler = { [weak self] _ in
+            // waitForContinueWithTimeout (not plain waitForContinue): reads
+            // the trap out loud when Voice Menus is on (built into
+            // waitForContinue already) and auto-advances after a delay
+            // instead of waiting indefinitely on a tap — this screen only
+            // had the corner ✕ icon as a way off it otherwise.
+            waitForContinueWithTimeout { [weak self] in
                 self?.showExplorationView()
             }
             return
@@ -16586,8 +16590,12 @@ class GameEngine: ObservableObject {
         logMultiplayerAction("\(target.name) triggered \(trap.name) — \(damage) damage! (\(target.currentHP)/\(target.maxHP) HP)")
 
         print("")
-        waitForContinue()
-        inputHandler = { [weak self] _ in
+        // waitForContinueWithTimeout (not plain waitForContinue): reads the
+        // trap out loud when Voice Menus is on (built into waitForContinue
+        // already) and auto-advances after a delay instead of waiting
+        // indefinitely on a tap — this screen only had the corner ✕ icon as
+        // a way off it otherwise.
+        waitForContinueWithTimeout { [weak self] in
             self?.showExplorationView()
         }
     }
