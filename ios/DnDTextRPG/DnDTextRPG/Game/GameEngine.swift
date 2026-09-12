@@ -152,13 +152,15 @@ class GameEngine: ObservableObject {
     @Published var awaitingTextInput: Bool = false
     @Published var awaitingContinue: Bool = false
     /// When true alongside awaitingContinue, the WHOLE screen is tappable to
-    /// continue (see TerminalView) — appropriate for a short, one-shot
-    /// result (rest, trap...) with nothing worth scrolling to reread.
-    /// Combat reports leave this false: tap-to-continue there is a narrow
-    /// right-edge strip instead, because full-width taps made it impossible
-    /// to scroll up mid-fight to reread an earlier round. See
-    /// waitForContinue(fullScreenTap:).
-    @Published var fullScreenTapToContinue: Bool = false
+    /// continue (see TerminalView) — the default for waitForContinue(), since
+    /// most "press to continue" screens (NPC results, gym, rest, trap, level
+    /// up...) are short, one-shot, and have nothing worth scrolling to
+    /// reread; a corner ✕ icon alone made them feel "stuck". Live combat
+    /// turns explicitly opt OUT (fullScreenTap: false) and fall back to a
+    /// narrow right-edge tap-to-advance strip instead, because full-width
+    /// taps there made it impossible to scroll up mid-fight to reread an
+    /// earlier round. See waitForContinue(fullScreenTap:).
+    @Published var fullScreenTapToContinue: Bool = true
     @Published var chatInputMode: Bool = false
     @Published var isHoldingScreen: Bool = false
 
@@ -2336,7 +2338,7 @@ class GameEngine: ObservableObject {
         }
     }
 
-    func waitForContinue(fullScreenTap: Bool = false) {
+    func waitForContinue(fullScreenTap: Bool = true) {
         // Same reasoning as promptText — waitForContinue is meant to be a
         // clean "tap anywhere to continue" state (see TerminalView's
         // awaitingContinue branch), which only renders when textTapEnabled
@@ -2372,7 +2374,7 @@ class GameEngine: ObservableObject {
     }
 
     /// Wait for continue with auto-timeout — taps to continue immediately, or auto-continues after delay
-    func waitForContinueWithTimeout(multiplier: Double = 2.0, fullScreenTap: Bool = false, action: @escaping () -> Void) {
+    func waitForContinueWithTimeout(multiplier: Double = 2.0, fullScreenTap: Bool = true, action: @escaping () -> Void) {
         waitForContinue(fullScreenTap: fullScreenTap)
 
         // Single-fire guard — without it, a tap landing at (or just before)
@@ -23277,7 +23279,7 @@ class GameEngine: ObservableObject {
                 SpeechEngine.shared.speak(displayText)
 
                 self.print("")
-                self.waitForContinue()
+                self.waitForContinue(fullScreenTap: false)
                 self.inputHandler = { [weak self] _ in
                     guard let self = self else { return }
                     if tookAction {
@@ -23945,7 +23947,7 @@ class GameEngine: ObservableObject {
                 self.print("  DM IN COMBAT", color: .cyan, bold: true)
                 self.printWrapped("Describe creative actions — throw oil, flip a table, taunt an enemy. The DM will interpret and apply results.", indent: 2, color: .dimGreen)
                 self.print("")
-                self.waitForContinue()
+                self.waitForContinue(fullScreenTap: false)
                 self.inputHandler = { [weak self] _ in
                     self?.askTheDMInCombat(characterId: characterId)
                 }
@@ -24053,7 +24055,7 @@ class GameEngine: ObservableObject {
                     self.logEvent("Asked DM in combat: \(input)", category: "DM")
 
                     // Stay in DM conversation — don't leave DM mode after each action
-                    self.waitForContinue()
+                    self.waitForContinue(fullScreenTap: false)
                     self.inputHandler = { [weak self] _ in
                         if tookAction {
                             combat.checkCombatEnd()
@@ -24520,12 +24522,12 @@ class GameEngine: ObservableObject {
                     self.print("")
 
                     self.logMultiplayerAttackReport(report)
-                    self.waitForContinue()
+                    self.waitForContinue(fullScreenTap: false)
                     self.inputHandler = { _ in completion() }
                 }
             } else {
                 self.logMultiplayerAttackReport(report)
-                self.waitForContinue()
+                self.waitForContinue(fullScreenTap: false)
                 self.inputHandler = { _ in completion() }
             }
         }
@@ -24683,7 +24685,7 @@ class GameEngine: ObservableObject {
             }
         }
 
-        waitForContinue()
+        waitForContinue(fullScreenTap: false)
         inputHandler = { [weak self] _ in
             self?.advanceCombat()
         }
@@ -24806,7 +24808,7 @@ class GameEngine: ObservableObject {
                 print("  Poison cured!", color: .brightGreen)
                 logMultiplayerAction("\(character.name) uses antidote — poison cured!")
                 combat.nextTurn()
-                waitForContinue()
+                waitForContinue(fullScreenTap: false)
                 inputHandler = { [weak self] _ in self?.advanceCombat() }
                 return
             }
@@ -24825,7 +24827,7 @@ class GameEngine: ObservableObject {
                 character.curePoison()
                 print("  The poison is cleansed!", color: .brightGreen)
                 combat.nextTurn()
-                waitForContinue()
+                waitForContinue(fullScreenTap: false)
                 inputHandler = { [weak self] _ in self?.advanceCombat() }
                 return
             }
@@ -24837,7 +24839,7 @@ class GameEngine: ObservableObject {
                 logMultiplayerAction("\(character.name) collapses, playing dead!")
                 character.isPlayingDead = true
                 combat.nextTurn()
-                waitForContinue()
+                waitForContinue(fullScreenTap: false)
                 inputHandler = { [weak self] _ in self?.advanceCombat() }
                 return
             }
@@ -25040,7 +25042,7 @@ class GameEngine: ObservableObject {
             self.print("  (they roll twice, take the worse result)", color: .dimGreen)
             combat.checkCombatEnd()
             combat.nextTurn()
-            self.waitForContinue()
+            self.waitForContinue(fullScreenTap: false)
             self.inputHandler = { [weak self] _ in self?.advanceCombat() }
         }
 
@@ -25135,7 +25137,7 @@ class GameEngine: ObservableObject {
                 }
                 combat.checkCombatEnd()
                 combat.nextTurn()
-                self.waitForContinue()
+                self.waitForContinue(fullScreenTap: false)
                 self.inputHandler = { [weak self] _ in self?.advanceCombat() }
             }
 
@@ -25220,7 +25222,7 @@ class GameEngine: ObservableObject {
 
         combat.checkCombatEnd()
         combat.nextTurn()
-        waitForContinue()
+        waitForContinue(fullScreenTap: false)
         inputHandler = { [weak self] _ in self?.advanceCombat() }
     }
 
@@ -25391,7 +25393,7 @@ class GameEngine: ObservableObject {
                 // Monsters get a free round of attacks
                 combat.nextTurn()
 
-                self.waitForContinue()
+                self.waitForContinue(fullScreenTap: false)
                 self.inputHandler = { [weak self] _ in
                     self?.advanceCombat()
                 }
@@ -25524,7 +25526,7 @@ class GameEngine: ObservableObject {
                     let shouldReturnToDM = self.returnToDMAfterCombat
                     self.returnToDMAfterCombat = false
                     self.print("")
-                    self.waitForContinue()
+                    self.waitForContinue(fullScreenTap: false)
                     self.inputHandler = { [weak self] _ in
                         if shouldReturnToDM {
                             self?.askTheDM()
@@ -25534,7 +25536,7 @@ class GameEngine: ObservableObject {
                     }
                 } else {
                     combat.nextTurn()
-                    self.waitForContinue()
+                    self.waitForContinue(fullScreenTap: false)
                     self.inputHandler = { [weak self] _ in self?.advanceCombat() }
                 }
             } else {
@@ -25557,7 +25559,7 @@ class GameEngine: ObservableObject {
 
                 combat.checkCombatEnd()
                 combat.nextTurn()
-                self.waitForContinue()
+                self.waitForContinue(fullScreenTap: false)
                 self.inputHandler = { [weak self] _ in self?.advanceCombat() }
             }
         }
@@ -25870,11 +25872,11 @@ class GameEngine: ObservableObject {
                     }
                     self.print("")
 
-                    self.waitForContinue()
+                    self.waitForContinue(fullScreenTap: false)
                     self.inputHandler = { _ in completion() }
                 }
             } else {
-                self.waitForContinue()
+                self.waitForContinue(fullScreenTap: false)
                 self.inputHandler = { _ in completion() }
             }
         }
@@ -25905,7 +25907,7 @@ class GameEngine: ObservableObject {
         combat.checkCombatEnd()
         combat.nextTurn()
 
-        waitForContinue()
+        waitForContinue(fullScreenTap: false)
         inputHandler = { [weak self] _ in self?.advanceCombat() }
     }
 
@@ -25928,7 +25930,7 @@ class GameEngine: ObservableObject {
         combat.checkCombatEnd()
         combat.nextTurn()
 
-        waitForContinue()
+        waitForContinue(fullScreenTap: false)
         inputHandler = { [weak self] _ in self?.advanceCombat() }
     }
 
@@ -25943,7 +25945,7 @@ class GameEngine: ObservableObject {
         print("  Failures:  \(String(repeating: "●", count: character.deathSaveFailures))\(String(repeating: "○", count: 3 - character.deathSaveFailures))", color: .red)
         print("")
 
-        waitForContinue()
+        waitForContinue(fullScreenTap: false)
         inputHandler = { [weak self] _ in
             guard let self = self else { return }
 
@@ -25984,7 +25986,7 @@ class GameEngine: ObservableObject {
             combat.checkCombatEnd()
             combat.nextTurn()
 
-            self.waitForContinue()
+            self.waitForContinue(fullScreenTap: false)
             self.inputHandler = { [weak self] _ in self?.advanceCombat() }
         }
     }
