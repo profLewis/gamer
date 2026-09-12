@@ -127,9 +127,23 @@ struct TerminalView: View {
                         Group {
                             if gameEngine.mapPanelHeight > 0 {
                                 // Fixed size — scroll internally rather than
-                                // ever clip the map or its key/legend.
-                                ScrollView {
-                                    mapContent
+                                // ever clip the map or its key/legend. A
+                                // ScrollView keeps whatever scroll offset it
+                                // had across content updates by default, so
+                                // moving to a new room (new pinnedMapLines)
+                                // could otherwise leave the panel scrolled
+                                // to wherever the PREVIOUS room's map last
+                                // was — always reset to the top border line
+                                // whenever the content actually changes.
+                                ScrollViewReader { mapProxy in
+                                    ScrollView {
+                                        mapContent
+                                    }
+                                    .onChange(of: gameEngine.pinnedMapLines.first?.id) { _ in
+                                        if let first = gameEngine.pinnedMapLines.first {
+                                            mapProxy.scrollTo(first.id, anchor: .top)
+                                        }
+                                    }
                                 }
                                 .frame(height: gameEngine.mapPanelHeight)
                             } else {
