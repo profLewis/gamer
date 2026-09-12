@@ -12,6 +12,8 @@ import GameKit
 import UniformTypeIdentifiers
 #if os(macOS)
 import AppKit
+#else
+import UIKit
 #endif
 
 /// Plain-text document wrapper for exporting/importing the adventure log.
@@ -75,6 +77,18 @@ private struct ScreenSnapshot {
 
 class GameEngine: ObservableObject {
     // MARK: - Published Properties
+
+    /// True if the OS's own screen reader is currently running — VoiceOver,
+    /// on both iOS and macOS (same feature, different API). Used only to
+    /// pick a sensible first-run default for blinkingCursorEnabled below;
+    /// never overrides an explicit choice once the user has made one.
+    private static var systemVoiceOverRunning: Bool {
+        #if os(macOS)
+        return NSWorkspace.shared.isVoiceOverEnabled
+        #else
+        return UIAccessibility.isVoiceOverRunning
+        #endif
+    }
 
     /// Screens left via an actual "< Back"/"<<" tap, most recent last — see
     /// ScreenSnapshot. "Fwd >" pops and restores the last entry, undoing
@@ -183,7 +197,13 @@ class GameEngine: ObservableObject {
     /// (type something, or tap the text to continue), not for ordinary
     /// menu/D-pad screens where the buttons themselves are the affordance.
     /// On by default.
-    @Published var blinkingCursorEnabled: Bool = UserDefaults.standard.object(forKey: "blinkingCursorEnabled") == nil ? true : UserDefaults.standard.bool(forKey: "blinkingCursorEnabled")
+    // Off by default when VoiceOver is already running the first time this
+    // setting is ever read on this device — a blinking cursor is at best
+    // useless and at worst distracting for a VoiceOver user, so the
+    // friendlier default is off, not on. Purely a first-run default: once
+    // UserDefaults has a stored value (the user toggled it, or the app has
+    // simply run before), that value always wins, VoiceOver or not.
+    @Published var blinkingCursorEnabled: Bool = UserDefaults.standard.object(forKey: "blinkingCursorEnabled") == nil ? !GameEngine.systemVoiceOverRunning : UserDefaults.standard.bool(forKey: "blinkingCursorEnabled")
 
     /// True only when the text/prompt area itself is what the player should
     /// act on — typing a response, or tapping to continue. Deliberately
@@ -3983,10 +4003,19 @@ class GameEngine: ObservableObject {
         }
 
         menuLongPressHandler = { [weak self] choice in
-            guard let self = self else { return }
-            // Long-press New Adventure → quick start
-            if choice == 1 {
+            guard let self = self, choice >= 1, choice <= menuOpts.count else { return }
+            switch menuOpts[choice - 1].text {
+            case "New Adventure":
+                // Long-press New Adventure → quick start
                 self.createRandomParty(count: 2, allAI: true)
+            case "Continue Adventure":
+                // Long-press → skip the save list entirely and load the
+                // single most recently saved slot directly.
+                if let mostRecent = SaveGameManager.shared.listSlots().max(by: { $0.latest.savedAt < $1.latest.savedAt }) {
+                    self.loadGame(mostRecent.latest)
+                }
+            default:
+                break
             }
         }
     }
@@ -6834,11 +6863,17 @@ class GameEngine: ObservableObject {
         printWrapped("Speaker and microphone icons for voice control.", indent: 2, color: .dimGreen)
         print("")
 
+        print("FLASHING CURSOR:", color: .cyan, bold: true)
+        print("  \(blinkingCursorEnabled ? "On" : "Off")", color: blinkingCursorEnabled ? .brightGreen : .red)
+        printWrapped("Blinks the cursor next to the > prompt while waiting for you to act. Turn this off if using VoiceOver — off automatically the first time this device has VoiceOver running.", indent: 2, color: .dimGreen)
+        print("")
+
         let displaySizeLabel = "Size \(displaySizeName)"
         let hitsLabel = hitAnimationsEnabled ? "Hits Off" : "Hits On"
         let dmVoiceLabel = speech.isEnabled ? "DM Voice On" : "DM Voice Off"
         let voiceMenuLabel = voiceMenuEnabled ? "Voice Menus On" : "Voice Menus Off"
-        let options = [displaySizeLabel, hitsLabel, dmVoiceLabel, "Companion Voices", voiceMenuLabel]
+        let cursorLabel = blinkingCursorEnabled ? "Cursor Off" : "Cursor On"
+        let options = [displaySizeLabel, hitsLabel, dmVoiceLabel, "Companion Voices", voiceMenuLabel, cursorLabel]
 
         var menuOpts = options.map { MenuOption($0) }
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -6891,6 +6926,11 @@ class GameEngine: ObservableObject {
                 self.voiceMenuEnabled.toggle()
                 UserDefaults.standard.set(self.voiceMenuEnabled, forKey: "voiceMenuEnabled")
                 self.showAccessibilityMenu()
+            case cursorLabel:
+                self.recordSettingChange(screen: "s:access", key: "blinkingCursorEnabled", name: "Cursor")
+                self.blinkingCursorEnabled.toggle()
+                UserDefaults.standard.set(self.blinkingCursorEnabled, forKey: "blinkingCursorEnabled")
+                self.showAccessibilityMenu()
             default: break
             }
         }
@@ -6927,6 +6967,10 @@ class GameEngine: ObservableObject {
 
             self.print("  VOICE MENUS", color: .cyan, bold: true)
             self.printWrapped("When on, a speaker icon and microphone icon appear on each screen. The speaker reads the screen aloud; the microphone lets you speak menu choices instead of tapping.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  FLASHING CURSOR", color: .cyan, bold: true)
+            self.printWrapped("Blinks the cursor next to the > prompt while waiting for you to act. Off by default the first time VoiceOver is detected running on this device — turn it off yourself if you use VoiceOver and it's still on.", indent: 2, color: .dimGreen)
             self.print("")
         }
     }
@@ -8409,7 +8453,7 @@ class GameEngine: ObservableObject {
         if keys.contains("iconScaleSetting") { iconScaleSetting = 0 }
         if keys.contains("useCustomKeyboard") { useCustomKeyboard = true }
         if keys.contains("idlePromptsEnabled") { idlePromptsEnabled = false }
-        if keys.contains("blinkingCursorEnabled") { blinkingCursorEnabled = true }
+        if keys.contains("blinkingCursorEnabled") { blinkingCursorEnabled = !GameEngine.systemVoiceOverRunning }
         if keys.contains("fontSizeSetting") { fontScale = FontSizeSetting.defaultSetting.scale }
         if keys.contains("undoRedoEnabled") && !undoRedoEnabled { clearAllUndoRedo() }
 
@@ -8465,7 +8509,7 @@ class GameEngine: ObservableObject {
         iconScaleSetting = 0
         useCustomKeyboard = true
         idlePromptsEnabled = false
-        blinkingCursorEnabled = true
+        blinkingCursorEnabled = !GameEngine.systemVoiceOverRunning
         fontScale = FontSizeSetting.defaultSetting.scale
         justDMMode = false
         DMEngine.shared.justDMMode = false
@@ -26717,17 +26761,25 @@ class GameEngine: ObservableObject {
         dateFormatter.dateStyle = .medium
         dateFormatter.timeStyle = .short
 
+        // Exact printed-line range per entry, in the same order actions[]
+        // is built below (local slots, then remote matches) — so tapping
+        // an entry's description text, not just its numbered button, can
+        // open it too, matching Continue Adventure's own list.
+        var entryLineRanges: [Range<Int>] = []
+
         // List local save slots
         if hasLocalSlots {
             print("Local Saves", color: .cyan, bold: true)
             print("")
             for (index, slot) in slots.enumerated() {
+                let lineStart = terminalLines.count
                 let dateStr = dateFormatter.string(from: slot.latest.savedAt)
                 let bpInfo = slot.breakpointCount > 1 ? " (\(slot.breakpointCount) saves)" : ""
                 print("\(index + 1). \(slot.slotName)\(bpInfo)", color: .brightGreen)
                 print("   \(slot.latest.partyDescription)", color: .dimGreen)
                 print("   \(dateStr)", color: .dimGreen)
                 print("")
+                entryLineRanges.append(lineStart..<terminalLines.count)
             }
         }
 
@@ -26736,12 +26788,14 @@ class GameEngine: ObservableObject {
             print("Remote Games", color: .cyan, bold: true)
             print("")
             for (index, match) in remoteMatches.enumerated() {
+                let lineStart = terminalLines.count
                 let opponentName = remoteMatchOpponentName(match)
                 let phaseStr = remoteMatchPhaseString(match)
                 let num = slots.count + index + 1
                 print("\(num). vs. \(opponentName)", color: .brightGreen)
                 print("   \(phaseStr)", color: .dimGreen)
                 print("")
+                entryLineRanges.append(lineStart..<terminalLines.count)
             }
         }
 
@@ -26793,6 +26847,14 @@ class GameEngine: ObservableObject {
             } else {
                 backToLoadGame()
             }
+        }
+
+        // Tap an entry's description text, not just its numbered button —
+        // matches Continue Adventure's own list.
+        textLongPressHandler = { lineIndex in
+            guard let idx = entryLineRanges.firstIndex(where: { $0.contains(lineIndex) }) else { return }
+            guard idx < actions.count else { return }
+            actions[idx]()
         }
     }
 
