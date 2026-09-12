@@ -416,7 +416,17 @@ struct TerminalView: View {
                     #if !os(tvOS)
                     // tvOS has no touch/swipe input (remote + focus engine
                     // instead) — swipe-left/right card navigation doesn't apply.
-                    .gesture(
+                    // simultaneousGesture, not gesture: a plain .gesture() here
+                    // competed with the ScrollView's own native drag-to-scroll
+                    // recognizer for every touch inside it — on many drags it
+                    // won that race and swallowed the touch before the
+                    // ScrollView ever saw it, which is why this text/combat
+                    // log read as "not scrollable" even though nothing was
+                    // actually disabling scroll. This gesture's own logic
+                    // already ignores anything that isn't a clear, mostly-
+                    // horizontal swipe, so letting it run alongside scrolling
+                    // instead of ahead of it doesn't change when it fires.
+                    .simultaneousGesture(
                         DragGesture(minimumDistance: 20, coordinateSpace: .global)
                             .onEnded { value in
                                 let horizontal = value.translation.width
@@ -627,7 +637,7 @@ struct TerminalView: View {
                         .padding(.vertical, 4)
                         .background(Color.black.opacity(0.95))
                         #if !os(tvOS)
-                        .gesture(
+                        .simultaneousGesture(
                             DragGesture(minimumDistance: 20, coordinateSpace: .global)
                                 .onEnded { value in
                                     let horizontal = value.translation.width
