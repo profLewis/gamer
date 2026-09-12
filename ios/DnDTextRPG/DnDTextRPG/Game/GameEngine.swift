@@ -36,8 +36,57 @@ struct LogFileDocument: FileDocument {
     }
 }
 
+/// A recently-left screen's full render/interaction state, captured by
+/// GameEngine.clearTerminal() and restored by goForwardInHistory() when
+/// the player taps the "Fwd >" compact-nav button. Deliberately excludes
+/// D-pad corner/direction-pad state (dpad*, directionHandler,
+/// chatInputMode) — screens using those are exploration/combat screens,
+/// which never qualify for "Fwd >" in the first place since they don't
+/// carry a "< Back" (see GameEngine.withForwardOption's gating).
+private struct ScreenSnapshot {
+    let terminalLines: [TerminalLine]
+    let pinnedMapLines: [TerminalLine]
+    let menuOptions: [MenuOption]
+    let directionExits: [Direction: Bool]
+    let securedExits: Set<Direction>
+    let menuHandler: ((Int) -> Void)?
+    let menuLongPressHandler: ((Int) -> Void)?
+    let closeHandler: (() -> Void)?
+    let inputHandler: ((String) -> Void)?
+    let textLongPressHandler: ((Int) -> Void)?
+    let swipeLeftHandler: (() -> Void)?
+    let swipeRightHandler: (() -> Void)?
+    let swipeRandomHandler: (() -> Void)?
+    let rerollHandler: (() -> Void)?
+    let undoHandler: (() -> Void)?
+    let redoHandler: (() -> Void)?
+    let undoLabel: String?
+    let redoLabel: String?
+    let undoTargetButtonIndex: Int?
+    let redoTargetButtonIndex: Int?
+    let awaitingTextInput: Bool
+    let awaitingContinue: Bool
+    let cardPositionLabel: String?
+    let dragonGifName: String?
+    let menuImageName: String?
+    let suppressAutoScroll: Bool
+    let scrollLocked: Bool
+}
+
 class GameEngine: ObservableObject {
     // MARK: - Published Properties
+
+    /// Recently-left screens, most recent last — see ScreenSnapshot. Capped
+    /// so a very long session doesn't grow this unbounded. "Fwd >" pops and
+    /// restores the last entry; it's a simple "jump back to where I just
+    /// was" stack, not full bidirectional history with a position pointer
+    /// (this app's ~200+ "< Back" buttons are independent closures, not a
+    /// central router, so there's no clean way to tell a back-navigation
+    /// apart from any other screen change at the one shared choke point,
+    /// clearTerminal() — a plain LIFO "recently visited" cache covers the
+    /// same practical need without requiring that distinction).
+    private var navigationHistory: [ScreenSnapshot] = []
+    private static let maxNavigationHistory = 30
 
     @Published var terminalLines: [TerminalLine] = []
     /// The dungeon map, when one is showing — kept separate from
@@ -925,7 +974,103 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// True whenever the compact nav cell's third slot would otherwise be
+    /// empty (no `<<`/`>>` pagination in play) and there's a screen to jump
+    /// back to — see ScreenSnapshot/navigationHistory.
+    private var canShowForwardOption: Bool { !navigationHistory.isEmpty }
+
+    /// Appends a "Fwd >" compact-nav item to `options` when it would
+    /// actually land in the otherwise-empty third slot: the screen already
+    /// has `< Back`/`<<` (claims slot 0) AND `?` (claims slot 1) — without
+    /// both already present, "Fwd >" would get pulled into whichever empty
+    /// slot comes first instead of the rightmost one (see TerminalView's
+    /// compactNavCell "other" fallback) — and isn't already using `>>`.
+    private func withForwardOption(_ options: [MenuOption]) -> [MenuOption] {
+        guard canShowForwardOption else { return options }
+        guard !options.contains(where: { $0.text == ">>" }) else { return options }
+        guard options.contains(where: { $0.text == "< Back" || $0.text == "<<" }) else { return options }
+        guard options.contains(where: { $0.text == "?" || $0.text == "?\u{0338}" }) else { return options }
+        return options + [MenuOption("Fwd >", tint: .navigation, compact: true)]
+    }
+
+    private func captureScreenSnapshot() -> ScreenSnapshot {
+        ScreenSnapshot(
+            terminalLines: terminalLines,
+            pinnedMapLines: pinnedMapLines,
+            menuOptions: currentMenuOptions,
+            directionExits: directionExits,
+            securedExits: securedExits,
+            menuHandler: menuHandler,
+            menuLongPressHandler: menuLongPressHandler,
+            closeHandler: closeHandler,
+            inputHandler: inputHandler,
+            textLongPressHandler: textLongPressHandler,
+            swipeLeftHandler: swipeLeftHandler,
+            swipeRightHandler: swipeRightHandler,
+            swipeRandomHandler: swipeRandomHandler,
+            rerollHandler: rerollHandler,
+            undoHandler: undoHandler,
+            redoHandler: redoHandler,
+            undoLabel: undoLabel,
+            redoLabel: redoLabel,
+            undoTargetButtonIndex: undoTargetButtonIndex,
+            redoTargetButtonIndex: redoTargetButtonIndex,
+            awaitingTextInput: awaitingTextInput,
+            awaitingContinue: awaitingContinue,
+            cardPositionLabel: cardPositionLabel,
+            dragonGifName: dragonGifName,
+            menuImageName: menuImageName,
+            suppressAutoScroll: suppressAutoScroll,
+            scrollLocked: scrollLocked
+        )
+    }
+
+    /// Tapped from "Fwd >" — jumps back to the most recently left screen.
+    /// Deliberately does NOT go through clearTerminal()/re-push the screen
+    /// being left here, so a return trip via that screen's own native
+    /// "< Back" behaves exactly as it always has.
+    private func goForwardInHistory() {
+        guard let snapshot = navigationHistory.popLast() else { return }
+        terminalLines = snapshot.terminalLines
+        pinnedMapLines = snapshot.pinnedMapLines
+        currentMenuOptions = snapshot.menuOptions
+        directionExits = snapshot.directionExits
+        securedExits = snapshot.securedExits
+        menuHandler = snapshot.menuHandler
+        menuLongPressHandler = snapshot.menuLongPressHandler
+        closeHandler = snapshot.closeHandler
+        inputHandler = snapshot.inputHandler
+        textLongPressHandler = snapshot.textLongPressHandler
+        swipeLeftHandler = snapshot.swipeLeftHandler
+        swipeRightHandler = snapshot.swipeRightHandler
+        swipeRandomHandler = snapshot.swipeRandomHandler
+        rerollHandler = snapshot.rerollHandler
+        undoHandler = snapshot.undoHandler
+        redoHandler = snapshot.redoHandler
+        undoLabel = snapshot.undoLabel
+        redoLabel = snapshot.redoLabel
+        undoTargetButtonIndex = snapshot.undoTargetButtonIndex
+        redoTargetButtonIndex = snapshot.redoTargetButtonIndex
+        awaitingTextInput = snapshot.awaitingTextInput
+        awaitingContinue = snapshot.awaitingContinue
+        cardPositionLabel = snapshot.cardPositionLabel
+        dragonGifName = snapshot.dragonGifName
+        menuImageName = snapshot.menuImageName
+        suppressAutoScroll = snapshot.suppressAutoScroll
+        scrollLocked = snapshot.scrollLocked
+    }
+
     func clearTerminal() {
+        // Cache the screen we're leaving (for "Fwd >") before wiping it —
+        // only once something real has actually been shown (an empty
+        // snapshot from, e.g., back-to-back clears would just be noise a
+        // "Fwd >" tap could jump to and find nothing on screen).
+        if !terminalLines.isEmpty || !currentMenuOptions.isEmpty {
+            navigationHistory.append(captureScreenSnapshot())
+            if navigationHistory.count > Self.maxNavigationHistory {
+                navigationHistory.removeFirst()
+            }
+        }
         // Bumped once per call, captured by each watchdog below as
         // myGeneration. THE REAL BUG (found after extensive investigation
         // into the "Accept -> blank screen" reports): a watchdog only ever
@@ -1616,11 +1761,12 @@ class GameEngine: ObservableObject {
             self.dpadTorchHandler = nil
             self.dpadSearchHandler = nil
             self.dpadListenHandler = nil
-            self.currentMenuOptions = options.enumerated().map { index, text in
+            let mapped = options.enumerated().map { index, text -> MenuOption in
                 let tint = Self.autoTint(text)
                 let compact = text == "?" || text == "?\u{0338}" || text == "<<" || text == ">>" || text == "< Back"
                 return MenuOption(text, isDefault: index == defaultIndex, tint: tint, compact: compact)
             }
+            self.currentMenuOptions = self.withForwardOption(mapped)
             self.awaitingTextInput = false
             self.awaitingContinue = false
             self.autoReadIfSpeakerMode()
@@ -1642,12 +1788,13 @@ class GameEngine: ObservableObject {
             self.dpadTorchHandler = nil
             self.dpadSearchHandler = nil
             self.dpadListenHandler = nil
-            self.currentMenuOptions = options.map { opt in
+            let mapped = options.map { opt -> MenuOption in
                 if !opt.isCompactNav && (opt.text == "?" || opt.text == "?\u{0338}" || opt.text == "<<" || opt.text == ">>" || opt.text == "< Back") {
                     return MenuOption(opt.text, isDefault: opt.isDefault, isDisabled: opt.isDisabled, isAlert: opt.isAlert, tint: opt.tint, compact: true)
                 }
                 return opt
             }
+            self.currentMenuOptions = self.withForwardOption(mapped)
             self.awaitingTextInput = false
             self.awaitingContinue = false
             self.autoReadIfSpeakerMode()
@@ -1973,12 +2120,13 @@ class GameEngine: ObservableObject {
         menuLongPressHandler = nil
         runOnMain {
             self.directionExits = exits
-            self.currentMenuOptions = options.map { opt in
+            let mapped = options.map { opt -> MenuOption in
                 if !opt.isCompactNav && (opt.text == "?" || opt.text == "?\u{0338}" || opt.text == "<<" || opt.text == ">>" || opt.text == "< Back") {
                     return MenuOption(opt.text, isDefault: opt.isDefault, isDisabled: opt.isDisabled, isAlert: opt.isAlert, tint: opt.tint, compact: true)
                 }
                 return opt
             }
+            self.currentMenuOptions = self.withForwardOption(mapped)
             self.awaitingTextInput = false
             self.awaitingContinue = false
             self.autoReadIfSpeakerMode()
@@ -2014,10 +2162,11 @@ class GameEngine: ObservableObject {
         runOnMain {
             self.directionExits = [:]
             self.securedExits = []
-            self.currentMenuOptions = options.enumerated().map { index, text in
+            let mapped = options.enumerated().map { index, text -> MenuOption in
                 let compact = text == "?" || text == "?\u{0338}" || text == "<<" || text == ">>" || text == "< Back"
                 return MenuOption(text, isDefault: index == 0, tint: Self.autoTint(text), compact: compact)
             }
+            self.currentMenuOptions = self.withForwardOption(mapped)
             self.awaitingTextInput = true
             self.awaitingContinue = false
             self.autoReadIfSpeakerMode()
@@ -2172,6 +2321,16 @@ class GameEngine: ObservableObject {
         // Ignore stale taps from a previous menu (e.g. finger-up after long-press
         // where the old menu had more options than the new one)
         guard choice >= 1 && choice <= currentMenuOptions.count else { return }
+
+        // "Fwd >" is injected generically (see withForwardOption) rather
+        // than wired by each screen's own menuHandler — intercept it here,
+        // before dispatching to that handler, so no caller needs to know
+        // about it or account for its index in their own options array.
+        if currentMenuOptions[choice - 1].text == "Fwd >" {
+            flashTitle()
+            goForwardInHistory()
+            return
+        }
 
         // Flash the title text as visual feedback on every button press
         flashTitle()
@@ -7056,16 +7215,28 @@ class GameEngine: ObservableObject {
         print("  Current: \(current)", color: .brightGreen)
         print("")
 
-        let options = ["Off", "8 Hours", "12 Hours", "1 Day", "2 Days", "3 Days"]
+        var options = ["Off", "8 Hours", "12 Hours", "1 Day", "2 Days", "3 Days"]
+        options.append("?")
+        options.append("< Back")
         showMenu(options)
-        closeHandler = { [weak self] in self?.showGameplaySettings() }
+        let backToGameplay: () -> Void = { [weak self] in self?.showGameplaySettings() }
+        closeHandler = backToGameplay
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             let values = [0, 480, 720, 1440, 2880, 4320]
             if choice > 0 && choice <= values.count {
                 self.gameTimeLimit = values[choice - 1]
+                self.showGameplaySettings()
+            } else if options[choice - 1] == "?" {
+                self.showInlineHelp {
+                    self.printTitle("Time Limit — Help")
+                    self.print("")
+                    self.printWrapped("Sets an optional in-game clock. When the clock runs out, the adventure ends in defeat — the remaining time is shown during exploration. Off means no limit.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else {
+                backToGameplay()
             }
-            self.showGameplaySettings()
         }
     }
 
@@ -7078,16 +7249,28 @@ class GameEngine: ObservableObject {
         print("  Current: \(current)", color: .brightGreen)
         print("")
 
-        let options = ["Show All", "Last 50", "Last 100", "Last 200"]
+        var options = ["Show All", "Last 50", "Last 100", "Last 200"]
+        options.append("?")
+        options.append("< Back")
         showMenu(options)
-        closeHandler = { [weak self] in self?.showGameplaySettings() }
+        let backToGameplay: () -> Void = { [weak self] in self?.showGameplaySettings() }
+        closeHandler = backToGameplay
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             let values = [0, 50, 100, 200]
             if choice > 0 && choice <= values.count {
                 self.adventureLogLimit = values[choice - 1]
+                self.showGameplaySettings()
+            } else if options[choice - 1] == "?" {
+                self.showInlineHelp {
+                    self.printTitle("Adventure Log Limit — Help")
+                    self.print("")
+                    self.printWrapped("Controls how many recent entries the Adventure Log displays. 'Show All' keeps everything but can be slow to scroll on a very long adventure.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else {
+                backToGameplay()
             }
-            self.showGameplaySettings()
         }
     }
 
@@ -7105,16 +7288,20 @@ class GameEngine: ObservableObject {
         print("")
 
         let modes = ListSortMode.allCases
-        let options = modes.map { $0.label }
+        var options = modes.map { $0.label }
+        options.append("< Back")
         showMenu(options)
-        closeHandler = { [weak self] in self?.showGameplaySettings() }
+        let backToGameplay: () -> Void = { [weak self] in self?.showGameplaySettings() }
+        closeHandler = backToGameplay
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice > 0 && choice <= modes.count {
                 self.recordSettingChange(screen: "s:gameplay", key: "list_sort_mode", name: "List Order")
                 self.listSortMode = modes[choice - 1]
+                self.showGameplaySettings()
+            } else {
+                backToGameplay()
             }
-            self.showGameplaySettings()
         }
     }
 
@@ -7138,16 +7325,20 @@ class GameEngine: ObservableObject {
             if !values.contains(v) { values.append(v) }
         }
         values.sort()
-        let options = values.map { String(format: "%.1fs", $0) }
+        var options = values.map { String(format: "%.1fs", $0) }
+        options.append("< Back")
         promptTextWithMenu("> ", options: options)
-        closeHandler = { [weak self] in self?.showGameplaySettings() }
+        let backToGameplay: () -> Void = { [weak self] in self?.showGameplaySettings() }
+        closeHandler = backToGameplay
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice > 0 && choice <= values.count {
                 self.infoTimeout = values[choice - 1]
                 UserDefaults.standard.set(self.infoTimeout, forKey: "infoTimeout")
+                self.showGameplaySettings()
+            } else {
+                backToGameplay()
             }
-            self.showGameplaySettings()
         }
         inputHandler = { [weak self] input in
             guard let self = self else { return }
@@ -7161,7 +7352,7 @@ class GameEngine: ObservableObject {
                 parsed = Double(trimmed)
             } else if let intVal = Int(trimmed) {
                 // Integer: if it's a valid button number, treat as button press
-                if intVal >= 1 && intVal <= options.count {
+                if intVal >= 1 && intVal <= values.count {
                     self.infoTimeout = values[intVal - 1]
                     UserDefaults.standard.set(self.infoTimeout, forKey: "infoTimeout")
                     self.showGameplaySettings()
@@ -7196,16 +7387,20 @@ class GameEngine: ObservableObject {
         print("  Current: \(maxButtonsPerScreen)", color: .brightGreen)
         print("")
 
-        let options = ["6", "8", "10", "12"]
+        var options = ["6", "8", "10", "12"]
+        options.append("< Back")
         showMenu(options)
-        closeHandler = { [weak self] in self?.showGameplaySettings() }
+        let backToGameplay: () -> Void = { [weak self] in self?.showGameplaySettings() }
+        closeHandler = backToGameplay
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             let values = [6, 8, 10, 12]
             if choice > 0 && choice <= values.count {
                 self.maxButtonsPerScreen = values[choice - 1]
+                self.showGameplaySettings()
+            } else {
+                backToGameplay()
             }
-            self.showGameplaySettings()
         }
     }
 
@@ -7217,16 +7412,20 @@ class GameEngine: ObservableObject {
         print("  Current: \(String(format: "%.1fs", longPressDuration))", color: .brightGreen)
         print("")
 
-        let options = ["0.3s", "0.5s", "1.0s", "2.0s"]
+        var options = ["0.3s", "0.5s", "1.0s", "2.0s"]
+        options.append("< Back")
         promptTextWithMenu("> ", options: options)
-        closeHandler = { [weak self] in self?.showGameplaySettings() }
+        let backToGameplay: () -> Void = { [weak self] in self?.showGameplaySettings() }
+        closeHandler = backToGameplay
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             let values: [Double] = [0.3, 0.5, 1.0, 2.0]
             if choice > 0 && choice <= values.count {
                 self.longPressDuration = values[choice - 1]
+                self.showGameplaySettings()
+            } else {
+                backToGameplay()
             }
-            self.showGameplaySettings()
         }
         inputHandler = { [weak self] input in
             guard let self = self else { return }
@@ -7341,9 +7540,12 @@ class GameEngine: ObservableObject {
             options.append("View/Load")
             options.append("Delete Backup")
         }
+        options.append("?")
+        options.append("< Back")
 
         showMenu(options)
-        closeHandler = { [weak self] in self?.showSettings() }
+        let backToSettings: () -> Void = { [weak self] in self?.showSettings() }
+        closeHandler = backToSettings
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             let selected = options[choice - 1]
@@ -7353,6 +7555,17 @@ class GameEngine: ObservableObject {
                 self.showLoadBackupMenu()
             } else if selected == "Delete Backup" {
                 self.showDeleteBackupMenu()
+            } else if selected == "?" {
+                self.showInlineHelp {
+                    self.printTitle("Settings Backup — Help")
+                    self.print("")
+                    self.printWrapped("New Backup: saves a snapshot of your current settings under a name you choose.", indent: 2, color: .dimGreen)
+                    self.printWrapped("View/Load: restores settings from a previously saved backup, overwriting your current ones.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Delete Backup: removes a saved backup permanently.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else {
+                backToSettings()
             }
         }
     }
@@ -9027,9 +9240,12 @@ class GameEngine: ObservableObject {
             options.append("Preview")
             options.append("Voice Pool")
         }
+        options.append("?")
+        options.append("< Back")
 
         showMenu(options)
-        closeHandler = { [weak self] in self?.returnFromCharacterEditSubscreen(index: index) }
+        let goBack: () -> Void = { [weak self] in self?.returnFromCharacterEditSubscreen(index: index) }
+        closeHandler = goBack
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             let selected = options[choice - 1]
@@ -9047,6 +9263,19 @@ class GameEngine: ObservableObject {
                 self.showCharacterVoiceEdit(index: index)
             } else if selected == "Voice Pool" {
                 self.showAdventurerVoiceSettingsFrom(index: index)
+            } else if selected == "?" {
+                self.showInlineHelp {
+                    self.printTitle("Voice — Help")
+                    self.print("")
+                    self.printWrapped("Turn On/Off Voices: enables or disables companion text-to-speech entirely.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Change Voice: manually pick a specific voice instead of the automatic race/class match.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Reset to Auto: clears a manual voice pick, back to automatic matching.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Preview: hear this character speak a sample line.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Voice Pool: manage which voices are available to be auto-assigned.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else {
+                goBack()
             }
         }
     }
@@ -9394,22 +9623,35 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        let options = AutosaveInterval.allCases.map { $0.displayName }
+        var options = AutosaveInterval.allCases.map { $0.displayName }
         let currentIndex = AutosaveInterval.allCases.firstIndex(of: current) ?? 0
-        closeHandler = { [weak self] in self?.showSaveSettings() }
+        options.append("?")
+        options.append("< Back")
+        let backToSaveSettings: () -> Void = { [weak self] in self?.showSaveSettings() }
+        closeHandler = backToSaveSettings
         showMenu(options, defaultIndex: currentIndex)
 
         menuHandler = { [weak self] choice in
+            guard let self = self else { return }
             if choice <= AutosaveInterval.allCases.count {
                 let selected = AutosaveInterval.allCases[choice - 1]
-                self?.autosaveInterval = selected
-                self?.print("")
-                self?.print("Autosave set to: \(selected.displayName)", color: .brightGreen)
-                self?.print("")
-                self?.waitForContinue()
-                self?.inputHandler = { [weak self] _ in
+                self.autosaveInterval = selected
+                self.print("")
+                self.print("Autosave set to: \(selected.displayName)", color: .brightGreen)
+                self.print("")
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
                     self?.showSaveSettings()
                 }
+            } else if options[choice - 1] == "?" {
+                self.showInlineHelp {
+                    self.printTitle("Autosave — Help")
+                    self.print("")
+                    self.printWrapped("Automatically saves your game as you explore, on the interval you choose here. Each autosave replaces the previous one — it's not a substitute for manual save slots.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else {
+                backToSaveSettings()
             }
         }
     }
