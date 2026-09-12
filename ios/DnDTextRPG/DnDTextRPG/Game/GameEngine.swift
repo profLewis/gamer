@@ -164,7 +164,7 @@ class GameEngine: ObservableObject {
     @Published var closeHandler: (() -> Void)?
 
     /// Accessibility: show mic icon in menu icon bars for voice menu selection
-    @Published var voiceMenuEnabled: Bool = UserDefaults.standard.bool(forKey: "voiceMenuEnabled")
+    @Published var voiceMenuEnabled: Bool = (UserDefaults.standard.object(forKey: "voiceMenuEnabled") as? Bool) ?? true
 
     /// Card navigation style: true = <</>> buttons, false = swipe gesture only
     @Published var useArrowNavigation: Bool = UserDefaults.standard.object(forKey: "useArrowNavigation") == nil ? false : UserDefaults.standard.bool(forKey: "useArrowNavigation")
@@ -378,6 +378,25 @@ class GameEngine: ObservableObject {
     var torchTurnsRemaining: Int = 0      // minutes remaining on active torch
     var activeTorchId: UUID?              // which torch item is currently burning
     var torchHolderId: UUID?              // which character is holding the lit torch
+
+    /// Optional override for WHO performs a single-actor exploration action
+    /// (Search Room, Listen, Illuminate) from the Actions menu — nil means
+    /// "use the automatic default" (whoever in the party is actually best
+    /// suited, e.g. highest Perception, or already holding the best torch),
+    /// exactly as before this existed. Setting this lets the player
+    /// deliberately have a specific character act instead, even a
+    /// worse-suited one, for roleplay or other reasons. Cleared if that
+    /// character is no longer in the party or falls unconscious.
+    @Published var actingAsCharacterId: UUID? = nil
+
+    /// The character currently overriding the automatic actor choice, if
+    /// any and still valid (in the party, conscious). Callers fall back to
+    /// their own "best fit" default when this is nil.
+    var actingOverrideCharacter: Character? {
+        guard let id = actingAsCharacterId else { return nil }
+        guard let character = party.first(where: { $0.id == id }), character.isConscious else { return nil }
+        return character
+    }
 
     // DM mode tracking
     var returnToDMAfterCombat: Bool = false
@@ -2475,6 +2494,12 @@ class GameEngine: ObservableObject {
         // Suppress taps briefly after a long-press screen transition
         guard Date() > suppressMenuUntil else { return }
 
+        // Ignore a second tap arriving within a third of a second of the last
+        // one handled — a fast double-tap firing the same button action
+        // twice before the screen has visibly moved on (see lastMenuChoiceHandledAt).
+        guard Date().timeIntervalSince(lastMenuChoiceHandledAt) > 0.35 else { return }
+        lastMenuChoiceHandledAt = Date()
+
         // Ignore stale taps from a previous menu (e.g. finger-up after long-press
         // where the old menu had more options than the new one)
         guard choice >= 1 && choice <= currentMenuOptions.count else { return }
@@ -2598,6 +2623,14 @@ class GameEngine: ObservableObject {
     }
 
     private var suppressMenuUntil: Date = .distantPast
+
+    /// A fast double-tap on a button (finger bounce, or tapping again before
+    /// the screen visibly reacts) can fire this handler twice for what the
+    /// player experiences as one tap — in combat that means the same attack
+    /// resolves twice and its report/log line appears duplicated. This is a
+    /// short re-entrancy guard, separate from suppressMenuUntil (which is
+    /// about long-press screen transitions, not rapid double-taps).
+    private var lastMenuChoiceHandledAt: Date = .distantPast
 
     func handleMenuLongPress(_ choice: Int) {
         stopIdleAnimations()
@@ -4831,6 +4864,9 @@ class GameEngine: ObservableObject {
         print("")
         print("PARTY STATUS", color: .cyan, bold: true)
         printWrapped("Open Party Status from the exploration menu to see each character's full stat sheet, HP, gold, XP, and equipped gear. Use Party Review to change names or player types mid-game.", indent: 2)
+        print("")
+        print("FAMILIARS", color: .cyan, bold: true)
+        printWrapped("Some side quests offer a familiar — a small companion (raven, black cat, toad, owl, imp, sprite, fox) that appears on that character's stat sheet. A familiar is currently a flavour/roleplay companion rather than a combat asset — no extra abilities yet.", indent: 2)
         print("")
 
         let hasGame = dungeon != nil && !party.isEmpty
@@ -8453,7 +8489,7 @@ class GameEngine: ObservableObject {
         add("battle_sounds_enabled", "Sound FX", current: battleSoundsEnabled ? "On" : "Off", dflt: "On")
         add("hit_animations", "Hit Animations", current: hitAnimationsEnabled ? "On" : "Off", dflt: "On")
         add("speechEnabled", "DM Voice", current: SpeechEngine.shared.isEnabled ? "On" : "Off", dflt: "Off")
-        add("voiceMenuEnabled", "Voice Menus", current: voiceMenuEnabled ? "On" : "Off", dflt: "Off")
+        add("voiceMenuEnabled", "Voice Menus", current: voiceMenuEnabled ? "On" : "Off", dflt: "On")
         add("fontSizeSetting", "Display Size", current: fontSizeSetting.displayName, dflt: FontSizeSetting.defaultSetting.displayName)
         add("maxButtonsPerScreen", "Button Limit", current: "\(maxButtonsPerScreen)", dflt: "6")
         add("useArrowNavigation", "Card Navigation", current: useArrowNavigation ? "Buttons" : "Swipe", dflt: "Swipe")
@@ -8608,7 +8644,7 @@ class GameEngine: ObservableObject {
         }
 
         // Re-sync cached properties
-        if keys.contains("voiceMenuEnabled") { voiceMenuEnabled = false }
+        if keys.contains("voiceMenuEnabled") { voiceMenuEnabled = true }
         if keys.contains("useArrowNavigation") { useArrowNavigation = false }
         if keys.contains("infoTimeout") { infoTimeout = 2.0 }
         if keys.contains("iconScaleSetting") { iconScaleSetting = 0 }
@@ -8664,7 +8700,7 @@ class GameEngine: ObservableObject {
         }
 
         // Re-sync @Published properties that cache UserDefaults values
-        voiceMenuEnabled = false
+        voiceMenuEnabled = true
         useArrowNavigation = false
         infoTimeout = 2.0
         iconScaleSetting = 0
@@ -15367,6 +15403,9 @@ class GameEngine: ObservableObject {
             self.print("  INVENTORY", color: .cyan, bold: true)
             self.printWrapped("Open pack to equip, use, or drop items.", indent: 2, color: .dimGreen)
             self.print("")
+            self.print("  ACTING AS", color: .cyan, bold: true)
+            self.printWrapped("Search Room, Listen, and Illuminate normally use whoever in the party is automatically best suited. Tap 'Acting As' to override that and have a specific character do it instead — handy for roleplay. Set back to Auto any time.", indent: 2, color: .dimGreen)
+            self.print("")
         }
     }
 
@@ -15734,13 +15773,17 @@ class GameEngine: ObservableObject {
             }
         }
 
-        // Talk to NPC — shown on the D-pad (SE corner) rather than in menu buttons.
-        // Without a torch, NPCs are harder to find (only show if already spoken to).
-        // Always set both branches (not just the truthy one) — otherwise a
-        // stale NPC icon from a previous room lingers into rooms with no NPC,
-        // since neither this render pass nor showMenuWithDirections clears it.
+        // Talk to NPC — also on the D-pad (SE corner), but that corner icon
+        // is easy to miss (or, per repeated reports, sometimes just doesn't
+        // render), and an armoury/shop's own room text promises an NPC is
+        // here. So this is ALSO a plain menu button — never just the D-pad —
+        // to guarantee "there's an NPC here" always has a visible, tappable
+        // way to act on it. Without a torch, NPCs are harder to find (only
+        // show if already spoken to).
         if let npc = room.npc, npcsEnabled, (roomIsLit || npc.hasBeenTalkedTo) {
             let talkLabel = npc.hasBeenTalkedTo ? "Talk" : "Speak to \(npc.type.rawValue.components(separatedBy: " ").last ?? "Stranger")"
+            menuOpts.append(MenuOption(talkLabel, tint: .cyan))
+            actions.append { [weak self] in self?.talkToNPC() }
             DispatchQueue.main.async {
                 self.dpadNPCLabel = talkLabel
                 self.dpadNPCHandler = { [weak self] in self?.talkToNPC() }
@@ -15965,6 +16008,14 @@ class GameEngine: ObservableObject {
 
     /// Find the best torch to light (most life remaining)
     private func findBestTorch() -> (Character, Item)? {
+        // If an actor override is set (Actions > Acting As) and they're
+        // actually carrying a usable torch, illuminate with THEIRS
+        // specifically rather than automatically whoever has the
+        // longest-lasting one in the party.
+        if let overrideChar = actingOverrideCharacter,
+           let torch = overrideChar.inventory.first(where: { $0.isTorch && ($0.torchLife ?? Item.torchFullLife) > 0 }) {
+            return (overrideChar, torch)
+        }
         var best: (Character, Item)? = nil
         for char in party {
             for item in char.inventory where item.isTorch {
@@ -17017,6 +17068,19 @@ class GameEngine: ObservableObject {
             }
         }
 
+        // Acting As — override which character performs the single-actor
+        // actions above (Search Room, Listen, Illuminate). Only worth
+        // showing once there's more than one conscious party member to pick
+        // from.
+        if consciousParty.count > 1 {
+            let actingLabel = actingOverrideCharacter.map { "Acting As: \(shortName(for: $0))" } ?? "Acting As: Auto"
+            menuOpts.append(MenuOption(actingLabel, tint: actingOverrideCharacter != nil ? .cyan : .navigation))
+            actions.append { [weak self] in
+                returnToActions()
+                self?.showActingAsPicker()
+            }
+        }
+
         // Save (quick save)
         menuOpts.append(MenuOption("Save", tint: .navigation))
         actions.append { [weak self] in self?.quickSave() }
@@ -17064,6 +17128,43 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Lets the player choose who performs the single-actor exploration
+    /// actions (Search Room, Listen, Illuminate) instead of the automatic
+    /// "best fit" default — e.g. for roleplay reasons. "Auto" clears the
+    /// override.
+    func showActingAsPicker() {
+        clearTerminal()
+        if let dungeon = dungeon {
+            printExplorationMap()
+            print("")
+        }
+        printSubtitle("Acting As")
+        printWrapped("Choose who performs Search Room, Listen, and Illuminate. Auto picks whoever in the party is best suited each time.", indent: 2, color: .dimGreen)
+        print("")
+
+        let candidates = party.filter { $0.isConscious }
+        var options: [String] = ["Auto (best fit)"]
+        for char in candidates {
+            options.append(shortName(for: char) + (char.id == actingAsCharacterId ? " (current)" : ""))
+        }
+        options.append("< Back")
+
+        showMenu(options)
+        closeHandler = { [weak self] in self?.showActionsMenu() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                self.actingAsCharacterId = nil
+                self.showActionsMenu()
+            } else if choice > 1 && choice <= options.count - 1 {
+                self.actingAsCharacterId = candidates[choice - 2].id
+                self.showActionsMenu()
+            } else {
+                self.showActionsMenu()
+            }
+        }
+    }
+
     func searchRoom() {
         guard let room = dungeon?.currentRoom else { return }
 
@@ -17100,7 +17201,10 @@ class GameEngine: ObservableObject {
 
         // Perception check
         let roll = Dice.d20()
-        let bestPerception = party.map { $0.skillModifier(for: .perception) }.max() ?? 0
+        // Uses the override actor's own Perception if one is set (Actions >
+        // Acting As), else automatically whoever in the party has the best.
+        let bestPerception = actingOverrideCharacter?.skillModifier(for: .perception)
+            ?? (party.map { $0.skillModifier(for: .perception) }.max() ?? 0)
         let total = roll + bestPerception
 
         if total >= 15 {
@@ -17206,7 +17310,10 @@ class GameEngine: ObservableObject {
 
         // Harder perception check in the dark (DC 18 instead of 15)
         let roll = Dice.d20()
-        let bestPerception = party.map { $0.skillModifier(for: .perception) }.max() ?? 0
+        // Uses the override actor's own Perception if one is set (Actions >
+        // Acting As), else automatically whoever in the party has the best.
+        let bestPerception = actingOverrideCharacter?.skillModifier(for: .perception)
+            ?? (party.map { $0.skillModifier(for: .perception) }.max() ?? 0)
         let total = roll + bestPerception
 
         // Fumbling mishaps (30% chance)
@@ -17308,7 +17415,10 @@ class GameEngine: ObservableObject {
 
         // Harder check — 30% chance of learning something vs normal examine
         let roll = Dice.d20()
-        let bestPerception = party.map { $0.skillModifier(for: .perception) }.max() ?? 0
+        // Uses the override actor's own Perception if one is set (Actions >
+        // Acting As), else automatically whoever in the party has the best.
+        let bestPerception = actingOverrideCharacter?.skillModifier(for: .perception)
+            ?? (party.map { $0.skillModifier(for: .perception) }.max() ?? 0)
         let total = roll + bestPerception
 
         if total >= 16 {
@@ -17453,7 +17563,10 @@ class GameEngine: ObservableObject {
 
         // Perception check — d20 + best perception vs DC 12
         let roll = Dice.d20()
-        let bestPerception = party.map { $0.skillModifier(for: .perception) }.max() ?? 0
+        // Uses the override actor's own Perception if one is set (Actions >
+        // Acting As), else automatically whoever in the party has the best.
+        let bestPerception = actingOverrideCharacter?.skillModifier(for: .perception)
+            ?? (party.map { $0.skillModifier(for: .perception) }.max() ?? 0)
         // Bonus +2 in the dark (ears sharpen)
         let darkBonus = torchLit ? 0 : 2
         let total = roll + bestPerception + darkBonus
@@ -18564,7 +18677,9 @@ class GameEngine: ObservableObject {
 
     private func requestNPCRepair() {
         guard let room = dungeon?.currentRoom, let npc = room.npc else { return }
-        let cost = 20
+        let costPerWeapon = 20
+        let brokenCount = party.reduce(0) { $0 + $1.inventory.filter { $0.broken }.count }
+        let cost = brokenCount > 0 ? brokenCount * costPerWeapon : costPerWeapon
 
         pickCharacter(title: "Who pays for repairs?") { [weak self] character in
             guard let self = self else { return }
@@ -18575,14 +18690,23 @@ class GameEngine: ObservableObject {
                 self.print("")
             }
 
-            if character.gold < cost {
-                self.printWrapped("\"Repairs cost \(cost) gold. \(character.name) hasn't got enough. Come back with coin!\"", indent: 2, color: .yellow)
+            if brokenCount == 0 {
+                self.printWrapped("\"Nothing of yours is broken right now — come back if a weapon shatters in battle.\"", indent: 2, color: .yellow)
+            } else if character.gold < cost {
+                self.printWrapped("\"Fixing \(brokenCount) broken weapon\(brokenCount == 1 ? "" : "s") costs \(cost) gold. \(character.name) hasn't got enough. Come back with coin!\"", indent: 2, color: .yellow)
             } else {
                 character.gold -= cost
-                self.printWrapped("The \(npc.type.rawValue) hammers away at your equipment.", indent: 2, color: .cyan)
+                var fixedNames: [String] = []
+                for member in self.party {
+                    for idx in member.inventory.indices where member.inventory[idx].broken {
+                        member.inventory[idx].isBroken = false
+                        fixedNames.append(member.inventory[idx].name)
+                    }
+                }
+                self.printWrapped("The \(npc.type.rawValue) hammers away at your broken gear.", indent: 2, color: .cyan)
                 self.print("")
                 self.printWrapped("\"Good as new! Well, almost. That'll be \(cost) gold.\"", indent: 2, color: .yellow)
-                self.logEvent("\(npc.type.rawValue) repaired gear for \(character.name) (-\(cost) gold)", category: "NPC")
+                self.logEvent("\(npc.type.rawValue) repaired \(fixedNames.joined(separator: ", ")) for \(character.name) (-\(cost) gold)", category: "NPC")
             }
 
             self.waitForContinue()
@@ -19428,10 +19552,16 @@ class GameEngine: ObservableObject {
     }
 
     private func showEquipMenu(character: Character, type: ItemType, label: String, onBack: (() -> Void)? = nil, fromDM: Bool = false) {
-        let items = character.inventory.filter { $0.type == type }
+        let items = character.inventory.filter { $0.type == type && !$0.broken }
+        let brokenItems = character.inventory.filter { $0.type == type && $0.broken }
 
         clearTerminal()
         printSubtitle("Equip \(label)")
+
+        if !brokenItems.isEmpty {
+            printWrapped("Broken, can't equip: \(brokenItems.map { $0.name }.joined(separator: ", ")) — find a smith to repair.", indent: 2, color: .red)
+            print("")
+        }
 
         var options: [String] = []
         for item in items {
@@ -19721,11 +19851,15 @@ class GameEngine: ObservableObject {
                 } else {
                     torchInfo = ""
                 }
-                print("  \(tag) \(item.name)\(torchInfo)", color: .green)
+                let brokenInfo = item.broken ? " (broken)" : ""
+                print("  \(tag) \(item.name)\(torchInfo)\(brokenInfo)", color: item.broken ? .red : .green)
             }
         }
         print("")
         printWrapped("Items are things in your backpack — potions, torches, rope, etc. Equipment (weapons, armour, shields) is what you wear or wield.", indent: 2, color: .dimGreen)
+        if character.inventory.contains(where: { $0.broken }) {
+            printWrapped("Broken gear can't be equipped — a smith can repair it, or drop it and equip something else.", indent: 2, color: .red)
+        }
         print("")
 
         let usableItems = character.inventory.filter { $0.type == .potion || $0.name == "Whetstone" }
@@ -20581,12 +20715,17 @@ class GameEngine: ObservableObject {
     /// - helpBuilder: closure that prints help text (should NOT call clearTerminal)
     func showInlineHelp(_ helpBuilder: () -> Void) {
         if let saved = savedHelpState {
-            // Restore previous state — remove help text, restore original lines and menu
-            DispatchQueue.main.async {
-                self.terminalLines = saved.lines
-                self.currentMenuOptions = saved.menu
-                self.pinnedMapLines = saved.pinnedMapLines
-            }
+            // Restore previous state — remove help text, restore original lines and menu.
+            // Synchronous, not DispatchQueue.main.async: a tap on an underlined
+            // help title calls showInlineHelp({}) to dismiss and THEN immediately
+            // (same call stack) invokes the real button's own handler, which
+            // prints its own fresh output right away. Deferring this restore to
+            // the next run-loop tick meant it landed AFTER that fresh output and
+            // silently overwrote it with the stale pre-help screen — the tap
+            // visibly did nothing, even though the button's action genuinely ran.
+            self.terminalLines = saved.lines
+            self.currentMenuOptions = saved.menu
+            self.pinnedMapLines = saved.pinnedMapLines
             self.menuHandler = saved.menuHandler
             self.closeHandler = saved.closeHandler
             self.menuLongPressHandler = saved.menuLongPressHandler
@@ -24282,6 +24421,11 @@ class GameEngine: ObservableObject {
                                 char.curePoison()
                             }
                         }
+                    }
+                    if let brokenWeapon = report.brokenWeaponName {
+                        self.print("")
+                        self.print("  \(report.targetName)'s \(brokenWeapon) breaks blocking the blow!", color: .red, bold: true)
+                        self.print("  It's been stowed, broken — a smith can repair it.", color: .dimGreen)
                     }
                     self.print("")
 

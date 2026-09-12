@@ -67,6 +67,14 @@ struct TerminalView: View {
     private var recentlyScrolledManually: Bool {
         Date().timeIntervalSince(lastManualScrollAt) < 8.0
     }
+    /// True whenever the bottom-of-terminal sentinel view is actually on
+    /// screen. Unlike the time-based check above, this doesn't expire — a
+    /// player who scrolls up mid-combat to reread an earlier round stays
+    /// scrolled there for as long as they like, even if a whole slow round
+    /// (several monster attacks, each with its own delayed print phases)
+    /// plays out in the meantime. Auto-scroll only resumes once they
+    /// actually scroll back down to the bottom themselves.
+    @State private var isNearBottom: Bool = true
     #if os(iOS)
     @State private var showCustomKeyboard: Bool = false
     @State private var keyboardCollapsedAt: Date = .distantPast
@@ -243,6 +251,16 @@ struct TerminalView: View {
                                             .multilineTextAlignment(.center)
                                     }
                                 }
+                                // Invisible sentinel — its visibility tells us whether
+                                // the view is actually scrolled to the bottom, so
+                                // auto-scroll can follow new content ONLY then, rather
+                                // than yanking a deliberately-scrolled-up reader back
+                                // down (see isNearBottom).
+                                Color.clear
+                                    .frame(height: 1)
+                                    .id("bottomSentinel")
+                                    .onAppear { isNearBottom = true }
+                                    .onDisappear { isNearBottom = false }
                             }
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
@@ -264,27 +282,29 @@ struct TerminalView: View {
                             // appended line bumps this count separately, since prints are
                             // now synchronous) queues up several of these force-scrolls,
                             // including the two delayed re-scrolls below landing up to
-                            // 0.5s later. Without checking recentlyScrolledManually, a
-                            // player who starts scrolling right as a long list (e.g. a
-                            // shop's full stock) finishes rendering had their manual
-                            // scroll repeatedly yanked back — the list looked "stuck",
-                            // unable to actually scroll it away from the forced position.
-                            guard !recentlyScrolledManually else { return }
+                            // 0.5s later.
                             if gameEngine.suppressAutoScroll {
+                                // Paginated card-style screens — still time-based (isNearBottom's
+                                // bottom-sentinel doesn't map to "stay at the top" the same way).
+                                guard !recentlyScrolledManually else { return }
                                 scrollToTop(scrollProxy)
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                                     guard gameEngine.suppressAutoScroll, !recentlyScrolledManually else { return }
                                     scrollToTop(scrollProxy)
                                 }
                             } else {
+                                // Chat/combat-style screens — follow the tail only while the
+                                // reader is actually at the bottom (isNearBottom, no timeout).
+                                // A deliberate scroll-up to reread an earlier round stays put
+                                // no matter how long the round takes to finish.
                                 scrollToBottom(scrollProxy)
                                 // Delayed re-scrolls for long pages where LazyVStack layout lags
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                    guard !gameEngine.suppressAutoScroll, !recentlyScrolledManually else { return }
+                                    guard !gameEngine.suppressAutoScroll else { return }
                                     scrollToBottom(scrollProxy)
                                 }
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                    guard !gameEngine.suppressAutoScroll, !recentlyScrolledManually else { return }
+                                    guard !gameEngine.suppressAutoScroll else { return }
                                     scrollToBottom(scrollProxy)
                                 }
                             }
@@ -296,7 +316,7 @@ struct TerminalView: View {
                                 showCustomKeyboard = false
                                 #endif
                                 // Re-scroll after keyboard appears
-                                guard !gameEngine.suppressAutoScroll, !recentlyScrolledManually else { return }
+                                guard !gameEngine.suppressAutoScroll else { return }
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                     scrollToBottom(scrollProxy)
                                 }
@@ -304,7 +324,7 @@ struct TerminalView: View {
                         }
                         .onChange(of: gameEngine.awaitingTextInput) { awaiting in
                             if awaiting {
-                                guard !gameEngine.suppressAutoScroll, !recentlyScrolledManually else { return }
+                                guard !gameEngine.suppressAutoScroll else { return }
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                     scrollToBottom(scrollProxy)
                                 }
@@ -312,10 +332,11 @@ struct TerminalView: View {
                         }
                         .onChange(of: gameEngine.currentMenuOptions.count) { _ in
                             // Combat redraws its menu (new attack options) after nearly
-                            // every turn, so without the manual-scroll check, scrolling
-                            // up mid-combat to reread a report got yanked back to the
-                            // bottom on the very next turn — effectively unscrollable.
-                            guard !gameEngine.suppressAutoScroll, !recentlyScrolledManually else { return }
+                            // every turn — scrollToBottom's own isNearBottom check means
+                            // this only follows the tail while the reader is already
+                            // there, so scrolling up mid-combat to reread a report stays
+                            // put no matter how many turns pass.
+                            guard !gameEngine.suppressAutoScroll else { return }
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                                 scrollToBottom(scrollProxy)
                             }
@@ -985,13 +1006,17 @@ struct TerminalView: View {
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
-        // Respect a recent manual scroll — e.g. scrolling back up mid-combat to
-        // reread what happened — instead of immediately snapping back down.
-        guard !recentlyScrolledManually else { return }
-        if let lastLine = gameEngine.terminalLines.last {
-            withAnimation {
-                proxy.scrollTo(lastLine.id, anchor: .bottom)
-            }
+        // Respect a deliberate scroll-up — e.g. scrolling back up mid-combat to
+        // reread what happened — instead of snapping back down. Once the
+        // reader isn't at the bottom any more, stay out of their way until
+        // they scroll back down themselves (see isNearBottom).
+        guard isNearBottom else { return }
+        // Scroll to the sentinel itself (not the last content line) — anchoring
+        // the last line at .bottom would leave the 1pt sentinel just past the
+        // visible edge, flipping isNearBottom to false right after every
+        // auto-scroll and permanently disabling this feature on first use.
+        withAnimation {
+            proxy.scrollTo("bottomSentinel", anchor: .bottom)
         }
     }
 

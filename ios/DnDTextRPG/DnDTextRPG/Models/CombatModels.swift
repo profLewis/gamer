@@ -995,6 +995,10 @@ struct AttackReport {
 
     // Status effects
     let poisonApplied: Bool
+
+    /// Set when the defender's equipped weapon broke blocking this hit —
+    /// the weapon's name, for a UI message. nil = nothing broke.
+    let brokenWeaponName: String?
 }
 
 // MARK: - Combat State
@@ -1216,7 +1220,8 @@ final class Combat: ObservableObject {
             attackerArt: character.characterClass.asciiArt,
             defenderArt: monster.type.asciiArt,
             weaponName: character.equippedWeapon?.name ?? "Unarmed",
-            poisonApplied: false
+            poisonApplied: false,
+            brokenWeaponName: nil
         )
 
         combatLog.append("\(character.name) attacks \(monster.name)")
@@ -1273,6 +1278,20 @@ final class Combat: ObservableObject {
             targetUnconscious = !character.isConscious
         }
 
+        // Blocking a hit can break the weapon that took the blow. Only
+        // matters for a real weapon (not bare-handed), and one that isn't
+        // already broken.
+        var brokenWeaponName: String? = nil
+        if attack.hits, !targetUnconscious,
+           let weapon = character.equippedWeapon, weapon.weaponStats != nil, !weapon.broken,
+           Double.random(in: 0...1) < 0.08 {
+            brokenWeaponName = weapon.name
+            character.unequipWeapon()
+            if let idx = character.inventory.firstIndex(where: { $0.name == weapon.name && !$0.broken }) {
+                character.inventory[idx].isBroken = true
+            }
+        }
+
         // Check for poison
         var didPoison = false
         if attack.hits && monster.type.canPoison && !character.isPoisoned {
@@ -1307,10 +1326,14 @@ final class Combat: ObservableObject {
             attackerArt: monster.type.asciiArt,
             defenderArt: character.characterClass.asciiArt,
             weaponName: attackDesc,
-            poisonApplied: didPoison
+            poisonApplied: didPoison,
+            brokenWeaponName: brokenWeaponName
         )
 
         combatLog.append("\(monster.name) attacks \(character.name) with \(attackDesc)")
+        if let broken = brokenWeaponName {
+            combatLog.append("\(character.name)'s \(broken) breaks blocking the blow!")
+        }
         return report
     }
 

@@ -66,9 +66,17 @@ struct Item: Codable, Identifiable, Equatable {
     /// (Room.doorLockIds). nil = not a key.
     var keyForDoorId: UUID? = nil
 
+    /// Weapons can break when used to block a blow in combat. Optional (not
+    /// a plain Bool) so old saves without this field decode fine — treat
+    /// missing as "not broken" via `broken` below.
+    var isBroken: Bool? = nil
+
     static let torchFullLife = 720  // 12 hours in minutes
 
     var isTorch: Bool { name.lowercased().contains("torch") }
+
+    /// A broken weapon can't be equipped or used to attack until repaired.
+    var broken: Bool { isBroken ?? false }
 
     /// Human-readable torch life remaining
     var torchLifeDescription: String? {
