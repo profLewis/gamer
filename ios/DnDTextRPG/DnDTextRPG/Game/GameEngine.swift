@@ -2375,19 +2375,36 @@ class GameEngine: ObservableObject {
     /// so a longer search/listen result is never cut off mid-sentence.
     private var speechReadCompleteHandler: (() -> Void)?
 
+    /// Bumped on every autoReturn() call; the fallback Timer scheduled by
+    /// THIS call captures its own value and checks it still matches before
+    /// firing. Without this, tapping through an autoReturn() screen early
+    /// left its Timer running in the background with no way to cancel it
+    /// (`self.closeHandler != nil` was the only guard, and virtually every
+    /// later screen sets ITS OWN closeHandler) — so that stale Timer could
+    /// fire minutes later, mid a completely unrelated screen, and silently
+    /// invoke this call's old destination() on top of it. Root cause of
+    /// reports like a screen (e.g. the victory screen) suddenly becoming
+    /// unresponsive with no visible cause.
+    private var autoReturnGeneration = 0
+
     func autoReturn(after seconds: Double? = nil) {
         let seconds = seconds ?? infoTimeout
         let destination = autoReturnDestination ?? { [weak self] in self?.showExplorationView() }
         autoReturnDestination = nil
         closeHandler = destination
         speechReadCompleteHandler = nil
+        autoReturnGeneration += 1
+        let myGeneration = autoReturnGeneration
 
         // Fires destination() exactly once, however it ends up triggered
         // (manual tap, the real speech-finished signal, or the fallback
         // timer below) — clearing closeHandler/speechReadCompleteHandler
         // first so whichever path runs first wins and the rest are no-ops.
+        // The generation check additionally guards against THIS call's own
+        // fallback Timer firing after some later autoReturn() call has
+        // already superseded it (see autoReturnGeneration's doc above).
         let fire: () -> Void = { [weak self] in
-            guard let self = self, self.closeHandler != nil else { return }
+            guard let self = self, self.closeHandler != nil, self.autoReturnGeneration == myGeneration else { return }
             self.closeHandler = nil
             self.speechReadCompleteHandler = nil
             destination()
@@ -25800,10 +25817,15 @@ class GameEngine: ObservableObject {
 
     func handleCombatVictory() {
         guard !isHandlingCombatVictory else { return }
+        // currentCombat checked BEFORE setting the guard flag — this flag is
+        // only ever reset when a new combat starts (never inside this
+        // function), so if it were set true here and currentCombat then
+        // turned out nil, this function would permanently short-circuit
+        // every future real combat victory for the rest of the session.
+        guard let combat = currentCombat else { return }
         isHandlingCombatVictory = true
         cancelCombatIdleTimer()
         combatHesitating = false
-        guard let combat = currentCombat else { return }
         // combat.lootAwarded (unlike isHandlingCombatVictory) survives a
         // multiplayer catch-up resync, which resets isHandlingCombatVictory
         // to false and re-enters this function for a fight that was already
