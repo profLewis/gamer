@@ -464,8 +464,113 @@ struct TerminalView: View {
 
                     // Button row + input bar + custom keyboard — right half
                     // in landscape (see the HStack/VStack split below), full
-                    // width below the map+text in portrait.
+                    // width below the map+text in portrait. Landscape puts
+                    // the input bar FIRST (above the buttons) — pinned at
+                    // the bottom like portrait, the system keyboard (which
+                    // covers roughly the bottom half of a landscape screen)
+                    // hid the typed text the moment it appeared, since
+                    // there's so much less vertical space to work with than
+                    // portrait has.
                     VStack(spacing: 0) {
+                        if isLandscape {
+                            inputBarAndKeyboardBlock
+                            dpadAndMenuButtonsBlock
+                        } else {
+                            dpadAndMenuButtonsBlock
+                            inputBarAndKeyboardBlock
+                        }
+                    }
+                    .frame(maxWidth: isLandscape ? .infinity : nil, alignment: .top)
+                }
+                .background(terminalBackground)
+
+                // Tap-anywhere overlay for continue
+                if gameEngine.awaitingContinue {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            gameEngine.handleContinue()
+                        }
+                }
+            }
+            .onAppear { gameEngine.isLandscapeOrientation = isLandscape }
+            .onChange(of: isLandscape) { newValue in gameEngine.isLandscapeOrientation = newValue }
+        }
+        .onAppear {
+            gameEngine.startGame()
+            #if os(macOS)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                isMainViewFocused = true
+            }
+            #endif
+        }
+        #if os(macOS)
+        .focusable()
+        .focused($isMainViewFocused)
+        .onKeyPress(phases: .down) { press in
+            return handleMacKeyPress(press)
+        }
+        .onChange(of: gameEngine.awaitingTextInput) { awaiting in
+            if !awaiting {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    isMainViewFocused = true
+                }
+            }
+        }
+        .onChange(of: gameEngine.awaitingContinue) { awaiting in
+            if awaiting {
+                isMainViewFocused = true
+            }
+        }
+        .onChange(of: gameEngine.currentMenuOptions.count) { _ in
+            if !gameEngine.awaitingTextInput {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    isMainViewFocused = true
+                }
+            }
+        }
+        .onChange(of: gameEngine.directionExits.count) { _ in
+            if !gameEngine.awaitingTextInput {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    isMainViewFocused = true
+                }
+            }
+        }
+        #endif
+        .onChange(of: gameEngine.prefillInputText) { newVal in
+            if let text = newVal {
+                inputText = text
+                gameEngine.prefillInputText = nil
+            }
+        }
+        #if !os(tvOS)
+        .fileExporter(isPresented: $gameEngine.showLogExporter,
+                      document: LogFileDocument(text: gameEngine.pendingLogExportText),
+                      contentType: .plainText,
+                      defaultFilename: "adventure-log") { result in
+            gameEngine.handleLogExportResult(result)
+        }
+        .modifier(LogImporterModifier(isPresented: $gameEngine.showLogImporter) { result in
+            guard case .success(let url) = result else { return }
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+            if let text = try? String(contentsOf: url, encoding: .utf8) {
+                gameEngine.importAdventureLog(from: text)
+            }
+        })
+        #endif
+        .overlay {
+            if gameEngine.mapOverlayVisible {
+                fullMapOverlay
+            }
+        }
+    }
+
+    /// Direction D-pad + action button row — one of Region B's two blocks
+    /// (see body), reordered relative to inputBarAndKeyboardBlock depending
+    /// on orientation.
+    @ViewBuilder
+    private var dpadAndMenuButtonsBlock: some View {
                     // Direction pad + menu buttons (hidden in Just DM mode, except on
                     // victory/defeat milestone screens — see forceInteractiveControls).
                     if (!gameEngine.isJustDMActive || gameEngine.forceInteractiveControls),
@@ -546,7 +651,12 @@ struct TerminalView: View {
                         )
                         #endif
                     }
+    }
 
+    /// Text input bar + custom in-app keyboard — Region B's other block
+    /// (see body and dpadAndMenuButtonsBlock).
+    @ViewBuilder
+    private var inputBarAndKeyboardBlock: some View {
                     // Standard input bar — always visible
                     HStack(spacing: 4) {
                             // > prompt — always visible
@@ -838,91 +948,6 @@ struct TerminalView: View {
                         .transition(.move(edge: .bottom))
                     }
                     #endif
-                    } // end button row/input bar/keyboard — right half in landscape
-                    .frame(maxWidth: isLandscape ? .infinity : nil, alignment: .top)
-                }
-                .background(terminalBackground)
-
-                // Tap-anywhere overlay for continue
-                if gameEngine.awaitingContinue {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            gameEngine.handleContinue()
-                        }
-                }
-            }
-            .onAppear { gameEngine.isLandscapeOrientation = isLandscape }
-            .onChange(of: isLandscape) { newValue in gameEngine.isLandscapeOrientation = newValue }
-        }
-        .onAppear {
-            gameEngine.startGame()
-            #if os(macOS)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                isMainViewFocused = true
-            }
-            #endif
-        }
-        #if os(macOS)
-        .focusable()
-        .focused($isMainViewFocused)
-        .onKeyPress(phases: .down) { press in
-            return handleMacKeyPress(press)
-        }
-        .onChange(of: gameEngine.awaitingTextInput) { awaiting in
-            if !awaiting {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    isMainViewFocused = true
-                }
-            }
-        }
-        .onChange(of: gameEngine.awaitingContinue) { awaiting in
-            if awaiting {
-                isMainViewFocused = true
-            }
-        }
-        .onChange(of: gameEngine.currentMenuOptions.count) { _ in
-            if !gameEngine.awaitingTextInput {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    isMainViewFocused = true
-                }
-            }
-        }
-        .onChange(of: gameEngine.directionExits.count) { _ in
-            if !gameEngine.awaitingTextInput {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    isMainViewFocused = true
-                }
-            }
-        }
-        #endif
-        .onChange(of: gameEngine.prefillInputText) { newVal in
-            if let text = newVal {
-                inputText = text
-                gameEngine.prefillInputText = nil
-            }
-        }
-        #if !os(tvOS)
-        .fileExporter(isPresented: $gameEngine.showLogExporter,
-                      document: LogFileDocument(text: gameEngine.pendingLogExportText),
-                      contentType: .plainText,
-                      defaultFilename: "adventure-log") { result in
-            gameEngine.handleLogExportResult(result)
-        }
-        .modifier(LogImporterModifier(isPresented: $gameEngine.showLogImporter) { result in
-            guard case .success(let url) = result else { return }
-            let accessed = url.startAccessingSecurityScopedResource()
-            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-            if let text = try? String(contentsOf: url, encoding: .utf8) {
-                gameEngine.importAdventureLog(from: text)
-            }
-        })
-        #endif
-        .overlay {
-            if gameEngine.mapOverlayVisible {
-                fullMapOverlay
-            }
-        }
     }
 
     /// Easter egg: the whole explored floor, pannable in both directions,
