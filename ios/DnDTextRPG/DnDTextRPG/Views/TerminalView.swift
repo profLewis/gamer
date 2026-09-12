@@ -145,22 +145,29 @@ struct TerminalView: View {
                         // Length (which re-renders this same pinnedMapLines),
                         // could otherwise leave the panel scrolled to wherever
                         // it happened to be for the PREVIOUS content — always
-                        // re-centre on the top border line whenever content
-                        // changes (new room, new Map Length...) — the panel's
-                        // own height below is calculated to match exactly the
-                        // map's own rows, so anchoring at the top means the
-                        // map fills the panel precisely (with @ falling
-                        // naturally in the middle, same as the grid itself is
-                        // always centred on the player) and the key/legend
-                        // that follows sits just below the fold, reachable by
-                        // scrolling down instead of showing by default.
+                        // re-centre on the first actual grid row whenever
+                        // content changes (new room, new Map Length...) —
+                        // skipping past the 3-line header (border/"MAP"
+                        // title/separator, always first in pinnedMapLines;
+                        // see GameEngine.printMap), which starts scrolled out
+                        // of view above rather than removed from the content
+                        // — reachable by scrolling up, same as the key/
+                        // legend that follows the grid is reachable by
+                        // scrolling down. The panel's own height below is
+                        // calculated to match exactly the grid + "@ here:
+                        // ..." line, so anchoring the first grid row at the
+                        // top means the map fills the panel precisely (with
+                        // @ falling naturally in the middle, same as the
+                        // grid itself is always centred on the player).
                         ScrollViewReader { mapProxy in
                             ScrollView {
                                 mapContent
                             }
                             .onChange(of: gameEngine.pinnedMapLines.first?.id) { _ in
-                                if let first = gameEngine.pinnedMapLines.first {
-                                    mapProxy.scrollTo(first.id, anchor: .top)
+                                let lines = gameEngine.pinnedMapLines
+                                let target = lines.count > 3 ? lines[3] : lines.first
+                                if let target {
+                                    mapProxy.scrollTo(target.id, anchor: .top)
                                 }
                             }
                         }

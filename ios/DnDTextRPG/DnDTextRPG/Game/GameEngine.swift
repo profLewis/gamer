@@ -856,15 +856,12 @@ class GameEngine: ObservableObject {
     /// how many button rows follow it. Replaces (not appends), since a map
     /// redraw always represents the current room, not a running log.
     func printMap(_ lines: [String], color: TerminalColor = .green, size: CGFloat = 14) {
-        // Drop the non-compact header (top border, "| MAP" title, separator
-        // — always exactly these 3 lines; see getMapDisplay) since every
-        // caller here renders the pinned panel, whose own box already makes
-        // "this is the map" obvious — that header was pure dead weight,
-        // taking up scroll-visible space for no information. The grid
-        // itself, its "@ here: ..." line, the legend, and the closing
-        // border all still follow untouched (see mapOnlyLineCount, which
-        // sizes the panel to show only up to the end of "@ here: ...").
-        let lines = lines.count > 4 ? Array(lines.dropFirst(3)) : lines
+        // The header (top border, "| MAP" title, separator — always exactly
+        // these 3 lines; see getMapDisplay) stays IN the content, same as
+        // the legend that follows the grid — both just start scrolled out
+        // of view. See TerminalView's initial scroll target (skips past
+        // these same 3 lines) and mapOnlyLineCount (panel height, sized to
+        // the grid + "@ here: ..." line only, independent of this header).
         let maxLen = lines.map { $0.count }.max() ?? 0
         let mapped = lines.map { line -> TerminalLine in
             let padded = maxLen > 0 ? line.padding(toLength: maxLen, withPad: " ", startingAt: 0) : line
@@ -15365,10 +15362,12 @@ class GameEngine: ObservableObject {
     var mapOnlyLineCount: Int {
         let (radius, verticalRadius, _) = bestMapRadius()
         guard radius > 0, dungeon != nil else { return 0 }
-        // Matches exactly what printMap actually leaves on screen after
-        // stripping the 3-line header (see printMap): room rows + corridor
-        // rows between them, plus the single "@ here: ..." line. No header
-        // (stripped), no legend/closing border (left below the fold).
+        // The panel's default scroll position skips past the 3-line header
+        // (see TerminalView's scroll target), so this only needs to cover
+        // what's visible from there: room rows + corridor rows between
+        // them, plus the single "@ here: ..." line. The header sits above
+        // (reachable by scrolling up) and the legend/closing border below
+        // (reachable by scrolling down) — neither counted here.
         let gridLines = (2 * verticalRadius + 1) + (2 * verticalRadius)
         return gridLines + 1
     }
