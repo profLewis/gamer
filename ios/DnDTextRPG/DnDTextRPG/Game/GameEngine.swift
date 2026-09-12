@@ -2287,15 +2287,38 @@ class GameEngine: ObservableObject {
     /// Wait for continue with auto-timeout — taps to continue immediately, or auto-continues after delay
     func waitForContinueWithTimeout(multiplier: Double = 2.0, action: @escaping () -> Void) {
         waitForContinue()
+
+        // Single-fire guard — without it, a tap landing at (or just before)
+        // the exact moment the timer's dispatched block runs can fire
+        // `action()` from BOTH paths: `timer.invalidate()` only stops the
+        // timer from firing again in the FUTURE, it does nothing for a
+        // callback that's already been dispatched to the main queue and is
+        // just waiting its turn to run. This is exactly the kind of screen
+        // `action` chains into the next step of a sequence (loot pickup,
+        // post-purchase options, etc.), so a double-fire here meant the
+        // next screen — and whatever it grants — ran twice. Mirrors the
+        // same guard autoReturn() already uses for its own timer/tap race.
+        var fired = false
+        let fire: () -> Void = { [weak self] in
+            guard !fired else { return }
+            fired = true
+            self?.inputHandler = nil
+            action()
+        }
         let timer = Timer.scheduledTimer(withTimeInterval: infoTimeout * multiplier, repeats: false) { [weak self] _ in
             DispatchQueue.main.async {
+                // Stale-screen check stays timer-only — a tap always means
+                // the player is acting on the CURRENT screen, but a pending
+                // timer could fire well after the player has already moved
+                // on some other way (e.g. the corner X), where `action`
+                // would no longer make sense to run.
                 guard self?.awaitingContinue == true else { return }
-                action()
+                fire()
             }
         }
         inputHandler = { _ in
             timer.invalidate()
-            action()
+            fire()
         }
     }
 
