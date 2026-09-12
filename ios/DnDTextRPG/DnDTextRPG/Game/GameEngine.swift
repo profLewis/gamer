@@ -2121,6 +2121,11 @@ class GameEngine: ObservableObject {
             || text == "?" || text == "?\u{0338}" || text == "<<" || text == ">>" { return .navigation }
         // Chat
         if lower == "chat" { return .cyan }
+        // View-only actions — read the same as Roster's own tint, so a
+        // non-mutating "look, don't touch" button (View Card) visually
+        // stands apart from the Change Type/Race/Class/Voice mutators
+        // right next to it, which all otherwise share the same default tint.
+        if lower == "view card" { return .cyan }
         return .normal
     }
 
