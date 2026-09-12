@@ -17,6 +17,7 @@ struct Trainer: Codable, Equatable {
     var greeting: String
     var membershipFee: Int
     var sparDC: Int                // DC to win free entry by sparring instead of paying
+    var lessonFee: Int = 15          // per-skill training cost, charged on top of entry
 
     static func == (lhs: Trainer, rhs: Trainer) -> Bool { lhs.name == rhs.name && lhs.gymName == rhs.gymName }
 
@@ -57,7 +58,8 @@ struct Trainer: Codable, Equatable {
             specialty: specialty,
             greeting: persona.greeting,
             membershipFee: 15 + dungeonLevel * 10,
-            sparDC: 12 + dungeonLevel
+            sparDC: 12 + dungeonLevel,
+            lessonFee: 10 + dungeonLevel * 5
         )
     }
 }

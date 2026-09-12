@@ -19502,8 +19502,13 @@ class GameEngine: ObservableObject {
             self.print("  Which skill should \(character.name) train?", color: .cyan)
             print("")
 
+            print("  Lessons cost \(trainer.lessonFee)gp each — \(character.name) has \(character.gold)gp.", color: .dimGreen)
+            print("")
+
             let options = offered.map { skill -> String in
-                character.skillProficiencies.contains(skill) ? "\(skill.rawValue) (already trained)" : skill.rawValue
+                character.skillProficiencies.contains(skill)
+                    ? "\(skill.rawValue) (already trained, \(trainer.lessonFee)gp)"
+                    : "\(skill.rawValue) (\(trainer.lessonFee)gp)"
             }
             self.showMenu(options + ["< Done"])
             self.menuHandler = { [weak self] choice in
@@ -19514,6 +19519,13 @@ class GameEngine: ObservableObject {
                 }
                 let skill = offered[choice - 1]
                 self.print("")
+                guard character.gold >= trainer.lessonFee else {
+                    self.print("  \"Coin first, then the lesson.\" (\(character.name) doesn't have \(trainer.lessonFee)gp.)", color: .red)
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
+                    return
+                }
+                character.gold -= trainer.lessonFee
                 if character.skillProficiencies.contains(skill) {
                     let xp = 20
                     character.experiencePoints += xp
