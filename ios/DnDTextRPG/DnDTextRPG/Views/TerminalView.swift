@@ -1451,7 +1451,15 @@ struct DirectionPadView: View {
             HStack(spacing: 4) {
                 cornerIconButton(systemName: "sparkle.magnifyingglass", color: searchAmber, action: onSearchTap)
                 dirButton(.north)
-                cornerIconButton(systemName: "ear", color: listenAmber, action: onListenTap)
+                // A room with both an NPC and a teleport pad would otherwise
+                // lose the pad entirely (NPC keeps priority on the shared SE
+                // slot below) — Listen isn't tied to this specific room the
+                // way a pad is, so it steps aside here instead.
+                if onTeleportTap != nil, npcLabel != nil {
+                    cornerIconButton(systemName: "target", color: teleportPurple, action: onTeleportTap)
+                } else {
+                    cornerIconButton(systemName: "ear", color: listenAmber, action: onListenTap)
+                }
             }
             // West + Center + East
             HStack(spacing: 4) {
@@ -1486,9 +1494,9 @@ struct DirectionPadView: View {
             HStack(spacing: 4) {
                 cornerIconButton(systemName: torchLabel == "Douse" ? "flame.fill" : "flame", color: torchBlue, action: onTorchTap)
                 dirButton(.south)
-                // Same SE slot doubles as the teleport pad icon — NPC wins
-                // on the rare room that somehow has both (see
-                // GameEngine.dpadTeleportHandler).
+                // Same SE slot doubles as the teleport pad icon — NPC keeps
+                // priority here on the rare room that has both, but the pad
+                // isn't lost: it takes over the NE Listen slot above instead.
                 if npcLabel != nil {
                     cornerIconButton(systemName: "scroll", color: npcCyan, action: onNPCTap)
                 } else {

@@ -15587,11 +15587,13 @@ class GameEngine: ObservableObject {
             }
         }
 
-        // Teleport pad — roundel-target icon sharing the D-pad's SE corner
-        // slot with the NPC scroll icon (see dpadTeleportHandler; NPC wins
-        // if a room somehow has both). Always set both branches, same
-        // reasoning as NPC above — otherwise a stale teleport icon from a
-        // previous room lingers into one with no pad.
+        // Teleport pad — roundel-target icon normally sharing the D-pad's SE
+        // corner slot with the NPC scroll icon; if a room has both, NPC
+        // keeps SE and this instead takes over the NE Listen slot (see
+        // DirectionPadView — Listen isn't tied to this specific room the way
+        // a pad is, so it's the one that steps aside). Always set both
+        // branches, same reasoning as NPC above — otherwise a stale teleport
+        // icon from a previous room lingers into one with no pad.
         if teleportPadsEnabled, let destId = room.teleportDestinationRoomId, let destRoom = dungeon.rooms[destId],
            (room.cleared || room.encounter == nil) {
             DispatchQueue.main.async {
@@ -17631,28 +17633,54 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Gold penalty for abandoning the active quest — reneging costs the
+    /// party's standing with whoever gave it, represented mechanically as a
+    /// flat toll (scaled to dungeon level) taken from whoever in the party
+    /// can afford the most of it, never pushing anyone below zero. Returns
+    /// the amount actually collected (can be less than the nominal penalty,
+    /// or 0, if the party is broke).
+    @discardableResult
+    private func chargeQuestAbandonPenalty() -> Int {
+        let penalty = 20 + (dungeon?.level ?? 1) * 10
+        var remaining = penalty
+        for char in party.sorted(by: { $0.gold > $1.gold }) {
+            guard remaining > 0 else { break }
+            let take = min(char.gold, remaining)
+            char.gold -= take
+            remaining -= take
+        }
+        return penalty - remaining
+    }
+
     /// Abandoning a quest partway through is a deliberate choice (you lose
-    /// whatever progress you'd made and clear the way for a different NPC
-    /// to offer something new), so it goes through a confirm step rather
-    /// than a single tap — same weight as other one-way actions in the game.
-    private func confirmGiveUpQuest() {
-        guard let quest = activeQuest else { showPartyStatus(); return }
+    /// whatever progress you'd made, pay a toll for reneging, and clear the
+    /// way for a different NPC to offer something new), so it goes through a
+    /// confirm step rather than a single tap — same weight as other one-way
+    /// actions in the game. `returnTo` is wherever this was reached from
+    /// (Party Status, or the quest-giver's own conversation screen).
+    private func confirmAbandonQuest(returnTo: @escaping () -> Void) {
+        guard let quest = activeQuest else { returnTo(); return }
+        let penalty = 20 + (dungeon?.level ?? 1) * 10
         clearTerminal()
         printTitle("Give Up This Quest?")
         print("")
         print("  \(quest.giverName): \(quest.description)", color: .yellow)
         print("")
-        printWrapped("Any progress is lost, and \(quest.giverName) won't offer it again. You'll be free to accept a different quest from someone else.", indent: 2, color: .dimGreen)
+        printWrapped("Any progress is lost, and \(quest.giverName) won't offer it again. Word gets around — reneging costs the party's standing, about \(penalty) gold's worth of goodwill. You'll be free to accept a different quest from someone else.", indent: 2, color: .dimGreen)
         print("")
         showMenu(["Yes, Give It Up", "No, Keep It"])
-        closeHandler = { [weak self] in self?.showPartyStatus() }
+        closeHandler = returnTo
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == 1 {
-                self.logEvent("Gave up quest: \(quest.description)", category: "QUEST")
+                let charged = self.chargeQuestAbandonPenalty()
+                self.logEvent("Gave up quest: \(quest.description) (paid \(charged) gold in lost goodwill)", category: "QUEST")
                 self.activeQuest = nil
+                self.print("  The party's reputation takes a hit — \(charged) gold poorer for it.", color: .yellow)
+                self.waitForContinueWithTimeout { returnTo() }
+            } else {
+                returnTo()
             }
-            self.showPartyStatus()
         }
     }
 
@@ -17708,6 +17736,8 @@ class GameEngine: ObservableObject {
         case .visitRoomType:
             let found = dungeon?.rooms.values.contains { $0.roomType == quest.targetRoomType && $0.visited } ?? false
             return found ? "Progress: found it!" : "Progress: not found yet"
+        case .slayBoss:
+            return "Progress: the creature still lurks below"
         }
     }
 
@@ -17730,6 +17760,11 @@ class GameEngine: ObservableObject {
             return party.contains { $0.level >= quest.target }
         case .visitRoomType:
             return dungeon?.rooms.values.contains { $0.roomType == quest.targetRoomType && $0.visited } ?? false
+        case .slayBoss:
+            // Never auto-completes here — the boss fight ends the game
+            // entirely, a distinct flow handled directly in
+            // handleGameVictory() instead of the generic exploration check.
+            return false
         }
     }
 
@@ -17741,6 +17776,43 @@ class GameEngine: ObservableObject {
         activeQuest = nil
         showSideQuestComplete(quest)
         return true
+    }
+
+    /// Applies a quest reward immediately and returns a short description —
+    /// used for the Gatekeeper's slayBoss reward, which resolves inline as
+    /// part of the victory screen (the game is ending) rather than through
+    /// showSideQuestComplete()'s own screen/continuation. SideQuest.random()
+    /// never offers newSkill/specialSpell/instantLevelUp/familiar for
+    /// slayBoss specifically (none of them mean anything once the adventure
+    /// is over), but this stays exhaustive in case that ever changes.
+    private func applyQuestRewardInline(_ reward: SideQuestReward) -> String {
+        switch reward {
+        case .bonusGold(let amount):
+            let eligible = party.filter { $0.isConscious }
+            let recipients = eligible.isEmpty ? party : eligible
+            let each = max(1, amount / recipients.count)
+            for char in recipients { char.gold += each }
+            return "\(amount) gold (\(each) each)"
+        case .titleSuffix(let suffix):
+            if let honoree = party.filter({ $0.isConscious }).randomElement() ?? party.first {
+                if !honoree.name.hasSuffix(suffix) { honoree.name = "\(honoree.name) \(suffix)" }
+                return "\(honoree.name) is honored with the title \"\(suffix)\""
+            }
+            return reward.description
+        case .maxHPBoost(let amount):
+            for char in party { char.maxHP += amount; char.currentHP += amount }
+            return "+\(amount) max HP for the whole party"
+        case .certificate(let name):
+            if let recipient = party.filter({ $0.isConscious }).randomElement() ?? party.first {
+                let item = Item(id: UUID(), name: name, description: "A framed certificate — mostly for bragging rights.",
+                                 type: .misc, weight: 0.1, value: 1, weaponStats: nil, armorStats: nil, potionStats: nil)
+                _ = recipient.addItem(item)
+                return "\(recipient.name) receives a \(name)"
+            }
+            return reward.description
+        case .newSkill, .specialSpell, .instantLevelUp, .familiar:
+            return reward.description
+        }
     }
 
     private func showSideQuestComplete(_ quest: SideQuest) {
@@ -17846,8 +17918,10 @@ class GameEngine: ObservableObject {
     private func askNPCAbout(topic: String) {
         guard let room = dungeon?.currentRoom, var npc = room.npc else { return }
 
-        // Gatekeeper quest acceptance flow
-        if npc.type == .gatekeeper && topic == "Quest" && !npc.questAccepted {
+        // Gatekeeper quest flow — handles offering a new (varied) quest,
+        // showing progress on one already underway, or explaining that the
+        // active quest came from someone else, all in one place.
+        if npc.type == .gatekeeper && topic == "Quest" {
             showGatekeeperQuest(npc: npc, room: room)
             return
         }
@@ -17894,11 +17968,8 @@ class GameEngine: ObservableObject {
 
         let response: String
         if npc.type == .gatekeeper {
-            if topic == "Quest" && npc.questAccepted {
-                response = "Your quest is underway. Slay the creature in the depths and return for your \(npc.questGold) gold reward."
-            } else {
-                response = npc.type.gatekeeperResponse(for: topic, trustworthiness: npc.trustworthiness, dungeonLevel: dungeon?.level ?? 1, bossType: bossType, questGold: npc.questGold, askCount: askCount)
-            }
+            // "Quest" always returns early above via showGatekeeperQuest().
+            response = npc.type.gatekeeperResponse(for: topic, trustworthiness: npc.trustworthiness, dungeonLevel: dungeon?.level ?? 1, bossType: bossType, questGold: npc.questGold, askCount: askCount)
         } else {
             response = npc.type.response(for: topic, dungeonLevel: dungeon?.level ?? 1, bossType: bossType, context: ctx, askCount: askCount)
         }
@@ -17932,21 +18003,65 @@ class GameEngine: ObservableObject {
         print("")
 
         let bossType = dungeon?.rooms.values.first(where: { $0.roomType == .boss })?.encounter?.monsters.first?.type
-        let questText = npc.type.gatekeeperResponse(for: "Quest", trustworthiness: npc.trustworthiness, dungeonLevel: dungeon?.level ?? 1, bossType: bossType, questGold: npc.questGold)
+
+        // A quest already underway — from this gatekeeper or someone else —
+        // takes priority over offering a new one (only one active at a time).
+        if let quest = activeQuest {
+            if quest.giverName == npc.type.rawValue {
+                printWrapped("\"Your task is still ahead of you.\"", indent: 2, color: .yellow)
+                print("")
+                print("  Quest: \(quest.description)", color: .cyan)
+                print("  Reward: \(quest.reward.description)", color: .brightGreen)
+                print("  \(self.sideQuestProgressDescription(quest))", color: .dimGreen)
+                print("")
+                showMenu(["Abandon Quest", "Keep Going"])
+                closeHandler = { [weak self] in self?.talkToNPC() }
+                menuHandler = { [weak self] choice in
+                    guard let self = self else { return }
+                    if choice == 1 {
+                        self.confirmAbandonQuest(returnTo: { self.talkToNPC() })
+                    } else {
+                        self.talkToNPC()
+                    }
+                }
+            } else {
+                printWrapped("\"You've already got a task in hand, from \(quest.giverName). See to that first — or give it up, if you'd rather take on something of mine instead.\"", indent: 2, color: .yellow)
+                print("")
+                showMenu(["Abandon That Quest", "Never Mind"])
+                closeHandler = { [weak self] in self?.talkToNPC() }
+                menuHandler = { [weak self] choice in
+                    guard let self = self else { return }
+                    if choice == 1 {
+                        self.confirmAbandonQuest(returnTo: { self.talkToNPC() })
+                    } else {
+                        self.talkToNPC()
+                    }
+                }
+            }
+            return
+        }
+
+        // No quest active — offer a fresh, varied one (not always "slay the
+        // boss for gold"; see SideQuest.random(includeSlayBoss:)).
+        guard let dungeon = dungeon else { talkToNPC(); return }
+        let totalGold = party.reduce(0) { $0 + $1.gold }
+        let quest = SideQuest.random(level: dungeon.level, giverName: npc.type.rawValue,
+                                     monstersSlain: monstersSlain, partyGold: totalGold, party: party,
+                                     dungeon: dungeon, includeSlayBoss: true)
+
+        let questText = npc.type.gatekeeperResponse(for: "Quest", trustworthiness: npc.trustworthiness, dungeonLevel: dungeon.level, bossType: bossType, questGold: 0)
         printWrapped("\"\(questText)\"", indent: 2, color: .yellow)
         print("")
-        print("  Quest: Slay the dungeon boss", color: .cyan)
-        print("  Reward: \(npc.questGold) gold", color: .brightGreen)
+        print("  Quest: \(quest.description)", color: .cyan)
+        print("  Reward: \(quest.reward.description)", color: .brightGreen)
         print("")
 
         showMenu(["Accept Quest", "Decline"])
-
+        closeHandler = { [weak self] in self?.talkToNPC() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == 1 {
-                var updatedNPC = npc
-                updatedNPC.questAccepted = true
-                room.npc = updatedNPC
+                self.activeQuest = quest
                 self.clearTerminal()
                 if let dungeon = self.dungeon {
                     self.printExplorationMap()
@@ -17955,14 +18070,13 @@ class GameEngine: ObservableObject {
                 self.printLines(npc.type.asciiArt, color: .cyan)
                 self.print("")
                 self.printWrapped("\"Good. May fortune favour you. Return when the deed is done.\"", indent: 2, color: .yellow)
-                self.logEvent("Accepted quest from Gatekeeper: slay boss for \(npc.questGold) gold", category: "QUEST")
+                self.logEvent("Accepted quest from Gatekeeper: \(quest.description)", category: "QUEST")
                 self.waitForContinue()
                 self.inputHandler = { [weak self] _ in self?.talkToNPC() }
             } else {
                 self.talkToNPC()
             }
         }
-        closeHandler = { [weak self] in self?.talkToNPC() }
     }
 
     private func tradeWithNPC() {
@@ -19980,7 +20094,7 @@ class GameEngine: ObservableObject {
             let selected = menuOpts[choice - 1]
             switch selected {
             case "Give Up Quest":
-                self.confirmGiveUpQuest()
+                self.confirmAbandonQuest(returnTo: { self.showPartyStatus() })
             case "Cure Poison":
                 self.showPoisonInfo(onBack: { self.showPartyStatus() })
             case "Party Review":
@@ -20040,7 +20154,7 @@ class GameEngine: ObservableObject {
             self.printWrapped("Map + each character's HP, gold, XP. Green HP = healthy, yellow = wounded, red = critical.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  BUTTONS", color: .cyan, bold: true)
-            self.printWrapped("Party Review — edit characters and view stat cards. Save to Roster — persist a character's progress for future adventures. Adventure Log — event timeline. Settings — game settings. Cure Poison — when poisoned. Give Up Quest — abandon your current quest (loses progress) so a different NPC can offer you a new one.", indent: 2, color: .dimGreen)
+            self.printWrapped("Party Review — edit characters and view stat cards. Save to Roster — persist a character's progress for future adventures. Adventure Log — event timeline. Settings — game settings. Cure Poison — when poisoned. Give Up Quest — abandon your current quest (loses progress and costs some gold in lost goodwill) so a different NPC can offer you a new one.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  MONSTER STRENGTH", color: .cyan, bold: true)
             self.printWrapped("Monsters scale up a little as your party's average level rises, on top of your chosen difficulty — the dungeon keeps pace with your growing skill instead of staying static.", indent: 2, color: .dimGreen)
@@ -25738,12 +25852,14 @@ class GameEngine: ObservableObject {
             self?.resetGame()
         }
 
-        // Check for gatekeeper quest reward (before stats)
-        if let entrance = dungeon?.rooms[0], let gk = entrance.npc, gk.type == .gatekeeper && gk.questAccepted {
-            let reward = gk.questGold
-            let leader = party.first
-            leader?.gold += reward
-            logEvent("Gatekeeper quest complete! Reward: \(reward) gold", category: "QUEST")
+        // Check for gatekeeper quest reward (before stats) — the quest's
+        // type/reward vary (see SideQuest.random(includeSlayBoss:)), not
+        // always "slay the boss for flat gold" as it once was.
+        var gatekeeperRewardLine: String? = nil
+        if let quest = activeQuest, quest.type == .slayBoss {
+            gatekeeperRewardLine = applyQuestRewardInline(quest.reward)
+            logEvent("Gatekeeper quest complete! Reward: \(quest.reward.description)", category: "QUEST")
+            activeQuest = nil
         }
 
         // Gather stats
@@ -25800,12 +25916,12 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        // Gatekeeper quest reward display
-        if let entrance = dungeon?.rooms[0], let gk = entrance.npc, gk.type == .gatekeeper && gk.questAccepted {
-            print("  ┌─ Quest Complete! ─────────────┐", color: .cyan, bold: true)
-            print("  │  The Gatekeeper rewards you    │", color: .cyan)
-            print("  │  with \(String(gk.questGold).padding(toLength: 4, withPad: " ", startingAt: 0)) gold pieces!         │", color: .brightGreen)
-            print("  └────────────────────────────────┘", color: .cyan)
+        // Gatekeeper quest reward display — variable-length now that the
+        // reward varies, so a plain callout instead of the old fixed-width
+        // box (which only ever fit a short gold amount).
+        if let rewardLine = gatekeeperRewardLine {
+            print("  ✦ QUEST COMPLETE — the Gatekeeper's task is done", color: .cyan, bold: true)
+            printWrapped("  \(rewardLine)", indent: 2, color: .brightGreen)
             print("")
         }
 

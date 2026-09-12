@@ -1000,10 +1000,14 @@ enum NPCType: String, CaseIterable, Codable {
                 ].randomElement()!
             }
         case "Quest":
+            // Kept generic — the specific task and reward (which vary each
+            // time, not always "slay the boss for gold") are printed as
+            // their own structured lines right after this in
+            // showGatekeeperQuest(), not baked into this flavour text.
             return [
-                "Slay the creature that lurks in the deepest chamber and return to tell the tale. I'll reward you with \(questGold) gold for proof of its defeat.",
-                "I've a bounty for the thing below — \(questGold) gold to whoever brings me proof of its demise. Interested?",
-                "The monster below has plagued travellers for too long. End it, and \(questGold) gold is yours. A fair price for dangerous work.",
+                "I've a task, if you're interested — something that wants doing in these depths.",
+                "There's work to be done down there, for the right sort of adventurer. Interested?",
+                "I could use someone willing to take on a task in the dungeon. Are you in?",
             ].randomElement()!
         case "Merchants":
             // Not gated by trustworthiness — this is practical, verifiable
