@@ -15368,13 +15368,19 @@ class GameEngine: ObservableObject {
         // as a full-width band, so widens generously; landscape gives it its
         // own narrower column (map | icons | text), so widens more modestly
         // to avoid overflowing that column.
-        let horizontalRadius = isLandscapeOrientation ? min(mapRadius + 1, 4) : min(mapRadius + 2, 5)
+        // Landscape's screen is short — a portrait-tuned Length (rows) just
+        // doesn't fit, forcing heavy scrolling in a panel that has much less
+        // height to work with than portrait's. Landscape resets to a small,
+        // fixed vertical extent of its own rather than inheriting whatever
+        // Length the player picked for portrait.
+        let verticalRadius = isLandscapeOrientation ? 1 : mapRadius
+        let horizontalRadius = isLandscapeOrientation ? min(verticalRadius + 1, 4) : min(mapRadius + 2, 5)
         // Key/legend always hidden on the small pinned map, regardless of
         // Map Length — it used to only hide once Length went above 1, so the
         // default (1) showed a key most players never saw once they'd
         // turned it up. The full key is still available in the expanded map
         // overlay (long-press the map), which doesn't go through here.
-        return (horizontalRadius, mapRadius, true)
+        return (horizontalRadius, verticalRadius, true)
     }
 
     /// Redraws the full exploration screen: map + room description + party + menu

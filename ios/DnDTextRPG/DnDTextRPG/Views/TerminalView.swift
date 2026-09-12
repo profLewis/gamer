@@ -132,33 +132,39 @@ struct TerminalView: View {
                         .padding(.top, 4)
                         .padding(.bottom, 2)
 
-                        Group {
-                            if gameEngine.mapPanelHeight > 0 {
-                                // Fixed size — scroll internally rather than
-                                // ever clip the map or its key/legend. A
-                                // ScrollView keeps whatever scroll offset it
-                                // had across content updates by default, so
-                                // moving to a new room (new pinnedMapLines)
-                                // could otherwise leave the panel scrolled
-                                // to wherever the PREVIOUS room's map last
-                                // was — always reset to the top border line
-                                // whenever the content actually changes.
-                                ScrollViewReader { mapProxy in
-                                    ScrollView {
-                                        mapContent
-                                    }
-                                    .onChange(of: gameEngine.pinnedMapLines.first?.id) { _ in
-                                        if let first = gameEngine.pinnedMapLines.first {
-                                            mapProxy.scrollTo(first.id, anchor: .top)
-                                        }
-                                    }
-                                }
-                                .frame(height: gameEngine.mapPanelHeight)
-                            } else {
-                                // Auto — sized to fit the whole map + key, no cap.
+                        // Always wrapped in a real ScrollView — "Auto" used to
+                        // render mapContent bare with no scroll container at
+                        // all, so if the surrounding layout ever squeezed it
+                        // shorter than the map's actual content (a taller Map
+                        // Length, a small landscape column, bigger text
+                        // scale...), the overflow was silently CLIPPED with no
+                        // way to reach it — not scrolled, just gone. A
+                        // ScrollView keeps whatever scroll offset it had
+                        // across content updates by default, so moving to a
+                        // new room (new pinnedMapLines), or changing Map
+                        // Length (which re-renders this same pinnedMapLines),
+                        // could otherwise leave the panel scrolled to wherever
+                        // it happened to be for the PREVIOUS content — always
+                        // re-centre on the player's own "@" row instead,
+                        // falling back to the top border line if it can't be
+                        // found (shouldn't happen — @ is always on the map).
+                        ScrollViewReader { mapProxy in
+                            ScrollView {
                                 mapContent
                             }
+                            .onChange(of: gameEngine.pinnedMapLines.first?.id) { _ in
+                                if let homeLine = gameEngine.pinnedMapLines.first(where: { $0.text.contains("@") }) {
+                                    mapProxy.scrollTo(homeLine.id, anchor: .center)
+                                } else if let first = gameEngine.pinnedMapLines.first {
+                                    mapProxy.scrollTo(first.id, anchor: .top)
+                                }
+                            }
                         }
+                        // Landscape ignores the portrait-tuned Panel Size —
+                        // a screen that's short on height needs its own small
+                        // fixed panel, not whatever (possibly much taller, or
+                        // uncapped Auto) size was set for portrait.
+                        .frame(height: isLandscape ? 120 : (gameEngine.mapPanelHeight > 0 ? gameEngine.mapPanelHeight : nil))
                         .background(terminalBackground)
                         .contentShape(Rectangle())
                         .onLongPressGesture(minimumDuration: 0.5) {
