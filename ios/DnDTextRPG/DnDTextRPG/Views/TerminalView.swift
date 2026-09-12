@@ -160,7 +160,13 @@ struct TerminalView: View {
                         // @ falling naturally in the middle, same as the
                         // grid itself is always centred on the player).
                         ScrollViewReader { mapProxy in
-                            ScrollView {
+                            // Landscape's map column can be narrower than
+                            // the map's own minimum rendered width (the grid
+                            // has a hard floor of ~26 characters wide) — add
+                            // horizontal scrolling too so any overflow there
+                            // stays reachable rather than silently clipped
+                            // off the right edge.
+                            ScrollView(isLandscape ? [.vertical, .horizontal] : [.vertical]) {
                                 mapContent
                             }
                             .onChange(of: gameEngine.pinnedMapLines.first?.id) { _ in
@@ -225,7 +231,18 @@ struct TerminalView: View {
                     // landscape to avoid showing it twice).
                     if isLandscape, (!gameEngine.isJustDMActive || gameEngine.forceInteractiveControls),
                        !gameEngine.directionExits.isEmpty {
+                        // The pad's normal cell size (max(80, 80*scale) —
+                        // ~240pt across 3 columns plus inter-cell spacing)
+                        // doesn't reliably fit a landscape third on most
+                        // iPhones — it was overflowing its column (reading as
+                        // "the icon grid doesn't show", since the overflow
+                        // spills outside the column's visible bounds rather
+                        // than clipping in place). Shrink cells to whatever
+                        // this column can actually fit instead.
+                        let columnWidth = geometry.size.width / 3
+                        let dpadCellWidth = max(44, (columnWidth - 16 - 8) / 3)
                         DirectionPadView(exits: gameEngine.directionExits, secured: gameEngine.securedExits, scale: scale,
+                            cellWidth: dpadCellWidth,
                             onSelect: { direction in
                                 gameEngine.handleDirectionChoice(direction)
                             },
@@ -243,7 +260,7 @@ struct TerminalView: View {
                             onSearchTap: gameEngine.dpadSearchHandler,
                             onListenTap: gameEngine.dpadListenHandler
                         )
-                        .frame(width: geometry.size.width / 3, alignment: .top)
+                        .frame(width: columnWidth, alignment: .top)
                         .padding(.top, 20 * scale)
                     }
 
@@ -456,6 +473,13 @@ struct TerminalView: View {
                     #endif
                     } // end adaptiveMapTextStack
 
+                    // Everything below (button row, input bar, custom
+                    // keyboard) capped to at most a third of the screen's
+                    // height in landscape — that trio was otherwise free to
+                    // grow as tall as its content wanted, which on a short
+                    // landscape screen crowded out the map/icons/text row
+                    // above it far more than intended.
+                    VStack(spacing: 0) {
                     // Direction pad + menu buttons (hidden in Just DM mode, except on
                     // victory/defeat milestone screens — see forceInteractiveControls).
                     // In landscape the D-pad already showed above as its own middle
@@ -830,6 +854,8 @@ struct TerminalView: View {
                         .transition(.move(edge: .bottom))
                     }
                     #endif
+                    } // end button row/input bar/keyboard height cap
+                    .frame(maxHeight: isLandscape ? geometry.size.height / 3 : nil, alignment: .top)
                 }
                 .background(terminalBackground)
 
@@ -1578,6 +1604,12 @@ struct DirectionPadView: View {
     let exits: [Direction: Bool]
     var secured: Set<Direction> = []
     let scale: CGFloat
+    /// Overrides the button cell width (each of the 3x3 grid's columns is
+    /// one of these) below its normal max(80, 80*scale) floor — set when
+    /// the pad has to fit a column narrower than that floor allows (e.g.
+    /// landscape's map|icons|text three-way split), rather than overflowing
+    /// its allotted space. Leave nil for the normal floor-respecting size.
+    var cellWidth: CGFloat? = nil
     let onSelect: (Direction) -> Void
     var onLongPress: ((Direction) -> Void)? = nil
     var centerLabel: String? = nil
@@ -1606,6 +1638,8 @@ struct DirectionPadView: View {
     private let searchAmber = Color(red: 0.8, green: 0.6, blue: 0.2)
     private let listenAmber = Color(red: 0.8, green: 0.6, blue: 0.2)
 
+    private var effectiveCellWidth: CGFloat { cellWidth ?? max(80, 80 * scale) }
+
     @ViewBuilder
     private func cornerIconButton(systemName: String, color: Color, action: (() -> Void)?) -> some View {
         if let action = action {
@@ -1613,7 +1647,7 @@ struct DirectionPadView: View {
                 Image(systemName: systemName)
                     .font(.system(size: 16 * scale))
                     .foregroundColor(color)
-                    .frame(width: max(80, 80 * scale), height: max(44, 34 * scale))
+                    .frame(width: effectiveCellWidth, height: max(44, 34 * scale))
                     .background(
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(color.opacity(0.6), lineWidth: 1)
@@ -1625,7 +1659,7 @@ struct DirectionPadView: View {
             }
             .buttonStyle(.plain)
         } else {
-            Color.clear.frame(width: max(80, 80 * scale), height: max(44, 34 * scale))
+            Color.clear.frame(width: effectiveCellWidth, height: max(44, 34 * scale))
         }
     }
 
@@ -1657,7 +1691,7 @@ struct DirectionPadView: View {
                             .font(.system(size: 11 * scale, design: .monospaced))
                             .fontWeight(.semibold)
                             .foregroundColor(centerBlue)
-                            .frame(width: max(80, 80 * scale), height: max(44, 34 * scale))
+                            .frame(width: effectiveCellWidth, height: max(44, 34 * scale))
                             .background(
                                 RoundedRectangle(cornerRadius: 6)
                                     .stroke(centerBlue.opacity(0.6), lineWidth: 1)
@@ -1686,7 +1720,7 @@ struct DirectionPadView: View {
                 if npcLabel != nil {
                     cornerIconButton(systemName: "scroll", color: npcCyan, action: onNPCTap)
                 } else {
-                    Color.clear.frame(width: max(80, 80 * scale), height: max(44, 34 * scale))
+                    Color.clear.frame(width: effectiveCellWidth, height: max(44, 34 * scale))
                 }
             }
         }
@@ -1723,7 +1757,7 @@ struct DirectionPadView: View {
                     .font(.system(size: 11 * scale, design: .monospaced))
                     .fontWeight(.semibold)
                     .foregroundColor(textColor)
-                    .frame(width: max(80, 80 * scale), height: max(44, 34 * scale))
+                    .frame(width: effectiveCellWidth, height: max(44, 34 * scale))
                     .background(
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(strokeColor, lineWidth: 1)
