@@ -20186,6 +20186,11 @@ class GameEngine: ObservableObject {
             self?.showCharacterCardFromEdit(index: index, inGame: true)
         }
 
+        opts.append("Inventory")
+        actions.append { [weak self] in
+            self?.showPackMenu(character: char, onBack: { self?.showInGameEditCharacter(index: index) })
+        }
+
         opts.append("?")
         actions.append { [weak self] in
             self?.showInGameEditHelp(index: index)
@@ -20233,6 +20238,9 @@ class GameEngine: ObservableObject {
             self.print("")
             self.print("  VIEW CARD", color: .cyan, bold: true)
             self.printWrapped("See the full stat card. Swipe left/right to browse party members.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  INVENTORY", color: .cyan, bold: true)
+            self.printWrapped("Open this character's pack — equip, use, or drop items.", indent: 2, color: .dimGreen)
             self.print("")
         }
     }
