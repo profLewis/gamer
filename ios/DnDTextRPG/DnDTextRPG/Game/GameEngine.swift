@@ -15380,6 +15380,11 @@ class GameEngine: ObservableObject {
 
         if !room.cleared && room.encounter != nil {
             print("You sense danger here...", color: .red)
+        } else if roomIsLit, room.cleared, room.encounter == nil, !room.defeatedMonsterNames.isEmpty {
+            // A cleared room describes its own aftermath every time it's
+            // revisited, not just the moment the fight ended — cleared here
+            // (room.encounter == nil) means nothing new has moved in since.
+            print("  \(defeatedMonsterSummary(room.defeatedMonsterNames))", color: .dimGreen)
         }
         // NPC presence — harder to notice without light
         if let npc = room.npc, npcsEnabled {
@@ -16656,6 +16661,23 @@ class GameEngine: ObservableObject {
                 applyTo(poisonedMembers[choice - 1])
             }
         }
+    }
+
+    /// "2 Zombies, 1 Goblin lie dead here." — groups Room.defeatedMonsterNames
+    /// by name with counts, since a fight is usually more than one monster.
+    private func defeatedMonsterSummary(_ names: [String]) -> String {
+        var counts: [String: Int] = [:]
+        var order: [String] = []
+        for name in names {
+            if counts[name] == nil { order.append(name) }
+            counts[name, default: 0] += 1
+        }
+        let parts = order.map { name -> String in
+            let count = counts[name] ?? 1
+            return count > 1 ? "\(count) \(name)s" : "1 \(name)"
+        }
+        let verb = names.count == 1 ? "lies" : "lie"
+        return "\(parts.joined(separator: ", ")) \(verb) dead here."
     }
 
     private func showActionsMenu() {
@@ -18824,7 +18846,15 @@ class GameEngine: ObservableObject {
             // Split equally
             let goldEach = gold / eligible.count
             let remainder = gold % eligible.count
-            options.append("Split (\(goldEach)gp each)")
+            // Fewer coins than people (goldEach == 0) still says a real
+            // minimum of 1 each for however many actually get one, rather
+            // than the misleading "0gp each" that plain integer division
+            // gives — 3 gold split 4 ways is "1gp each, for 3 of you", not
+            // "0gp each, +3 extra".
+            let buttonLabel = goldEach == 0
+                ? "Split (1gp each, for \(remainder) of \(eligible.count))"
+                : "Split (\(goldEach)gp each)"
+            options.append(buttonLabel)
             actions.append { [weak self] in
                 guard let self = self else { return }
                 // Distribute remainder randomly one coin at a time
@@ -18834,7 +18864,9 @@ class GameEngine: ObservableObject {
                     let bonus = indices.firstIndex(of: i)! < remainder ? 1 : 0
                     char.gold += goldEach + bonus
                 }
-                if remainder > 0 {
+                if goldEach == 0 {
+                    self.print("  Gold split — \(remainder) of \(eligible.count) get 1gp each (not quite enough to go around).", color: .yellow)
+                } else if remainder > 0 {
                     self.print("  Gold split (\(goldEach)gp each, +\(remainder) extra spread around).", color: .yellow)
                 } else {
                     self.print("  Gold split among the party (\(goldEach)gp each).", color: .yellow)
@@ -25772,8 +25804,11 @@ class GameEngine: ObservableObject {
                 }
             }
         }
-        // Mark room cleared
+        // Mark room cleared — capture who was defeated before the encounter
+        // is wiped, so a revisit can describe the aftermath (see
+        // Room.defeatedMonsterNames and showExplorationView()).
         dungeon?.currentRoom?.cleared = true
+        dungeon?.currentRoom?.defeatedMonsterNames = combat.encounter.monsters.map { $0.name }
         dungeon?.currentRoom?.encounter = nil
 
         // Chance for NPC to appear in cleared room (15%)

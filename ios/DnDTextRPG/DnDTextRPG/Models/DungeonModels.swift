@@ -167,6 +167,13 @@ class Room: Identifiable, ObservableObject, Codable {
     @Published var hiddenItems: [Item]      // Items discoverable by searching (thematic per room type)
     @Published var hiddenGold: Int           // Gold discoverable by searching
     @Published var droppedItems: [Item]     // Items left behind by the party
+    /// Names of monsters defeated here, captured right before the fight's
+    /// Encounter is cleared — lets a revisit describe the aftermath (e.g.
+    /// "2 dead zombies") instead of the room looking like nothing happened.
+    /// Cleared again if a fresh encounter is ever placed here (e.g. a future
+    /// "monsters wander in" respawn), so a description never lingers past
+    /// the point it's no longer accurate.
+    @Published var defeatedMonsterNames: [String] = []
     @Published var npc: DungeonNPC?         // NPC present in this room
     @Published var secured: Set<Direction>  // Barred/secured exits
     @Published var merchant: Merchant?      // Shopkeeper present in this room (shop/armoury rooms)
@@ -219,6 +226,7 @@ class Room: Identifiable, ObservableObject, Codable {
         case id, x, y, roomType, name, roomDescription, exits, visited, cleared
         case encounter, treasure, isLocked, searchedFor, trapTriggered
         case hiddenItems, hiddenGold, droppedItems, npc, secured, merchant, trainer
+        case defeatedMonsterNames
         case riddleIndex, riddleResolved, doorLockIds, openedLocks
         case teleportDestinationRoomId
         case verticalDestinationRoomId, verticalMethod, verticalDirection, verticalRopeHintRoomName
@@ -243,6 +251,7 @@ class Room: Identifiable, ObservableObject, Codable {
         self.hiddenItems = []
         self.hiddenGold = 0
         self.droppedItems = []
+        self.defeatedMonsterNames = []
         self.npc = nil
         self.secured = []
         self.merchant = nil
@@ -280,6 +289,7 @@ class Room: Identifiable, ObservableObject, Codable {
         hiddenItems = try container.decodeIfPresent([Item].self, forKey: .hiddenItems) ?? []
         hiddenGold = try container.decodeIfPresent(Int.self, forKey: .hiddenGold) ?? 0
         droppedItems = try container.decodeIfPresent([Item].self, forKey: .droppedItems) ?? []
+        defeatedMonsterNames = try container.decodeIfPresent([String].self, forKey: .defeatedMonsterNames) ?? []
         npc = try container.decodeIfPresent(DungeonNPC.self, forKey: .npc)
         secured = try container.decodeIfPresent(Set<Direction>.self, forKey: .secured) ?? []
         merchant = try container.decodeIfPresent(Merchant.self, forKey: .merchant)
@@ -315,6 +325,7 @@ class Room: Identifiable, ObservableObject, Codable {
         try container.encode(hiddenItems, forKey: .hiddenItems)
         try container.encode(hiddenGold, forKey: .hiddenGold)
         try container.encode(droppedItems, forKey: .droppedItems)
+        try container.encode(defeatedMonsterNames, forKey: .defeatedMonsterNames)
         try container.encodeIfPresent(npc, forKey: .npc)
         try container.encode(secured, forKey: .secured)
         try container.encodeIfPresent(merchant, forKey: .merchant)
@@ -789,7 +800,7 @@ class Dungeon: ObservableObject, Codable {
         if numRooms >= 12 {
             let padCandidates = rooms.values.filter { $0.roomType != .entrance && $0.roomType != .boss }
             var usedForPad: Set<Int> = []
-            let numPads = numRooms >= 25 ? 2 : 1
+            let numPads = max(1, numRooms / 15)
             for _ in 0..<numPads {
                 let available = padCandidates.filter { !usedForPad.contains($0.id) }
                 guard let roomA = available.randomElement() else { break }
@@ -819,7 +830,7 @@ class Dungeon: ObservableObject, Codable {
         // shortcut in a large dungeon barely registered. Skipped in small
         // dungeons.
         if numRooms >= 15 {
-            let numVertical = max(1, numRooms / 20)
+            let numVertical = max(1, numRooms / 12)
             var usedForVertical: Set<Int> = []
             for i in 0..<numVertical {
                 let vCandidates = rooms.values.filter {
