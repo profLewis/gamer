@@ -768,6 +768,8 @@ struct TerminalView: View {
                         }
                 }
             }
+            .onAppear { gameEngine.isLandscapeOrientation = isLandscape }
+            .onChange(of: isLandscape) { newValue in gameEngine.isLandscapeOrientation = newValue }
         }
         .onAppear {
             gameEngine.startGame()

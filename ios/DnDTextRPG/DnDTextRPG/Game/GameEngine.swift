@@ -321,6 +321,13 @@ class GameEngine: ObservableObject {
         }
     }
     @Published var textTapEnabled: Bool = false
+
+    /// Mirrors TerminalView's GeometryReader-derived orientation — GameEngine
+    /// otherwise has no idea how the screen is laid out. Used by
+    /// bestMapRadius() to widen the map in portrait, where it gets the full
+    /// screen width as a band above the text (landscape instead gives it its
+    /// own narrower left column, so doesn't need the same widening).
+    @Published var isLandscapeOrientation: Bool = false
     @Published var gameState: GameState = .mainMenu
 
     /// Victory/defeat are meta-game milestones (save/continue, return to menu) —
@@ -15339,7 +15346,12 @@ class GameEngine: ObservableObject {
         // small fixed size whenever the torch went out, instead of just
         // going dark in place at the same size.
         guard mapRadius > 0 else { return (0, 0, false) }
-        return (mapRadius, mapRadius, mapRadius > 1)
+        // Portrait gives the map a full-width band above the text — widen
+        // just the horizontal radius there so it actually uses that width
+        // instead of a narrow strip with blank space either side. Landscape
+        // already gets its own (narrower) left column, so stays as-is.
+        let horizontalRadius = isLandscapeOrientation ? mapRadius : min(mapRadius + 2, 5)
+        return (horizontalRadius, mapRadius, mapRadius > 1)
     }
 
     /// Redraws the full exploration screen: map + room description + party + menu
@@ -19686,6 +19698,12 @@ class GameEngine: ObservableObject {
                         self.print("  Poison also cured!", color: .brightGreen)
                     }
                     self.logMultiplayerAction("\(target.name) drinks \(potion.name) — restored \(amount) HP (\(target.currentHP)/\(target.maxHP))")
+                } else {
+                    // Flavour potion — no mechanical effect, just colour.
+                    self.print("")
+                    self.print("  \(target.name) drinks \(potion.name).", color: .dimGreen)
+                    self.print("  \(potion.potionStats?.effect ?? "Nothing obvious happens.")", color: .dimGreen)
+                    self.logMultiplayerAction("\(target.name) drinks \(potion.name)")
                 }
 
                 self.waitForContinue()
@@ -20533,8 +20551,8 @@ class GameEngine: ObservableObject {
         // quest and moved on has somewhere to check back in.
         if let quest = activeQuest {
             print("")
-            print("  QUEST from \(quest.giverName): \(quest.description)", color: .cyan, bold: true)
-            print("    \(sideQuestProgressDescription(quest))", color: .dimGreen)
+            printWrapped("QUEST from \(quest.giverName): \(quest.description)", indent: 2, color: .cyan, bold: true)
+            printWrapped(sideQuestProgressDescription(quest), indent: 4, color: .dimGreen)
         }
 
         // Torch status
@@ -20580,15 +20598,15 @@ class GameEngine: ObservableObject {
             // Line 1: Name + Race/Class + type tag
             let shortClass = String(char.characterClass.rawValue.prefix(3))
             let namePrefix = (char.isComputerControlled && !charIsRemote && !char.name.hasPrefix("R.")) ? "R. " : ""
-            print("  \(namePrefix)\(shortName(for: char))  \(char.race.rawValue) \(shortClass) L\(char.level)  \(typeTag)", color: .brightGreen, bold: true)
-            print("    ✦ \(char.characterClass.rankTitle(atLevel: char.level))", color: .cyan)
+            printWrapped("\(namePrefix)\(shortName(for: char))  \(char.race.rawValue) \(shortClass) L\(char.level)  \(typeTag)", indent: 2, color: .brightGreen, bold: true)
+            printWrapped("✦ \(char.characterClass.rankTitle(atLevel: char.level))", indent: 4, color: .cyan)
 
             // Line 2: HP bar + AC + Gold
             let barLen = 8
             let filled = Int(hpFraction * Double(barLen))
             let hpBar = String(repeating: "█", count: filled) + String(repeating: "░", count: barLen - filled)
-            let wpnStr = char.equippedWeapon.map { "  \(String($0.name.prefix(10)))" } ?? ""
-            print("    [\(hpBar)] \(char.currentHP)/\(char.maxHP) AC\(char.armorClass) \(char.gold)gp\(wpnStr)", color: hpColor)
+            let wpnStr = char.equippedWeapon.map { "  \(String($0.name.prefix(10)))\(char.equippedWeapon?.broken == true ? " (broken)" : "")" } ?? ""
+            printWrapped("[\(hpBar)] \(char.currentHP)/\(char.maxHP) AC\(char.armorClass) \(char.gold)gp\(wpnStr)", indent: 4, color: hpColor)
 
             // Line 3: XP + progress toward next level
             if char.level >= 5 {
@@ -24143,25 +24161,41 @@ class GameEngine: ObservableObject {
         let lower = name.lowercased()
 
         // Potions (check specific before generic)
+        if lower.contains("superior") && lower.contains("healing") { return ItemCatalog.superiorHealingPotion() }
         if lower.contains("greater") && lower.contains("healing") { return ItemCatalog.greaterHealingPotion() }
+        if lower.contains("fire resistance") { return ItemCatalog.potionOfFireResistance() }
+        if lower.contains("giant") && lower.contains("strength") { return ItemCatalog.potionOfGiantStrength() }
+        if lower.contains("clarity") { return ItemCatalog.elixirOfClarity() }
         if lower.contains("healing") || lower.contains("potion") { return ItemCatalog.healingPotion() }
 
         // Weapons
         if lower.contains("greataxe") { return ItemCatalog.greataxe() }
+        if lower.contains("battleaxe") { return ItemCatalog.battleaxe() }
         if lower.contains("longsword") || lower.contains("long sword") { return ItemCatalog.longsword() }
         if lower.contains("shortsword") || lower.contains("short sword") { return ItemCatalog.shortsword() }
         if lower.contains("longbow") || lower.contains("long bow") { return ItemCatalog.longbow() }
+        if lower.contains("light crossbow") || lower.contains("crossbow") { return ItemCatalog.lightCrossbow() }
+        if lower.contains("sling") { return ItemCatalog.sling() }
         if lower.contains("rapier") { return ItemCatalog.rapier() }
+        if lower.contains("scimitar") { return ItemCatalog.scimitar() }
         if lower.contains("quarterstaff") || lower.contains("staff") { return ItemCatalog.quarterstaff() }
         if lower.contains("handaxe") || lower.contains("hand axe") { return ItemCatalog.handaxe() }
+        if lower.contains("warhammer") || lower.contains("war hammer") { return ItemCatalog.warhammer() }
+        if lower.contains("trident") { return ItemCatalog.trident() }
+        if lower.contains("whip") { return ItemCatalog.whip() }
+        if lower.contains("spear") { return ItemCatalog.spear() }
         if lower.contains("mace") { return ItemCatalog.mace() }
         if lower.contains("dagger") || lower.contains("knife") { return ItemCatalog.dagger() }
 
         // Armor
+        if lower.contains("plate") { return ItemCatalog.plateArmor() }
         if lower.contains("chain mail") || lower.contains("chainmail") { return ItemCatalog.chainMail() }
+        if lower.contains("ring mail") { return ItemCatalog.ringMail() }
         if lower.contains("scale mail") || lower.contains("scalemail") { return ItemCatalog.scaleMail() }
         if lower.contains("studded leather") { return ItemCatalog.studdedLeather() }
+        if lower.contains("padded") { return ItemCatalog.paddedArmor() }
         if lower.contains("leather armor") || lower.contains("leather armour") { return ItemCatalog.leatherArmor() }
+        if lower.contains("buckler") { return ItemCatalog.buckler() }
         if lower.contains("shield") { return ItemCatalog.shield() }
 
         // Misc gear

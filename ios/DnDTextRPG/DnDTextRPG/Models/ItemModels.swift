@@ -180,6 +180,70 @@ struct ItemCatalog {
              armorStats: nil, potionStats: nil)
     }
 
+    static func warhammer() -> Item {
+        Item(id: UUID(), name: "Warhammer", description: "A heavy hammer built to crack armour.",
+             type: .weapon, weight: 5.0, value: 15,
+             weaponStats: WeaponStats(damage: "1d8", damageType: "bludgeoning",
+                                       isFinesse: false, isRanged: false, isTwoHanded: false),
+             armorStats: nil, potionStats: nil)
+    }
+
+    static func battleaxe() -> Item {
+        Item(id: UUID(), name: "Battleaxe", description: "A broad, single-bladed axe.",
+             type: .weapon, weight: 4.0, value: 10,
+             weaponStats: WeaponStats(damage: "1d8", damageType: "slashing",
+                                       isFinesse: false, isRanged: false, isTwoHanded: false),
+             armorStats: nil, potionStats: nil)
+    }
+
+    static func scimitar() -> Item {
+        Item(id: UUID(), name: "Scimitar", description: "A light, curved blade.",
+             type: .weapon, weight: 3.0, value: 25,
+             weaponStats: WeaponStats(damage: "1d6", damageType: "slashing",
+                                       isFinesse: true, isRanged: false, isTwoHanded: false),
+             armorStats: nil, potionStats: nil)
+    }
+
+    static func spear() -> Item {
+        Item(id: UUID(), name: "Spear", description: "A simple thrusting weapon.",
+             type: .weapon, weight: 3.0, value: 1,
+             weaponStats: WeaponStats(damage: "1d6", damageType: "piercing",
+                                       isFinesse: false, isRanged: false, isTwoHanded: false),
+             armorStats: nil, potionStats: nil)
+    }
+
+    static func sling() -> Item {
+        Item(id: UUID(), name: "Sling", description: "A leather strap for hurling stones.",
+             type: .weapon, weight: 0.5, value: 1,
+             weaponStats: WeaponStats(damage: "1d4", damageType: "bludgeoning",
+                                       isFinesse: false, isRanged: true, isTwoHanded: false),
+             armorStats: nil, potionStats: nil)
+    }
+
+    static func lightCrossbow() -> Item {
+        Item(id: UUID(), name: "Light Crossbow", description: "A mechanical ranged weapon, slow to reload but hard-hitting.",
+             type: .weapon, weight: 5.0, value: 25,
+             weaponStats: WeaponStats(damage: "1d8", damageType: "piercing",
+                                       isFinesse: false, isRanged: true, isTwoHanded: true),
+             armorStats: nil, potionStats: nil)
+    }
+
+    static func whip() -> Item {
+        Item(id: UUID(), name: "Whip", description: "A long, snapping lash — more intimidating than deadly.",
+             type: .weapon, weight: 3.0, value: 2,
+             weaponStats: WeaponStats(damage: "1d4", damageType: "slashing",
+                                       isFinesse: true, isRanged: false, isTwoHanded: false),
+             armorStats: nil, potionStats: nil)
+    }
+
+    static func trident() -> Item {
+        Item(id: UUID(), name: "Trident", description: "A three-pronged spear, favoured by sea-folk.",
+             type: .weapon, weight: 4.0, value: 5,
+             weaponStats: WeaponStats(damage: "1d6", damageType: "piercing",
+                                       isFinesse: false, isRanged: false, isTwoHanded: false),
+             armorStats: nil, potionStats: nil)
+    }
+
     // MARK: Armor
 
     static func leatherArmor() -> Item {
@@ -222,6 +286,38 @@ struct ItemCatalog {
              potionStats: nil)
     }
 
+    static func paddedArmor() -> Item {
+        Item(id: UUID(), name: "Padded Armour", description: "Quilted layers of cloth and batting.",
+             type: .armor, weight: 8.0, value: 5,
+             weaponStats: nil,
+             armorStats: ArmorStats(baseAC: 11, maxDexBonus: nil, stealthDisadvantage: true, isShield: false),
+             potionStats: nil)
+    }
+
+    static func ringMail() -> Item {
+        Item(id: UUID(), name: "Ring Mail", description: "Leather armour reinforced with metal rings.",
+             type: .armor, weight: 40.0, value: 30,
+             weaponStats: nil,
+             armorStats: ArmorStats(baseAC: 14, maxDexBonus: 0, stealthDisadvantage: true, isShield: false),
+             potionStats: nil)
+    }
+
+    static func plateArmor() -> Item {
+        Item(id: UUID(), name: "Plate Armour", description: "A full suit of shaped, fitted metal plate — the pinnacle of protection.",
+             type: .armor, weight: 65.0, value: 200,
+             weaponStats: nil,
+             armorStats: ArmorStats(baseAC: 18, maxDexBonus: 0, stealthDisadvantage: true, isShield: false),
+             potionStats: nil)
+    }
+
+    static func buckler() -> Item {
+        Item(id: UUID(), name: "Buckler", description: "A small strap-on shield. +1 AC, doesn't get in the way.",
+             type: .shield, weight: 2.0, value: 5,
+             weaponStats: nil,
+             armorStats: ArmorStats(baseAC: 1, maxDexBonus: nil, stealthDisadvantage: false, isShield: true),
+             potionStats: nil)
+    }
+
     // MARK: Potions
 
     static func healingPotion() -> Item {
@@ -243,6 +339,37 @@ struct ItemCatalog {
              type: .potion, weight: 1.0, value: 30,
              weaponStats: nil, armorStats: nil,
              potionStats: PotionStats(healAmount: "0", effect: "Cures poison"))
+    }
+
+    static func superiorHealingPotion() -> Item {
+        Item(id: UUID(), name: "Potion of Superior Healing", description: "Restores 8d4+8 hit points. Rare and expensive.",
+             type: .potion, weight: 1.0, value: 400,
+             weaponStats: nil, armorStats: nil,
+             potionStats: PotionStats(healAmount: "8d4+8", effect: "Restores 8d4+8 HP"))
+    }
+
+    /// Flavour potions — no mechanical heal (healAmount nil keeps them out of
+    /// the combat/pack "Use" heal flow), just colour for the shop shelf and
+    /// the "find" table. Not every item needs to be useful.
+    static func potionOfFireResistance() -> Item {
+        Item(id: UUID(), name: "Potion of Fire Resistance", description: "Smells of ash. Said to numb the skin against flame — untested by this party.",
+             type: .potion, weight: 1.0, value: 60,
+             weaponStats: nil, armorStats: nil,
+             potionStats: PotionStats(healAmount: nil, effect: "Reputed fire resistance (untested)"))
+    }
+
+    static func elixirOfClarity() -> Item {
+        Item(id: UUID(), name: "Elixir of Clarity", description: "A shimmering, faintly fizzing tonic. Mostly makes you feel very awake.",
+             type: .potion, weight: 1.0, value: 20,
+             weaponStats: nil, armorStats: nil,
+             potionStats: PotionStats(healAmount: nil, effect: "Feel very awake"))
+    }
+
+    static func potionOfGiantStrength() -> Item {
+        Item(id: UUID(), name: "Potion of Giant's Strength", description: "Thick as syrup and smells of the earth. Supposedly grants monstrous strength.",
+             type: .potion, weight: 1.0, value: 250,
+             weaponStats: nil, armorStats: nil,
+             potionStats: PotionStats(healAmount: nil, effect: "Reputed monstrous strength (untested)"))
     }
 
     // MARK: Misc
@@ -352,6 +479,11 @@ struct ItemCatalog {
         stock.append(shortsword())
         stock.append(mace())
         stock.append(shield())
+        stock.append(spear())
+        stock.append(sling())
+        stock.append(paddedArmor())
+        stock.append(buckler())
+        stock.append(elixirOfClarity())
 
         if level >= 2 {
             stock.append(greaterHealingPotion())
@@ -360,12 +492,26 @@ struct ItemCatalog {
             stock.append(rapier())
             stock.append(studdedLeather())
             stock.append(longbow())
+            stock.append(warhammer())
+            stock.append(battleaxe())
+            stock.append(scimitar())
+            stock.append(lightCrossbow())
+            stock.append(ringMail())
+            stock.append(potionOfFireResistance())
         }
 
         if level >= 3 {
             stock.append(greaterHealingPotion())
             stock.append(chainMail())
             stock.append(greataxe())
+            stock.append(whip())
+            stock.append(trident())
+            stock.append(potionOfGiantStrength())
+        }
+
+        if level >= 4 {
+            stock.append(superiorHealingPotion())
+            stock.append(plateArmor())
         }
 
         return stock
