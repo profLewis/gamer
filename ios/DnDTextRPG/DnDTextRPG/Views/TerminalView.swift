@@ -965,8 +965,8 @@ struct TerminalView: View {
             }
             Button(action: { gameEngine.recentreMap() }) {
                 HStack(spacing: 4) {
-                    Image(systemName: "location.fill")
-                    Text("Recentre")
+                    Image(systemName: "xmark.circle.fill")
+                    Text("Close")
                         .font(.system(size: 13 * scale, design: .monospaced))
                         .fontWeight(.semibold)
                 }
