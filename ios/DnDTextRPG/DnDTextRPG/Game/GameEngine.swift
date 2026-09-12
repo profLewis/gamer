@@ -10139,12 +10139,12 @@ class GameEngine: ObservableObject {
 
         let current = mapRadius
         let opts = [("1 Short", 1), ("2 Normal", 2), ("3 Long", 3)]
-        var menuOpts = opts.map { (label, val) -> String in
-            val == current ? "\(label) <--" : label
+        var menuOpts: [MenuOption] = opts.map { (label, val) -> MenuOption in
+            MenuOption(val == current ? "\(label) <--" : label)
         }
         let torchToggleIndex: Int? = dungeon != nil ? menuOpts.count + 1 : nil
         if dungeon != nil {
-            menuOpts.append(mapPreviewTorchOn ? "Torch Off" : "Torch On")
+            menuOpts.append(MenuOption(mapPreviewTorchOn ? "Torch Off" : "Torch On"))
         }
         // Cycles the fixed number of key slots shown in the map legend —
         // filtered to symbols actually present, but always this many rows
@@ -10153,7 +10153,7 @@ class GameEngine: ObservableObject {
         let legendSteps = [3, 6, 9, Dungeon.mapLegendEntries.count]
         let legendIndex = menuOpts.count + 1
         let legendLabel = mapLegendMaxSymbols >= Dungeon.mapLegendEntries.count ? "Legend: All" : "Legend: \(mapLegendMaxSymbols)"
-        menuOpts.append(legendLabel)
+        menuOpts.append(MenuOption(legendLabel))
 
         // The on-screen pinned map panel's own height — separate from the
         // map's content size above. "Auto" (0) fits the panel to the map +
@@ -10163,9 +10163,15 @@ class GameEngine: ObservableObject {
         let panelSteps: [CGFloat] = [0, 120, 180, 260, 340]
         let panelIndex = menuOpts.count + 1
         let panelLabel = mapPanelHeight <= 0 ? "Panel: Auto" : "Panel: \(Int(mapPanelHeight))"
-        menuOpts.append(panelLabel)
+        menuOpts.append(MenuOption(panelLabel))
 
-        showMenu(menuOpts)
+        // Standard 3-bar nav pair — this screen was missing them entirely.
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        let helpIndex = menuOpts.count
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        let backIndex = menuOpts.count
+
+        showMenuOptions(menuOpts)
 
         closeHandler = { [weak self] in self?.showGameplaySettings() }
         menuHandler = { [weak self] choice in
@@ -10187,6 +10193,10 @@ class GameEngine: ObservableObject {
                 self.mapPanelHeight = panelSteps[(currentIdx + 1) % panelSteps.count]
                 self.recordSettingChange(screen: "s:gameplay", key: "map_panel_height", name: "Map Panel")
                 self.showMapRadiusMenu()
+            } else if choice == helpIndex {
+                self.showGameplaySettingsHelp()
+            } else if choice == backIndex {
+                self.showGameplaySettings()
             }
         }
     }
@@ -15359,7 +15369,12 @@ class GameEngine: ObservableObject {
         // own narrower column (map | icons | text), so widens more modestly
         // to avoid overflowing that column.
         let horizontalRadius = isLandscapeOrientation ? min(mapRadius + 1, 4) : min(mapRadius + 2, 5)
-        return (horizontalRadius, mapRadius, mapRadius > 1)
+        // Key/legend always hidden on the small pinned map, regardless of
+        // Map Length — it used to only hide once Length went above 1, so the
+        // default (1) showed a key most players never saw once they'd
+        // turned it up. The full key is still available in the expanded map
+        // overlay (long-press the map), which doesn't go through here.
+        return (horizontalRadius, mapRadius, true)
     }
 
     /// Redraws the full exploration screen: map + room description + party + menu
