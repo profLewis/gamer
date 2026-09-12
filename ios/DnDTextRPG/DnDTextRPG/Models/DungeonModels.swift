@@ -202,6 +202,12 @@ class Room: Identifiable, ObservableObject, Codable {
     /// paired room at verticalDestinationRoomId always gets the opposite
     /// direction, so travelling it and coming back flips consistently.
     @Published var verticalDirection: String? = nil
+    /// For a "rope" verticalMethod only — the name of the room a Rope item
+    /// was guaranteed-placed in when this connection was generated, so a
+    /// party without one can be told exactly where to look instead of just
+    /// "you need a rope". nil for stairs (needs nothing) and for any older
+    /// save predating this hint.
+    @Published var verticalRopeHintRoomName: String? = nil
     /// Wall-mounted torches keep this passage lit on their own — its
     /// description, exits, and contents are visible even with no torch of
     /// your own (see GameEngine's roomIsLit), and searching it always
@@ -215,7 +221,7 @@ class Room: Identifiable, ObservableObject, Codable {
         case hiddenItems, hiddenGold, droppedItems, npc, secured, merchant, trainer
         case riddleIndex, riddleResolved, doorLockIds, openedLocks
         case teleportDestinationRoomId
-        case verticalDestinationRoomId, verticalMethod, verticalDirection
+        case verticalDestinationRoomId, verticalMethod, verticalDirection, verticalRopeHintRoomName
         case isTorchlit
     }
 
@@ -249,6 +255,7 @@ class Room: Identifiable, ObservableObject, Codable {
         self.verticalDestinationRoomId = nil
         self.verticalMethod = nil
         self.verticalDirection = nil
+        self.verticalRopeHintRoomName = nil
         self.isTorchlit = false
     }
 
@@ -285,6 +292,7 @@ class Room: Identifiable, ObservableObject, Codable {
         verticalDestinationRoomId = try container.decodeIfPresent(Int.self, forKey: .verticalDestinationRoomId)
         verticalMethod = try container.decodeIfPresent(String.self, forKey: .verticalMethod)
         verticalDirection = try container.decodeIfPresent(String.self, forKey: .verticalDirection)
+        verticalRopeHintRoomName = try container.decodeIfPresent(String.self, forKey: .verticalRopeHintRoomName)
         isTorchlit = try container.decodeIfPresent(Bool.self, forKey: .isTorchlit) ?? false
     }
 
@@ -319,6 +327,7 @@ class Room: Identifiable, ObservableObject, Codable {
         try container.encodeIfPresent(verticalDestinationRoomId, forKey: .verticalDestinationRoomId)
         try container.encodeIfPresent(verticalMethod, forKey: .verticalMethod)
         try container.encodeIfPresent(verticalDirection, forKey: .verticalDirection)
+        try container.encodeIfPresent(verticalRopeHintRoomName, forKey: .verticalRopeHintRoomName)
         try container.encode(isTorchlit, forKey: .isTorchlit)
     }
 
@@ -837,7 +846,11 @@ class Dungeon: ObservableObject, Codable {
                 }
                 guard let roomB = farEnough.randomElement() else { continue }
 
-                let method = ["stairs", "rope", "levitation"].randomElement()!
+                // Just two methods, never mixed on the same connection —
+                // stairs are free and always usable both ways; rope needs
+                // an actual Rope item to climb UP (going down, you can
+                // always just jump and risk a landing injury instead).
+                let method = ["stairs", "rope"].randomElement()!
                 let aGoesDown = Bool.random()
                 roomA.verticalDestinationRoomId = roomB.id
                 roomA.verticalMethod = method
@@ -845,6 +858,22 @@ class Dungeon: ObservableObject, Codable {
                 roomB.verticalDestinationRoomId = roomA.id
                 roomB.verticalMethod = method
                 roomB.verticalDirection = aGoesDown ? "up" : "down"
+
+                // A rope connection needs an actual findable rope somewhere
+                // in the dungeon, or climbing up would be a dead end with
+                // no way to know where to look — guarantee one and remember
+                // the room's name so both ends can point the player at it.
+                if method == "rope" {
+                    let ropeCandidates = rooms.values.filter {
+                        $0.id != roomA.id && $0.id != roomB.id
+                            && $0.roomType != .entrance && $0.roomType != .boss
+                    }
+                    if let ropeRoom = ropeCandidates.randomElement() ?? rooms.values.first(where: { $0.roomType != .entrance }) {
+                        ropeRoom.hiddenItems.append(ItemCatalog.rope())
+                        roomA.verticalRopeHintRoomName = ropeRoom.name
+                        roomB.verticalRopeHintRoomName = ropeRoom.name
+                    }
+                }
 
                 usedForVertical.insert(roomA.id)
                 usedForVertical.insert(roomB.id)

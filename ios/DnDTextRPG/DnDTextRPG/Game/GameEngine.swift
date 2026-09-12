@@ -15533,23 +15533,39 @@ class GameEngine: ObservableObject {
         if let vMethod = room.verticalMethod, let vDestId = room.verticalDestinationRoomId,
            let vDestRoom = dungeon.rooms[vDestId], (room.cleared || room.encounter == nil) {
             let goingDown = room.verticalDirection == "down"
+            let hasRope = party.flatMap { $0.inventory }.contains { $0.name.hasPrefix("Rope") }
             let label: String
             let met: Bool
             switch vMethod {
             case "stairs":
+                // Always usable either way — no risk, no gear needed.
                 label = goingDown ? "Descend the Stairs" : "Climb the Stairs"
                 met = true
             case "rope":
-                label = goingDown ? "Climb Down the Rope" : "Climb Up the Rope"
-                met = party.flatMap { $0.inventory }.contains { $0.name.hasPrefix("Rope") }
-            default: // "levitation"
+                if goingDown {
+                    // Going down never truly needs a rope — you can always
+                    // jump, just at the cost of a landing injury without one.
+                    label = hasRope ? "Climb Down the Rope" : "Jump Down (risk injury)"
+                    met = true
+                } else {
+                    // Climbing UP a rope-only connection genuinely needs the
+                    // rope in hand — no free equivalent going this direction.
+                    label = "Climb Up the Rope"
+                    met = hasRope
+                    if !met, let hintRoom = room.verticalRopeHintRoomName {
+                        print("  You'll need rope to climb up here. Try the \(hintRoom).", color: .yellow)
+                    } else if !met {
+                        print("  You'll need rope to climb up here.", color: .yellow)
+                    }
+                }
+            default: // "levitation" — legacy method from older saves; no longer generated
                 label = goingDown ? "Levitate Down" : "Levitate Up"
                 met = party.contains { $0.spellSlots.level1Current > 0 || $0.spellSlots.level2Current > 0 }
             }
             menuOpts.append(MenuOption(label, isDisabled: !met))
             actions.append { [weak self] in
                 guard let self = self, self.roomIsLit, met else { return }
-                self.useVerticalConnection(method: vMethod, from: room, to: vDestRoom)
+                self.useVerticalConnection(method: vMethod, from: room, to: vDestRoom, tookInjuryRisk: vMethod == "rope" && goingDown && !hasRope)
             }
         }
 
@@ -16047,7 +16063,7 @@ class GameEngine: ObservableObject {
     /// magic. Requirements (rope carried / spell slot available) are
     /// checked by the caller before this is ever invoked — see the
     /// "Take the Stairs"/"Climb the Rope"/"Levitate" menu option above.
-    private func useVerticalConnection(method: String, from room: Room, to destination: Room) {
+    private func useVerticalConnection(method: String, from room: Room, to destination: Room, tookInjuryRisk: Bool = false) {
         guard let dungeon = dungeon else { return }
         dungeon.currentRoomId = destination.id
         let goingDown = room.verticalDirection == "down"
@@ -16059,8 +16075,23 @@ class GameEngine: ObservableObject {
         let dirWord = goingDown ? "down" : "up"
         switch method {
         case "rope":
-            explorationStatusMessage = ("You climb \(dirWord) the rope through the hole to Floor \(dungeon.currentFloor)...", .cyan)
-            logEvent("Climbed via rope \(dirWord) from \(room.name) to \(destination.name) (Floor \(dungeon.currentFloor))", category: "EXPLORE")
+            if tookInjuryRisk {
+                // Jumping down without a rope — no roll needed to succeed
+                // (you always make it down), just a real chance of a bruising
+                // landing, unlike the safe roped climb.
+                if Int.random(in: 1...100) <= 40, let unlucky = party.filter({ $0.isConscious }).randomElement() {
+                    let injury = Dice.roll(6)
+                    unlucky.currentHP = max(1, unlucky.currentHP - injury)
+                    explorationStatusMessage = ("You jump down to Floor \(dungeon.currentFloor) — \(unlucky.name) lands wrong! (-\(injury) HP)", .red)
+                    logEvent("\(unlucky.name) was hurt jumping down without a rope (-\(injury) HP)", category: "EXPLORE")
+                } else {
+                    explorationStatusMessage = ("You jump down to Floor \(dungeon.currentFloor), landing hard but unhurt.", .yellow)
+                }
+                logEvent("Jumped down without a rope from \(room.name) to \(destination.name) (Floor \(dungeon.currentFloor))", category: "EXPLORE")
+            } else {
+                explorationStatusMessage = ("You climb \(dirWord) the rope through the hole to Floor \(dungeon.currentFloor)...", .cyan)
+                logEvent("Climbed via rope \(dirWord) from \(room.name) to \(destination.name) (Floor \(dungeon.currentFloor))", category: "EXPLORE")
+            }
         case "levitation":
             // Spend a slot from whichever caster has one — this is what
             // "casts" the levitation, not a specific known spell (the
