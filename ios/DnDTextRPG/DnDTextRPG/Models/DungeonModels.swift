@@ -1036,7 +1036,7 @@ class Dungeon: ObservableObject, Codable {
         return headerLines + gridLines + hereLine + legendLines
     }
 
-    func getMapDisplay(visibilityRadius: Int = 3, torchLit: Bool = true, compact: Bool = false, verticalRadius: Int? = nil, legendMaxSymbols: Int = mapLegendEntries.count) -> [String] {
+    func getMapDisplay(visibilityRadius: Int = 3, torchLit: Bool = true, compact: Bool = false, verticalRadius: Int? = nil, legendMaxSymbols: Int = mapLegendEntries.count, hasTrapSense: Bool = false) -> [String] {
         guard let current = rooms[currentRoomId] else { return ["No map available."] }
 
         // Torch off: no direction info — you can't see the passages. Sized
@@ -1123,6 +1123,19 @@ class Dungeon: ObservableObject, Codable {
         let gridSlack = max(0, border.count - naturalContentWidth)
         let gridLeadPad = String(repeating: " ", count: gridSlack / 2)
 
+        // A trap room's own symbol ("!") would otherwise show up on the map
+        // the instant it's merely seen — before the trap has actually gone
+        // off, and whether or not anyone in the party could plausibly have
+        // noticed it. Disguised as an ordinary empty room until either the
+        // trap has actually been triggered, or the party has a character
+        // skilled enough to sense it (Perception proficiency).
+        func effectiveSymbol(for room: Room, hasTrapSense: Bool) -> String {
+            guard room.roomType == .trap, !room.trapTriggered, !hasTrapSense else {
+                return room.roomType.symbol
+            }
+            return RoomType.empty.symbol
+        }
+
         // Corridors are only ever drawn once, from whichever side happens to
         // iterate first — the room being drawn's own east/south exits. A
         // north/west exit is only ever drawn as part of THAT neighbor's own
@@ -1162,7 +1175,7 @@ class Dungeon: ObservableObject, Codable {
                         // and doubling it up for "NPC here" read as confusing.
                         roomRow += "[N]"
                     } else {
-                        roomRow += "[\(room.roomType.symbol)]"
+                        roomRow += "[\(effectiveSymbol(for: room, hasTrapSense: hasTrapSense))]"
                     }
 
                     // East corridor (XX = secured/barred, KK = locked door)
@@ -1256,8 +1269,11 @@ class Dungeon: ObservableObject, Codable {
         // which already shows [M] instead of [S]/[A] for the same reason.
         if current.merchant != nil {
             hereSymbols.append(("M", "Merchant"))
-        } else if let label = hereLabels[current.roomType.symbol] {
-            hereSymbols.append((current.roomType.symbol, label))
+        } else {
+            let currentSymbol = effectiveSymbol(for: current, hasTrapSense: hasTrapSense)
+            if let label = hereLabels[currentSymbol] {
+                hereSymbols.append((currentSymbol, label))
+            }
         }
         // Only worth flagging when it's actually doing something — if the
         // party's own torch is already lit, wall-mounted torches are redundant info.
@@ -1285,7 +1301,7 @@ class Dungeon: ObservableObject, Codable {
                 // line above for why.
                 visibleSymbols.insert("M")
             } else {
-                visibleSymbols.insert(room.roomType.symbol)
+                visibleSymbols.insert(effectiveSymbol(for: room, hasTrapSense: hasTrapSense))
             }
             if room.trainer != nil { visibleSymbols.insert("G") }
         }

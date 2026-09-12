@@ -2310,7 +2310,7 @@ class GameEngine: ObservableObject {
     func printExplorationMap() {
         guard let dungeon = dungeon else { return }
         let (radius, verticalRadius, compact) = bestMapRadius()
-        let mapLines = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: verticalRadius, legendMaxSymbols: mapLegendMaxSymbols)
+        let mapLines = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: verticalRadius, legendMaxSymbols: mapLegendMaxSymbols, hasTrapSense: partyHasTrapSense)
         printMap(mapLines, color: torchMapColor, size: mapFontSize)
     }
 
@@ -6581,6 +6581,13 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Whether anyone in the party is skilled enough to sense a trap room
+    /// on the map before it's actually gone off — see
+    /// Dungeon.getMapDisplay's hasTrapSense parameter.
+    var partyHasTrapSense: Bool {
+        party.contains { $0.skillProficiencies.contains(.perception) }
+    }
+
     private func autosaveIfNeeded() {
         let interval = autosaveInterval
         guard interval != .off, dungeon != nil else { return }
@@ -9867,7 +9874,7 @@ class GameEngine: ObservableObject {
         if let dungeon = dungeon {
             let previewLabel = mapPreviewTorchOn ? "TORCH ON" : "TORCH OFF"
             print("  PREVIEW (\(previewLabel)):", color: .cyan, bold: true)
-            let previewMap = dungeon.getMapDisplay(visibilityRadius: mapRadius, torchLit: mapPreviewTorchOn, legendMaxSymbols: mapLegendMaxSymbols)
+            let previewMap = dungeon.getMapDisplay(visibilityRadius: mapRadius, torchLit: mapPreviewTorchOn, legendMaxSymbols: mapLegendMaxSymbols, hasTrapSense: partyHasTrapSense)
             printLines(previewMap, color: mapPreviewTorchOn ? .dimGreen : .red, size: mapFontSize)
             print("")
         }
@@ -15172,7 +15179,7 @@ class GameEngine: ObservableObject {
 
         // Dynamically size the map to fill screen without scrolling
         let (radius, verticalRadius, compact) = bestMapRadius()
-        let mapLines = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: verticalRadius, legendMaxSymbols: mapLegendMaxSymbols)
+        let mapLines = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: verticalRadius, legendMaxSymbols: mapLegendMaxSymbols, hasTrapSense: partyHasTrapSense)
         printMap(mapLines, color: torchMapColor, size: mapFontSize)
         if !torchLit {
             if partyHasTorch() {
@@ -16362,7 +16369,7 @@ class GameEngine: ObservableObject {
 
         // Same layout as exploration view — map, room info, party status
         let (radius, verticalRadius, compact) = bestMapRadius()
-        let mapLines = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: verticalRadius, legendMaxSymbols: mapLegendMaxSymbols)
+        let mapLines = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: verticalRadius, legendMaxSymbols: mapLegendMaxSymbols, hasTrapSense: partyHasTrapSense)
         printMap(mapLines, color: torchMapColor, size: mapFontSize)
         if !torchLit {
             if partyHasTorch() {
@@ -28321,7 +28328,7 @@ class GameEngine: ObservableObject {
             print("")
 
             // Show map for spatial context
-            let mapLines = state.dungeon.getMapDisplay(visibilityRadius: state.torchLit ? mapRadius : 0, torchLit: state.torchLit, legendMaxSymbols: mapLegendMaxSymbols)
+            let mapLines = state.dungeon.getMapDisplay(visibilityRadius: state.torchLit ? mapRadius : 0, torchLit: state.torchLit, legendMaxSymbols: mapLegendMaxSymbols, hasTrapSense: partyHasTrapSense)
             printMap(mapLines, color: state.torchLit ? .brightGreen : .gray, size: mapFontSize)
             print("")
 
@@ -28378,7 +28385,7 @@ class GameEngine: ObservableObject {
             // Exploration catch-up
 
             // Show map
-            let mapLines = state.dungeon.getMapDisplay(visibilityRadius: state.torchLit ? mapRadius : 0, torchLit: state.torchLit, legendMaxSymbols: mapLegendMaxSymbols)
+            let mapLines = state.dungeon.getMapDisplay(visibilityRadius: state.torchLit ? mapRadius : 0, torchLit: state.torchLit, legendMaxSymbols: mapLegendMaxSymbols, hasTrapSense: partyHasTrapSense)
             printMap(mapLines, color: state.torchLit ? .brightGreen : .gray, size: mapFontSize)
             print("")
 
@@ -28986,7 +28993,7 @@ class GameEngine: ObservableObject {
 
                     // Always show map for spatial context
                     if let dungeon = self.dungeon {
-                        let mapLines = dungeon.getMapDisplay(visibilityRadius: self.effectiveMapRadius(), torchLit: self.torchLit, legendMaxSymbols: self.mapLegendMaxSymbols)
+                        let mapLines = dungeon.getMapDisplay(visibilityRadius: self.effectiveMapRadius(), torchLit: self.torchLit, legendMaxSymbols: self.mapLegendMaxSymbols, hasTrapSense: self.partyHasTrapSense)
                         printMap(mapLines, color: self.torchMapColor, size: self.mapFontSize)
                         print("")
                     }
@@ -29099,7 +29106,7 @@ class GameEngine: ObservableObject {
 
         // Always show map
         if let dungeon = self.dungeon {
-            let mapLines = dungeon.getMapDisplay(visibilityRadius: effectiveMapRadius(), torchLit: torchLit, legendMaxSymbols: mapLegendMaxSymbols)
+            let mapLines = dungeon.getMapDisplay(visibilityRadius: effectiveMapRadius(), torchLit: torchLit, legendMaxSymbols: mapLegendMaxSymbols, hasTrapSense: partyHasTrapSense)
             printMap(mapLines, color: torchMapColor, size: mapFontSize)
             print("")
         }
@@ -29254,7 +29261,7 @@ class GameEngine: ObservableObject {
 
                     // Show map
                     if let dungeon = self.dungeon {
-                        let mapLines = dungeon.getMapDisplay(visibilityRadius: self.effectiveMapRadius(), torchLit: freshState.torchLit, legendMaxSymbols: self.mapLegendMaxSymbols)
+                        let mapLines = dungeon.getMapDisplay(visibilityRadius: self.effectiveMapRadius(), torchLit: freshState.torchLit, legendMaxSymbols: self.mapLegendMaxSymbols, hasTrapSense: self.partyHasTrapSense)
                         printMap(mapLines, color: freshState.torchLit ? .brightGreen : .gray, size: self.mapFontSize)
                         print("")
                     }
@@ -29793,7 +29800,7 @@ class GameEngine: ObservableObject {
                                  "display map", "look at map", "open map"]
             if mapWords.contains(lower) || (lower.contains("show") && lower.contains("map")) {
                 if let dungeon = self.dungeon {
-                    let mapLines = dungeon.getMapDisplay(visibilityRadius: self.effectiveMapRadius(), torchLit: self.torchLit, legendMaxSymbols: self.mapLegendMaxSymbols)
+                    let mapLines = dungeon.getMapDisplay(visibilityRadius: self.effectiveMapRadius(), torchLit: self.torchLit, legendMaxSymbols: self.mapLegendMaxSymbols, hasTrapSense: self.partyHasTrapSense)
                     let roomName = dungeon.currentRoom?.name ?? "the dungeon"
                     let exits = dungeon.currentRoom?.exits.keys.map { $0.rawValue }.joined(separator: ", ") ?? ""
                     self.clearTerminal()
