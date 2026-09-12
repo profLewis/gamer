@@ -235,6 +235,14 @@ class Room: Identifiable, ObservableObject, Codable {
     /// turns up spare torches to take. Only ever set on .corridor rooms
     /// (see Dungeon.generateDungeon()'s room creation).
     @Published var isTorchlit: Bool = false
+    /// Whether Dungeon.expandIfNeeded(from:) has already made its one-time
+    /// decision for every direction this room didn't already have an exit
+    /// in. Without this, expandIfNeeded re-rolled its 60% chance for any
+    /// still-missing direction on EVERY visit, so a room could genuinely
+    /// grow a new exit on a later revisit that simply wasn't there the
+    /// first time — the map must be fixed once a room has been considered,
+    /// not still being decided fresh each time the player walks back in.
+    @Published var expansionConsidered: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case id, x, y, roomType, name, roomDescription, exits, visited, cleared
@@ -244,7 +252,7 @@ class Room: Identifiable, ObservableObject, Codable {
         case riddleIndex, riddleResolved, doorLockIds, openedLocks
         case teleportDestinationRoomId
         case verticalDestinationRoomId, verticalMethod, verticalDirection, verticalRopeHintRoomName
-        case isTorchlit
+        case isTorchlit, expansionConsidered
     }
 
     init(id: Int, x: Int, y: Int, type: RoomType) {
@@ -281,6 +289,7 @@ class Room: Identifiable, ObservableObject, Codable {
         self.verticalDirection = nil
         self.verticalRopeHintRoomName = nil
         self.isTorchlit = false
+        self.expansionConsidered = false
     }
 
     required init(from decoder: Decoder) throws {
@@ -320,6 +329,7 @@ class Room: Identifiable, ObservableObject, Codable {
         verticalDirection = try container.decodeIfPresent(String.self, forKey: .verticalDirection)
         verticalRopeHintRoomName = try container.decodeIfPresent(String.self, forKey: .verticalRopeHintRoomName)
         isTorchlit = try container.decodeIfPresent(Bool.self, forKey: .isTorchlit) ?? false
+        expansionConsidered = try container.decodeIfPresent(Bool.self, forKey: .expansionConsidered) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -357,6 +367,7 @@ class Room: Identifiable, ObservableObject, Codable {
         try container.encodeIfPresent(verticalDirection, forKey: .verticalDirection)
         try container.encodeIfPresent(verticalRopeHintRoomName, forKey: .verticalRopeHintRoomName)
         try container.encode(isTorchlit, forKey: .isTorchlit)
+        try container.encode(expansionConsidered, forKey: .expansionConsidered)
     }
 
     static func generateName(for type: RoomType) -> String {
@@ -971,7 +982,18 @@ class Dungeon: ObservableObject, Codable {
 
     /// Expand the dungeon by adding new rooms around the given room.
     /// Called when the player enters a room near the edge of the map.
+    ///
+    /// Only ever does this ONCE per room (see Room.expansionConsidered) —
+    /// it used to re-roll its 60% chance for any still-missing direction on
+    /// EVERY visit, so a room whose open direction happened to roll "no
+    /// room here" on the first visit could still spawn a brand new exit on
+    /// a later revisit, purely because the dice got rolled again. The map
+    /// must be fixed the moment a room has been fully considered once, not
+    /// still being decided fresh each time the player walks back in.
     func expandIfNeeded(from room: Room) {
+        guard !room.expansionConsidered else { return }
+        defer { room.expansionConsidered = true }
+
         // Only expand from rooms that have open adjacent cells
         let occupied = Set(rooms.values.map { "\($0.x),\($0.y)" })
 

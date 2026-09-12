@@ -5022,6 +5022,8 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped("Use @ to address party members (e.g. '@Thorin heal me') or speak to the DM directly. The DM responds in character and may take game actions.", indent: 2)
         print("")
+        printWrapped("If the DM or an NPC seems to ignore what you asked, don't assume it's broken — try asking again, maybe worded differently. Not every response lands the first time.", indent: 2, color: .dimGreen)
+        print("")
         print("  Shortcuts in chat:", color: .dimGreen)
         print("    'i' = open inventory", color: .dimGreen)
         print("    'map' = show dungeon map", color: .dimGreen)
@@ -15430,6 +15432,9 @@ class GameEngine: ObservableObject {
             self.print("")
             self.print("  ASK FOR A QUEST", color: .cyan, bold: true)
             self.printWrapped("Some NPCs have a task for you — only one quest can be active at a time. Check progress any time on the Party Status screen.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  IF THEY SEEM TO IGNORE YOU", color: .cyan, bold: true)
+            self.printWrapped("Don't assume something's broken — try asking again, maybe worded differently. Not every question lands the first time.", indent: 2, color: .dimGreen)
             self.print("")
         }
     }
