@@ -27293,6 +27293,18 @@ class GameEngine: ObservableObject {
         case orphanHof(HallOfFameEntry)
     }
 
+    /// Approximate monospace column width of a string, for budgeting how
+    /// much text fits in a button label. Plain `.count` (grapheme clusters)
+    /// undercounts emoji — most (e.g. the "⭐" some seed save names start
+    /// with) render about twice as wide as a regular character in a
+    /// monospaced font, so a budget based on `.count` alone let text that
+    /// technically "fit" actually overflow its button's box.
+    private func displayWidth(_ s: String) -> Int {
+        s.reduce(0) { total, char in
+            total + (char.unicodeScalars.contains(where: { $0.properties.isEmojiPresentation }) ? 2 : 1)
+        }
+    }
+
     private func showLoadGameMenu(returnTo origin: LoadGameOrigin) {
         clearTerminal()
         printTitle("Continue Adventure")
@@ -27425,10 +27437,10 @@ class GameEngine: ObservableObject {
                 let charName = parts.first ?? slot.slotName
                 let location = save.dungeonName
                 let maxLen = 20
-                if charName.count + location.count + 3 <= maxLen {
+                if displayWidth(charName) + displayWidth(location) + 3 <= maxLen {
                     options.append("\(charName) · \(location)")
                 } else {
-                    let locBudget = max(4, maxLen - charName.count - 3)
+                    let locBudget = max(4, maxLen - displayWidth(charName) - 3)
                     options.append("\(charName) · \(location.prefix(locBudget))")
                 }
 
@@ -27450,10 +27462,10 @@ class GameEngine: ObservableObject {
                 let charName = entry.partyNames.first ?? "Hero"
                 let location = entry.dungeonName
                 let maxLen = 20
-                if charName.count + location.count + 3 <= maxLen {
+                if displayWidth(charName) + displayWidth(location) + 3 <= maxLen {
                     options.append("\(charName) · \(location)")
                 } else {
-                    let locBudget = max(4, maxLen - charName.count - 3)
+                    let locBudget = max(4, maxLen - displayWidth(charName) - 3)
                     options.append("\(charName) · \(location.prefix(locBudget))")
                 }
             }
