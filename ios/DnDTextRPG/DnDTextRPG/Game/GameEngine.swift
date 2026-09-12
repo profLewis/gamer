@@ -16016,17 +16016,19 @@ class GameEngine: ObservableObject {
 
         SoundManager.shared.playDeath()
 
-        // Thieves' Tools give the party a chance to disarm the trap entirely.
-        let hasThievesTools = party.contains { char in char.inventory.contains { $0.name == "Thieves' Tools" } }
+        // Thieves' Tools give the party a chance to disarm the trap entirely
+        // — credited to whichever tool-owner actually rolls the check (not
+        // just "the party"), so it's clear who to thank (or blame).
+        let toolOwners = party.filter { char in char.inventory.contains { $0.name == "Thieves' Tools" } }
         var disarmed = false
-        if hasThievesTools {
-            let bestTools = party.map { $0.skillModifier(for: .sleightOfHand) }.max() ?? 0
+        if let user = toolOwners.max(by: { $0.skillModifier(for: .sleightOfHand) < $1.skillModifier(for: .sleightOfHand) }) {
+            let modifier = user.skillModifier(for: .sleightOfHand)
             let roll = Dice.d20()
-            if roll + bestTools >= 14 {
+            if roll + modifier >= 14 {
                 disarmed = true
-                print("  Your Thieves' Tools make quick work of it — \(trap.name) disarmed! No damage taken.", color: .brightGreen)
+                print("  \(user.name)'s Thieves' Tools make quick work of it — \(trap.name) disarmed! No damage taken.", color: .brightGreen)
             } else {
-                print("  You try to disarm it with your Thieves' Tools, but fumble — \(trap.name) triggers anyway!", color: .yellow)
+                print("  \(user.name) tries to disarm it with their Thieves' Tools, but fumbles — \(trap.name) triggers anyway!", color: .yellow)
             }
         }
 
@@ -16038,9 +16040,10 @@ class GameEngine: ObservableObject {
         }
 
         if disarmed {
+            let userName = toolOwners.max(by: { $0.skillModifier(for: .sleightOfHand) < $1.skillModifier(for: .sleightOfHand) })?.name ?? "The party"
             print("")
-            logEvent("Trap: \(trap.name) disarmed with Thieves' Tools", category: "TRAP")
-            logMultiplayerAction("Disarmed \(trap.name) with Thieves' Tools — no damage")
+            logEvent("Trap: \(trap.name) disarmed by \(userName) with Thieves' Tools", category: "TRAP")
+            logMultiplayerAction("\(userName) disarmed \(trap.name) with Thieves' Tools — no damage")
             waitForContinue()
             inputHandler = { [weak self] _ in
                 self?.showExplorationView()
