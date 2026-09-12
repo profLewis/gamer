@@ -76,17 +76,16 @@ private struct ScreenSnapshot {
 class GameEngine: ObservableObject {
     // MARK: - Published Properties
 
-    /// Recently-left screens, most recent last — see ScreenSnapshot. Capped
-    /// so a very long session doesn't grow this unbounded. "Fwd >" pops and
-    /// restores the last entry; it's a simple "jump back to where I just
-    /// was" stack, not full bidirectional history with a position pointer
-    /// (this app's ~200+ "< Back" buttons are independent closures, not a
-    /// central router, so there's no clean way to tell a back-navigation
-    /// apart from any other screen change at the one shared choke point,
-    /// clearTerminal() — a plain LIFO "recently visited" cache covers the
-    /// same practical need without requiring that distinction).
+    /// Screens left via an actual "< Back"/"<<" tap, most recent last — see
+    /// ScreenSnapshot. "Fwd >" pops and restores the last entry, undoing
+    /// that Back tap. Populated only when justNavigatedBack is true at the
+    /// next clearTerminal() (set in handleMenuChoice, only for a tap whose
+    /// text is "< Back"/"<<") and wiped by ANY other kind of screen change
+    /// (see clearTerminal()) — so "Fwd >" only ever shows up right after
+    /// using Back, not as a general "recently visited" cache.
     private var navigationHistory: [ScreenSnapshot] = []
     private static let maxNavigationHistory = 30
+    private var justNavigatedBack: Bool = false
 
     @Published var terminalLines: [TerminalLine] = []
     /// The dungeon map, when one is showing — kept separate from
@@ -1061,15 +1060,24 @@ class GameEngine: ObservableObject {
     }
 
     func clearTerminal() {
-        // Cache the screen we're leaving (for "Fwd >") before wiping it —
-        // only once something real has actually been shown (an empty
-        // snapshot from, e.g., back-to-back clears would just be noise a
-        // "Fwd >" tap could jump to and find nothing on screen).
-        if !terminalLines.isEmpty || !currentMenuOptions.isEmpty {
-            navigationHistory.append(captureScreenSnapshot())
-            if navigationHistory.count > Self.maxNavigationHistory {
-                navigationHistory.removeFirst()
+        // "Fwd >" is an undo of the "< Back" that's about to happen, not a
+        // general "recently visited" cache — only actually useful right
+        // after a real Back tap. justNavigatedBack (set in handleMenuChoice,
+        // only for a tap on "< Back"/"<<") tells us whether THIS transition
+        // is that: if so, cache the screen we're leaving so "Fwd >" can
+        // return to it; otherwise this is an ordinary forward move, which
+        // invalidates any pending "Fwd >" the same way a browser's forward
+        // history clears once you navigate somewhere new after going back.
+        if justNavigatedBack {
+            if !terminalLines.isEmpty || !currentMenuOptions.isEmpty {
+                navigationHistory.append(captureScreenSnapshot())
+                if navigationHistory.count > Self.maxNavigationHistory {
+                    navigationHistory.removeFirst()
+                }
             }
+            justNavigatedBack = false
+        } else {
+            navigationHistory.removeAll()
         }
         // Bumped once per call, captured by each watchdog below as
         // myGeneration. THE REAL BUG (found after extensive investigation
@@ -2331,6 +2339,14 @@ class GameEngine: ObservableObject {
             goForwardInHistory()
             return
         }
+
+        // Marks the NEXT clearTerminal() (whichever screen this tap leads
+        // to) as a genuine Back navigation — see justNavigatedBack/
+        // navigationHistory. Any other tap here means a normal forward
+        // move, invalidating "Fwd >" for the same reason a browser's
+        // forward history clears once you go somewhere new.
+        let tappedText = currentMenuOptions[choice - 1].text
+        justNavigatedBack = (tappedText == "< Back" || tappedText == "<<")
 
         // Flash the title text as visual feedback on every button press
         flashTitle()
