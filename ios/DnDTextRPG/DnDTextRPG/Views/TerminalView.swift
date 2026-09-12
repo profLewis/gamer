@@ -259,25 +259,17 @@ struct TerminalView: View {
                                             .onTapGesture {
                                                 gameEngine.textLongPressHandler?(index)
                                             }
-                                    } else if gameEngine.swipeLeftHandler != nil {
-                                        // Card mode — tap anywhere on card advances to next
+                                    } else if gameEngine.swipeLeftHandler != nil || gameEngine.awaitingContinue {
+                                        // Card mode / "Press to continue" screens (victory/level-up/
+                                        // defeat/combat reports/etc.) — advancing used to be a tap
+                                        // ANYWHERE on the line, full width, which made it impossible to
+                                        // scroll back up to reread a combat report: any tap meant to
+                                        // start a scroll just advanced instead. The tap-to-advance zone
+                                        // now lives only in a strip on the right edge (see the
+                                        // tapToAdvanceStrip overlay below) — everywhere else is free for
+                                        // ordinary scroll drags.
                                         TerminalLineView(line: line, scale: scale)
                                             .id(line.id)
-                                            .contentShape(Rectangle())
-                                            .onTapGesture {
-                                                gameEngine.swipeLeftHandler?()
-                                            }
-                                    } else if gameEngine.awaitingContinue {
-                                        // "Press to continue" screens (victory/level-up/defeat/etc.) — the
-                                        // corner X icon shows closeHandler (abandon) instead of this whenever
-                                        // closeHandler is set, which leaves touch users with no visible way
-                                        // to advance. Tap-anywhere is the reliable fallback.
-                                        TerminalLineView(line: line, scale: scale)
-                                            .id(line.id)
-                                            .contentShape(Rectangle())
-                                            .onTapGesture {
-                                                gameEngine.handleContinue()
-                                            }
                                     } else {
                                         TerminalLineView(line: line, scale: scale)
                                             .id(line.id)
@@ -413,6 +405,7 @@ struct TerminalView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .background(terminalBackground)
+                    .overlay(alignment: .trailing) { tapToAdvanceStrip }
                     #if !os(tvOS)
                     // tvOS has no touch/swipe input (remote + focus engine
                     // instead) — swipe-left/right card navigation doesn't apply.
@@ -958,6 +951,36 @@ struct TerminalView: View {
                         .transition(.move(edge: .bottom))
                     }
                     #endif
+    }
+
+    /// Tap-to-advance zone for card mode / "Press to continue" screens
+    /// (victory, level-up, combat reports...) — a narrow strip on the right
+    /// edge instead of the whole line being tappable, so the rest of the
+    /// text stays free for ordinary scroll drags (a full-width tap target
+    /// made it impossible to scroll up mid-combat to reread a report: any
+    /// tap meant to start a scroll just advanced to the next screen
+    /// instead). A faint chevron marks it as tappable without being
+    /// visually loud.
+    @ViewBuilder
+    private var tapToAdvanceStrip: some View {
+        if gameEngine.swipeLeftHandler != nil || gameEngine.awaitingContinue {
+            VStack {
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13 * scale))
+                    .foregroundColor(terminalGreen.opacity(0.35))
+                Spacer()
+            }
+            .frame(width: 44)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if gameEngine.swipeLeftHandler != nil {
+                    gameEngine.swipeLeftHandler?()
+                } else {
+                    gameEngine.handleContinue()
+                }
+            }
+        }
     }
 
     /// Easter egg: the whole explored floor, pannable in both directions,
