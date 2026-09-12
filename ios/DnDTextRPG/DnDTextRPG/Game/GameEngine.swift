@@ -24736,6 +24736,17 @@ class GameEngine: ObservableObject {
             }
         }
 
+        // Use Potion — drink or administer a healing potion (or antidote) to
+        // yourself or any ally. Takes the whole turn, same as Cast Spell.
+        // Only offered when this character is actually carrying something
+        // usable — a Whetstone alone doesn't count, that's not a heal.
+        if character.inventory.contains(where: { $0.potionStats?.healAmount != nil || $0.name.lowercased().contains("antidote") }) {
+            options.append("Use Potion")
+            actions.append { [weak self] in
+                self?.showCombatUsePotionMenu(characterId: characterId)
+            }
+        }
+
         // Fighter: Second Wind
         if character.characterClass == .fighter && !character.secondWindUsed {
             options.append("Second Wind")
@@ -24784,21 +24795,99 @@ class GameEngine: ObservableObject {
             self?.attemptRunAway()
         }
 
-        // Help
-        options.append("?")
-        actions.append { [weak self] in
+        // Help — pinned (not a regular option) so it always shares the
+        // compact nav cell with << / >> on every page, instead of being just
+        // another paginated item that could get bumped to a later page once
+        // there are enough combat actions to need pagination (leaving a page
+        // with ">>" but no "?").
+        showPaginatedMenu(options, pinned: ["?"], pinnedHandler: { [weak self] _ in
             self?.cancelCombatIdleTimer()
             self?.showCombatHelp(characterId: characterId)
-        }
-
-        showPaginatedMenu(options) { [weak self] idx in
+        }, handler: { [weak self] idx in
             self?.cancelCombatIdleTimer()
             if idx >= 0 && idx < actions.count {
                 actions[idx]()
             }
-        }
+        })
         resetIdleTimer()
         startCombatIdleTimer(characterId: characterId)
+    }
+
+    /// "Use Potion" combat action — drink or administer a healing potion
+    /// (or antidote) to yourself or any ally, mirroring showUsePotionMenu's
+    /// effects but ending the turn afterward instead of returning to the
+    /// Pack screen, since this is a full combat action.
+    private func showCombatUsePotionMenu(characterId: UUID) {
+        guard let combat = currentCombat,
+              let character = party.first(where: { $0.id == characterId }) else { return }
+        let potions = character.inventory.filter { $0.potionStats?.healAmount != nil || $0.name.lowercased().contains("antidote") }
+        guard !potions.isEmpty else { showPlayerCombatMenu(characterId: characterId); return }
+
+        clearTerminal()
+        printCombatStatus()
+        print("")
+        printTitle("Use Potion")
+        for char in party where char.isConscious {
+            let hpPct = char.maxHP > 0 ? Double(char.currentHP) / Double(char.maxHP) : 1.0
+            let color: TerminalColor = hpPct <= 0.33 ? .red : hpPct <= 0.66 ? .yellow : .dimGreen
+            print("  \(shortName(for: char)): \(char.currentHP)/\(char.maxHP) HP\(char.isPoisoned ? " (poisoned)" : "")", color: color)
+        }
+        print("")
+        for potion in potions {
+            if let effect = potion.potionStats?.effect {
+                print("  \(potion.name): \(effect)", color: .dimGreen)
+            } else {
+                print("  \(potion.name): cures poison", color: .dimGreen)
+            }
+        }
+        print("")
+
+        closeHandler = { [weak self] in self?.showPlayerCombatMenu(characterId: characterId) }
+        showPaginatedMenu(potions.map { $0.name }, pinned: ["< Back"], pinnedHandler: { [weak self] _ in
+            self?.showPlayerCombatMenu(characterId: characterId)
+        }, handler: { [weak self] idx in
+            guard let self = self, idx >= 0 && idx < potions.count else { return }
+            let potion = potions[idx]
+
+            let applyAndEndTurn: (Character) -> Void = { target in
+                character.removeItem(potion)
+                let isAntidote = potion.name.lowercased().contains("antidote")
+                self.print("")
+                if isAntidote {
+                    if target.isPoisoned {
+                        target.curePoison()
+                        self.print("  \(target.name) drinks the antidote! Poison cured!", color: .brightGreen)
+                        self.logMultiplayerAction("\(target.name) uses antidote — poison cured!")
+                    } else {
+                        self.print("  \(target.name) drinks the antidote. (Not poisoned — no effect.)", color: .dimGreen)
+                    }
+                } else if let healStr = potion.potionStats?.healAmount {
+                    let roll = Dice.rollDamage(healStr)
+                    let amount = max(1, roll.total)
+                    target.heal(amount)
+                    self.print("  \(target.name) drinks \(potion.name)! Restored \(amount) HP! (\(target.currentHP)/\(target.maxHP))", color: .brightGreen)
+                    if target.isPoisoned {
+                        target.curePoison()
+                        self.print("  Poison also cured!", color: .brightGreen)
+                    }
+                    self.logMultiplayerAction("\(target.name) drinks \(potion.name) — restored \(amount) HP")
+                }
+                combat.checkCombatEnd()
+                combat.nextTurn()
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in self?.advanceCombat() }
+            }
+
+            if self.party.filter({ $0.isConscious }).count > 1 {
+                self.pickCharacter(title: "Give the \(potion.name) to whom?", onBack: {
+                    self.showCombatUsePotionMenu(characterId: characterId)
+                }) { target in
+                    applyAndEndTurn(target)
+                }
+            } else {
+                applyAndEndTurn(character)
+            }
+        })
     }
 
     /// Weapon picker for the "Change Weapon" combat action — see
