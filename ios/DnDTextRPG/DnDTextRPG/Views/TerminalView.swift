@@ -486,15 +486,14 @@ struct TerminalView: View {
                     .frame(maxWidth: isLandscape ? .infinity : nil, alignment: .top)
                 }
                 .background(terminalBackground)
-
-                // Tap-anywhere overlay for continue
-                if gameEngine.awaitingContinue {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            gameEngine.handleContinue()
-                        }
-                }
+                // A full-screen tap-anywhere-to-continue catcher used to live
+                // here — it sat on top of EVERYTHING, including the text
+                // ScrollView and its own tapToAdvanceStrip below, so it kept
+                // intercepting scroll drags no matter how the text area's own
+                // tap handling was scoped down. tapToAdvanceStrip (see the
+                // text ScrollView's overlay) is the sole tap-to-continue
+                // affordance now — a visible, discoverable right-edge strip
+                // instead of an invisible full-screen trap.
             }
             .onAppear { gameEngine.isLandscapeOrientation = isLandscape }
             .onChange(of: isLandscape) { newValue in gameEngine.isLandscapeOrientation = newValue }
