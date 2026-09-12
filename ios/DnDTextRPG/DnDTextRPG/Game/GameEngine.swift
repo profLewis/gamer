@@ -17498,7 +17498,11 @@ class GameEngine: ObservableObject {
 
         // Topic buttons
         for topic in npc.type.knownTopics {
-            options.append(MenuOption("Ask: \(topic)", tint: .amber))
+            // "Ask: Quest" leads to an actionable quest-acceptance flow
+            // (the Gatekeeper's), not just lore — tinted the same as
+            // "Ask to Trade"/"Ask for a Quest" rather than the generic
+            // topic amber.
+            options.append(MenuOption("Ask: \(topic)", tint: topic == "Quest" ? .cyan : .amber))
             actions.append { [weak self] in
                 self?.askNPCAbout(topic: topic)
             }

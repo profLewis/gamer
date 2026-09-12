@@ -714,7 +714,29 @@ class ShopEngine {
         // goods are already a favour, so their floor allows less of a
         // discount than ordinary stock.
         let floor = isRareGood ? max(1, askingPrice - askingPrice / 5) : max(1, askingPrice / 4)
-        let ceiling = askingPrice - 1
+        // Capped at what's actually in the purse — an offer above your own
+        // gold only ever made sense here as a typo or a bug; the "combine
+        // with barter" case is a genuinely different flow (see Barter),
+        // reached separately rather than folded into this one.
+        let ceiling = min(askingPrice - 1, character.gold)
+
+        guard ceiling >= floor else {
+            game.print("  You don't even have enough for a lowball offer.", color: .red)
+            game.printWrapped("Care to barter something instead?", indent: 2, color: .dimGreen)
+            game.print("")
+            game.showMenu(["Barter", "< Back"])
+            game.closeHandler = backAction
+            game.menuHandler = { [weak self] choice in
+                guard let self = self else { return }
+                if choice == 1 {
+                    self.showBarterMenu(item: item, askingPrice: askingPrice, backAction: backAction, returnTo: returnTo, completion: completion)
+                } else {
+                    backAction()
+                }
+            }
+            return
+        }
+
         let retry: () -> Void = { [weak self] in
             self?.showNegotiation(item: item, askingPrice: askingPrice, attempt: attempt + 1, isRareGood: isRareGood,
                                    backAction: backAction, returnTo: returnTo, completion: completion)
@@ -726,6 +748,25 @@ class ShopEngine {
                 game.print("  You step back from the table.", color: .dimGreen)
                 game.waitForContinue()
                 game.inputHandler = { _ in backAction() }
+                return
+            }
+            // A typed/spoken offer can still exceed the purse even though
+            // the suggested buttons never do — catch it before wasting a
+            // Persuasion roll on a price that couldn't be paid anyway.
+            guard offer <= character.gold else {
+                game.print("  You don't have \(offer) gold to offer.", color: .red)
+                game.printWrapped("Care to barter something toward it instead?", indent: 2, color: .dimGreen)
+                game.print("")
+                game.showMenu(["Barter", "Try Again"])
+                game.closeHandler = backAction
+                game.menuHandler = { [weak self] choice in
+                    guard let self = self else { return }
+                    if choice == 1 {
+                        self.showBarterMenu(item: item, askingPrice: askingPrice, backAction: backAction, returnTo: returnTo, completion: completion)
+                    } else {
+                        retry()
+                    }
+                }
                 return
             }
             // Asking price or more — no haggling needed, just sell it. No
