@@ -15628,11 +15628,27 @@ class GameEngine: ObservableObject {
             room.encounter = nil
         }
 
-        // Same self-heal for the NPC side: an armoury whose text says a
-        // merchant has set up shop should have someone standing there to
-        // trade with, even in a dungeon generated/saved before this existed.
-        if room.roomType == .armory, room.merchant != nil, room.npc == nil {
-            room.npc = DungeonNPC(type: .dwarvenSmith)
+        // Every armoury/forge room is a merchant shop, full stop — not
+        // conditional on whether it already had a merchant. An earlier
+        // version of this self-heal only added the merchant/NPC when
+        // room.merchant was ALREADY non-nil, which does nothing for a room
+        // that predates the merchant guarantee entirely (merchant still
+        // nil) — exactly the case for any armoury generated before this
+        // fix existed, including ones whose stored flavour text already
+        // happens to mention a merchant (one of the random description
+        // variants rolled at creation, before this was made unconditional).
+        // Retrofit unconditionally so "a merchant has set up shop here" is
+        // never a lie, no matter how old the save.
+        if room.roomType == .armory {
+            if room.merchant == nil {
+                room.merchant = Merchant.random(tier: MerchantTier.forDungeonLevel(dungeon.level))
+            }
+            if room.roomDescription != Room.armouryMerchantVariant {
+                room.roomDescription = Room.armouryMerchantVariant
+            }
+            if room.npc == nil {
+                room.npc = DungeonNPC(type: .dwarvenSmith)
+            }
         }
 
         // Merchant present in the room itself (shop room, or an armoury a merchant

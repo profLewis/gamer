@@ -150,6 +150,13 @@ enum RoomType: String, CaseIterable, Codable {
 // MARK: - Room
 
 class Room: Identifiable, ObservableObject, Codable {
+    /// The armoury/forge flavour text that names a merchant — shared with
+    /// GameEngine's self-heal (see the room-menu render pass) so an old
+    /// save whose armoury room already has this text stored (from before
+    /// merchants were guaranteed here) gets a real merchant retrofitted to
+    /// match it, not just newly-generated dungeons.
+    static let armouryMerchantVariant = "Swords, shields, and helms line the walls. A forge in the corner is cold but could be relit. A merchant has set up shop here."
+
     let id: Int
     let x: Int
     let y: Int
@@ -773,10 +780,9 @@ class Dungeon: ObservableObject, Codable {
         // a merchant shop now, same as a dedicated .shop room, rather than
         // just sometimes — matches the "a merchant has set up shop here"
         // flavour text, which used to only sometimes be true.
-        let armouryMerchantVariant = "Swords, shields, and helms line the walls. A forge in the corner is cold but could be relit. A merchant has set up shop here."
         for armouryRoom in rooms.values where armouryRoom.roomType == .armory {
             armouryRoom.merchant = Merchant.random(tier: MerchantTier.forDungeonLevel(level))
-            armouryRoom.roomDescription = armouryMerchantVariant
+            armouryRoom.roomDescription = Room.armouryMerchantVariant
             // A merchant here must actually be reachable — the "Visit
             // Merchant" button stays hidden behind an uncleared encounter
             // (see showExplorationView()'s gating), so an armoury that says
