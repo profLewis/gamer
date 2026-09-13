@@ -10599,7 +10599,8 @@ class GameEngine: ObservableObject {
                     self.printWrapped("Without a lit torch, visibility drops to 1 regardless of this setting. The preview above shows both lit and unlit — tap 'Torch On/Off' to compare.", indent: 2, color: .dimGreen)
                     self.print("")
                     self.print("  LEGEND", color: .cyan, bold: true)
-                    self.printWrapped("How many symbol/meaning rows the map's key shows at once — cycles through a few fixed sizes up to 'All'. Only symbols actually nearby are shown, but the box stays this many rows regardless.", indent: 2, color: .dimGreen)
+                    self.printWrapped("How many symbol/meaning rows the map's key shows at once — cycles through a few fixed sizes up to 'All'. Only symbols actually nearby are shown, but the box stays this many rows regardless. Full symbol key:", indent: 2, color: .dimGreen)
+                    self.printFullMapLegend()
                     self.print("")
                 }
             } else if choice == backIndex {
@@ -16052,12 +16053,22 @@ class GameEngine: ObservableObject {
     }
 
     /// Help screen for exploration — explains the map, buttons, and gameplay
+    /// The map's full symbol key, printed as a wrapped list — used in every
+    /// help page that references the minimap, so "what does that symbol
+    /// mean" always has a real answer to look up, not just the live map's
+    /// own on-screen legend (which only shows symbols currently nearby).
+    private func printFullMapLegend() {
+        let pairs = Dungeon.mapLegendEntries.map { "\($0.symbol) \($0.label)" }
+        printWrapped(pairs.joined(separator: "   "), indent: 2, color: .green)
+    }
+
     private func showExplorationHelp() {
         showInlineHelp {
             self.printTitle("Exploration Help")
             self.print("")
             self.print("  THE MAP", color: .cyan, bold: true)
-            self.printWrapped("@ is your party. Rooms: $ Loot, ! Danger, M Merchant, + Shrine. XX = secured door, KK = locked door.", indent: 2, color: .green)
+            self.printWrapped("@ is your party. XX = secured door, KK = locked door. Full symbol key:", indent: 2, color: .green)
+            self.printFullMapLegend()
             self.print("")
             self.print("  DIRECTIONS", color: .cyan, bold: true)
             self.printWrapped("Tap N/S/E/W to move. Long-press a direction to secure/unsecure that door.", indent: 2, color: .dimGreen)
@@ -16483,58 +16494,52 @@ class GameEngine: ObservableObject {
         // explicit request — if that rendering issue resurfaces, restoring
         // this fallback button is the quick fix. Without a torch, NPCs are
         // harder to find (only show if already spoken to).
+        // NOTE: these dpad* assignments are deliberately synchronous, matching
+        // dpadSearchHandler/dpadListenHandler just below — showExplorationView
+        // already mutates other @Published state (terminalLines, menuOpts)
+        // synchronously in this same call, so wrapping ONLY these in
+        // DispatchQueue.main.async deferred them to the next run-loop tick,
+        // one frame behind everything else. That's the root cause of the
+        // long-reported "D-pad icons sometimes just don't render" bug: the
+        // view could render in the gap between the two, showing a stale or
+        // missing icon for a frame. See the still-open investigation task.
         if let npc = room.npc, npcsEnabled, (roomIsLit || npc.hasBeenTalkedTo) {
             let talkLabel = npc.hasBeenTalkedTo ? "Talk" : "Speak to \(npc.type.rawValue.components(separatedBy: " ").last ?? "Stranger")"
-            DispatchQueue.main.async {
-                self.dpadNPCLabel = talkLabel
-                self.dpadNPCHandler = { [weak self] in self?.talkToNPC() }
-            }
+            self.dpadNPCLabel = talkLabel
+            self.dpadNPCHandler = { [weak self] in self?.talkToNPC() }
         } else {
-            DispatchQueue.main.async {
-                self.dpadNPCLabel = nil
-                self.dpadNPCHandler = nil
-            }
+            self.dpadNPCLabel = nil
+            self.dpadNPCHandler = nil
         }
 
-        // Teleport pad — roundel-target icon normally sharing the D-pad's SE
-        // corner slot with the NPC scroll icon; if a room has both, NPC
-        // keeps SE and this instead takes over the NE Listen slot (see
-        // DirectionPadView — Listen isn't tied to this specific room the way
-        // a pad is, so it's the one that steps aside). Always set both
-        // branches, same reasoning as NPC above — otherwise a stale teleport
-        // icon from a previous room lingers into one with no pad.
+        // Teleport pad — roundel-target icon sharing the D-pad's NW corner
+        // slot with the Search Room icon (see DirectionPadView — Search is
+        // still reachable as a full menu button, so bumping its shortcut
+        // icon here costs nothing). Always set both branches — otherwise a
+        // stale teleport icon from a previous room lingers into one with no
+        // pad.
         if teleportPadsEnabled, let destId = room.teleportDestinationRoomId, let destRoom = dungeon.rooms[destId],
            (room.cleared || room.encounter == nil) {
-            DispatchQueue.main.async {
-                self.dpadTeleportHandler = { [weak self] in
-                    guard let self = self, self.roomIsLit else { return }
-                    self.useTeleportPad(from: room, to: destRoom)
-                }
+            self.dpadTeleportHandler = { [weak self] in
+                guard let self = self, self.roomIsLit else { return }
+                self.useTeleportPad(from: room, to: destRoom)
             }
         } else {
-            DispatchQueue.main.async {
-                self.dpadTeleportHandler = nil
-            }
+            self.dpadTeleportHandler = nil
         }
 
-        // Torch toggle — shown on the D-pad (NW corner) as a quick-access
+        // Torch toggle — shown on the D-pad (SW corner) as a quick-access
         // icon, alongside the existing "Douse Torch"/"Illuminate" entry in
         // the Actions submenu (not removed — some players prefer the list).
         if torchLit {
-            DispatchQueue.main.async {
-                self.dpadTorchLabel = "Douse"
-                self.dpadTorchHandler = { [weak self] in self?.douseTorch() }
-            }
+            self.dpadTorchLabel = "Douse"
+            self.dpadTorchHandler = { [weak self] in self?.douseTorch() }
         } else if partyHasTorch() {
-            DispatchQueue.main.async {
-                self.dpadTorchLabel = "Illuminate"
-                self.dpadTorchHandler = { [weak self] in self?.lightTorch() }
-            }
+            self.dpadTorchLabel = "Illuminate"
+            self.dpadTorchHandler = { [weak self] in self?.lightTorch() }
         } else {
-            DispatchQueue.main.async {
-                self.dpadTorchLabel = nil
-                self.dpadTorchHandler = nil
-            }
+            self.dpadTorchLabel = nil
+            self.dpadTorchHandler = nil
         }
 
         // Search Room / Listen — shown on the D-pad (NW/NE corners) as
