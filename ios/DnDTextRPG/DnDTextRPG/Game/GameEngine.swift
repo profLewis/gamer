@@ -10276,6 +10276,14 @@ class GameEngine: ObservableObject {
         return String(filtered).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Shows enough of a stored key to visually confirm it's the one you meant
+    /// to paste (catches truncation/wrong-key mistakes) without ever printing
+    /// the whole thing on screen.
+    private func redactedKeyPreview(_ key: String) -> String {
+        guard key.count > 10 else { return String(repeating: "•", count: key.count) }
+        return "\(key.prefix(6))…\(key.suffix(4))"
+    }
+
     /// A quick, non-blocking sanity check — catches the common case of pasting
     /// the wrong provider's key (e.g. a Gemini "AIza..." key while OpenAI is
     /// selected) with an immediate, specific hint instead of waiting on a
@@ -10449,6 +10457,7 @@ class GameEngine: ObservableObject {
         }
         let hasKeychainBackup = loadAPIKeyFromKeychain(for: provider) != nil
         if hasKey {
+            options.append("Test Key")
             options.append("Copy Key")
             options.append("Clear Key")
         }
@@ -10489,6 +10498,9 @@ class GameEngine: ObservableObject {
                     self.printWrapped("Manually type or paste your API key into a text field. Use this if clipboard paste doesn't work.", indent: 2, color: .dimGreen)
                     self.print("")
                     if hasKey {
+                        self.print("  TEST KEY", color: .cyan, bold: true)
+                        self.printWrapped("Re-runs the connection test against your currently stored key, and shows its length and first/last characters — useful if a key seems right but keeps failing.", indent: 2, color: .dimGreen)
+                        self.print("")
                         self.print("  COPY KEY", color: .cyan, bold: true)
                         self.printWrapped("Copies your current key to the clipboard — useful as a backup before clearing.", indent: 2, color: .dimGreen)
                         self.print("")
@@ -10570,6 +10582,16 @@ class GameEngine: ObservableObject {
                         self?.print("  Testing API key...", color: .dimGreen)
                     }
                     self?.validateAndConfirmKey(provider: provider)
+                }
+            } else if selected == "Test Key" {
+                if let key = DMEngine.shared.apiKey, !key.isEmpty {
+                    self.print("")
+                    self.print("  Key: \(self.redactedKeyPreview(key)) (\(key.count) chars)", color: .dimGreen)
+                    if let warning = self.keyFormatWarning(for: provider, key: key) {
+                        self.print("  Note: \(warning)", color: .yellow)
+                    }
+                    self.print("  Testing API key...", color: .dimGreen)
+                    self.validateAndConfirmKey(provider: provider)
                 }
             } else if selected == "Copy Key" {
                 #if os(iOS)
@@ -10678,6 +10700,10 @@ class GameEngine: ObservableObject {
                     self?.print("")
                     self?.print("  KEY TEST FAILED", color: .red, bold: true)
                     self?.print("")
+                    if let self = self, let key = DMEngine.shared.apiKey, !key.isEmpty {
+                        self.print("  Key tested: \(self.redactedKeyPreview(key)) (\(key.count) chars)", color: .dimGreen)
+                        self.print("")
+                    }
                     if let msg = errorMessage {
                         // Wrap long error messages
                         let maxLen = 30
