@@ -720,6 +720,32 @@ enum NPCType: String, CaseIterable, Codable {
                 "The boss sleeps sometimes. Not often, but when it does, the whole dungeon goes quiet. That's when smart ones run.",
             ]
 
+        // Dwarven Smith
+        case (.dwarvenSmith, "Weapon quality"):
+            return [
+                "Feel that balance? Forged it myself, three folds of steel. A blade that won't fail you when it counts.",
+                "Cheap steel snaps in a fight. Mine doesn't. I test every blade against an anvil before it leaves this forge.",
+                "A weapon's only as good as the smith who made it — and the fool who neglects to sharpen it. Bring yours by if the edge dulls.",
+            ]
+        case (.dwarvenSmith, "Armour repair"):
+            return [
+                "Dented plate, torn mail — bring it here. A dwarf's hammer can fix what a monster's claws broke.",
+                "I can true a warped breastplate in an hour, given the right coals. Don't wait until it's in pieces.",
+                "Armour repair is half the trade down here. These halls chew through steel faster than any battlefield I've worked.",
+            ]
+        case (.dwarvenSmith, "Forging"):
+            return [
+                "Forging's in dwarven blood. My father taught me, his father taught him, back to the mountain halls themselves.",
+                "The heat down here's poor for forging — not enough draft. I make do, but my kin on the surface would scoff at this anvil.",
+                "Good forging takes patience. Rush the fold and the blade remembers — snaps right when you need it most.",
+            ]
+        case (.dwarvenSmith, "Dwarven lore"):
+            return [
+                "My clan mined these depths generations back, before whatever's down there drove the rest of us out. I stayed. Stubborn, my mother called it.",
+                "Every dwarf knows the old smithing songs — they keep the hammer's rhythm true. I'll spare you my singing voice, though.",
+                "We dwarves don't forget a debt, good or ill. This dungeon owes my kin a great deal. I mean to collect, one ingot at a time.",
+            ]
+
         // Wandering Trader
         case (.wanderingTrader, "Rare goods"):
             return [

@@ -4234,15 +4234,15 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("New Adventure"))
         actions.append { [weak self] in self?.startNewGame() }
 
-        // Hall of Fame — a top-level button, not nested inside Continue
-        // Adventure (it used to be pinned there, but a completed tale
-        // already shows up in that list too, so tucking a second,
-        // score-sorted view of the same tales behind a Continue Adventure
-        // sub-button just made Continue Adventure a confusing place to
-        // find it).
-        menuOpts.append(MenuOption("Hall of Fame"))
-        actions.append { [weak self] in self?.showHallOfFame() }
-
+        // No separate "Hall of Fame" button — briefly tried that (as a
+        // pinned button inside Continue Adventure, then as its own
+        // top-level button here), but Continue Adventure's own list
+        // already shows every completed tale's W/L result right alongside
+        // adventures still in progress, so a second, score-sorted view of
+        // the same tales was just a near-duplicate. Its "Manage" pinned
+        // button now lives on Continue Adventure directly instead (see
+        // showLoadGameMenu). The dedicated Hall of Fame screen itself is
+        // still there for the "hall of fame" chat command.
         // Multiplayer match buttons
         for mp in mpEntries {
             let names = mp.match.participants.compactMap { $0.player?.displayName }
@@ -4278,14 +4278,12 @@ class GameEngine: ObservableObject {
 
         // Continue Adventure goes straight to the save-game list — tap an
         // entry and it loads immediately, ordered most-recently-saved
-        // first (see SaveGameManager.listSlots). This used to open the
-        // Hall of Fame (past completed tales, sorted by score) instead,
-        // which had no direct "load this" action on an entry — reliving a
-        // tale required first noticing the separate pinned "Manage Saves"
-        // button. Hall of Fame is still reachable — as its own button
-        // above, and via the "hall of fame" chat command — just not
-        // nested inside Continue Adventure. (Continue Adventure itself is
-        // added above, ahead of New Adventure.)
+        // first (see SaveGameManager.listSlots), with completed tales
+        // showing their Hall of Fame result (W/L, score) right in the
+        // list — so a separate Hall of Fame list would just duplicate it.
+        // Hall of Fame is still reachable via the "hall of fame" chat
+        // command. (Continue Adventure itself is added above, ahead of
+        // New Adventure.)
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showPlayHelp() }
 
@@ -4337,10 +4335,7 @@ class GameEngine: ObservableObject {
             self.printWrapped("Start a fresh adventure. Pick your party size, then create each character — or load one from the Character Hall of Fame (defaults to your most recent hero, if you have one). Long-press for a quick start with a random party.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  CONTINUE ADVENTURE", color: .cyan, bold: true)
-            self.printWrapped("Lists your saved games, most recently saved first — tap one to load it immediately. 'Manage Saves' (inside it) renames or deletes saves.", indent: 2, color: .dimGreen)
-            self.print("")
-            self.print("  HALL OF FAME", color: .cyan, bold: true)
-            self.printWrapped("Revisits your greatest (and most tragic) completed tales, sorted by score.", indent: 2, color: .dimGreen)
+            self.printWrapped("Lists your saved games, most recently saved first — tap one to load it immediately. Completed tales show their Hall of Fame result (W/L, score) right in the list. 'Manage' renames, copies, or deletes saves.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  CHARACTER SAVES", color: .cyan, bold: true)
             self.printWrapped("Found inside New Adventure's character selection (the Character Hall of Fame screen) — 'Manage Saves' there browses and deletes your full Character Roster, not just Hall-of-Famers. Save a character any time from Party Review or Party Status.", indent: 2, color: .dimGreen)
@@ -9360,7 +9355,8 @@ class GameEngine: ObservableObject {
         }
     }
 
-    func showAIProviderMenu() {
+    func showAIProviderMenu(onBack: (() -> Void)? = nil) {
+        let back = onBack ?? { [weak self] in self?.showDMSettingsSubMenu() }
         clearTerminal()
         printTitle("AI Provider")
 
@@ -9444,10 +9440,10 @@ class GameEngine: ObservableObject {
         let helpIndex = options.count - 1  // 1-based choice for ?
         let backIndex = options.count      // 1-based choice for < Back
 
-        closeHandler = { [weak self] in self?.showDMSettingsSubMenu() }
+        closeHandler = back
         menuHandler = { [weak self] choice in
             if choice == backIndex {
-                self?.showDMSettingsSubMenu()
+                back()
                 return
             }
             if choice == helpIndex {
@@ -16785,6 +16781,12 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showExplorationHelp() }
 
+        // Same destination as the corner X icon (see closeHandler below) —
+        // this just gives that action a discoverable button too, since not
+        // everyone taps the corner icon.
+        menuOpts.append(MenuOption("< Leave", tint: .navigation, compact: true))
+        actions.append { [weak self] in self?.leaveExplorationTapped() }
+
         // --- Multiplayer ---
         if isMultiplayer {
             menuOpts.append(MenuOption("Pass Turn", tint: .cyan))
@@ -16858,16 +16860,7 @@ class GameEngine: ObservableObject {
         }
 
         // Close icon → if just saved, go straight to quit confirmation; otherwise Save/Quit menu
-        closeHandler = { [weak self] in
-            guard let self = self else { return }
-            if let saved = self.lastSaveTime, Date().timeIntervalSince(saved) < 60,
-               let slotId = self.activeSlotId {
-                let slotName = self.activeSlotName ?? "Current Game"
-                self.confirmQuitAfterRecentSave(slotId: slotId, slotName: slotName)
-            } else {
-                self.showSaveMenu()
-            }
-        }
+        closeHandler = { [weak self] in self?.leaveExplorationTapped() }
 
         // Text input → enter chat mode (set after async to override showMenuWithDirections)
         inputHandler = { [weak self] input in
@@ -21520,6 +21513,9 @@ class GameEngine: ObservableObject {
         let roomsVisited = dungeon?.rooms.values.filter { $0.visited }.count ?? 0
         let totalRooms = dungeon?.rooms.count ?? 0
         print("  Explored: \(roomsVisited)/\(totalRooms) rooms", color: .cyan)
+        let dm = DMEngine.shared
+        let aiLabel = dm.isConfigured ? dm.provider.displayName : (dm.isAppleModelAvailable ? "Apple On-Device AI" : "Basic DM (no AI)")
+        print("  DM: \(aiLabel)", color: .cyan)
         if partySkillMultiplier > 1.0 {
             let pct = Int(((partySkillMultiplier - 1.0) * 100).rounded())
             print("  Monster strength: +\(pct)% (your party has grown stronger)", color: .yellow)
@@ -21598,7 +21594,7 @@ class GameEngine: ObservableObject {
         print("")
 
         // Build menu
-        var menuOpts = ["Party Review", "Save to Roster", "Adventure Log", "Lore", "Settings", "?", "< Back"]
+        var menuOpts = ["Party Review", "Save to Roster", "Adventure Log", "Lore", "AI", "Settings", "?", "< Back"]
         let hasPoisoned = party.contains(where: { $0.isPoisoned })
         if hasPoisoned {
             menuOpts.insert("Cure Poison", at: 0)
@@ -21629,6 +21625,8 @@ class GameEngine: ObservableObject {
                 self.showAdventureLog()
             case "Lore":
                 self.showLoreBook()
+            case "AI":
+                self.showAIProviderMenu(onBack: { [weak self] in self?.showPartyStatus() })
             case "Settings":
                 self.showSettings()
             case "?":
@@ -21689,7 +21687,15 @@ class GameEngine: ObservableObject {
                 if let merchant = npc.merchant {
                     entries.append((merchant.name, "\(merchant.shopName), \(room.name) — \(merchant.personaBlurb)"))
                 } else {
-                    entries.append((npc.name, "Encountered in \(room.name)."))
+                    // A non-merchant NPC has no unique name of their own
+                    // (npc.name is just their type, e.g. "Hermit") — so the
+                    // one thing worth recording about them is what they're
+                    // actually like, not just where you found them.
+                    var desc = "\(npc.type.description) Met in \(room.name)."
+                    if let trait = npc.type.personalityTraits.first {
+                        desc += " (\(trait).)"
+                    }
+                    entries.append((npc.name, desc))
                 }
             }
         }
@@ -21737,7 +21743,7 @@ class GameEngine: ObservableObject {
             self.printWrapped("Map + each character's HP, gold, XP. Green HP = healthy, yellow = wounded, red = critical.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  BUTTONS", color: .cyan, bold: true)
-            self.printWrapped("Party Review — edit characters and view stat cards. Save to Roster — persist a character's progress for future adventures. Adventure Log — event timeline. Lore — named merchants and NPCs you've actually met this adventure. Settings — game settings. Cure Poison — when poisoned. Give Up Quest — abandon your current quest (loses progress and costs some gold in lost goodwill) so a different NPC can offer you a new one.", indent: 2, color: .dimGreen)
+            self.printWrapped("Party Review — edit characters and view stat cards. Save to Roster — persist a character's progress for future adventures. Adventure Log — event timeline. Lore — named merchants and NPCs you've actually met this adventure. AI — see which AI is running the DM (shown above as \"DM:\") and switch providers. Settings — game settings. Cure Poison — when poisoned. Give Up Quest — abandon your current quest (loses progress and costs some gold in lost goodwill) so a different NPC can offer you a new one.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  MONSTER STRENGTH", color: .cyan, bold: true)
             self.printWrapped("Monsters scale up a little as your party's average level rises, on top of your chosen difficulty — the dungeon keeps pace with your growing skill instead of staying static.", indent: 2, color: .dimGreen)
@@ -28286,6 +28292,19 @@ class GameEngine: ObservableObject {
         case settings
     }
 
+    /// Shared destination for the exploration screen's corner X icon and
+    /// its "< Leave" nav button — if just saved, go straight to quit
+    /// confirmation; otherwise the Save/Quit menu.
+    private func leaveExplorationTapped() {
+        if let saved = lastSaveTime, Date().timeIntervalSince(saved) < 60,
+           let slotId = activeSlotId {
+            let slotName = activeSlotName ?? "Current Game"
+            confirmQuitAfterRecentSave(slotId: slotId, slotName: slotName)
+        } else {
+            showSaveMenu()
+        }
+    }
+
     func showSaveMenu() {
         clearTerminal()
         printTitle("Save/Quit")
@@ -29136,21 +29155,21 @@ class GameEngine: ObservableObject {
             return
         }
 
-        // "Select" (multi-delete) deliberately isn't a pinned button here —
-        // this screen already has enough buttons on it; reach select mode
-        // via Hall of Fame's "Manage" sub-screen instead (one extra tap,
-        // for an action used far less often than just continuing/reading).
-        // Hall of Fame itself is NOT pinned here — it used to be, but that
-        // put it inside Continue Adventure where it doesn't really belong
-        // (this list already includes completed tales); it's now a
-        // top-level button on the Play menu instead (see renderPlayMenu).
-        let pinnedButtons = ["?", "< Back"]
+        // This list already covers what a separate "Hall of Fame" button
+        // used to (every completed tale shows its W/L result right here,
+        // alongside adventures still in progress) — so rather than a
+        // second, near-duplicate list elsewhere, "Manage" is pinned right
+        // here for renaming/deleting saves, which is the one thing this
+        // screen's own list doesn't do inline.
+        let pinnedButtons = ["Manage", "?", "< Back"]
         showPaginatedMenuOptions(options, page: page, pinned: pinnedButtons, handler: { idx in
             guard idx >= 0 && idx < rows.count else { return }
             openRow(rows[idx])
         }, pinnedHandler: { [weak self] choice in
             guard let self = self else { return }
             switch choice {
+            case pinnedButtons.firstIndex(of: "Manage") ?? -1:
+                self.showManageSavesMenu(returnTo: origin)
             case pinnedButtons.firstIndex(of: "?") ?? -1:
                 self.showInlineHelp {
                     self.printTitle("Continue Adventure — Help")
@@ -29162,7 +29181,8 @@ class GameEngine: ObservableObject {
                     self.print("  COLOUR", color: .cyan, bold: true)
                     self.printWrapped("Cyan = still in progress (PLAYING). Yellow = you won (W). Red = your party fell (L) — you can still revisit or relive it.", indent: 2, color: .dimGreen)
                     self.print("")
-                    self.printWrapped("Looking for your Hall of Fame — the dedicated, sorted-by-score view of every completed tale? That's back on the Play menu now, as its own button.", indent: 2, color: .dimGreen)
+                    self.print("  MANAGE", color: .cyan, bold: true)
+                    self.printWrapped("Rename, copy, or delete saves — including bulk multi-select delete.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             default:
@@ -30216,19 +30236,25 @@ class GameEngine: ObservableObject {
 
     private func confirmQuitAfterRecentSave(slotId: UUID, slotName: String) {
         clearTerminal()
-        printTitle("Quit App?")
+        printTitle("Leave or Quit?")
         print("")
         print("Game was saved moments ago.", color: .green)
         print("  \(slotName)", color: .dimGreen)
         print("")
+        printWrapped("Main Menu stays in the app. Quit App closes it entirely.", indent: 2, color: .dimGreen)
+        print("")
 
-        showMenu(["Quit App", "Keep Playing", "Save Again"], defaultIndex: 1)
+        // "Main Menu" (stay in the app) is the default here — you just
+        // tapped the Leave/close-icon action, so heading to the Main Menu
+        // is the most likely intent, not quitting the app or continuing.
+        showMenu(["Quit App", "Main Menu", "Keep Playing", "Save Again"], defaultIndex: 1)
         closeHandler = { [weak self] in self?.showExplorationView() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             switch choice {
             case 1: self.performQuit()
-            case 3: self.showSaveMenu()
+            case 2: self.resetGame()
+            case 4: self.showSaveMenu()
             default: self.showExplorationView()
             }
         }
@@ -30255,13 +30281,16 @@ class GameEngine: ObservableObject {
         clearTerminal()
         print("Leave This Adventure?", color: .yellow, bold: true)
         print("")
-        printWrapped("Both options close the app.", indent: 2, color: .dimGreen)
-        printWrapped("Save & Quit saves your game first, so you can continue later. Quit Without Saving discards anything since your last save.", indent: 2, color: .dimGreen)
+        printWrapped("LEAVE stays in the app and returns to its Main Menu. QUIT closes the app entirely.", indent: 2, color: .dimGreen)
+        printWrapped("Save & Quit saves your game first. Quit Without Saving and Leave Without Saving both discard anything since your last save.", indent: 2, color: .dimGreen)
         print("")
 
-        // Both options here close the app via performQuit() — see the
-        // note on performQuit() for where the actual app-exit action lives.
+        // "Leave" is the one option here that does NOT call performQuit() —
+        // it stays in the app (resetGame() → showMainMenu()). Both "Quit"
+        // options close the app via performQuit() — see the note on
+        // performQuit() for where the actual app-exit action lives.
         var menuOpts = [
+            MenuOption("Leave Without Saving", tint: .danger),
             MenuOption("Save & Quit"),
             MenuOption("Quit Without Saving", tint: .danger),
             MenuOption("< Back"),
@@ -30273,6 +30302,8 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             let text = menuOpts[choice - 1].text
             switch text {
+            case "Leave Without Saving":
+                self.resetGame()
             case "Save & Quit":
                 self.performQuickSave()
                 self.performQuit()
@@ -30292,6 +30323,14 @@ class GameEngine: ObservableObject {
             self.printTitle("Leave Adventure — Help")
             self.print("")
 
+            self.print("  LEAVE vs QUIT", color: .cyan, bold: true)
+            self.printWrapped("Leave stays in the app — you land back on the Main Menu and can start or continue any adventure. Quit closes the app completely.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  LEAVE WITHOUT SAVING", color: .cyan, bold: true)
+            self.printWrapped("Returns to the Main Menu, app stays open, but discards anything since your last save.", indent: 2, color: .dimGreen)
+            self.print("")
+
             self.print("  SAVE & QUIT", color: .cyan, bold: true)
             self.printWrapped("Saves your game to the current slot, then closes the app. You can continue this adventure later from the main menu.", indent: 2, color: .dimGreen)
             self.print("")
@@ -30300,7 +30339,7 @@ class GameEngine: ObservableObject {
             self.printWrapped("Also closes the app, but discards anything since your last save.", indent: 2, color: .dimGreen)
             self.print("")
 
-            self.print("  CANCEL", color: .cyan, bold: true)
+            self.print("  < BACK", color: .cyan, bold: true)
             self.printWrapped("Go back to exploring the dungeon.", indent: 2, color: .dimGreen)
             self.print("")
         }
