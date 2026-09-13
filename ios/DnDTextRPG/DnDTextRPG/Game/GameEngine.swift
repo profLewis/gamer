@@ -6931,6 +6931,7 @@ class GameEngine: ObservableObject {
         print("")
 
         var menuOpts = ["DM Settings", "Accessibility", "Mood", "Gameplay", "Saving"].map { MenuOption($0) }
+        menuOpts.append(MenuOption("Save Settings"))
         menuOpts.append(MenuOption("Reset", tint: .danger))
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
@@ -6953,11 +6954,24 @@ class GameEngine: ObservableObject {
             case "Mood": self.showMusicSettings()
             case "Gameplay": self.showGameplaySettings()
             case "Saving": self.showSaveSettings()
+            case "Save Settings": self.quickSaveSettings()
             case "Reset": self.confirmResetToDefaults()
             case "?": self.showSettingsHelp()
             case "< Back": backToMain()
             default: break
             }
+        }
+    }
+
+    /// One-tap settings backup from the main Settings screen — saves over a
+    /// fixed "Quick Save" slot so repeated taps don't pile up backups. For
+    /// named, multi-slot backups use Saving > Settings Backup instead.
+    private func quickSaveSettings() {
+        clearTerminal()
+        printTitle("Settings")
+        print("")
+        saveSettingsBackup(name: "Quick Save") { [weak self] in
+            self?.showSettings()
         }
     }
 
@@ -8354,6 +8368,9 @@ class GameEngine: ObservableObject {
             self.printWrapped("Gameplay — map radius, card navigation, info timeout, button limit, NPCs, multiplayer, timers, and keyboard.", indent: 2, color: .dimGreen)
             self.printWrapped("Saving — autosave frequency, manage and delete saves, settings backup/restore, and API key backup.", indent: 2, color: .dimGreen)
             self.print("")
+            self.print("  SAVE SETTINGS", color: .cyan, bold: true)
+            self.printWrapped("One-tap backup of your current settings, saved as 'Quick Save'. Restore it later from Settings > Saving > Settings Backup.", indent: 2, color: .dimGreen)
+            self.print("")
             self.print("  RESET", color: .cyan, bold: true)
             self.printWrapped("Opens the Reset screen where you can:", indent: 2, color: .dimGreen)
             self.printWrapped("• Review Changes — see every setting's current value alongside its default, and choose which ones to reset.", indent: 4, color: .dimGreen)
@@ -9013,10 +9030,13 @@ class GameEngine: ObservableObject {
         print("  These give the best DM experience.", color: .dimGreen)
         print("  Each requires its own API key.", color: .dimGreen)
         print("")
-        print("  Orange buttons below aren't set up", color: .orange)
-        print("  yet — no key saved, so they won't", color: .orange)
-        print("  work until you tap in and add one.", color: .orange)
-        print("")
+        let allProvidersHaveKeys = AIProvider.allCases.allSatisfy { dm.apiKey(for: $0) != nil }
+        if !allProvidersHaveKeys {
+            print("  Orange buttons below aren't set up", color: .orange)
+            print("  yet — no key saved, so they won't", color: .orange)
+            print("  work until you tap in and add one.", color: .orange)
+            print("")
+        }
 
         let current = dm.provider
         for provider in AIProvider.allCases {
@@ -9243,9 +9263,15 @@ class GameEngine: ObservableObject {
             print("  installed in Settings > Accessibility", color: .dimGreen)
             print("  > Spoken Content > Voices.", color: .dimGreen)
             print("")
-            showMenu(["Settings"])
+            showMenu(["?", "< Back"])
             closeHandler = { [weak self] in self?.showSettings() }
-            menuHandler = { [weak self] _ in self?.showSettings() }
+            menuHandler = { [weak self] choice in
+                if choice == 1 {
+                    self?.showDMVoiceHelp()
+                } else {
+                    self?.showSettings()
+                }
+            }
             return
         }
 
@@ -9257,9 +9283,15 @@ class GameEngine: ObservableObject {
             print("  Enable the DM first in", color: .yellow)
             print("  'DM Ad-lib Level' settings.", color: .yellow)
             print("")
+            showMenu(["?", "< Back"])
             closeHandler = { [weak self] in self?.showSettings() }
-            waitForContinue()
-            inputHandler = { [weak self] _ in self?.showSettings() }
+            menuHandler = { [weak self] choice in
+                if choice == 1 {
+                    self?.showDMVoiceHelp()
+                } else {
+                    self?.showSettings()
+                }
+            }
             return
         }
 
@@ -9297,11 +9329,24 @@ class GameEngine: ObservableObject {
             options.append(speech.accessibilityHelpEnabled ? "Help Narration Off" : "Help Narration On")
         }
         options.append("Preview")
+        // Standard 3-bar nav pair — this screen was missing them entirely.
+        options.append("?")
+        let helpIndex = options.count
+        options.append("< Back")
+        let backIndex = options.count
 
         closeHandler = { [weak self] in self?.showSettings() }
         showMenu(options)
 
         menuHandler = { [weak self] choice in
+            if choice == helpIndex {
+                self?.showDMVoiceHelp()
+                return
+            }
+            if choice == backIndex {
+                self?.showSettings()
+                return
+            }
             let selected = options[choice - 1]
             if selected.hasPrefix("Turn O") {
                 speech.isEnabled = !speech.isEnabled
@@ -9315,6 +9360,28 @@ class GameEngine: ObservableObject {
             } else if selected == "Preview" {
                 self?.showVoicePreview()
             }
+        }
+    }
+
+    private func showDMVoiceHelp() {
+        showInlineHelp { [weak self] in
+            self?.printTitle("DM Voice Help")
+            self?.print("")
+            self?.print("  WHAT IT DOES", color: .cyan, bold: true)
+            self?.printWrapped("Reads the DM's responses aloud using iOS text-to-speech. No API key or account needed — it's built into iOS.", indent: 2, color: .dimGreen)
+            self?.print("")
+            self?.print("  TURN ON / OFF", color: .cyan, bold: true)
+            self?.printWrapped("Toggles narration. The DM must be enabled first (see 'DM Ad-lib Level' in Settings) — voice has nothing to read if the DM is Off.", indent: 2, color: .dimGreen)
+            self?.print("")
+            self?.print("  CHOOSE DM VOICE", color: .cyan, bold: true)
+            self?.printWrapped("Pick which installed system voice reads the DM's lines, and adjust its speed and pitch.", indent: 2, color: .dimGreen)
+            self?.print("")
+            self?.print("  HELP NARRATION", color: .cyan, bold: true)
+            self?.printWrapped("When on, the DM also reads help pages and menus aloud as you navigate — useful for vision accessibility.", indent: 2, color: .dimGreen)
+            self?.print("")
+            self?.print("  PREVIEW", color: .cyan, bold: true)
+            self?.printWrapped("Plays a short sample line in the current voice, speed, and pitch so you can check it before playing.", indent: 2, color: .dimGreen)
+            self?.print("")
         }
     }
 
