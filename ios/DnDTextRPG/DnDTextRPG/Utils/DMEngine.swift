@@ -1374,19 +1374,112 @@ class DMEngine {
 
     // MARK: - Google (Gemini)
 
-    private func callGoogle(apiKey: String, system: String,
-                             messages: [(role: String, content: String)],
-                             completion: @escaping (String?) -> Void) {
-        let urlString = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=\(apiKey)"
-        guard let url = URL(string: urlString) else {
+    /// Google retires Gemini model names surprisingly often (e.g. gemini-2.0-flash
+    /// returning HTTP 404 "no longer available"). Rather than hardcode one name and
+    /// break every time Google retires it, we try our best-guess default first, and
+    /// only if THAT specifically 404s as an unknown model, ask Google's own model
+    /// list for what's actually live right now and switch to the newest "flash"
+    /// model there — then remember that choice so we don't re-discover on every call.
+    private static let defaultGoogleModel = "gemini-3.6-flash"
+    private var resolvedGoogleModel: String? {
+        get { UserDefaults.standard.string(forKey: "google_resolved_model") }
+        set { UserDefaults.standard.set(newValue, forKey: "google_resolved_model") }
+    }
+    private var googleModelToUse: String { resolvedGoogleModel ?? Self.defaultGoogleModel }
+
+    private func googleGenerateContentURL(model: String, apiKey: String) -> URL? {
+        URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)")
+    }
+
+    /// True only when the response is specifically "this model name doesn't exist"
+    /// (HTTP 404 with a NOT_FOUND status/message) — not just any error — so a real
+    /// outage or a bad API key doesn't send us off discovering models pointlessly.
+    private func isModelNotFoundError(data: Data?, response: URLResponse?) -> Bool {
+        guard (response as? HTTPURLResponse)?.statusCode == 404, let data = data,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let errorObj = json["error"] as? [String: Any] else { return false }
+        let status = errorObj["status"] as? String ?? ""
+        let message = (errorObj["message"] as? String ?? "").lowercased()
+        return status == "NOT_FOUND" || message.contains("not found") || message.contains("not supported")
+    }
+
+    /// Asks Google which models actually exist right now and picks the newest
+    /// "flash" model that supports generateContent (falling back to "pro", then to
+    /// whatever's first) — always preferring the highest version number found.
+    private func discoverBestGoogleModel(apiKey: String, completion: @escaping (String?) -> Void) {
+        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models?key=\(apiKey)") else {
             completion(nil)
             return
         }
+        URLSession.shared.dataTask(with: URLRequest(url: url)) { data, _, error in
+            guard let data = data, error == nil,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let models = json["models"] as? [[String: Any]] else {
+                completion(nil)
+                return
+            }
+            let usable = models.compactMap { m -> String? in
+                guard let name = m["name"] as? String,
+                      let methods = m["supportedGenerationMethods"] as? [String],
+                      methods.contains("generateContent") else { return nil }
+                // Names come back as "models/gemini-3.6-flash" — strip the prefix.
+                return name.hasPrefix("models/") ? String(name.dropFirst("models/".count)) : name
+            }
+            func newestVersion(in candidates: [String]) -> String? {
+                candidates.max { a, b in
+                    (Self.extractVersion(a) ?? 0) < (Self.extractVersion(b) ?? 0)
+                }
+            }
+            let flashModels = usable.filter { $0.lowercased().contains("flash") }
+            let proModels = usable.filter { $0.lowercased().contains("pro") }
+            completion(newestVersion(in: flashModels) ?? newestVersion(in: proModels) ?? usable.first)
+        }.resume()
+    }
 
+    /// Pulls the "3.6" out of "gemini-3.6-flash" (or "gemini-3.6-flash-002") so
+    /// candidates can be compared and the newest picked.
+    private static func extractVersion(_ modelName: String) -> Double? {
+        guard let range = modelName.range(of: #"gemini-(\d+(\.\d+)?)"#, options: .regularExpression) else { return nil }
+        let match = modelName[range]
+        let numberString = match.replacingOccurrences(of: "gemini-", with: "")
+        return Double(numberString)
+    }
+
+    /// Shared POST-with-fallback used by both the real DM call and the key-test
+    /// call: tries the current model, and on a confirmed "model not found" 404,
+    /// discovers and switches to whatever Google's newest live flash model is,
+    /// caches that choice, and retries exactly once.
+    private func googlePost(apiKey: String, body: [String: Any], attemptedDiscovery: Bool = false,
+                             completion: @escaping (Data?, URLResponse?, Error?) -> Void) {
+        guard let url = googleGenerateContentURL(model: googleModelToUse, apiKey: apiKey) else {
+            completion(nil, nil, nil)
+            return
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { completion(data, response, error); return }
+            if !attemptedDiscovery, self.isModelNotFoundError(data: data, response: response) {
+                self.discoverBestGoogleModel(apiKey: apiKey) { discovered in
+                    guard let discovered = discovered, discovered != self.googleModelToUse else {
+                        completion(data, response, error)
+                        return
+                    }
+                    self.resolvedGoogleModel = discovered
+                    self.googlePost(apiKey: apiKey, body: body, attemptedDiscovery: true, completion: completion)
+                }
+            } else {
+                completion(data, response, error)
+            }
+        }.resume()
+    }
+
+    private func callGoogle(apiKey: String, system: String,
+                             messages: [(role: String, content: String)],
+                             completion: @escaping (String?) -> Void) {
         // Gemini uses "contents" array with "parts". System instruction is separate.
         var contents: [[String: Any]] = []
         for msg in messages {
@@ -1400,9 +1493,7 @@ class DMEngine {
             "generationConfig": ["maxOutputTokens": effectiveMaxTokens]
         ]
 
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-
-        URLSession.shared.dataTask(with: request) { data, _, error in
+        googlePost(apiKey: apiKey, body: body) { data, _, error in
             guard let data = data, error == nil,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let candidates = json["candidates"] as? [[String: Any]],
@@ -1413,7 +1504,7 @@ class DMEngine {
                 return
             }
             completion(text)
-        }.resume()
+        }
     }
 
     // MARK: - API Key Validation
@@ -1436,24 +1527,12 @@ class DMEngine {
     }
 
     private func testGoogleKey(apiKey: String, completion: @escaping (Bool, String?) -> Void) {
-        let urlString = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=\(apiKey)"
-        guard let url = URL(string: urlString) else {
-            completion(false, "Invalid API key format.")
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 15
-
         let body: [String: Any] = [
             "contents": [["role": "user", "parts": [["text": "Say hello in one word."]]]],
             "generationConfig": ["maxOutputTokens": 10]
         ]
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        URLSession.shared.dataTask(with: request) { data, response, error in
+        googlePost(apiKey: apiKey, body: body) { data, response, error in
             if let error = error {
                 completion(false, "Connection error: \(error.localizedDescription)")
                 return
@@ -1485,7 +1564,7 @@ class DMEngine {
             } else {
                 completion(false, "Unexpected response format.")
             }
-        }.resume()
+        }
     }
 
     private func testAnthropicKey(apiKey: String, completion: @escaping (Bool, String?) -> Void) {
