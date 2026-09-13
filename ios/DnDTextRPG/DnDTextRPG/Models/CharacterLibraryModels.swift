@@ -73,6 +73,13 @@ class CharacterLibraryManager {
     func delete(id: UUID) {
         let fileURL = libraryDirectory.appendingPathComponent("\(id.uuidString).json")
         try? FileManager.default.removeItem(at: fileURL)
+        // A Character Hall of Fame entry linked to this character is a
+        // historical record of the same roster save, not an independent
+        // one — deleting the roster save should delete it too, rather
+        // than leaving a ghost entry that still shows up in Character
+        // Hall of Fame (and fails only once actually tapped) after the
+        // character it names is gone.
+        CharacterHallOfFameManager.shared.deleteEntries(forLinkedCharacterId: id)
     }
 
     /// Keep only the most recently saved N characters.
@@ -173,8 +180,21 @@ class CharacterHallOfFameManager {
         let entries = listEntries()
         guard entries.count > 10 else { return }
         for entry in entries.suffix(from: 10) {
-            let fileURL = hallDirectory.appendingPathComponent("\(entry.id.uuidString).json")
-            try? FileManager.default.removeItem(at: fileURL)
+            deleteEntry(id: entry.id)
+        }
+    }
+
+    func deleteEntry(id: UUID) {
+        let fileURL = hallDirectory.appendingPathComponent("\(id.uuidString).json")
+        try? FileManager.default.removeItem(at: fileURL)
+    }
+
+    /// Deletes every entry linked to a roster character — used when that
+    /// character is deleted from the roster, so Character Hall of Fame
+    /// doesn't go on showing a ghost of a hero the player just removed.
+    func deleteEntries(forLinkedCharacterId characterId: UUID) {
+        for entry in listEntries() where entry.linkedCharacterId == characterId {
+            deleteEntry(id: entry.id)
         }
     }
 }

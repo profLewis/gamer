@@ -4252,11 +4252,15 @@ class GameEngine: ObservableObject {
 
         // Continue Adventure first — resuming an existing adventure is the
         // more common action than starting a fresh one, so it's button 1
-        // (and the default) rather than New Adventure.
-        menuOpts.append(MenuOption("Continue Adventure", isDefault: true))
+        // (and the default) rather than New Adventure. EXCEPT when there's
+        // nothing to continue — an empty save list makes "Continue" a dead
+        // end, so New Adventure (the only thing actually possible) becomes
+        // the default instead, even though it still displays second.
+        let hasSaves = !localSlots.isEmpty
+        menuOpts.append(MenuOption("Continue Adventure", isDefault: hasSaves))
         actions.append { [weak self] in self?.showLoadGameMenu(returnTo: .mainMenu) }
 
-        menuOpts.append(MenuOption("New Adventure"))
+        menuOpts.append(MenuOption("New Adventure", isDefault: !hasSaves))
         actions.append { [weak self] in self?.startNewGame() }
 
         // No separate "Hall of Fame" button — briefly tried that (as a
@@ -28219,6 +28223,17 @@ class GameEngine: ObservableObject {
         print("")
         printTitle("Character Hall of Fame")
 
+        // Garbage-collect entries whose character was deleted from the
+        // roster since before CharacterLibraryManager.delete cascaded this
+        // cleanup itself — quietly, on every visit, so a deleted character
+        // never resurfaces here as a ghost of the "same" hero.
+        let rosterIds = Set(CharacterLibraryManager.shared.listCharacters().map { $0.character.id })
+        for entry in CharacterHallOfFameManager.shared.listEntries() {
+            if entry.linkedCharacterId == nil || !rosterIds.contains(entry.linkedCharacterId!) {
+                CharacterHallOfFameManager.shared.deleteEntry(id: entry.id)
+            }
+        }
+
         let entries = CharacterHallOfFameManager.shared.listEntries()
         let backTarget = onBack ?? { [weak self] in self?.showPlayMenu() }
         let manageAction: () -> Void = { [weak self] in
@@ -28441,9 +28456,22 @@ class GameEngine: ObservableObject {
             print("")
             print("  Characters you save after creating them (or from Party Status during an adventure) will appear here, ready to bring into a future party.", color: .dimGreen)
             print("")
-            showMenu(["?", "< Back"])
+            // With nothing to load, the only way to get a character at all
+            // is through New Adventure's own creation flow — so offer it
+            // directly rather than just a dead-end back button (when
+            // loadHandler is set, the player is already mid-creation
+            // picking a character to load, so there's nothing extra to
+            // point them at).
+            var opts = ["?", "< Back"]
+            if loadHandler == nil { opts.insert("New Adventure", at: 0) }
+            showMenu(opts)
             menuHandler = { [weak self] choice in
-                if choice == 1 { helpAction() } else { (onBack ?? { self?.showPlayMenu() })() }
+                guard let self = self else { return }
+                switch opts[choice - 1] {
+                case "New Adventure": self.startNewGame()
+                case "?": helpAction()
+                default: (onBack ?? { self.showPlayMenu() })()
+                }
             }
             closeHandler = onBack ?? { [weak self] in self?.showPlayMenu() }
             return
@@ -29694,6 +29722,7 @@ class GameEngine: ObservableObject {
             print("No saved games to manage.", color: .yellow)
             print("")
             print("Start an adventure first!", color: .dimGreen)
+            print("")
             let goBack: () -> Void = { [weak self] in
                 switch origin {
                 case .mainMenu: self?.showPlayMenu()
@@ -29701,9 +29730,24 @@ class GameEngine: ObservableObject {
                 case .settings: self?.showSettings()
                 }
             }
-            waitForContinue()
-            inputHandler = { _ in goBack() }
+            showMenu(["New Adventure", "?", "< Back"])
             closeHandler = goBack
+            menuHandler = { [weak self] choice in
+                guard let self = self else { return }
+                switch choice {
+                case 1:
+                    self.startNewGame()
+                case 2:
+                    self.showInlineHelp {
+                        self.printTitle("Manage Saves — Help")
+                        self.print("")
+                        self.printWrapped("Rename, copy, or delete saved games and remote multiplayer matches — once you've got one to manage.", indent: 2, color: .dimGreen)
+                        self.print("")
+                    }
+                default:
+                    goBack()
+                }
+            }
             return
         }
 
