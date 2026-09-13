@@ -264,8 +264,39 @@ class GameEngine: ObservableObject {
     /// Use custom in-app keyboard instead of system keyboard (no globe/mic)
     @Published var useCustomKeyboard: Bool = UserDefaults.standard.object(forKey: "useCustomKeyboard") == nil ? true : UserDefaults.standard.bool(forKey: "useCustomKeyboard")
 
-    /// Idle animation prompts (eye blinks, combat hesitation, save menu nags)
-    @Published var idlePromptsEnabled: Bool = UserDefaults.standard.bool(forKey: "idlePromptsEnabled")
+    /// Idle animation prompts (eye blinks, combat hesitation, save menu
+    /// nags, and — see justDMPrompt — idle hints in free-text mode). On
+    /// by default as of the version below; see migrateDefaultsForNewVersion.
+    @Published var idlePromptsEnabled: Bool = GameEngine.defaultIdlePromptsEnabled()
+
+    /// Runs once per app version bump — applies a NEW default value only
+    /// to a setting the user has genuinely never touched (its UserDefaults
+    /// key is entirely absent), leaving any explicit choice — including an
+    /// explicit "off" — exactly as chosen. Ordinary "add a new setting"
+    /// defaults (e.g. useCustomKeyboard above) don't need this: nothing
+    /// about their meaning changed, so "unset key = new default" was
+    /// always safe. This is specifically for flipping the default of a
+    /// setting that ALREADY existed with a different default in an
+    /// earlier version — add one line here per future case.
+    private static func migrateDefaultsForNewVersion() {
+        let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+        let lastMigrated = UserDefaults.standard.string(forKey: "lastMigratedDefaultsVersion")
+        guard lastMigrated != currentVersion else { return }
+
+        // v3.1: Idle Prompts (including the new free-text idle hints)
+        // default to On going forward — previously Off. Only applies to
+        // installs that have never touched this setting at all.
+        if UserDefaults.standard.object(forKey: "idlePromptsEnabled") == nil {
+            UserDefaults.standard.set(true, forKey: "idlePromptsEnabled")
+        }
+
+        UserDefaults.standard.set(currentVersion, forKey: "lastMigratedDefaultsVersion")
+    }
+
+    private static func defaultIdlePromptsEnabled() -> Bool {
+        migrateDefaultsForNewVersion()
+        return UserDefaults.standard.bool(forKey: "idlePromptsEnabled")
+    }
 
     /// Blinking terminal cursor next to the "> " prompt — only while the
     /// game specifically expects the player to act in the text/prompt area
@@ -468,6 +499,11 @@ class GameEngine: ObservableObject {
 
     // Combat idle timer — penalise hesitation
     private var combatIdleTimer: Timer?
+    /// Just DM (free-text) mode's idle-hint nudge — see justDMPrompt/
+    /// showJustDMIdleHint. Gated on idlePromptsEnabled like the other idle
+    /// timers; especially useful here since there are no visible buttons
+    /// to remind the player what's possible.
+    private var justDMIdleHintTimer: Timer?
     private var combatHesitating: Bool = false  // true = next attack has disadvantage
 
     // Track barricade state for DM context injection
@@ -7913,7 +7949,7 @@ class GameEngine: ObservableObject {
         infoTimeout = d.object(forKey: "infoTimeout") == nil ? 10.0 : d.double(forKey: "infoTimeout")
         iconScaleSetting = d.integer(forKey: "iconScaleSetting")
         useCustomKeyboard = d.object(forKey: "useCustomKeyboard") == nil ? true : d.bool(forKey: "useCustomKeyboard")
-        idlePromptsEnabled = d.bool(forKey: "idlePromptsEnabled")
+        idlePromptsEnabled = d.object(forKey: "idlePromptsEnabled") == nil ? true : d.bool(forKey: "idlePromptsEnabled")
         blinkingCursorEnabled = d.object(forKey: "blinkingCursorEnabled") == nil ? !GameEngine.systemVoiceOverRunning : d.bool(forKey: "blinkingCursorEnabled")
         justDMMode = d.bool(forKey: "justDMMode")
     }
@@ -8894,7 +8930,7 @@ class GameEngine: ObservableObject {
             infoTimeout = 10.0
             iconScaleSetting = 0
             useCustomKeyboard = true
-            idlePromptsEnabled = false
+            idlePromptsEnabled = true
             blinkingCursorEnabled = !GameEngine.systemVoiceOverRunning
             fontScale = FontSizeSetting.defaultSetting.scale
             justDMMode = false
@@ -9037,7 +9073,7 @@ class GameEngine: ObservableObject {
         #if os(iOS)
         add("useCustomKeyboard", "Keyboard", current: useCustomKeyboard ? "Custom" : "System", dflt: "Custom")
         #endif
-        add("idlePromptsEnabled", "Idle Prompts", current: idlePromptsEnabled ? "On" : "Off", dflt: "Off")
+        add("idlePromptsEnabled", "Idle Prompts", current: idlePromptsEnabled ? "On" : "Off", dflt: "On")
         add("blinkingCursorEnabled", "Blinking Cursor", current: blinkingCursorEnabled ? "On" : "Off", dflt: "On")
 
         add("autosave_interval", "Autosave", current: autosaveInterval.displayName, dflt: AutosaveInterval.everyRoom.displayName)
@@ -9182,7 +9218,7 @@ class GameEngine: ObservableObject {
         if keys.contains("infoTimeout") { infoTimeout = 10.0 }
         if keys.contains("iconScaleSetting") { iconScaleSetting = 0 }
         if keys.contains("useCustomKeyboard") { useCustomKeyboard = true }
-        if keys.contains("idlePromptsEnabled") { idlePromptsEnabled = false }
+        if keys.contains("idlePromptsEnabled") { idlePromptsEnabled = true }
         if keys.contains("blinkingCursorEnabled") { blinkingCursorEnabled = !GameEngine.systemVoiceOverRunning }
         if keys.contains("fontSizeSetting") { fontScale = FontSizeSetting.defaultSetting.scale }
         if keys.contains("undoRedoEnabled") && !undoRedoEnabled { clearAllUndoRedo() }
@@ -23972,8 +24008,33 @@ class GameEngine: ObservableObject {
         menuHandler = nil
 
         inputHandler = { [weak self] input in
+            self?.justDMIdleHintTimer?.invalidate()
             self?.processJustDMInput(input)
         }
+
+        // Idle hint — especially important here since, unlike button mode,
+        // there's nothing on screen reminding the player what's possible.
+        // Reset on every prompt so it only ever fires after genuine
+        // inactivity, not on a fixed schedule regardless of input.
+        justDMIdleHintTimer?.invalidate()
+        if idlePromptsEnabled {
+            justDMIdleHintTimer = Timer.scheduledTimer(withTimeInterval: 25.0, repeats: false) { [weak self] _ in
+                self?.showJustDMIdleHint()
+            }
+        }
+    }
+
+    /// Fires after a stretch of idleness in Just DM mode — a reminder of
+    /// what's possible, since there are no visible buttons to prompt it.
+    /// Appends below whatever's already on screen (doesn't clear/redraw),
+    /// so it never disrupts anything the player's already mid-typing.
+    private func showJustDMIdleHint() {
+        // Bail if the player left text mode, or something else is now
+        // showing (e.g. combat, a menu) while this stale timer fired.
+        guard justDMMode, awaitingTextInput else { return }
+        print("")
+        printWrapped("  Still there? Try: \(Self.justDMHintExamples.randomElement()!)", indent: 2, color: .dimGreen)
+        printWrapped("  Or type \"?\" for help, \"buttons on\" for menus.", indent: 2, color: .dimGreen)
     }
 
     private func processJustDMInput(_ input: String) {
