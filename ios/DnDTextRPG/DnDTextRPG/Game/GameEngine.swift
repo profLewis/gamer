@@ -4257,7 +4257,13 @@ class GameEngine: ObservableObject {
         // end, so New Adventure (the only thing actually possible) becomes
         // the default instead, even though it still displays second.
         let hasSaves = !localSlots.isEmpty
-        menuOpts.append(MenuOption("Continue Adventure", isDefault: hasSaves))
+        // Disabled (dimmed) rather than removed when there's nothing to
+        // continue — still discoverable as "the button that would resume
+        // play," just visibly not the thing to reach for right now. A
+        // long-press bypasses isDisabled by design (see MenuButtonsView),
+        // so it still fires — redirected to New Adventure below rather
+        // than silently doing nothing when there's no save to jump to.
+        menuOpts.append(MenuOption("Continue Adventure", isDefault: hasSaves, isDisabled: !hasSaves))
         actions.append { [weak self] in self?.showLoadGameMenu(returnTo: .mainMenu) }
 
         menuOpts.append(MenuOption("New Adventure", isDefault: !hasSaves))
@@ -4349,6 +4355,11 @@ class GameEngine: ObservableObject {
                 let candidates = SaveGameManager.shared.listSlots().filter { !$0.latest.party.isEmpty }
                 if let mostRecent = candidates.max(by: { $0.latest.savedAt < $1.latest.savedAt }) {
                     self.loadGame(mostRecent.latest)
+                } else {
+                    // Nothing to continue — the button's dimmed for exactly
+                    // this reason, but a long-press still does SOMETHING
+                    // useful instead of silently going nowhere.
+                    self.startNewGame()
                 }
             default:
                 break
@@ -7470,7 +7481,7 @@ class GameEngine: ObservableObject {
         ])
         options.append(undoRedoEnabled ? "Undo/Redo Off" : "Undo/Redo On")
 
-        showPaginatedMenu(options, page: page, pinned: ["?", "< Back"]) { [weak self] idx in
+        showPaginatedMenuOptions(options, page: page, pinned: ["?", "< Back"], handler: { [weak self] idx in
             guard let self = self else { return }
             guard idx >= 0 && idx < options.count else { return }
             let currentPage = self.paginatedPage
@@ -7554,19 +7565,13 @@ class GameEngine: ObservableObject {
                 }
                 self.showGameplaySettings(page: currentPage)
             }
-        }
-        // Wrap menuHandler to intercept pinned ?/< Back buttons
-        let originalHandler = menuHandler
-        menuHandler = { [weak self] choice in
+        }, pinnedHandler: { [weak self] choice in
             guard let self = self else { return }
-            let idx = choice - 1
-            guard idx >= 0 && idx < self.currentMenuOptions.count else { originalHandler?(choice); return }
-            switch self.currentMenuOptions[idx].text {
-            case "?": self.showGameplaySettingsHelp()
-            case "< Back": self.showSettings()
-            default: originalHandler?(choice)
+            switch choice {
+            case 0: self.showGameplaySettingsHelp()
+            default: self.showSettings()
             }
-        }
+        })
         closeHandler = { [weak self] in self?.showSettings() }
         installSettingUndoRedo(screen: "s:gameplay") { [weak self] in self?.showGameplaySettings(page: self?.paginatedPage ?? 0) }
     }
@@ -8581,12 +8586,9 @@ class GameEngine: ObservableObject {
         printWrapped("The Reyes Failsafe is a real-world safety tool for the AI Dungeon Master — the tabletop equivalent of an 'X-Card'.", indent: 2, color: .dimGreen)
         print("")
         print("  WHAT IT DOES:", color: .cyan, bold: true)
-        print("  1. Removes the DM's last response from view", color: .dimGreen)
-        print("     (replaced with a neutral placeholder).", color: .dimGreen)
-        print("  2. Tells the DM to steer away from that", color: .dimGreen)
-        print("     specific direction from now on.", color: .dimGreen)
-        print("  3. Play continues — your next action gets", color: .dimGreen)
-        print("     a fresh, redirected response.", color: .dimGreen)
+        printWrapped("1. Removes the DM's last response from view (replaced with a neutral placeholder).", indent: 2, color: .dimGreen)
+        printWrapped("2. Tells the DM to steer away from that specific direction from now on.", indent: 2, color: .dimGreen)
+        printWrapped("3. Play continues — your next action gets a fresh, redirected response.", indent: 2, color: .dimGreen)
         print("")
         printWrapped("This isn't a toggle to switch on ahead of time — it's a right-now action you use the moment the DM says something you don't like, mid-adventure. Come back to this screen any time that happens.", indent: 2, color: .dimGreen)
         print("")
@@ -8739,9 +8741,17 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped("Choose what to reset, then Apply.", indent: 2, color: .dimGreen)
         print("")
+        let resetLineStart = terminalLines.count
         print("  [\(resetSettings ? "x" : " ")] Reset Settings to Defaults", color: resetSettings ? .brightGreen : .dimGreen)
+        let resetLineRange = resetLineStart..<terminalLines.count
+
+        let clearKeysLineStart = terminalLines.count
         print("  [\(clearKeys ? "x" : " ")] Also Clear API Keys", color: clearKeys ? .yellow : .dimGreen)
+        let clearKeysLineRange = clearKeysLineStart..<terminalLines.count
+
+        let deleteSavesLineStart = terminalLines.count
         print("  [\(deleteSaves ? "x" : " ")] Also Delete Saved Games", color: deleteSaves ? .yellow : .dimGreen)
+        let deleteSavesLineRange = deleteSavesLineStart..<terminalLines.count
         print("")
         printWrapped("Settings backups are never affected — you can always restore one afterwards from Save Settings.", indent: 2, color: .dimGreen)
         print("")
@@ -8764,6 +8774,19 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(menuOpts)
+        // Tap the printed checkbox row itself, not just its numbered
+        // button below — despite the name, textLongPressHandler drives a
+        // plain tap gesture on the terminal text (see textTapEnabled).
+        textLongPressHandler = { [weak self] lineIndex in
+            guard let self = self else { return }
+            if resetLineRange.contains(lineIndex) {
+                self.confirmResetToDefaults(resetSettings: !resetSettings, clearKeys: clearKeys, deleteSaves: deleteSaves)
+            } else if clearKeysLineRange.contains(lineIndex) {
+                self.confirmResetToDefaults(resetSettings: resetSettings, clearKeys: !clearKeys, deleteSaves: deleteSaves)
+            } else if deleteSavesLineRange.contains(lineIndex) {
+                self.confirmResetToDefaults(resetSettings: resetSettings, clearKeys: clearKeys, deleteSaves: !deleteSaves)
+            }
+        }
         closeHandler = { [weak self] in self?.showSettings() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
@@ -29203,10 +29226,19 @@ class GameEngine: ObservableObject {
         if rows.isEmpty {
             print("  No saved games or adventures recorded yet.", color: .yellow)
             print("")
-            showMenu(["?", "< Back"])
+            // Same button set as the Play menu itself (Continue Adventure/
+            // New Adventure/?/Back), rather than a bespoke minimal screen —
+            // Continue Adventure just sits disabled here since there's
+            // nothing to continue (long-press still redirects to New
+            // Adventure, matching the Play menu's own dimmed button).
+            let opts = [MenuOption("Continue Adventure", isDisabled: true), MenuOption("New Adventure"),
+                        MenuOption("?", tint: .navigation, compact: true), MenuOption("< Back", tint: .navigation, compact: true)]
+            showMenuOptions(opts)
             menuHandler = { [weak self] choice in
-                guard let self = self else { return }
-                if choice == 1 {
+                guard let self = self, choice >= 1, choice <= opts.count else { return }
+                switch opts[choice - 1].text {
+                case "New Adventure": self.startNewGame()
+                case "?":
                     self.showInlineHelp {
                         self.printTitle("Continue Adventure — Help")
                         self.print("")
@@ -29215,10 +29247,14 @@ class GameEngine: ObservableObject {
                         self.printWrapped("Start one from New Adventure on the Play menu.", indent: 2, color: .dimGreen)
                         self.print("")
                     }
-                } else {
-                    backAction()
+                default: backAction()
                 }
             }
+            menuLongPressHandler = { [weak self] choice in
+                guard choice == 1 else { return }
+                self?.startNewGame()
+            }
+            closeHandler = backAction
             return
         }
 
