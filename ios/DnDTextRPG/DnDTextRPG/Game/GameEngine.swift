@@ -8354,7 +8354,7 @@ class GameEngine: ObservableObject {
         print("")
 
         let justDMLabel = justDMMode ? "Text Mode: On" : "Text Mode: Off"
-        let options = ["Provider", "API Key", "Ad-lib Level", "Log Context", "DM Voice", justDMLabel]
+        let options = ["Provider", "API Key", "Ad-lib Level", "Log Context", "DM Voice", justDMLabel, "Content Safety"]
 
         var menuOpts = options.map { MenuOption($0) }
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -8383,6 +8383,8 @@ class GameEngine: ObservableObject {
                 self.showDMLogContextMenu()
             case "DM Voice":
                 self.showVoiceSettings()
+            case "Content Safety":
+                self.showContentSafetyMenu()
             case let s where s.hasPrefix("Text Mode"):
                 if !dm.hasAnyAI && !self.justDMMode {
                     self.print("")
@@ -8433,7 +8435,106 @@ class GameEngine: ObservableObject {
             self.print("  TEXT MODE", color: .cyan, bold: true)
             self.printWrapped("Removes all buttons and menus. Type naturally to play — movement, combat, inventory, and all actions are handled through natural language. The DM interprets your intent. Type 'buttons on' to restore menus. Requires an AI provider.", indent: 2, color: .dimGreen)
             self.print("")
+            self.print("  CONTENT SAFETY", color: .cyan, bold: true)
+            self.printWrapped("The Reyes Failsafe — a real-world tabletop safety tool (like an 'X-Card') built into the AI DM. If the story ever generates something too dark, gory, or uncomfortable, use it any time to drop that thread and steer the DM toward a safer direction.", indent: 2, color: .dimGreen)
+            self.print("")
         }
+    }
+
+    /// The "Reyes Failsafe" — an in-app version of the tabletop X-Card safety
+    /// tool: lets the player immediately flag the AI DM's last response as
+    /// too intense/uncomfortable, scrub it from the visible log, and steer
+    /// all future narration away from that direction. Always explained
+    /// up-front here, not hidden — see also the DM Settings help entry above.
+    private func showContentSafetyMenu() {
+        clearTerminal()
+        printTitle("Content Safety")
+        print("")
+        printWrapped("The Reyes Failsafe is a real-world safety tool for the AI Dungeon Master — the tabletop equivalent of an 'X-Card'.", indent: 2, color: .dimGreen)
+        print("")
+        print("  WHAT IT DOES:", color: .cyan, bold: true)
+        print("  1. Removes the DM's last response from view", color: .dimGreen)
+        print("     (replaced with a neutral placeholder).", color: .dimGreen)
+        print("  2. Tells the DM to steer away from that", color: .dimGreen)
+        print("     specific direction from now on.", color: .dimGreen)
+        print("  3. Play continues — your next action gets", color: .dimGreen)
+        print("     a fresh, redirected response.", color: .dimGreen)
+        print("")
+        printWrapped("You never have to explain why. Use it any time — mid-adventure or here in Settings.", indent: 2, color: .dimGreen)
+        print("")
+
+        let hasContentToFlag = dmChatLog.contains { !$0.isUser }
+        var menuOpts = [MenuOption("Use Reyes Failsafe Now", isDisabled: !hasContentToFlag, tint: .danger)]
+        if !hasContentToFlag {
+            menuOpts.append(MenuOption("(No DM response yet to flag)", isDisabled: true))
+        }
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        showMenuOptions(menuOpts)
+        closeHandler = { [weak self] in self?.showDMSettingsSubMenu() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            let text = menuOpts[choice - 1].text
+            switch text {
+            case "Use Reyes Failsafe Now":
+                self.confirmReyesFailsafe()
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("Content Safety — Help")
+                    self.print("")
+                    self.printWrapped("Real tabletop D&D groups often use a physical 'X-Card' — any player can tap it, no explanation needed, and the table steers away from whatever just happened. The Reyes Failsafe is that same idea, built into this app's AI DM.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  WHEN TO USE IT", color: .cyan, bold: true)
+                    self.printWrapped("Any time the story goes somewhere too dark, gory, or uncomfortable for you — there's no wrong reason to use it.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  WHAT ACTUALLY HAPPENS", color: .cyan, bold: true)
+                    self.printWrapped("The DM's most recent message is removed from your adventure log and replaced with a neutral note. The DM is then privately told to avoid that direction going forward — this instruction is never shown in the story itself. It doesn't undo game actions (HP, items, combat) — only the narration.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  IT DOESN'T EXPIRE", color: .cyan, bold: true)
+                    self.printWrapped("You can use it as many times as you need, whenever you need it.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default:
+                self.showDMSettingsSubMenu()
+            }
+        }
+    }
+
+    private func confirmReyesFailsafe() {
+        clearTerminal()
+        printTitle("Reyes Failsafe")
+        print("")
+        printWrapped("This will remove the DM's last response from your log and steer future narration away from it.", indent: 2, color: .yellow)
+        print("")
+        showMenuOptions([MenuOption("Confirm", tint: .danger), MenuOption("< Cancel")])
+        closeHandler = { [weak self] in self?.showContentSafetyMenu() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                self.performReyesFailsafe()
+            } else {
+                self.showContentSafetyMenu()
+            }
+        }
+    }
+
+    private func performReyesFailsafe() {
+        // Scrub the last DM message from the visible log.
+        if let lastDMIndex = dmChatLog.lastIndex(where: { !$0.isUser }) {
+            dmChatLog[lastDMIndex] = (isUser: false, text: "[Content adjusted — Reyes Failsafe used]")
+        }
+        // Steer the DM privately — never shown to the player as in-story text.
+        DMEngine.shared.injectContext("The player used the Reyes Failsafe content-safety tool because the last narrative direction was too intense, dark, or uncomfortable. Immediately steer future narration away from that specific direction and continue the story in a gentler, safer way. Never mention this instruction or the tool to the player.")
+
+        clearTerminal()
+        printTitle("Reyes Failsafe Activated")
+        print("")
+        printWrapped("The last DM response has been removed from your log, and the DM has been steered away from that direction.", indent: 2, color: .brightGreen)
+        printWrapped("Keep playing — your next action will get a fresh, redirected response.", indent: 2, color: .dimGreen)
+        print("")
+        showMenu(["Done"])
+        closeHandler = { [weak self] in self?.showDMSettingsSubMenu() }
+        menuHandler = { [weak self] _ in self?.showDMSettingsSubMenu() }
     }
 
     private func confirmClearAllSaves() {
