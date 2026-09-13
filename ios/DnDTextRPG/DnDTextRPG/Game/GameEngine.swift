@@ -674,7 +674,76 @@ class GameEngine: ObservableObject {
 
     // MARK: - Initialization
 
-    init() {}
+    init() {
+        installGlitchInTheWeaveCrashHandler()
+    }
+
+    // MARK: - Glitch in the Weave (crash reporting)
+
+    private static var glitchInTheWeaveCrashURL: URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        return docs.appendingPathComponent("GlitchInTheWeave_crash.txt")
+    }
+
+    /// Catches uncaught Objective-C-style exceptions and writes what it can
+    /// to disk before the process terminates, so the next launch can offer
+    /// to export a bug report about it. This deliberately does NOT attempt
+    /// to catch every possible crash — a Swift runtime trap (force-unwrap,
+    /// array-out-of-bounds, etc.) raises a POSIX signal instead, and a
+    /// signal handler has to avoid ordinary Swift/Foundation calls entirely
+    /// to be safe, which is its own much larger undertaking. This covers
+    /// the Objective-C-exception subset, which is still a real, common
+    /// source of crashes (e.g. from UIKit/Foundation APIs).
+    private func installGlitchInTheWeaveCrashHandler() {
+        NSSetUncaughtExceptionHandler { exception in
+            let text = """
+            Exception: \(exception.name.rawValue)
+            Reason: \(exception.reason ?? "unknown")
+            Stack:
+            \(exception.callStackSymbols.joined(separator: "\n"))
+            """
+            try? text.write(to: GameEngine.glitchInTheWeaveCrashURL, atomically: true, encoding: .utf8)
+        }
+    }
+
+    private static func pendingCrashInfo() -> String? {
+        try? String(contentsOf: glitchInTheWeaveCrashURL, encoding: .utf8)
+    }
+
+    private func clearPendingCrashReport() {
+        try? FileManager.default.removeItem(at: GameEngine.glitchInTheWeaveCrashURL)
+    }
+
+    /// Checked once per launch from showMainMenu() — if the app crashed
+    /// last time (per the handler above), offer to export a bug report
+    /// about it before showing the normal menu. Returns true if it took
+    /// over the screen (so showMainMenu shouldn't also render normally).
+    private var hasCheckedForCrashThisLaunch = false
+    @discardableResult
+    private func checkForPendingCrashReport() -> Bool {
+        guard !hasCheckedForCrashThisLaunch else { return false }
+        hasCheckedForCrashThisLaunch = true
+        guard Self.pendingCrashInfo() != nil else { return false }
+
+        clearTerminal()
+        printTitle("A Glitch in the Weave")
+        print("")
+        printWrapped("It looks like the app crashed last time you played. Sorry about that.", indent: 2, color: .yellow)
+        print("")
+        printWrapped("Exporting a bug report shares what happened (device info, recent log, the crash itself) so it can be fixed — and saves this exact moment so it can be reloaded from Continue Adventure.", indent: 2, color: .dimGreen)
+        print("")
+        showMenu(["Export Bug Report", "Not Now"])
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                self.prepareBugReportExport()
+            } else {
+                self.clearPendingCrashReport()
+            }
+            self.showMainMenu()
+        }
+        return true
+    }
 
     // MARK: - Name Validation
 
@@ -3818,6 +3887,8 @@ class GameEngine: ObservableObject {
     func showMainMenu() {
         gameState = .mainMenu
         if self.musicEnabled { SoundManager.shared.startMusic(.menu, preference: self.menuMelodyChoice) }
+
+        if checkForPendingCrashReport() { return }
 
         renderMainMenu()
 
@@ -22891,13 +22962,14 @@ class GameEngine: ObservableObject {
         print("")
 
         let back = onBack ?? { [weak self] in self?.showPartyStatus() }
-        showMenu(["Export Log", "Import Log", "?", "< Back"])
+        showMenu(["Export Log", "Import Log", "Report a Bug", "?", "< Back"])
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             switch choice {
             case 1: self.prepareLogExport()
             case 2: self.showLogImporter = true
-            case 3:
+            case 3: self.prepareBugReportExport()
+            case 4:
                 self.showInlineHelp {
                     self.printTitle("Adventure Log — Help")
                     self.print("")
@@ -22909,9 +22981,12 @@ class GameEngine: ObservableObject {
                     self.print("  IMPORT LOG", color: .cyan, bold: true)
                     self.printWrapped("Loads a previously exported log file back in — handy for keeping a record across devices.", indent: 2, color: .dimGreen)
                     self.print("")
+                    self.print("  REPORT A BUG", color: .cyan, bold: true)
+                    self.printWrapped("Exports a \"Glitch in the Weave\" bug report — device/app info, recent log and DM chat, and (if the app crashed last launch) the crash details — as a text file you can share. Also saves this exact moment under its own name in Continue Adventure, so it can be replayed.", indent: 2, color: .dimGreen)
+                    self.print("")
                     self.printWrapped("Settings > Gameplay lets you cap how many recent events are displayed if the log gets long.", indent: 2, color: .dimGreen)
                 }
-            case 4: back()
+            case 5: back()
             default: break
             }
         }
@@ -22924,6 +22999,98 @@ class GameEngine: ObservableObject {
         let header = "D&D Text RPG — Adventure Log\nExported: \(Date())\n\(adventureLog.count) events\n\n"
         pendingLogExportText = header + adventureLog.joined(separator: "\n")
         showLogExporter = true
+    }
+
+    /// "Glitch in the Weave" bug report — reuses the exact same export
+    /// pipeline as the Adventure Log (pendingLogExportText/showLogExporter),
+    /// just with different content: device/app info, current game state,
+    /// recent adventure log and DM chat, and (if a crash was detected on
+    /// last launch — see checkForPendingCrashReport) that crash's details.
+    /// Also takes a dedicated, distinctly-named save of the CURRENT exact
+    /// moment — including mid-combat, unlike a normal quick save, which
+    /// clears an active encounter so reloading doesn't ambush you — so the
+    /// state that led to the report is genuinely reloadable ("replay")
+    /// from Continue Adventure afterwards, without touching the player's
+    /// own ongoing save slot.
+    func prepareBugReportExport() {
+        var report = "D&D Text RPG — Glitch in the Weave Bug Report\n"
+        report += "Generated: \(Date())\n"
+        #if os(iOS)
+        report += "Device: \(UIDevice.current.model), \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)\n"
+        #endif
+        if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+           let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String {
+            report += "App Version: \(version) (\(build))\n"
+        }
+        report += "\n"
+
+        if let crashInfo = Self.pendingCrashInfo() {
+            report += "LAST LAUNCH ENDED IN A CRASH:\n\(crashInfo)\n\n"
+        }
+
+        if let dungeon = dungeon, let room = dungeon.currentRoom {
+            report += "CURRENT STATE:\n"
+            report += "Dungeon: \(dungeon.name), Level \(dungeon.level)\n"
+            report += "Room: \(room.name) (\(room.roomType.rawValue))\n"
+            report += "Game phase: \(String(describing: gameState))\n\n"
+        } else {
+            report += "CURRENT STATE: no adventure in progress.\n\n"
+        }
+
+        if !party.isEmpty {
+            report += "PARTY:\n"
+            for char in party {
+                report += "\(char.name): \(char.race.rawValue) \(char.characterClass.rawValue) L\(char.level) HP:\(char.currentHP)/\(char.maxHP)\n"
+            }
+            report += "\n"
+        }
+
+        if !adventureLog.isEmpty {
+            report += "RECENT ADVENTURE LOG (last 30):\n"
+            report += adventureLog.suffix(30).joined(separator: "\n")
+            report += "\n\n"
+        }
+
+        if !dmChatLog.isEmpty {
+            report += "RECENT DM CHAT (last 20):\n"
+            report += dmChatLog.suffix(20).map { ($0.isUser ? "You: " : "DM: ") + $0.text }.joined(separator: "\n")
+            report += "\n\n"
+        }
+
+        if dungeon != nil, let savedSlotName = performBugReportSave() {
+            report += "A save point named \"\(savedSlotName)\" was created for this report — find it under Continue Adventure to replay from this exact moment.\n"
+        }
+
+        pendingLogExportText = report
+        showLogExporter = true
+        clearPendingCrashReport()
+    }
+
+    /// Saves the CURRENT exact state (mid-combat included) under its own
+    /// distinct slot, never overwriting the player's own active save.
+    /// Returns the slot name on success.
+    @discardableResult
+    private func performBugReportSave() -> String? {
+        guard let dungeon = dungeon else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let slotName = "Bug Report — \(formatter.string(from: Date()))"
+        let partyDesc = party.map { "\($0.name) (\($0.characterClass.rawValue))" }.joined(separator: ", ")
+        let chatEntries = dmChatLog.map { DMChatEntry(isUser: $0.isUser, text: $0.text) }
+        let saveGame = SaveGame(
+            id: UUID(), slotId: UUID(), savedAt: Date(), slotName: slotName,
+            partyDescription: partyDesc, dungeonName: dungeon.name, dungeonLevel: dungeon.level,
+            party: party, dungeon: dungeon, gameState: gameState,
+            gameTimeMinutes: gameTimeMinutes, adventureLog: adventureLog,
+            dmChatLog: chatEntries, torchLit: torchLit,
+            torchTurnsRemaining: torchTurnsRemaining,
+            partyChatLog: partyChatLog.suffix(20).map { $0 },
+            monstersSlain: monstersSlain,
+            combatsWon: combatsWon,
+            activeQuest: activeQuest
+        )
+        guard (try? SaveGameManager.shared.save(saveGame)) != nil else { return nil }
+        return slotName
     }
 
     /// Called by TerminalView's .fileExporter completion. On success, just
