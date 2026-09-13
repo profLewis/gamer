@@ -6933,7 +6933,6 @@ class GameEngine: ObservableObject {
         var menuOpts = ["DM Settings", "Accessibility", "Mood", "Gameplay", "Game Saves"].map { MenuOption($0) }
         menuOpts.append(MenuOption("Save Settings"))
         menuOpts.append(MenuOption("Reset", tint: .danger))
-        menuOpts.append(MenuOption("Factory Reset", tint: .danger))
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(menuOpts)
@@ -6957,7 +6956,6 @@ class GameEngine: ObservableObject {
             case "Game Saves": self.showSaveSettings()
             case "Save Settings": self.showSettingsBackupMenu()
             case "Reset": self.confirmResetToDefaults()
-            case "Factory Reset": self.confirmFactoryReset()
             case "?": self.showSettingsHelp()
             case "< Back": backToMain()
             default: break
@@ -8488,14 +8486,7 @@ class GameEngine: ObservableObject {
             self.printWrapped("A different kind of saving — your settings and API keys, not your adventures. Opens Quick Save, Save As, Load, and API key backup/restore, all in one place. Quick Save also backs up your API keys to the device Keychain in the same tap.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  RESET", color: .cyan, bold: true)
-            self.printWrapped("Opens the Reset screen where you can:", indent: 2, color: .dimGreen)
-            self.printWrapped("• Review Changes — see every setting's current value alongside its default, and choose which ones to reset.", indent: 4, color: .dimGreen)
-            self.printWrapped("• Save Settings First — back up your current settings before resetting.", indent: 4, color: .dimGreen)
-            self.printWrapped("• Reset Now — reset all settings at once.", indent: 4, color: .dimGreen)
-            self.printWrapped("API keys and saved games are never affected by Reset — only Factory Reset touches those.", indent: 2, color: .dimGreen)
-            self.print("")
-            self.print("  FACTORY RESET", color: .red, bold: true)
-            self.printWrapped("The nuclear option: wipes settings, every saved game, AND every API key (app and Keychain) in one go, back to a fresh install. Needs two confirmations since it can't be undone. Settings backup files are left alone, so you can still restore your settings from one afterwards.", indent: 2, color: .dimGreen)
+            self.printWrapped("Opens the Reset screen: three toggles (Reset Settings, Clear API Keys, Delete Saved Games) — switch on any combination, from a plain settings reset to a full wipe of everything. Shows exactly what will change before applying, and can save your current settings first as a safety net.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  RED = OFF", color: .red, bold: true)
             self.printWrapped("Red = feature off. Green = on.", indent: 2, color: .dimGreen)
@@ -8503,152 +8494,208 @@ class GameEngine: ObservableObject {
         }
     }
 
-    /// The genuinely destructive option: settings, every saved game, AND
-    /// every API key (in-app and Keychain) all wiped in one go — chains the
-    /// same primitives "Reset" -> "Also Clear API Keys" -> "Also Delete
-    /// Saves" already offer one at a time. Settings backup files themselves
-    /// are deliberately left alone, so restoring from one afterwards is
-    /// still possible if this was tapped by mistake.
-    private func confirmFactoryReset() {
+    /// The unified Reset screen — combines what used to be a separate plain
+    /// "Reset" (settings only) and "Factory Reset" (settings + saves + keys)
+    /// into one screen with three independent toggles, so any combination
+    /// is a normal option rather than two hardcoded presets. Settings backup
+    /// files are never touched by any combination of these toggles — restoring
+    /// one afterwards (via Save Settings > Load) is always still possible.
+    private func confirmResetToDefaults(resetSettings: Bool = true, clearKeys: Bool = false, deleteSaves: Bool = false) {
         clearTerminal()
-        printTitle("Factory Reset")
+        printTitle("Reset")
         print("")
-        printWrapped("This wipes EVERYTHING back to a fresh install:", indent: 2, color: .red)
+        printWrapped("Choose what to reset, then Apply.", indent: 2, color: .dimGreen)
         print("")
-        print("  • All settings reset to defaults", color: .yellow)
-        print("  • All saved games deleted", color: .yellow)
-        print("  • All API keys removed (app + Keychain)", color: .yellow)
+        print("  [\(resetSettings ? "x" : " ")] Reset Settings to Defaults", color: resetSettings ? .brightGreen : .dimGreen)
+        print("  [\(clearKeys ? "x" : " ")] Also Clear API Keys", color: clearKeys ? .yellow : .dimGreen)
+        print("  [\(deleteSaves ? "x" : " ")] Also Delete Saved Games", color: deleteSaves ? .yellow : .dimGreen)
         print("")
-        printWrapped("Your settings backups are NOT deleted — you can still restore one afterwards from Save Settings if needed.", indent: 2, color: .dimGreen)
+        printWrapped("Settings backups are never affected — you can always restore one afterwards from Save Settings.", indent: 2, color: .dimGreen)
         print("")
 
-        let menuOpts = [MenuOption("I Understand, Continue", tint: .danger),
-                        MenuOption("Cancel", tint: .navigation)]
-        showMenuOptions(menuOpts)
-        closeHandler = { [weak self] in self?.showSettings() }
-        menuHandler = { [weak self] choice in
-            guard let self = self else { return }
-            guard choice == 1 else {
-                self.showSettings()
-                return
-            }
-            self.confirmFactoryResetFinal()
+        var options = ["Reset Settings: \(resetSettings ? "On" : "Off")",
+                        "Clear API Keys: \(clearKeys ? "On" : "Off")",
+                        "Delete Saves: \(deleteSaves ? "On" : "Off")"]
+        if resetSettings {
+            options.append("Review Setting Changes")
         }
-    }
+        options.append("Save Settings First")
+        options.append("Load a Backup")
+        let anySelected = resetSettings || clearKeys || deleteSaves
+        options.append("Apply")
 
-    private func confirmFactoryResetFinal() {
-        clearTerminal()
-        printTitle("Factory Reset — Are You Sure?")
-        print("")
-        printWrapped("This cannot be undone.", indent: 2, color: .red)
-        print("")
-
-        let menuOpts = [MenuOption("Yes, Factory Reset Everything", tint: .danger),
-                        MenuOption("Cancel", tint: .navigation)]
-        showMenuOptions(menuOpts)
-        closeHandler = { [weak self] in self?.showSettings() }
-        menuHandler = { [weak self] choice in
-            guard let self = self else { return }
-            guard choice == 1 else {
-                self.showSettings()
-                return
-            }
-            self.performFactoryReset()
+        var menuOpts = options.map { MenuOption($0) }
+        if let applyIdx = options.firstIndex(of: "Apply") {
+            menuOpts[applyIdx] = MenuOption("Apply", isDisabled: !anySelected, tint: (clearKeys || deleteSaves) ? .danger : .normal)
         }
-    }
-
-    private func performFactoryReset() {
-        // Settings
-        for key in Self.settingsKeys {
-            UserDefaults.standard.removeObject(forKey: key)
-        }
-        voiceMenuEnabled = true
-        useArrowNavigation = false
-        infoTimeout = 2.0
-        iconScaleSetting = 0
-        useCustomKeyboard = true
-        idlePromptsEnabled = false
-        blinkingCursorEnabled = !GameEngine.systemVoiceOverRunning
-        fontScale = FontSizeSetting.defaultSetting.scale
-        justDMMode = false
-        DMEngine.shared.justDMMode = false
-        syncSettingsAfterRestore()
-
-        // API keys — app storage and Keychain, every provider
-        for provider in AIProvider.allCases {
-            UserDefaults.standard.removeObject(forKey: provider.userDefaultsKey)
-            deleteSingleAPIKeyFromKeychain(for: provider)
-        }
-
-        // Saved games
-        for save in SaveGameManager.shared.listAllSaves() {
-            SaveGameManager.shared.delete(id: save.id)
-        }
-
-        clearTerminal()
-        printTitle("Factory Reset Complete")
-        print("")
-        printWrapped("Settings, saved games, and API keys have all been reset.", indent: 2, color: .brightGreen)
-        print("")
-        showMenu(["Done"])
-        closeHandler = { [weak self] in self?.showSettings() }
-        menuHandler = { [weak self] _ in self?.showSettings() }
-    }
-
-    private func confirmResetToDefaults() {
-        clearTerminal()
-        printTitle("Reset to Defaults")
-        print("")
-        printWrapped("This will restore settings to their original values.", indent: 2)
-        print("")
-        printWrapped("Your saved games and API keys will NOT be affected.", indent: 2, color: .yellow)
-        print("")
-
-        var menuOpts = [MenuOption("Review Changes"), MenuOption("Save Settings First"),
-                        MenuOption("Reset Now", tint: .danger),
-                        MenuOption("No Reset", tint: .navigation)]
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(menuOpts)
         closeHandler = { [weak self] in self?.showSettings() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             let text = menuOpts[choice - 1].text
             switch text {
-            case "Review Changes":
+            case let s where s.hasPrefix("Reset Settings:"):
+                self.confirmResetToDefaults(resetSettings: !resetSettings, clearKeys: clearKeys, deleteSaves: deleteSaves)
+            case let s where s.hasPrefix("Clear API Keys:"):
+                self.confirmResetToDefaults(resetSettings: resetSettings, clearKeys: !clearKeys, deleteSaves: deleteSaves)
+            case let s where s.hasPrefix("Delete Saves:"):
+                self.confirmResetToDefaults(resetSettings: resetSettings, clearKeys: clearKeys, deleteSaves: !deleteSaves)
+            case "Review Setting Changes":
                 self.showResetReview()
             case "Save Settings First":
                 self.saveSettingsBackup(name: "Before Reset") {
-                    self.showResetConfirmation(action: "Reset All Settings", changes: self.changedSettings()) {
-                        self.resetSettingsToDefaults()
-                    }
+                    self.confirmResetToDefaults(resetSettings: resetSettings, clearKeys: clearKeys, deleteSaves: deleteSaves)
                 }
-            case "Reset Now":
-                self.showResetConfirmation(action: "Reset All Settings", changes: self.changedSettings()) {
-                    self.resetSettingsToDefaults()
-                }
-            case "No Reset":
-                self.showSettings()
+            case "Load a Backup":
+                self.showLoadBackupMenu()
+            case "Apply":
+                guard anySelected else { return }
+                self.showUnifiedResetConfirmation(resetSettings: resetSettings, clearKeys: clearKeys, deleteSaves: deleteSaves)
             case "?":
                 self.showInlineHelp {
                     self.printTitle("Reset Help")
                     self.print("")
-                    self.print("  REVIEW CHANGES", color: .cyan, bold: true)
-                    self.printWrapped("Shows every setting that differs from its default. You can toggle each one on or off, then apply only the ones you want to reset.", indent: 2, color: .dimGreen)
+                    self.print("  THE THREE TOGGLES", color: .cyan, bold: true)
+                    self.printWrapped("Tap any of the three checkbox rows to switch it on or off. Mix and match — settings-only, keys-only, all three together (the old 'Factory Reset'), or any other combination.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  REVIEW SETTING CHANGES", color: .cyan, bold: true)
+                    self.printWrapped("Only shown when 'Reset Settings' is on. Shows every setting that differs from its default, and lets you toggle individual ones off if you don't want everything reset.", indent: 2, color: .dimGreen)
                     self.print("")
                     self.print("  SAVE SETTINGS FIRST", color: .cyan, bold: true)
-                    self.printWrapped("Backs up your current settings before resetting. You can restore them later from Settings → Saving.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Backs up your current settings (as 'Before Reset') before doing anything else — a safety net regardless of which toggles are on.", indent: 2, color: .dimGreen)
                     self.print("")
-                    self.print("  RESET NOW", color: .cyan, bold: true)
-                    self.printWrapped("Resets every setting to its default value immediately. Shows a confirmation with all changes before proceeding. API keys and saved games are preserved.", indent: 2, color: .dimGreen)
+                    self.print("  LOAD A BACKUP", color: .cyan, bold: true)
+                    self.printWrapped("Jumps straight to loading a previously saved settings backup instead, if that's what you actually wanted.", indent: 2, color: .dimGreen)
                     self.print("")
-                    self.print("  NO RESET", color: .cyan, bold: true)
-                    self.printWrapped("Return to Settings without changing anything.", indent: 2, color: .dimGreen)
+                    self.print("  APPLY", color: .cyan, bold: true)
+                    self.printWrapped("Shows exactly what will happen for everything you've switched on, then asks you to confirm before doing it.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             default:
                 self.showSettings()
             }
         }
+    }
+
+    /// Confirmation for the unified Reset screen — lists exactly what will
+    /// happen for whichever toggles are on (settings diff, save file names,
+    /// affected providers) before anything actually changes.
+    private func showUnifiedResetConfirmation(resetSettings: Bool, clearKeys: Bool, deleteSaves: Bool) {
+        clearTerminal()
+        printTitle("Confirm Reset")
+        print("")
+
+        let changes = resetSettings ? changedSettings() : []
+        let saves = deleteSaves ? SaveGameManager.shared.listAllSaves() : []
+        let keyedProviders = clearKeys ? AIProvider.allCases.filter { DMEngine.shared.apiKey(for: $0) != nil } : []
+
+        if resetSettings {
+            if changes.isEmpty {
+                printWrapped("Settings: already at defaults, nothing to change.", indent: 2, color: .dimGreen)
+            } else {
+                print("  SETTINGS (\(changes.count)):", color: .cyan, bold: true)
+                for item in changes {
+                    print("    \(item.name): \(item.currentDisplay) → \(item.defaultDisplay)", color: .dimGreen)
+                }
+            }
+            print("")
+        }
+        if clearKeys {
+            if keyedProviders.isEmpty {
+                printWrapped("API Keys: none currently set, nothing to clear.", indent: 2, color: .dimGreen)
+            } else {
+                print("  API KEYS TO CLEAR:", color: .yellow, bold: true)
+                for provider in keyedProviders {
+                    print("    \(provider.displayName)", color: .dimGreen)
+                }
+            }
+            print("")
+        }
+        if deleteSaves {
+            if saves.isEmpty {
+                printWrapped("Saved Games: none exist, nothing to delete.", indent: 2, color: .dimGreen)
+            } else {
+                print("  SAVES TO DELETE (\(saves.count)):", color: .yellow, bold: true)
+                for save in saves {
+                    print("    \(save.slotName)", color: .dimGreen)
+                }
+            }
+            print("")
+        }
+        if clearKeys || deleteSaves {
+            printWrapped("This cannot be undone.", indent: 2, color: .red)
+            print("")
+        }
+
+        let nothingToDo = changes.isEmpty && keyedProviders.isEmpty && saves.isEmpty
+        let menuOpts = [MenuOption(nothingToDo ? "Nothing To Apply" : "Apply", isDisabled: nothingToDo, tint: (clearKeys || deleteSaves) ? .danger : .normal),
+                        MenuOption("< Back")]
+        showMenuOptions(menuOpts)
+        closeHandler = { [weak self] in self?.confirmResetToDefaults(resetSettings: resetSettings, clearKeys: clearKeys, deleteSaves: deleteSaves) }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 && !nothingToDo {
+                self.performUnifiedReset(resetSettings: resetSettings, clearKeys: clearKeys, deleteSaves: deleteSaves)
+            } else {
+                self.confirmResetToDefaults(resetSettings: resetSettings, clearKeys: clearKeys, deleteSaves: deleteSaves)
+            }
+        }
+    }
+
+    /// Executes whichever combination of toggles was confirmed, printing
+    /// each step as it happens rather than a single flat "done" message.
+    private func performUnifiedReset(resetSettings: Bool, clearKeys: Bool, deleteSaves: Bool) {
+        clearTerminal()
+        printTitle("Resetting…")
+        print("")
+
+        if resetSettings {
+            print("  Resetting settings...", color: .dimGreen)
+            for key in Self.settingsKeys {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+            voiceMenuEnabled = true
+            useArrowNavigation = false
+            infoTimeout = 2.0
+            iconScaleSetting = 0
+            useCustomKeyboard = true
+            idlePromptsEnabled = false
+            blinkingCursorEnabled = !GameEngine.systemVoiceOverRunning
+            fontScale = FontSizeSetting.defaultSetting.scale
+            justDMMode = false
+            DMEngine.shared.justDMMode = false
+            syncSettingsAfterRestore()
+            print("  ✓ Settings reset to defaults.", color: .brightGreen)
+            print("")
+        }
+
+        if clearKeys {
+            print("  Clearing API keys...", color: .dimGreen)
+            for provider in AIProvider.allCases {
+                UserDefaults.standard.removeObject(forKey: provider.userDefaultsKey)
+                deleteSingleAPIKeyFromKeychain(for: provider)
+            }
+            print("  ✓ API keys cleared (app + Keychain).", color: .brightGreen)
+            print("")
+        }
+
+        if deleteSaves {
+            let saves = SaveGameManager.shared.listAllSaves()
+            print("  Deleting \(saves.count) save file\(saves.count == 1 ? "" : "s")...", color: .dimGreen)
+            for save in saves {
+                SaveGameManager.shared.delete(id: save.id)
+            }
+            print("  ✓ Saved games deleted.", color: .brightGreen)
+            print("")
+        }
+
+        printWrapped("Done.", indent: 2, color: .brightGreen)
+        print("")
+        showMenu(["Done"])
+        closeHandler = { [weak self] in self?.showSettings() }
+        menuHandler = { [weak self] _ in self?.showSettings() }
     }
 
     /// Confirmation screen showing exactly what will change before any reset action
@@ -8924,110 +8971,6 @@ class GameEngine: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { completion() }
     }
 
-    private func resetSettingsToDefaults() {
-        // Preserve API key and saves
-        let preserveKeys: Set<String> = ["dmApiKey"]
-        let preserved = preserveKeys.compactMap { key -> (String, Any)? in
-            guard let val = UserDefaults.standard.object(forKey: key) else { return nil }
-            return (key, val)
-        }
-
-        // Remove all settings keys
-        for key in Self.settingsKeys where !preserveKeys.contains(key) {
-            UserDefaults.standard.removeObject(forKey: key)
-        }
-
-        // Restore preserved keys
-        for (key, val) in preserved {
-            UserDefaults.standard.set(val, forKey: key)
-        }
-
-        // Re-sync @Published properties that cache UserDefaults values
-        voiceMenuEnabled = true
-        useArrowNavigation = false
-        infoTimeout = 2.0
-        iconScaleSetting = 0
-        useCustomKeyboard = true
-        idlePromptsEnabled = false
-        blinkingCursorEnabled = !GameEngine.systemVoiceOverRunning
-        fontScale = FontSizeSetting.defaultSetting.scale
-        justDMMode = false
-        DMEngine.shared.justDMMode = false
-        // Note: computed properties (musicEnabled, hitAnimationsEnabled, etc.)
-        // read directly from UserDefaults so they auto-reset.
-
-        // Sync runtime sound/music state
-        syncSettingsAfterRestore()
-
-        clearTerminal()
-        printTitle("Settings Reset")
-        print("")
-        printWrapped("All settings restored to defaults.", indent: 2, color: .brightGreen)
-        print("")
-        print("  Defaults:", color: .cyan, bold: true)
-        print("    Music: On   Sounds: On", color: .dimGreen)
-        print("    Hits: On    DM Voice: Off", color: .dimGreen)
-        print("    Voice Menus: Off", color: .dimGreen)
-        print("    DM: Moderate ad-lib", color: .dimGreen)
-        print("    Text Mode: Off", color: .dimGreen)
-        print("")
-        printWrapped("API keys and saved games are unchanged.", indent: 2, color: .dimGreen)
-        printWrapped("To change API keys: Settings → DM Settings.", indent: 2, color: .dimGreen)
-        print("")
-
-        let menuOpts = [MenuOption("Also Clear API Keys", tint: .danger),
-                        MenuOption("Also Delete Saves", tint: .danger),
-                        MenuOption("Done", tint: .navigation)]
-        showMenuOptions(menuOpts)
-        closeHandler = { [weak self] in self?.showSettings() }
-        menuHandler = { [weak self] choice in
-            guard let self = self else { return }
-            switch choice {
-            case 1:
-                self.confirmClearAPIKeysAfterReset()
-            case 2:
-                self.confirmClearAllSaves()
-            default:
-                self.showSettings()
-            }
-        }
-    }
-
-    private func confirmClearAPIKeysAfterReset() {
-        clearTerminal()
-        printTitle("Confirm: Clear API Keys")
-        print("")
-        printWrapped("This will permanently remove all stored API keys.", indent: 2, color: .red)
-        print("")
-        printWrapped("You will need to re-enter your API key to use the AI Dungeon Master.", indent: 2, color: .yellow)
-        print("")
-
-        let menuOpts = [MenuOption("Yes, Clear Keys", tint: .danger),
-                        MenuOption("< Back")]
-        showMenuOptions(menuOpts)
-        closeHandler = { [weak self] in self?.showSettings() }
-        menuHandler = { [weak self] choice in
-            guard let self = self else { return }
-            if choice == 1 {
-                // DMEngine.shared.apiKey only ever addresses the CURRENTLY
-                // selected provider's key — clearing every provider actually
-                // stored requires going through each one explicitly.
-                for provider in AIProvider.allCases {
-                    UserDefaults.standard.removeObject(forKey: provider.userDefaultsKey)
-                }
-                self.clearTerminal()
-                self.printTitle("API Keys Cleared")
-                self.print("")
-                self.printWrapped("All API keys have been removed.", indent: 2, color: .red)
-                self.print("")
-                self.showMenu(["Done"])
-                self.closeHandler = { [weak self] in self?.showSettings() }
-                self.menuHandler = { [weak self] _ in self?.showSettings() }
-            } else {
-                self.showSettings()
-            }
-        }
-    }
 
     func showMusicSettings() {
         clearTerminal()
