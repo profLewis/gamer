@@ -9013,21 +9013,30 @@ class GameEngine: ObservableObject {
         print("  These give the best DM experience.", color: .dimGreen)
         print("  Each requires its own API key.", color: .dimGreen)
         print("")
+        print("  Orange buttons below aren't set up", color: .orange)
+        print("  yet — no key saved, so they won't", color: .orange)
+        print("  work until you tap in and add one.", color: .orange)
+        print("")
 
         let current = dm.provider
         for provider in AIProvider.allCases {
             let isCurrent = provider == current && dm.isConfigured
             let marker = isCurrent ? " <--" : ""
             let hasKey = dm.apiKey(for: provider) != nil
-            let keyStatus = hasKey ? " [key set]" : ""
+            let keyStatus = hasKey ? " [key set]" : " [not set up]"
             let freeTag = provider == .google && !hasKey ? " (FREE!)" : ""
+            let rowColor: TerminalColor = isCurrent ? .brightGreen : (hasKey ? .dimGreen : .orange)
             print("  \(provider.displayName)\(keyStatus)\(freeTag)\(marker)",
-                  color: isCurrent ? .brightGreen : .dimGreen, bold: isCurrent)
+                  color: rowColor, bold: isCurrent)
             print("     \(provider.keyURL)", color: .dimGreen)
             print("")
         }
 
-        // Build menu with <-- marker on current provider
+        // Build menu with <-- marker on current provider. Tint amber (this
+        // app's closest button colour to orange) for anything not actually
+        // usable yet — no key saved for a cloud provider, or Apple's model
+        // unavailable on this hardware — so readiness is visible on the
+        // button itself, not just in the text above.
         var options: [MenuOption] = []
         let isAppleSelected = !dm.isConfigured && dm.isAppleModelAvailable
         if dm.isAppleModelAvailable {
@@ -9036,8 +9045,9 @@ class GameEngine: ObservableObject {
         }
         for provider in AIProvider.allCases {
             let isSelected = provider == current && dm.isConfigured
+            let hasKey = dm.apiKey(for: provider) != nil
             let label = isSelected ? "\(provider.displayName) <--" : provider.displayName
-            options.append(MenuOption(label, isDefault: isSelected))
+            options.append(MenuOption(label, isDefault: isSelected, tint: hasKey ? .normal : .amber))
         }
         options.append(MenuOption("?", tint: .navigation, compact: true))
         options.append(MenuOption("< Back", tint: .navigation, compact: true))
@@ -9073,6 +9083,9 @@ class GameEngine: ObservableObject {
                     self?.print("")
                     self?.print("  TAP A PROVIDER", color: .cyan, bold: true)
                     self?.printWrapped("Tapping any provider (including Apple On-Device AI) opens its own info screen — status, a Test button, and (for cloud providers) buttons to enter, edit, or remove its key.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                    self?.print("  BUTTON COLOUR", color: .cyan, bold: true)
+                    self?.printWrapped("An orange provider button means it isn't ready to use yet — usually no key saved. Green means a key is saved (this doesn't guarantee it'll pass a test — use Test Key on that provider's screen to check).", indent: 2, color: .dimGreen)
                     self?.print("")
                 }
                 return
@@ -10369,6 +10382,47 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Shows the full, un-redacted key on screen — the actual "view" a
+    /// redacted preview can't give you — with a direct Copy button right
+    /// there, since seeing it and wanting to copy it usually go together.
+    private func showFullAPIKey(provider: AIProvider) {
+        clearTerminal()
+        printTitle("\(provider.displayName) Key")
+        print("")
+        if let key = DMEngine.shared.apiKey, !key.isEmpty {
+            print("  \(key)", color: .brightGreen)
+            print("")
+            print("  (\(key.count) characters)", color: .dimGreen)
+        } else {
+            print("  No key set.", color: .yellow)
+        }
+        print("")
+        var opts = [MenuOption]()
+        #if os(iOS)
+        opts.append(MenuOption("Copy Key"))
+        #endif
+        opts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        showMenuOptions(opts)
+        closeHandler = { [weak self] in self?.promptAPIKey() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            #if os(iOS)
+            if choice == 1, let key = DMEngine.shared.apiKey {
+                UIPasteboard.general.string = key
+                self.print("")
+                self.print("  Key copied to clipboard.", color: .brightGreen)
+                self.print("")
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.showFullAPIKey(provider: provider)
+                }
+                return
+            }
+            #endif
+            self.promptAPIKey()
+        }
+    }
+
     private func promptAPIKey(showClearConfirm: Bool = false) {
         let provider = DMEngine.shared.provider
         clearTerminal()
@@ -10472,6 +10526,7 @@ class GameEngine: ObservableObject {
         }
         let hasKeychainBackup = loadAPIKeyFromKeychain(for: provider) != nil
         if hasKey {
+            options.append("Show Key")
             options.append("Test Key")
             options.append("Copy Key")
             options.append("Remove Key")
@@ -10518,6 +10573,9 @@ class GameEngine: ObservableObject {
                     self.printWrapped("Opens a text field with your current key already filled in, so you can review or correct it character-by-character, or type/paste a new one from scratch if there's no key yet.", indent: 2, color: .dimGreen)
                     self.print("")
                     if hasKey {
+                        self.print("  SHOW KEY", color: .cyan, bold: true)
+                        self.printWrapped("Displays your full, un-redacted key on screen, with a Copy button right there.", indent: 2, color: .dimGreen)
+                        self.print("")
                         self.print("  TEST KEY", color: .cyan, bold: true)
                         self.printWrapped("Re-runs the connection test against your currently stored key, and shows its length and first/last characters — useful if a key seems right but keeps failing.", indent: 2, color: .dimGreen)
                         self.print("")
@@ -10649,6 +10707,8 @@ class GameEngine: ObservableObject {
                     }
                     self?.validateAndConfirmKey(provider: provider)
                 }
+            } else if selected == "Show Key" {
+                self.showFullAPIKey(provider: provider)
             } else if selected == "Test Key" {
                 if let key = DMEngine.shared.apiKey, !key.isEmpty {
                     self.print("")
