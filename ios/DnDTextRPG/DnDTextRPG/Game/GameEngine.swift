@@ -10040,6 +10040,8 @@ class GameEngine: ObservableObject {
         if canRevert {
             menuOpts[menuOpts.count - 1] = MenuOption("Revert", tint: .danger)
         }
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(menuOpts)
 
         closeHandler = { [weak self] in
@@ -10047,6 +10049,29 @@ class GameEngine: ObservableObject {
             self?.showVoiceSettings()
         }
         menuHandler = { [weak self] choice in
+            if choice == menuOpts.count {
+                speech.stop()
+                self?.showVoiceSettings()
+                return
+            }
+            if choice == menuOpts.count - 1 {
+                self?.showInlineHelp {
+                    self?.printTitle("DM Voice Preview — Help")
+                    self?.print("")
+                    self?.print("  SOUNDS GOOD", color: .cyan, bold: true)
+                    self?.printWrapped("Keeps this voice and returns to DM Voice settings.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                    self?.print("  CHANGE VOICE / SPEED / PITCH", color: .cyan, bold: true)
+                    self?.printWrapped("Adjust and come straight back here to hear the result.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                    if canRevert {
+                        self?.print("  REVERT", color: .cyan, bold: true)
+                        self?.printWrapped("Switches back to the voice you had before this preview.", indent: 2, color: .dimGreen)
+                        self?.print("")
+                    }
+                }
+                return
+            }
             speech.stop()
             let selected = opts[choice - 1]
             switch selected {
