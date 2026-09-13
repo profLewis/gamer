@@ -1389,6 +1389,16 @@ struct MenuButtonsView: View {
         let compact = compactIndices
         let regular = regularIndices
         let spacerIndex = needsTrailingSpacer ? options.count - 1 : -1
+        // Never let the compact nav cell (?, <<, >>, < Back...) share the
+        // ONLY row on screen — with 0 or 1 regular buttons, the grid would
+        // otherwise be a single row with the nav cell crammed in next to
+        // the lone action button (or standing alone). Force a second row
+        // instead, so the nav cell always settles into a bottom-right
+        // corner below at least one row of real content, not sharing a
+        // row with it. 2+ regular buttons already produce 2+ rows on their
+        // own (see the plain "push to right column" logic below), so this
+        // only kicks in for the single-row case.
+        let forceSecondRow = !compact.isEmpty && regular.count <= 1
 
         LazyVGrid(columns: gridColumns, spacing: isCompact ? 4 : 6) {
             // Regular buttons — the displayed "N." is this button's position
@@ -1409,8 +1419,16 @@ struct MenuButtonsView: View {
 
             // Compact nav cell (↩ ⏮ ? ⏭ ↪) — single cell, bottom right
             if !compact.isEmpty {
-                // Push to right column if regular count is even
-                if regular.count % 2 == 0 {
+                if forceSecondRow {
+                    // Pad with empty cells so the nav cell lands as the 4th
+                    // cell overall (i.e. bottom-right of a forced 2-row,
+                    // 2-column layout) — contiguous with the lone button's
+                    // row rather than leaving a blank row above it.
+                    ForEach(0..<max(0, 3 - regular.count), id: \.self) { _ in
+                        Color.clear.frame(minHeight: buttonMinHeight)
+                    }
+                } else if regular.count % 2 == 0 {
+                    // Push to right column if regular count is even
                     Color.clear.frame(minHeight: buttonMinHeight)
                 }
                 compactNavCell(indices: compact)
