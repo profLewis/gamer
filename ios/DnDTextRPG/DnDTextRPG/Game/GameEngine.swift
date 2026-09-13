@@ -10307,7 +10307,19 @@ class GameEngine: ObservableObject {
                 self.recordSettingChange(screen: "s:gameplay", key: "map_legend_max_symbols", name: "Map Legend")
                 self.showMapRadiusMenu()
             } else if choice == helpIndex {
-                self.showGameplaySettingsHelp()
+                self.showInlineHelp {
+                    self.printTitle("Map Length Help")
+                    self.print("")
+                    self.print("  MAP LENGTH", color: .cyan, bold: true)
+                    self.printWrapped("How far you can see up/down the minimap. Width isn't affected — the map already widens on its own to use the available screen space. Larger values may need scrolling.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  TORCH", color: .cyan, bold: true)
+                    self.printWrapped("Without a lit torch, visibility drops to 1 regardless of this setting. The preview above shows both lit and unlit — tap 'Torch On/Off' to compare.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  LEGEND", color: .cyan, bold: true)
+                    self.printWrapped("How many symbol/meaning rows the map's key shows at once — cycles through a few fixed sizes up to 'All'. Only symbols actually nearby are shown, but the box stays this many rows regardless.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
             } else if choice == backIndex {
                 self.showGameplaySettings()
             }
@@ -10664,6 +10676,13 @@ class GameEngine: ObservableObject {
                         self.printWrapped("2. Create a new API key there and copy it immediately — it's shown once only.", indent: 2, color: .dimGreen)
                         self.printWrapped("3. Come back and use Paste Key or Edit Key.", indent: 2, color: .dimGreen)
                         self.printWrapped("4. If Test Key fails with a billing/credit error, tap Billing Page and add a payment method — a typical session only costs a few pence.", indent: 2, color: .dimGreen)
+                        self.print("")
+                    } else {
+                        self.print("  GETTING YOUR FREE KEY", color: .cyan, bold: true)
+                        self.printWrapped("1. Tap Get Free Key — sign in with a Google account (you must be 18+).", indent: 2, color: .dimGreen)
+                        self.printWrapped("2. Tap 'Create API key' on the AI Studio page and copy it immediately — it's shown once only.", indent: 2, color: .dimGreen)
+                        self.printWrapped("3. Come back and use Paste Key or Edit Key.", indent: 2, color: .dimGreen)
+                        self.printWrapped("4. A real Gemini key always starts with 'AIza'. If yours starts with something else (e.g. 'AQ.'), you've likely copied a different token from the page — go back to AI Studio and copy the one under 'API key' specifically.", indent: 2, color: .dimGreen)
                         self.print("")
                     }
                 }
