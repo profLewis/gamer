@@ -156,6 +156,12 @@ class SaveGameManager {
         let fileName = "\(id.uuidString).json"
         let fileURL = savesDirectory.appendingPathComponent(fileName)
         try? FileManager.default.removeItem(at: fileURL)
+        // A completed tale's Hall of Fame entry is just this same save
+        // shown differently in Continue Adventure's one unified list, not
+        // a second, independent record — deleting the save should delete
+        // it too, rather than leaving a "no save" ghost of the adventure
+        // the player just removed.
+        HallOfFameManager.shared.deleteEntries(forSaveGameId: id)
     }
 
     /// Delete all breakpoints in a slot

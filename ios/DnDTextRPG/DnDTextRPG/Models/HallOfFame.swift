@@ -146,6 +146,23 @@ class HallOfFameManager {
         try? data.write(to: fileURL)
     }
 
+    func deleteEntry(id: UUID) {
+        let fileURL = hallDirectory.appendingPathComponent("\(id.uuidString).json")
+        try? FileManager.default.removeItem(at: fileURL)
+    }
+
+    /// Deletes every entry linked to a save (there should only ever be one,
+    /// but this is thorough) — used when that save is deleted, so Continue
+    /// Adventure doesn't go on showing a "no save" ghost of an adventure
+    /// the player just removed. See GameEngine's single-list design: this
+    /// list already IS the Hall of Fame (completed tales show their W/L
+    /// result inline), so deleting the save should delete the whole entry.
+    func deleteEntries(forSaveGameId saveGameId: UUID) {
+        for entry in listEntries() where entry.saveGameId == saveGameId {
+            deleteEntry(id: entry.id)
+        }
+    }
+
     // MARK: - Stats
 
     func totalVictories() -> Int {

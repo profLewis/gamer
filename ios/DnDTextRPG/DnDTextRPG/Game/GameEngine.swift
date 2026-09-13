@@ -29111,23 +29111,26 @@ class GameEngine: ObservableObject {
         let slots = SaveGameManager.shared.listSlots()
         let allHofEntries = HallOfFameManager.shared.listEntries()
 
-        // Every entry — an adventure still in progress, one that's been
-        // recorded in the Hall of Fame with a surviving linked save, or a
-        // Hall of Fame entry with no (surviving) save at all — is the exact
-        // same kind of row here. A slot whose latest save happens to be
-        // linked from a completed Hall of Fame entry is simply shown in
-        // that entry's own style (outcome tag + score) instead of PLAYING;
-        // there's no separate "kind" of list item, no separate screen to
-        // visit, and no different behaviour depending on which one it is.
+        // Every entry here is backed by an actual save — no separate
+        // "Hall of Fame entry with no surviving save" row anymore (that
+        // used to linger even after the player deleted every save, which
+        // read as two disconnected lists of the same adventures instead of
+        // one). A slot whose latest save happens to be linked from a
+        // completed Hall of Fame entry is simply shown in that entry's own
+        // style (outcome tag + score) instead of PLAYING.
         let hofBySaveId: [UUID: HallOfFameEntry] = Dictionary(
             allHofEntries.compactMap { entry in entry.saveGameId.map { ($0, entry) } },
             uniquingKeysWith: { first, _ in first }
         )
-        let orphanHofEntries = allHofEntries.filter { entry in
-            entry.saveGameId == nil || SaveGameManager.shared.load(id: entry.saveGameId!) == nil
+        // Garbage-collect anything left over from before this was fixed,
+        // or from a deletion path that predates SaveGameManager.delete's
+        // own cascade — quietly, on every visit, so a deleted adventure
+        // never resurfaces here again.
+        for entry in allHofEntries where entry.saveGameId == nil || SaveGameManager.shared.load(id: entry.saveGameId!) == nil {
+            HallOfFameManager.shared.deleteEntry(id: entry.id)
         }
 
-        var rows: [AdventureRow] = slots.map { .slot($0) } + orphanHofEntries.map { .orphanHof($0) }
+        var rows: [AdventureRow] = slots.map { .slot($0) }
 
         if rows.isEmpty {
             print("  No saved games or adventures recorded yet.", color: .yellow)
