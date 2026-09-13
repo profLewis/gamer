@@ -1039,10 +1039,15 @@ class GameEngine: ObservableObject {
         }
     }
 
-    /// Font size for the map — larger on iPad
+    /// Font size for the map — larger on iPad, a little larger on macOS
+    /// too (the window is much roomier than a phone screen — see
+    /// bestMapRadius's macOS branch for where most of that extra space
+    /// actually goes: a bigger viewport, not a bigger font).
     var mapFontSize: CGFloat {
         #if os(iOS)
         return UIDevice.current.userInterfaceIdiom == .pad ? 20 : 14
+        #elseif os(macOS)
+        return 16
         #else
         return 14
         #endif
@@ -16215,6 +16220,16 @@ class GameEngine: ObservableObject {
         // small fixed size whenever the torch went out, instead of just
         // going dark in place at the same size.
         guard mapRadius > 0 else { return (0, 0, false) }
+        #if os(macOS)
+        // A resizable macOS window is typically far roomier than either
+        // phone orientation — "bigger map" there means an actually wider
+        // viewport (more of the dungeon visible at once), not a bigger
+        // font stretched to fill the extra space (see mapFontSize, which
+        // only bumps up a little for macOS).
+        let verticalRadius = mapRadius + 2
+        let horizontalRadius = min(mapRadius + 6, 10)
+        return (horizontalRadius, verticalRadius, false)
+        #else
         // The "Map Length" setting only ever governs vertical rows (how far
         // up/down you can see) — width is handled automatically here instead,
         // widening to use whatever screen space is actually available rather
@@ -16229,6 +16244,7 @@ class GameEngine: ObservableObject {
         // Length the player picked for portrait.
         let verticalRadius = isLandscapeOrientation ? 1 : mapRadius
         let horizontalRadius = isLandscapeOrientation ? min(verticalRadius + 1, 4) : min(mapRadius + 2, 5)
+        #endif
         // Key/legend always hidden on the small pinned map, regardless of
         // Map Length — it used to only hide once Length went above 1, so the
         // The key/legend IS part of this content (compact: false) — it's

@@ -127,6 +127,11 @@ struct TerminalView: View {
     var body: some View {
         GeometryReader { geometry in
             let isLandscape = geometry.size.width > geometry.size.height
+            // Map's own font stays the regular text scale — "bigger map"
+            // on macOS means showing more of the dungeon (a wider viewport
+            // — see GameEngine.bestMapRadius's macOS branch), not a bigger
+            // font blown up to fill extra window space.
+            let mapScale = scale
             ZStack {
                 topLevelStack(isLandscape: isLandscape) {
                     adaptiveMapTextStack(isLandscape: isLandscape) {
@@ -154,10 +159,10 @@ struct TerminalView: View {
                                 // bottom.
                                 if isLandscape && index == 3 {
                                     Color.clear
-                                        .frame(height: (gameEngine.mapFontSize * scale * 1.3 + 2) / 2)
+                                        .frame(height: (gameEngine.mapFontSize * mapScale * 1.3 + 2) / 2)
                                         .id("landscapeMapHalfLineSpacer")
                                 }
-                                TerminalLineView(line: line, scale: scale)
+                                TerminalLineView(line: line, scale: mapScale)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -231,7 +236,7 @@ struct TerminalView: View {
                         // ever taller than the space actually available (a
                         // small landscape column, a long Map
                         // Length, larger text scale...).
-                        .frame(height: (CGFloat(gameEngine.mapOnlyLineCount) - (isLandscape ? 0.0 : 0.5)) * (gameEngine.mapFontSize * scale * 1.3 + 2))
+                        .frame(height: (CGFloat(gameEngine.mapOnlyLineCount) - (isLandscape ? 0.0 : 0.5)) * (gameEngine.mapFontSize * mapScale * 1.3 + 2))
                         .background(terminalBackground)
                         .contentShape(Rectangle())
                         .onLongPressGesture(minimumDuration: 0.5) {
