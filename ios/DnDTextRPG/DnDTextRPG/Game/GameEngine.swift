@@ -205,6 +205,18 @@ class GameEngine: ObservableObject {
     @Published var suppressAutoScroll: Bool = true
     /// Lock scrolling entirely (for card views with swipe navigation)
     @Published var scrollLocked: Bool = false
+    /// Bumped by every clearTerminal() call — i.e. every genuine navigation
+    /// to a new screen. TerminalView uses this to tell "brand new screen,
+    /// whatever the reader was scrolled to a moment ago is irrelevant" apart
+    /// from "same screen, just more content appended" — the latter is the
+    /// only case its own recent-manual-scroll guard is meant to protect
+    /// (see recentlyScrolledManually there). Without this distinction, an
+    /// incidental few points of finger movement during the very tap that
+    /// opens a new screen (very easy to trigger on a real touchscreen) could
+    /// get read as "the reader just manually scrolled" and suppress that
+    /// new screen's scroll-to-top, leaving it showing blank/stale content
+    /// until some later, unrelated transition happened to land right.
+    @Published private(set) var screenGeneration: Int = 0
 
     /// Swipe left/right handlers for top-trump card navigation
     var swipeLeftHandler: (() -> Void)?
@@ -1334,6 +1346,7 @@ class GameEngine: ObservableObject {
         // makes a watchdog stand down the instant anything newer has
         // started, instead of judging a screen it was never watching.
         clearTerminalGeneration += 1
+        screenGeneration += 1
         stopIdleAnimations()
         stopMenuAnimation()
         SpeechEngine.shared.stop()

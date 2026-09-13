@@ -75,6 +75,10 @@ struct TerminalView: View {
     /// plays out in the meantime. Auto-scroll only resumes once they
     /// actually scroll back down to the bottom themselves.
     @State private var isNearBottom: Bool = true
+    /// Last gameEngine.screenGeneration value we actually scrolled-to-top
+    /// for — lets the scroll-to-top handler tell "brand new screen" apart
+    /// from "same screen, more content appended" (see its own comment).
+    @State private var lastScrolledGeneration: Int = -1
     #if os(iOS)
     @State private var showCustomKeyboard: Bool = false
     @State private var keyboardCollapsedAt: Date = .distantPast
@@ -358,10 +362,24 @@ struct TerminalView: View {
                             if gameEngine.suppressAutoScroll {
                                 // Paginated card-style screens — still time-based (isNearBottom's
                                 // bottom-sentinel doesn't map to "stay at the top" the same way).
-                                guard !recentlyScrolledManually else { return }
+                                // EXCEPT when this is a genuinely new screen (screenGeneration
+                                // changed since the last scroll) — the recent-manual-scroll guard
+                                // is only meant to protect "still reading the same paginated
+                                // content, just tapped a nav button" from being yanked back to
+                                // top; it must not also suppress the very first scroll-to-top of
+                                // a brand new screen. Without this, a few points of incidental
+                                // finger movement during the tap that OPENED this new screen
+                                // (trivially easy on a real touchscreen) read as "the reader just
+                                // manually scrolled," leaving the new screen at whatever offset
+                                // the previous one was scrolled to — which can be well past this
+                                // screen's shorter content, i.e. showing nothing at all until an
+                                // unrelated later transition happened to land right.
+                                let isNewScreen = gameEngine.screenGeneration != lastScrolledGeneration
+                                guard isNewScreen || !recentlyScrolledManually else { return }
+                                lastScrolledGeneration = gameEngine.screenGeneration
                                 scrollToTop(scrollProxy)
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                    guard gameEngine.suppressAutoScroll, !recentlyScrolledManually else { return }
+                                    guard gameEngine.suppressAutoScroll else { return }
                                     scrollToTop(scrollProxy)
                                 }
                             } else {
@@ -579,6 +597,22 @@ struct TerminalView: View {
         }
     }
 
+    /// Reserves stable vertical space for the button grid so its position
+    /// doesn't shift depending on whether the current screen has 1, 2, or 3
+    /// rows of buttons — sized for maxButtonsPerScreen (the "Buttons"
+    /// Gameplay setting, 2 per row), using the same row-height/spacing math
+    /// as MenuButtonsView itself. A screen with fewer buttons just leaves
+    /// blank space below them instead of the whole block (and the text
+    /// ScrollView above it, which greedily fills whatever's left) shifting.
+    private var reservedButtonGridHeight: CGFloat {
+        let maxButtons = max(1, gameEngine.maxButtonsPerScreen)
+        let rows = Int(ceil(Double(maxButtons) / 2.0))
+        let isCompact = maxButtons > 6
+        let rowHeight: CGFloat = isCompact ? max(36, 32 * scale) : max(44, 38 * scale)
+        let spacing: CGFloat = isCompact ? 4 : 6
+        return CGFloat(rows) * rowHeight + CGFloat(max(0, rows - 1)) * spacing
+    }
+
     /// Direction D-pad + action button row — one of Region B's two blocks
     /// (see body), reordered relative to inputBarAndKeyboardBlock depending
     /// on orientation.
@@ -633,6 +667,7 @@ struct TerminalView: View {
                                     undoTargetIndex: gameEngine.undoTargetButtonIndex,
                                     redoTargetIndex: gameEngine.redoTargetButtonIndex
                                 )
+                                .frame(minHeight: reservedButtonGridHeight, alignment: .top)
                             }
 
                         }
