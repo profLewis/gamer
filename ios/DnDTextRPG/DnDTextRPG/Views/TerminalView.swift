@@ -300,6 +300,7 @@ struct TerminalView: View {
                                             .foregroundColor(.secondary)
                                             .frame(maxWidth: .infinity)
                                             .multilineTextAlignment(.center)
+                                            .onTapGesture { gameEngine.showPoseLore(for: caption) }
                                     }
                                 }
                                 // Inline image (e.g. main menu portrait)

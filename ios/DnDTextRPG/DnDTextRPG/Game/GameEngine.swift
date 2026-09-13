@@ -141,11 +141,33 @@ class GameEngine: ObservableObject {
         "dragon_flapping": "Wings Through the Archive",
     ]
 
+    /// A short flavour blurb per pose caption — tapping the caption (see
+    /// TerminalView) shows this instead of the text just sitting there
+    /// inert. Every caption gets one so tapping never does nothing.
+    private static let poseLore: [String: String] = [
+        "Warden of the Hall": "No one remembers who set this dragon to guard the threshold, or what it's meant to keep in — or out. It watches every adventurer who passes, and says nothing.",
+        "Spoils of Victory": "Gold, glory, and one very smug dragon. Whatever's still lurking below can wait until the next descent.",
+        "Wings Through the Archive": "Somewhere beneath the dungeon's oldest halls, something with wings still keeps its own records.",
+    ]
+
     /// Caption for whichever full-screen art/GIF moment is currently showing.
     var currentPoseCaption: String? {
         if let gif = dragonGifName { return Self.poseNames[gif] }
         if let img = menuImageName { return Self.poseNames[img] }
         return nil
+    }
+
+    /// Tapping a pose caption (e.g. "Warden of the Hall" next to the main
+    /// menu dragon) shows a short flavour blurb instead of just sitting
+    /// there as inert decoration — restores whatever was on screen after.
+    func showPoseLore(for caption: String) {
+        guard let lore = Self.poseLore[caption] else { return }
+        showInlineHelp {
+            self.printTitle(caption)
+            self.print("")
+            self.printWrapped(lore, indent: 2, color: .dimGreen)
+            self.print("")
+        }
     }
     /// When set, TerminalView prefills the text input field with this value
     @Published var prefillInputText: String? = nil
@@ -12443,7 +12465,7 @@ class GameEngine: ObservableObject {
                 "Your companions may not take kindly to sudden changes.",
             ]
             printWrapped(warnings.randomElement()!, indent: 2, color: .yellow)
-            print("  (Long-press to edit anyway)", color: .dimGreen)
+            printWrapped("The DM advises against changing these mid-adventure, so they're greyed out below — but you can go against that advice: long-press a greyed-out button to change it anyway.", indent: 2, color: .dimGreen)
             print("")
         }
 
@@ -12548,6 +12570,8 @@ class GameEngine: ObservableObject {
         print("  \(char.ethicalAlignment.rawValue) (\(char.ethicalScore))", color: alignmentColor, bold: true)
         printWrapped(char.ethicalAlignment.summary, indent: 2, color: .dimGreen)
         print("")
+        printWrapped("This is a look-up, not something you can set directly — it's earned (or lost) through what this character actually does in the story, tracked in the log below.", indent: 2, color: .yellow)
+        print("")
         if char.ethicalLog.isEmpty {
             printWrapped("No notable choices tracked yet this campaign.", indent: 2, color: .dimGreen)
         } else {
@@ -12565,7 +12589,10 @@ class GameEngine: ObservableObject {
                 self.showInlineHelp {
                     self.printTitle("Reputation — Help")
                     self.print("")
-                    self.printWrapped("Glyphkeeper tracks a running ethical score (-100 Villainous to +100 Heroic) for each character, shifted by certain choices during the campaign.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Glyphkeeper tracks a running ethical score (-100 Villainous to +100 Heroic) for each character, shifted by certain choices during the campaign. You can't set it directly — it's a record of what this character has actually done, not a stat to edit.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  WHY IT MATTERS", color: .cyan, bold: true)
+                    self.printWrapped("A better reputation gets you easier haggling and warmer narration/NPC reactions from the DM. A worse one makes both harder — merchants charge more, and the story treats you accordingly.", indent: 2, color: .dimGreen)
                     self.print("")
                     self.print("  WHERE IT'S USED", color: .cyan, bold: true)
                     self.printWrapped("The AI DM sees each character's reputation band and lets it colour narration and NPC reactions. Merchants also react to it directly — a good reputation makes haggling easier, a bad one makes it harder (see the DC note shown when you haggle).", indent: 2, color: .dimGreen)
@@ -28579,7 +28606,7 @@ class GameEngine: ObservableObject {
         }
     }
 
-    private func showLoadGameMenu(returnTo origin: LoadGameOrigin) {
+    private func showLoadGameMenu(returnTo origin: LoadGameOrigin, page: Int = 0) {
         clearTerminal()
         printTitle("Continue Adventure")
 
@@ -28784,11 +28811,11 @@ class GameEngine: ObservableObject {
                 }
                 return label
             }
-            var pinned = ["Select All", "?", "< Back"]
+            var pinned = ["Select All", "Deselect All", "?", "< Back"]
             if !manageSaveSelectedSlotIds.isEmpty {
-                pinned.insert("Delete Selected (\(manageSaveSelectedSlotIds.count))", at: 1)
+                pinned.insert("Delete Selected (\(manageSaveSelectedSlotIds.count))", at: 2)
             }
-            showPaginatedMenuOptions(displayOptions, pinned: pinned, handler: { [weak self] idx in
+            showPaginatedMenuOptions(displayOptions, page: page, pinned: pinned, handler: { [weak self] idx in
                 guard let self = self, idx >= 0 && idx < rows.count else { return }
                 guard case .slot(let slot) = rows[idx] else { return }
                 if self.manageSaveSelectedSlotIds.contains(slot.slotId) {
@@ -28796,18 +28823,17 @@ class GameEngine: ObservableObject {
                 } else {
                     self.manageSaveSelectedSlotIds.insert(slot.slotId)
                 }
-                self.showLoadGameMenu(returnTo: origin)
+                self.showLoadGameMenu(returnTo: origin, page: self.paginatedPage)
             }, pinnedHandler: { [weak self] choice in
                 guard let self = self else { return }
                 let chosen = pinned[choice]
                 switch chosen {
                 case "Select All":
-                    if self.manageSaveSelectedSlotIds.count == selectableSlotIds.count {
-                        self.manageSaveSelectedSlotIds.removeAll()
-                    } else {
-                        self.manageSaveSelectedSlotIds = Set(selectableSlotIds)
-                    }
-                    self.showLoadGameMenu(returnTo: origin)
+                    self.manageSaveSelectedSlotIds = Set(selectableSlotIds)
+                    self.showLoadGameMenu(returnTo: origin, page: self.paginatedPage)
+                case "Deselect All":
+                    self.manageSaveSelectedSlotIds.removeAll()
+                    self.showLoadGameMenu(returnTo: origin, page: self.paginatedPage)
                 case "?":
                     self.showInlineHelp {
                         self.printTitle("Select Saves — Help")
@@ -28860,7 +28886,7 @@ class GameEngine: ObservableObject {
         // dedicated, sorted-by-score view of every completed tale had no
         // discoverable button anywhere in normal play.
         let pinnedButtons = ["Hall of Fame", "?", "< Back"]
-        showPaginatedMenuOptions(options, pinned: pinnedButtons, handler: { idx in
+        showPaginatedMenuOptions(options, page: page, pinned: pinnedButtons, handler: { idx in
             guard idx >= 0 && idx < rows.count else { return }
             openRow(rows[idx])
         }, pinnedHandler: { [weak self] choice in
@@ -28875,6 +28901,9 @@ class GameEngine: ObservableObject {
                     self.printWrapped("Tap an entry's button, or its description text, to see its save points and read its tale. Long-press a numbered button to load that adventure's latest save directly.", indent: 2, color: .dimGreen)
                     self.print("")
                     self.printWrapped("A completed adventure shows its Hall of Fame result (W/L, score); one still in progress shows PLAYING. Either way it's read and continued the same way.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  COLOUR", color: .cyan, bold: true)
+                    self.printWrapped("Cyan = still in progress (PLAYING). Yellow = you won (W). Red = your party fell (L) — you can still revisit or relive it.", indent: 2, color: .dimGreen)
                     self.print("")
                     self.printWrapped("HALL OF FAME (pinned button): a separate, dedicated view of every completed tale, sorted by score — distinct from this list, which also includes adventures still in progress.", indent: 2, color: .dimGreen)
                     self.print("")
@@ -29113,7 +29142,7 @@ class GameEngine: ObservableObject {
         }
     }
 
-    private func renderManageSavesMenu(slots: [SaveSlot], remoteMatches: [GKTurnBasedMatch], returnTo origin: LoadGameOrigin) {
+    private func renderManageSavesMenu(slots: [SaveSlot], remoteMatches: [GKTurnBasedMatch], returnTo origin: LoadGameOrigin, page: Int = 0) {
         clearTerminal()
         printTitle("Manage Saves")
 
@@ -29188,12 +29217,12 @@ class GameEngine: ObservableObject {
             let displayOptions = slots.map { slot -> String in
                 (manageSaveSelectedSlotIds.contains(slot.slotId) ? "[x] " : "[ ] ") + slot.slotName
             }
-            var pinned = ["Select All", "?", "< Back"]
+            var pinned = ["Select All", "Deselect All", "?", "< Back"]
             if !manageSaveSelectedSlotIds.isEmpty {
-                pinned.insert("Delete Selected (\(manageSaveSelectedSlotIds.count))", at: 1)
+                pinned.insert("Delete Selected (\(manageSaveSelectedSlotIds.count))", at: 2)
             }
             print("Tap slots to select, then Delete Selected:", color: .cyan)
-            showPaginatedMenuOptions(displayOptions, pinned: pinned, handler: { [weak self] idx in
+            showPaginatedMenuOptions(displayOptions, page: page, pinned: pinned, handler: { [weak self] idx in
                 guard let self = self, idx >= 0 && idx < slots.count else { return }
                 let slotId = slots[idx].slotId
                 if self.manageSaveSelectedSlotIds.contains(slotId) {
@@ -29201,13 +29230,16 @@ class GameEngine: ObservableObject {
                 } else {
                     self.manageSaveSelectedSlotIds.insert(slotId)
                 }
-                self.renderManageSavesMenu(slots: slots, remoteMatches: remoteMatches, returnTo: origin)
+                self.renderManageSavesMenu(slots: slots, remoteMatches: remoteMatches, returnTo: origin, page: self.paginatedPage)
             }, pinnedHandler: { [weak self] choice in
                 guard let self = self else { return }
                 let chosen = pinned[choice]
                 if chosen == "Select All" {
                     self.manageSaveSelectedSlotIds = Set(slots.map { $0.slotId })
-                    self.renderManageSavesMenu(slots: slots, remoteMatches: remoteMatches, returnTo: origin)
+                    self.renderManageSavesMenu(slots: slots, remoteMatches: remoteMatches, returnTo: origin, page: self.paginatedPage)
+                } else if chosen == "Deselect All" {
+                    self.manageSaveSelectedSlotIds.removeAll()
+                    self.renderManageSavesMenu(slots: slots, remoteMatches: remoteMatches, returnTo: origin, page: self.paginatedPage)
                 } else if chosen.hasPrefix("Delete Selected") {
                     let count = self.manageSaveSelectedSlotIds.count
                     self.clearTerminal()
