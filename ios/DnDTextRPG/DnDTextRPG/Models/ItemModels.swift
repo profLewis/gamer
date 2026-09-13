@@ -459,6 +459,21 @@ struct ItemCatalog {
                 ("Greataxe + Two Handaxes", [greataxe(), handaxe(), handaxe(), healingPotion(), healingPotion(), torch()]),
                 ("Two Handaxes + Leather Armor", [handaxe(), handaxe(), leatherArmor(), healingPotion(), healingPotion(), torch()]),
             ]
+        case .engineer:
+            return [
+                ("Light Crossbow + Tinker's Tools + Leather Armour", [lightCrossbow(), thievesTools(), leatherArmor(), healingPotion(), torch()]),
+                ("Dagger + Tinker's Tools + Extra Potions", [dagger(), thievesTools(), healingPotion(), healingPotion(), torch()]),
+            ]
+        case .scout:
+            return [
+                ("Longbow + Leather Armour + Shortsword", [longbow(), leatherArmor(), shortsword(), healingPotion(), torch()]),
+                ("Shortsword + Studded Leather", [shortsword(), studdedLeather(), healingPotion(), healingPotion(), torch()]),
+            ]
+        case .thief:
+            return [
+                ("Dagger + Leather Armour + Thieves' Tools", [dagger(), leatherArmor(), thievesTools(), healingPotion(), torch()]),
+                ("Rapier + Thieves' Tools + Extra Potions", [rapier(), thievesTools(), healingPotion(), healingPotion(), torch()]),
+            ]
         }
     }
 

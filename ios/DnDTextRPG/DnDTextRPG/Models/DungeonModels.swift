@@ -815,13 +815,23 @@ class Dungeon: ObservableObject, Codable {
         }
 
         // Training gyms — a chance in chamber rooms, offering to teach a new
-        // skill proficiency for a fee or by winning a sparring check.
+        // skill proficiency for a fee or by winning a sparring check. Unlike
+        // shops (guaranteed >= 1 via numShops = max(1, ...)) and general NPCs
+        // (floor of 2 via maxNPCs), this was a pure independent 35%-per-room
+        // roll with no fallback — a dungeon with only 2-3 chamber rooms had
+        // a very real (well over a coin-flip's worth) chance of ending up
+        // with zero gyms at all, which is exactly what got reported as
+        // "missing gyms." Guarantee at least one, same pattern as shops.
         let chamberRooms = rooms.values.filter { $0.roomType == .chamber && $0.encounter == nil }
         for room in chamberRooms {
             if Int.random(in: 1...100) <= 35 {
                 let specialty = Skill.allCases.randomElement()!
                 room.trainer = Trainer.random(specialty: specialty, dungeonLevel: level)
             }
+        }
+        if !chamberRooms.isEmpty, !chamberRooms.contains(where: { $0.trainer != nil }), let luckyRoom = chamberRooms.randomElement() {
+            let specialty = Skill.allCases.randomElement()!
+            luckyRoom.trainer = Trainer.random(specialty: specialty, dungeonLevel: level)
         }
 
         // Teleport pads — a rare shortcut linking two distant rooms. A

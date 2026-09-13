@@ -829,10 +829,13 @@ class ShopEngine {
             case .selfish: reputationMod = 3
             case .villainous: reputationMod = 6
             }
+            // Class "reliability" edge — Clerics/Thieves negotiate a better
+            // deal (see CharacterClass.negotiateReliability).
+            let classMod = -character.characterClass.negotiateReliability
             // Steeper asks need a better roll; each repeat attempt on this
             // same item also stiffens the merchant's resolve a little; rare
             // goods are harder to talk down further still.
-            let effectiveDC = merchant.tier.haggleDC + (isRareGood ? 3 : 0) + Int((discountPct * 40).rounded()) + (attempt - 1) * 2 + reputationMod
+            let effectiveDC = merchant.tier.haggleDC + (isRareGood ? 3 : 0) + Int((discountPct * 40).rounded()) + (attempt - 1) * 2 + reputationMod + classMod
 
             game.print("")
             game.print("  \(character.name) offers \(offer)gp and rolls Persuasion: d20[\(roll)] + \(persuasionMod) = \(total) vs DC \(effectiveDC)", color: .cyan)
@@ -841,6 +844,9 @@ class ShopEngine {
                     ? "  Reputation (\(character.ethicalAlignment.rawValue)) works in your favour: \(reputationMod) to the DC."
                     : "  Reputation (\(character.ethicalAlignment.rawValue)) works against you: +\(reputationMod) to the DC."
                 game.print(repNote, color: .dimGreen)
+            }
+            if classMod != 0 {
+                game.print("  \(character.characterClass.rawValue)'s way with words helps: \(classMod) to the DC.", color: .dimGreen)
             }
 
             if total >= effectiveDC {

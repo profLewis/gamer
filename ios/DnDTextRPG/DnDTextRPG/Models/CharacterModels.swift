@@ -120,12 +120,15 @@ enum CharacterClass: String, CaseIterable, Codable {
     case cleric = "Cleric"
     case ranger = "Ranger"
     case barbarian = "Barbarian"
+    case engineer = "Engineer"
+    case scout = "Scout"
+    case thief = "Thief"
 
     var hitDie: Int {
         switch self {
         case .barbarian: return 12
         case .fighter, .ranger: return 10
-        case .cleric, .rogue: return 8
+        case .cleric, .rogue, .engineer, .scout, .thief: return 8
         case .wizard: return 6
         }
     }
@@ -133,8 +136,8 @@ enum CharacterClass: String, CaseIterable, Codable {
     var primaryAbility: Ability {
         switch self {
         case .fighter, .barbarian: return .strength
-        case .wizard: return .intelligence
-        case .rogue, .ranger: return .dexterity
+        case .wizard, .engineer: return .intelligence
+        case .rogue, .ranger, .scout, .thief: return .dexterity
         case .cleric: return .wisdom
         }
     }
@@ -151,6 +154,9 @@ enum CharacterClass: String, CaseIterable, Codable {
         case .cleric:    titles = ["Acolyte", "Curate", "Priest", "High Priest", "Hierophant"]
         case .ranger:    titles = ["Tracker", "Pathfinder", "Warden", "Ranger-Captain", "Wildkeeper"]
         case .barbarian: titles = ["Brawler", "Berserker", "Reaver", "Warchief", "Juggernaut"]
+        case .engineer:  titles = ["Tinkerer", "Mechanist", "Artificer", "Machinist", "Grand Engineer"]
+        case .scout:     titles = ["Wayfinder", "Trailblazer", "Outrider", "Vanguard", "Pathlord"]
+        case .thief:     titles = ["Sneak", "Prowler", "Fence", "Cat Burglar", "Shadow Lord"]
         }
         let idx = max(0, min(titles.count - 1, level - 1))
         return titles[idx]
@@ -165,6 +171,9 @@ enum CharacterClass: String, CaseIterable, Codable {
         case .rogue:     return [.dexterity, .constitution, .wisdom, .charisma, .intelligence, .strength]
         case .cleric:    return [.wisdom, .constitution, .strength, .charisma, .dexterity, .intelligence]
         case .ranger:    return [.dexterity, .wisdom, .constitution, .strength, .charisma, .intelligence]
+        case .engineer:  return [.intelligence, .dexterity, .constitution, .wisdom, .charisma, .strength]
+        case .scout:     return [.dexterity, .wisdom, .constitution, .strength, .intelligence, .charisma]
+        case .thief:     return [.dexterity, .charisma, .constitution, .wisdom, .intelligence, .strength]
         }
     }
 
@@ -182,19 +191,55 @@ enum CharacterClass: String, CaseIterable, Codable {
             return [.animalHandling, .athletics, .insight, .investigation, .nature, .perception, .stealth, .survival]
         case .barbarian:
             return [.animalHandling, .athletics, .intimidation, .nature, .perception, .survival]
+        case .engineer:
+            return [.arcana, .history, .investigation, .perception, .sleightOfHand]
+        case .scout:
+            return [.athletics, .insight, .investigation, .nature, .perception, .stealth, .survival]
+        case .thief:
+            return [.deception, .insight, .intimidation, .performance, .persuasion, .sleightOfHand, .stealth]
         }
     }
 
     var numSkillChoices: Int {
         switch self {
-        case .rogue: return 4
-        case .ranger: return 3
+        case .rogue, .thief: return 4
+        case .ranger, .scout, .engineer: return 3
         default: return 2
         }
     }
 
     var startingHP: Int {
         return hitDie
+    }
+
+    // MARK: - Reliability (class-flavoured edge at Search / Map / Negotiate)
+
+    /// Bonus to Search Room's Perception check — mechanically-minded classes
+    /// are better at spotting traps and hidden compartments.
+    var searchReliability: Int {
+        switch self {
+        case .rogue, .engineer: return 2
+        default: return 0
+        }
+    }
+
+    /// Whether this class extends the party's effective map visibility
+    /// radius (see GameEngine.effectiveMapRadius) — reconnaissance,
+    /// pathfinding, or arcane sense of the dungeon's layout.
+    var mapReliability: Int {
+        switch self {
+        case .wizard, .ranger, .scout: return 2
+        default: return 0
+        }
+    }
+
+    /// Bonus applied to haggling (reduces the effective DC) — classes with
+    /// a trusted, persuasive, or street-smart edge negotiate better deals.
+    var negotiateReliability: Int {
+        switch self {
+        case .cleric, .thief: return 2
+        default: return 0
+        }
     }
 
     var asciiArt: [String] {
@@ -243,6 +288,27 @@ enum CharacterClass: String, CaseIterable, Codable {
                 "=||=",
                 " /  \\",
             ]
+        case .engineer:
+            return [
+                " [o]",
+                " /|\\+",
+                " /|\\",
+                " / \\",
+            ]
+        case .scout:
+            return [
+                "  o",
+                " /|\\",
+                " )|\\\\",
+                " / \\",
+            ]
+        case .thief:
+            return [
+                "  o",
+                " /|\\",
+                " /|>",
+                " / \\",
+            ]
         }
     }
 
@@ -284,6 +350,24 @@ enum CharacterClass: String, CaseIterable, Codable {
                 ["  o", " /|\\", "=||=", " /  \\"],             // ready
                 ["  o", "  |\\", "  || =>>", " /  \\"],         // swing!
                 ["  o", " /|", "<<= ||", "   /  \\"],           // backswing
+            ]
+        case .engineer:
+            return [
+                [" [o]", " /|\\+", " /|\\", " / \\"],           // tinkering
+                [" [o]", " /|\\*", " /|\\", " / \\"],           // spark!
+                [" [o]", " /|\\+", " /|\\ ✦", " / \\"],         // gadget ready
+            ]
+        case .scout:
+            return [
+                ["  o", " /|\\", " )|\\\\", " / \\"],           // scanning
+                ["  o", " /|\\", " )|  \\\\", " / \\"],         // spotted something
+                ["  o", " /|\\", " )|\\\\", " / \\"],           // steady
+            ]
+        case .thief:
+            return [
+                ["  o", " /|\\", " /|>", " / \\"],              // lurking
+                ["  o", " /|\\  >", " /|", " / \\"],            // snatch!
+                ["  o", " /|\\", " /|>", " / \\"],              // vanished
             ]
         }
     }

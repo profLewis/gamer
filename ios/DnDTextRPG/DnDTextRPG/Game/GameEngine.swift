@@ -6811,8 +6811,13 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Class-based "reliability" bonus (see CharacterClass.mapReliability):
+    /// a party with a Wizard, Ranger, or Scout sees a little further, torch
+    /// permitting — reconnaissance/pathfinding/arcane sense of the layout.
     func effectiveMapRadius() -> Int {
-        return torchLit ? mapRadius : 0
+        guard torchLit else { return 0 }
+        let bonus = party.contains { $0.characterClass.mapReliability > 0 } ? 1 : 0
+        return mapRadius + bonus
     }
 
     func partyHasTorch() -> Bool {
@@ -16120,6 +16125,9 @@ class GameEngine: ObservableObject {
             self.printWrapped("Search looks for hidden items. Listen reveals what's beyond exits. Rest (centre) heals — hold for long rest.", indent: 2, color: .dimGreen)
             self.printWrapped("Search/Listen results auto-continue after a delay (Settings > Info Timeout) — tap the result text to continue immediately instead of waiting.", indent: 2, color: .dimGreen)
             self.print("")
+            self.print("  CLASS RELIABILITY", color: .cyan, bold: true)
+            self.printWrapped("Some classes have a natural edge: Rogues and Engineers search more reliably, Wizards/Rangers/Scouts see further on the map, Clerics and Thieves negotiate better deals. Having one in the party helps everyone at that activity.", indent: 2, color: .dimGreen)
+            self.print("")
             self.print("  TELEPORT PAD", color: .cyan, bold: true)
             self.printWrapped("A purple target icon (bottom-right corner, where the NPC scroll icon normally sits) appears when the room has an active teleport pad — tap it to instantly travel to its linked room. Toggle in Settings > Gameplay.", indent: 2, color: .dimGreen)
             self.print("")
@@ -17954,7 +17962,11 @@ class GameEngine: ObservableObject {
         // Acting As), else automatically whoever in the party has the best.
         let bestPerception = actingOverrideCharacter?.skillModifier(for: .perception)
             ?? (party.map { $0.skillModifier(for: .perception) }.max() ?? 0)
-        let total = roll + bestPerception
+        // Class "reliability" edge — Rogues/Engineers are that much more
+        // likely to spot what's hidden (see CharacterClass.searchReliability).
+        let classBonus = actingOverrideCharacter?.characterClass.searchReliability
+            ?? (party.map { $0.characterClass.searchReliability }.max() ?? 0)
+        let total = roll + bestPerception + classBonus
 
         if total >= 15 {
             // Success — find something from the room's hidden loot
@@ -22058,8 +22070,11 @@ class GameEngine: ObservableObject {
         case .barbarian: return 1  // tribal outsider
         case .fighter:   return 2  // common soldier
         case .ranger:    return 3  // woodsman
+        case .scout:     return 3  // woodsman-adjacent
+        case .thief:     return 3  // street-smart, rougher edges than Rogue
         case .rogue:     return 4  // street-smart
         case .cleric:    return 5  // educated clergy
+        case .engineer:  return 5  // trained craftsman-scholar
         case .wizard:    return 6  // scholarly elite
         }
     }
@@ -26828,6 +26843,12 @@ class GameEngine: ObservableObject {
             lines = ["🏹 lets out a sharp whistle and does a little victory jig.", "🏹 nocks an arrow skyward and lets it fly in celebration."]
         case .barbarian:
             lines = ["🪓 pounds their chest and stomps the ground, whooping with joy!", "🪓 hoists their weapon overhead with a triumphant roar!"]
+        case .engineer:
+            lines = ["⚙️ tightens a bolt on a contraption and it whirs to life triumphantly!", "⚙️ sketches a quick diagram in the air, muttering excitedly."]
+        case .scout:
+            lines = ["🧭 spins a compass, grins, and points confidently ahead.", "🧭 crouches low, scans the horizon, then flashes a thumbs up."]
+        case .thief:
+            lines = ["🗝️ palms an invisible coin, winks, and it's gone.", "🗝️ flashes a sly grin and pockets something that wasn't there before."]
         }
         return lines.randomElement()!
     }
@@ -26837,8 +26858,8 @@ class GameEngine: ObservableObject {
     private static func primaryAbility(for characterClass: CharacterClass) -> Ability {
         switch characterClass {
         case .fighter, .barbarian: return .strength
-        case .wizard: return .intelligence
-        case .rogue, .ranger: return .dexterity
+        case .wizard, .engineer: return .intelligence
+        case .rogue, .ranger, .scout, .thief: return .dexterity
         case .cleric: return .wisdom
         }
     }
