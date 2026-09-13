@@ -8454,10 +8454,14 @@ class GameEngine: ObservableObject {
         print("  3. Play continues — your next action gets", color: .dimGreen)
         print("     a fresh, redirected response.", color: .dimGreen)
         print("")
-        printWrapped("You never have to explain why. Use it any time — mid-adventure or here in Settings.", indent: 2, color: .dimGreen)
+        printWrapped("This isn't a toggle to switch on ahead of time — it's a right-now action you use the moment the DM says something you don't like, mid-adventure. Come back to this screen any time that happens.", indent: 2, color: .dimGreen)
         print("")
 
         let hasContentToFlag = dmChatLog.contains { !$0.isUser }
+        if !hasContentToFlag {
+            printWrapped("Nothing to flag right now — the DM hasn't said anything yet in this adventure. The button below lights up as soon as it has.", indent: 2, color: .yellow)
+            print("")
+        }
         var menuOpts = [MenuOption("Use Reyes Failsafe Now", isDisabled: !hasContentToFlag, tint: .danger)]
         if !hasContentToFlag {
             menuOpts.append(MenuOption("(No DM response yet to flag)", isDisabled: true))
@@ -28592,13 +28596,20 @@ class GameEngine: ObservableObject {
         // this screen already has enough buttons on it; reach select mode
         // via Hall of Fame's "Manage" sub-screen instead (one extra tap,
         // for an action used far less often than just continuing/reading).
-        let pinnedButtons = ["?", "< Back"]
+        // "Hall of Fame" itself IS pinned here — it used to be reachable
+        // only via the hidden "hall of fame" text command, which meant the
+        // dedicated, sorted-by-score view of every completed tale had no
+        // discoverable button anywhere in normal play.
+        let pinnedButtons = ["Hall of Fame", "?", "< Back"]
         showPaginatedMenuOptions(options, pinned: pinnedButtons, handler: { idx in
             guard idx >= 0 && idx < rows.count else { return }
             openRow(rows[idx])
         }, pinnedHandler: { [weak self] choice in
             guard let self = self else { return }
-            if choice == (pinnedButtons.firstIndex(of: "?") ?? -1) {
+            switch choice {
+            case pinnedButtons.firstIndex(of: "Hall of Fame") ?? -1:
+                self.showHallOfFame()
+            case pinnedButtons.firstIndex(of: "?") ?? -1:
                 self.showInlineHelp {
                     self.printTitle("Continue Adventure — Help")
                     self.print("")
@@ -28606,8 +28617,10 @@ class GameEngine: ObservableObject {
                     self.print("")
                     self.printWrapped("A completed adventure shows its Hall of Fame result (W/L, score); one still in progress shows PLAYING. Either way it's read and continued the same way.", indent: 2, color: .dimGreen)
                     self.print("")
+                    self.printWrapped("HALL OF FAME (pinned button): a separate, dedicated view of every completed tale, sorted by score — distinct from this list, which also includes adventures still in progress.", indent: 2, color: .dimGreen)
+                    self.print("")
                 }
-            } else {
+            default:
                 backAction()
             }
         })
