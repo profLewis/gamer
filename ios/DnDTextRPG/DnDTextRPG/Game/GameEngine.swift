@@ -193,7 +193,7 @@ class GameEngine: ObservableObject {
     @Published var cardPositionLabel: String?
 
     /// Info screen auto-dismiss delay in seconds (configurable in Gameplay settings)
-    @Published var infoTimeout: Double = UserDefaults.standard.object(forKey: "infoTimeout") == nil ? 2.0 : UserDefaults.standard.double(forKey: "infoTimeout")
+    @Published var infoTimeout: Double = UserDefaults.standard.object(forKey: "infoTimeout") == nil ? 10.0 : UserDefaults.standard.double(forKey: "infoTimeout")
 
     /// Whether the DM is currently reading the screen aloud
     @Published var isSpeakingAloud: Bool = false
@@ -7794,7 +7794,7 @@ class GameEngine: ObservableObject {
         let d = UserDefaults.standard
         voiceMenuEnabled = (d.object(forKey: "voiceMenuEnabled") as? Bool) ?? true
         useArrowNavigation = d.object(forKey: "useArrowNavigation") == nil ? false : d.bool(forKey: "useArrowNavigation")
-        infoTimeout = d.object(forKey: "infoTimeout") == nil ? 2.0 : d.double(forKey: "infoTimeout")
+        infoTimeout = d.object(forKey: "infoTimeout") == nil ? 10.0 : d.double(forKey: "infoTimeout")
         iconScaleSetting = d.integer(forKey: "iconScaleSetting")
         useCustomKeyboard = d.object(forKey: "useCustomKeyboard") == nil ? true : d.bool(forKey: "useCustomKeyboard")
         idlePromptsEnabled = d.bool(forKey: "idlePromptsEnabled")
@@ -8757,7 +8757,7 @@ class GameEngine: ObservableObject {
             }
             voiceMenuEnabled = true
             useArrowNavigation = false
-            infoTimeout = 2.0
+            infoTimeout = 10.0
             iconScaleSetting = 0
             useCustomKeyboard = true
             idlePromptsEnabled = false
@@ -8889,7 +8889,7 @@ class GameEngine: ObservableObject {
         add("undoRedoEnabled", "Undo/Redo", current: undoRedoEnabled ? "On" : "Off", dflt: "On")
 
         let infoStr = infoTimeout == 0 ? "Off" : String(format: "%.1fs", infoTimeout)
-        add("infoTimeout", "Info Timeout", current: infoStr, dflt: "2.0s")
+        add("infoTimeout", "Info Timeout", current: infoStr, dflt: "10.0s")
 
         let lpStr = String(format: "%.1fs", longPressDuration)
         add("longPressDuration", "Long Press", current: lpStr, dflt: "0.5s")
@@ -9035,7 +9035,7 @@ class GameEngine: ObservableObject {
         // Re-sync cached properties
         if keys.contains("voiceMenuEnabled") { voiceMenuEnabled = true }
         if keys.contains("useArrowNavigation") { useArrowNavigation = false }
-        if keys.contains("infoTimeout") { infoTimeout = 2.0 }
+        if keys.contains("infoTimeout") { infoTimeout = 10.0 }
         if keys.contains("iconScaleSetting") { iconScaleSetting = 0 }
         if keys.contains("useCustomKeyboard") { useCustomKeyboard = true }
         if keys.contains("idlePromptsEnabled") { idlePromptsEnabled = false }
