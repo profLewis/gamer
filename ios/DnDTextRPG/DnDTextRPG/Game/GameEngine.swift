@@ -10284,18 +10284,38 @@ class GameEngine: ObservableObject {
         return "\(key.prefix(6))…\(key.suffix(4))"
     }
 
-    /// A quick, non-blocking sanity check — catches the common case of pasting
-    /// the wrong provider's key (e.g. a Gemini "AIza..." key while OpenAI is
-    /// selected) with an immediate, specific hint instead of waiting on a
-    /// network round-trip just to get back a generic "incorrect API key" 401.
-    private func keyFormatWarning(for provider: AIProvider, key: String) -> String? {
+    /// Which provider a key's prefix unambiguously identifies, if any. OpenAI's
+    /// "sk-" is a PREFIX of Anthropic's "sk-ant-", so this must check the more
+    /// specific patterns first — a naive `hasPrefix("sk-")` check for OpenAI
+    /// also matches Anthropic keys, silently letting a wrong-provider key
+    /// through with no warning at all (the actual bug behind an early version
+    /// of this check).
+    private func detectedProvider(forKeyFormat key: String) -> AIProvider? {
+        if key.hasPrefix("sk-ant-") { return .anthropic }
+        if key.hasPrefix("AIza") { return .google }
+        if key.hasPrefix("sk-") { return .openAI }
+        return nil
+    }
+
+    /// Checks a key against the currently selected provider. Returns nil if it
+    /// looks right. Returns (message, blocking: true) when the key's prefix
+    /// confidently identifies a DIFFERENT provider — e.g. pasting an Anthropic
+    /// "sk-ant-..." key while OpenAI is selected — since testing that against
+    /// the wrong provider's API would only ever produce a generic, unhelpful
+    /// 401. Returns (message, blocking: false) for a merely-unrecognized
+    /// format (typo, or a future key style this app doesn't know yet), where
+    /// testing anyway is still the right call.
+    private func keyFormatWarning(for provider: AIProvider, key: String) -> (message: String, blocking: Bool)? {
+        if let detected = detectedProvider(forKeyFormat: key), detected != provider {
+            return ("This looks like a \(detected.displayName) key, not \(provider.displayName). Get an \(provider.displayName) key instead, or switch providers in AI Provider settings.", true)
+        }
         switch provider {
         case .openAI:
-            return key.hasPrefix("sk-") ? nil : "OpenAI keys normally start with 'sk-'."
+            return key.hasPrefix("sk-") ? nil : ("OpenAI keys normally start with 'sk-'.", false)
         case .anthropic:
-            return key.hasPrefix("sk-ant-") ? nil : "Anthropic keys normally start with 'sk-ant-'."
+            return key.hasPrefix("sk-ant-") ? nil : ("Anthropic keys normally start with 'sk-ant-'.", false)
         case .google:
-            return key.hasPrefix("AIza") ? nil : "Google (Gemini) keys normally start with 'AIza'."
+            return key.hasPrefix("AIza") ? nil : ("Google (Gemini) keys normally start with 'AIza'.", false)
         }
     }
 
@@ -10543,10 +10563,20 @@ class GameEngine: ObservableObject {
                 #if os(iOS)
                 if let raw = UIPasteboard.general.string, !self.sanitizedAPIKeyInput(raw).isEmpty {
                     let clipText = self.sanitizedAPIKeyInput(raw)
-                    DMEngine.shared.apiKey = clipText
                     self.print("")
+                    if let warning = self.keyFormatWarning(for: provider, key: clipText), warning.blocking {
+                        DMEngine.shared.apiKey = nil
+                        self.print("  \(warning.message)", color: .yellow)
+                        self.print("")
+                        self.waitForContinue()
+                        self.inputHandler = { [weak self] _ in
+                            self?.promptAPIKey()
+                        }
+                        return
+                    }
+                    DMEngine.shared.apiKey = clipText
                     if let warning = self.keyFormatWarning(for: provider, key: clipText) {
-                        self.print("  Note: \(warning)", color: .yellow)
+                        self.print("  Note: \(warning.message)", color: .yellow)
                         self.print("  Testing it anyway...", color: .dimGreen)
                     } else {
                         self.print("  Testing API key...", color: .dimGreen)
@@ -10573,10 +10603,20 @@ class GameEngine: ObservableObject {
                         self?.promptAPIKey()
                         return
                     }
-                    DMEngine.shared.apiKey = trimmed
                     self?.print("")
+                    if let warning = self?.keyFormatWarning(for: provider, key: trimmed), warning.blocking {
+                        DMEngine.shared.apiKey = nil
+                        self?.print("  \(warning.message)", color: .yellow)
+                        self?.print("")
+                        self?.waitForContinue()
+                        self?.inputHandler = { [weak self] _ in
+                            self?.promptAPIKey()
+                        }
+                        return
+                    }
+                    DMEngine.shared.apiKey = trimmed
                     if let warning = self?.keyFormatWarning(for: provider, key: trimmed) {
-                        self?.print("  Note: \(warning)", color: .yellow)
+                        self?.print("  Note: \(warning.message)", color: .yellow)
                         self?.print("  Testing it anyway...", color: .dimGreen)
                     } else {
                         self?.print("  Testing API key...", color: .dimGreen)
@@ -10588,7 +10628,7 @@ class GameEngine: ObservableObject {
                     self.print("")
                     self.print("  Key: \(self.redactedKeyPreview(key)) (\(key.count) chars)", color: .dimGreen)
                     if let warning = self.keyFormatWarning(for: provider, key: key) {
-                        self.print("  Note: \(warning)", color: .yellow)
+                        self.print("  Note: \(warning.message)", color: .yellow)
                     }
                     self.print("  Testing API key...", color: .dimGreen)
                     self.validateAndConfirmKey(provider: provider)
