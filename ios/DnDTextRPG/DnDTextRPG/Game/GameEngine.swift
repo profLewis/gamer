@@ -2897,6 +2897,40 @@ class GameEngine: ObservableObject {
         return prev[n]
     }
 
+    /// Single, authoritative way to leave Just DM (free-text) mode and
+    /// return to normal button/D-pad play. Used by every "buttons on"
+    /// trigger (typed command, voice command, the universal text-input
+    /// check) so they can't drift into subtly different behaviour from
+    /// each other — they used to be three separate hand-copied blocks.
+    /// Always resolves against the CURRENT authoritative state
+    /// (dungeon.currentRoom / currentCombat), never anything narrated —
+    /// that authoritative state is exactly what SaveGame serializes, so
+    /// it stays correct across a save/reload too. Also logs the exact
+    /// room/combat it's returning to, so a mismatch between what the AI
+    /// narrated and what's actually true is visible in the Adventure Log
+    /// rather than just a silent surprise.
+    private func exitJustDMMode() {
+        justDMMode = false
+        UserDefaults.standard.set(false, forKey: "justDMMode")
+        DMEngine.shared.justDMMode = false
+        inDMMode = false
+        print("")
+        print("  Buttons restored.", color: .brightGreen)
+        if let combat = currentCombat {
+            logEvent("Switched to menu mode (combat)", category: "SYSTEM")
+            if let entry = combat.currentCombatant, entry.isPlayer {
+                showPlayerCombatMenu(characterId: entry.id)
+            } else {
+                advanceCombat()
+            }
+        } else if let dungeon = dungeon, let room = dungeon.currentRoom {
+            logEvent("Switched to menu mode in \(room.name)", category: "SYSTEM")
+            showExplorationView()
+        } else {
+            showMainMenu()
+        }
+    }
+
     func handleVoiceMenuChoice(_ transcript: String) {
         let lower = transcript.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !lower.isEmpty else { return }
@@ -2909,18 +2943,7 @@ class GameEngine: ObservableObject {
             || lower.hasPrefix("buttons o")
         if isButtonsOn {
             if justDMMode {
-                justDMMode = false
-                UserDefaults.standard.set(false, forKey: "justDMMode")
-                DMEngine.shared.justDMMode = false
-                inDMMode = false
-                print("  Buttons restored.", color: .brightGreen)
-                if currentCombat != nil {
-                    advanceCombat()
-                } else if dungeon != nil {
-                    showExplorationView()
-                } else {
-                    showMainMenu()
-                }
+                exitJustDMMode()
                 return
             }
         }
@@ -3562,23 +3585,7 @@ class GameEngine: ObservableObject {
             || lowerCheck == "text mode off"
             || lowerCheck.hasPrefix("buttons o") {
             if justDMMode {
-                justDMMode = false
-                UserDefaults.standard.set(false, forKey: "justDMMode")
-                DMEngine.shared.justDMMode = false
-                inDMMode = false
-                print("  Buttons restored.", color: .brightGreen)
-                // Return to the appropriate screen
-                if currentCombat != nil {
-                    if let entry = currentCombat?.currentCombatant, entry.isPlayer {
-                        showPlayerCombatMenu(characterId: entry.id)
-                    } else {
-                        advanceCombat()
-                    }
-                } else if dungeon != nil {
-                    showExplorationView()
-                } else {
-                    showMainMenu()
-                }
+                exitJustDMMode()
                 return
             }
         }
@@ -3871,9 +3878,13 @@ class GameEngine: ObservableObject {
     func startGame() {
         GameCenterManager.shared.authenticatePlayer()
         GameCenterManager.shared.turnBasedDelegate = self
+        // Roster first — repairOrphanEntries can read the roster (to
+        // rebuild legacy parties), and that read creates the roster's
+        // folder, which seedCharacterRosterIfEmpty uses to tell a fresh
+        // install apart from one that's simply been emptied.
+        seedCharacterRosterIfEmpty()
         HallOfFameManager.shared.seedIfEmpty()
         HallOfFameManager.shared.repairOrphanEntries()
-        seedCharacterRosterIfEmpty()
         // Sync sound settings from UserDefaults
         SoundManager.shared.battleSoundsEnabled = battleSoundsEnabled
         DMEngine.shared.justDMMode = justDMMode
@@ -3887,7 +3898,18 @@ class GameEngine: ObservableObject {
     /// HallOfFameManager.seedIfEmpty()'s "give new players something to
     /// explore" role, one layer down.
     private func seedCharacterRosterIfEmpty() {
-        guard CharacterLibraryManager.shared.listCharacters().isEmpty else { return }
+        // Once ever, on a genuinely fresh install — never again just
+        // because the roster happens to be empty, or deleting every
+        // character would bring the starter six straight back on the next
+        // launch. An install whose roster folder already exists has been
+        // used before, even if it's empty now. Checked before
+        // listCharacters(), whose own directory getter creates that folder.
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: "characterRosterSeedDone") else { return }
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let usedBefore = FileManager.default.fileExists(atPath: docs.appendingPathComponent("SavedCharacters").path)
+        defaults.set(true, forKey: "characterRosterSeedDone")
+        guard !usedBefore, CharacterLibraryManager.shared.listCharacters().isEmpty else { return }
 
         let starters: [(name: String, race: Race, cls: CharacterClass)] = [
             ("Bram", .human, .fighter),
@@ -6997,6 +7019,23 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Defensive, belt-and-braces check against activeSlotId ever pointing
+    /// at a slot that's been deleted (from anywhere — Manage Saves, a bulk
+    /// delete, a future code path this doesn't already know about): if the
+    /// slot activeSlotId names has no breakpoints left on disk, it was
+    /// deleted out from under this session, and blindly reusing that id
+    /// for the next save would resurrect the exact adventure the player
+    /// just removed. Called at the top of every save path that trusts
+    /// activeSlotId, so deletion stays robust regardless of which screen
+    /// or code path did it — not just the ones that remember to clear
+    /// activeSlotId themselves.
+    private func clearActiveSlotIfDeleted() {
+        guard let slotId = activeSlotId,
+              SaveGameManager.shared.listBreakpoints(slotId: slotId).isEmpty else { return }
+        activeSlotId = nil
+        activeSlotName = nil
+    }
+
     private func performAutosave() {
         guard let dungeon = dungeon else { return }
         // Never persist a party-less save — if this ever fired at a moment
@@ -7004,6 +7043,7 @@ class GameEngine: ObservableObject {
         // (and, worse, "load the most recent save across every slot"
         // shortcuts) with an adventure that has no characters in it.
         guard !party.isEmpty else { return }
+        clearActiveSlotIfDeleted()
 
         let partyDesc = party.map { "\($0.name) (\($0.characterClass.rawValue))" }.joined(separator: ", ")
 
@@ -24048,19 +24088,7 @@ class GameEngine: ObservableObject {
             || lower == "menu mode" || lower == "just dm off" || lower == "dm off"
             || lower == "text mode off"
             || lower.hasPrefix("buttons o") {
-            justDMMode = false
-            UserDefaults.standard.set(false, forKey: "justDMMode")
-            DMEngine.shared.justDMMode = false
-            inDMMode = false
-            print("")
-            print("  Buttons restored.", color: .brightGreen)
-            if currentCombat != nil {
-                advanceCombat()
-            } else if dungeon != nil {
-                showExplorationView()
-            } else {
-                showMainMenu()
-            }
+            exitJustDMMode()
             return
         }
 
@@ -28436,6 +28464,7 @@ class GameEngine: ObservableObject {
         // Create a linked save so the player can replay from Hall of Fame
         var linkedSaveId: UUID? = nil
         if let dungeon = dungeon {
+            clearActiveSlotIfDeleted()
             let saveId = UUID()
             let slotId = activeSlotId ?? UUID()
             let slotName = activeSlotName ?? "\(party.first?.name ?? "Hero") — \(dungeon.name)"
@@ -28681,6 +28710,7 @@ class GameEngine: ObservableObject {
             showExplorationView()
             return
         }
+        clearActiveSlotIfDeleted()
 
         let slots = SaveGameManager.shared.listSlots()
 
@@ -29111,6 +29141,7 @@ class GameEngine: ObservableObject {
             showExplorationView()
             return
         }
+        clearActiveSlotIfDeleted()
 
         let slotId: UUID
         let slotName: String

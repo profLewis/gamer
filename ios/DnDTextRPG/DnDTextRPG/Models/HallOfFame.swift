@@ -232,7 +232,20 @@ class HallOfFameManager {
     /// other saves or breakpoints exist elsewhere.
     func repairOrphanEntries() {
         for entry in listEntries() {
-            guard entry.saveGameId == nil || SaveGameManager.shared.load(id: entry.saveGameId!) == nil else { continue }
+            if let linkedId = entry.saveGameId {
+                // Linked to a real save that no longer exists — the player
+                // deleted it. Rebuilding a fresh save for it here (the old
+                // behaviour) is exactly what made deleted adventures come
+                // back on every relaunch. Drop the entry instead, so the
+                // one Continue Adventure list stays in step with what the
+                // player actually chose to keep.
+                if SaveGameManager.shared.load(id: linkedId) == nil {
+                    deleteEntry(id: entry.id)
+                }
+                continue
+            }
+            // Legacy entry from before Hall of Fame entries were linked to
+            // saves at all — give it a real, loadable save, once.
             guard let save = buildRepairSave(for: entry) else { continue }
             try? SaveGameManager.shared.save(save)
             var updated = entry
@@ -351,8 +364,25 @@ class HallOfFameManager {
         return log
     }
 
+    private static let seedDoneKey = "hallOfFameSeedDone"
+
+    /// First-run only. This used to fire whenever the Hall of Fame was
+    /// empty — including right after a player deliberately deleted every
+    /// save (each deletion cascades to its Hall of Fame entry), which then
+    /// re-wrote all the "⭐" demo adventures on the very next launch:
+    /// deleted plays "coming back". Now gated on a persisted one-time
+    /// flag, and skipped outright for an install that has used the Hall of
+    /// Fame before (its folder already exists on disk) even if it's empty
+    /// now — so upgrading users who already emptied it aren't re-seeded
+    /// either. Checked before listEntries(), whose own directory getter
+    /// would create that folder and mask the answer.
     func seedIfEmpty() {
-        guard listEntries().isEmpty else { return }
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: Self.seedDoneKey) else { return }
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let usedBefore = FileManager.default.fileExists(atPath: docs.appendingPathComponent("HallOfFame").path)
+        defaults.set(true, forKey: Self.seedDoneKey)
+        guard !usedBefore, listEntries().isEmpty else { return }
 
         let seeds: [SeedDef] = [
             // Robin's Company — folk heroes, the high score to beat

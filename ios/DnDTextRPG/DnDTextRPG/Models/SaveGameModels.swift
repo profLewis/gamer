@@ -76,6 +76,35 @@ class SaveGameManager {
         return dir
     }
 
+    // MARK: - Deletion record
+    //
+    // A persisted list of every save id the player has deleted — kept in
+    // its own file, outside SavedGames/, and only ever appended to. Any
+    // save file whose id is on it is treated as deleted (and removed
+    // again) by listAllSaves/load, no matter which code path may have
+    // written it back. Belt-and-braces behind the real fix (launch-time
+    // seeding/repair no longer recreating deleted adventures — see
+    // HallOfFameManager.seedIfEmpty/repairOrphanEntries): a deletion
+    // should never be silently undone.
+
+    private var deletedSavesURL: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("DeletedSaves.json")
+    }
+
+    private func loadDeletedSaveIds() -> Set<UUID> {
+        guard let data = try? Data(contentsOf: deletedSavesURL),
+              let strings = try? JSONDecoder().decode([String].self, from: data) else { return [] }
+        return Set(strings.compactMap(UUID.init(uuidString:)))
+    }
+
+    private func recordDeletedSaveId(_ id: UUID) {
+        var ids = loadDeletedSaveIds()
+        guard ids.insert(id).inserted else { return }
+        guard let data = try? JSONEncoder().encode(ids.map { $0.uuidString }) else { return }
+        try? data.write(to: deletedSavesURL, options: .atomic)
+    }
+
     func listAllSaves() -> [SaveGame] {
         guard let files = try? FileManager.default.contentsOfDirectory(
             at: savesDirectory,
@@ -84,12 +113,18 @@ class SaveGameManager {
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
+        let deletedIds = loadDeletedSaveIds()
 
         return files
             .filter { $0.pathExtension == "json" }
             .compactMap { url -> SaveGame? in
-                guard let data = try? Data(contentsOf: url) else { return nil }
-                return try? decoder.decode(SaveGame.self, from: data)
+                guard let data = try? Data(contentsOf: url),
+                      let save = try? decoder.decode(SaveGame.self, from: data) else { return nil }
+                if deletedIds.contains(save.id) {
+                    try? FileManager.default.removeItem(at: url)
+                    return nil
+                }
+                return save
             }
             .sorted { $0.savedAt > $1.savedAt }
     }
@@ -143,6 +178,7 @@ class SaveGameManager {
     }
 
     func load(id: UUID) -> SaveGame? {
+        guard !loadDeletedSaveIds().contains(id) else { return nil }
         let fileName = "\(id.uuidString).json"
         let fileURL = savesDirectory.appendingPathComponent(fileName)
         guard let data = try? Data(contentsOf: fileURL) else { return nil }
@@ -156,6 +192,7 @@ class SaveGameManager {
         let fileName = "\(id.uuidString).json"
         let fileURL = savesDirectory.appendingPathComponent(fileName)
         try? FileManager.default.removeItem(at: fileURL)
+        recordDeletedSaveId(id)
         // A completed tale's Hall of Fame entry is just this same save
         // shown differently in Continue Adventure's one unified list, not
         // a second, independent record — deleting the save should delete
