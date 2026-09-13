@@ -8354,7 +8354,7 @@ class GameEngine: ObservableObject {
         print("")
 
         let justDMLabel = justDMMode ? "Text Mode: On" : "Text Mode: Off"
-        let options = ["Provider", "API Key", "Ad-lib Level", "Log Context", "DM Voice", justDMLabel, "Content Safety"]
+        let options = ["API Key", "Ad-lib Level", "Log Context", "DM Voice", justDMLabel, "Content Safety"]
 
         var menuOpts = options.map { MenuOption($0) }
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -8373,8 +8373,6 @@ class GameEngine: ObservableObject {
             }
             let selected = options[choice - 1]
             switch selected {
-            case "Provider":
-                self.showAIProviderMenu()
             case "API Key":
                 self.promptAPIKey()
             case "Ad-lib Level":
@@ -8412,12 +8410,8 @@ class GameEngine: ObservableObject {
             self.printTitle("DM Settings Help")
             self.print("")
 
-            self.print("  PROVIDER", color: .cyan, bold: true)
-            self.printWrapped("Choose which AI service powers the Dungeon Master. Options include OpenAI, Anthropic, Google, and Apple on-device AI. Cloud providers need an API key and offer more creative narration.", indent: 2, color: .dimGreen)
-            self.print("")
-
             self.print("  API KEY", color: .cyan, bold: true)
-            self.printWrapped("Enter, paste, or clear the API key for your chosen cloud provider. You can also copy your key as a backup. Keys are stored locally on your device and never shared.", indent: 2, color: .dimGreen)
+            self.printWrapped("Opens the Set API Key screen. Its own 'Provider' button lets you switch which AI service powers the Dungeon Master (OpenAI, Anthropic, Google, or Apple on-device) — cloud providers need an API key and offer more creative narration. From there you can enter, paste, test, or clear the key for your chosen provider. Keys are stored locally on your device and never shared.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  AD-LIB LEVEL", color: .cyan, bold: true)
@@ -10812,6 +10806,7 @@ class GameEngine: ObservableObject {
             print("  'Copy Key' to back it up.", color: .dimGreen)
             print("")
             var confirmOpts = [MenuOption("Remove Key", tint: .danger), MenuOption("Copy Key First")]
+            confirmOpts.append(MenuOption("Delete Permanently", tint: .danger))
             confirmOpts.append(MenuOption("< Back"))
             showMenuOptions(confirmOpts)
             closeHandler = { [weak self] in self?.promptAPIKey() }
@@ -10844,6 +10839,8 @@ class GameEngine: ObservableObject {
                         }
                     }
                     #endif
+                case 3: // Delete permanently (also wipes the Keychain backup)
+                    self.promptPermanentKeyDelete(provider: provider)
                 default: // Cancel
                     self.promptAPIKey()
                 }
@@ -10851,7 +10848,7 @@ class GameEngine: ObservableObject {
             return
         }
 
-        var options = [String]()
+        var options = ["Provider"]
         if provider == .google {
             options.append("Get Free Key")
         } else {
@@ -10879,83 +10876,32 @@ class GameEngine: ObservableObject {
             self?.closeHandler = nil
             self?.showDMSettingsSubMenu()
         }
-        var menuOpts = options.map { text -> MenuOption in
-            if text == "Remove Key" { return MenuOption(text, tint: .danger) }
-            if text == "Load Key" { return MenuOption(text, isDisabled: !hasKeychainBackup) }
-            return MenuOption(text)
-        }
-        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
-        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
-        showMenuOptions(menuOpts)
 
-        menuHandler = { [weak self] choice in
+        // Paginated (<< / >>) rather than one long flat list — this screen
+        // has grown too many buttons (Provider, key actions, nav) to fit
+        // comfortably on one page under the user's configured button limit.
+        showPaginatedMenu(options, pinned: ["?", "< Back"], pinnedHandler: { [weak self] pIdx in
             guard let self = self else { return }
-            if choice == menuOpts.count {
+            if pIdx == 0 {
+                self.showAPIKeyHelp(provider: provider, hasKey: hasKey)
+            } else {
                 self.closeHandler = nil
                 self.showDMSettingsSubMenu()
-                return
             }
-            if choice == menuOpts.count - 1 {
-                // Help
-                self.showInlineHelp {
-                    self.printTitle("API Key Help")
-                    self.print("")
-                    self.print("  GET KEY", color: .cyan, bold: true)
-                    self.printWrapped("Opens your provider's website where you can create an API key. Copy it there, then come back and paste it. See below for the exact steps and what it costs.", indent: 2, color: .dimGreen)
-                    self.print("")
-                    if self.billingURL(for: provider) != nil {
-                        self.print("  BILLING PAGE", color: .cyan, bold: true)
-                        self.printWrapped("Opens your provider's billing page directly. \(provider.displayName) needs a payment method on file before a key will actually work — this is where you add one.", indent: 2, color: .dimGreen)
-                        self.print("")
-                    }
-                    self.print("  PASTE KEY", color: .cyan, bold: true)
-                    self.printWrapped("Pastes a key from your clipboard. The quickest way to enter a key you've just copied.", indent: 2, color: .dimGreen)
-                    self.print("")
-                    self.print("  EDIT KEY", color: .cyan, bold: true)
-                    self.printWrapped("Opens a text field with your current key already filled in, so you can review or correct it character-by-character, or type/paste a new one from scratch if there's no key yet.", indent: 2, color: .dimGreen)
-                    self.print("")
-                    if hasKey {
-                        self.print("  SHOW KEY", color: .cyan, bold: true)
-                        self.printWrapped("Displays your full, un-redacted key on screen, with a Copy button right there.", indent: 2, color: .dimGreen)
-                        self.print("")
-                        self.print("  TEST KEY", color: .cyan, bold: true)
-                        self.printWrapped("Re-runs the connection test against your currently stored key, and shows its length and first/last characters — useful if a key seems right but keeps failing.", indent: 2, color: .dimGreen)
-                        self.print("")
-                        self.print("  COPY KEY", color: .cyan, bold: true)
-                        self.printWrapped("Copies your current key to the clipboard — useful as a backup before removing it.", indent: 2, color: .dimGreen)
-                        self.print("")
-                        self.print("  SAVE TO KEYCHAIN", color: .cyan, bold: true)
-                        self.printWrapped("Backs up this key to the device Keychain right now. This already happens automatically every time you open this screen — use this button for an explicit confirmation, or right after typing/pasting a new key.", indent: 2, color: .dimGreen)
-                        self.print("")
-                        self.print("  REMOVE KEY", color: .cyan, bold: true)
-                        self.printWrapped("Removes your stored API key. The key is automatically backed up to Keychain first, so you can restore it with Load Key. Long-press Remove Key to permanently delete the key and its backup.", indent: 2, color: .dimGreen)
-                        self.print("")
-                    }
-                    self.print("  LOAD KEY", color: .cyan, bold: true)
-                    self.printWrapped("Restores a previously backed-up key from the device Keychain. Keys are backed up automatically when removed, or manually via Save to Keychain (above) or the main Settings screen's Save Settings.", indent: 2, color: .dimGreen)
-                    self.print("")
-                    self.printWrapped("Your API key is stored locally on this device and never shared. Each provider has its own key — switching providers preserves other keys.", indent: 2, color: .dimGreen)
-                    self.print("")
-                    if provider != .google {
-                        self.print("  GETTING A PAID ACCOUNT SET UP", color: .cyan, bold: true)
-                        self.printWrapped("1. Tap Get Key — sign in or create an account.", indent: 2, color: .dimGreen)
-                        self.printWrapped("2. Create a new API key there and copy it immediately — it's shown once only.", indent: 2, color: .dimGreen)
-                        self.printWrapped("3. Come back and use Paste Key or Edit Key.", indent: 2, color: .dimGreen)
-                        self.printWrapped("4. If Test Key fails with a billing/credit error, tap Billing Page and add a payment method — a typical session only costs a few pence.", indent: 2, color: .dimGreen)
-                        self.print("")
-                    } else {
-                        self.print("  GETTING YOUR FREE KEY", color: .cyan, bold: true)
-                        self.printWrapped("1. Tap Get Free Key — sign in with a Google account (you must be 18+).", indent: 2, color: .dimGreen)
-                        self.printWrapped("2. Tap 'Create API key' on the AI Studio page and copy it immediately — it's shown once only.", indent: 2, color: .dimGreen)
-                        self.printWrapped("3. Come back and use Paste Key or Edit Key.", indent: 2, color: .dimGreen)
-                        self.printWrapped("4. New keys from AI Studio start with 'AQ.' — that's correct and expected, not a mistake. Older keys starting with 'AIza' still work for now, but Google is phasing them out; if one stops working, generate a fresh key.", indent: 2, color: .dimGreen)
-                        self.print("")
-                    }
-                }
-                return
-            }
-            let selected = options[choice - 1]
-            if selected == "Get Free Key" || selected == "Get Key" {
+        }, handler: { [weak self] idx in
+            guard let self = self else { return }
+            let selected = options[idx]
+            self.handleAPIKeySelection(selected, provider: provider)
+        })
+    }
+
+    /// The actual per-button behaviour for the Set API Key screen — split out
+    /// from promptAPIKey so the paginated-menu handler (which only knows the
+    /// selected option's text, not its position) can call straight into it.
+    private func handleAPIKeySelection(_ selected: String, provider: AIProvider) {
+        if selected == "Provider" {
+            self.showAIProviderMenu()
+        } else if selected == "Get Free Key" || selected == "Get Key" {
                 // Open the provider's key URL in Safari
                 let urlString: String
                 switch provider {
@@ -11115,13 +11061,66 @@ class GameEngine: ObservableObject {
                     }
                 }
             }
-        }
-        // Long-press Remove Key → permanent delete (removes from Keychain too)
-        menuLongPressHandler = { [weak self] choice in
-            guard let self = self else { return }
-            let idx = choice - 1
-            guard idx >= 0 && idx < options.count && options[idx] == "Remove Key" else { return }
-            self.promptPermanentKeyDelete(provider: provider)
+    }
+
+    private func showAPIKeyHelp(provider: AIProvider, hasKey: Bool) {
+        showInlineHelp {
+            self.printTitle("API Key Help")
+            self.print("")
+            self.print("  PROVIDER", color: .cyan, bold: true)
+            self.printWrapped("Switch which AI service powers the Dungeon Master (Anthropic, OpenAI, Google, or Apple on-device).", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  GET KEY", color: .cyan, bold: true)
+            self.printWrapped("Opens your provider's website where you can create an API key. Copy it there, then come back and paste it. See below for the exact steps and what it costs.", indent: 2, color: .dimGreen)
+            self.print("")
+            if self.billingURL(for: provider) != nil {
+                self.print("  BILLING PAGE", color: .cyan, bold: true)
+                self.printWrapped("Opens your provider's billing page directly. \(provider.displayName) needs a payment method on file before a key will actually work — this is where you add one.", indent: 2, color: .dimGreen)
+                self.print("")
+            }
+            self.print("  PASTE KEY", color: .cyan, bold: true)
+            self.printWrapped("Pastes a key from your clipboard. The quickest way to enter a key you've just copied.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  EDIT KEY", color: .cyan, bold: true)
+            self.printWrapped("Opens a text field with your current key already filled in, so you can review or correct it character-by-character, or type/paste a new one from scratch if there's no key yet.", indent: 2, color: .dimGreen)
+            self.print("")
+            if hasKey {
+                self.print("  SHOW KEY", color: .cyan, bold: true)
+                self.printWrapped("Displays your full, un-redacted key on screen, with a Copy button right there.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.print("  TEST KEY", color: .cyan, bold: true)
+                self.printWrapped("Re-runs the connection test against your currently stored key, and shows its length and first/last characters — useful if a key seems right but keeps failing.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.print("  COPY KEY", color: .cyan, bold: true)
+                self.printWrapped("Copies your current key to the clipboard — useful as a backup before removing it.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.print("  SAVE TO KEYCHAIN", color: .cyan, bold: true)
+                self.printWrapped("Backs up this key to the device Keychain right now. This already happens automatically every time you open this screen — use this button for an explicit confirmation, or right after typing/pasting a new key.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.print("  REMOVE KEY", color: .cyan, bold: true)
+                self.printWrapped("Removes your stored API key (backed up to Keychain first, so Load Key can restore it). Its confirmation screen also offers 'Delete Permanently', which wipes the Keychain backup too — irreversible.", indent: 2, color: .dimGreen)
+                self.print("")
+            }
+            self.print("  LOAD KEY", color: .cyan, bold: true)
+            self.printWrapped("Restores a previously backed-up key from the device Keychain. Keys are backed up automatically when removed, or manually via Save to Keychain (above) or the main Settings screen's Save Settings.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("Your API key is stored locally on this device and never shared. Each provider has its own key — switching providers preserves other keys.", indent: 2, color: .dimGreen)
+            self.print("")
+            if provider != .google {
+                self.print("  GETTING A PAID ACCOUNT SET UP", color: .cyan, bold: true)
+                self.printWrapped("1. Tap Get Key — sign in or create an account.", indent: 2, color: .dimGreen)
+                self.printWrapped("2. Create a new API key there and copy it immediately — it's shown once only.", indent: 2, color: .dimGreen)
+                self.printWrapped("3. Come back and use Paste Key or Edit Key.", indent: 2, color: .dimGreen)
+                self.printWrapped("4. If Test Key fails with a billing/credit error, tap Billing Page and add a payment method — a typical session only costs a few pence.", indent: 2, color: .dimGreen)
+                self.print("")
+            } else {
+                self.print("  GETTING YOUR FREE KEY", color: .cyan, bold: true)
+                self.printWrapped("1. Tap Get Free Key — sign in with a Google account (you must be 18+).", indent: 2, color: .dimGreen)
+                self.printWrapped("2. Tap 'Create API key' on the AI Studio page and copy it immediately — it's shown once only.", indent: 2, color: .dimGreen)
+                self.printWrapped("3. Come back and use Paste Key or Edit Key.", indent: 2, color: .dimGreen)
+                self.printWrapped("4. New keys from AI Studio start with 'AQ.' — that's correct and expected, not a mistake. Older keys starting with 'AIza' still work for now, but Google is phasing them out; if one stops working, generate a fresh key.", indent: 2, color: .dimGreen)
+                self.print("")
+            }
         }
     }
 
@@ -11181,7 +11180,7 @@ class GameEngine: ObservableObject {
                     self?.print("")
                     self?.waitForContinue()
                     self?.inputHandler = { [weak self] _ in
-                        self?.showAIProviderMenu()
+                        self?.promptAPIKey()
                     }
                 } else {
                     self?.print("")
@@ -12343,6 +12342,18 @@ class GameEngine: ObservableObject {
             printCardRow("Pack", "\(char.inventory.count)/\(Character.maxInventorySlots) items", width: cardWidth, color: .dimGreen)
         }
 
+        // ── Reputation (Glyphkeeper) ──
+        print("  ╟\(String(repeating: "─", count: cardWidth))╢", color: .cyan)
+        let alignmentColor: TerminalColor
+        switch char.ethicalAlignment {
+        case .heroic: alignmentColor = .brightGreen
+        case .kind: alignmentColor = .cyan
+        case .neutral: alignmentColor = .dimGreen
+        case .selfish: alignmentColor = .yellow
+        case .villainous: alignmentColor = .red
+        }
+        printCardRow("Reputation", "\(char.ethicalAlignment.rawValue) (\(char.ethicalScore))", width: cardWidth, color: alignmentColor)
+
         // ── Card border bottom ──
         print("  ╚\(border)╝", color: .cyan)
         print("")
@@ -12395,6 +12406,9 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("Change Voice", isDisabled: inGame))
         actions.append { [weak self] in returnHere(); self?.showCharacterVoiceEdit(index: index) }
 
+        menuOpts.append(MenuOption("Reputation", tint: .cyan))
+        actions.append { [weak self] in self?.showReputationLog(index: index) }
+
         // Not disabled in-game — saving/loading roster progress mid-adventure
         // is safe and is exactly when you'd want to (e.g. after a level-up).
         menuOpts.append(MenuOption("Roster", tint: .cyan))
@@ -12435,6 +12449,59 @@ class GameEngine: ObservableObject {
         menuLongPressHandler = { choice in
             guard choice > 0 && choice <= actions.count else { return }
             actions[choice - 1]()
+        }
+    }
+
+    /// Glyphkeeper's visible face — shows a character's current reputation
+    /// band/score and the log of what shifted it, most recent first. Read
+    /// by the AI DM too (see buildDMContext's partyStatus line) so NPC
+    /// reactions and narration stay consistent with this over a long campaign.
+    private func showReputationLog(index: Int) {
+        guard index < party.count else { showPartyReview(); return }
+        let char = party[index]
+        clearTerminal()
+        printTitle("\(char.name)'s Reputation")
+        print("")
+        let alignmentColor: TerminalColor
+        switch char.ethicalAlignment {
+        case .heroic: alignmentColor = .brightGreen
+        case .kind: alignmentColor = .cyan
+        case .neutral: alignmentColor = .dimGreen
+        case .selfish: alignmentColor = .yellow
+        case .villainous: alignmentColor = .red
+        }
+        print("  \(char.ethicalAlignment.rawValue) (\(char.ethicalScore))", color: alignmentColor, bold: true)
+        printWrapped(char.ethicalAlignment.summary, indent: 2, color: .dimGreen)
+        print("")
+        if char.ethicalLog.isEmpty {
+            printWrapped("No notable choices tracked yet this campaign.", indent: 2, color: .dimGreen)
+        } else {
+            print("  RECENT (most recent first):", color: .cyan, bold: true)
+            for entry in char.ethicalLog {
+                print("  \(entry)", color: .dimGreen)
+            }
+        }
+        print("")
+        showMenu(["?", "< Back"])
+        closeHandler = { [weak self] in self?.showCharacterReviewCard(index: index) }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                self.showInlineHelp {
+                    self.printTitle("Reputation — Help")
+                    self.print("")
+                    self.printWrapped("Glyphkeeper tracks a running ethical score (-100 Villainous to +100 Heroic) for each character, shifted by certain choices during the campaign.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  WHERE IT'S USED", color: .cyan, bold: true)
+                    self.printWrapped("The AI DM sees each character's reputation band and lets it colour narration and NPC reactions. Merchants also react to it directly — a good reputation makes haggling easier, a bad one makes it harder (see the DC note shown when you haggle).", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  THE LOG", color: .cyan, bold: true)
+                    self.printWrapped("Keeps the most recent 20 shifts so you can see exactly what's shaped your character's standing.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else {
+                self.showCharacterReviewCard(index: index)
+            }
         }
     }
 
@@ -24631,7 +24698,7 @@ class GameEngine: ObservableObject {
         let room = dungeon?.currentRoom
         let exitList = room?.exits.keys.map { $0.rawValue }.joined(separator: ", ") ?? "None"
         let partyStatus = party.map {
-            "\($0.name) (\($0.race.rawValue) \($0.characterClass.rawValue)) HP:\($0.currentHP)/\($0.maxHP) Gold:\($0.gold)"
+            "\($0.name) (\($0.race.rawValue) \($0.characterClass.rawValue)) HP:\($0.currentHP)/\($0.maxHP) Gold:\($0.gold) Reputation:\($0.ethicalAlignment.rawValue)"
         }.joined(separator: "\n")
 
         let inventorySummary = party.map { char -> String in

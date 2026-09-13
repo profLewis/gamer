@@ -327,6 +327,39 @@ enum Skill: String, CaseIterable, Codable {
     }
 }
 
+// MARK: - Glyphkeeper (Ethical Alignment)
+
+/// A character's tracked moral standing, derived from their running
+/// `ethicalScore` (-100...100). Named bands rather than a raw number so the
+/// DM, character sheet, and NPC reactions can all talk about it consistently.
+enum EthicalAlignment: String, CaseIterable {
+    case villainous = "Villainous"
+    case selfish = "Selfish"
+    case neutral = "Neutral"
+    case kind = "Kind"
+    case heroic = "Heroic"
+
+    static func forScore(_ score: Int) -> EthicalAlignment {
+        switch score {
+        case ..<(-60): return .villainous
+        case -60 ..< -20: return .selfish
+        case -20...20: return .neutral
+        case 21..<60: return .kind
+        default: return .heroic
+        }
+    }
+
+    var summary: String {
+        switch self {
+        case .villainous: return "Known for cruelty and self-interest above all else."
+        case .selfish: return "Looks out for themself first, others second."
+        case .neutral: return "No strong reputation either way."
+        case .kind: return "Known for fairness and looking out for others."
+        case .heroic: return "Known for selfless courage and mercy."
+        }
+    }
+}
+
 // MARK: - Character
 
 class Character: ObservableObject, Identifiable, Codable {
@@ -381,6 +414,14 @@ class Character: ObservableObject, Identifiable, Codable {
     @Published var familiarName: String?
     @Published var familiarType: String?
 
+    // Glyphkeeper — running ethical/alignment tracking. A single -100...100
+    // score (Villainous...Heroic) shifted by tracked in-game choices, with a
+    // short rolling log of what shifted it — the "memory" the AI DM reads to
+    // keep narration and NPC reactions consistent with who this character has
+    // actually been over the campaign, not just this one scene.
+    @Published var ethicalScore: Int = 0
+    @Published var ethicalLog: [String] = []   // most recent first, capped
+
     enum CodingKeys: String, CodingKey {
         case id, name, race, characterClass, level, abilityScores
         case currentHP, maxHP, tempHP, skillProficiencies, experiencePoints, gold
@@ -391,6 +432,7 @@ class Character: ObservableObject, Identifiable, Codable {
         case isComputerControlled
         case isPoisoned, poisonDamagePerTurn, poisonTurnsRemaining
         case familiarName, familiarType
+        case ethicalScore, ethicalLog
     }
 
     init(name: String, race: Race, characterClass: CharacterClass, abilityScores: AbilityScores, isComputerControlled: Bool = false) {
@@ -482,6 +524,8 @@ class Character: ObservableObject, Identifiable, Codable {
         isDodging = false
         familiarName = (try? container.decodeIfPresent(String.self, forKey: .familiarName)) ?? nil
         familiarType = (try? container.decodeIfPresent(String.self, forKey: .familiarType)) ?? nil
+        ethicalScore = (try? container.decodeIfPresent(Int.self, forKey: .ethicalScore)) ?? 0
+        ethicalLog = (try? container.decodeIfPresent([String].self, forKey: .ethicalLog)) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -518,6 +562,8 @@ class Character: ObservableObject, Identifiable, Codable {
         try container.encode(poisonTurnsRemaining, forKey: .poisonTurnsRemaining)
         try container.encodeIfPresent(familiarName, forKey: .familiarName)
         try container.encodeIfPresent(familiarType, forKey: .familiarType)
+        try container.encode(ethicalScore, forKey: .ethicalScore)
+        try container.encode(ethicalLog, forKey: .ethicalLog)
     }
 
     var proficiencyBonus: Int {
@@ -557,6 +603,24 @@ class Character: ObservableObject, Identifiable, Codable {
             return abilityMod + proficiencyBonus
         }
         return abilityMod
+    }
+
+    // MARK: - Glyphkeeper (Ethical Alignment)
+
+    var ethicalAlignment: EthicalAlignment { EthicalAlignment.forScore(ethicalScore) }
+
+    /// Shifts this character's tracked ethical score by `delta` (clamped to
+    /// -100...100) and records why, most-recent-first, capped at 20 entries
+    /// so the log stays a useful recent summary rather than growing forever
+    /// across a long campaign.
+    func adjustEthicalScore(_ delta: Int, reason: String) {
+        guard delta != 0 else { return }
+        ethicalScore = max(-100, min(100, ethicalScore + delta))
+        let sign = delta > 0 ? "+" : ""
+        ethicalLog.insert("\(sign)\(delta) — \(reason)", at: 0)
+        if ethicalLog.count > 20 {
+            ethicalLog.removeLast(ethicalLog.count - 20)
+        }
     }
 
     func takeDamage(_ amount: Int) {

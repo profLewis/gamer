@@ -1012,6 +1012,7 @@ class DMEngine {
 
         PARTY:
         \(context.partyStatus)
+        Each character's "Reputation" reflects their tracked pattern of choices this campaign (Villainous/Selfish/Neutral/Kind/Heroic). Let it colour how NPCs react to them and how you narrate their actions — a Heroic character shouldn't be treated the same as a Villainous one — but don't lecture the player about it directly.
 
         INVENTORY:
         \(context.inventorySummary)

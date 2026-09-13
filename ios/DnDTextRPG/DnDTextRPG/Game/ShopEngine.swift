@@ -818,13 +818,30 @@ class ShopEngine {
             let persuasionMod = character.skillModifier(for: .persuasion)
             let roll = Dice.roll(20)
             let total = roll + persuasionMod
+            // Word travels: a character with a strong reputation (Glyphkeeper)
+            // finds merchants easier (Kind/Heroic) or warier (Selfish/
+            // Villainous) to negotiate with — a small DC shift either way.
+            let reputationMod: Int
+            switch character.ethicalAlignment {
+            case .heroic: reputationMod = -6
+            case .kind: reputationMod = -3
+            case .neutral: reputationMod = 0
+            case .selfish: reputationMod = 3
+            case .villainous: reputationMod = 6
+            }
             // Steeper asks need a better roll; each repeat attempt on this
             // same item also stiffens the merchant's resolve a little; rare
             // goods are harder to talk down further still.
-            let effectiveDC = merchant.tier.haggleDC + (isRareGood ? 3 : 0) + Int((discountPct * 40).rounded()) + (attempt - 1) * 2
+            let effectiveDC = merchant.tier.haggleDC + (isRareGood ? 3 : 0) + Int((discountPct * 40).rounded()) + (attempt - 1) * 2 + reputationMod
 
             game.print("")
             game.print("  \(character.name) offers \(offer)gp and rolls Persuasion: d20[\(roll)] + \(persuasionMod) = \(total) vs DC \(effectiveDC)", color: .cyan)
+            if reputationMod != 0 {
+                let repNote = reputationMod < 0
+                    ? "  Reputation (\(character.ethicalAlignment.rawValue)) works in your favour: \(reputationMod) to the DC."
+                    : "  Reputation (\(character.ethicalAlignment.rawValue)) works against you: +\(reputationMod) to the DC."
+                game.print(repNote, color: .dimGreen)
+            }
 
             if total >= effectiveDC {
                 self.narrate(situation: "The player offers \(offer) gold for a \(item.name) (asking price \(askingPrice)) and makes a successful Persuasion check. React in character, agreeing to the price.",
