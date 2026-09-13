@@ -25,6 +25,15 @@ enum AIProvider: Int, CaseIterable {
         }
     }
 
+    /// Short enough to fit a "Test X" button label alongside the others.
+    var shortName: String {
+        switch self {
+        case .anthropic: return "Claude"
+        case .openAI: return "GPT"
+        case .google: return "Gemini"
+        }
+    }
+
     var keyPlaceholder: String {
         switch self {
         case .anthropic: return "sk-ant-..."

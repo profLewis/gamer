@@ -9039,11 +9039,21 @@ class GameEngine: ObservableObject {
             let label = isSelected ? "\(provider.displayName) <--" : provider.displayName
             options.append(MenuOption(label, isDefault: isSelected))
         }
+        // A "Test <Provider>" button for each provider that already has a key
+        // stored — lets you check any provider's access right from this
+        // screen, without first switching to it and hunting through Set API
+        // Key. Only shown once a key exists; there's nothing to test yet
+        // otherwise.
+        let testableProviders = AIProvider.allCases.filter { dm.apiKey(for: $0) != nil }
+        for provider in testableProviders {
+            options.append(MenuOption("Test \(provider.shortName)", tint: .navigation))
+        }
         options.append(MenuOption("?", tint: .navigation, compact: true))
         options.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(options)
 
         let appleOffset = dm.isAppleModelAvailable ? 1 : 0
+        let testOffset = appleOffset + AIProvider.allCases.count
         let helpIndex = options.count - 1  // 1-based choice for ?
         let backIndex = options.count      // 1-based choice for < Back
 
@@ -9051,6 +9061,20 @@ class GameEngine: ObservableObject {
         menuHandler = { [weak self] choice in
             if choice == backIndex {
                 self?.showDMSettingsSubMenu()
+                return
+            }
+            if choice - testOffset >= 1 && choice - testOffset <= testableProviders.count {
+                let tested = testableProviders[choice - testOffset - 1]
+                // validateAndConfirmKey always tests DMEngine's CURRENT
+                // provider — switch to the one being tested so it checks the
+                // right key. On success this leaves it selected (testing a
+                // key you want to use is a reasonable way to pick it); on
+                // failure validateAndConfirmKey clears the bad key and drops
+                // straight into that provider's Set API Key screen to fix it.
+                dm.provider = tested
+                self?.print("")
+                self?.print("  Testing \(tested.displayName) key...", color: .dimGreen)
+                self?.validateAndConfirmKey(provider: tested)
                 return
             }
             if choice == helpIndex {
@@ -9070,6 +9094,9 @@ class GameEngine: ObservableObject {
                     self?.printWrapped("Strong narrative quality. Pay-as-you-go pricing. Requires an OpenAI account with credit.", indent: 2, color: .dimGreen)
                     self?.print("")
                     self?.printWrapped("After selecting a cloud provider, you'll be prompted to enter your API key. Keys are stored locally on your device.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                    self?.print("  TEST BUTTONS", color: .cyan, bold: true)
+                    self?.printWrapped("A \"Test <Provider>\" button appears for any provider that already has a key saved — checks that provider's access right away, without switching to it first. If the test fails, the bad key is cleared and you're dropped straight into that provider's Set API Key screen to fix it.", indent: 2, color: .dimGreen)
                     self?.print("")
                 }
                 return
