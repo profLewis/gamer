@@ -18,6 +18,10 @@ struct Trainer: Codable, Equatable {
     var membershipFee: Int
     var sparDC: Int                // DC to win free entry by sparring instead of paying
     var lessonFee: Int = 15          // per-skill training cost, charged on top of entry
+    /// Once true (paid, or won by sparring), this gym never asks for
+    /// entry again for the rest of the adventure — see Dungeon.hasMultiGymPass
+    /// for the version that covers every gym in the dungeon at once.
+    var membershipPaid: Bool = false
 
     static func == (lhs: Trainer, rhs: Trainer) -> Bool { lhs.name == rhs.name && lhs.gymName == rhs.gymName }
 

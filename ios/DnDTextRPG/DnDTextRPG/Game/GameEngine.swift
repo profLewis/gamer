@@ -21202,7 +21202,7 @@ class GameEngine: ObservableObject {
     /// Training gym entry: pay a membership fee, or spar (a skill check
     /// against the trainer's specialty) for free entry.
     func visitGym() {
-        guard let room = dungeon?.currentRoom, let trainer = room.trainer else { return }
+        guard let dungeon = dungeon, let room = dungeon.currentRoom, var trainer = room.trainer else { return }
 
         clearTerminal()
         printTitle(trainer.gymName)
@@ -21211,7 +21211,20 @@ class GameEngine: ObservableObject {
         printWrapped("\"\(trainer.greeting)\"", indent: 2, color: .yellow)
         print("")
 
-        showMenu(["Pay Membership (\(trainer.membershipFee)gp)", "Spar for Free Entry", "< Leave"])
+        // Already a member here — either paid at THIS gym before, or holds
+        // a Multi-Gym Pass covering every gym in the dungeon — so entry is
+        // free from now on; go straight to training instead of asking to
+        // pay or spar again every single visit.
+        if trainer.membershipPaid || dungeon.hasMultiGymPass {
+            print("  \"Welcome back.\"", color: .brightGreen)
+            print("")
+            waitForContinue()
+            inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
+            return
+        }
+
+        let passPrice = trainer.membershipFee * 4
+        showMenu(["Pay Membership (\(trainer.membershipFee)gp)", "Spar for Free Entry", "Multi-Gym Pass (\(passPrice)gp)", "< Leave"])
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             switch choice {
@@ -21226,8 +21239,10 @@ class GameEngine: ObservableObject {
                         return
                     }
                     character.gold -= trainer.membershipFee
+                    trainer.membershipPaid = true
+                    room.trainer = trainer
                     self.print("")
-                    self.print("  \"Welcome to \(trainer.gymName).\"", color: .brightGreen)
+                    self.print("  \"Welcome to \(trainer.gymName). That's good for the rest of the adventure — no need to pay again.\"", color: .brightGreen)
                     self.advanceTime(15)
                     self.waitForContinue()
                     self.inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
@@ -21242,7 +21257,9 @@ class GameEngine: ObservableObject {
                     self.print("  \(character.name) spars: d20[\(roll)] + \(mod) = \(total) vs DC \(trainer.sparDC)", color: .dimGreen)
                     self.advanceTime(15)
                     if total >= trainer.sparDC {
-                        self.print("  \"Not bad! You've earned your way in.\"", color: .brightGreen)
+                        trainer.membershipPaid = true
+                        room.trainer = trainer
+                        self.print("  \"Not bad! You've earned your way in — for good.\"", color: .brightGreen)
                         self.waitForContinue()
                         self.inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
                     } else {
@@ -21250,6 +21267,24 @@ class GameEngine: ObservableObject {
                         self.waitForContinue()
                         self.inputHandler = { [weak self] _ in self?.showExplorationView() }
                     }
+                }
+            case 3:
+                self.pickCharacter(title: "Who buys the pass?", cancelLabel: "Don't Enter", showGold: true) { [weak self] character in
+                    guard let self = self else { return }
+                    guard character.gold >= passPrice else {
+                        self.print("")
+                        self.print("  \"That's the going rate for every gym in these halls. Come back with more coin.\"", color: .red)
+                        self.waitForContinue()
+                        self.inputHandler = { [weak self] _ in self?.showExplorationView() }
+                        return
+                    }
+                    character.gold -= passPrice
+                    dungeon.hasMultiGymPass = true
+                    self.print("")
+                    self.print("  \"A Multi-Gym Pass! Every gym in these halls will recognise this — no more membership fees, anywhere.\"", color: .brightGreen)
+                    self.advanceTime(15)
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
                 }
             default:
                 self.showExplorationView()
@@ -23383,6 +23418,10 @@ class GameEngine: ObservableObject {
                         self.print("  Rage uses restored", color: .cyan)
                     }
                     char.huntersMarkActive = false
+                    if char.characterClass.willpowerSurgeMaxUses > 0 {
+                        char.willpowerSurgeUsesRemaining = char.characterClass.willpowerSurgeMaxUses
+                        self.print("  Willpower Surge restored", color: .cyan)
+                    }
                 }
                 self.logEvent("Long rest — party fully recovered", category: "REST")
                 self.logMultiplayerAction("Long rest — party fully recovered")
@@ -25847,6 +25886,9 @@ class GameEngine: ObservableObject {
             // Clear dodge at start of turn (dodge only lasts until your next turn)
             if let character = party.first(where: { $0.id == current.id }) {
                 character.isDodging = false
+                if character.willpowerSurgeImmuneTurns > 0 {
+                    character.willpowerSurgeImmuneTurns -= 1
+                }
             }
 
             // Check if character fled or is playing dead
@@ -25886,20 +25928,31 @@ class GameEngine: ObservableObject {
                !character.isConscious {
                 showDeathSavingThrow(character: character)
             } else if let character = party.first(where: { $0.id == current.id }),
+                      character.isMindControlled {
+                performMindControlledTurn(character: character, combat: combat)
+            } else if let character = party.first(where: { $0.id == current.id }),
                       character.isComputerControlled {
                 runAICombatTurn(character: character)
             } else {
                 showPlayerCombatMenu(characterId: current.id)
             }
         } else {
-            if let report = combat.runMonsterTurn() {
+            switch combat.runMonsterTurn() {
+            case .attack(let report):
                 displayAttackReport(report) { [weak self] in
                     guard let self = self else { return }
                     combat.checkCombatEnd()
                     combat.nextTurn()
                     self.advanceCombat()
                 }
-            } else {
+            case .mindControl(let attempt):
+                resolveMindControlAttempt(attempt, combat: combat) { [weak self] in
+                    guard let self = self else { return }
+                    combat.checkCombatEnd()
+                    combat.nextTurn()
+                    self.advanceCombat()
+                }
+            case nil:
                 combat.nextTurn()
                 advanceCombat()
             }
@@ -27062,6 +27115,131 @@ class GameEngine: ObservableObject {
 
         waitForContinue(fullScreenTap: false)
         inputHandler = { [weak self] _ in self?.advanceCombat() }
+    }
+
+    // MARK: - Willpower Surge (mind control)
+
+    /// Entry point for a MindControlAttempt (see runMonsterTurn) — routes
+    /// to the timed Willpower Surge prompt for an eligible, still-charged
+    /// Cleric/Wizard, or straight to an automatic saving throw otherwise.
+    private func resolveMindControlAttempt(_ attempt: MindControlAttempt, combat: Combat, completion: @escaping () -> Void) {
+        guard let target = party.first(where: { $0.id == attempt.targetId }) else {
+            completion()
+            return
+        }
+        if attempt.offersWillpowerSurge {
+            showWillpowerSurgePrompt(attempt: attempt, target: target, completion: completion)
+        } else {
+            autoResolveMindControlSave(attempt: attempt, target: target, completion: completion)
+        }
+    }
+
+    /// The QTE itself — a single "RESIST!" button with a short fuse. Tap it
+    /// in time and the surge shatters the attempt outright, no save needed;
+    /// let the timer run out and it's treated as a miss (falls through to
+    /// the same consequence as a failed saving throw).
+    private func showWillpowerSurgePrompt(attempt: MindControlAttempt, target: Character, completion: @escaping () -> Void) {
+        clearTerminal()
+        printCombatStatus()
+        print("")
+        print("  \(attempt.monsterName) reaches for \(target.name)'s mind with \(attempt.attackDescription)!", color: .magenta, bold: true)
+        print("")
+        print("  ⚡ WILLPOWER SURGE! ⚡", color: .brightGreen, bold: true)
+        printWrapped("Tap RESIST before the surge fades!", indent: 2, color: .yellow)
+        print("")
+
+        target.willpowerSurgeUsesRemaining -= 1
+        showMenu(["RESIST!"])
+
+        var resolved = false
+        let surgeTimer = Timer.scheduledTimer(withTimeInterval: 2.2, repeats: false) { [weak self] _ in
+            guard let self = self, !resolved else { return }
+            resolved = true
+            self.finishWillpowerSurge(succeeded: false, attempt: attempt, target: target, completion: completion)
+        }
+        menuHandler = { [weak self] _ in
+            guard let self = self, !resolved else { return }
+            resolved = true
+            surgeTimer.invalidate()
+            self.finishWillpowerSurge(succeeded: true, attempt: attempt, target: target, completion: completion)
+        }
+    }
+
+    private func finishWillpowerSurge(succeeded: Bool, attempt: MindControlAttempt, target: Character, completion: @escaping () -> Void) {
+        clearTerminal()
+        printCombatStatus()
+        print("")
+        if succeeded {
+            // Grace window — stops the very next monster turn from just
+            // throwing the same prompt straight back at them.
+            target.willpowerSurgeImmuneTurns = 1
+            print("  \(target.name)'s will blazes bright — the surge shatters \(attempt.monsterName)'s hold before it can take root!", color: .brightGreen, bold: true)
+            logEvent("\(target.name) resisted mind control with a Willpower Surge", category: "COMBAT")
+            logMultiplayerAction("\(target.name) resisted \(attempt.monsterName)'s mind control with a Willpower Surge!")
+        } else {
+            let turns = Int.random(in: 1...2)
+            target.applyMindControl(turns: turns)
+            print("  \(target.name) wasn't fast enough — \(attempt.monsterName)'s will crashes over their own!", color: .red, bold: true)
+            printWrapped("\(target.name) will lose \(turns) turn\(turns == 1 ? "" : "s") to it.", indent: 2, color: .dimGreen)
+            logEvent("\(target.name) succumbed to mind control", category: "COMBAT")
+            logMultiplayerAction("\(attempt.monsterName) seized control of \(target.name)'s mind!")
+        }
+        print("")
+        waitForContinue(fullScreenTap: false)
+        inputHandler = { _ in completion() }
+    }
+
+    /// Plain WIS saving throw — used when the target isn't a Cleric/Wizard,
+    /// or has no Willpower Surge uses left this rest.
+    private func autoResolveMindControlSave(attempt: MindControlAttempt, target: Character, completion: @escaping () -> Void) {
+        clearTerminal()
+        printCombatStatus()
+        print("")
+        print("  \(attempt.monsterName) reaches for \(target.name)'s mind with \(attempt.attackDescription)!", color: .magenta, bold: true)
+        let mod = target.abilityScores.modifier(for: .wisdom)
+        let roll = Dice.roll(20)
+        let total = roll + mod
+        print("  Willpower save: d20[\(roll)] + \(mod) = \(total) vs DC \(attempt.saveDC)", color: .dimGreen)
+        print("")
+        if total >= attempt.saveDC {
+            print("  \(target.name) resists!", color: .brightGreen, bold: true)
+            logEvent("\(target.name) resisted mind control (WIS save)", category: "COMBAT")
+            logMultiplayerAction("\(target.name) resisted \(attempt.monsterName)'s mind control!")
+        } else {
+            let turns = Int.random(in: 1...2)
+            target.applyMindControl(turns: turns)
+            print("  \(target.name)'s mind is overwhelmed!", color: .red, bold: true)
+            printWrapped("\(target.name) will lose \(turns) turn\(turns == 1 ? "" : "s") to it.", indent: 2, color: .dimGreen)
+            logEvent("\(target.name) succumbed to mind control", category: "COMBAT")
+            logMultiplayerAction("\(attempt.monsterName) seized control of \(target.name)'s mind!")
+        }
+        print("")
+        waitForContinue(fullScreenTap: false)
+        inputHandler = { _ in completion() }
+    }
+
+    /// A mind-controlled character's turn — frozen, unable to act, rather
+    /// than making a choice of their own. advanceCombat() (not a passed-in
+    /// completion) is safe to call from both the single-player and
+    /// multiplayer combat loops — it already branches on isMultiplayer.
+    private func performMindControlledTurn(character: Character, combat: Combat) {
+        character.mindControlTurnsRemaining -= 1
+        if character.mindControlTurnsRemaining <= 0 {
+            character.isMindControlled = false
+        }
+        clearTerminal()
+        printCombatStatus()
+        print("")
+        print("  \(character.name)'s mind is not their own — they stand frozen, unable to act!", color: .magenta, bold: true)
+        print("")
+        logEvent("\(character.name) lost their turn to mind control", category: "COMBAT")
+        waitForContinue(fullScreenTap: false)
+        inputHandler = { [weak self] _ in
+            guard let self = self else { return }
+            combat.checkCombatEnd()
+            combat.nextTurn()
+            self.advanceCombat()
+        }
     }
 
     // MARK: - Death Saving Throws
@@ -33433,6 +33611,9 @@ class GameEngine: ObservableObject {
                 if let character = party.first(where: { $0.id == current.id }) {
                     // Clear dodge
                     character.isDodging = false
+                    if character.willpowerSurgeImmuneTurns > 0 {
+                        character.willpowerSurgeImmuneTurns -= 1
+                    }
 
                     // Skip if fled or playing dead
                     if character.hasFledCombat || character.isPlayingDead {
@@ -33469,6 +33650,12 @@ class GameEngine: ObservableObject {
                         return
                     }
 
+                    // Mind-controlled — lose this turn instead of choosing an action
+                    if character.isMindControlled {
+                        performMindControlledTurn(character: character, combat: combat)
+                        return
+                    }
+
                     // AI characters auto-play
                     if character.isComputerControlled {
                         runAICombatTurn(character: character)
@@ -33490,14 +33677,22 @@ class GameEngine: ObservableObject {
             }
         } else {
             // Monster turn — execute locally
-            if let report = combat.runMonsterTurn() {
+            switch combat.runMonsterTurn() {
+            case .attack(let report):
                 displayAttackReport(report) { [weak self] in
                     guard let self = self else { return }
                     combat.checkCombatEnd()
                     combat.nextTurn()
                     self.multiplayerCombatTurn()
                 }
-            } else {
+            case .mindControl(let attempt):
+                resolveMindControlAttempt(attempt, combat: combat) { [weak self] in
+                    guard let self = self else { return }
+                    combat.checkCombatEnd()
+                    combat.nextTurn()
+                    self.multiplayerCombatTurn()
+                }
+            case nil:
                 combat.nextTurn()
                 multiplayerCombatTurn()
             }

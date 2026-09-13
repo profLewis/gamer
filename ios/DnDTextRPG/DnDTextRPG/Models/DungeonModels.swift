@@ -591,6 +591,11 @@ class Dungeon: ObservableObject, Codable {
     /// of THIS specific adventure.
     @Published var emergencyDropUsed: Bool = false
 
+    /// A one-time premium purchase (see GameEngine.visitGym) that covers
+    /// every gym in this dungeon at once, instead of paying each Trainer's
+    /// membershipPaid individually.
+    @Published var hasMultiGymPass: Bool = false
+
     /// True if this dungeon has at least one stairs/rope/levitation link.
     var hasVerticalConnections: Bool {
         rooms.values.contains { $0.verticalDestinationRoomId != nil }
@@ -612,7 +617,7 @@ class Dungeon: ObservableObject, Codable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, level, rooms, currentRoomId, previousRoomId, nextRoomId, currentFloor, emergencyDropUsed
+        case name, level, rooms, currentRoomId, previousRoomId, nextRoomId, currentFloor, emergencyDropUsed, hasMultiGymPass
     }
 
     init(name: String, level: Int) {
@@ -642,6 +647,7 @@ class Dungeon: ObservableObject, Codable {
             ?? (roomsDict.keys.max().map { $0 + 1 } ?? 0)
         currentFloor = try container.decodeIfPresent(Int.self, forKey: .currentFloor) ?? 1
         emergencyDropUsed = (try? container.decodeIfPresent(Bool.self, forKey: .emergencyDropUsed)) ?? false
+        hasMultiGymPass = (try? container.decodeIfPresent(Bool.self, forKey: .hasMultiGymPass)) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -655,6 +661,7 @@ class Dungeon: ObservableObject, Codable {
         try container.encode(nextRoomId, forKey: .nextRoomId)
         try container.encode(currentFloor, forKey: .currentFloor)
         try container.encode(emergencyDropUsed, forKey: .emergencyDropUsed)
+        try container.encode(hasMultiGymPass, forKey: .hasMultiGymPass)
     }
 
     /// Next room ID for dynamic expansion

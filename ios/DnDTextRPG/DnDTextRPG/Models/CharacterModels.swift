@@ -214,6 +214,20 @@ enum CharacterClass: String, CaseIterable, Codable {
 
     // MARK: - Reliability (class-flavoured edge at Search / Map / Negotiate)
 
+    /// Willpower Surge: a timed on-screen prompt to resist an enemy's
+    /// mind-control attack the instant it's cast, instead of an automatic
+    /// saving throw — a Cleric's faith or a Wizard's trained mental
+    /// discipline pushing back against it (this roster has no Paladin or
+    /// Sorcerer; these two are the closest existing divine/arcane-willpower
+    /// analogues). Limited like Second Wind/Rage, restored on long rest
+    /// (see Character.willpowerSurgeUsesRemaining).
+    var willpowerSurgeMaxUses: Int {
+        switch self {
+        case .cleric, .wizard: return 1
+        default: return 0
+        }
+    }
+
     /// Bonus to Search Room's Perception check — mechanically-minded classes
     /// are better at spotting traps and hidden compartments.
     var searchReliability: Int {
@@ -492,6 +506,14 @@ class Character: ObservableObject, Identifiable, Codable {
     @Published var isPlayingDead: Bool       // Pretending to be dead in combat
     @Published var hasFledCombat: Bool       // Has fled this combat
     @Published var isDodging: Bool           // Took Dodge action — attackers have disadvantage
+    @Published var isMindControlled: Bool = false      // Lost their turn to an enemy's mind-control attack
+    @Published var mindControlTurnsRemaining: Int = 0
+    @Published var willpowerSurgeImmuneTurns: Int = 0  // Grace window right after a successful Willpower Surge resist
+    // Willpower Surge: Paladin/Sorcerer reactive ability — a timed on-screen
+    // prompt to resist an enemy's mind-control attack the instant it's cast,
+    // rather than an automatic saving throw. Limited like Second Wind/Rage
+    // (see willpowerSurgeMaxUses below), restored on long rest.
+    @Published var willpowerSurgeUsesRemaining: Int = 0
 
     // Familiar — a small companion, currently cosmetic/flavour only (shown
     // on the character card and in status), earned as a quest reward
@@ -517,6 +539,7 @@ class Character: ObservableObject, Identifiable, Codable {
         case isPoisoned, poisonDamagePerTurn, poisonTurnsRemaining
         case familiarName, familiarType
         case ethicalScore, ethicalLog
+        case willpowerSurgeUsesRemaining
     }
 
     init(name: String, race: Race, characterClass: CharacterClass, abilityScores: AbilityScores, isComputerControlled: Bool = false) {
@@ -559,6 +582,7 @@ class Character: ObservableObject, Identifiable, Codable {
         self.isDodging = false
         self.familiarName = nil
         self.familiarType = nil
+        self.willpowerSurgeUsesRemaining = characterClass.willpowerSurgeMaxUses
 
         // Calculate starting HP
         let conMod = abilityScores.modifier(for: .constitution)
@@ -610,6 +634,7 @@ class Character: ObservableObject, Identifiable, Codable {
         familiarType = (try? container.decodeIfPresent(String.self, forKey: .familiarType)) ?? nil
         ethicalScore = (try? container.decodeIfPresent(Int.self, forKey: .ethicalScore)) ?? 0
         ethicalLog = (try? container.decodeIfPresent([String].self, forKey: .ethicalLog)) ?? []
+        willpowerSurgeUsesRemaining = (try? container.decodeIfPresent(Int.self, forKey: .willpowerSurgeUsesRemaining)) ?? characterClass.willpowerSurgeMaxUses
     }
 
     func encode(to encoder: Encoder) throws {
@@ -648,6 +673,7 @@ class Character: ObservableObject, Identifiable, Codable {
         try container.encodeIfPresent(familiarType, forKey: .familiarType)
         try container.encode(ethicalScore, forKey: .ethicalScore)
         try container.encode(ethicalLog, forKey: .ethicalLog)
+        try container.encode(willpowerSurgeUsesRemaining, forKey: .willpowerSurgeUsesRemaining)
     }
 
     var proficiencyBonus: Int {
@@ -737,6 +763,14 @@ class Character: ObservableObject, Identifiable, Codable {
         }
     }
 
+    /// A failed (or auto-resolved) mind-control attempt — loses their next
+    /// `turns` turn(s) to it. See willpowerSurgeUsesRemaining/
+    /// willpowerSurgeImmuneTurns for the resist side of this.
+    func applyMindControl(turns: Int) {
+        isMindControlled = true
+        mindControlTurnsRemaining = turns
+    }
+
     func applyPoison(damagePerTurn: Int, turns: Int) {
         isPoisoned = true
         poisonDamagePerTurn = damagePerTurn
@@ -769,6 +803,10 @@ class Character: ObservableObject, Identifiable, Codable {
         hasFledCombat = false
         isDodging = false
         weaponSharpenedUses = 0
+        isMindControlled = false
+        mindControlTurnsRemaining = 0
+        willpowerSurgeImmuneTurns = 0
+        willpowerSurgeUsesRemaining = characterClass.willpowerSurgeMaxUses
     }
 
     /// Called each combat turn — returns damage taken from poison, or 0 if recovered

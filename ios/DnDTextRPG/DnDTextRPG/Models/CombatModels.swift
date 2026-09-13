@@ -296,6 +296,38 @@ enum MonsterType: String, CaseIterable, Codable {
         }
     }
 
+    /// Whether this monster type can attempt to seize a mind instead of a
+    /// physical attack — see Character.isMindControlled / Willpower Surge.
+    /// Scoped to the dungeon's classic psychic/dominating high-tier threats.
+    var canMindControl: Bool {
+        switch self {
+        case .mindFlayer, .beholder, .vecna: return true
+        default: return false
+        }
+    }
+
+    /// Chance (0.0-1.0), rolled instead of a normal attack, that this
+    /// monster attempts mind control this turn.
+    var mindControlChance: Double {
+        switch self {
+        case .mindFlayer: return 0.35
+        case .beholder: return 0.25
+        case .vecna: return 0.30
+        default: return 0.0
+        }
+    }
+
+    /// Save DC for an auto-resolved (non-Willpower-Surge) mind control
+    /// attempt — scales with how fearsome the caster is.
+    var mindControlDC: Int {
+        switch self {
+        case .mindFlayer: return 14
+        case .beholder: return 16
+        case .vecna: return 18
+        default: return 10
+        }
+    }
+
     var asciiArt: [String] {
         switch self {
         case .giantRat:
@@ -1001,6 +1033,29 @@ struct AttackReport {
     let brokenWeaponName: String?
 }
 
+/// A mind-control attempt rolled instead of a normal attack (see
+/// MonsterType.canMindControl) — resolved by GameEngine rather than here,
+/// since a Willpower Surge resist needs an on-screen timed prompt, which
+/// this model layer has no UI to show.
+struct MindControlAttempt {
+    let monsterName: String
+    let attackDescription: String
+    let targetId: UUID
+    let targetName: String
+    /// True when the target can attempt a Willpower Surge resist instead
+    /// of an automatic saving throw (see Character.willpowerSurgeUsesRemaining).
+    let offersWillpowerSurge: Bool
+    let saveDC: Int
+}
+
+/// What happened on a monster's turn — a normal attack, or a mind-control
+/// attempt (see MindControlAttempt) that GameEngine must resolve with its
+/// own UI before combat can continue.
+enum MonsterTurnOutcome {
+    case attack(AttackReport)
+    case mindControl(MindControlAttempt)
+}
+
 // MARK: - Combat State
 
 enum CombatState: String, Codable {
@@ -1337,12 +1392,12 @@ final class Combat: ObservableObject {
         return report
     }
 
-    func runMonsterTurn() -> AttackReport? {
+    func runMonsterTurn() -> MonsterTurnOutcome? {
         guard let current = currentCombatant, !current.isPlayer else {
             return nil
         }
 
-        guard encounter.monsters.first(where: { $0.id == current.id && $0.isAlive }) != nil else {
+        guard let monster = encounter.monsters.first(where: { $0.id == current.id && $0.isAlive }) else {
             return nil  // Monster dead, caller handles nextTurn
         }
 
@@ -1369,7 +1424,29 @@ final class Combat: ObservableObject {
             target.isPlayingDead = false
         }
 
-        return monsterAttack(monsterId: current.id, targetId: target.id)
+        // Mind control is rolled INSTEAD OF a normal attack, not alongside
+        // one — a monster that can do it either casts, or attacks, each
+        // turn, never both. Skipped entirely while the target is already
+        // riding out a resist's grace window (willpowerSurgeImmuneTurns) —
+        // that window exists precisely so a fresh Willpower Surge prompt
+        // can't be spammed right back at them next turn.
+        if monster.type.canMindControl, target.willpowerSurgeImmuneTurns <= 0,
+           Double.random(in: 0...1) < monster.type.mindControlChance {
+            let attackDesc = monster.type.attackDescriptions.randomElement() ?? monster.type.rawValue
+            let offersWillpowerSurge = target.willpowerSurgeUsesRemaining > 0
+            combatLog.append("\(monster.name) reaches for \(target.name)'s mind with \(attackDesc)")
+            return .mindControl(MindControlAttempt(
+                monsterName: monster.name,
+                attackDescription: attackDesc,
+                targetId: target.id,
+                targetName: target.name,
+                offersWillpowerSurge: offersWillpowerSurge,
+                saveDC: monster.type.mindControlDC
+            ))
+        }
+
+        guard let report = monsterAttack(monsterId: current.id, targetId: target.id) else { return nil }
+        return .attack(report)
     }
 
     // MARK: - Spell Casting
@@ -1608,7 +1685,7 @@ final class Combat: ObservableObject {
                 s = char.isComputerControlled ? "◆" : "●"  // ◆ = AI, ● = human
             }
             let n = String(char.name.prefix(16)).padding(toLength: maxPartyName, withPad: " ", startingAt: 0)
-            let statusTag = char.hasFledCombat ? " [fled]" : (char.isPlayingDead ? " [playing dead]" : "")
+            let statusTag = char.hasFledCombat ? " [fled]" : (char.isPlayingDead ? " [playing dead]" : (char.isMindControlled ? " [mind-controlled]" : ""))
             let hp = String("\(char.currentHP)/\(char.maxHP)").padding(toLength: 7, withPad: " ", startingAt: 0)
             let youTag = localCharacterIds.contains(char.id) ? " ◀" : ""
             lines.append(" \(s) \(n)  \(hp)\(statusTag)\(youTag)")
