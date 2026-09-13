@@ -13231,11 +13231,21 @@ class GameEngine: ObservableObject {
             typeLabels.append("Remote Player")
         }
 
+        opts.append("?")
+        opts.append("< Back")
         showMenu(opts)
 
         closeHandler = { [weak self] in self?.returnFromCharacterEditSubscreen(index: index) }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
+            if choice == opts.count {
+                self.returnFromCharacterEditSubscreen(index: index)
+                return
+            }
+            if choice == opts.count - 1 {
+                self.showEditCharacterHelp(index: index)
+                return
+            }
             guard choice > 0 && choice <= typeLabels.count else { return }
             let newType = typeLabels[choice - 1]
             // No change? Go back
@@ -13442,19 +13452,30 @@ class GameEngine: ObservableObject {
         print("")
 
         let races = Race.allCases
-        showMenu(races.map { $0.rawValue })
-
-        closeHandler = { [weak self] in self?.returnFromCharacterEditSubscreen(index: index) }
-        menuHandler = { [weak self] choice in
-            guard let self = self, choice >= 1 && choice <= races.count else { return }
-            let newRace = races[choice - 1]
+        let backAction: () -> Void = { [weak self] in self?.returnFromCharacterEditSubscreen(index: index) }
+        closeHandler = backAction
+        showPaginatedMenu(races.map { $0.rawValue }, pinned: ["?", "< Back"], pinnedHandler: { [weak self] p in
+            guard let self = self else { return }
+            if p == 0 {
+                self.showInlineHelp {
+                    self.printTitle("Change Race — Help")
+                    self.print("")
+                    self.printWrapped("Tap a race to see exactly how it would change this character's ability scores and HP, then confirm or back out.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else {
+                backAction()
+            }
+        }, handler: { [weak self] idx in
+            guard let self = self, idx >= 0 && idx < races.count else { return }
+            let newRace = races[idx]
             let char = self.party[index]
             if newRace == char.race {
-                self.returnFromCharacterEditSubscreen(index: index)
+                backAction()
                 return
             }
             self.confirmChangeRace(index: index, newRace: newRace)
-        }
+        })
     }
 
     private func confirmChangeRace(index: Int, newRace: Race) {
@@ -13492,10 +13513,19 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        showMenu(["Confirm", "< Back"])
+        showMenuOptions([MenuOption("Confirm"), MenuOption("< Back"), MenuOption("?", tint: .navigation, compact: true)])
         closeHandler = { [weak self] in self?.showChangeRace(index: index) }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
+            if choice == 3 {
+                self.showInlineHelp {
+                    self.printTitle("Confirm Race Change — Help")
+                    self.print("")
+                    self.printWrapped("Shows exactly which ability scores (and HP) would change. Confirm applies it; < Back returns to picking a race.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+                return
+            }
             if choice == 1 {
                 self.pushEditSnapshot(index: index)
                 let char = self.party[index]
@@ -13524,19 +13554,30 @@ class GameEngine: ObservableObject {
         print("")
 
         let classes = CharacterClass.allCases
-        showMenu(classes.map { $0.rawValue })
-
-        closeHandler = { [weak self] in self?.returnFromCharacterEditSubscreen(index: index) }
-        menuHandler = { [weak self] choice in
-            guard let self = self, choice >= 1 && choice <= classes.count else { return }
-            let newClass = classes[choice - 1]
+        let backAction: () -> Void = { [weak self] in self?.returnFromCharacterEditSubscreen(index: index) }
+        closeHandler = backAction
+        showPaginatedMenu(classes.map { $0.rawValue }, pinned: ["?", "< Back"], pinnedHandler: { [weak self] p in
+            guard let self = self else { return }
+            if p == 0 {
+                self.showInlineHelp {
+                    self.printTitle("Change Class — Help")
+                    self.print("")
+                    self.printWrapped("Tap a class to see exactly what changing to it would do — ability priorities, hit die, equipment, skills, and spellcasting — then confirm or back out.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else {
+                backAction()
+            }
+        }, handler: { [weak self] idx in
+            guard let self = self, idx >= 0 && idx < classes.count else { return }
+            let newClass = classes[idx]
             let char = self.party[index]
             if newClass == char.characterClass {
-                self.returnFromCharacterEditSubscreen(index: index)
+                backAction()
                 return
             }
             self.confirmChangeClass(index: index, newClass: newClass)
-        }
+        })
     }
 
     private func confirmChangeClass(index: Int, newClass: CharacterClass) {
@@ -13567,10 +13608,19 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        showMenu(["Confirm", "< Back"])
+        showMenuOptions([MenuOption("Confirm"), MenuOption("< Back"), MenuOption("?", tint: .navigation, compact: true)])
         closeHandler = { [weak self] in self?.showChangeClass(index: index) }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
+            if choice == 3 {
+                self.showInlineHelp {
+                    self.printTitle("Confirm Class Change — Help")
+                    self.print("")
+                    self.printWrapped("Shows exactly what changing class would do. Confirm applies it (old equipment is replaced); < Back returns to picking a class.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+                return
+            }
             if choice == 1 {
                 self.pushEditSnapshot(index: index)
                 self.applyClassChange(index: index, newClass: newClass)
@@ -16128,6 +16178,9 @@ class GameEngine: ObservableObject {
             self.print("  CLASS RELIABILITY", color: .cyan, bold: true)
             self.printWrapped("Some classes have a natural edge: Rogues and Engineers search more reliably, Wizards/Rangers/Scouts see further on the map, Clerics and Thieves negotiate better deals. Having one in the party helps everyone at that activity.", indent: 2, color: .dimGreen)
             self.print("")
+            self.print("  WANDERING MONSTERS", color: .cyan, bold: true)
+            self.printWrapped("A room you've already cleared isn't guaranteed to stay empty — something dangerous next door can occasionally wander in.", indent: 2, color: .dimGreen)
+            self.print("")
             self.print("  TELEPORT PAD", color: .cyan, bold: true)
             self.printWrapped("A purple target icon (bottom-right corner, where the NPC scroll icon normally sits) appears when the room has an active teleport pad — tap it to instantly travel to its linked room. Toggle in Settings > Gameplay.", indent: 2, color: .dimGreen)
             self.print("")
@@ -16252,6 +16305,7 @@ class GameEngine: ObservableObject {
     func showExplorationView() {
         guard let dungeon = dungeon, let room = dungeon.currentRoom else { return }
         checkForMonsterRespawn(room: room)
+        checkForMonsterWander(room: room)
 
         // Just DM mode — route to conversational exploration
         if isJustDMActive {
@@ -17693,6 +17747,38 @@ class GameEngine: ObservableObject {
             .replacingOccurrences(of: " lies dead here.", with: "")
         explorationStatusMessage = ("The \(summary.lowercased()) you left for dead claw their way upright again!", .red)
         logEvent("Zombie respawn in \(room.name): \(names.joined(separator: ", "))", category: "EXPLORE")
+    }
+
+    /// Monsters occasionally wander between adjacent rooms — a room you
+    /// already cleared isn't guaranteed to stay empty forever if something
+    /// is prowling next door. Mirrors checkForMonsterRespawn's shape/cadence
+    /// above, but MOVES a real monster (with whatever HP it already had)
+    /// out of a live neighboring encounter rather than conjuring a fresh
+    /// one — nothing appears from nowhere.
+    private func checkForMonsterWander(room: Room) {
+        guard let dungeon = dungeon else { return }
+        // Only wander into a room that's actually safe right now.
+        guard room.cleared, room.encounter == nil else { return }
+        guard Int.random(in: 1...100) <= 10 else { return }
+
+        let neighborRooms = room.exits.values.compactMap { dungeon.rooms[$0] }
+        let candidates = neighborRooms.filter { ($0.encounter?.aliveMonsters.count ?? 0) > 0 }
+        guard let sourceRoom = candidates.randomElement(),
+              var sourceEncounter = sourceRoom.encounter,
+              let movingIndex = sourceEncounter.monsters.firstIndex(where: { $0.currentHP > 0 }) else { return }
+
+        let monster = sourceEncounter.monsters.remove(at: movingIndex)
+        if sourceEncounter.aliveMonsters.isEmpty {
+            sourceRoom.encounter = nil
+            sourceRoom.cleared = true
+        } else {
+            sourceRoom.encounter = sourceEncounter
+        }
+
+        room.encounter = Encounter(monsters: [monster], difficulty: sourceEncounter.difficulty)
+        room.cleared = false
+        explorationStatusMessage = ("You hear something moving nearby... a \(monster.name) has wandered in!", .red)
+        logEvent("\(monster.name) wandered from \(sourceRoom.name) into \(room.name)", category: "EXPLORE")
     }
 
     private func showActionsMenu() {
@@ -21373,7 +21459,7 @@ class GameEngine: ObservableObject {
         print("")
 
         // Build menu
-        var menuOpts = ["Party Review", "Save to Roster", "Adventure Log", "Settings", "?", "< Back"]
+        var menuOpts = ["Party Review", "Save to Roster", "Adventure Log", "Lore", "Settings", "?", "< Back"]
         let hasPoisoned = party.contains(where: { $0.isPoisoned })
         if hasPoisoned {
             menuOpts.insert("Cure Poison", at: 0)
@@ -21402,6 +21488,8 @@ class GameEngine: ObservableObject {
                 self.showSavePartyToRosterMenu()
             case "Adventure Log":
                 self.showAdventureLog()
+            case "Lore":
+                self.showLoreBook()
             case "Settings":
                 self.showSettings()
             case "?":
@@ -21445,6 +21533,63 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Every named individual (merchants, wandering traders) the party has
+    /// actually met so far this adventure — visited rooms only, so nothing
+    /// spoils what's still undiscovered. This is also fed to the AI DM (see
+    /// buildDMContext's partyStatus/lore section) so a named character it
+    /// introduced stays consistent instead of being re-invented differently
+    /// later in a long campaign.
+    private func loreEntries() -> [(name: String, description: String)] {
+        guard let dungeon = dungeon else { return [] }
+        var entries: [(name: String, description: String)] = []
+        for room in dungeon.rooms.values where room.visited {
+            if let merchant = room.merchant {
+                entries.append((merchant.name, "\(merchant.shopName), \(room.name) — \(merchant.personaBlurb)"))
+            }
+            if let npc = room.npc, npc.hasBeenTalkedTo {
+                if let merchant = npc.merchant {
+                    entries.append((merchant.name, "\(merchant.shopName), \(room.name) — \(merchant.personaBlurb)"))
+                } else {
+                    entries.append((npc.name, "Encountered in \(room.name)."))
+                }
+            }
+        }
+        return entries.sorted { $0.name < $1.name }
+    }
+
+    func showLoreBook() {
+        clearTerminal()
+        printTitle("Lore")
+        print("")
+        let entries = loreEntries()
+        if entries.isEmpty {
+            printWrapped("No named individuals encountered yet — merchants and NPCs you've met will show up here.", indent: 2, color: .dimGreen)
+        } else {
+            for entry in entries {
+                print("  \(entry.name)", color: .brightGreen, bold: true)
+                printWrapped(entry.description, indent: 4, color: .dimGreen)
+                print("")
+            }
+        }
+        showMenu(["?", "< Back"])
+        closeHandler = { [weak self] in self?.showPartyStatus() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                self.showInlineHelp {
+                    self.printTitle("Lore — Help")
+                    self.print("")
+                    self.printWrapped("A running record of every named merchant or NPC your party has actually met — so you can look someone up if you forget who they were or where you found them.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("The AI DM keeps this list in mind too, so a named character it introduced stays consistent instead of being described differently later on.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else {
+                self.showPartyStatus()
+            }
+        }
+    }
+
     private func showPartyStatusHelp() {
         showInlineHelp {
             self.printTitle("Party Status — Help")
@@ -21453,7 +21598,7 @@ class GameEngine: ObservableObject {
             self.printWrapped("Map + each character's HP, gold, XP. Green HP = healthy, yellow = wounded, red = critical.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  BUTTONS", color: .cyan, bold: true)
-            self.printWrapped("Party Review — edit characters and view stat cards. Save to Roster — persist a character's progress for future adventures. Adventure Log — event timeline. Settings — game settings. Cure Poison — when poisoned. Give Up Quest — abandon your current quest (loses progress and costs some gold in lost goodwill) so a different NPC can offer you a new one.", indent: 2, color: .dimGreen)
+            self.printWrapped("Party Review — edit characters and view stat cards. Save to Roster — persist a character's progress for future adventures. Adventure Log — event timeline. Lore — named merchants and NPCs you've actually met this adventure. Settings — game settings. Cure Poison — when poisoned. Give Up Quest — abandon your current quest (loses progress and costs some gold in lost goodwill) so a different NPC can offer you a new one.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  MONSTER STRENGTH", color: .cyan, bold: true)
             self.printWrapped("Monsters scale up a little as your party's average level rises, on top of your chosen difficulty — the dungeon keeps pace with your growing skill instead of staying static.", indent: 2, color: .dimGreen)
@@ -21749,10 +21894,30 @@ class GameEngine: ObservableObject {
             self.showCharacterCard(index: prev)
         } : nil
 
+        // This card was swipe/close-icon only — no visible "?"/"< Back",
+        // so the only ways to navigate it were undiscoverable gestures.
+        showMenuOptions([MenuOption("?", tint: .navigation, compact: true), MenuOption("< Back", tint: .navigation, compact: true)])
         closeHandler = { [weak self] in
             self?.swipeLeftHandler = nil
             self?.swipeRightHandler = nil
             self?.showPartyStatus()
+        }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                self.showInlineHelp {
+                    self.printTitle("Character Card — Help")
+                    self.print("")
+                    self.printWrapped("A quick-glance stat card. Swipe left/right (or use <</>> if shown) to browse the rest of the party.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("For the full detail view — where you can also edit this character — see Party Status > Party Review instead.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else {
+                self.swipeLeftHandler = nil
+                self.swipeRightHandler = nil
+                self.showPartyStatus()
+            }
         }
     }
 
@@ -24904,7 +25069,12 @@ class GameEngine: ObservableObject {
             timeLimit: timeLimitInfo,
             droppedItems: droppedInfo,
             npcInfo: npcInfo,
-            justDMMode: isJustDMActive
+            justDMMode: isJustDMActive,
+            knownLore: {
+                let entries = loreEntries()
+                guard !entries.isEmpty else { return nil }
+                return entries.map { "\($0.name): \($0.description)" }.joined(separator: "\n")
+            }()
         )
     }
 
@@ -28302,7 +28472,7 @@ class GameEngine: ObservableObject {
             try SaveGameManager.shared.save(saveGame)
             SoundManager.shared.playSave()
             logEvent("Quick save: \(slotName)", category: "SYSTEM")
-            explorationStatusMessage = ("Game saved!", .brightGreen)
+            explorationStatusMessage = ("Game saved! (\"\(slotName)\" — find it under Continue Adventure.)", .brightGreen)
         } catch {
             explorationStatusMessage = ("Save failed: \(error.localizedDescription)", .red)
         }
@@ -29400,6 +29570,7 @@ class GameEngine: ObservableObject {
 
         print("")
         promptText("Enter new name for this slot:")
+        closeHandler = cancelAction
 
         inputHandler = { [weak self] newName in
             guard let self = self else { return }
@@ -29487,13 +29658,30 @@ class GameEngine: ObservableObject {
             return "Delete \(i + 1). \(dateStr)"
         }
 
-        showMenu(options)
+        var menuOpts = options.map { MenuOption($0) }
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        showMenuOptions(menuOpts)
 
         closeHandler = backTarget
         menuHandler = { [weak self] choice in
-            guard choice >= 1 && choice <= options.count else { return }
+            guard let self = self else { return }
+            if choice == menuOpts.count {
+                backTarget()
+                return
+            }
+            if choice == menuOpts.count - 1 {
+                self.showInlineHelp {
+                    self.printTitle("Delete a Save — Help")
+                    self.print("")
+                    self.printWrapped("Tap a save point to permanently delete just that one, keeping the rest of this adventure's saves.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+                return
+            }
+            guard choice >= 1 && choice <= breakpoints.count else { return }
             let bp = breakpoints[choice - 1]
-            self?.confirmDeleteBreakpoint(bp, slot: slot, isLast: breakpoints.count == 1, returnTo: origin, onBack: onBack, onAllDeleted: onAllDeleted)
+            self.confirmDeleteBreakpoint(bp, slot: slot, isLast: breakpoints.count == 1, returnTo: origin, onBack: onBack, onAllDeleted: onAllDeleted)
         }
     }
 
@@ -29511,9 +29699,20 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        showMenu(["Yes, Delete", "No, Keep It"])
+        let opts = [MenuOption("Yes, Delete", tint: .danger), MenuOption("No, Keep It"),
+                    MenuOption("?", tint: .navigation, compact: true)]
+        showMenuOptions(opts)
 
         menuHandler = { [weak self] choice in
+            if choice == 3 {
+                self?.showInlineHelp {
+                    self?.printTitle("Delete Save — Help")
+                    self?.print("")
+                    self?.printWrapped("Permanently deletes this one save point. This cannot be undone — 'No, Keep It' cancels safely.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                }
+                return
+            }
             if choice == 1 {
                 SaveGameManager.shared.delete(id: bp.id)
                 if self?.activeSlotId == slot.slotId && isLast {
@@ -29564,7 +29763,10 @@ class GameEngine: ObservableObject {
         print("This cannot be undone.", color: .yellow)
         print("")
 
-        showMenu(["Yes, Delete All", "No, Keep It"])
+        let opts = [MenuOption("Yes, Delete All", tint: .danger), MenuOption("No, Keep It"),
+                    MenuOption("?", tint: .navigation, compact: true)]
+        showMenuOptions(opts)
+        closeHandler = cancelAction
 
         menuHandler = { [weak self] choice in
             if choice == 1 {
@@ -29577,6 +29779,13 @@ class GameEngine: ObservableObject {
                 self?.print("Adventure deleted.", color: .red)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     doneAction()
+                }
+            } else if choice == 3 {
+                self?.showInlineHelp {
+                    self?.printTitle("Delete Adventure — Help")
+                    self?.print("")
+                    self?.printWrapped("Permanently deletes every save point for this adventure. This cannot be undone — 'No, Keep It' cancels safely.", indent: 2, color: .dimGreen)
+                    self?.print("")
                 }
             } else {
                 cancelAction()

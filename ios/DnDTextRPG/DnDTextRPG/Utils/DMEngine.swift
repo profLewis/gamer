@@ -1016,6 +1016,7 @@ class DMEngine {
 
         INVENTORY:
         \(context.inventorySummary)
+        \(context.knownLore.map { "\nKNOWN NAMED CHARACTERS (keep these consistent — same name, same personality, same shop/role — never re-invent who they are):\n\($0)" } ?? "")
 
         DUNGEON LEVEL: \(context.dungeonLevel)
         TORCH: \(context.torchLit ? "Lit (\(context.torchTurnsRemaining) rooms remaining)" : "Unlit — the party is in darkness")
@@ -1741,5 +1742,9 @@ struct DMContext {
     var droppedItems: String? = nil
     var npcInfo: String? = nil
     var justDMMode: Bool = false
+    /// Named merchants/NPCs the party has actually met (see GameEngine.
+    /// loreEntries) — keeps the DM consistent about who a named character
+    /// is instead of re-inventing them differently later in a long campaign.
+    var knownLore: String? = nil
     var inCombat: Bool { combatSummary != nil }
 }
