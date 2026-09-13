@@ -6930,9 +6930,10 @@ class GameEngine: ObservableObject {
         print("  Autosave: \(autosaveInterval.displayName)", color: .dimGreen)
         print("")
 
-        var menuOpts = ["DM Settings", "Accessibility", "Mood", "Gameplay", "Saving"].map { MenuOption($0) }
+        var menuOpts = ["DM Settings", "Accessibility", "Mood", "Gameplay", "Game Saves"].map { MenuOption($0) }
         menuOpts.append(MenuOption("Save Settings"))
         menuOpts.append(MenuOption("Reset", tint: .danger))
+        menuOpts.append(MenuOption("Factory Reset", tint: .danger))
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(menuOpts)
@@ -6953,9 +6954,10 @@ class GameEngine: ObservableObject {
             case "Accessibility": self.showAccessibilityMenu()
             case "Mood": self.showMusicSettings()
             case "Gameplay": self.showGameplaySettings()
-            case "Saving": self.showSaveSettings()
-            case "Save Settings": self.quickSaveSettings()
+            case "Game Saves": self.showSaveSettings()
+            case "Save Settings": self.showSettingsBackupMenu()
             case "Reset": self.confirmResetToDefaults()
+            case "Factory Reset": self.confirmFactoryReset()
             case "?": self.showSettingsHelp()
             case "< Back": backToMain()
             default: break
@@ -6970,10 +6972,14 @@ class GameEngine: ObservableObject {
     /// View/Load/Delete screen, where "Quick Save" now shows up in the list.
     private func quickSaveSettings() {
         clearTerminal()
-        printTitle("Settings")
+        printTitle("Save Settings")
         print("")
+        let keysBacked = backupAllAPIKeysToKeychainQuietly()
         saveSettingsBackup(name: "Quick Save") { [weak self] in
             self?.showSettingsBackupMenu()
+        }
+        if keysBacked > 0 {
+            print("  \(keysBacked) API key\(keysBacked == 1 ? "" : "s") backed up to Keychain too.", color: .dimGreen)
         }
     }
 
@@ -7755,7 +7761,11 @@ class GameEngine: ObservableObject {
         "hit_animations", "voiceMenuEnabled", "iconScaleSetting", "adventureLogLimit",
         "fontSizeSetting", "music_enabled", "battle_sounds_enabled",
         "autosave_interval", "dmProvider", "dmAdLibLevel", "dmLogContextSize",
-        "dmApiKey", "speechEnabled", "companionVoiceMode",
+        // Note: deliberately excludes each provider's own API key
+        // (AIProvider.userDefaultsKey) — those are backed up/restored via
+        // the dedicated, encrypted Keychain flow instead of this plaintext
+        // plist, not duplicated into it.
+        "speechEnabled", "companionVoiceMode",
         "menu_melody", "exploration_melody", "combat_melody", "chat_melody",
         "gameTimeLimit", "useCustomKeyboard", "undoRedoEnabled",
         "justDMMode",
@@ -7775,6 +7785,41 @@ class GameEngine: ObservableObject {
         for (key, value) in dict {
             UserDefaults.standard.set(value, forKey: key)
         }
+    }
+
+    /// A handful of settings are cached in @Published vars read once from
+    /// UserDefaults at property-init time, so writing UserDefaults directly
+    /// (as importSettings does) doesn't move them — call this right after
+    /// importSettings so a loaded backup takes effect immediately instead of
+    /// requiring the player to force-quit and relaunch the app.
+    private func refreshCachedPublishedSettings() {
+        let d = UserDefaults.standard
+        voiceMenuEnabled = (d.object(forKey: "voiceMenuEnabled") as? Bool) ?? true
+        useArrowNavigation = d.object(forKey: "useArrowNavigation") == nil ? false : d.bool(forKey: "useArrowNavigation")
+        infoTimeout = d.object(forKey: "infoTimeout") == nil ? 2.0 : d.double(forKey: "infoTimeout")
+        iconScaleSetting = d.integer(forKey: "iconScaleSetting")
+        useCustomKeyboard = d.object(forKey: "useCustomKeyboard") == nil ? true : d.bool(forKey: "useCustomKeyboard")
+        idlePromptsEnabled = d.bool(forKey: "idlePromptsEnabled")
+        blinkingCursorEnabled = d.object(forKey: "blinkingCursorEnabled") == nil ? !GameEngine.systemVoiceOverRunning : d.bool(forKey: "blinkingCursorEnabled")
+        justDMMode = d.bool(forKey: "justDMMode")
+    }
+
+    /// Writes a settings snapshot straight to disk with no on-screen feedback —
+    /// used internally to capture an automatic "before you loaded a backup"
+    /// safety copy, distinct from the user-facing Save As / Quick Save actions.
+    private func silentlySaveSettingsSnapshot(name: String) {
+        let dict = exportSettings()
+        guard let data = try? PropertyListSerialization.data(fromPropertyList: dict, format: .xml, options: 0) else { return }
+        try? data.write(to: settingsBackupURL(name: name))
+    }
+
+    /// Plain, redacted (API key hidden) listing of a settings dict's raw keys
+    /// and values — enough to see what a backup actually contains before
+    /// applying it, without needing a full labeled-field editor.
+    private func settingsSummaryLines(_ dict: [String: Any]) -> [String] {
+        // API keys are never in this dict (see the exclusion note on
+        // settingsKeys above), so nothing here needs redacting.
+        dict.keys.sorted().map { key in "  \(key): \(dict[key] ?? "")" }
     }
 
     private func settingsBackupDir() -> URL {
@@ -7813,11 +7858,14 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// The screen "Save Settings" opens — tapping that button no longer
+    /// instantly saves anything; it lands here, where Quick Save, Save As,
+    /// Load, Delete, and API key backup/restore all live together.
     private func showSettingsBackupMenu() {
         migrateOldBackup()
         clearTerminal()
-        printTitle("Settings Backup")
-        printWrapped("Save, load, or manage named settings backups.", indent: 2, color: .dimGreen)
+        printTitle("Save Settings")
+        printWrapped("Save, load, or manage settings and API key backups.", indent: 2, color: .dimGreen)
         print("")
 
         let backups = listSettingsBackups()
@@ -7835,37 +7883,67 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        var options = ["New Backup"]
+        let hasKeychainBackup = loadAPIKeysFromKeychain() != nil
+        print("API KEY BACKUP:", color: .cyan, bold: true)
+        print("  \(hasKeychainBackup ? "Saved to Keychain" : "Not backed up")", color: hasKeychainBackup ? .brightGreen : .dimGreen)
+        print("")
+
+        var options = ["Quick Save", "Save As"]
         if !backups.isEmpty {
-            options.append("View/Load")
+            options.append("Load")
             options.append("Delete Backup")
         }
-        options.append("?")
-        options.append("< Back")
+        options.append(hasKeychainBackup ? "Restore API Keys" : "Backup API Keys")
 
-        showMenu(options)
+        var menuOpts = options.map { MenuOption($0) }
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        showMenuOptions(menuOpts)
         let backToSettings: () -> Void = { [weak self] in self?.showSettings() }
         closeHandler = backToSettings
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
+            if choice == menuOpts.count {
+                backToSettings()
+                return
+            }
+            if choice == menuOpts.count - 1 {
+                self.showInlineHelp {
+                    self.printTitle("Save Settings — Help")
+                    self.print("")
+                    self.print("  QUICK SAVE", color: .cyan, bold: true)
+                    self.printWrapped("Instantly saves your current settings over a fixed 'Quick Save' slot, and backs up your API keys to the device Keychain — one tap, no naming needed.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  SAVE AS", color: .cyan, bold: true)
+                    self.printWrapped("Saves your current settings under a name you choose, alongside any others — use this to keep multiple backups instead of overwriting 'Quick Save'.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    if !backups.isEmpty {
+                        self.print("  LOAD", color: .cyan, bold: true)
+                        self.printWrapped("Shows exactly what's in a saved backup before applying it. Applies instantly — no restart needed — and automatically saves your previous settings as 'Before Load' first, with an Undo button right there if you change your mind.", indent: 2, color: .dimGreen)
+                        self.print("")
+                        self.print("  DELETE BACKUP", color: .cyan, bold: true)
+                        self.printWrapped("Removes a saved backup permanently.", indent: 2, color: .dimGreen)
+                        self.print("")
+                    }
+                    self.print("  BACKUP / RESTORE API KEYS", color: .cyan, bold: true)
+                    self.printWrapped("Saves your AI provider API keys to the device Keychain for safe keeping (this also happens automatically with Quick Save). Restore retrieves them if they're ever cleared. The Keychain is encrypted and persists across app reinstalls.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+                return
+            }
             let selected = options[choice - 1]
-            if selected == "New Backup" {
+            if selected == "Quick Save" {
+                self.quickSaveSettings()
+            } else if selected == "Save As" {
                 self.promptNewBackupName()
-            } else if selected == "View/Load" {
+            } else if selected == "Load" {
                 self.showLoadBackupMenu()
             } else if selected == "Delete Backup" {
                 self.showDeleteBackupMenu()
-            } else if selected == "?" {
-                self.showInlineHelp {
-                    self.printTitle("Settings Backup — Help")
-                    self.print("")
-                    self.printWrapped("New Backup: saves a snapshot of your current settings under a name you choose.", indent: 2, color: .dimGreen)
-                    self.printWrapped("View/Load: restores settings from a previously saved backup, overwriting your current ones.", indent: 2, color: .dimGreen)
-                    self.printWrapped("Delete Backup: removes a saved backup permanently.", indent: 2, color: .dimGreen)
-                    self.print("")
-                }
-            } else {
-                backToSettings()
+            } else if selected == "Backup API Keys" {
+                self.backupAPIKeysToKeychain()
+            } else if selected == "Restore API Keys" {
+                self.restoreAPIKeysFromKeychain()
             }
         }
     }
@@ -7912,8 +7990,8 @@ class GameEngine: ObservableObject {
 
     private func showLoadBackupMenu() {
         clearTerminal()
-        printTitle("Load Backup")
-        print("  This will overwrite your current settings.", color: .yellow)
+        printTitle("Load Settings")
+        print("  Pick a backup to preview before applying.", color: .dimGreen)
         print("")
 
         let backups = listSettingsBackups()
@@ -7921,32 +7999,69 @@ class GameEngine: ObservableObject {
 
         showPaginatedMenu(names) { [weak self] idx in
             guard let self = self, idx >= 0 && idx < backups.count else { return }
-            let backup = backups[idx]
+            self.showBackupPreview(backups[idx])
+        }
+        closeHandler = { [weak self] in self?.showSettingsBackupMenu() }
+    }
+
+    /// Shows exactly what a backup contains (a plain key/value listing, API
+    /// key redacted) before committing to anything — answers "what am I
+    /// actually about to load" instead of a blind "overwrite?" prompt.
+    private func showBackupPreview(_ backup: (name: String, date: Date)) {
+        clearTerminal()
+        printTitle("Preview: \(backup.name)")
+        let url = settingsBackupURL(name: backup.name)
+        guard let data = try? Data(contentsOf: url),
+              let dict = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] else {
+            print("  Failed to read backup.", color: .red)
+            print("")
+            waitForContinue()
+            inputHandler = { [weak self] _ in self?.showLoadBackupMenu() }
+            return
+        }
+        printWrapped("This backup contains \(dict.count) saved setting\(dict.count == 1 ? "" : "s"):", indent: 2, color: .dimGreen)
+        print("")
+        printLines(settingsSummaryLines(dict), color: .dimGreen)
+        print("")
+        showMenu(["Apply", "< Cancel"])
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            guard choice == 1 else {
+                self.showLoadBackupMenu()
+                return
+            }
+            // Snapshot current settings first, both to disk (visible as a
+            // normal backup, same as "Before Reset") and in memory (so Undo
+            // below doesn't need a round-trip through the filesystem).
+            let before = self.exportSettings()
+            self.silentlySaveSettingsSnapshot(name: "Before Load")
+            self.importSettings(dict)
+            self.refreshCachedPublishedSettings()
             self.clearTerminal()
-            self.printTitle("Load: \(backup.name)")
-            self.print("  Overwrite current settings with this backup?", color: .yellow)
+            self.printTitle("Settings Applied")
             self.print("")
-            self.showMenu(["Yes, Load", "< Cancel"])
+            self.print("  Settings restored from \(backup.name).", color: .brightGreen)
+            self.print("  Applied instantly — no restart needed.", color: .dimGreen)
+            self.print("  Your previous settings were saved as", color: .dimGreen)
+            self.print("  'Before Load' if you want them back.", color: .dimGreen)
+            self.print("")
+            self.showMenu(["Undo", "Done"])
             self.menuHandler = { [weak self] choice in
                 guard let self = self else { return }
                 if choice == 1 {
-                    let url = self.settingsBackupURL(name: backup.name)
-                    if let data = try? Data(contentsOf: url),
-                       let dict = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] {
-                        self.importSettings(dict)
-                        self.print("")
-                        self.print("  Settings restored from \(backup.name).", color: .brightGreen)
-                        self.print("  Restart the app for all changes to take effect.", color: .dimGreen)
-                    } else {
-                        self.print("")
-                        self.print("  Failed to read backup.", color: .red)
-                    }
+                    self.importSettings(before)
+                    self.refreshCachedPublishedSettings()
+                    self.print("")
+                    self.print("  Reverted to your previous settings.", color: .yellow)
+                    self.print("")
+                    self.waitForContinue()
+                    self.inputHandler = { [weak self] _ in self?.showSettingsBackupMenu() }
+                } else {
+                    self.showSettingsBackupMenu()
                 }
-                self.waitForContinue()
-                self.inputHandler = { [weak self] _ in self?.showSettingsBackupMenu() }
             }
         }
-        closeHandler = { [weak self] in self?.showSettingsBackupMenu() }
+        closeHandler = { [weak self] in self?.showLoadBackupMenu() }
     }
 
     private func showDeleteBackupMenu() {
@@ -8085,7 +8200,7 @@ class GameEngine: ObservableObject {
         }
         print("")
         waitForContinue()
-        inputHandler = { [weak self] _ in self?.showSaveSettings() }
+        inputHandler = { [weak self] _ in self?.showSettingsBackupMenu() }
     }
 
     private func restoreAPIKeysFromKeychain() {
@@ -8097,7 +8212,7 @@ class GameEngine: ObservableObject {
             print("  Use 'Backup API Keys' to save them first.", color: .dimGreen)
             print("")
             waitForContinue()
-            inputHandler = { [weak self] _ in self?.showSaveSettings() }
+            inputHandler = { [weak self] _ in self?.showSettingsBackupMenu() }
             return
         }
         var restored = 0
@@ -8112,12 +8227,39 @@ class GameEngine: ObservableObject {
         print("  \(restored) API key\(restored == 1 ? "" : "s") restored from Keychain.", color: .brightGreen)
         print("")
         waitForContinue()
-        inputHandler = { [weak self] _ in self?.showSaveSettings() }
+        inputHandler = { [weak self] _ in self?.showSettingsBackupMenu() }
     }
 
+    /// The Keychain-writing work behind "Backup API Keys", with no printing
+    /// or waiting — so Quick Save can fold it into one action silently.
+    @discardableResult
+    private func backupAllAPIKeysToKeychainQuietly() -> Int {
+        var backed = 0
+        for provider in AIProvider.allCases {
+            let key = provider.userDefaultsKey
+            guard let value = UserDefaults.standard.string(forKey: key), !value.isEmpty,
+                  let data = value.data(using: .utf8) else { continue }
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: keychainServicePrefix + key,
+                kSecAttrAccount as String: key
+            ]
+            SecItemDelete(query as CFDictionary)
+            var addQuery = query
+            addQuery[kSecValueData as String] = data
+            if SecItemAdd(addQuery as CFDictionary, nil) == errSecSuccess {
+                backed += 1
+            }
+        }
+        return backed
+    }
+
+    /// This screen is specifically about GAMEPLAY saves (autosave and save
+    /// files) — settings/API key backup lives under "Save Settings" instead,
+    /// a separate concern reached from the main Settings screen.
     private func showSaveSettings() {
         clearTerminal()
-        printTitle("Save & Backup")
+        printTitle("Game Saves")
 
         print("AUTOSAVE:", color: .cyan, bold: true)
         print("  \(autosaveInterval.displayName)", color: .brightGreen)
@@ -8129,27 +8271,11 @@ class GameEngine: ObservableObject {
         print("  \(saves.count) save file\(saves.count == 1 ? "" : "s")", color: .dimGreen)
         print("")
 
-        let backups = listSettingsBackups()
-        print("SETTINGS BACKUPS:", color: .cyan, bold: true)
-        if backups.isEmpty {
-            print("  No backups", color: .dimGreen)
-        } else {
-            print("  \(backups.count) backup\(backups.count == 1 ? "" : "s")", color: .dimGreen)
-        }
-        print("")
-
-        let hasKeychainBackup = loadAPIKeysFromKeychain() != nil
-        print("API KEY BACKUP:", color: .cyan, bold: true)
-        print("  \(hasKeychainBackup ? "Saved to Keychain" : "Not backed up")", color: hasKeychainBackup ? .brightGreen : .dimGreen)
-        print("")
-
         var options = ["Autosave"]
         if !saves.isEmpty {
             options.append("Manage Saves")
             options.append("Clear All Saves")
         }
-        options.append("Settings Backup")
-        options.append(hasKeychainBackup ? "Restore API Keys" : "Backup API Keys")
 
         var menuOpts = options.map { MenuOption($0) }
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -8174,19 +8300,15 @@ class GameEngine: ObservableObject {
                 self.showManageSavesMenu(returnTo: .settings)
             } else if selected == "Clear All Saves" {
                 self.confirmClearAllSaves()
-            } else if selected == "Settings Backup" {
-                self.showSettingsBackupMenu()
-            } else if selected == "Backup API Keys" {
-                self.backupAPIKeysToKeychain()
-            } else if selected == "Restore API Keys" {
-                self.restoreAPIKeysFromKeychain()
             }
         }
     }
 
     private func showSaveSettingsHelp() {
         showInlineHelp {
-            self.printTitle("Saving — Help")
+            self.printTitle("Game Saves — Help")
+            self.print("")
+            self.printWrapped("This screen is about your GAMEPLAY saves — your adventures in progress. For settings/API key backup, see 'Save Settings' on the main Settings screen instead.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  AUTOSAVE", color: .cyan, bold: true)
@@ -8199,14 +8321,6 @@ class GameEngine: ObservableObject {
 
             self.print("  CLEAR ALL SAVES", color: .cyan, bold: true)
             self.printWrapped("Permanently deletes every save file on the device. Use with caution — this cannot be undone.", indent: 2, color: .dimGreen)
-            self.print("")
-
-            self.print("  SETTINGS BACKUP", color: .cyan, bold: true)
-            self.printWrapped("Create and restore backups of all your settings (display size, gameplay options, DM config, etc.). Useful before experimenting with changes or when moving to a new device.", indent: 2, color: .dimGreen)
-            self.print("")
-
-            self.print("  API KEY BACKUP / RESTORE", color: .cyan, bold: true)
-            self.printWrapped("Saves your AI provider API keys to the device Keychain for safe keeping. Restore retrieves them if they are cleared. The Keychain is encrypted and persists across app reinstalls.", indent: 2, color: .dimGreen)
             self.print("")
         }
     }
@@ -8368,22 +8482,117 @@ class GameEngine: ObservableObject {
             self.printWrapped("Accessibility — display size, hit animations, DM voice, companion voices, and voice menus.", indent: 2, color: .dimGreen)
             self.printWrapped("Mood — background music tunes for each game phase, plus music and sound effect switches.", indent: 2, color: .dimGreen)
             self.printWrapped("Gameplay — map radius, card navigation, info timeout, button limit, NPCs, multiplayer, timers, and keyboard.", indent: 2, color: .dimGreen)
-            self.printWrapped("Saving — autosave frequency, manage and delete saves, settings backup/restore, and API key backup.", indent: 2, color: .dimGreen)
+            self.printWrapped("Game Saves — autosave frequency, and managing/deleting individual save files. Your adventures in progress, not your settings.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  SAVE SETTINGS", color: .cyan, bold: true)
-            self.printWrapped("One-tap backup of your current settings, saved as 'Quick Save'. Takes you straight to Settings Backup afterwards, where you can view, load, or delete it (or any other saved backup) any time.", indent: 2, color: .dimGreen)
+            self.printWrapped("A different kind of saving — your settings and API keys, not your adventures. Opens Quick Save, Save As, Load, and API key backup/restore, all in one place. Quick Save also backs up your API keys to the device Keychain in the same tap.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  RESET", color: .cyan, bold: true)
             self.printWrapped("Opens the Reset screen where you can:", indent: 2, color: .dimGreen)
             self.printWrapped("• Review Changes — see every setting's current value alongside its default, and choose which ones to reset.", indent: 4, color: .dimGreen)
             self.printWrapped("• Save Settings First — back up your current settings before resetting.", indent: 4, color: .dimGreen)
             self.printWrapped("• Reset Now — reset all settings at once.", indent: 4, color: .dimGreen)
-            self.printWrapped("API keys and saved games are never affected by reset.", indent: 2, color: .dimGreen)
+            self.printWrapped("API keys and saved games are never affected by Reset — only Factory Reset touches those.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  FACTORY RESET", color: .red, bold: true)
+            self.printWrapped("The nuclear option: wipes settings, every saved game, AND every API key (app and Keychain) in one go, back to a fresh install. Needs two confirmations since it can't be undone. Settings backup files are left alone, so you can still restore your settings from one afterwards.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  RED = OFF", color: .red, bold: true)
             self.printWrapped("Red = feature off. Green = on.", indent: 2, color: .dimGreen)
             self.print("")
         }
+    }
+
+    /// The genuinely destructive option: settings, every saved game, AND
+    /// every API key (in-app and Keychain) all wiped in one go — chains the
+    /// same primitives "Reset" -> "Also Clear API Keys" -> "Also Delete
+    /// Saves" already offer one at a time. Settings backup files themselves
+    /// are deliberately left alone, so restoring from one afterwards is
+    /// still possible if this was tapped by mistake.
+    private func confirmFactoryReset() {
+        clearTerminal()
+        printTitle("Factory Reset")
+        print("")
+        printWrapped("This wipes EVERYTHING back to a fresh install:", indent: 2, color: .red)
+        print("")
+        print("  • All settings reset to defaults", color: .yellow)
+        print("  • All saved games deleted", color: .yellow)
+        print("  • All API keys removed (app + Keychain)", color: .yellow)
+        print("")
+        printWrapped("Your settings backups are NOT deleted — you can still restore one afterwards from Save Settings if needed.", indent: 2, color: .dimGreen)
+        print("")
+
+        let menuOpts = [MenuOption("I Understand, Continue", tint: .danger),
+                        MenuOption("Cancel", tint: .navigation)]
+        showMenuOptions(menuOpts)
+        closeHandler = { [weak self] in self?.showSettings() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            guard choice == 1 else {
+                self.showSettings()
+                return
+            }
+            self.confirmFactoryResetFinal()
+        }
+    }
+
+    private func confirmFactoryResetFinal() {
+        clearTerminal()
+        printTitle("Factory Reset — Are You Sure?")
+        print("")
+        printWrapped("This cannot be undone.", indent: 2, color: .red)
+        print("")
+
+        let menuOpts = [MenuOption("Yes, Factory Reset Everything", tint: .danger),
+                        MenuOption("Cancel", tint: .navigation)]
+        showMenuOptions(menuOpts)
+        closeHandler = { [weak self] in self?.showSettings() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            guard choice == 1 else {
+                self.showSettings()
+                return
+            }
+            self.performFactoryReset()
+        }
+    }
+
+    private func performFactoryReset() {
+        // Settings
+        for key in Self.settingsKeys {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        voiceMenuEnabled = true
+        useArrowNavigation = false
+        infoTimeout = 2.0
+        iconScaleSetting = 0
+        useCustomKeyboard = true
+        idlePromptsEnabled = false
+        blinkingCursorEnabled = !GameEngine.systemVoiceOverRunning
+        fontScale = FontSizeSetting.defaultSetting.scale
+        justDMMode = false
+        DMEngine.shared.justDMMode = false
+        syncSettingsAfterRestore()
+
+        // API keys — app storage and Keychain, every provider
+        for provider in AIProvider.allCases {
+            UserDefaults.standard.removeObject(forKey: provider.userDefaultsKey)
+            deleteSingleAPIKeyFromKeychain(for: provider)
+        }
+
+        // Saved games
+        for save in SaveGameManager.shared.listAllSaves() {
+            SaveGameManager.shared.delete(id: save.id)
+        }
+
+        clearTerminal()
+        printTitle("Factory Reset Complete")
+        print("")
+        printWrapped("Settings, saved games, and API keys have all been reset.", indent: 2, color: .brightGreen)
+        print("")
+        showMenu(["Done"])
+        closeHandler = { [weak self] in self?.showSettings() }
+        menuHandler = { [weak self] _ in self?.showSettings() }
     }
 
     private func confirmResetToDefaults() {
@@ -8800,8 +9009,12 @@ class GameEngine: ObservableObject {
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == 1 {
-                UserDefaults.standard.removeObject(forKey: "dmApiKey")
-                DMEngine.shared.apiKey = nil
+                // DMEngine.shared.apiKey only ever addresses the CURRENTLY
+                // selected provider's key — clearing every provider actually
+                // stored requires going through each one explicitly.
+                for provider in AIProvider.allCases {
+                    UserDefaults.standard.removeObject(forKey: provider.userDefaultsKey)
+                }
                 self.clearTerminal()
                 self.printTitle("API Keys Cleared")
                 self.print("")
@@ -10613,6 +10826,7 @@ class GameEngine: ObservableObject {
             options.append("Show Key")
             options.append("Test Key")
             options.append("Copy Key")
+            options.append("Save to Keychain")
             options.append("Remove Key")
         }
         options.append("Load Key")
@@ -10666,12 +10880,15 @@ class GameEngine: ObservableObject {
                         self.print("  COPY KEY", color: .cyan, bold: true)
                         self.printWrapped("Copies your current key to the clipboard — useful as a backup before removing it.", indent: 2, color: .dimGreen)
                         self.print("")
+                        self.print("  SAVE TO KEYCHAIN", color: .cyan, bold: true)
+                        self.printWrapped("Backs up this key to the device Keychain right now. This already happens automatically every time you open this screen — use this button for an explicit confirmation, or right after typing/pasting a new key.", indent: 2, color: .dimGreen)
+                        self.print("")
                         self.print("  REMOVE KEY", color: .cyan, bold: true)
                         self.printWrapped("Removes your stored API key. The key is automatically backed up to Keychain first, so you can restore it with Load Key. Long-press Remove Key to permanently delete the key and its backup.", indent: 2, color: .dimGreen)
                         self.print("")
                     }
                     self.print("  LOAD KEY", color: .cyan, bold: true)
-                    self.printWrapped("Restores a previously backed-up key from the device Keychain. Keys are backed up automatically when removed, or manually via Save & Backup.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Restores a previously backed-up key from the device Keychain. Keys are backed up automatically when removed, or manually via Save to Keychain (above) or the main Settings screen's Save Settings.", indent: 2, color: .dimGreen)
                     self.print("")
                     self.printWrapped("Your API key is stored locally on this device and never shared. Each provider has its own key — switching providers preserves other keys.", indent: 2, color: .dimGreen)
                     self.print("")
@@ -10823,6 +11040,15 @@ class GameEngine: ObservableObject {
                     }
                 }
                 #endif
+            } else if selected == "Save to Keychain" {
+                self.backupSingleAPIKeyToKeychain(for: provider)
+                self.print("")
+                self.print("  \(provider.displayName) key saved to Keychain.", color: .brightGreen)
+                self.print("")
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.promptAPIKey()
+                }
             } else if selected == "Remove Key" {
                 self.promptAPIKey(showClearConfirm: true)
             } else if selected == "Load Key" {
