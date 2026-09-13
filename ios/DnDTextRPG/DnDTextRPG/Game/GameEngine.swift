@@ -10264,6 +10264,33 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Trims ordinary whitespace, then strips invisible Unicode characters
+    /// (zero-width space/joiners, word joiner, BOM) that `.whitespacesAndNewlines`
+    /// doesn't cover — these ride along silently when a key is copied from some
+    /// web pages' "click to copy" buttons, and turn an otherwise-correct key into
+    /// one that reads fine on screen but fails provider auth with a plain
+    /// "incorrect API key" error, since the invisible character is still there.
+    private func sanitizedAPIKeyInput(_ raw: String) -> String {
+        let invisibleScalars: Set<Unicode.Scalar> = ["\u{200B}", "\u{200C}", "\u{200D}", "\u{2060}", "\u{FEFF}"]
+        let filtered = String.UnicodeScalarView(raw.unicodeScalars.filter { !invisibleScalars.contains($0) })
+        return String(filtered).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// A quick, non-blocking sanity check — catches the common case of pasting
+    /// the wrong provider's key (e.g. a Gemini "AIza..." key while OpenAI is
+    /// selected) with an immediate, specific hint instead of waiting on a
+    /// network round-trip just to get back a generic "incorrect API key" 401.
+    private func keyFormatWarning(for provider: AIProvider, key: String) -> String? {
+        switch provider {
+        case .openAI:
+            return key.hasPrefix("sk-") ? nil : "OpenAI keys normally start with 'sk-'."
+        case .anthropic:
+            return key.hasPrefix("sk-ant-") ? nil : "Anthropic keys normally start with 'sk-ant-'."
+        case .google:
+            return key.hasPrefix("AIza") ? nil : "Google (Gemini) keys normally start with 'AIza'."
+        }
+    }
+
     private func promptAPIKey(showClearConfirm: Bool = false) {
         let provider = DMEngine.shared.provider
         clearTerminal()
@@ -10502,11 +10529,16 @@ class GameEngine: ObservableObject {
             } else if selected == "Paste Key" {
                 // Paste from clipboard
                 #if os(iOS)
-                if let clipText = UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines),
-                   !clipText.isEmpty {
+                if let raw = UIPasteboard.general.string, !self.sanitizedAPIKeyInput(raw).isEmpty {
+                    let clipText = self.sanitizedAPIKeyInput(raw)
                     DMEngine.shared.apiKey = clipText
                     self.print("")
-                    self.print("  Testing API key...", color: .dimGreen)
+                    if let warning = self.keyFormatWarning(for: provider, key: clipText) {
+                        self.print("  Note: \(warning)", color: .yellow)
+                        self.print("  Testing it anyway...", color: .dimGreen)
+                    } else {
+                        self.print("  Testing API key...", color: .dimGreen)
+                    }
                     self.validateAndConfirmKey(provider: provider)
                 } else {
                     self.print("")
@@ -10524,14 +10556,19 @@ class GameEngine: ObservableObject {
                 self.print("")
                 self.promptText("Paste your API key:")
                 self.inputHandler = { [weak self] key in
-                    let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let trimmed = self?.sanitizedAPIKeyInput(key) ?? key.trimmingCharacters(in: .whitespacesAndNewlines)
                     if trimmed.isEmpty {
                         self?.promptAPIKey()
                         return
                     }
                     DMEngine.shared.apiKey = trimmed
                     self?.print("")
-                    self?.print("  Testing API key...", color: .dimGreen)
+                    if let warning = self?.keyFormatWarning(for: provider, key: trimmed) {
+                        self?.print("  Note: \(warning)", color: .yellow)
+                        self?.print("  Testing it anyway...", color: .dimGreen)
+                    } else {
+                        self?.print("  Testing API key...", color: .dimGreen)
+                    }
                     self?.validateAndConfirmKey(provider: provider)
                 }
             } else if selected == "Copy Key" {
