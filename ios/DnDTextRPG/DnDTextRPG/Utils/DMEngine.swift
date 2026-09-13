@@ -1396,8 +1396,12 @@ class DMEngine {
     }
     private var googleModelToUse: String { resolvedGoogleModel ?? Self.defaultGoogleModel }
 
-    private func googleGenerateContentURL(model: String, apiKey: String) -> URL? {
-        URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)")
+    /// Google's newer "AQ."-prefixed Auth keys (the default AI Studio now issues)
+    /// aren't accepted via the "?key=" query parameter — only the "x-goog-api-key"
+    /// header works for them. The older "AIza"-prefixed Standard keys accept
+    /// either, so sending the key as a header covers both formats.
+    private func googleGenerateContentURL(model: String) -> URL? {
+        URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")
     }
 
     /// True only when the response is specifically "this model name doesn't exist"
@@ -1416,11 +1420,13 @@ class DMEngine {
     /// "flash" model that supports generateContent (falling back to "pro", then to
     /// whatever's first) — always preferring the highest version number found.
     private func discoverBestGoogleModel(apiKey: String, completion: @escaping (String?) -> Void) {
-        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models?key=\(apiKey)") else {
+        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models") else {
             completion(nil)
             return
         }
-        URLSession.shared.dataTask(with: URLRequest(url: url)) { data, _, error in
+        var request = URLRequest(url: url)
+        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+        URLSession.shared.dataTask(with: request) { data, _, error in
             guard let data = data, error == nil,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let models = json["models"] as? [[String: Any]] else {
@@ -1460,13 +1466,14 @@ class DMEngine {
     /// caches that choice, and retries exactly once.
     private func googlePost(apiKey: String, body: [String: Any], attemptedDiscovery: Bool = false,
                              completion: @escaping (Data?, URLResponse?, Error?) -> Void) {
-        guard let url = googleGenerateContentURL(model: googleModelToUse, apiKey: apiKey) else {
+        guard let url = googleGenerateContentURL(model: googleModelToUse) else {
             completion(nil, nil, nil)
             return
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in

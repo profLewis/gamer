@@ -6964,14 +6964,16 @@ class GameEngine: ObservableObject {
     }
 
     /// One-tap settings backup from the main Settings screen — saves over a
-    /// fixed "Quick Save" slot so repeated taps don't pile up backups. For
-    /// named, multi-slot backups use Saving > Settings Backup instead.
+    /// fixed "Quick Save" slot so repeated taps don't pile up backups. Rather
+    /// than adding a second "Load Settings" button here too (this screen is
+    /// crowded enough), lands on Settings Backup afterwards — the existing
+    /// View/Load/Delete screen, where "Quick Save" now shows up in the list.
     private func quickSaveSettings() {
         clearTerminal()
         printTitle("Settings")
         print("")
         saveSettingsBackup(name: "Quick Save") { [weak self] in
-            self?.showSettings()
+            self?.showSettingsBackupMenu()
         }
     }
 
@@ -8369,7 +8371,7 @@ class GameEngine: ObservableObject {
             self.printWrapped("Saving — autosave frequency, manage and delete saves, settings backup/restore, and API key backup.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  SAVE SETTINGS", color: .cyan, bold: true)
-            self.printWrapped("One-tap backup of your current settings, saved as 'Quick Save'. Restore it later from Settings > Saving > Settings Backup.", indent: 2, color: .dimGreen)
+            self.printWrapped("One-tap backup of your current settings, saved as 'Quick Save'. Takes you straight to Settings Backup afterwards, where you can view, load, or delete it (or any other saved backup) any time.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  RESET", color: .cyan, bold: true)
             self.printWrapped("Opens the Reset screen where you can:", indent: 2, color: .dimGreen)
@@ -10424,7 +10426,10 @@ class GameEngine: ObservableObject {
     /// of this check).
     private func detectedProvider(forKeyFormat key: String) -> AIProvider? {
         if key.hasPrefix("sk-ant-") { return .anthropic }
-        if key.hasPrefix("AIza") { return .google }
+        // Google's AI Studio now issues "AQ."-prefixed Auth keys by default;
+        // older "AIza"-prefixed Standard keys still exist but Google rejects
+        // them from September 2026 — recognize both formats as Google.
+        if key.hasPrefix("AQ.") || key.hasPrefix("AIza") { return .google }
         if key.hasPrefix("sk-") { return .openAI }
         return nil
     }
@@ -10447,7 +10452,7 @@ class GameEngine: ObservableObject {
         case .anthropic:
             return key.hasPrefix("sk-ant-") ? nil : ("Anthropic keys normally start with 'sk-ant-'.", false)
         case .google:
-            return key.hasPrefix("AIza") ? nil : ("Google (Gemini) keys normally start with 'AIza'.", false)
+            return (key.hasPrefix("AQ.") || key.hasPrefix("AIza")) ? nil : ("Google (Gemini) keys normally start with 'AQ.' (or the older 'AIza' format).", false)
         }
     }
 
@@ -10682,7 +10687,7 @@ class GameEngine: ObservableObject {
                         self.printWrapped("1. Tap Get Free Key — sign in with a Google account (you must be 18+).", indent: 2, color: .dimGreen)
                         self.printWrapped("2. Tap 'Create API key' on the AI Studio page and copy it immediately — it's shown once only.", indent: 2, color: .dimGreen)
                         self.printWrapped("3. Come back and use Paste Key or Edit Key.", indent: 2, color: .dimGreen)
-                        self.printWrapped("4. A real Gemini key always starts with 'AIza'. If yours starts with something else (e.g. 'AQ.'), you've likely copied a different token from the page — go back to AI Studio and copy the one under 'API key' specifically.", indent: 2, color: .dimGreen)
+                        self.printWrapped("4. New keys from AI Studio start with 'AQ.' — that's correct and expected, not a mistake. Older keys starting with 'AIza' still work for now, but Google is phasing them out; if one stops working, generate a fresh key.", indent: 2, color: .dimGreen)
                         self.print("")
                     }
                 }
