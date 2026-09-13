@@ -16451,17 +16451,15 @@ class GameEngine: ObservableObject {
             }
         }
 
-        // Talk to NPC — also on the D-pad (SE corner), but that corner icon
-        // is easy to miss (or, per repeated reports, sometimes just doesn't
-        // render), and an armoury/shop's own room text promises an NPC is
-        // here. So this is ALSO a plain menu button — never just the D-pad —
-        // to guarantee "there's an NPC here" always has a visible, tappable
-        // way to act on it. Without a torch, NPCs are harder to find (only
-        // show if already spoken to).
+        // Talk to NPC — lives on the D-pad (SE corner) only now; it used to
+        // ALSO be a plain menu button, duplicating that icon, as a hedge
+        // against the D-pad icon "sometimes just doesn't render" (see the
+        // still-open investigation into vanished D-pad icons). Removed per
+        // explicit request — if that rendering issue resurfaces, restoring
+        // this fallback button is the quick fix. Without a torch, NPCs are
+        // harder to find (only show if already spoken to).
         if let npc = room.npc, npcsEnabled, (roomIsLit || npc.hasBeenTalkedTo) {
             let talkLabel = npc.hasBeenTalkedTo ? "Talk" : "Speak to \(npc.type.rawValue.components(separatedBy: " ").last ?? "Stranger")"
-            menuOpts.append(MenuOption(talkLabel, tint: .cyan))
-            actions.append { [weak self] in self?.talkToNPC() }
             DispatchQueue.main.async {
                 self.dpadNPCLabel = talkLabel
                 self.dpadNPCHandler = { [weak self] in self?.talkToNPC() }
