@@ -4388,29 +4388,6 @@ class GameEngine: ObservableObject {
         }
     }
 
-    private func confirmDeleteSlot(_ slot: SaveSlot) {
-        clearTerminal()
-        printTitle("Delete Save?")
-        print("This will delete all saves for:", color: .red)
-        print("  \(slot.slotName)", color: .brightGreen)
-        if slot.breakpointCount > 1 {
-            print("  (\(slot.breakpointCount) saves)", color: .dimGreen)
-        }
-        print("")
-        showMenu(["Yes, Delete", "< Cancel"], defaultIndex: 1)
-        menuHandler = { [weak self] choice in
-            if choice == 1 {
-                let saves = SaveGameManager.shared.listBreakpoints(slotId: slot.slotId)
-                for save in saves {
-                    SaveGameManager.shared.delete(id: save.id)
-                }
-                self?.showPlayMenu()
-            } else {
-                self?.showPlayMenu()
-            }
-        }
-    }
-
     private func showMultiplayerHub() {
         clearTerminal()
         printTitle("Multiplayer Games")
@@ -9105,12 +9082,19 @@ class GameEngine: ObservableObject {
         printWrapped("Settings that differ from defaults. Tap to toggle. Selected items (✓) will be reset.", indent: 2, color: .dimGreen)
         print("")
 
+        // Exact printed-line range per setting (so tapping its two-line
+        // block in the text window toggles it too, not just its numbered
+        // button below — same convention used for selectable lists
+        // elsewhere, e.g. Manage Saves).
+        var itemLineRanges: [Range<Int>] = []
         for item in changed {
+            let lineStart = terminalLines.count
             let isSelected = sel.contains(item.key)
             let check = isSelected ? "✓" : "✗"
             let checkColor: TerminalColor = isSelected ? .brightGreen : .red
             print("  \(check) \(item.name)", color: checkColor, bold: isSelected)
             print("    now: \(item.currentDisplay)  default: \(item.defaultDisplay)", color: .dimGreen)
+            itemLineRanges.append(lineStart..<terminalLines.count)
         }
         print("")
 
@@ -9125,17 +9109,21 @@ class GameEngine: ObservableObject {
         allOptions.append(selectedCount == changed.count ? "Deselect All" : "Select All")
         allOptions.append("Apply Reset")
 
-        showPaginatedMenu(allOptions, page: page, pinned: ["?", "< Back"]) { [weak self] idx in
+        let toggleSetting: (Int) -> Void = { [weak self] idx in
+            guard let self = self, idx >= 0, idx < changed.count else { return }
+            var newSel = sel
+            let key = changed[idx].key
+            if newSel.contains(key) { newSel.remove(key) } else { newSel.insert(key) }
+            self.showResetReview(selected: newSel, page: self.paginatedPage)
+        }
+
+        showPaginatedMenuOptions(allOptions, page: page, pinned: ["?", "< Back"], handler: { [weak self] idx in
             guard let self = self else { return }
             guard idx >= 0 && idx < allOptions.count else { return }
             let currentPage = self.paginatedPage
 
             if idx < changed.count {
-                // Toggle this setting
-                var newSel = sel
-                let key = changed[idx].key
-                if newSel.contains(key) { newSel.remove(key) } else { newSel.insert(key) }
-                self.showResetReview(selected: newSel, page: currentPage)
+                toggleSetting(idx)
             } else if allOptions[idx] == "Select All" || allOptions[idx] == "Deselect All" {
                 let newSel: Set<String> = selectedCount == changed.count ? [] : Set(changed.map { $0.key })
                 self.showResetReview(selected: newSel, page: currentPage)
@@ -9145,21 +9133,15 @@ class GameEngine: ObservableObject {
                     self.applySelectiveReset(keys: sel)
                 }
             }
-        }
-
-        // Intercept ?/< Back
-        let originalHandler = menuHandler
-        menuHandler = { [weak self] choice in
+        }, pinnedHandler: { [weak self] choice in
             guard let self = self else { return }
-            let idx = choice - 1
-            guard idx >= 0 && idx < self.currentMenuOptions.count else { originalHandler?(choice); return }
-            switch self.currentMenuOptions[idx].text {
-            case "?":
+            switch choice {
+            case 0:
                 self.showInlineHelp {
                     self.printTitle("Review Changes Help")
                     self.print("")
                     self.print("  TOGGLE SETTINGS", color: .cyan, bold: true)
-                    self.printWrapped("Tap any setting to toggle it on (✓) or off (✗). Only settings marked ✓ will be reset to their default values.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Tap any setting — its text above, or the numbered button below — to toggle it on (✓) or off (✗). Only settings marked ✓ will be reset to their default values.", indent: 2, color: .dimGreen)
                     self.print("")
                     self.print("  SELECT ALL / DESELECT ALL", color: .cyan, bold: true)
                     self.printWrapped("Quickly select or deselect every setting.", indent: 2, color: .dimGreen)
@@ -9168,11 +9150,16 @@ class GameEngine: ObservableObject {
                     self.printWrapped("Resets the selected settings to their defaults. Unselected settings keep their current values. API keys and saved games are never affected.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
-            case "< Back":
-                self.confirmResetToDefaults()
             default:
-                originalHandler?(choice)
+                self.confirmResetToDefaults()
             }
+        })
+
+        // Tap a setting's own printed text (not just its numbered button)
+        // to toggle it too — see itemLineRanges above.
+        textLongPressHandler = { lineIndex in
+            guard let idx = itemLineRanges.firstIndex(where: { $0.contains(lineIndex) }) else { return }
+            toggleSetting(idx)
         }
         closeHandler = { [weak self] in self?.confirmResetToDefaults() }
     }
@@ -28603,6 +28590,26 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// The one place that should ever call SaveGameManager.deleteSlot —
+    /// clears activeSlotId/activeSlotName too, if the deleted slot was the
+    /// currently active adventure. Without this, deleting your own active
+    /// adventure (directly, or as part of a multi-select bulk delete)
+    /// left activeSlotId still pointing at that now-gone slotId, and the
+    /// very next autosave (every few rooms, mid-play) silently wrote a
+    /// fresh save right back under the same id — the deletion looked like
+    /// it "didn't stick" the moment you kept playing (or, on a bulk
+    /// delete that happened to include the active slot, even before you
+    /// noticed). Single-slot delete already had this check inline; the
+    /// bulk multi-select delete paths and the "replace an old slot to
+    /// free up room" path did not.
+    private func deleteSlotClearingActiveIfNeeded(_ slotId: UUID) {
+        SaveGameManager.shared.deleteSlot(slotId: slotId)
+        if activeSlotId == slotId {
+            activeSlotId = nil
+            activeSlotName = nil
+        }
+    }
+
     func showSaveMenu() {
         clearTerminal()
         printTitle("Save/Quit")
@@ -29014,7 +29021,7 @@ class GameEngine: ObservableObject {
                     guard let self = self else { return }
                     switch confirm {
                     case 1:
-                        SaveGameManager.shared.deleteSlot(slotId: selected.slotId)
+                        self.deleteSlotClearingActiveIfNeeded(selected.slotId)
                         self.askForNewSlotName()
                     case 2:
                         self.clearTerminal()
@@ -29460,7 +29467,7 @@ class GameEngine: ObservableObject {
                             guard let self = self else { return }
                             if c == 1 {
                                 for id in self.manageSaveSelectedSlotIds {
-                                    SaveGameManager.shared.deleteSlot(slotId: id)
+                                    self.deleteSlotClearingActiveIfNeeded(id)
                                 }
                                 self.manageSaveSelectedSlotIds.removeAll()
                                 self.manageSaveSelectMode = false
@@ -29873,7 +29880,7 @@ class GameEngine: ObservableObject {
                         guard let self = self else { return }
                         if c == 1 {
                             for id in self.manageSaveSelectedSlotIds {
-                                SaveGameManager.shared.deleteSlot(slotId: id)
+                                self.deleteSlotClearingActiveIfNeeded(id)
                             }
                             self.manageSaveSelectedSlotIds.removeAll()
                             self.manageSaveSelectMode = false
@@ -30423,11 +30430,7 @@ class GameEngine: ObservableObject {
 
         menuHandler = { [weak self] choice in
             if choice == 1 {
-                SaveGameManager.shared.deleteSlot(slotId: slot.slotId)
-                if self?.activeSlotId == slot.slotId {
-                    self?.activeSlotId = nil
-                    self?.activeSlotName = nil
-                }
+                self?.deleteSlotClearingActiveIfNeeded(slot.slotId)
                 self?.print("")
                 self?.print("Adventure deleted.", color: .red)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
