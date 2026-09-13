@@ -11510,30 +11510,70 @@ class GameEngine: ObservableObject {
         printWrapped("Gold:\(entry.goldCollected)  Slain:\(entry.monstersSlain)  Rooms:\(entry.roomsExplored)/\(entry.totalRooms)  Day \(day)", indent: 4, color: .dimGreen)
         print("")
 
+        // "Read Tale" alone meant loading/reliving a specific adventure
+        // needed an extra detour through that narrative screen first — this
+        // scroll-wheel selector had no way to just pick one directly.
+        let canRelive = entry.saveGameId != nil && SaveGameManager.shared.load(id: entry.saveGameId!) != nil
         var options = ["▲ Prev", "▼ Next", "Read Tale"]
+        if canRelive {
+            options.append("⚔ Relive")
+        }
         if count > 3 {
             options.insert("Surprise Me", at: 2)
         }
+        var menuOpts = options.map { MenuOption($0) }
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
 
-        showMenu(options)
+        showMenuOptions(menuOpts)
         menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == menuOpts.count {
+                self.showHallOfFame()
+                return
+            }
+            if choice == menuOpts.count - 1 {
+                self.showInlineHelp {
+                    self.printTitle("Choose a Tale — Help")
+                    self.print("")
+                    self.print("  ▲ PREV / ▼ NEXT", color: .cyan, bold: true)
+                    self.printWrapped("Scroll through recorded tales one at a time. You can also swipe left/right.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  READ TALE", color: .cyan, bold: true)
+                    self.printWrapped("Shows a dramatic narrative summary of the selected adventure.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    if canRelive {
+                        self.print("  ⚔ RELIVE", color: .cyan, bold: true)
+                        self.printWrapped("Jumps straight into this adventure's linked save — a victory lets you relive the legend, a defeat gives you a second chance from one room before the fall. Only shown when a save still exists for this tale.", indent: 2, color: .dimGreen)
+                        self.print("")
+                    }
+                    if count > 3 {
+                        self.print("  SURPRISE ME", color: .cyan, bold: true)
+                        self.printWrapped("Jumps to a random tale.", indent: 2, color: .dimGreen)
+                        self.print("")
+                    }
+                }
+                return
+            }
             let selected = options[choice - 1]
             switch selected {
             case "▲ Prev":
                 let prev = (selectedIndex - 1 + count) % count
-                self?.showTaleSelector(entries: entries, selectedIndex: prev)
+                self.showTaleSelector(entries: entries, selectedIndex: prev)
             case "▼ Next":
                 let next = (selectedIndex + 1) % count
-                self?.showTaleSelector(entries: entries, selectedIndex: next)
+                self.showTaleSelector(entries: entries, selectedIndex: next)
             case "Surprise Me":
                 let rand = Int.random(in: 0..<count)
                 let tales = entries.map { AdventureTaleData(hof: $0) }
-                self?.showAdventureTale(tales[rand], tales: tales, index: rand)
+                self.showAdventureTale(tales[rand], tales: tales, index: rand)
             case "Read Tale":
                 let tales = entries.map { AdventureTaleData(hof: $0) }
-                self?.showAdventureTale(tales[selectedIndex], tales: tales, index: selectedIndex)
+                self.showAdventureTale(tales[selectedIndex], tales: tales, index: selectedIndex)
+            case "⚔ Relive":
+                self.showLoadTransition(AdventureTaleData(hof: entry))
             default:
-                self?.showHallOfFame()
+                self.showHallOfFame()
             }
         }
 
@@ -28948,6 +28988,76 @@ class GameEngine: ObservableObject {
             }
         }
 
+        let backToLoadGame: () -> Void = { [weak self] in self?.showLoadGameMenu(returnTo: origin) }
+
+        // Bulk multi-select (local slots only — remote matches already have
+        // their own "Delete All Remote Games" bulk shortcut below). Mirrors
+        // Continue Adventure's own select mode.
+        if manageSaveSelectMode {
+            let displayOptions = slots.map { slot -> String in
+                (manageSaveSelectedSlotIds.contains(slot.slotId) ? "[x] " : "[ ] ") + slot.slotName
+            }
+            var pinned = ["Select All", "?", "< Back"]
+            if !manageSaveSelectedSlotIds.isEmpty {
+                pinned.insert("Delete Selected (\(manageSaveSelectedSlotIds.count))", at: 1)
+            }
+            print("Tap slots to select, then Delete Selected:", color: .cyan)
+            showPaginatedMenuOptions(displayOptions, pinned: pinned, handler: { [weak self] idx in
+                guard let self = self, idx >= 0 && idx < slots.count else { return }
+                let slotId = slots[idx].slotId
+                if self.manageSaveSelectedSlotIds.contains(slotId) {
+                    self.manageSaveSelectedSlotIds.remove(slotId)
+                } else {
+                    self.manageSaveSelectedSlotIds.insert(slotId)
+                }
+                self.renderManageSavesMenu(slots: slots, remoteMatches: remoteMatches, returnTo: origin)
+            }, pinnedHandler: { [weak self] choice in
+                guard let self = self else { return }
+                let chosen = pinned[choice]
+                if chosen == "Select All" {
+                    self.manageSaveSelectedSlotIds = Set(slots.map { $0.slotId })
+                    self.renderManageSavesMenu(slots: slots, remoteMatches: remoteMatches, returnTo: origin)
+                } else if chosen.hasPrefix("Delete Selected") {
+                    let count = self.manageSaveSelectedSlotIds.count
+                    self.clearTerminal()
+                    self.printTitle("Delete \(count) Save\(count == 1 ? "" : "s")?")
+                    self.print("")
+                    self.print("  This cannot be undone.", color: .red)
+                    self.print("")
+                    self.showMenu(["Delete Permanently", "< Cancel"])
+                    self.menuHandler = { [weak self] c in
+                        guard let self = self else { return }
+                        if c == 1 {
+                            for id in self.manageSaveSelectedSlotIds {
+                                SaveGameManager.shared.deleteSlot(slotId: id)
+                            }
+                            self.manageSaveSelectedSlotIds.removeAll()
+                            self.manageSaveSelectMode = false
+                        }
+                        self.showManageSavesMenu(returnTo: origin)
+                    }
+                } else if chosen == "?" {
+                    self.showInlineHelp {
+                        self.printTitle("Manage Saves — Help")
+                        self.print("")
+                        self.printWrapped("Tap a slot to check/uncheck it, Select All to grab every local save, then Delete Selected to remove them all at once.", indent: 2, color: .dimGreen)
+                        self.print("")
+                    }
+                } else {
+                    self.manageSaveSelectMode = false
+                    self.manageSaveSelectedSlotIds.removeAll()
+                    self.showManageSavesMenu(returnTo: origin)
+                }
+            })
+            closeHandler = { [weak self] in
+                guard let self = self else { return }
+                self.manageSaveSelectMode = false
+                self.manageSaveSelectedSlotIds.removeAll()
+                backToLoadGame()
+            }
+            return
+        }
+
         // Build menu options
         var options: [String] = []
         var actions: [() -> Void] = []
@@ -28975,28 +29085,36 @@ class GameEngine: ObservableObject {
         }
 
         print("Select a slot to manage:", color: .cyan)
-        options.append("?")
-        options.append("< Back")
-        showMenu(options)
+        var pinnedButtons = ["?", "< Back"]
+        if hasLocalSlots {
+            pinnedButtons.insert("Select", at: 0)
+        }
 
-        let backToLoadGame: () -> Void = { [weak self] in self?.showLoadGameMenu(returnTo: origin) }
         closeHandler = backToLoadGame
-        menuHandler = { [weak self] choice in
+        showPaginatedMenuOptions(options, pinned: pinnedButtons, handler: { idx in
+            guard idx >= 0 && idx < actions.count else { return }
+            actions[idx]()
+        }, pinnedHandler: { [weak self] choice in
             guard let self = self else { return }
-            guard choice >= 1 && choice <= options.count else { return }
-            if choice <= actions.count {
-                actions[choice - 1]()
-            } else if options[choice - 1] == "?" {
+            let chosen = pinnedButtons[choice]
+            if chosen == "Select" {
+                self.manageSaveSelectMode = true
+                self.renderManageSavesMenu(slots: slots, remoteMatches: remoteMatches, returnTo: origin)
+            } else if chosen == "?" {
                 self.showInlineHelp {
                     self.printTitle("Manage Saves — Help")
                     self.print("")
                     self.printWrapped("Tap a local save slot or remote game to rename, delete, or otherwise manage it.", indent: 2, color: .dimGreen)
+                    if hasLocalSlots {
+                        self.print("")
+                        self.printWrapped("Select lets you check off several local saves at once and delete them together.", indent: 2, color: .dimGreen)
+                    }
                     self.print("")
                 }
             } else {
                 backToLoadGame()
             }
-        }
+        })
 
         // Tap an entry's description text, not just its numbered button —
         // matches Continue Adventure's own list.
