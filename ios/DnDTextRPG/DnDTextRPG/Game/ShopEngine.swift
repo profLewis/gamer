@@ -140,7 +140,11 @@ class ShopEngine {
         game.print("  Stock: \(stock.count) items on the shelves", color: .green)
         game.print("")
 
-        game.showMenu(["Buy", "Sell", "Haggle", "Ask About Rare Goods", "?", "< Leave Shop"])
+        // "< Back" (not a custom "Leave Shop" label) so showMenu's
+        // auto-detection renders it as the standard compact 3-bar nav
+        // button, like every other screen's back button — leaving a shop
+        // is exactly a "< Back" action, not a distinct one.
+        game.showMenu(["Buy", "Sell", "Haggle", "Ask About Rare Goods", "?", "< Back"])
 
         game.menuHandler = { [weak self] choice in
             guard let self = self, let game = self.game else { return }

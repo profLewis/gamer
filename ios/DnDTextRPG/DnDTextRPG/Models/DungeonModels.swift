@@ -584,6 +584,13 @@ class Dungeon: ObservableObject, Codable {
     /// second level that never appears anywhere on screen.
     @Published var currentFloor: Int = 1
 
+    /// "Emergency Drop" — the rare, automatic anti-total-party-wipe save
+    /// (see GameEngine.handleCombatDefeat) — is one-time-per-adventure, so
+    /// it's a genuine safety net rather than a repeatable free pass. Tracked
+    /// here (not on GameEngine) so it correctly persists across saves/loads
+    /// of THIS specific adventure.
+    @Published var emergencyDropUsed: Bool = false
+
     /// True if this dungeon has at least one stairs/rope/levitation link.
     var hasVerticalConnections: Bool {
         rooms.values.contains { $0.verticalDestinationRoomId != nil }
@@ -605,7 +612,7 @@ class Dungeon: ObservableObject, Codable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, level, rooms, currentRoomId, previousRoomId, nextRoomId, currentFloor
+        case name, level, rooms, currentRoomId, previousRoomId, nextRoomId, currentFloor, emergencyDropUsed
     }
 
     init(name: String, level: Int) {
@@ -634,6 +641,7 @@ class Dungeon: ObservableObject, Codable {
         nextRoomId = try container.decodeIfPresent(Int.self, forKey: .nextRoomId)
             ?? (roomsDict.keys.max().map { $0 + 1 } ?? 0)
         currentFloor = try container.decodeIfPresent(Int.self, forKey: .currentFloor) ?? 1
+        emergencyDropUsed = (try? container.decodeIfPresent(Bool.self, forKey: .emergencyDropUsed)) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -646,6 +654,7 @@ class Dungeon: ObservableObject, Codable {
         try container.encodeIfPresent(previousRoomId, forKey: .previousRoomId)
         try container.encode(nextRoomId, forKey: .nextRoomId)
         try container.encode(currentFloor, forKey: .currentFloor)
+        try container.encode(emergencyDropUsed, forKey: .emergencyDropUsed)
     }
 
     /// Next room ID for dynamic expansion

@@ -4234,6 +4234,15 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("New Adventure"))
         actions.append { [weak self] in self?.startNewGame() }
 
+        // Hall of Fame — a top-level button, not nested inside Continue
+        // Adventure (it used to be pinned there, but a completed tale
+        // already shows up in that list too, so tucking a second,
+        // score-sorted view of the same tales behind a Continue Adventure
+        // sub-button just made Continue Adventure a confusing place to
+        // find it).
+        menuOpts.append(MenuOption("Hall of Fame"))
+        actions.append { [weak self] in self?.showHallOfFame() }
+
         // Multiplayer match buttons
         for mp in mpEntries {
             let names = mp.match.participants.compactMap { $0.player?.displayName }
@@ -4273,10 +4282,10 @@ class GameEngine: ObservableObject {
         // Hall of Fame (past completed tales, sorted by score) instead,
         // which had no direct "load this" action on an entry — reliving a
         // tale required first noticing the separate pinned "Manage Saves"
-        // button. The Hall of Fame itself is still reachable — it's now a
-        // pinned option on this same save-list screen, and via the "hall
-        // of fame" chat command. (Continue Adventure itself is added above,
-        // ahead of New Adventure.)
+        // button. Hall of Fame is still reachable — as its own button
+        // above, and via the "hall of fame" chat command — just not
+        // nested inside Continue Adventure. (Continue Adventure itself is
+        // added above, ahead of New Adventure.)
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showPlayHelp() }
 
@@ -4328,7 +4337,10 @@ class GameEngine: ObservableObject {
             self.printWrapped("Start a fresh adventure. Pick your party size, then create each character — or load one from the Character Hall of Fame (defaults to your most recent hero, if you have one). Long-press for a quick start with a random party.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  CONTINUE ADVENTURE", color: .cyan, bold: true)
-            self.printWrapped("Lists your saved games, most recently saved first — tap one to load it immediately. 'Manage Saves' renames or deletes saves; 'Hall of Fame' revisits your greatest (and most tragic) completed tales.", indent: 2, color: .dimGreen)
+            self.printWrapped("Lists your saved games, most recently saved first — tap one to load it immediately. 'Manage Saves' (inside it) renames or deletes saves.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  HALL OF FAME", color: .cyan, bold: true)
+            self.printWrapped("Revisits your greatest (and most tragic) completed tales, sorted by score.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  CHARACTER SAVES", color: .cyan, bold: true)
             self.printWrapped("Found inside New Adventure's character selection (the Character Hall of Fame screen) — 'Manage Saves' there browses and deletes your full Character Roster, not just Hall-of-Famers. Save a character any time from Party Review or Party Status.", indent: 2, color: .dimGreen)
@@ -12663,7 +12675,7 @@ class GameEngine: ObservableObject {
                     self.printWrapped("Glyphkeeper tracks a running ethical score (-100 Villainous to +100 Heroic) for each character, shifted by certain choices during the campaign. You can't set it directly — it's a record of what this character has actually done, not a stat to edit.", indent: 2, color: .dimGreen)
                     self.print("")
                     self.print("  WHY IT MATTERS", color: .cyan, bold: true)
-                    self.printWrapped("A better reputation gets you easier haggling and warmer narration/NPC reactions from the DM. A worse one makes both harder — merchants charge more, and the story treats you accordingly.", indent: 2, color: .dimGreen)
+                    self.printWrapped("A better reputation gets you easier haggling and warmer narration/NPC reactions from the DM. A worse one makes both harder — merchants charge more, and the story treats you accordingly. A party with a collective reputation of Kind or better also becomes eligible for Emergency Drop — a rare, one-time-per-adventure chance to survive what would otherwise be a total party wipe.", indent: 2, color: .dimGreen)
                     self.print("")
                     self.print("  WHERE IT'S USED", color: .cyan, bold: true)
                     self.printWrapped("The AI DM sees each character's reputation band and lets it colour narration and NPC reactions. Merchants also react to it directly — a good reputation makes haggling easier, a bad one makes it harder (see the DC note shown when you haggle).", indent: 2, color: .dimGreen)
@@ -20222,7 +20234,13 @@ class GameEngine: ObservableObject {
 
     // MARK: - Inventory
 
-    func pickCharacter(title: String, cancelLabel: String = "Done", from candidates: [Character]? = nil, onBack: (() -> Void)? = nil, showGold: Bool = false, action: @escaping (Character) -> Void) {
+    /// - helpAction: when provided, replaces the single `cancelLabel`
+    ///   button with the standard compact "?"/"< Back" pair (auto-detected
+    ///   as compact nav by showMenu) instead of a custom-worded cancel
+    ///   button — for callers that want the ordinary 3-bar nav convention
+    ///   rather than a one-off label like "Don't Enter". Existing callers
+    ///   that don't pass this keep their current cancelLabel behaviour.
+    func pickCharacter(title: String, cancelLabel: String = "Done", from candidates: [Character]? = nil, onBack: (() -> Void)? = nil, showGold: Bool = false, helpAction: (() -> Void)? = nil, action: @escaping (Character) -> Void) {
         let chars = candidates ?? party
         if chars.count == 1 {
             action(chars[0])
@@ -20245,7 +20263,13 @@ class GameEngine: ObservableObject {
             let stat = showGold ? "\(char.gold)gp" : "\(char.currentHP)/\(char.maxHP)HP"
             options.append("\(shortName(for: char)) \(stat)")
         }
-        options.append(cancelLabel)
+        let usesHelpNav = helpAction != nil
+        if usesHelpNav {
+            options.append("?")
+            options.append("< Back")
+        } else {
+            options.append(cancelLabel)
+        }
 
         let cancelAction: () -> Void = { [weak self] in
             if let onBack = onBack { onBack() } else { self?.showExplorationView() }
@@ -20253,7 +20277,16 @@ class GameEngine: ObservableObject {
         showMenu(options)
         closeHandler = cancelAction
         menuHandler = { choice in
-            if choice == options.count {
+            if usesHelpNav {
+                if choice == chars.count + 1 {
+                    helpAction?()
+                    return
+                }
+                if choice == chars.count + 2 {
+                    cancelAction()
+                    return
+                }
+            } else if choice == options.count {
                 cancelAction()
                 return
             }
@@ -21144,7 +21177,15 @@ class GameEngine: ObservableObject {
     func visitShop() {
         guard let dungeon = dungeon, let room = dungeon.currentRoom, let merchant = room.merchant else { return }
 
-        pickCharacter(title: "Who visits \(merchant.name)?", cancelLabel: "Don't Enter", showGold: true) { [weak self] character in
+        pickCharacter(title: "Who visits \(merchant.name)?", showGold: true, helpAction: { [weak self] in
+            guard let self = self else { return }
+            self.showInlineHelp {
+                self.printTitle("Visit Merchant — Help")
+                self.print("")
+                self.printWrapped("Pick which character enters \(merchant.name)'s shop. The gold shown is that character's own — purchases, sales, and haggling all come out of their purse specifically.", indent: 2, color: .dimGreen)
+                self.print("")
+            }
+        }) { [weak self] character in
             guard let self = self else { return }
             self.shopEngine.openShop(character: character, dungeonLevel: dungeon.level, merchant: merchant) { [weak self] in
                 self?.showExplorationView()
@@ -27514,7 +27555,58 @@ class GameEngine: ObservableObject {
         autoReturn(after: infoTimeout * 3)
     }
 
+    /// "Emergency Drop" — a rare, automatic anti-total-party-wipe save.
+    /// EXPLICIT about how it works (see the on-screen message below and the
+    /// Reputation help screen) rather than a hidden mechanic: only a party
+    /// with a strong collective reputation (Glyphkeeper) is even eligible,
+    /// and even then it's a chance, not a guarantee, scaled by how good
+    /// they are. One use per adventure (Dungeon.emergencyDropUsed) — a
+    /// genuine safety net, not a repeatable free pass. Returns true if it
+    /// triggered (handleCombatDefeat should stop, not proceed to game over).
+    private func tryEmergencyDrop() -> Bool {
+        guard let dungeon = dungeon, !dungeon.emergencyDropUsed, !party.isEmpty else { return false }
+        let avgScore = party.map { $0.ethicalScore }.reduce(0, +) / party.count
+        // Threshold matches solidly Kind or better (see EthicalAlignment.forScore).
+        let goodnessThreshold = 40
+        guard avgScore >= goodnessThreshold else { return false }
+        // Chance scales with how good the party is — capped, never certain.
+        let chance = min(60, avgScore)
+        guard Int.random(in: 1...100) <= chance else { return false }
+
+        dungeon.emergencyDropUsed = true
+        for char in party {
+            char.currentHP = max(1, char.maxHP / 10)
+            char.isRaging = false
+            char.huntersMarkActive = false
+            char.isPlayingDead = false
+            char.hasFledCombat = false
+            char.isDodging = false
+        }
+        ensureSafeRoom()
+        clearAllUndoRedo()
+        cancelCombatIdleTimer()
+        combatHesitating = false
+        SoundManager.shared.stopMusic()
+        clearTerminal()
+        gameState = .exploring
+        logEvent("Emergency Drop triggered — the party's reputation (avg \(avgScore)) spared them from a total wipe.", category: "COMBAT")
+
+        printTitle("Emergency Drop")
+        print("")
+        printWrapped("The party should have fallen here — but word of your reputation reached further than the blade. Someone, or something, pulled you back from the brink.", indent: 2, color: .brightGreen)
+        print("")
+        printWrapped("This is Emergency Drop: a rare, one-time-per-adventure save, only possible because your party's collective reputation is Kind or better. It won't happen again this adventure.", indent: 2, color: .dimGreen)
+        print("")
+        printWrapped("Your party is alive, but shaken — everyone is down to a sliver of HP.", indent: 2, color: .yellow)
+        print("")
+        showMenu(["Continue"])
+        menuHandler = { [weak self] _ in self?.showExplorationView() }
+        closeHandler = { [weak self] in self?.showExplorationView() }
+        return true
+    }
+
     func handleCombatDefeat() {
+        if tryEmergencyDrop() { return }
         clearAllUndoRedo()
         suppressMenuUntil = .distantPast // same fix as handleGameVictory: don't let a pre-defeat long-press swallow the first menu tap
         cancelCombatIdleTimer()
@@ -29048,19 +29140,17 @@ class GameEngine: ObservableObject {
         // this screen already has enough buttons on it; reach select mode
         // via Hall of Fame's "Manage" sub-screen instead (one extra tap,
         // for an action used far less often than just continuing/reading).
-        // "Hall of Fame" itself IS pinned here — it used to be reachable
-        // only via the hidden "hall of fame" text command, which meant the
-        // dedicated, sorted-by-score view of every completed tale had no
-        // discoverable button anywhere in normal play.
-        let pinnedButtons = ["Hall of Fame", "?", "< Back"]
+        // Hall of Fame itself is NOT pinned here — it used to be, but that
+        // put it inside Continue Adventure where it doesn't really belong
+        // (this list already includes completed tales); it's now a
+        // top-level button on the Play menu instead (see renderPlayMenu).
+        let pinnedButtons = ["?", "< Back"]
         showPaginatedMenuOptions(options, page: page, pinned: pinnedButtons, handler: { idx in
             guard idx >= 0 && idx < rows.count else { return }
             openRow(rows[idx])
         }, pinnedHandler: { [weak self] choice in
             guard let self = self else { return }
             switch choice {
-            case pinnedButtons.firstIndex(of: "Hall of Fame") ?? -1:
-                self.showHallOfFame()
             case pinnedButtons.firstIndex(of: "?") ?? -1:
                 self.showInlineHelp {
                     self.printTitle("Continue Adventure — Help")
@@ -29072,7 +29162,7 @@ class GameEngine: ObservableObject {
                     self.print("  COLOUR", color: .cyan, bold: true)
                     self.printWrapped("Cyan = still in progress (PLAYING). Yellow = you won (W). Red = your party fell (L) — you can still revisit or relive it.", indent: 2, color: .dimGreen)
                     self.print("")
-                    self.printWrapped("HALL OF FAME (pinned button): a separate, dedicated view of every completed tale, sorted by score — distinct from this list, which also includes adventures still in progress.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Looking for your Hall of Fame — the dedicated, sorted-by-score view of every completed tale? That's back on the Play menu now, as its own button.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             default:
