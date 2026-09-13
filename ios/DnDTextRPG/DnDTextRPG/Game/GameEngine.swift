@@ -458,6 +458,13 @@ class GameEngine: ObservableObject {
     var isJustDMActive: Bool {
         justDMMode && (DMEngine.shared.isConfigured || DMEngine.shared.isAppleModelAvailable)
     }
+    /// justDMMode is a persisted preference — a player who enabled it last
+    /// session can land right back in buttons-off text mode with no menus
+    /// or D-pad on screen, on a brand new adventure OR a loaded one, with
+    /// no reminder in THIS launch of how that mode works. Reset every app
+    /// launch (not persisted) so the warning below reappears once per
+    /// session rather than nagging on every single exchange.
+    private var hasShownJustDMStartupNotice = false
 
     // Combat idle timer — penalise hesitation
     private var combatIdleTimer: Timer?
@@ -23829,6 +23836,20 @@ class GameEngine: ObservableObject {
         return nil
     }
 
+    /// Rotating examples of what free text can do in Just DM mode — shown
+    /// occasionally beneath the chat log (see showJustDMExploration) while
+    /// the player is still new to it, since the one-time "TEXT MODE"
+    /// intro block never shows again once they've said anything at all.
+    private static let justDMHintExamples: [String] = [
+        "search the room · ask the guard about the gate · attack the goblin with my sword",
+        "cast fireball at the orc · check my inventory · rest by the fire",
+        "sneak past the sleeping troll · pick the lock · haggle with the merchant",
+        "look under the bed · shout for help · drink a healing potion",
+        "go north · listen at the door · examine the strange rune",
+        "hide in the shadows · barter for a better price · light my torch",
+        "tell the wounded knight I'll help him · search the corpse · flee the fight",
+    ]
+
     private func showJustDMExploration() {
         guard let dungeon = dungeon, let room = dungeon.currentRoom else { return }
 
@@ -23863,6 +23884,15 @@ class GameEngine: ObservableObject {
         }
         print("")
 
+        if !hasShownJustDMStartupNotice {
+            hasShownJustDMStartupNotice = true
+            print("  ⚠ BUTTONS OFF — Text Mode", color: .yellow, bold: true)
+            printWrapped("  This adventure is running with no menu buttons or D-pad — everything's typed.", indent: 2, color: .dimGreen)
+            printWrapped("  Type \"buttons on\" any time to bring the normal menus back.", indent: 2, color: .brightGreen)
+            printWrapped("  Type \"settings\" to open Settings from here too — including changing which AI runs the DM.", indent: 2, color: .brightGreen)
+            print("")
+        }
+
         // Party status (compact bar)
         var statusParts: [String] = []
         for char in party {
@@ -23888,6 +23918,16 @@ class GameEngine: ObservableObject {
                     }
                 }
                 if isNewest { print("") }
+            }
+            // The full "TEXT MODE" guidance below only ever shows once
+            // (before the player's said anything at all) — after that, a
+            // short rotating example is the only reminder of what you can
+            // type, and only while still new to it. Without this, someone
+            // who forgot what's possible here had no way back to a hint
+            // short of typing "?" for the full help screen.
+            if dmChatLog.count < 20 {
+                printWrapped("  (try: \(Self.justDMHintExamples.randomElement()!))", indent: 2, color: .dimGreen)
+                print("")
             }
         } else {
             // First time in text mode — show guidance
@@ -29135,8 +29175,22 @@ class GameEngine: ObservableObject {
         if rows.isEmpty {
             print("  No saved games or adventures recorded yet.", color: .yellow)
             print("")
-            showMenu(["< Back"])
-            menuHandler = { _ in backAction() }
+            showMenu(["?", "< Back"])
+            menuHandler = { [weak self] choice in
+                guard let self = self else { return }
+                if choice == 1 {
+                    self.showInlineHelp {
+                        self.printTitle("Continue Adventure — Help")
+                        self.print("")
+                        self.printWrapped("Once you've saved (or completed) an adventure, it'll show up here — tap it to continue, or see how it ended.", indent: 2, color: .dimGreen)
+                        self.print("")
+                        self.printWrapped("Start one from New Adventure on the Play menu.", indent: 2, color: .dimGreen)
+                        self.print("")
+                    }
+                } else {
+                    backAction()
+                }
+            }
             return
         }
 
