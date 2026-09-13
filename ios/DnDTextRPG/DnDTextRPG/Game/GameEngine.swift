@@ -9039,21 +9039,11 @@ class GameEngine: ObservableObject {
             let label = isSelected ? "\(provider.displayName) <--" : provider.displayName
             options.append(MenuOption(label, isDefault: isSelected))
         }
-        // A "Test <Provider>" button for each provider that already has a key
-        // stored — lets you check any provider's access right from this
-        // screen, without first switching to it and hunting through Set API
-        // Key. Only shown once a key exists; there's nothing to test yet
-        // otherwise.
-        let testableProviders = AIProvider.allCases.filter { dm.apiKey(for: $0) != nil }
-        for provider in testableProviders {
-            options.append(MenuOption("Test \(provider.shortName)", tint: .navigation))
-        }
         options.append(MenuOption("?", tint: .navigation, compact: true))
         options.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(options)
 
         let appleOffset = dm.isAppleModelAvailable ? 1 : 0
-        let testOffset = appleOffset + AIProvider.allCases.count
         let helpIndex = options.count - 1  // 1-based choice for ?
         let backIndex = options.count      // 1-based choice for < Back
 
@@ -9061,20 +9051,6 @@ class GameEngine: ObservableObject {
         menuHandler = { [weak self] choice in
             if choice == backIndex {
                 self?.showDMSettingsSubMenu()
-                return
-            }
-            if choice - testOffset >= 1 && choice - testOffset <= testableProviders.count {
-                let tested = testableProviders[choice - testOffset - 1]
-                // validateAndConfirmKey always tests DMEngine's CURRENT
-                // provider — switch to the one being tested so it checks the
-                // right key. On success this leaves it selected (testing a
-                // key you want to use is a reasonable way to pick it); on
-                // failure validateAndConfirmKey clears the bad key and drops
-                // straight into that provider's Set API Key screen to fix it.
-                dm.provider = tested
-                self?.print("")
-                self?.print("  Testing \(tested.displayName) key...", color: .dimGreen)
-                self?.validateAndConfirmKey(provider: tested)
                 return
             }
             if choice == helpIndex {
@@ -9095,55 +9071,92 @@ class GameEngine: ObservableObject {
                     self?.print("")
                     self?.printWrapped("After selecting a cloud provider, you'll be prompted to enter your API key. Keys are stored locally on your device.", indent: 2, color: .dimGreen)
                     self?.print("")
-                    self?.print("  TEST BUTTONS", color: .cyan, bold: true)
-                    self?.printWrapped("A \"Test <Provider>\" button appears for any provider that already has a key saved — checks that provider's access right away, without switching to it first. If the test fails, the bad key is cleared and you're dropped straight into that provider's Set API Key screen to fix it.", indent: 2, color: .dimGreen)
+                    self?.print("  TAP A PROVIDER", color: .cyan, bold: true)
+                    self?.printWrapped("Tapping any provider (including Apple On-Device AI) opens its own info screen — status, a Test button, and (for cloud providers) buttons to enter, edit, or remove its key.", indent: 2, color: .dimGreen)
                     self?.print("")
                 }
                 return
             }
             if dm.isAppleModelAvailable && choice == 1 {
-                dm.apiKey = nil
-                dm.clearHistory()
-                self?.dmChatLog = []
-                self?.print("")
-                self?.print("Switched to Apple On-Device AI.", color: .brightGreen)
-                self?.print("")
-                self?.print("  Runs locally, no account needed.", color: .dimGreen)
-                self?.print("  Works offline.", color: .dimGreen)
-                self?.print("  May refuse some queries — try", color: .dimGreen)
-                self?.print("  rephrasing if it won't answer.", color: .dimGreen)
-                self?.print("")
-                self?.waitForContinue()
-                self?.inputHandler = { [weak self] _ in
-                    self?.showAIProviderMenu()
-                }
+                self?.showAppleAIInfo()
             } else if choice - appleOffset >= 1 && choice - appleOffset <= AIProvider.allCases.count {
                 let selected = AIProvider.allCases[choice - appleOffset - 1]
                 dm.provider = selected
                 dm.clearHistory()
                 self?.dmChatLog = []
-                self?.print("")
-                self?.print("AI Provider set to: \(selected.displayName)", color: .brightGreen)
-                if dm.apiKey(for: selected) == nil {
-                    self?.print("")
-                    self?.print("You need an API key for \(selected.displayName).", color: .yellow)
-                    if selected == .google {
-                        self?.print("Gemini is free — just needs a Google", color: .brightGreen)
-                        self?.print("account (you must be 18+).", color: .brightGreen)
+                self?.promptAPIKey()
+            }
+        }
+    }
+
+    /// The Apple on-device model's own info/test screen — mirrors what
+    /// promptAPIKey gives the cloud providers (status + a Test button), even
+    /// though there's no key to manage here.
+    private func showAppleAIInfo() {
+        clearTerminal()
+        printTitle("Apple On-Device AI")
+        print("")
+        let dm = DMEngine.shared
+        if dm.isAppleModelAvailable {
+            print("  Available on this device.", color: .brightGreen)
+        } else {
+            print("  Not available on this device.", color: .yellow)
+            print("  Requires iOS 26+ on iPhone 16", color: .dimGreen)
+            print("  or newer, with Apple Intelligence", color: .dimGreen)
+            print("  turned on.", color: .dimGreen)
+        }
+        print("")
+        print("  Runs locally, no account needed.", color: .dimGreen)
+        print("  Works offline. May refuse some", color: .dimGreen)
+        print("  queries — try rephrasing if it", color: .dimGreen)
+        print("  won't answer.", color: .dimGreen)
+        print("")
+
+        var options = [MenuOption("Test", isDisabled: !dm.isAppleModelAvailable)]
+        if !dm.isConfigured {
+            options.append(MenuOption("Use Apple AI <--", isDefault: true))
+        } else {
+            options.append(MenuOption("Use Apple AI"))
+        }
+        options.append(MenuOption("< Back", tint: .navigation, compact: true))
+        showMenuOptions(options)
+        closeHandler = { [weak self] in self?.showAIProviderMenu() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1: // Test
+                self.print("")
+                self.print("  Testing Apple On-Device AI...", color: .dimGreen)
+                DMEngine.shared.testAppleModel { success, errorMessage in
+                    DispatchQueue.main.async {
+                        self.print("")
+                        if success {
+                            self.print("  Test passed!", color: .brightGreen)
+                            self.print("  Apple On-Device AI responded.", color: .brightGreen)
+                        } else {
+                            self.print("  TEST FAILED", color: .red, bold: true)
+                            self.print("  \(errorMessage ?? "Unknown error.")", color: .yellow)
+                        }
+                        self.print("")
+                        self.waitForContinue()
+                        self.inputHandler = { [weak self] _ in
+                            self?.showAppleAIInfo()
+                        }
                     }
-                    self?.print("")
-                    self?.print("Tap 'Set API Key' in Settings to", color: .dimGreen)
-                    self?.print("get your key and paste it in.", color: .dimGreen)
                 }
-                self?.print("")
-                self?.waitForContinue()
-                self?.inputHandler = { [weak self] _ in
-                    if dm.apiKey(for: selected) == nil {
-                        self?.promptAPIKey()
-                    } else {
-                        self?.showAIProviderMenu()
-                    }
+            case 2: // Use Apple AI
+                DMEngine.shared.apiKey = nil
+                DMEngine.shared.clearHistory()
+                self.dmChatLog = []
+                self.print("")
+                self.print("  Switched to Apple On-Device AI.", color: .brightGreen)
+                self.print("")
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.showAIProviderMenu()
                 }
+            default: // Back
+                self.showAIProviderMenu()
             }
         }
     }
@@ -10346,89 +10359,43 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// The account-billing page for a provider that requires a paid account.
+    /// nil for Google, which has a free tier and no billing page to visit.
+    private func billingURL(for provider: AIProvider) -> String? {
+        switch provider {
+        case .anthropic: return "https://console.anthropic.com/settings/billing"
+        case .openAI: return "https://platform.openai.com/settings/billing"
+        case .google: return nil
+        }
+    }
+
     private func promptAPIKey(showClearConfirm: Bool = false) {
         let provider = DMEngine.shared.provider
         clearTerminal()
         printTitle("Set API Key")
         print("")
         print("  Provider: \(provider.displayName)", color: .cyan)
-        print("")
         if provider == .google {
-            print("  Gemini is FREE — no credit card", color: .brightGreen)
-            print("  needed! Just a Google account.", color: .brightGreen)
-            print("")
-            print("  Note: You must be 18+ to create", color: .yellow)
-            print("  a Google API key.", color: .yellow)
-            print("")
-            print("  HOW TO GET YOUR KEY:", color: .cyan, bold: true)
-            print("  1. Tap 'Get Free Key' below", color: .dimGreen)
-            print("  2. Sign in with your Google account", color: .dimGreen)
-            print("  3. Click 'Create API Key'", color: .dimGreen)
-            print("  4. A long key starting with 'AIza'", color: .dimGreen)
-            print("     will appear — tap the copy icon", color: .dimGreen)
-            print("  5. Come back here and tap 'Paste Key'", color: .dimGreen)
-            print("")
-            print("  Google lets you view your key again", color: .dimGreen)
-            print("  later, so don't worry if you lose it.", color: .dimGreen)
-        } else if provider == .anthropic {
-            print("  Claude is Anthropic's AI — one of", color: .dimGreen)
-            print("  the best DMs available. Requires a", color: .dimGreen)
-            print("  paid account with credit.", color: .dimGreen)
-            print("")
-            print("  HOW TO GET YOUR KEY:", color: .cyan, bold: true)
-            print("  1. Tap 'Get Key' — this opens the", color: .dimGreen)
-            print("     Anthropic console API keys page", color: .dimGreen)
-            print("  2. Sign in or create a free account", color: .dimGreen)
-            print("  3. Click the '+ Create Key' button", color: .dimGreen)
-            print("  4. Give it any name (e.g. 'DnD')", color: .dimGreen)
-            print("  5. Your key appears — it starts with", color: .dimGreen)
-            print("     sk-ant-api03-... Copy it NOW!", color: .dimGreen)
-            print("  6. Come back here and tap 'Paste Key'", color: .dimGreen)
-            print("")
-            print("  IMPORTANT:", color: .red, bold: true)
-            print("  The key is shown ONLY ONCE when you", color: .yellow)
-            print("  create it. You cannot go back to view", color: .yellow)
-            print("  or copy it later. If you lose it, you", color: .yellow)
-            print("  must delete the old key and create a", color: .yellow)
-            print("  new one. So copy it straight away!", color: .yellow)
-            print("")
-            print("  COST: Claude uses pay-as-you-go.", color: .cyan)
-            print("  A typical dungeon session costs only", color: .dimGreen)
-            print("  a few pence. Add credit at:", color: .dimGreen)
-            print("  console.anthropic.com/settings/billing", color: .dimGreen)
-        } else if provider == .openAI {
-            print("  ChatGPT is OpenAI's AI. Requires a", color: .dimGreen)
-            print("  paid account with credit.", color: .dimGreen)
-            print("")
-            print("  HOW TO GET YOUR KEY:", color: .cyan, bold: true)
-            print("  1. Tap 'Get Key' — this opens the", color: .dimGreen)
-            print("     OpenAI API keys page", color: .dimGreen)
-            print("  2. Sign in or create an account", color: .dimGreen)
-            print("  3. Click '+ Create new secret key'", color: .dimGreen)
-            print("  4. Give it any name (e.g. 'DnD')", color: .dimGreen)
-            print("  5. Your key appears — it starts with", color: .dimGreen)
-            print("     sk-... Copy it NOW!", color: .dimGreen)
-            print("  6. Come back here and tap 'Paste Key'", color: .dimGreen)
-            print("")
-            print("  IMPORTANT:", color: .red, bold: true)
-            print("  The key is shown ONLY ONCE when you", color: .yellow)
-            print("  create it. You cannot go back to view", color: .yellow)
-            print("  or copy it later. If you lose it, you", color: .yellow)
-            print("  must delete the old key and create a", color: .yellow)
-            print("  new one. So copy it straight away!", color: .yellow)
-            print("")
-            print("  COST: OpenAI uses pay-as-you-go.", color: .cyan)
-            print("  A typical dungeon session costs only", color: .dimGreen)
-            print("  a few pence. Add credit at:", color: .dimGreen)
-            print("  platform.openai.com/settings/billing", color: .dimGreen)
+            print("  Free tier — just needs a Google", color: .brightGreen)
+            print("  account (you must be 18+).", color: .brightGreen)
+        } else {
+            print("  Requires a paid account with", color: .dimGreen)
+            print("  credit — a typical session costs", color: .dimGreen)
+            print("  only a few pence. See '?' below for", color: .dimGreen)
+            print("  step-by-step setup + billing info.", color: .dimGreen)
         }
+        print("")
 
-        // Show existing key status
+        // Show existing key status prominently, whether set or not — this
+        // is the actual state of the world, front and centre, instead of
+        // buried after a wall of setup instructions.
         if let existingKey = DMEngine.shared.apiKey, !existingKey.isEmpty {
-            print("")
-            let preview = String(existingKey.suffix(6))
-            print("  Current key: ...\(preview)", color: .brightGreen)
-            print("  Setting a new key will replace it.", color: .dimGreen)
+            print("  Current key: \(redactedKeyPreview(existingKey)) (\(existingKey.count) chars)", color: .brightGreen)
+            if let warning = keyFormatWarning(for: provider, key: existingKey) {
+                print("  Note: \(warning.message)", color: .yellow)
+            }
+        } else {
+            print("  No key set for \(provider.displayName) yet.", color: .yellow)
         }
 
         // Note about key preservation
@@ -10443,24 +10410,24 @@ class GameEngine: ObservableObject {
 
         // Handle clear confirmation overlay
         if showClearConfirm {
-            print("  Are you sure you want to clear", color: .red)
+            print("  Are you sure you want to remove", color: .red)
             print("  this API key?", color: .red)
             print("")
             print("  Tip: Copy the key first using", color: .dimGreen)
             print("  'Copy Key' to back it up.", color: .dimGreen)
             print("")
-            var confirmOpts = [MenuOption("Clear Key", tint: .danger), MenuOption("Copy Key First")]
+            var confirmOpts = [MenuOption("Remove Key", tint: .danger), MenuOption("Copy Key First")]
             confirmOpts.append(MenuOption("< Back"))
             showMenuOptions(confirmOpts)
             closeHandler = { [weak self] in self?.promptAPIKey() }
             menuHandler = { [weak self] choice in
                 guard let self = self else { return }
                 switch choice {
-                case 1: // Clear
+                case 1: // Remove
                     self.backupSingleAPIKeyToKeychain(for: provider)
                     DMEngine.shared.apiKey = nil
                     self.print("")
-                    self.print("  API key cleared.", color: .yellow)
+                    self.print("  API key removed.", color: .yellow)
                     self.print("  (Backed up to Keychain — use", color: .dimGreen)
                     self.print("  'Load Key' to restore it.)", color: .dimGreen)
                     self.print("")
@@ -10494,9 +10461,10 @@ class GameEngine: ObservableObject {
             options.append("Get Free Key")
         } else {
             options.append("Get Key")
+            options.append("Billing Page")
         }
         options.append("Paste Key")
-        options.append("Type Key")
+        options.append("Edit Key")
         let hasKey = DMEngine.shared.apiKey != nil && !(DMEngine.shared.apiKey ?? "").isEmpty
         // Auto-backup current key to Keychain whenever we visit this screen
         if hasKey {
@@ -10506,7 +10474,7 @@ class GameEngine: ObservableObject {
         if hasKey {
             options.append("Test Key")
             options.append("Copy Key")
-            options.append("Clear Key")
+            options.append("Remove Key")
         }
         options.append("Load Key")
 
@@ -10515,7 +10483,7 @@ class GameEngine: ObservableObject {
             self?.showDMSettingsSubMenu()
         }
         var menuOpts = options.map { text -> MenuOption in
-            if text == "Clear Key" { return MenuOption(text, tint: .danger) }
+            if text == "Remove Key" { return MenuOption(text, tint: .danger) }
             if text == "Load Key" { return MenuOption(text, isDisabled: !hasKeychainBackup) }
             return MenuOption(text)
         }
@@ -10536,30 +10504,43 @@ class GameEngine: ObservableObject {
                     self.printTitle("API Key Help")
                     self.print("")
                     self.print("  GET KEY", color: .cyan, bold: true)
-                    self.printWrapped("Opens your provider's website where you can create an API key. Copy it there, then come back and paste it.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Opens your provider's website where you can create an API key. Copy it there, then come back and paste it. See below for the exact steps and what it costs.", indent: 2, color: .dimGreen)
                     self.print("")
+                    if self.billingURL(for: provider) != nil {
+                        self.print("  BILLING PAGE", color: .cyan, bold: true)
+                        self.printWrapped("Opens your provider's billing page directly. \(provider.displayName) needs a payment method on file before a key will actually work — this is where you add one.", indent: 2, color: .dimGreen)
+                        self.print("")
+                    }
                     self.print("  PASTE KEY", color: .cyan, bold: true)
                     self.printWrapped("Pastes a key from your clipboard. The quickest way to enter a key you've just copied.", indent: 2, color: .dimGreen)
                     self.print("")
-                    self.print("  TYPE KEY", color: .cyan, bold: true)
-                    self.printWrapped("Manually type or paste your API key into a text field. Use this if clipboard paste doesn't work.", indent: 2, color: .dimGreen)
+                    self.print("  EDIT KEY", color: .cyan, bold: true)
+                    self.printWrapped("Opens a text field with your current key already filled in, so you can review or correct it character-by-character, or type/paste a new one from scratch if there's no key yet.", indent: 2, color: .dimGreen)
                     self.print("")
                     if hasKey {
                         self.print("  TEST KEY", color: .cyan, bold: true)
                         self.printWrapped("Re-runs the connection test against your currently stored key, and shows its length and first/last characters — useful if a key seems right but keeps failing.", indent: 2, color: .dimGreen)
                         self.print("")
                         self.print("  COPY KEY", color: .cyan, bold: true)
-                        self.printWrapped("Copies your current key to the clipboard — useful as a backup before clearing.", indent: 2, color: .dimGreen)
+                        self.printWrapped("Copies your current key to the clipboard — useful as a backup before removing it.", indent: 2, color: .dimGreen)
                         self.print("")
-                        self.print("  CLEAR KEY", color: .cyan, bold: true)
-                        self.printWrapped("Removes your stored API key. The key is automatically backed up to Keychain first, so you can restore it with Load Key. Long-press Clear Key to permanently delete the key and its backup.", indent: 2, color: .dimGreen)
+                        self.print("  REMOVE KEY", color: .cyan, bold: true)
+                        self.printWrapped("Removes your stored API key. The key is automatically backed up to Keychain first, so you can restore it with Load Key. Long-press Remove Key to permanently delete the key and its backup.", indent: 2, color: .dimGreen)
                         self.print("")
                     }
                     self.print("  LOAD KEY", color: .cyan, bold: true)
-                    self.printWrapped("Restores a previously backed-up key from the device Keychain. Keys are backed up automatically when cleared, or manually via Save & Backup.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Restores a previously backed-up key from the device Keychain. Keys are backed up automatically when removed, or manually via Save & Backup.", indent: 2, color: .dimGreen)
                     self.print("")
                     self.printWrapped("Your API key is stored locally on this device and never shared. Each provider has its own key — switching providers preserves other keys.", indent: 2, color: .dimGreen)
                     self.print("")
+                    if provider != .google {
+                        self.print("  GETTING A PAID ACCOUNT SET UP", color: .cyan, bold: true)
+                        self.printWrapped("1. Tap Get Key — sign in or create an account.", indent: 2, color: .dimGreen)
+                        self.printWrapped("2. Create a new API key there and copy it immediately — it's shown once only.", indent: 2, color: .dimGreen)
+                        self.printWrapped("3. Come back and use Paste Key or Edit Key.", indent: 2, color: .dimGreen)
+                        self.printWrapped("4. If Test Key fails with a billing/credit error, tap Billing Page and add a payment method — a typical session only costs a few pence.", indent: 2, color: .dimGreen)
+                        self.print("")
+                    }
                 }
                 return
             }
@@ -10582,6 +10563,19 @@ class GameEngine: ObservableObject {
                     }
                 }
                 // When they come back, show the same menu again
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    self.promptAPIKey()
+                }
+            } else if selected == "Billing Page" {
+                if let urlString = self.billingURL(for: provider), let url = URL(string: urlString) {
+                    DispatchQueue.main.async {
+                        #if canImport(UIKit)
+                        UIApplication.shared.open(url)
+                        #elseif os(macOS)
+                        NSWorkspace.shared.open(url)
+                        #endif
+                    }
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                     self.promptAPIKey()
                 }
@@ -10620,10 +10614,15 @@ class GameEngine: ObservableObject {
                     }
                 }
                 #endif
-            } else if selected == "Type Key" {
-                // Manual text entry
+            } else if selected == "Edit Key" {
+                // Pre-fill with the actual current key (if any) so this
+                // doubles as "view" — you can see and correct it character
+                // by character, not just blindly overwrite it.
                 self.print("")
-                self.promptText("Paste your API key:")
+                self.promptText("Edit your API key:")
+                if let existing = DMEngine.shared.apiKey, !existing.isEmpty {
+                    self.prefillInputText = existing
+                }
                 self.inputHandler = { [weak self] key in
                     let trimmed = self?.sanitizedAPIKeyInput(key) ?? key.trimmingCharacters(in: .whitespacesAndNewlines)
                     if trimmed.isEmpty {
@@ -10673,7 +10672,7 @@ class GameEngine: ObservableObject {
                     }
                 }
                 #endif
-            } else if selected == "Clear Key" {
+            } else if selected == "Remove Key" {
                 self.promptAPIKey(showClearConfirm: true)
             } else if selected == "Load Key" {
                 if let restored = self.loadAPIKeyFromKeychain(for: provider) {
@@ -10696,11 +10695,11 @@ class GameEngine: ObservableObject {
                 }
             }
         }
-        // Long-press Clear Key → permanent delete (removes from Keychain too)
+        // Long-press Remove Key → permanent delete (removes from Keychain too)
         menuLongPressHandler = { [weak self] choice in
             guard let self = self else { return }
             let idx = choice - 1
-            guard idx >= 0 && idx < options.count && options[idx] == "Clear Key" else { return }
+            guard idx >= 0 && idx < options.count && options[idx] == "Remove Key" else { return }
             self.promptPermanentKeyDelete(provider: provider)
         }
     }

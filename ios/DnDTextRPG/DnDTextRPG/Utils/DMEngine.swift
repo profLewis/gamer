@@ -1535,6 +1535,40 @@ class DMEngine {
         }
     }
 
+    /// Same shape as testAPIKey (success, errorMessage), but for the Apple
+    /// on-device model — there's no key to check, just whether the model is
+    /// available on this hardware/OS and actually responds to a trivial
+    /// prompt, using a throwaway session rather than the real DM one so this
+    /// never disturbs an in-progress conversation's context.
+    func testAppleModel(completion: @escaping (Bool, String?) -> Void) {
+        #if canImport(FoundationModels)
+        guard #available(iOS 26.0, *) else {
+            completion(false, "Requires iOS 26 or later.")
+            return
+        }
+        guard isAppleModelAvailable else {
+            completion(false, "Not available on this device. Requires iPhone 16 or newer with Apple Intelligence enabled.")
+            return
+        }
+        Task {
+            do {
+                let session = LanguageModelSession(instructions: "Reply with exactly one word.")
+                let response = try await session.respond(to: "Say hello.")
+                let isEmpty = response.content.isEmpty
+                DispatchQueue.main.async {
+                    completion(!isEmpty, nil)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    completion(false, "\(error.localizedDescription)")
+                }
+            }
+        }
+        #else
+        completion(false, "Not supported on this platform.")
+        #endif
+    }
+
     private func testGoogleKey(apiKey: String, completion: @escaping (Bool, String?) -> Void) {
         let body: [String: Any] = [
             "contents": [["role": "user", "parts": [["text": "Say hello in one word."]]]],
