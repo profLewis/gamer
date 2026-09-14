@@ -30013,7 +30013,12 @@ class GameEngine: ObservableObject {
         dateFormatter.dateStyle = .short
         dateFormatter.timeStyle = .short
 
+        // Each save point's printed lines, so tapping its text loads it —
+        // same as the Continue Adventure list one screen back.
+        var entryLineRanges: [Range<Int>] = []
         for (index, bp) in breakpoints.enumerated() {
+            let lineStart = terminalLines.count
+            defer { entryLineRanges.append(lineStart..<terminalLines.count) }
             let dateStr = dateFormatter.string(from: bp.savedAt)
             let day = bp.gameTimeMinutes / 1440 + 1
             let hourOfDay = (bp.gameTimeMinutes % 1440) / 60
@@ -30044,7 +30049,7 @@ class GameEngine: ObservableObject {
                     self.printTitle("\(slot.slotName) — Help")
                     self.print("")
                     self.print("  LOAD LATEST / LOAD #N", color: .cyan, bold: true)
-                    self.printWrapped("Continue this adventure from that save point. Long-press any of these to load the latest one directly.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Continue this adventure from that save point — tap its button or its text. Long-press any of these to load the latest one directly.", indent: 2, color: .dimGreen)
                     self.print("")
                     self.print("  READ TALE", color: .cyan, bold: true)
                     self.printWrapped("A narrative of this adventure so far — same style whether it's finished or still in progress.", indent: 2, color: .dimGreen)
@@ -30061,6 +30066,12 @@ class GameEngine: ObservableObject {
         menuLongPressHandler = { [weak self] choice in
             guard choice > 0 && choice <= breakpoints.count else { return }
             self?.loadGame(breakpoints[choice - 1])
+        }
+
+        textLongPressHandler = { [weak self] lineIndex in
+            guard let idx = entryLineRanges.firstIndex(where: { $0.contains(lineIndex) }),
+                  idx < breakpoints.count else { return }
+            self?.loadGame(breakpoints[idx])
         }
 
         closeHandler = { [weak self] in self?.showLoadGameMenu(returnTo: origin) }
@@ -30752,7 +30763,10 @@ class GameEngine: ObservableObject {
         dateFormatter.dateStyle = .medium
         dateFormatter.timeStyle = .short
 
+        var entryLineRanges: [Range<Int>] = []
         for (i, bp) in breakpoints.enumerated() {
+            let lineStart = terminalLines.count
+            defer { entryLineRanges.append(lineStart..<terminalLines.count) }
             let dateStr = dateFormatter.string(from: bp.savedAt)
             let label = i == 0 ? " (latest)" : ""
             print("\(i + 1). \(dateStr)\(label)", color: .brightGreen)
@@ -30792,6 +30806,13 @@ class GameEngine: ObservableObject {
             guard choice >= 1 && choice <= breakpoints.count else { return }
             let bp = breakpoints[choice - 1]
             self.confirmDeleteBreakpoint(bp, slot: slot, isLast: breakpoints.count == 1, returnTo: origin, onBack: onBack, onAllDeleted: onAllDeleted)
+        }
+
+        // Tapping a save's text works like its button — still asks to confirm.
+        textLongPressHandler = { [weak self] lineIndex in
+            guard let idx = entryLineRanges.firstIndex(where: { $0.contains(lineIndex) }),
+                  idx < breakpoints.count else { return }
+            self?.confirmDeleteBreakpoint(breakpoints[idx], slot: slot, isLast: breakpoints.count == 1, returnTo: origin, onBack: onBack, onAllDeleted: onAllDeleted)
         }
     }
 
