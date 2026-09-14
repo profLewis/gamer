@@ -18054,9 +18054,18 @@ class GameEngine: ObservableObject {
     }
 
     /// Types `text` out a few letters at a time, with a soft typewriter
-    /// tick (Reduce Animations: all at once).
-    private func typewrite(_ text: String, color: TerminalColor) {
+    /// tick (Reduce Animations: all at once). A new line (or a tap) finishes
+    /// any line still being typed first.
+    private var typewriterFinish: (() -> Void)?
+
+    private func finishTypewriter() {
         typewriterTimer?.invalidate()
+        typewriterFinish?()
+        typewriterFinish = nil
+    }
+
+    private func typewrite(_ text: String, color: TerminalColor) {
+        finishTypewriter()
         let start = terminalLines.count
         printWrapped(text, indent: 2, color: color)
         let end = terminalLines.count
@@ -18064,11 +18073,19 @@ class GameEngine: ObservableObject {
         let full = (start..<end).map { terminalLines[$0].text }
         for i in start..<end { terminalLines[i].text = "" }
         let generation = screenGeneration
+        typewriterFinish = { [weak self] in
+            guard let self = self, self.screenGeneration == generation else { return }
+            for (k, t) in full.enumerated() where start + k < self.terminalLines.count { self.terminalLines[start + k].text = t }
+        }
         var lineIndex = 0
         var shown = 0
         typewriterTimer = Timer.scheduledTimer(withTimeInterval: 0.028, repeats: true) { [weak self] timer in
-            guard let self = self, self.screenGeneration == generation, lineIndex < full.count,
-                  start + lineIndex < self.terminalLines.count else { timer.invalidate(); return }
+            guard let self = self, self.screenGeneration == generation else { timer.invalidate(); return }
+            guard lineIndex < full.count, start + lineIndex < self.terminalLines.count else {
+                timer.invalidate()
+                self.typewriterFinish = nil
+                return
+            }
             shown += 1
             self.terminalLines[start + lineIndex].text = String(full[lineIndex].prefix(shown))
             if shown % 3 == 1 { SoundManager.shared.playTypewriterTick() }
@@ -18082,10 +18099,12 @@ class GameEngine: ObservableObject {
     /// Tale leads straight on to the Progress Tale.
     private func showTalePages(title: String, lines: [String], page: Int, onBack: @escaping () -> Void,
                                emptyMessage: String = "There's no tale to tell yet.",
-                               finishLabel: String? = nil, onFinish: (() -> Void)? = nil) {
-        clearTerminal()
-        printTitle(title)
-        print("")
+                               finishLabel: String? = nil, onFinish: (() -> Void)? = nil, appendOnly: Bool = false) {
+        if !appendOnly || lines.isEmpty {
+            clearTerminal()
+            printTitle(title)
+            print("")
+        }
         guard !lines.isEmpty else {
             printWrapped(emptyMessage, indent: 2, color: .dimGreen)
             var opts: [String] = []
@@ -18101,6 +18120,17 @@ class GameEngine: ObservableObject {
         }
         let i = min(max(0, page), lines.count - 1)
         let last = i == lines.count - 1
+        // Earlier paragraphs stay on the page; the new one types in below.
+        if appendOnly {
+            finishTypewriter()
+            suppressAutoScroll = false
+            print("")
+        } else {
+            for k in 0..<i {
+                printWrapped(lines[k], indent: 2, color: .green)
+                print("")
+            }
+        }
         typewrite(lines[i], color: last ? .yellow : .green)
         var opts: [String] = []
         if !last { opts.append("Next") } else if let label = finishLabel, onFinish != nil { opts.append(label) }
@@ -18108,7 +18138,7 @@ class GameEngine: ObservableObject {
         opts.append("< Back")
         showMenu(opts)
         let next: () -> Void = { [weak self] in
-            self?.showTalePages(title: title, lines: lines, page: i + 1, onBack: onBack, emptyMessage: emptyMessage, finishLabel: finishLabel, onFinish: onFinish)
+            self?.showTalePages(title: title, lines: lines, page: i + 1, onBack: onBack, emptyMessage: emptyMessage, finishLabel: finishLabel, onFinish: onFinish, appendOnly: true)
         }
         let previous: () -> Void = { [weak self] in
             self?.showTalePages(title: title, lines: lines, page: i - 1, onBack: onBack, emptyMessage: emptyMessage, finishLabel: finishLabel, onFinish: onFinish)
@@ -18253,8 +18283,15 @@ class GameEngine: ObservableObject {
             done()
             return
         }
-        clearTerminal()
-        for _ in 0..<4 { print("") }
+        // One page: each paragraph types in below the last, and the view
+        // follows it down.
+        if i == 0 {
+            clearTerminal()
+            print("")
+        } else {
+            finishTypewriter()
+            print("")
+        }
         typewrite(lines[i], color: i == lines.count - 1 ? .yellow : .brightGreen)
         waitForContinue(fullScreenTap: true, autoContinue: false)
         let token = UUID()
@@ -18268,8 +18305,11 @@ class GameEngine: ObservableObject {
             self.closeHandler = nil
             done()
         }
+        // Long enough to type and read it — a little longer at the very end.
         let words = lines[i].split(separator: " ").count
-        scheduleAutoAdvance(after: max(3.5, Double(words) / 2.4), isStillValid: { [weak self] in
+        let typing = reduceAnimations ? 0 : Double(lines[i].count) * 0.028
+        let wait = typing + max(2.5, Double(words) / 3.2) + (i == lines.count - 1 ? 4.0 : 0)
+        scheduleAutoAdvance(after: wait, isStillValid: { [weak self] in
             guard let self = self else { return false }
             return self.cutsceneToken == token && self.awaitingContinue
         }, fire: { [weak self] in self?.handleContinue() })
