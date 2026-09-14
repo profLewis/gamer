@@ -284,6 +284,11 @@ struct FAQData {
             keywords: ["rare goods", "under the counter", "special item", "secret stock"]
         ),
         FAQEntry(
+            question: "Can I skip the \"are you sure?\" questions?",
+            answer: "Yes — long-press the button instead of tapping it. Long-pressing Quit Without Saving, Quit+Save, Delete Adventure, a save in Delete One Save, Clear All Saves or Give Up Quest does it straight away, with no confirmation. A normal tap still asks first.",
+            keywords: ["are you sure", "confirm", "confirmation", "skip confirmation", "long-press", "long press", "quit without saving", "delete"]
+        ),
+        FAQEntry(
             question: "Is there a bigger map?",
             answer: "Cartographers speak of an atlas for those patient enough to press — and hold — the map they already have. The gyms of the deep teach Map Training too, if you can afford it.",
             keywords: ["atlas", "world map", "bigger map", "whole map", "full map", "map explorer", "cartography", "map training"]

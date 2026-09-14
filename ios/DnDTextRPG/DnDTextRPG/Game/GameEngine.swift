@@ -5138,6 +5138,12 @@ class GameEngine: ObservableObject {
             printWrapped("Navigate with buttons or type commands at the > prompt. Swipe left to go back, swipe right to continue.", indent: 2, color: .dimGreen)
         }
         print("")
+        print("  • Long-press", color: .brightGreen, bold: true)
+        printWrapped("    a button for its shortcut — e.g. long-press Quit Without Saving, Delete or Give Up Quest to skip the \"are you sure?\" step, Long Rest to rest fast, or Continue Adventure to jump straight into your latest save.", color: .green)
+        print("")
+        print("  • Auto-Continue", color: .brightGreen, bold: true)
+        printWrapped("    Many screens move on by themselves after a few seconds. A little hourglass turns beside the > prompt while they count down: tap it to pause (it says paused), tap again to carry on, long-press it to hurry. Settings > Gameplay turns Auto-Continue off or changes how long screens wait.", color: .green)
+        print("")
 
         let helpTopics = ["Getting Started", "Exploration", "Combat",
                           "Character & Party", "Recovery",
@@ -9062,6 +9068,13 @@ class GameEngine: ObservableObject {
         showMenuOptions(menuOpts)
         closeHandler = { [weak self] in self?.showSettings() }
         installSettingUndoRedo(screen: "s:save") { [weak self] in self?.showSaveSettings() }
+        // Long-press Clear All Saves skips the confirmation.
+        menuLongPressHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= options.count, options[choice - 1] == "Clear All Saves" else { return }
+            for save in SaveGameManager.shared.listAllSaves() { SaveGameManager.shared.delete(id: save.id) }
+            self.showSaveSettings()
+            self.print("All saves deleted.", color: .yellow)
+        }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == menuOpts.count {
@@ -19811,6 +19824,17 @@ class GameEngine: ObservableObject {
     /// confirm step rather than a single tap — same weight as other one-way
     /// actions in the game. `returnTo` is wherever this was reached from
     /// (Party Status, or the quest-giver's own conversation screen).
+    /// Gives up the active quest — the confirmed path of confirmAbandonQuest,
+    /// and what a long-press on Give Up Quest does directly.
+    private func abandonActiveQuest(returnTo: @escaping () -> Void) {
+        guard let quest = activeQuest else { returnTo(); return }
+        let charged = chargeQuestAbandonPenalty()
+        logEvent("Gave up quest: \(quest.description) (paid \(charged) gold in lost goodwill)", category: "QUEST")
+        activeQuest = nil
+        print("  The party's reputation takes a hit — \(charged) gold poorer for it.", color: .yellow)
+        waitForContinueWithTimeout { returnTo() }
+    }
+
     private func confirmAbandonQuest(returnTo: @escaping () -> Void) {
         guard let quest = activeQuest else { returnTo(); return }
         let penalty = 20 + (dungeon?.level ?? 1) * 10
@@ -19826,11 +19850,7 @@ class GameEngine: ObservableObject {
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             if choice == 1 {
-                let charged = self.chargeQuestAbandonPenalty()
-                self.logEvent("Gave up quest: \(quest.description) (paid \(charged) gold in lost goodwill)", category: "QUEST")
-                self.activeQuest = nil
-                self.print("  The party's reputation takes a hit — \(charged) gold poorer for it.", color: .yellow)
-                self.waitForContinueWithTimeout { returnTo() }
+                self.abandonActiveQuest(returnTo: returnTo)
             } else {
                 returnTo()
             }
@@ -22484,6 +22504,13 @@ class GameEngine: ObservableObject {
 
         closeHandler = { [weak self] in
             self?.showExplorationView()
+        }
+
+        // Long-press Give Up Quest skips the "are you sure?" step.
+        menuLongPressHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= menuOpts.count, menuOpts[choice - 1] == "Give Up Quest" else { return }
+            self.print("")
+            self.abandonActiveQuest(returnTo: { [weak self] in self?.showPartyStatus() })
         }
 
         menuHandler = { [weak self] choice in
@@ -29733,6 +29760,18 @@ class GameEngine: ObservableObject {
                 self?.cancelSaveMenuIdleTimer()
                 self?.showExplorationView()
             }
+            // Long-press skips the "are you sure?" step.
+            menuLongPressHandler = { [weak self] choice in
+                guard let self = self, choice >= 1 && choice <= options.count, let slotId = self.activeSlotId else { return }
+                switch options[choice - 1] {
+                case "Quit-Save":
+                    self.performQuit()
+                case "Quit+Save":
+                    self.performSave(slotId: slotId, slotName: slotName)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.performQuit() }
+                default: break
+                }
+            }
             menuHandler = { [weak self] choice in
                 guard let self = self, choice >= 1 && choice <= options.count else { return }
                 self.cancelSaveMenuIdleTimer()
@@ -29992,6 +30031,10 @@ class GameEngine: ObservableObject {
         // it doesn't quit, and there's no active slot yet to route them
         // through the main Save/Quit screen's own Quit-Save button).
         promptTextWithMenu("Enter a name, or use default:", options: [defaultName, "Quit Without Saving"])
+        // Long-press Quit Without Saving skips the confirmation.
+        menuLongPressHandler = { [weak self] choice in
+            if choice == 2 { self?.performQuit() }
+        }
 
         closeHandler = { [weak self] in
             self?.showExplorationView()
@@ -30106,6 +30149,9 @@ class GameEngine: ObservableObject {
                 self.print("")
 
                 self.showMenu(["Yes, Replace", "Different Slot", "Quit Without Saving"])
+                self.menuLongPressHandler = { [weak self] confirm in
+                    if confirm == 3 { self?.performQuit() }
+                }
                 self.closeHandler = { [weak self] in self?.showExplorationView() }
                 self.menuHandler = { [weak self] confirm in
                     guard let self = self else { return }
@@ -30752,6 +30798,12 @@ class GameEngine: ObservableObject {
         options.append(contentsOf: ["Delete Adventure", "?", "< Back"])
         showMenu(options)
         closeHandler = backToDetail
+        // Long-press Delete Adventure deletes straight away — no confirmation.
+        menuLongPressHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= options.count, options[choice - 1] == "Delete Adventure" else { return }
+            self.deleteSlotClearingActiveIfNeeded(slot.slotId)
+            self.showLoadGameMenu(returnTo: origin)
+        }
         menuHandler = { [weak self] choice in
             guard let self = self, choice >= 1, choice <= options.count else { return }
             let backToManage: () -> Void = { [weak self] in self?.showSaveSlotManage(slot: slot, returnTo: origin) }
@@ -31428,6 +31480,17 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(menuOpts)
 
+        // Long-press a save to delete it straight away (no confirmation).
+        menuLongPressHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= breakpoints.count else { return }
+            if breakpoints.count == 1 {
+                self.deleteSlotClearingActiveIfNeeded(slot.slotId)
+                (onAllDeleted ?? { [weak self] in self?.showManageSavesMenu(returnTo: origin) })()
+            } else {
+                SaveGameManager.shared.delete(id: breakpoints[choice - 1].id)
+                self.showBreakpointList(slot: slot, returnTo: origin, onBack: onBack, onAllDeleted: onAllDeleted)
+            }
+        }
         closeHandler = backTarget
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
@@ -31552,7 +31615,7 @@ class GameEngine: ObservableObject {
                 self?.showInlineHelp {
                     self?.printTitle("Delete Adventure — Help")
                     self?.print("")
-                    self?.printWrapped("Permanently deletes every save point for this adventure. This cannot be undone — 'No, Keep It' cancels safely.", indent: 2, color: .dimGreen)
+                    self?.printWrapped("Permanently deletes every save point for this adventure. This cannot be undone — 'No, Keep It' cancels safely. (In a hurry? Long-press Delete Adventure to skip this step.)", indent: 2, color: .dimGreen)
                     self?.print("")
                 }
             } else {
