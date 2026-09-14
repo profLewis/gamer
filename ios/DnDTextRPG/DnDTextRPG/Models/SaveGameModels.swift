@@ -53,6 +53,9 @@ struct SaveGame: Codable, Identifiable {
 
     // Further quests a strong party is carrying at the same time (nil in older saves)
     var otherQuests: [SideQuest]? = nil
+
+    // The adventure's opening tale, a line a page (nil in older saves)
+    var introLines: [String]? = nil
 }
 
 // MARK: - Save Slot (grouped view)

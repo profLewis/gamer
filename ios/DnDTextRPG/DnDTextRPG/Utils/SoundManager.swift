@@ -316,6 +316,12 @@ class SoundManager {
         ])
     }
 
+    /// A soft typewriter key tick (the Opening Tale).
+    func playTypewriterTick() {
+        guard battleSoundsEnabled else { return }
+        playSequence([(0, 0.012, 0.05, .noise)])
+    }
+
     /// Fight Club: the party's supporters cheer — a rush of voices rising.
     func playCrowdCheer() {
         guard battleSoundsEnabled else { return }

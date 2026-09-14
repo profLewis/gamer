@@ -5803,7 +5803,7 @@ class GameEngine: ObservableObject {
         print("  (Long-press for auto-setup)", color: .dimGreen)
         print("")
 
-        showMenu(["2 Characters", "3 Characters", "4 Characters"])
+        showMenu(["2 Adventurers", "3 Adventurers", "4 Adventurers"])
 
         closeHandler = { [weak self] in self?.showMultiplayerHub() }
         menuHandler = { [weak self] choice in
@@ -8631,7 +8631,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest, otherQuests: otherQuests
+            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines
         )
 
         try? SaveGameManager.shared.save(saveGame)
@@ -18024,10 +18024,95 @@ class GameEngine: ObservableObject {
     // why this party is going down, what they're after, what they might
     // gain, and what their particular skills should count for.
     private var cutsceneActive = false
+    /// This adventure's opening tale, a line a page (Party Status > Opening Tale).
+    var adventureIntroLines: [String] = []
+    private var typewriterTimer: Timer?
+
+    /// For adventures saved before the tale was kept: the lines, recovered
+    /// from the Adventure Log's "The tale begins:" entry.
+    private func recoveredIntroLines() -> [String] {
+        guard let entry = adventureLog.first(where: { $0.contains("The tale begins: ") }),
+              let range = entry.range(of: "The tale begins: ") else { return [] }
+        let chars = Array(String(entry[range.upperBound...]))
+        var lines: [String] = []
+        var current = ""
+        for (i, ch) in chars.enumerated() {
+            current.append(ch)
+            let next: Swift.Character = i + 1 < chars.count ? chars[i + 1] : " "
+            if ".!?…".contains(ch) && next == " " {
+                lines.append(current.trimmingCharacters(in: .whitespaces))
+                current = ""
+            }
+        }
+        let rest = current.trimmingCharacters(in: .whitespaces)
+        if !rest.isEmpty { lines.append(rest) }
+        return lines
+    }
+
+    /// Types `text` out a few letters at a time, with a soft typewriter
+    /// tick (Reduce Animations: all at once).
+    private func typewrite(_ text: String, color: TerminalColor) {
+        typewriterTimer?.invalidate()
+        let start = terminalLines.count
+        printWrapped(text, indent: 2, color: color)
+        let end = terminalLines.count
+        guard !reduceAnimations, end > start else { return }
+        let full = (start..<end).map { terminalLines[$0].text }
+        for i in start..<end { terminalLines[i].text = "" }
+        let generation = screenGeneration
+        var lineIndex = 0
+        var shown = 0
+        typewriterTimer = Timer.scheduledTimer(withTimeInterval: 0.028, repeats: true) { [weak self] timer in
+            guard let self = self, self.screenGeneration == generation, lineIndex < full.count,
+                  start + lineIndex < self.terminalLines.count else { timer.invalidate(); return }
+            shown += 1
+            self.terminalLines[start + lineIndex].text = String(full[lineIndex].prefix(shown))
+            if shown % 3 == 1 { SoundManager.shared.playTypewriterTick() }
+            if shown >= full[lineIndex].count { lineIndex += 1; shown = 0 }
+        }
+    }
+
+    /// The adventure's opening tale again, a page at a time — typed out
+    /// like a typewriter; swipe (or Next / Previous) between pages.
+    func showOpeningTale(page: Int, onBack: @escaping () -> Void) {
+        let lines = adventureIntroLines.isEmpty ? recoveredIntroLines() : adventureIntroLines
+        clearTerminal()
+        printTitle("The Tale Begins")
+        print("")
+        guard !lines.isEmpty else {
+            printWrapped("This adventure began before tales were told — there's no opening tale to tell.", indent: 2, color: .dimGreen)
+            showMenu(["< Back"])
+            closeHandler = onBack
+            menuHandler = { _ in onBack() }
+            return
+        }
+        let i = min(max(0, page), lines.count - 1)
+        typewrite(lines[i], color: i == lines.count - 1 ? .yellow : .green)
+        var opts: [String] = []
+        if i < lines.count - 1 { opts.append("Next") }
+        if i > 0 { opts.append("Previous") }
+        opts.append("< Back")
+        showMenu(opts)
+        let next: () -> Void = { [weak self] in self?.showOpeningTale(page: i + 1, onBack: onBack) }
+        let previous: () -> Void = { [weak self] in self?.showOpeningTale(page: i - 1, onBack: onBack) }
+        cardPositionLabel = "\(i + 1)/\(lines.count)"
+        swipeLeftHandler = i < lines.count - 1 ? next : nil
+        swipeRightHandler = i > 0 ? previous : nil
+        closeHandler = onBack
+        menuHandler = { choice in
+            guard choice >= 1, choice <= opts.count else { return }
+            switch opts[choice - 1] {
+            case "Next": next()
+            case "Previous": previous()
+            default: onBack()
+            }
+        }
+    }
     private var cutsceneToken = UUID()
 
     private func playAdventureCutscene(then done: @escaping () -> Void) {
         let lines = adventureBackstory()
+        adventureIntroLines = lines
         logEvent("The tale begins: " + lines.joined(separator: " "), category: "STORY")
         cutsceneActive = true
         func show(_ i: Int) {
@@ -24238,7 +24323,7 @@ class GameEngine: ObservableObject {
         // Build menu
         // "Brain" (was "AI") — which mind runs the Dungeon Master.
         // Party Review first (the default); Brain now lives in Settings.
-        var menuOpts = ["Party Review", "Tell the Tale", "Save to Roster", "Adventure Log", "Lore", "Settings", "?", "< Back"]
+        var menuOpts = ["Party Review", "Tell the Tale", "Opening Tale", "Save to Roster", "Adventure Log", "Lore", "Settings", "?", "< Back"]
         if dungeon?.hasCartography == true {
             menuOpts.insert("Atlas", at: menuOpts.firstIndex(of: "Lore") ?? 0)
         }
@@ -24286,6 +24371,8 @@ class GameEngine: ObservableObject {
                 self.showAdventureLog()
             case "Tell the Tale":
                 self.tellTaleSoFar(onBack: { [weak self] in self?.showPartyStatus() })
+            case "Opening Tale":
+                self.showOpeningTale(page: 0, onBack: { [weak self] in self?.showPartyStatus() })
             case "Atlas":
                 self.showAtlas(onBack: { [weak self] in self?.showPartyStatus() })
             case "Lore":
@@ -24320,7 +24407,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest, otherQuests: otherQuests
+            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines
         )
         showAdventureTale(AdventureTaleData(inProgress: snapshot), onBack: onBack)
     }
@@ -24477,6 +24564,7 @@ class GameEngine: ObservableObject {
             for (name, what) in [
                 ("Party Review", "edit adventurers and see their stat cards"),
                 ("Tell the Tale", "the story of this adventure so far"),
+                ("Opening Tale", "the tale that began this adventure, again — swipe for the next page"),
                 ("Save to Roster", "keep an adventurer's progress for future adventures"),
                 ("Adventure Log", "a timeline of what's happened"),
                 ("Lore", "the named merchants and folk you've met"),
@@ -25896,7 +25984,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest, otherQuests: otherQuests
+            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines
         )
         guard (try? SaveGameManager.shared.save(saveGame)) != nil else { return nil }
         return slotName
@@ -31606,7 +31694,7 @@ class GameEngine: ObservableObject {
                 torchTurnsRemaining: torchTurnsRemaining,
                 partyChatLog: partyChatLog.suffix(20).map { $0 },
                 monstersSlain: monstersSlain, combatsWon: combatsWon,
-                activeQuest: activeQuest, otherQuests: otherQuests
+                activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines
             )
             try? SaveGameManager.shared.save(hofSave)
             linkedSaveId = saveId
@@ -32335,7 +32423,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest, otherQuests: otherQuests
+            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines
         )
 
         do {
@@ -32383,7 +32471,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest, otherQuests: otherQuests
+            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines
         )
 
         do {
@@ -33013,7 +33101,7 @@ class GameEngine: ObservableObject {
                 partyChatLog: bp.partyChatLog,
                 monstersSlain: bp.monstersSlain,
                 combatsWon: bp.combatsWon,
-                activeQuest: bp.activeQuest, otherQuests: bp.otherQuests
+                activeQuest: bp.activeQuest, otherQuests: bp.otherQuests, introLines: bp.introLines
             )
             try? SaveGameManager.shared.save(copy)
         }
@@ -33591,7 +33679,7 @@ class GameEngine: ObservableObject {
                 gameTimeMinutes: bp.gameTimeMinutes, adventureLog: bp.adventureLog,
                 dmChatLog: bp.dmChatLog, torchLit: bp.torchLit, torchTurnsRemaining: bp.torchTurnsRemaining,
                 partyChatLog: bp.partyChatLog, monstersSlain: bp.monstersSlain, combatsWon: bp.combatsWon,
-                activeQuest: bp.activeQuest, otherQuests: bp.otherQuests
+                activeQuest: bp.activeQuest, otherQuests: bp.otherQuests, introLines: bp.introLines
             )
             try? SaveGameManager.shared.save(renamed)
         }
@@ -33834,6 +33922,7 @@ class GameEngine: ObservableObject {
         combatsWon = save.combatsWon
         activeQuest = save.activeQuest
         otherQuests = save.otherQuests ?? []
+        adventureIntroLines = save.introLines ?? []
         // Restore torch state — if not saved, auto-light if anyone has a torch
         if let savedTorchLit = save.torchLit {
             torchLit = savedTorchLit
@@ -34080,6 +34169,7 @@ class GameEngine: ObservableObject {
         combatsWon = 0
         activeQuest = nil
         otherQuests = []
+        adventureIntroLines = []
         activeSlotId = nil
         activeSlotName = nil
         torchLit = false
@@ -34101,7 +34191,7 @@ class GameEngine: ObservableObject {
             print("leaving?", color: .yellow)
             print("")
 
-            showMenu(["Quit+Save", "Quit-Save", "?", "< Back"])
+            showMenu(["Save, Then Quit", "Quit Without Saving", "?", "< Back"])
             menuHandler = { [weak self] choice in
                 guard let self = self else { return }
                 switch choice {
@@ -34113,10 +34203,10 @@ class GameEngine: ObservableObject {
                     self.showInlineHelp {
                         self.printTitle("Quit — Help")
                         self.print("")
-                        self.print("  QUIT+SAVE", color: .cyan, bold: true)
+                        self.print("  SAVE, THEN QUIT", color: .cyan, bold: true)
                         self.printWrapped("Takes you to the Save menu first — pick a slot, then the app closes once it's saved.", indent: 2, color: .dimGreen)
                         self.print("")
-                        self.print("  QUIT-SAVE", color: .cyan, bold: true)
+                        self.print("  QUIT WITHOUT SAVING", color: .cyan, bold: true)
                         self.printWrapped("Closes the app immediately WITHOUT saving. Today's progress on this adventure is lost.", indent: 2, color: .yellow)
                         self.print("")
                         self.print("  < BACK", color: .cyan, bold: true)
