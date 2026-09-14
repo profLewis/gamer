@@ -870,61 +870,51 @@ class Character: ObservableObject, Identifiable, Codable {
 
     // MARK: - Carry Capacity
 
-    static let maxInventorySlots = 10
+    /// A hidden safety cap on separate items — weight is the real limit
+    /// (see carryCapacity); play shouldn't normally reach this.
+    static let maxInventorySlots = 40
 
-    /// Pack weight limit. Strength is still the main driver (the classic
-    /// STR x 15 lb), but Constitution now matters too — stamina to haul a
-    /// load all day, +10 lb per point of CON modifier (or 5 lb less per
-    /// point below zero) — and small folk (halflings, gnomes) manage a bit
-    /// less for their size. Never below 30 lb, so nobody's left unable to
-    /// carry the basics.
+    /// How much the pack holds: about 40 lb — roughly ten medium things
+    /// like axes (or four greataxes, or forty potions) — a little more for
+    /// the strong (+7% per point of STR modifier) and the hardy (+4% per
+    /// point of CON modifier), less for small folk (halflings, gnomes).
+    /// Worn weapon, armour and shield don't count against it.
     var carryCapacity: Double {
-        let base = Double(abilityScores.strength) * 15.0
-        let conMod = abilityScores.modifier(for: .constitution)
-        let stamina = conMod >= 0 ? Double(conMod) * 10.0 : Double(conMod) * 5.0
+        let str = Double(abilityScores.modifier(for: .strength))
+        let con = Double(abilityScores.modifier(for: .constitution))
         let isSmall: Bool
         switch race {
         case .lightfootHalfling, .stoutHalfling, .gnome: isSmall = true
         default: isSmall = false
         }
-        let sizeFactor = isSmall ? 0.85 : 1.0
-        return max(30.0, (base + stamina) * sizeFactor)
+        let pounds = 40.0 * (1 + 0.07 * str + 0.04 * con) * (isSmall ? 0.85 : 1.0)
+        return min(60, max(26, pounds.rounded()))
     }
 
+    /// What's in the pack (worn gear isn't).
     var currentWeight: Double {
-        var total = inventory.reduce(0.0) { $0 + $1.weight }
-        if let w = equippedWeapon { total += w.weight }
-        if let a = equippedArmor { total += a.weight }
-        if let s = equippedShield { total += s.weight }
-        return total
+        inventory.reduce(0.0) { $0 + $1.weight }
     }
 
     var isEncumbered: Bool {
         currentWeight > carryCapacity
     }
 
+    /// No room for even a small thing more.
     var isInventoryFull: Bool {
-        inventory.count >= Character.maxInventorySlots
+        currentWeight + 0.5 > carryCapacity || inventory.count >= Character.maxInventorySlots
     }
 
     func canCarry(_ item: Item) -> Bool {
         currentWeight + item.weight <= carryCapacity && inventory.count < Character.maxInventorySlots
     }
 
-    /// Why canCarry(_:) would refuse this item, in words — the two checks
-    /// it makes (weight, item-slot count) are independent, so a message
-    /// that always blames weight is wrong (and confusing) whenever it's
-    /// actually the slot cap that's hit, which carries no visible number
-    /// anywhere else on screen. nil if the item CAN be carried.
+    /// Why canCarry(_:) would refuse this item, in words. nil if it CAN be carried.
     func carryBlockReason(for item: Item) -> String? {
-        let overWeight = currentWeight + item.weight > carryCapacity
-        let overSlots = inventory.count >= Character.maxInventorySlots
-        if overWeight && overSlots {
-            return "You're carrying too much, and too many separate items — drop or store something first."
-        } else if overWeight {
-            return "That's too heavy to carry right now — drop or store something first."
-        } else if overSlots {
-            return "Your pack is full (\(Character.maxInventorySlots) items max) — drop or store something first, even if you've got the weight to spare."
+        if currentWeight + item.weight > carryCapacity {
+            return "That won't fit — the pack would be too heavy. Drop, use or store something first."
+        } else if inventory.count >= Character.maxInventorySlots {
+            return "The pack is stuffed with too many separate things — drop or store something first."
         }
         return nil
     }

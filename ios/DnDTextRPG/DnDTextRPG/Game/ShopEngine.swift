@@ -61,7 +61,7 @@ class ShopEngine {
         // — without it, a refusal to carry something well within the
         // weight limit reads as a bug, since nothing on screen hints that
         // item SLOTS are a separate, independent cap from weight.
-        game.print("  Gold: \(character.gold)  |  Carrying: \(game.formatWeightPair(character.currentWeight, character.carryCapacity)) (\(character.inventory.count)/\(Character.maxInventorySlots) items)", color: .yellow)
+        game.print("  Gold: \(character.gold)  |  Carrying: \(game.formatWeightPair(character.currentWeight, character.carryCapacity)) (\(character.inventory.count) items)", color: .yellow)
     }
 
     /// Builds a buy/sell list button label as "Name  <price>  <weight>" —
@@ -136,7 +136,7 @@ class ShopEngine {
         }
         game.print("")
         game.print("  Your gold: \(character.gold)", color: .yellow)
-        game.print("  Carry weight: \(game.formatWeightPair(character.currentWeight, character.carryCapacity))  (\(character.inventory.count)/\(Character.maxInventorySlots) items)", color: .green)
+        game.print("  Carry weight: \(game.formatWeightPair(character.currentWeight, character.carryCapacity))  (\(character.inventory.count) items)", color: .green)
         game.print("  Stock: \(stock.count) items on the shelves", color: .green)
         game.print("")
 
@@ -290,7 +290,6 @@ class ShopEngine {
         game.print("  Gold: \(character.gold) → \(character.gold - item.value)", color: .yellow)
         let newWeight = character.currentWeight + item.weight
         game.print("  Carry: \(game.formatWeightPair(character.currentWeight, character.carryCapacity)) → \(game.formatWeightPair(newWeight, character.carryCapacity))", color: .yellow)
-        game.print("  Items: \(character.inventory.count)/\(Character.maxInventorySlots) → \(character.inventory.count + 1)/\(Character.maxInventorySlots)", color: .yellow)
         game.print("")
 
         game.showMenu(["Buy", "< Cancel"])

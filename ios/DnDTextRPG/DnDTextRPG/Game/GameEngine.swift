@@ -14505,7 +14505,7 @@ class GameEngine: ObservableObject {
         // ── Pack ──
         if !char.inventory.isEmpty {
             print("  ╟\(String(repeating: "─", count: cardWidth))╢", color: .cyan)
-            printCardRow("Pack", "\(char.inventory.count)/\(Character.maxInventorySlots) items", width: cardWidth, color: .dimGreen)
+            printCardRow("Pack", formatWeightPair(char.currentWeight, char.carryCapacity), width: cardWidth, color: .dimGreen)
         }
 
         // ── Reputation (Glyphkeeper) ──
@@ -22244,7 +22244,7 @@ class GameEngine: ObservableObject {
                         self.waitForContinueWithTimeout { onDone() }
                     } else {
                         if char.isInventoryFull {
-                            self.print("  \(char.name)'s bag is full! (\(char.inventory.count)/\(Character.maxInventorySlots))", color: .yellow)
+                            self.print("  \(char.name)'s bag is full! (\(self.formatWeightPair(char.currentWeight, char.carryCapacity)))", color: .yellow)
                         } else {
                             self.print("  \(char.name) can't carry any more!", color: .yellow)
                         }
@@ -22284,7 +22284,7 @@ class GameEngine: ObservableObject {
                     self.waitForContinueWithTimeout(multiplier: 0.8) { onDone() }
                 } else {
                     if char.isInventoryFull {
-                        self.print("  Bag is full! (\(char.inventory.count)/\(Character.maxInventorySlots))", color: .yellow)
+                        self.print("  Bag is full! (\(self.formatWeightPair(char.currentWeight, char.carryCapacity)))", color: .yellow)
                     } else {
                         self.print("  Too heavy to carry!", color: .yellow)
                     }
@@ -22739,7 +22739,7 @@ class GameEngine: ObservableObject {
         print("")
 
         let slotColor: TerminalColor = character.isInventoryFull ? .red : .cyan
-        print("  BAG (\(character.inventory.count)/\(Character.maxInventorySlots)):", color: slotColor, bold: true)
+        print("  BAG (\(formatWeightPair(character.currentWeight, character.carryCapacity))):", color: slotColor, bold: true)
         if character.inventory.isEmpty {
             print("    (empty)", color: .dimGreen)
         } else {
@@ -22841,7 +22841,7 @@ class GameEngine: ObservableObject {
             self.print("")
 
             self.print("  BAG (PACK)", color: .cyan, bold: true)
-            self.printWrapped("Your bag holds up to \(Character.maxInventorySlots) items. Item tags show type: [W] weapon, [A] armour, [S] shield, [P] potion, [?] scroll, [$] gem, [.] misc. Weight and gold value are shown for each item.", indent: 2, color: .dimGreen)
+            self.printWrapped("Your bag holds about 40 lb — roughly ten medium things like axes — a little more for the strong and hardy, a little less for small folk; worn weapon, armour and shield don't count. Item tags show type: [W] weapon, [A] armour, [S] shield, [P] potion, [?] scroll, [$] gem, [.] misc. Weight and gold value are shown for each item.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  OPEN PACK", color: .cyan, bold: true)
@@ -23486,7 +23486,7 @@ class GameEngine: ObservableObject {
                 } else {
                     self.print("")
                     if recipient.isInventoryFull {
-                        self.print("  \(recipient.name)'s bag is full! (\(recipient.inventory.count)/\(Character.maxInventorySlots))", color: .yellow)
+                        self.print("  \(recipient.name)'s bag is full! (\(self.formatWeightPair(recipient.currentWeight, recipient.carryCapacity)))", color: .yellow)
                     } else {
                         self.print("  \(recipient.name) can't carry any more!", color: .yellow)
                     }
@@ -31873,7 +31873,7 @@ class GameEngine: ObservableObject {
             let hpPct = char.maxHP > 0 ? (char.currentHP * 100 / char.maxHP) : 0
             let hpColor: TerminalColor = hpPct > 50 ? .brightGreen : (hpPct > 25 ? .yellow : .red)
             printWrapped("\(char.name) (\(char.characterClass.rawValue) Lv\(char.level))", indent: 4, color: hpColor)
-            printWrapped("HP \(char.currentHP)/\(char.maxHP)  Gold \(char.gold)  Items \(char.inventory.count)/\(Character.maxInventorySlots)", indent: 6, color: .dimGreen)
+            printWrapped("HP \(char.currentHP)/\(char.maxHP)  Gold \(char.gold)  Pack \(formatWeightPair(char.currentWeight, char.carryCapacity))", indent: 6, color: .dimGreen)
         }
         print("")
 
