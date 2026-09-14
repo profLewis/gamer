@@ -17836,7 +17836,9 @@ class GameEngine: ObservableObject {
         let verticalRadius = macMapRows
         var horizontalRadius = min(mapRadius + 6, 10)
         if macMapPaneWidth > 0 {
-            let charWidth = mapFontSize * fontScale * 0.6
+            // The monospaced font's real advance, so the box never outgrows the pane.
+            let font = NSFont.monospacedSystemFont(ofSize: mapFontSize * fontScale, weight: .regular)
+            let charWidth = max(1, ("M" as NSString).size(withAttributes: [.font: font]).width)
             let columns = Int((macMapPaneWidth - 24) / charWidth) - 4
             horizontalRadius = max(2, (columns / 5 - 1) / 2)
         }

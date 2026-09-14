@@ -184,7 +184,13 @@ struct TerminalView: View {
                                 TerminalLineView(line: line, scale: mapScale)
                             }
                         }
+                        #if os(macOS)
+                        // Mac: the box sits in the middle of its pane, so @ (always
+                        // the middle of the grid) is the middle of the map area too.
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        #else
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        #endif
                         .padding(.horizontal, 8)
                         .padding(.top, 4)
                         .padding(.bottom, 2)
