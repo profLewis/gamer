@@ -385,6 +385,12 @@ class GameEngine: ObservableObject {
     }
 
     private func continueHintText() -> String {
+        // Still waiting after the first hint: "anywhere" deserves the small
+        // print — the strip down one edge is kept for scrolling, not taps.
+        if continueHintCount >= 2 {
+            let side = leftHanded ? "left" : "right"
+            return "  (When I said anywhere: anywhere on the text except the narrow strip down the \(side) edge — that's kept for scrolling. Or type 'go on'.)"
+        }
         if autoContinuePaused {
             return "  (Paused — tap anywhere or type 'go on' to continue, or tap the hourglass to let it run.)"
         }
@@ -4465,6 +4471,15 @@ class GameEngine: ObservableObject {
         // Shortcut commands — intercept before handlers
         let lower = trimmed.lowercased()
         if !chatInputMode && inputHandler == nil {
+            // Typing a button's own name (or its first word) presses it —
+            // handy with buttons hidden, and for anyone who'd rather type.
+            if let idx = currentMenuOptions.firstIndex(where: { option in
+                let label = option.text.lowercased()
+                return !option.isCompactNav && !option.isDisabled && (label == lower || label.hasPrefix(lower + " "))
+            }) {
+                handleMenuChoice(idx + 1)
+                return
+            }
             // Easter egg: about:dndRPG — instant victory with fabricated stats
             if lower == "about:dndrpg" {
                 setupEasterEggVictory()
@@ -4816,6 +4831,10 @@ class GameEngine: ObservableObject {
 
     func showMainMenu() {
         linkReturnSnapshot = nil
+        // Text mode (buttons off) only drives the adventure itself — menus
+        // like this one keep their buttons, so the game is usable straight
+        // after Tap to Begin.
+        inDMMode = false
         gameState = .mainMenu
         if self.musicEnabled { SoundManager.shared.startMusic(.menu, preference: self.menuMelodyChoice) }
 
@@ -4854,6 +4873,11 @@ class GameEngine: ObservableObject {
             self.menuImageName = "DragonCastle"
         }
         print("")
+
+        if justDMMode {
+            printWrapped("Text mode is on: menus keep their buttons, and once you're in the dungeon you simply type what you do — the DM will give you clues. You can also type any button's name here. Type \"buttons on\" to switch text mode off.", indent: 2, color: .cyan)
+            print("")
+        }
 
         let hasActiveGame = dungeon != nil && !party.isEmpty
 
@@ -25459,6 +25483,42 @@ class GameEngine: ObservableObject {
         "tell the wounded knight I'll help him · search the corpse · flee the fight",
     ]
 
+    /// A clue about the current room for text mode — worked out locally from
+    /// the game state (not the AI), so every DM brain gives one: what's here,
+    /// what's worth trying, and how to phrase it.
+    private func justDMClue() -> String? {
+        guard let room = dungeon?.currentRoom else { return nil }
+        if !torchLit, partyHasTorch() {
+            return "It's pitch dark in here. Try \"light my torch\"."
+        }
+        if let hurt = party.first(where: { $0.isConscious && $0.currentHP <= $0.maxHP / 3 }) {
+            return "\(shortName(for: hurt)) is badly hurt — \"drink a potion\" or \"rest\" might be wise."
+        }
+        if let npc = room.npc, !npc.hasBeenTalkedTo {
+            return "Someone's here — try \"talk to the \(npc.name.lowercased())\"."
+        }
+        if room.merchant != nil {
+            return "A merchant has wares laid out — try \"what do you sell?\" or \"let's trade\"."
+        }
+        if room.trainer != nil {
+            return "This is a gym — try \"train with the trainer\"."
+        }
+        if room.teleportDestinationRoomId != nil {
+            return "A glowing pad hums underfoot — try \"step on the pad\"."
+        }
+        if let dir = room.verticalDirection {
+            return "A way leads \(dir) from here — try \"take the \(room.verticalMethod == "rope" ? "rope" : "stairs") \(dir)\"."
+        }
+        if !room.treasure.isEmpty || !room.hiddenItems.isEmpty {
+            return "Something here might be worth a closer look — try \"search the room\"."
+        }
+        let ways = room.exits.keys.map { $0.rawValue.lowercased() }.sorted()
+        if let first = ways.first {
+            return "Ways on: \(ways.joined(separator: ", ")). Try \"go \(first)\" — or ask me anything."
+        }
+        return nil
+    }
+
     private func showJustDMExploration() {
         guard let dungeon = dungeon, let room = dungeon.currentRoom else { return }
 
@@ -25538,7 +25598,10 @@ class GameEngine: ObservableObject {
             // type, and only while still new to it. Without this, someone
             // who forgot what's possible here had no way back to a hint
             // short of typing "?" for the full help screen.
-            if dmChatLog.count < 20 {
+            if let clue = justDMClue() {
+                printWrapped("  DM: \(clue)", indent: 2, color: .cyan)
+                print("")
+            } else if dmChatLog.count < 20 {
                 printWrapped("  (try: \(Self.justDMHintExamples.randomElement()!))", indent: 2, color: .dimGreen)
                 print("")
             }
@@ -25554,6 +25617,10 @@ class GameEngine: ObservableObject {
             print("")
             print("  ? for help · 'buttons on' to exit", color: .dimGreen)
             print("")
+            if let clue = justDMClue() {
+                printWrapped("  DM: \(clue)", indent: 2, color: .cyan)
+                print("")
+            }
         }
 
         justDMPrompt()
@@ -25599,7 +25666,11 @@ class GameEngine: ObservableObject {
         // showing (e.g. combat, a menu) while this stale timer fired.
         guard justDMMode, awaitingTextInput else { return }
         print("")
-        printWrapped("  Still there? Try: \(Self.justDMHintExamples.randomElement()!)", indent: 2, color: .dimGreen)
+        if let clue = justDMClue() {
+            printWrapped("  DM: Still there? \(clue)", indent: 2, color: .cyan)
+        } else {
+            printWrapped("  Still there? Try: \(Self.justDMHintExamples.randomElement()!)", indent: 2, color: .dimGreen)
+        }
         printWrapped("  Or type \"?\" for help, \"buttons on\" for menus.", indent: 2, color: .dimGreen)
     }
 
@@ -31020,6 +31091,15 @@ class GameEngine: ObservableObject {
         dateFormatter.dateStyle = .medium
         dateFormatter.timeStyle = .short
 
+        // Quick flip between newest-first and most-points-first right here
+        // (every order, incl. name and level, is in Settings > Gameplay >
+        // List Order). Tap the line itself.
+        let sortLineIndex = terminalLines.count
+        let nextSort: ListSortMode = listSortMode == .date ? .points : .date
+        let currentSortName = listSortMode == .date ? "newest" : (listSortMode == .points ? "most points" : listSortMode.label.lowercased())
+        print("  Sorted by \(currentSortName) — tap here for \(nextSort == .date ? "newest" : "most points") first", color: .cyan, underlined: true)
+        print("")
+
         var options: [String] = []
         // Exact printed-line range per entry (not a guessed fixed count —
         // printWrapped can span more than one terminal line depending on
@@ -31245,7 +31325,12 @@ class GameEngine: ObservableObject {
         // textLongPressHandler drives a plain tap gesture on the terminal
         // text (see textTapEnabled), so the descriptive block above each
         // button is a live target too, not just inert decoration.
-        textLongPressHandler = { lineIndex in
+        textLongPressHandler = { [weak self] lineIndex in
+            if lineIndex == sortLineIndex {
+                self?.listSortMode = nextSort
+                self?.showLoadGameMenu(returnTo: origin)
+                return
+            }
             guard let idx = entryLineRanges.firstIndex(where: { $0.contains(lineIndex) }) else { return }
             openRow(rows[idx])
         }

@@ -756,7 +756,7 @@ struct TerminalView: View {
     private var dpadAndMenuButtonsBlock: some View {
                     // Direction pad + menu buttons (hidden in Just DM mode, except on
                     // victory/defeat milestone screens — see forceInteractiveControls).
-                    if (!gameEngine.isJustDMActive || gameEngine.forceInteractiveControls),
+                    if (!gameEngine.isJustDMActive || gameEngine.forceInteractiveControls || !gameEngine.inDMMode),
                        !gameEngine.directionExits.isEmpty || !gameEngine.currentMenuOptions.isEmpty || reserveControlSlots {
                         VStack(spacing: 10) {
                             // Direction D-pad (when exploring)
@@ -982,7 +982,7 @@ struct TerminalView: View {
                                 autoCountdownBar
                             }
 
-                        if !gameEngine.isJustDMActive || gameEngine.forceInteractiveControls {
+                        if !gameEngine.isJustDMActive || gameEngine.forceInteractiveControls || !gameEngine.inDMMode {
                         // Card navigation — <</>>/swipe mode
                         if let posLabel = gameEngine.cardPositionLabel {
                             if gameEngine.useArrowNavigation {
