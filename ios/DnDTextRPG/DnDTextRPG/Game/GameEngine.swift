@@ -1453,10 +1453,19 @@ class GameEngine: ObservableObject {
             if let hl = map.highlight, hl.line == index { line.highlightRange = hl.column..<(hl.column + 3) }
             return line
         }
+        out.insert(TerminalLine(atlasShowAllRooms ? "THE WHOLE DEEP — every room on this level" : "THE CHARTED REACHES — where you've been", color: .cyan, size: mapFontSize), at: 0)
         out.append(TerminalLine(" ", size: mapFontSize))
         out += Dungeon.atlasKeyLines().map { TerminalLine($0, color: .dimGreen, size: mapFontSize) }
         mapOverlayLines = out
         mapOverlayVisible = true
+    }
+
+    /// The map overlay's Charted/Whole switch — the same setting as
+    /// Settings > Gameplay > World Map.
+    func setAtlasShowAll(_ all: Bool) {
+        atlasShowAllRooms = all
+        objectWillChange.send()
+        if mapOverlayVisible { presentAtlasMapOverlay() }
     }
 
     func atlasShowLevel(offset: Int) {

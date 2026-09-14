@@ -135,7 +135,7 @@ struct TerminalView: View {
     @State private var lineVisibility = LineVisibility()
     @State private var swipeScrollLines = 0
     @State private var swipeScrollToken = 0
-    @State private var zoomAtPinchStart: CGFloat? = nil
+    @State private var pinchScale: CGFloat = 1
 
     /// Wraps the map panel + scrolling text as an HStack (map | text side by
     /// side) in landscape, or the original VStack (map above text) otherwise
@@ -1421,7 +1421,7 @@ struct TerminalView: View {
             ScrollView([.horizontal, .vertical], showsIndicators: true) {
                 Group {
                     if gameEngine.pictureMapOn, let level = gameEngine.overlayAtlasLevel {
-                        PictureMapView(level: level, zoom: mapZoom * scale)
+                        PictureMapView(level: level, fontSize: gameEngine.mapFontSize * scale * mapZoom, showAll: gameEngine.atlasShowAllRooms)
                     } else {
                         VStack(alignment: .leading, spacing: 2) {
                             ForEach(gameEngine.mapOverlayLines) { line in
@@ -1430,18 +1430,22 @@ struct TerminalView: View {
                         }
                     }
                 }
+                // Live while pinching; the layout settles at the new size after.
+                .scaleEffect(pinchScale, anchor: .center)
+                .onTapGesture(count: 2) { mapZoom = 1 }   // double-tap: back to normal size
                 .padding(16)
                 .padding(.top, 44)
             }
             #if !os(tvOS)
-            // Pinch to zoom (a trackpad pinch on a Mac).
+            // Pinch to zoom (a trackpad pinch on a Mac): the map scales smoothly
+            // under your fingers, then settles at that size when you let go —
+            // resizing the layout every frame made it jump about.
             .simultaneousGesture(MagnificationGesture()
-                .onChanged { value in
-                    let start = zoomAtPinchStart ?? mapZoom
-                    if zoomAtPinchStart == nil { zoomAtPinchStart = mapZoom }
-                    mapZoom = min(4, max(0.4, start * value))
-                }
-                .onEnded { _ in zoomAtPinchStart = nil })
+                .onChanged { value in pinchScale = min(4 / mapZoom, max(0.4 / mapZoom, value)) }
+                .onEnded { value in
+                    mapZoom = min(4, max(0.4, mapZoom * value))
+                    pinchScale = 1
+                })
             #endif
             HStack(spacing: 8) {
                 // Page between the levels you've mapped (the Atlas keeps
@@ -1456,6 +1460,9 @@ struct TerminalView: View {
                 }
                 if gameEngine.atlasExploreAvailable && !gameEngine.atlasScreenActive {
                     overlayCapsule("Explore", systemImage: "book.closed") { gameEngine.openAtlasFromOverlay() }
+                }
+                overlayCapsule(gameEngine.atlasShowAllRooms ? "Charted" : "Whole", systemImage: "globe") {
+                    gameEngine.setAtlasShowAll(!gameEngine.atlasShowAllRooms)
                 }
                 overlayCapsule(gameEngine.pictureMapOn ? "Text" : "Picture", systemImage: gameEngine.pictureMapOn ? "text.alignleft" : "photo") {
                     gameEngine.pictureMapOn.toggle()
@@ -1871,43 +1878,174 @@ struct CombatArenaView: View {
     }
 }
 
-/// The whole level as a picture: a terrain tile for every room (drawn to
-/// suit what the room is), the passages between them, green names outlined
-/// in black, and little info panels in clear spots beside the rooms they
-/// describe. Every room and passage — the full map, as exploring would find it.
+/// The whole level as one pixel-art landscape: every cell of the map is a
+/// patch of textured ground (the room's own kind of floor, dirt passages,
+/// bedrock and the odd underground pool), textured by position so it all
+/// joins up — walls only where rooms don't connect, and ground that frays
+/// into the next room where they do. Tiny pixel sprites mark what each room
+/// is; green names and little info panels sit on top. Every room and
+/// passage — the full map, as exploring would find it.
 struct PictureMapView: View {
     let level: AtlasLevel
-    let zoom: CGFloat
+    /// The text map's font size — the picture uses the very same grid, so
+    /// flicking between the two, everything stays in place.
+    let fontSize: CGFloat
+    private var zoom: CGFloat { fontSize / 14 }
+    /// The Whole Deep (every room) or The Charted Reaches (only where
+    /// you've been — passages into the unknown fade off into the rock).
+    var showAll: Bool = true
+    private var rooms: [AtlasRoom] { showAll ? level.rooms : level.rooms.filter { $0.visited } }
 
+    /// The text map's grid (see Dungeon.atlasMapLines): each room is 5
+    /// characters by 2 lines, its "[X]" starting 2 characters in, with the
+    /// grid 4 lines down (a title line and the 3-line ATLAS header).
     private struct Layout {
         let minX: Int, minY: Int, cols: Int, rows: Int
-        let cell: CGFloat, pad: CGFloat, top: CGFloat
+        let charW: CGFloat, lineH: CGFloat
+        var cellW: CGFloat { charW * 5 }
+        var cellH: CGFloat { lineH * 2 }
+        var originX: CGFloat { charW * 3.5 - cellW / 2 }
+        var originY: CGFloat { lineH * 4.5 - cellH / 2 }
+        func origin(_ x: Int, _ y: Int) -> CGPoint {
+            CGPoint(x: originX + CGFloat(x - minX) * cellW, y: originY + CGFloat(y - minY) * cellH)
+        }
         func centre(_ x: Int, _ y: Int) -> CGPoint {
-            CGPoint(x: pad + (CGFloat(x - minX) + 0.5) * cell, y: top + pad + (CGFloat(y - minY) + 0.5) * cell)
+            let o = origin(x, y)
+            return CGPoint(x: o.x + cellW / 2, y: o.y + cellH / 2)
         }
     }
 
+    private static let pixelsPerCell = 12
+
+    /// The monospaced font's real character width and line height (plus the
+    /// text map's 2pt line spacing).
+    private var metrics: (charW: CGFloat, lineH: CGFloat) {
+        #if os(macOS)
+        let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        let lineHeight = font.ascender - font.descender + font.leading
+        #else
+        let font = UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        let lineHeight = font.lineHeight
+        #endif
+        let charW = ("M" as NSString).size(withAttributes: [.font: font]).width
+        return (charW, ceil(lineHeight) + 2)
+    }
+
     private var layout: Layout {
-        let xs = level.rooms.map { $0.x }, ys = level.rooms.map { $0.y }
-        // A ring of clear cells all round, for panels beside edge rooms.
-        let minX = (xs.min() ?? 0) - 1, maxX = (xs.max() ?? 0) + 1
-        let minY = (ys.min() ?? 0) - 1, maxY = (ys.max() ?? 0) + 1
-        return Layout(minX: minX, minY: minY, cols: maxX - minX + 1, rows: maxY - minY + 1,
-                      cell: 110 * zoom, pad: 12 * zoom, top: 28 * zoom)
+        let xs = rooms.map { $0.x }, ys = rooms.map { $0.y }
+        let minX = xs.min() ?? 0, maxX = xs.max() ?? 0
+        let minY = ys.min() ?? 0, maxY = ys.max() ?? 0
+        let m = metrics
+        return Layout(minX: minX, minY: minY, cols: maxX - minX + 1, rows: maxY - minY + 1, charW: m.charW, lineH: m.lineH)
     }
 
     var body: some View {
         let l = layout
         Canvas { ctx, size in draw(&ctx, size, l) }
-            .frame(width: CGFloat(l.cols) * l.cell + l.pad * 2, height: CGFloat(l.rows) * l.cell + l.pad * 2 + l.top)
-            .accessibilityLabel("Picture map of \(level.dungeonName), level \(level.level): \(level.rooms.count) rooms")
+            .frame(width: l.originX + CGFloat(l.cols) * l.cellW + l.charW * 3,
+                   height: l.originY + CGFloat(l.rows) * l.cellH + l.lineH * 2)
+            .accessibilityLabel("Picture map of \(level.dungeonName), level \(level.level): \(rooms.count) rooms")
     }
 
-    private struct SeededRNG {
-        var state: UInt64
-        mutating func next() -> CGFloat {
-            state = state &* 6364136223846793005 &+ 1442695040888963407
-            return CGFloat((state >> 33) % 10_000) / 10_000
+    private struct RGB: Equatable {
+        var r: Double, g: Double, b: Double
+        init(_ r: Double, _ g: Double, _ b: Double) { self.r = r; self.g = g; self.b = b }
+        func scaled(_ k: Double) -> RGB { RGB(r * k, g * k, b * k) }
+        var color: Color { Color(red: r, green: g, blue: b) }
+    }
+
+    private enum Terrain { case bedrock, water, stone, corridor, treasure, library, shrine, armoury, prison, shop, entrance, boss, trap }
+
+    private static func terrain(for typeName: String) -> Terrain {
+        let k = typeName.lowercased()
+        if k.contains("treasure") { return .treasure }
+        if k.contains("trap") { return .trap }
+        if k.contains("boss") { return .boss }
+        if k.contains("shrine") { return .shrine }
+        if k.contains("library") { return .library }
+        if k.contains("armour") || k.contains("armor") { return .armoury }
+        if k.contains("prison") { return .prison }
+        if k.contains("shop") { return .shop }
+        if k.contains("entrance") { return .entrance }
+        if k.contains("corridor") { return .corridor }
+        return .stone
+    }
+
+    /// A stable 0..<1 value for a pixel — the same every time it's drawn.
+    private static func noise(_ x: Int, _ y: Int, _ seed: Int) -> Double {
+        var h = UInt32(truncatingIfNeeded: x &* 374761393 &+ y &* 668265263 &+ seed &* 1442695041)
+        h = (h ^ (h >> 13)) &* 1274126177
+        h ^= h >> 16
+        return Double(h & 0xffff) / 65536
+    }
+
+    /// Ground textures by global pixel position, so neighbouring cells of the
+    /// same ground join seamlessly into one landscape.
+    private static func texture(_ t: Terrain, _ x: Int, _ y: Int) -> RGB {
+        let n = noise(x, y, 1)
+        func pick(_ p: [RGB]) -> RGB { p[min(p.count - 1, Int(n * Double(p.count)))] }
+        switch t {
+        case .bedrock:
+            if n > 0.97 { return RGB(0.22, 0.20, 0.17) }                       // pebbles
+            return pick([RGB(0.09, 0.08, 0.07), RGB(0.11, 0.10, 0.08), RGB(0.08, 0.07, 0.06), RGB(0.13, 0.11, 0.09)])
+        case .water:
+            if noise(x / 2, y, 5) > 0.9 { return RGB(0.45, 0.65, 0.85) }       // ripples
+            return pick([RGB(0.10, 0.22, 0.42), RGB(0.12, 0.26, 0.48), RGB(0.09, 0.20, 0.38)])
+        case .stone:
+            if x % 4 == 0 || y % 4 == 0 { return RGB(0.24, 0.24, 0.27) }       // grout between flagstones
+            return pick([RGB(0.38, 0.38, 0.42), RGB(0.34, 0.34, 0.38), RGB(0.42, 0.41, 0.45)])
+        case .corridor:
+            return pick([RGB(0.36, 0.27, 0.18), RGB(0.32, 0.24, 0.16), RGB(0.40, 0.30, 0.20), RGB(0.30, 0.23, 0.15)])
+        case .treasure:
+            if n > 0.95 { return RGB(1.0, 0.92, 0.45) }                         // glints
+            return pick([RGB(0.58, 0.46, 0.18), RGB(0.52, 0.41, 0.15), RGB(0.62, 0.50, 0.21)])
+        case .library:
+            if y % 3 == 0 { return RGB(0.24, 0.15, 0.08) }                       // plank seams
+            return pick([RGB(0.46, 0.30, 0.16), RGB(0.42, 0.27, 0.14), RGB(0.50, 0.33, 0.18)])
+        case .shrine:
+            return ((x / 2) + (y / 2)) % 2 == 0 ? RGB(0.26, 0.36, 0.62) : RGB(0.20, 0.28, 0.52)
+        case .armoury:
+            if x % 6 == 0 || y % 6 == 0 { return RGB(0.18, 0.19, 0.21) }         // plate edges
+            if x % 6 == 2 && y % 6 == 2 { return RGB(0.55, 0.56, 0.60) }         // rivets
+            return pick([RGB(0.32, 0.33, 0.36), RGB(0.29, 0.30, 0.33)])
+        case .prison:
+            if n > 0.93 { return RGB(0.55, 0.48, 0.20) }                         // straw
+            if x % 3 == 0 || y % 3 == 0 { return RGB(0.12, 0.12, 0.13) }
+            return pick([RGB(0.21, 0.21, 0.23), RGB(0.18, 0.18, 0.20)])
+        case .shop:
+            if y % 3 == 0 { return RGB(0.30, 0.18, 0.09) }
+            return pick([RGB(0.55, 0.36, 0.18), RGB(0.50, 0.32, 0.16)])
+        case .entrance:
+            if n > 0.96 { return RGB(0.95, 0.85, 0.30) }                          // flowers
+            return pick([RGB(0.18, 0.42, 0.16), RGB(0.15, 0.36, 0.13), RGB(0.22, 0.48, 0.19)])
+        case .boss:
+            if noise(x, y, 9) > 0.9 { return RGB(0.95, 0.40, 0.10) }              // embers in the cracks
+            return pick([RGB(0.20, 0.08, 0.07), RGB(0.16, 0.06, 0.05), RGB(0.25, 0.10, 0.08)])
+        case .trap:
+            if noise(x, y, 3) > 0.9 { return RGB(0.10, 0.10, 0.10) }              // cracks
+            return pick([RGB(0.36, 0.33, 0.30), RGB(0.32, 0.29, 0.26)])
+        }
+    }
+
+    // Tiny pixel sprites — one character per pixel, "." see-through.
+    private static let spritePalette: [Swift.Character: RGB] = [
+        "Y": RGB(1.0, 0.84, 0.2), "O": RGB(0.45, 0.30, 0.06), "B": RGB(0.45, 0.27, 0.12), "W": RGB(0.92, 0.90, 0.85),
+        "G": RGB(0.66, 0.66, 0.70), "D": RGB(0.20, 0.20, 0.24), "R": RGB(0.72, 0.16, 0.16), "N": RGB(0.20, 0.55, 0.25),
+        "U": RGB(0.25, 0.45, 0.80), "K": RGB(0.07, 0.07, 0.07), "F": RGB(1.0, 0.60, 0.15), "C": RGB(0.3, 0.9, 0.9),
+        "P": RGB(0.75, 0.45, 1.0), "A": RGB(1.0, 0.9, 0.2),
+    ]
+    private static func sprite(for t: Terrain) -> [String]? {
+        switch t {
+        case .treasure: return ["..YY..", ".YOOY.", "BBBBBB", "BYBBYB", "BBBBBB"]
+        case .shrine:   return ["..F...", "..W...", "GGGGGG", ".GGGG.", ".G..G."]
+        case .armoury:  return ["DDDDDD", ".DDDDD", "..DD..", ".DDDD."]
+        case .library:  return ["RUNBRU", "RUNBRU", "RUNBRU", "KKKKKK"]
+        case .boss:     return [".WWWW.", "WKWWKW", "WWWWWW", ".WKWK.", "..WW.."]
+        case .shop:     return ["..KK..", ".YYYY.", "YYOYYY", "YYYYYY", ".YYYY."]
+        case .entrance: return [".GGGG.", "GKKKKG", "GKKKKG", "GKKKKG"]
+        case .prison:   return ["D.D.D.", "D.D.D.", "D.D.D.", "D.D.D."]
+        case .trap:     return ["......", "G..G..", "GG.GG.", "GGGGGG"]
+        default:        return nil
         }
     }
 
@@ -1923,46 +2061,148 @@ struct PictureMapView: View {
     }
 
     private func draw(_ ctx: inout GraphicsContext, _ size: CGSize, _ l: Layout) {
-        let byId = Dictionary(level.rooms.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        let occupied = Set(level.rooms.map { "\($0.x),\($0.y)" })
-        let tile = l.cell * 0.74
+        let P = Self.pixelsPerCell
+        let pxW = l.cellW / CGFloat(P), pxH = l.cellH / CGFloat(P)
+        let cols = l.cols, rows = l.rows
         let green = Color(red: 0.0, green: 1.0, blue: 0.4)
+        ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(red: 0.05, green: 0.05, blue: 0.04)))
 
-        // Dark ground, lightly speckled.
-        ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(red: 0.04, green: 0.06, blue: 0.04)))
-        var speck = SeededRNG(state: UInt64(level.level) &+ 7)
-        for _ in 0..<(l.cols * l.rows * 6) {
-            let p = CGPoint(x: speck.next() * size.width, y: speck.next() * size.height)
-            ctx.fill(Path(ellipseIn: CGRect(x: p.x, y: p.y, width: 1.5, height: 1.5)), with: .color(Color.white.opacity(0.05)))
+        // Each cell: which room (if any), which sides open onto a connected
+        // neighbour (1 N, 2 E, 4 S, 8 W), and whether a passage winds through.
+        var roomIndex = [Int](repeating: -1, count: cols * rows)
+        var openSides = [UInt8](repeating: 0, count: cols * rows)
+        var corridor = [Bool](repeating: false, count: cols * rows)
+        var stubs = [UInt8](repeating: 0, count: cols * rows)   // passages into unknown rooms
+        func idx(_ x: Int, _ y: Int) -> Int? {
+            let cx = x - l.minX, cy = y - l.minY
+            return (cx >= 0 && cy >= 0 && cx < cols && cy < rows) ? cy * cols + cx : nil
+        }
+        func side(_ dx: Int, _ dy: Int) -> UInt8 { dy < 0 ? 1 : (dx > 0 ? 2 : (dy > 0 ? 4 : 8)) }
+        let byId = Dictionary(level.rooms.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        for (i, r) in rooms.enumerated() { if let k = idx(r.x, r.y) { roomIndex[k] = i } }
+        let visibleIds = Set(rooms.map { $0.id })
+        for r in rooms {
+            for (_, id) in r.exits {
+                guard let o = byId[id] else { continue }
+                let dx = o.x - r.x, dy = o.y - r.y
+                let known = visibleIds.contains(o.id)
+                if abs(dx) + abs(dy) == 1 {
+                    if let a = idx(r.x, r.y) { openSides[a] |= side(dx, dy) }
+                    if let b = idx(o.x, o.y) {
+                        if known { openSides[b] |= side(-dx, -dy) } else { stubs[b] |= side(-dx, -dy) }
+                    }
+                } else if known {
+                    var x = r.x, y = r.y
+                    while x != o.x { x += o.x > x ? 1 : -1; if let k = idx(x, y), roomIndex[k] < 0 { corridor[k] = true } }
+                    while y != o.y { y += o.y > y ? 1 : -1; if let k = idx(x, y), roomIndex[k] < 0 { corridor[k] = true } }
+                }
+            }
+        }
+        let terrains = rooms.map { Self.terrain(for: $0.typeName) }
+        let wall = RGB(0.05, 0.04, 0.04)
+        func neighbourTerrain(_ cx: Int, _ cy: Int) -> Terrain? {
+            guard cx >= 0, cy >= 0, cx < cols, cy < rows else { return nil }
+            let ri = roomIndex[cy * cols + cx]
+            return ri >= 0 ? terrains[ri] : nil
+        }
+        func pixel(_ gx: Int, _ gy: Int) -> RGB {
+            let cx = gx / P, cy = gy / P, lx = gx % P, ly = gy % P
+            let k = cy * cols + cx
+            let ri = roomIndex[k]
+            if ri >= 0 {
+                let open = openSides[k]
+                // Walls round each room, except where a passage joins a neighbour.
+                if ly == 0 && open & 1 == 0 { return wall }
+                if lx == P - 1 && open & 2 == 0 { return wall }
+                if ly == P - 1 && open & 4 == 0 { return wall }
+                if lx == 0 && open & 8 == 0 { return wall }
+                // Near an open side the neighbour's ground frays in, so the
+                // rooms run together as one landscape.
+                var t = terrains[ri]
+                let n = Self.noise(gx, gy, 4)
+                if open & 1 != 0, ly < 3, n < 0.5 - Double(ly) * 0.15, let nb = neighbourTerrain(cx, cy - 1) { t = nb }
+                else if open & 2 != 0, lx > P - 4, n < 0.5 - Double(P - 1 - lx) * 0.15, let nb = neighbourTerrain(cx + 1, cy) { t = nb }
+                else if open & 4 != 0, ly > P - 4, n < 0.5 - Double(P - 1 - ly) * 0.15, let nb = neighbourTerrain(cx, cy + 1) { t = nb }
+                else if open & 8 != 0, lx < 3, n < 0.5 - Double(lx) * 0.15, let nb = neighbourTerrain(cx - 1, cy) { t = nb }
+                let c = Self.texture(t, gx, gy)
+                return rooms[ri].visited ? c : c.scaled(0.72)
+            }
+            // A passage leading off into rock you haven't charted — a dirt
+            // track that fades into the dark.
+            let stub = stubs[k]
+            if stub != 0 {
+                let half = P / 2
+                let across = lx >= 4 && lx < P - 4, down = ly >= 4 && ly < P - 4
+                let n = Self.noise(gx, gy, 6)
+                if stub & 1 != 0, across, ly < half, n < 1 - Double(ly) / Double(half) { return Self.texture(.corridor, gx, gy) }
+                if stub & 4 != 0, across, ly >= half, n < 1 - Double(P - 1 - ly) / Double(half) { return Self.texture(.corridor, gx, gy) }
+                if stub & 8 != 0, down, lx < half, n < 1 - Double(lx) / Double(half) { return Self.texture(.corridor, gx, gy) }
+                if stub & 2 != 0, down, lx >= half, n < 1 - Double(P - 1 - lx) / Double(half) { return Self.texture(.corridor, gx, gy) }
+            }
+            if corridor[k] && ((lx >= 4 && lx < P - 4) || (ly >= 4 && ly < P - 4)) { return Self.texture(.corridor, gx, gy) }
+            if Self.noise(cx + l.minX, cy + l.minY, 7) < 0.12 && lx > 1 && lx < P - 2 && ly > 1 && ly < P - 2 {
+                return Self.texture(.water, gx, gy)
+            }
+            return Self.texture(.bedrock, gx, gy)
         }
 
-        // Passages.
-        for r in level.rooms {
-            for (_, id) in r.exits where id > r.id {
-                guard let o = byId[id] else { continue }
-                var path = Path()
-                path.move(to: l.centre(r.x, r.y))
-                path.addLine(to: l.centre(o.x, o.y))
-                ctx.stroke(path, with: .color(Color(white: 0.2)), lineWidth: l.cell * 0.18)
-                ctx.stroke(path, with: .color(Color(white: 0.34)), style: StrokeStyle(lineWidth: max(1, l.cell * 0.035), dash: [l.cell * 0.06, l.cell * 0.05]))
+        // The landscape, a row at a time (runs of one colour drawn together).
+        let width = cols * P, height = rows * P
+        let ox = l.originX, oy = l.originY
+        for gy in 0..<height {
+            var start = 0
+            var run = pixel(0, gy)
+            for gx in 1...width {
+                let c = gx < width ? pixel(gx, gy) : RGB(-1, -1, -1)
+                if c != run {
+                    ctx.fill(Path(CGRect(x: ox + CGFloat(start) * pxW, y: oy + CGFloat(gy) * pxH,
+                                         width: CGFloat(gx - start) * pxW + 0.5, height: pxH + 0.5)), with: .color(run.color))
+                    start = gx
+                    run = c
+                }
             }
         }
 
-        // Rooms.
-        for r in level.rooms { drawTile(&ctx, r, l.centre(r.x, r.y), tile, current: level.currentRoomId == r.id) }
-
-        // Names above each room (and the room's kind under it).
-        for r in level.rooms {
-            let c = l.centre(r.x, r.y)
-            let name = r.name.count > 18 ? String(r.name.prefix(17)) + "…" : r.name
-            outlined(&ctx, name, at: CGPoint(x: c.x, y: c.y - tile / 2 - 7 * zoom), size: 10 * zoom, color: r.visited ? green : green.opacity(0.6))
-            outlined(&ctx, r.visited ? r.typeName : "\(r.typeName)?", at: CGPoint(x: c.x, y: c.y + tile / 2 + 7 * zoom), size: 8 * zoom, color: Color(red: 0.0, green: 0.7, blue: 0.3))
+        // Pixel sprites and markers.
+        func drawSprite(_ art: [String], cellX x: Int, cellY y: Int, offsetX: Int? = nil, offsetY: Int? = nil) {
+            let o = l.origin(x, y)
+            let w = art.map { $0.count }.max() ?? 0
+            let sx = offsetX ?? (P - w) / 2, sy = offsetY ?? (P - art.count) / 2 + 1
+            for (j, row) in art.enumerated() {
+                for (i, ch) in row.enumerated() {
+                    guard let c = Self.spritePalette[ch] else { continue }
+                    ctx.fill(Path(CGRect(x: o.x + CGFloat(sx + i) * pxW, y: o.y + CGFloat(sy + j) * pxH,
+                                         width: pxW + 0.5, height: pxH + 0.5)), with: .color(c.color))
+                }
+            }
+        }
+        for (i, r) in rooms.enumerated() {
+            if let art = Self.sprite(for: terrains[i]) { drawSprite(art, cellX: r.x, cellY: r.y) }
+            if r.verticalTo != nil {
+                drawSprite(r.verticalDirection == "down" ? ["CCC", ".C."] : [".C.", "CCC"], cellX: r.x, cellY: r.y, offsetX: P - 4, offsetY: 1)
+            }
+            if r.teleportTo != nil { drawSprite(["P.P", ".P.", "P.P"], cellX: r.x, cellY: r.y, offsetX: 1, offsetY: 1) }
+            if r.danger { drawSprite(["R", "R", ".", "R"], cellX: r.x, cellY: r.y, offsetX: 1, offsetY: P - 5) }
+            if level.currentRoomId == r.id {
+                let o = l.origin(r.x, r.y)
+                ctx.stroke(Path(CGRect(x: o.x + pxW * 0.5, y: o.y + pxH * 0.5, width: l.cellW - pxW, height: l.cellH - pxH)),
+                           with: .color(.yellow), lineWidth: pxH * 0.7)
+                outlined(&ctx, "@", at: CGPoint(x: o.x + l.cellW / 2, y: o.y + l.cellH - pxH * 2.4), size: pxH * 2.6, color: .yellow)
+            }
         }
 
-        // Info panels in clear spots beside the rooms — the spot touching
-        // the most rooms wins — with a leader line to the room they describe.
+        // Names across the top of each room.
+        for r in rooms {
+            let o = l.origin(r.x, r.y)
+            let name = r.name.count > 12 ? String(r.name.prefix(11)) + "…" : r.name
+            outlined(&ctx, name, at: CGPoint(x: o.x + l.cellW / 2, y: o.y + pxH * 1.9), size: 6.5 * zoom, color: r.visited ? green : green.opacity(0.6))
+        }
+
+        // Info panels in clear rock beside the rooms — the spot touching the
+        // most rooms wins — with a leader line to the room they describe.
+        let occupied = Set(rooms.map { "\($0.x),\($0.y)" })
         var used = Set<String>()
-        for r in level.rooms {
+        for r in rooms {
             var lines: [String] = []
             if let m = r.merchantName { lines.append("Shop: \(m)") }
             if let g = r.gymName { lines.append("Gym: \(g)") }
@@ -1974,6 +2214,7 @@ struct PictureMapView: View {
             for dx in -1...1 {
                 for dy in -1...1 where dx != 0 || dy != 0 {
                     let x = r.x + dx, y = r.y + dy, key = "\(x),\(y)"
+                    guard x >= l.minX, y >= l.minY, x < l.minX + l.cols, y < l.minY + l.rows else { continue }
                     guard !occupied.contains(key), !used.contains(key) else { continue }
                     var score = 0
                     for ex in -1...1 { for ey in -1...1 where ex != 0 || ey != 0 { if occupied.contains("\(x + ex),\(y + ey)") { score += 1 } } }
@@ -1983,141 +2224,23 @@ struct PictureMapView: View {
             guard let spot = best else { continue }
             used.insert("\(spot.x),\(spot.y)")
             let pc = l.centre(spot.x, spot.y)
-            let lineH = 11 * zoom
-            let w = l.cell * 0.9, h = CGFloat(lines.count) * lineH + 8 * zoom
+            let lineH = 8.5 * zoom
+            let w = l.cellW * 0.98, h = CGFloat(lines.count) * lineH + 8 * zoom
             let rect = CGRect(x: pc.x - w / 2, y: pc.y - h / 2, width: w, height: h)
             var leader = Path()
             leader.move(to: pc)
             leader.addLine(to: l.centre(r.x, r.y))
-            ctx.stroke(leader, with: .color(green.opacity(0.35)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-            let panel = Path(roundedRect: rect, cornerRadius: 5 * zoom)
-            ctx.fill(panel, with: .color(Color.black.opacity(0.85)))
-            ctx.stroke(panel, with: .color(green.opacity(0.7)), lineWidth: 1)
+            ctx.stroke(leader, with: .color(green.opacity(0.4)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            ctx.fill(Path(rect), with: .color(Color.black.opacity(0.85)))
+            ctx.stroke(Path(rect), with: .color(green.opacity(0.7)), lineWidth: 1)
             for (i, text) in lines.enumerated() {
-                let t = text.count > 16 ? String(text.prefix(15)) + "…" : text
-                ctx.draw(ctx.resolve(Text(t).font(.system(size: 8.5 * zoom, design: .monospaced)).foregroundColor(text == "Danger!" ? .red : green)),
+                let t = text.count > 12 ? String(text.prefix(11)) + "…" : text
+                ctx.draw(ctx.resolve(Text(t).font(.system(size: 6.5 * zoom, design: .monospaced)).foregroundColor(text == "Danger!" ? .red : green)),
                          at: CGPoint(x: rect.midX, y: rect.minY + 4 * zoom + lineH * (CGFloat(i) + 0.5)))
             }
         }
 
-        outlined(&ctx, "\(level.dungeonName) — Level \(level.level)", at: CGPoint(x: l.pad, y: l.top * 0.55), size: 13 * zoom, color: green, anchor: .leading)
-    }
-
-    private func drawTile(_ ctx: inout GraphicsContext, _ r: AtlasRoom, _ c: CGPoint, _ t: CGFloat, current: Bool) {
-        var rng = SeededRNG(state: UInt64(truncatingIfNeeded: r.id &* 2654435761) &+ 1)
-        let rect = CGRect(x: c.x - t / 2, y: c.y - t / 2, width: t, height: t)
-        let shape = Path(roundedRect: rect, cornerRadius: t * 0.12)
-        let kind = r.typeName.lowercased()
-        func rgb(_ r: Double, _ g: Double, _ b: Double) -> Color { Color(red: r, green: g, blue: b) }
-        let base: Color
-        switch true {
-        case kind.contains("treasure"): base = rgb(0.30, 0.24, 0.08)
-        case kind.contains("trap"): base = rgb(0.26, 0.12, 0.08)
-        case kind.contains("boss"): base = rgb(0.26, 0.05, 0.08)
-        case kind.contains("shrine"): base = rgb(0.12, 0.17, 0.30)
-        case kind.contains("library"): base = rgb(0.24, 0.15, 0.08)
-        case kind.contains("armour"), kind.contains("armor"): base = rgb(0.22, 0.24, 0.27)
-        case kind.contains("prison"): base = rgb(0.11, 0.11, 0.12)
-        case kind.contains("shop"): base = rgb(0.28, 0.19, 0.10)
-        case kind.contains("entrance"): base = rgb(0.10, 0.22, 0.12)
-        case kind.contains("corridor"): base = rgb(0.17, 0.17, 0.17)
-        case kind.contains("chamber"): base = rgb(0.18, 0.20, 0.23)
-        default: base = rgb(0.10, 0.11, 0.10)
-        }
-        var g = ctx
-        g.clip(to: shape)
-        g.fill(shape, with: .color(base))
-        // Flagstones, a little uneven.
-        let n = 4
-        for i in 1..<n {
-            let f = CGFloat(i) / CGFloat(n)
-            var h = Path()
-            h.move(to: CGPoint(x: rect.minX, y: rect.minY + f * t + (rng.next() - 0.5) * t * 0.05))
-            h.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + f * t + (rng.next() - 0.5) * t * 0.05))
-            g.stroke(h, with: .color(.black.opacity(0.28)), lineWidth: 1)
-            var v = Path()
-            v.move(to: CGPoint(x: rect.minX + f * t + (rng.next() - 0.5) * t * 0.05, y: rect.minY))
-            v.addLine(to: CGPoint(x: rect.minX + f * t + (rng.next() - 0.5) * t * 0.05, y: rect.maxY))
-            g.stroke(v, with: .color(.black.opacity(0.18)), lineWidth: 1)
-        }
-        func dot(_ x: CGFloat, _ y: CGFloat, _ rad: CGFloat, _ color: Color) {
-            g.fill(Path(ellipseIn: CGRect(x: rect.minX + x * t - rad, y: rect.minY + y * t - rad, width: rad * 2, height: rad * 2)), with: .color(color))
-        }
-        func box(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ color: Color) {
-            g.fill(Path(CGRect(x: rect.minX + x * t, y: rect.minY + y * t, width: w * t, height: h * t)), with: .color(color))
-        }
-        switch true {
-        case kind.contains("treasure"):
-            box(0.30, 0.45, 0.40, 0.25, rgb(0.45, 0.28, 0.10)); box(0.30, 0.45, 0.40, 0.06, rgb(0.8, 0.65, 0.2))
-            for _ in 0..<7 { dot(0.15 + rng.next() * 0.7, 0.15 + rng.next() * 0.25, t * 0.035, rgb(1.0, 0.85, 0.2)) }
-        case kind.contains("trap"):
-            for i in 0..<5 {
-                let x0 = 0.1 + CGFloat(i) * 0.16
-                var spike = Path()
-                spike.move(to: CGPoint(x: rect.minX + x0 * t, y: rect.minY + 0.8 * t))
-                spike.addLine(to: CGPoint(x: rect.minX + (x0 + 0.07) * t, y: rect.minY + 0.55 * t))
-                spike.addLine(to: CGPoint(x: rect.minX + (x0 + 0.14) * t, y: rect.minY + 0.8 * t))
-                g.fill(spike, with: .color(rgb(0.6, 0.6, 0.62)))
-            }
-        case kind.contains("boss"):
-            g.draw(g.resolve(Text("☠").font(.system(size: t * 0.42)).foregroundColor(rgb(0.75, 0.2, 0.2))), at: c)
-        case kind.contains("shrine"):
-            box(0.32, 0.55, 0.36, 0.18, rgb(0.7, 0.7, 0.75))
-            for x in [0.36, 0.64] as [CGFloat] { dot(x, 0.47, t * 0.07, rgb(1, 0.6, 0.2).opacity(0.25)); dot(x, 0.47, t * 0.025, rgb(1, 0.8, 0.3)) }
-        case kind.contains("library"):
-            for row in 0..<3 {
-                let y = 0.2 + CGFloat(row) * 0.25
-                box(0.1, y + 0.12, 0.8, 0.04, rgb(0.45, 0.28, 0.12))
-                var x: CGFloat = 0.12
-                while x < 0.86 {
-                    let w = 0.03 + rng.next() * 0.03
-                    box(x, y + 0.02, w, 0.1, [rgb(0.6, 0.15, 0.15), rgb(0.15, 0.35, 0.6), rgb(0.2, 0.5, 0.25), rgb(0.7, 0.6, 0.3)][Int(rng.next() * 4) % 4])
-                    x += w + 0.01
-                }
-            }
-        case kind.contains("armour"), kind.contains("armor"):
-            box(0.3, 0.45, 0.4, 0.1, rgb(0.35, 0.35, 0.38)); box(0.42, 0.55, 0.16, 0.15, rgb(0.3, 0.3, 0.33)); box(0.33, 0.7, 0.34, 0.06, rgb(0.3, 0.3, 0.33))
-            for _ in 0..<5 { dot(0.35 + rng.next() * 0.3, 0.25 + rng.next() * 0.15, t * 0.015, rgb(1, 0.6, 0.1)) }
-        case kind.contains("prison"):
-            for i in 0..<6 { box(0.1 + CGFloat(i) * 0.15, 0.08, 0.035, 0.84, rgb(0.35, 0.35, 0.38)) }
-        case kind.contains("shop"):
-            for i in 0..<6 { box(CGFloat(i) / 6, 0, 1.0 / 6, 0.2, i % 2 == 0 ? rgb(0.7, 0.2, 0.2) : rgb(0.9, 0.85, 0.7)) }
-            box(0.2, 0.6, 0.6, 0.12, rgb(0.45, 0.3, 0.15))
-        case kind.contains("entrance"):
-            var arch = Path()
-            arch.addArc(center: CGPoint(x: c.x, y: rect.minY + 0.6 * t), radius: t * 0.25, startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
-            g.stroke(arch, with: .color(rgb(0.6, 0.7, 0.6)), lineWidth: t * 0.05)
-        case kind.contains("chamber"):
-            let rug = Path(CGRect(x: rect.minX + 0.22 * t, y: rect.minY + 0.28 * t, width: 0.56 * t, height: 0.44 * t))
-            g.fill(rug, with: .color(rgb(0.4, 0.1, 0.12)))
-            g.stroke(rug, with: .color(rgb(0.75, 0.6, 0.25)), lineWidth: 1.5)
-        default:
-            for _ in 0..<6 { dot(0.1 + rng.next() * 0.8, 0.1 + rng.next() * 0.8, t * 0.02, rgb(0.4, 0.4, 0.4)) }
-        }
-        // A little life: moss here, a puddle there.
-        if rng.next() < 0.25 { dot(0.1 + rng.next() * 0.2, 0.75 + rng.next() * 0.15, t * 0.08, rgb(0.15, 0.4, 0.15).opacity(0.55)) }
-        if rng.next() < 0.15 {
-            g.fill(Path(ellipseIn: CGRect(x: rect.minX + 0.6 * t, y: rect.minY + 0.78 * t, width: 0.25 * t, height: 0.1 * t)), with: .color(rgb(0.2, 0.35, 0.55).opacity(0.7)))
-        }
-        if !r.visited { g.fill(shape, with: .color(.black.opacity(0.35))) }
-        ctx.stroke(shape, with: .color(r.danger ? Color.red.opacity(0.85) : Color(red: 0, green: 0.6, blue: 0.25)), lineWidth: 1.5)
-        // Ways up/down and teleport pads, in the corners.
-        if r.verticalTo != nil {
-            ctx.draw(ctx.resolve(Text(r.verticalDirection == "down" ? "↓" : "↑").font(.system(size: t * 0.2, weight: .bold)).foregroundColor(.cyan)),
-                     at: CGPoint(x: rect.maxX - t * 0.12, y: rect.minY + t * 0.14))
-        }
-        if r.teleportTo != nil {
-            ctx.draw(ctx.resolve(Text("*").font(.system(size: t * 0.24, weight: .bold)).foregroundColor(Color(red: 0.7, green: 0.45, blue: 1))),
-                     at: CGPoint(x: rect.minX + t * 0.12, y: rect.minY + t * 0.14))
-        }
-        if current {
-            ctx.stroke(Path(roundedRect: rect.insetBy(dx: -3, dy: -3), cornerRadius: t * 0.14), with: .color(.yellow), lineWidth: 2.5)
-            outlinedAt(&ctx, "@", c, t * 0.34)
-        }
-    }
-
-    private func outlinedAt(_ ctx: inout GraphicsContext, _ s: String, _ p: CGPoint, _ size: CGFloat) {
-        outlined(&ctx, s, at: p, size: size, color: .yellow)
+        outlined(&ctx, "\(level.dungeonName) — Level \(level.level) · \(showAll ? "The Whole Deep" : "The Charted Reaches")", at: CGPoint(x: l.charW * 2, y: l.lineH * 2.5), size: fontSize, color: green, anchor: .leading)
     }
 }
 
