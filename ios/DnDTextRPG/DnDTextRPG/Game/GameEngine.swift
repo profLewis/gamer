@@ -3598,7 +3598,11 @@ class GameEngine: ObservableObject {
         // could fire well after the player has already moved on some other
         // way (e.g. the corner X), where `action` would no longer make sense.
         let myGeneration = Self.continueGeneration
-        scheduleAutoAdvance(after: countdownDelay(base: infoTimeout * multiplier), isStillValid: { [weak self] in
+        var delay = countdownDelay(base: infoTimeout * multiplier)
+        // Picking up the spoils after a fight: move along quicker (still
+        // time to read who took what).
+        if combatLootEligible != nil { delay = max(1.5, min(delay, 4.0) * 0.6) }
+        scheduleAutoAdvance(after: delay, isStillValid: { [weak self] in
             !fired && self?.awaitingContinue == true && Self.continueGeneration == myGeneration
         }, fire: fire)
         inputHandler = { _ in fire() }
