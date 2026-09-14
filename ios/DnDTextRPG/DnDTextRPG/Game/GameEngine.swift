@@ -8290,7 +8290,7 @@ class GameEngine: ObservableObject {
         hoveredMenuChoice = nil
         var opts = Self.applyAlwaysDisabled(options)
         func regular(_ o: MenuOption) -> Bool { !o.isCompactNav && o.text != "Fwd >" && o.text != "<<" && o.text != ">>" }
-        if !opts.contains(where: { $0.isDefault }), let i = opts.firstIndex(where: { regular($0) && !$0.isDisabled }) {
+        if !opts.contains(where: { $0.isDefault }), let i = opts.firstIndex(where: { regular($0) && !$0.isDisabled && $0.tint != .danger }) {
             let o = opts[i]
             var d = MenuOption(o.text, isDefault: true, isDisabled: o.isDisabled, isAlert: o.isAlert, tint: o.tint, compact: o.isCompactNav, displayNumber: o.displayNumber)
             d.sourceIndex = o.sourceIndex
@@ -8609,7 +8609,7 @@ class GameEngine: ObservableObject {
         print("  Autosave: \(autosaveInterval.displayName)", color: .dimGreen)
         print("")
 
-        var menuOpts = ["DM Settings", "Accessibility", "Mood", "Gameplay", "Game Saves"].map { MenuOption($0) }
+        var menuOpts = ["DM Settings", "Brain", "Accessibility", "Mood", "Gameplay", "Game Saves"].map { MenuOption($0) }
         menuOpts.append(MenuOption("Save Settings"))
         menuOpts.append(MenuOption("Reset", tint: .danger))
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -8629,6 +8629,7 @@ class GameEngine: ObservableObject {
             let text = menuOpts[choice - 1].text
             switch text {
             case "DM Settings": self.showDMSettingsSubMenu()
+            case "Brain": self.showAIProviderMenu(onBack: { [weak self] in self?.showSettings() })
             case "Accessibility": self.showAccessibilityMenu()
             case "Mood": self.showMusicSettings()
             case "Gameplay": self.showGameplaySettings()
@@ -23790,16 +23791,18 @@ class GameEngine: ObservableObject {
 
         // Build menu
         // "Brain" (was "AI") — which mind runs the Dungeon Master.
-        var menuOpts = ["Party Review", "Save to Roster", "Adventure Log", "Tell the Tale", "Lore", "Brain", "Settings", "?", "< Back"]
+        // Party Review first (the default); Brain now lives in Settings.
+        var menuOpts = ["Party Review", "Tell the Tale", "Save to Roster", "Adventure Log", "Lore", "Settings", "?", "< Back"]
         if dungeon?.hasCartography == true {
             menuOpts.insert("Atlas", at: menuOpts.firstIndex(of: "Lore") ?? 0)
         }
         let hasPoisoned = party.contains(where: { $0.isPoisoned })
+        // Occasional actions go at the end — never the default.
         if hasPoisoned {
-            menuOpts.insert("Cure Poison", at: 0)
+            menuOpts.insert("Cure Poison", at: menuOpts.firstIndex(of: "?") ?? menuOpts.count)
         }
         if activeQuest != nil {
-            menuOpts.insert("Give Up Quest", at: 0)
+            menuOpts.insert("Give Up Quest", at: menuOpts.firstIndex(of: "?") ?? menuOpts.count)
         }
 
         showMenu(menuOpts)
@@ -23929,25 +23932,51 @@ class GameEngine: ObservableObject {
         NameRegistry.reset(names)
     }
 
+    /// Same answer every run for the same text (Swift's own hash changes per launch).
+    private func stableHash(_ text: String) -> Int {
+        text.unicodeScalars.reduce(7) { ($0 &* 31 &+ Int($1.value)) & 0x7fffffff }
+    }
+
+    private static let loreLooks = ["wears a leather apron patched a dozen times", "has ink-stained fingers and a pencil behind one ear",
+        "keeps a tame rat on one shoulder", "hums sea shanties while counting coins", "wears spectacles far too big for their nose",
+        "has a laugh you can hear three rooms away", "never quite looks you in the eye", "keeps every coin in a different pocket",
+        "smells faintly of cinnamon and lamp oil", "has a scar they say came from a dragon", "speaks in a whisper, as if the walls listen",
+        "wears a hat with a very long feather", "has a beard braided with tiny bells", "is never without a mug of something steaming"]
+    private static let loreHabits = ["haggles just for the fun of it", "remembers every customer's name", "gives regulars a free biscuit",
+        "writes prices in a secret code", "insists everything is 'barely used'", "trades gossip as eagerly as goods",
+        "tests every coin with their teeth", "tells a different story about each item", "counts the stock twice, just in case",
+        "polishes whatever is nearest when thinking", "hides the best stock behind the worst"]
+    private static let loreRumours = ["They say they once sold a sword to a king.", "Rumour has it the best stock is under the counter.",
+        "Folk whisper they came down here to escape a debt.", "Someone swears they saw them chatting with a ghost.",
+        "They claim to have mapped half this dungeon.", "Nobody knows how the stock gets down here.",
+        "Their grandmother ran a shop in these very halls.", "They keep a list of every monster they've outrun."]
+
+    /// Different for each person and place, even when a name comes round again.
+    private func merchantLore(_ merchant: Merchant, room: Room) -> String {
+        let seed = stableHash(merchant.name + "|" + room.name)
+        return "\(merchant.shopName), \(room.name). \(merchant.personaBlurb) This one \(Self.loreLooks[seed % Self.loreLooks.count]) and \(Self.loreHabits[(seed / 7) % Self.loreHabits.count]). \(Self.loreRumours[(seed / 53) % Self.loreRumours.count]) Favourite saying: \"\(merchant.catchphrase)\""
+    }
+
     private func loreEntries() -> [(name: String, description: String)] {
         guard let dungeon = dungeon else { return [] }
         var entries: [(name: String, description: String)] = []
         for room in dungeon.rooms.values where room.visited {
             if let merchant = room.merchant {
-                entries.append((merchant.name, "\(merchant.shopName), \(room.name) — \(merchant.personaBlurb)"))
+                entries.append((merchant.name, merchantLore(merchant, room: room)))
             }
             if let npc = room.npc, npc.hasBeenTalkedTo {
                 if let merchant = npc.merchant {
-                    entries.append((merchant.name, "\(merchant.shopName), \(room.name) — \(merchant.personaBlurb)"))
+                    entries.append((merchant.name, merchantLore(merchant, room: room)))
                 } else {
                     // A non-merchant NPC has no unique name of their own
                     // (npc.name is just their type, e.g. "Hermit") — so the
                     // one thing worth recording about them is what they're
                     // actually like, not just where you found them.
                     var desc = "\(npc.type.description) Met in \(room.name)."
-                    if let trait = npc.type.personalityTraits.first {
-                        desc += " (\(trait).)"
-                    }
+                    let seed = stableHash(npc.displayName + "|" + room.name)
+                    let traits = npc.type.personalityTraits
+                    if !traits.isEmpty { desc += " (\(traits[seed % traits.count]).)" }
+                    desc += " This one \(Self.loreLooks[(seed / 11) % Self.loreLooks.count])."
                     entries.append((npc.displayName, desc))
                 }
             }
@@ -23999,7 +24028,18 @@ class GameEngine: ObservableObject {
             self.printWrapped("Map + each character's HP, gold, XP. Green HP = healthy, yellow = wounded, red = critical.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  BUTTONS", color: .cyan, bold: true)
-            self.printWrapped("Party Review — edit adventurers and view stat cards. Save to Roster — persist a character's progress for future adventures. Adventure Log — event timeline. Lore — named merchants and NPCs you've actually met this adventure. AI — see which AI is running the DM (shown above as \"DM:\") and switch providers. Settings — game settings. Cure Poison — when poisoned. Give Up Quest — abandon your current quest (loses progress and costs some gold in lost goodwill) so a different NPC can offer you a new one.", indent: 2, color: .dimGreen)
+            for (name, what) in [
+                ("Party Review", "edit adventurers and see their stat cards"),
+                ("Tell the Tale", "the story of this adventure so far"),
+                ("Save to Roster", "keep an adventurer's progress for future adventures"),
+                ("Adventure Log", "a timeline of what's happened"),
+                ("Lore", "the named merchants and folk you've met"),
+                ("Settings", "game settings — including Brain, which AI runs the DM"),
+                ("Cure Poison", "shown when someone is poisoned"),
+                ("Give Up Quest", "abandon a quest (progress lost, some gold in goodwill) to make room for another"),
+            ] {
+                self.printWrapped("\(name) — \(what)", indent: 2, color: .dimGreen)
+            }
             self.print("")
             self.print("  MONSTER STRENGTH", color: .cyan, bold: true)
             self.printWrapped("Monsters scale up a little as your party's average level rises, on top of your chosen difficulty — the dungeon keeps pace with your growing skill instead of staying static.", indent: 2, color: .dimGreen)

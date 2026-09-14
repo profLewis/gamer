@@ -128,6 +128,13 @@ struct TerminalView: View {
     private var scale: CGFloat { gameEngine.fontScale }
     /// The big map's zoom (pinch, or the -/+ buttons).
     @State private var mapZoom: CGFloat = 1
+    /// Which story lines are on screen (roughly — the list is lazy), so a
+    /// swipe over the controls can scroll the story by whole lines. A
+    /// reference, so updating it doesn't redraw the view.
+    final class LineVisibility { var indices = Set<Int>() }
+    @State private var lineVisibility = LineVisibility()
+    @State private var swipeScrollLines = 0
+    @State private var swipeScrollToken = 0
     @State private var zoomAtPinchStart: CGFloat? = nil
 
     /// Wraps the map panel + scrolling text as an HStack (map | text side by
@@ -324,6 +331,7 @@ struct TerminalView: View {
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 2) {
                                 ForEach(Array(gameEngine.terminalLines.enumerated()), id: \.element.id) { index, line in
+                                    Group {
                                     if let link = line.link {
                                         // In-text link — always its own tap target, whatever
                                         // the screen's other tap handling is.
@@ -367,6 +375,9 @@ struct TerminalView: View {
                                         TerminalLineView(line: line, scale: scale)
                                             .id(line.id)
                                     }
+                                    }
+                                    .onAppear { lineVisibility.indices.insert(index) }
+                                    .onDisappear { lineVisibility.indices.remove(index) }
                                 }
                                 // Animated GIF (e.g. main menu dragon)
                                 if let gifName = gameEngine.dragonGifName {
@@ -515,6 +526,15 @@ struct TerminalView: View {
                                     }
                                 }
                             }
+                        }
+                        // A vertical swipe over the controls scrolls the story.
+                        .onChange(of: swipeScrollToken) { _ in
+                            let lines = gameEngine.terminalLines
+                            guard !lines.isEmpty else { return }
+                            let top = lineVisibility.indices.min() ?? 0
+                            let target = min(max(0, top + swipeScrollLines), lines.count - 1)
+                            lastManualScrollAt = Date()
+                            withAnimation(.easeOut(duration: 0.3)) { scrollProxy.scrollTo(lines[target].id, anchor: .top) }
                         }
                         .onChange(of: isInputFocused) { focused in
                             if focused {
@@ -673,6 +693,18 @@ struct TerminalView: View {
                                 .onTapGesture { advanceFromStrip() }
                         }
                     }
+                    #if !os(tvOS)
+                    // Swiping up or down over the controls scrolls the story too.
+                    .simultaneousGesture(DragGesture(minimumDistance: 24).onEnded { value in
+                        let dy = value.translation.height
+                        guard abs(dy) > abs(value.translation.width) * 1.5, abs(dy) > 30 else { return }
+                        let lineHeight = 14 * scale * 1.2 + 2
+                        // Finger up: on to later text; finger down: back up.
+                        let lines = Int((dy / lineHeight * 1.5).rounded())
+                        swipeScrollLines = lines < 0 ? max(3, -lines) : -max(3, lines)
+                        swipeScrollToken += 1
+                    })
+                    #endif
                     .accessibilityElement(children: .contain)
                     .accessibilitySortPriority(1)
                 }
