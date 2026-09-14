@@ -108,7 +108,6 @@ struct TerminalView: View {
     #if os(macOS)
     /// Mac pane sizes, set by dragging the small handles (remembered).
     /// 0 = map pane tall enough for the whole map box, key included.
-    @AppStorage("macMapPaneHeight") private var macMapPaneHeight: Double = 0
     @AppStorage("macLeftPaneFraction") private var macLeftPaneFraction: Double = 0.5
     @State private var macDragBase: CGFloat? = nil
     #endif
@@ -257,22 +256,14 @@ struct TerminalView: View {
                         // small landscape column, a long Map
                         // Length, larger text scale...).
                         #if os(macOS)
-                        // Mac: the whole map box (header, grid, full key) unless the
-                        // player has dragged the handle below to another height.
-                        .frame(height: macMapPaneHeight > 0
-                               ? CGFloat(macMapPaneHeight)
-                               : CGFloat(gameEngine.pinnedMapLines.count) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 8)
-                        // Tell the engine the pane's size, so the map's extent follows it.
+                        // Mac: the whole map box (header, grid, full key). Its rows
+                        // are the Map Length setting — which the handle below sets.
+                        .frame(height: CGFloat(gameEngine.pinnedMapLines.count) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 8)
+                        // Tell the engine the pane's width, so the map's extent follows it.
                         .background(GeometryReader { geo in
                             Color.clear
-                                .onAppear {
-                                    gameEngine.macMapPaneChanged(width: geo.size.width,
-                                                                 userHeight: macMapPaneHeight > 0 ? CGFloat(macMapPaneHeight) : nil)
-                                }
-                                .onChange(of: geo.size) { size in
-                                    gameEngine.macMapPaneChanged(width: size.width,
-                                                                 userHeight: macMapPaneHeight > 0 ? CGFloat(macMapPaneHeight) : nil)
-                                }
+                                .onAppear { gameEngine.macMapPaneChanged(width: geo.size.width) }
+                                .onChange(of: geo.size.width) { width in gameEngine.macMapPaneChanged(width: width) }
                         })
                         #elseif os(tvOS)
                         .frame(height: CGFloat(gameEngine.pinnedMapLines.count) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 8)
@@ -298,18 +289,20 @@ struct TerminalView: View {
                         // (No divider line under the map either — the map
                         // panel's own background marks where it ends.)
                         #if os(macOS)
-                        // Mac: drag this small handle to make the map pane taller
-                        // or shorter (double-click: back to fitting the whole map).
+                        // Mac: drag this small handle to show more or fewer rooms up
+                        // and down — it sets Map Length (Settings > Gameplay), the pane
+                        // snapping to whole rows. Double-click: back to the default 3.
                         macPaneHandle(vertical: false)
                             .gesture(DragGesture(minimumDistance: 1)
                                 .onChanged { value in
-                                    let full = CGFloat(gameEngine.pinnedMapLines.count) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 8
-                                    let base = macDragBase ?? (macMapPaneHeight > 0 ? CGFloat(macMapPaneHeight) : full)
+                                    let lineHeight = gameEngine.mapFontSize * mapScale * 1.3 + 2
+                                    let base = macDragBase ?? CGFloat(gameEngine.pinnedMapLines.count) * lineHeight + 8
                                     macDragBase = base
-                                    macMapPaneHeight = Double(max(80, min(geometry.size.height - 140, base + value.translation.height)))
+                                    let target = max(80, min(geometry.size.height - 140, base + value.translation.height))
+                                    gameEngine.macFitMapRows(toHeight: target, lineHeight: lineHeight)
                                 }
                                 .onEnded { _ in macDragBase = nil })
-                            .onTapGesture(count: 2) { macMapPaneHeight = 0 }
+                            .onTapGesture(count: 2) { gameEngine.macSetMapRows(3) }
                         #endif
                     }
                     }

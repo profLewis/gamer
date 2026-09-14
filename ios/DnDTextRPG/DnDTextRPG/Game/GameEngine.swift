@@ -2740,6 +2740,7 @@ class GameEngine: ObservableObject {
         case "helpGlyph": return MenuOption.helpGlyph
         case "blinkingCursorEnabled": return blinkingCursorEnabled ? "On" : "Off"
         case "map_radius": return "\(mapRadius)"
+        case "mac_map_rows": return "\(macMapRows)"
         case "maxButtonsPerScreen": return "\(maxButtonsPerScreen)"
         case "autosave_interval": return autosaveInterval.displayName
         case "dmAdLibLevel": return DMEngine.shared.adLibLevel.displayName
@@ -7962,6 +7963,29 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Mac only: how many rooms up/down the map pane shows. One setting,
+    /// two controls — Settings > Gameplay > Map Length, or dragging the
+    /// handle under the map (see macFitMapRows).
+    static let macMapRowsRange = 1...15
+    var macMapRows: Int {
+        get {
+            let val = UserDefaults.standard.integer(forKey: "mac_map_rows")
+            return val > 0 ? min(val, Self.macMapRowsRange.upperBound) : 3
+        }
+        set {
+            UserDefaults.standard.set(min(max(newValue, Self.macMapRowsRange.lowerBound), Self.macMapRowsRange.upperBound), forKey: "mac_map_rows")
+        }
+    }
+
+    /// The Map Length the player sees and sets: the Mac's pane rows, else the phone's radius.
+    var mapLengthSetting: Int {
+        #if os(macOS)
+        return macMapRows
+        #else
+        return mapRadius
+        #endif
+    }
+
     var gameTimeLimit: Int {  // 0 = off, value in game-minutes
         get { UserDefaults.standard.integer(forKey: "gameTimeLimit") }
         set { UserDefaults.standard.set(newValue, forKey: "gameTimeLimit") }
@@ -8532,7 +8556,7 @@ class GameEngine: ObservableObject {
             char.inventory.contains { $0.name.lowercased().contains("torch") }
         }
         let effective = effectiveMapRadius()
-        print("  Setting: \(mapRadius)  Effective: \(effective)\(hasTorch ? "" : " (no torch!)")", color: hasTorch ? .dimGreen : .yellow)
+        print("  Setting: \(mapLengthSetting)  Effective: \(effective)\(hasTorch ? "" : " (no torch!)")", color: hasTorch ? .dimGreen : .yellow)
         printWrapped("How far you can see on the dungeon map. Illuminate your torch to see further!", indent: 2, color: .dimGreen)
         print("")
 
@@ -9162,7 +9186,7 @@ class GameEngine: ObservableObject {
         "speechEnabled", "companionVoiceMode",
         "menu_melody", "exploration_melody", "combat_melody", "chat_melody",
         "gameTimeLimit", "useCustomKeyboard", "undoRedoEnabled",
-        "justDMMode",
+        "justDMMode", "mac_map_rows",
     ]
 
     private func exportSettings() -> [String: Any] {
@@ -10396,7 +10420,11 @@ class GameEngine: ObservableObject {
         add("fontSizeSetting", "Display Size", current: fontSizeSetting.displayName, dflt: FontSizeSetting.defaultSetting.displayName)
         add("maxButtonsPerScreen", "Button Limit", current: "\(maxButtonsPerScreen)", dflt: "6")
         add("useArrowNavigation", "Card Navigation", current: useArrowNavigation ? "Buttons" : "Swipe", dflt: "Swipe")
+        #if os(macOS)
+        add("mac_map_rows", "Map Length", current: "\(macMapRows)", dflt: "3")
+        #else
         add("map_radius", "Map Length", current: "\(mapRadius)", dflt: "1")
+        #endif
         add("npcs_enabled", "NPCs", current: npcsEnabled ? "On" : "Off", dflt: "Off")
         add("multiple_shops_enabled", "Multi-Shop", current: multipleShopsEnabled ? "On" : "Off", dflt: "On")
         add("multiplayer_enabled", "Multiplayer", current: multiplayerEnabled ? "On" : "Off", dflt: "Off")
@@ -12050,9 +12078,13 @@ class GameEngine: ObservableObject {
     func showMapRadiusMenu() {
         clearTerminal()
         printTitle("Map Length")
+        #if os(macOS)
+        printWrapped("How many rooms up and down the map pane shows. This is the same as dragging the handle under the map — change it either way. The width follows the pane: widen the left column to see further sideways. The map always stays centred on you.", indent: 2, color: .dimGreen)
+        #else
         print("  How far you can see up/down the minimap.", color: .dimGreen)
         print("  Width isn't part of this — the map already widens on its", color: .dimGreen)
         print("  own to use the available screen width.", color: .dimGreen)
+        #endif
         print("  Without a torch, visibility drops to 1.", color: .dimGreen)
         print("  Larger values may cause scrolling.", color: .dimGreen)
         print("")
@@ -12060,7 +12092,7 @@ class GameEngine: ObservableObject {
             char.inventory.contains { $0.name.lowercased().contains("torch") }
         }
         let effective = effectiveMapRadius()
-        print("  Setting: \(mapRadius)  Effective: \(effective)", color: .brightGreen)
+        print("  Setting: \(mapLengthSetting)  Effective: \(effective)", color: .brightGreen)
         if !hasTorch {
             print("  No torch — visibility reduced!", color: .yellow)
         }
@@ -12078,11 +12110,17 @@ class GameEngine: ObservableObject {
             print("")
         }
 
+        #if os(macOS)
+        // Mac: step the pane's rows (the drag handle sets the same value).
+        var menuOpts: [MenuOption] = [MenuOption("- Shorter"), MenuOption("+ Longer")]
+        #else
         let current = mapRadius
         let opts = [("1 Short", 1), ("2 Normal", 2), ("3 Long", 3)]
         var menuOpts: [MenuOption] = opts.map { (label, val) -> MenuOption in
             MenuOption(val == current ? "\(label) <--" : label)
         }
+        #endif
+        let sizeOptionCount = menuOpts.count
         let torchToggleIndex: Int? = dungeon != nil ? menuOpts.count + 1 : nil
         if dungeon != nil {
             menuOpts.append(MenuOption(mapPreviewTorchOn ? "Torch Off" : "Torch On"))
@@ -12107,9 +12145,14 @@ class GameEngine: ObservableObject {
         closeHandler = { [weak self] in self?.showGameplaySettings() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
-            if choice >= 1 && choice <= 3 {
+            if choice >= 1 && choice <= sizeOptionCount {
+                #if os(macOS)
+                self.recordSettingChange(screen: "s:gameplay", key: "mac_map_rows", name: "Map")
+                self.macSetMapRows(self.macMapRows + (choice == 1 ? -1 : 1))
+                #else
                 self.recordSettingChange(screen: "s:gameplay", key: "map_radius", name: "Map")
                 self.mapRadius = choice
+                #endif
                 self.showMapRadiusMenu()
             } else if let torchToggleIndex = torchToggleIndex, choice == torchToggleIndex {
                 self.mapPreviewTorchOn.toggle()
@@ -12124,7 +12167,11 @@ class GameEngine: ObservableObject {
                     self.printTitle("Map Length Help")
                     self.print("")
                     self.print("  MAP LENGTH", color: .cyan, bold: true)
+                    #if os(macOS)
+                    self.printWrapped("How many rooms up and down the map pane shows. Shorter/Longer here, or drag the little handle under the map — both change this same setting (double-click the handle to go back to 3). The map's width follows the left column: drag the handle between the columns to see further sideways. You're always in the middle.", indent: 2, color: .dimGreen)
+                    #else
                     self.printWrapped("How far you can see up/down the minimap. Width isn't affected — the map already widens on its own to use the available screen space. Larger values may need scrolling.", indent: 2, color: .dimGreen)
+                    #endif
                     self.print("")
                     self.print("  TORCH", color: .cyan, bold: true)
                     self.printWrapped("Without a lit torch, visibility drops to 1 regardless of this setting. The preview above shows both lit and unlit — tap 'Torch On/Off' to compare.", indent: 2, color: .dimGreen)
@@ -17635,15 +17682,32 @@ class GameEngine: ObservableObject {
     /// follows it (see bestMapRadius). userHeight is nil while the pane is
     /// at its default "fit the whole map" size.
     private var macMapPaneWidth: CGFloat = 0
-    private var macMapPaneUserHeight: CGFloat? = nil
 
-    func macMapPaneChanged(width: CGFloat, userHeight: CGFloat?) {
+    func macMapPaneChanged(width: CGFloat) {
         let before = bestMapRadius()
         macMapPaneWidth = width
-        macMapPaneUserHeight = userHeight
-        let after = bestMapRadius()
-        guard before != after, dungeon != nil, !pinnedMapLines.isEmpty else { return }
+        guard before != bestMapRadius(), dungeon != nil, !pinnedMapLines.isEmpty else { return }
         printExplorationMap()
+    }
+
+    /// Dragging the map pane's handle: as many rows as fit in `height`
+    /// (each map line `lineHeight` tall, as TerminalView lays them out).
+    /// Saved as the Map Length setting, so Settings shows the same value.
+    func macFitMapRows(toHeight height: CGFloat, lineHeight: CGFloat) {
+        guard let dungeon = dungeon else { return }
+        let (radius, _, compact) = bestMapRadius()
+        var best = Self.macMapRowsRange.lowerBound
+        for rows in Self.macMapRowsRange {
+            let count = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: rows, legendMaxSymbols: mapLegendMaxSymbols, hasTrapSense: partyHasTrapSense, capWidth: false).count
+            if CGFloat(count) * lineHeight + 8 <= height { best = rows } else { break }
+        }
+        macSetMapRows(best)
+    }
+
+    func macSetMapRows(_ rows: Int) {
+        guard rows != macMapRows else { return }
+        macMapRows = rows
+        if dungeon != nil && !pinnedMapLines.isEmpty { printExplorationMap() }
     }
     #endif
 
@@ -17662,17 +17726,11 @@ class GameEngine: ObservableObject {
         // viewport (more of the dungeon visible at once), not a bigger
         // font stretched to fill the extra space (see mapFontSize, which
         // only bumps up a little for macOS).
-        // The map fills its pane: as wide as the column, and — once the
-        // player has dragged the pane to a height of their own — as many
-        // rows as fit (header, grid, "@ here" line and full key). Always
-        // centred on the current room, so a bigger pane shows more around you.
-        let lineHeight = mapFontSize * fontScale * 1.3 + 2 + 2   // + the lines' 2pt spacing
-        var verticalRadius = mapRadius + 2
-        if let paneHeight = macMapPaneUserHeight {
-            let lines = Int((paneHeight - 8) / lineHeight)
-            let keyLines = 2 + Dungeon.mapLegendRowCount(maxSymbols: mapLegendMaxSymbols)
-            verticalRadius = max(1, (lines - 5 - keyLines) / 4)
-        }
+        // The map fills its pane's width, and its height is the Map Length
+        // setting (which dragging the pane also sets). Always centred on the
+        // current room, so a bigger pane shows more around you.
+        // Rows: the Mac's Map Length (set in Settings or by dragging the pane).
+        let verticalRadius = macMapRows
         var horizontalRadius = min(mapRadius + 6, 10)
         if macMapPaneWidth > 0 {
             let charWidth = mapFontSize * fontScale * 0.6
