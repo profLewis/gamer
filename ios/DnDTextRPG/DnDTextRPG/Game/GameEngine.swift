@@ -17985,8 +17985,57 @@ class GameEngine: ObservableObject {
     private func adventureBackstory() -> [String] {
         let place = dungeon?.name ?? "the dungeon"
         let names = party.map { shortName(for: $0) }
-        let together = names.count <= 1 ? (names.first ?? "You")
+        let solo = names.count <= 1
+        let together = solo ? (names.first ?? "You")
             : names.dropLast().joined(separator: ", ") + " and " + names.last!
+
+        // What each kind of adventurer in this team brings — and any gap.
+        var team: [String] = []
+        var seen = Set<String>()
+        for c in party where team.count < 3 && seen.insert(c.characterClass.rawValue).inserted {
+            let n = shortName(for: c)
+            switch c.characterClass {
+            case .fighter: team.append("\(n)'s sword arm will hold the narrow corridors.")
+            case .wizard: team.append("\(n)'s spells can light the dark — and burn what lurks in it.")
+            case .rogue: team.append("\(n) knows how to slip past a sleeping guard, and open what others lock.")
+            case .cleric: team.append("\(n)'s prayers will mend what the dungeon breaks.")
+            case .ranger: team.append("\(n) can read a track in the dust and loose an arrow before trouble arrives.")
+            case .barbarian: team.append("When all else fails, \(n)'s fury will do the rest.")
+            case .engineer: team.append("\(n)'s gadgets have an answer for most locks — and most traps.")
+            case .scout: team.append("\(n) will see danger long before it sees them.")
+            case .thief: team.append("\(n)'s quick fingers will find the treasure others walk past.")
+            case .bard: team.append("\(n)'s songs will lift tired spirits — and a quick tongue can talk the party out of trouble.")
+            }
+        }
+        let classes = Set(party.map { $0.characterClass })
+        if !classes.contains(.cleric) {
+            team.append("With no healer among them, every potion will count.")
+        } else if classes.isDisjoint(with: [.fighter, .barbarian]) {
+            team.append("None of them is much of a brawler — cunning will have to win the day.")
+        }
+
+        // Story by Beau Lewis (world creation and storytelling) — the
+        // village, the beast (this dungeon's own boss, where there is one),
+        // the dungeon and the size of the band are filled in; the words are Beau's.
+        if Int.random(in: 1...10) <= 6 {
+            let village = Int.random(in: 1...3) == 1
+                ? ["Brackenford", "Thistledown", "Emberholt", "Wyrmsby"].randomElement()! : "Lithlind"
+            let bossName = dungeon?.rooms.values.first(where: { $0.roomType == .boss })?.encounter?.monsters.first?.name
+            let beast = bossName.map { "the \($0.lowercased())" } ?? "the bugbear"
+            var lines = [
+                "The small, quiet village of \(village), once a place of peace and prosperity, has been recently haunted by the terrifying beast that is known as \(beast).",
+                "In their panic and horror, the people desperately tried to find one brave enough to face its lair. But there was none.",
+                solo ? "Until, a lone, young and brave warrior came wandering through town, searching for adventure: \(together)."
+                     : "Until, a small, young band of brave warriors came wandering through town, searching for adventure: \(together).",
+                "One day, whilst \(solo ? "they were" : "they were") staying there, the elder of the village came to the inn that they had been staying at, begging for salvation.",
+                solo ? "The adventurer thought briefly, before bravely deciding to take up the task."
+                     : "The adventurers consulted briefly, before bravely deciding to take up the task.",
+            ]
+            lines += team
+            lines.append("Now you must venture deep, deeper than any man has ever gone before, into the dank, deep dungeon… of \(place).")
+            return lines
+        }
+
         var lines: [String] = []
         lines.append([
             "Word reached the village: the old seal on \(place) has cracked, and something below is stirring.",
@@ -17996,29 +18045,8 @@ class GameEngine: ObservableObject {
             "A half-burned letter arrived from an old friend: \"Meet me in \(place). Bring help. Tell no one.\"",
             "The Guild of Cartographers will pay handsomely for the first true map of \(place). No map-maker has ever come back.",
         ].randomElement()!)
-        lines.append("\(together) \(names.count == 1 ? "answers" : "answer") the call.")
-        var seen = Set<String>()
-        for c in party where lines.count < 5 && seen.insert(c.characterClass.rawValue).inserted {
-            let n = shortName(for: c)
-            switch c.characterClass {
-            case .fighter: lines.append("\(n)'s sword arm will hold the narrow corridors.")
-            case .wizard: lines.append("\(n)'s spells can light the dark — and burn what lurks in it.")
-            case .rogue: lines.append("\(n) knows how to slip past a sleeping guard, and open what others lock.")
-            case .cleric: lines.append("\(n)'s prayers will mend what the dungeon breaks.")
-            case .ranger: lines.append("\(n) can read a track in the dust and loose an arrow before trouble arrives.")
-            case .barbarian: lines.append("When all else fails, \(n)'s fury will do the rest.")
-            case .engineer: lines.append("\(n)'s gadgets have an answer for most locks — and most traps.")
-            case .scout: lines.append("\(n) will see danger long before it sees them.")
-            case .thief: lines.append("\(n)'s quick fingers will find the treasure others walk past.")
-            case .bard: lines.append("\(n)'s songs will lift tired spirits — and a quick tongue can talk the party out of trouble.")
-            }
-        }
-        let classes = Set(party.map { $0.characterClass })
-        if !classes.contains(.cleric) {
-            lines.append("With no healer among them, every potion will count.")
-        } else if classes.isDisjoint(with: [.fighter, .barbarian]) {
-            lines.append("None of them is much of a brawler — cunning will have to win the day.")
-        }
+        lines.append("\(together) \(solo ? "answers" : "answer") the call.")
+        lines += team
         lines.append([
             "Somewhere in its depths waits the creature behind it all — a guardian no one has bested.",
             "At the very bottom, they say, lies the Heart of the Deep: a gem that lights the dark for a hundred miles.",
