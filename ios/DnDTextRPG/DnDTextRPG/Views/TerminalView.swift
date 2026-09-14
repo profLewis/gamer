@@ -136,6 +136,7 @@ struct TerminalView: View {
     @State private var swipeScrollLines = 0
     @State private var swipeScrollToken = 0
     @State private var pinchScale: CGFloat = 1
+    @State private var showMapButtonHelp = false
 
     /// Wraps the map panel + scrolling text as an HStack (map | text side by
     /// side) in landscape, or the original VStack (map above text) otherwise
@@ -1464,29 +1465,62 @@ struct TerminalView: View {
                     pinchScale = 1
                 })
             #endif
-            HStack(spacing: 8) {
-                // Page between the levels you've mapped (the Atlas keeps
-                // every level you've left behind).
-                if gameEngine.atlasLevelCount > 1 {
-                    overlayCapsule("Lv", systemImage: "chevron.left", enabled: gameEngine.atlasLevelIndex > 0) {
-                        gameEngine.atlasShowLevel(offset: -1)
+            VStack(alignment: .trailing, spacing: 8) {
+                // Symbols only — each one's words are a hover-over hint (and
+                // VoiceOver's label), and ? explains them all.
+                HStack(spacing: 8) {
+                    // Page between the levels you've mapped (the Atlas keeps
+                    // every level you've left behind).
+                    if gameEngine.atlasLevelCount > 1 {
+                        overlayCapsule("Previous level", systemImage: "chevron.left", enabled: gameEngine.atlasLevelIndex > 0) {
+                            gameEngine.atlasShowLevel(offset: -1)
+                        }
+                        overlayCapsule("Next level", systemImage: "chevron.right", enabled: gameEngine.atlasLevelIndex < gameEngine.atlasLevelCount - 1) {
+                            gameEngine.atlasShowLevel(offset: 1)
+                        }
                     }
-                    overlayCapsule("Lv", systemImage: "chevron.right", enabled: gameEngine.atlasLevelIndex < gameEngine.atlasLevelCount - 1) {
-                        gameEngine.atlasShowLevel(offset: 1)
+                    if gameEngine.atlasExploreAvailable && !gameEngine.atlasScreenActive {
+                        overlayCapsule("Explore the rooms, one by one", systemImage: "book.closed") { gameEngine.openAtlasFromOverlay() }
+                    }
+                    overlayCapsule(gameEngine.atlasShowAllRooms ? "Show only where you've been (The Charted Reaches)" : "Show every room (The Whole Deep)",
+                                   systemImage: gameEngine.atlasShowAllRooms ? "map" : "globe") {
+                        gameEngine.setAtlasShowAll(!gameEngine.atlasShowAllRooms)
+                    }
+                    overlayCapsule(gameEngine.pictureMapOn ? "Show as text" : "Show as a picture", systemImage: gameEngine.pictureMapOn ? "text.alignleft" : "photo") {
+                        gameEngine.pictureMapOn.toggle()
+                    }
+                    overlayCapsule("Zoom out", systemImage: "minus.magnifyingglass", enabled: mapZoom > 0.45) { mapZoom = max(0.4, mapZoom / 1.25) }
+                    overlayCapsule("Zoom in", systemImage: "plus.magnifyingglass", enabled: mapZoom < 3.9) { mapZoom = min(4, mapZoom * 1.25) }
+                    overlayCapsule("Save or print this map", systemImage: "printer") {
+                        showMapButtonHelp = false
+                        gameEngine.saveOrPrintOverlayMap()
+                    }
+                    overlayCapsule("What the buttons do", systemImage: "questionmark") { showMapButtonHelp.toggle() }
+                    overlayCapsule("Close the map", systemImage: "xmark") {
+                        showMapButtonHelp = false
+                        gameEngine.recentreMap()
                     }
                 }
-                if gameEngine.atlasExploreAvailable && !gameEngine.atlasScreenActive {
-                    overlayCapsule("Explore", systemImage: "book.closed") { gameEngine.openAtlasFromOverlay() }
+                if showMapButtonHelp {
+                    VStack(alignment: .leading, spacing: 5) {
+                        ForEach(Self.mapButtonKey.indices, id: \.self) { i in
+                            HStack(spacing: 8) {
+                                Image(systemName: Self.mapButtonKey[i].symbol)
+                                    .frame(width: 22 * scale)
+                                Text(Self.mapButtonKey[i].meaning)
+                                    .font(.system(size: 12 * scale, design: .monospaced))
+                            }
+                            .foregroundColor(terminalGreen)
+                        }
+                        Text("Pinch to zoom (double-tap to reset); drag to look around.")
+                            .font(.system(size: 11 * scale, design: .monospaced))
+                            .foregroundColor(TerminalColor.dimGreen.swiftUIColor)
+                    }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.92)))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(terminalGreen.opacity(0.6), lineWidth: 1))
+                    .onTapGesture { showMapButtonHelp = false }
                 }
-                overlayCapsule(gameEngine.atlasShowAllRooms ? "Charted" : "Whole", systemImage: "globe") {
-                    gameEngine.setAtlasShowAll(!gameEngine.atlasShowAllRooms)
-                }
-                overlayCapsule(gameEngine.pictureMapOn ? "Text" : "Picture", systemImage: gameEngine.pictureMapOn ? "text.alignleft" : "photo") {
-                    gameEngine.pictureMapOn.toggle()
-                }
-                overlayCapsule("", systemImage: "minus.magnifyingglass", enabled: mapZoom > 0.45) { mapZoom = max(0.4, mapZoom / 1.25) }
-                overlayCapsule("", systemImage: "plus.magnifyingglass", enabled: mapZoom < 3.9) { mapZoom = min(4, mapZoom * 1.25) }
-                overlayCapsule("Close", systemImage: "xmark.circle.fill") { gameEngine.recentreMap() }
             }
             .padding(16)
         }
@@ -1512,21 +1546,35 @@ struct TerminalView: View {
     }
     #endif
 
+    /// What each of the big map's symbols means — the ? button's key.
+    private static let mapButtonKey: [(symbol: String, meaning: String)] = [
+        ("chevron.left", "Previous level you've mapped"),
+        ("chevron.right", "Next level you've mapped"),
+        ("book.closed", "Explore the rooms, one by one"),
+        ("globe", "The Whole Deep — every room"),
+        ("map", "The Charted Reaches — where you've been"),
+        ("photo", "Show the map as a picture"),
+        ("text.alignleft", "Show the map as text"),
+        ("minus.magnifyingglass", "Zoom out"),
+        ("plus.magnifyingglass", "Zoom in"),
+        ("printer", "Save or print (not quite in the spirit of the game!)"),
+        ("xmark", "Close the map"),
+    ]
+
+    /// The big map's buttons: a symbol in a green circle — the words are a
+    /// hover-over hint and VoiceOver's label.
     private func overlayCapsule(_ title: String, systemImage: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: systemImage)
-                Text(title)
-                    .font(.system(size: 13 * scale, design: .monospaced))
-                    .fontWeight(.semibold)
-            }
-            .foregroundColor(.black)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Capsule().fill(Color.green.opacity(enabled ? 1.0 : 0.35)))
+            Image(systemName: systemImage)
+                .font(.system(size: 16 * scale, weight: .semibold))
+                .foregroundColor(.black)
+                .frame(width: 36 * scale, height: 36 * scale)
+                .background(Circle().fill(Color.green.opacity(enabled ? 1.0 : 0.35)))
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
+        .help(title)
+        .accessibilityLabel(title)
     }
 
     // MARK: - Shortcut Positions (for button underlines)

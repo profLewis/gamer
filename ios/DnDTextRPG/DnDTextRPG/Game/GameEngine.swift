@@ -1691,6 +1691,14 @@ class GameEngine: ObservableObject {
     }
 
     /// Saving/printing the map works — but the Guild would rather you didn't.
+    /// The big map's printer button: the Atlas's own Save as PDF / Print
+    /// screen (with its gentle reminder) for the level on show.
+    func saveOrPrintOverlayMap() {
+        guard let level = overlayAtlasLevel else { return }
+        mapOverlayVisible = false
+        showAtlasSaveWarning(level: level, onBack: atlasOnBack ?? { [weak self] in self?.showExplorationView() })
+    }
+
     private func showAtlasSaveWarning(level: AtlasLevel, onBack: @escaping () -> Void) {
         clearTerminal()
         printTitle("Save Map")
