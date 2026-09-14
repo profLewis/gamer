@@ -1630,6 +1630,29 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// An arcane gym's Incantations lesson: the true words for each of the
+    /// character's spells — and what saying them does — learned for good.
+    private func teachIncantations(character: Character, trainer: Trainer, room: Room, price: Int) {
+        print("")
+        guard character.gold >= price else {
+            print("  \"The old words aren't cheap, friend. \(price)gp.\"", color: .red)
+            waitForContinue()
+            inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
+            return
+        }
+        character.gold -= price
+        printWrapped("\(trainer.name) leans close and teaches \(character.name) the true words:", indent: 2, color: .brightGreen)
+        for spell in character.knownSpells {
+            character.knownIncantations.insert(spell.name)
+            printWrapped("• \(spell.name): \"\(Self.trueIncantation(for: spell))!\"", indent: 4, color: .cyan)
+        }
+        printWrapped("Spoken true, a spell always takes hold — and now and then it surges without spending a slot. The wrong words fizzle, or backfire on the caster. From now on \(character.name) never gets them wrong.", indent: 2, color: .dimGreen)
+        logEvent("\(character.name) learned their spell incantations from \(trainer.name)", category: "TRAINING")
+        advanceTime(30)
+        waitForContinue()
+        inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
+    }
+
     /// Map Training (a gym's most expensive lesson) — unlocks the Atlas.
     private func buyMapTraining(character: Character, trainer: Trainer, room: Room, price: Int) {
         print("")
@@ -22746,12 +22769,28 @@ class GameEngine: ObservableObject {
                 self.printWrapped("\(trainer.name) also teaches Map Training — the cartographer's art — for \(mapTrainingPrice)gp. Expensive, but you'll never look at a map the same way again.", indent: 2, color: .dimGreen)
                 self.print("")
             }
-            let trainingMenu = options + (offersMapTraining ? ["Map Training (\(mapTrainingPrice)gp)"] : [])
+            // Incantations — arcane trainers teach the true words for every
+            // spell this character knows (see showIncantationChoice).
+            let incantationPrice = trainer.lessonFee * 2
+            let unlearned = character.knownSpells.filter { !character.knownIncantations.contains($0.name) }
+            let offersIncantations = (trainer.specialty == .arcana || trainer.specialty == .investigation) && !unlearned.isEmpty
+            if offersIncantations {
+                self.printWrapped("\(trainer.name) can also teach \(character.name) the true incantations for their spells, so they're never spoken wrong — \(incantationPrice)gp.", indent: 2, color: .dimGreen)
+                self.print("")
+            }
+            var extraLabels: [String] = []
+            if offersMapTraining { extraLabels.append("Map Training (\(mapTrainingPrice)gp)") }
+            if offersIncantations { extraLabels.append("Incantations (\(incantationPrice)gp)") }
+            let trainingMenu = options + extraLabels
             self.showMenu(trainingMenu + ["< Done"])
             self.menuHandler = { [weak self] choice in
                 guard let self = self else { return }
-                if offersMapTraining && choice == offered.count + 1 {
-                    self.buyMapTraining(character: character, trainer: trainer, room: room, price: mapTrainingPrice)
+                if choice > offered.count && choice <= offered.count + extraLabels.count {
+                    if extraLabels[choice - offered.count - 1].hasPrefix("Map Training") {
+                        self.buyMapTraining(character: character, trainer: trainer, room: room, price: mapTrainingPrice)
+                    } else {
+                        self.teachIncantations(character: character, trainer: trainer, room: room, price: incantationPrice)
+                    }
                     return
                 }
                 guard choice >= 1 && choice <= offered.count else {
@@ -25577,6 +25616,30 @@ class GameEngine: ObservableObject {
         if let dir = room.verticalDirection { here.append("a way \(dir)") }
         if !here.isEmpty { parts.append("Here: \(here.joined(separator: ", ")).") }
         return parts.joined(separator: " ")
+    }
+
+    /// Merchants who've already lost their temper with the party this
+    /// session — each only ever does it once.
+    var merchantsWhoLostTemper: Set<String> = []
+
+    /// Would the party clearly win a scuffle with a merchant's bodyguard?
+    var partyOutclassesMerchant: Bool {
+        let conscious = party.filter { $0.isConscious }
+        guard conscious.count >= 2 else { return false }
+        let avgLevel = conscious.map { $0.level }.reduce(0, +) / conscious.count
+        let healthy = conscious.allSatisfy { $0.currentHP * 2 >= $0.maxHP }
+        return healthy && avgLevel >= (dungeon?.level ?? 1)
+    }
+
+    /// You stood your ground with an angry merchant — their bodyguard steps in.
+    func startMerchantBrawl(merchantName: String) {
+        let level = dungeon?.level ?? 1
+        let type: MonsterType = level >= 3 ? .ogre : (level >= 2 ? .hobgoblin : .orc)
+        let bodyguard = Monster.create(type, customName: "\(merchantName)'s Bodyguard")
+        print("")
+        printWrapped("\(merchantName) whistles. A hulking bodyguard shoulders out from behind the counter...", indent: 2, color: .red)
+        logEvent("Pushed \(merchantName) too far — their bodyguard attacks", category: "SHOP")
+        startCombat(encounter: Encounter(monsters: [bodyguard], difficulty: .medium))
     }
 
     private func justDMClue() -> String? {
@@ -28772,10 +28835,95 @@ class GameEngine: ObservableObject {
         }
     }
 
+    // MARK: Incantations
+    //
+    // Now and then the words matter: the caster picks the incantation. The
+    // true words (always the same for a spell, so they can be learned) cast
+    // it — sometimes with a surge that spends no slot; the wrong ones fizzle
+    // or backfire. Arcane gyms teach the true words for good.
+
+    private static let incantationFirst = ["Ignis", "Lux", "Vox", "Aqua", "Terra", "Ventus", "Umbra", "Arcanum", "Fulmen", "Vita", "Glacies", "Sanctus"]
+    private static let incantationSecond = ["Magna", "Venite", "Ardeo", "Fiat", "Protego", "Surgo", "Revelo", "Tueor", "Frango", "Sano", "Ligo", "Volo"]
+
+    /// The true words for a spell — fixed per spell (a stable hash of its
+    /// name, not Swift's per-launch hashValue).
+    static func trueIncantation(for spell: Spell) -> String {
+        let seed = spell.name.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0x7fffffff }
+        return "\(incantationFirst[seed % incantationFirst.count]) \(incantationSecond[(seed / 13) % incantationSecond.count])"
+    }
+
     func executeSpell(characterId: UUID, spell: Spell, targetIds: [UUID]) {
+        guard let caster = party.first(where: { $0.id == characterId }) else { return }
+        let chance = spell.level == .cantrip ? 15 : 35
+        if !caster.knownIncantations.contains(spell.name), Int.random(in: 1...100) <= chance {
+            showIncantationChoice(caster: caster, spell: spell, targetIds: targetIds)
+            return
+        }
+        performSpell(characterId: characterId, spell: spell, targetIds: targetIds, surge: false)
+    }
+
+    private func showIncantationChoice(caster: Character, spell: Spell, targetIds: [UUID]) {
+        guard let combat = currentCombat else { return }
+        let truth = Self.trueIncantation(for: spell)
+        var decoys = Set<String>()
+        while decoys.count < 2 {
+            let decoy = "\(Self.incantationFirst.randomElement()!) \(Self.incantationSecond.randomElement()!)"
+            if decoy != truth { decoys.insert(decoy) }
+        }
+        let choices = ([truth] + Array(decoys)).shuffled()
+        clearTerminal()
+        printCombatStatus()
+        print("")
+        print("\(caster.name) raises a hand to cast \(spell.name)...", color: .brightGreen, bold: true)
+        printWrapped("The words matter. Which incantation?", indent: 2, color: .cyan)
+        print("")
+        showMenu(choices.map { "\"\($0)!\"" })
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= choices.count else { return }
+            let said = choices[choice - 1]
+            self.print("")
+            if said == truth {
+                let surge = Int.random(in: 1...100) <= 25
+                self.print("  \"\(said)!\" — the words ring true.", color: .brightGreen)
+                if surge { self.print("  ✦ The magic surges! (No spell slot spent.)", color: .magenta, bold: true) }
+                self.logEvent("\(caster.name) spoke the true words for \(spell.name)\(surge ? " — and it surged" : "")", category: "COMBAT")
+                self.waitForContinue(fullScreenTap: false)
+                self.inputHandler = { [weak self] _ in
+                    self?.performSpell(characterId: caster.id, spell: spell, targetIds: targetIds, surge: surge)
+                }
+            } else {
+                // Wrong words: the slot's spent either way.
+                if spell.level != .cantrip { caster.spellSlots.useSlot(level: spell.level) }
+                if Bool.random() {
+                    self.print("  \"\(said)!\" — nothing. The spell fizzles.", color: .yellow)
+                    self.logEvent("\(caster.name)'s \(spell.name) fizzled (wrong words)", category: "COMBAT")
+                } else {
+                    let hurt = max(1, Dice.rollDamage("1d4").total)
+                    caster.takeDamage(hurt)
+                    self.print("  \"\(said)!\" — the magic backfires! \(caster.name) takes \(hurt) damage. (\(caster.currentHP)/\(caster.maxHP) HP)", color: .red)
+                    self.logEvent("\(caster.name)'s \(spell.name) backfired (wrong words)", category: "COMBAT")
+                }
+                self.printWrapped("(The true words were \"\(truth)\" — an arcane gym can teach them for good.)", indent: 2, color: .dimGreen)
+                combat.checkCombatEnd()
+                combat.nextTurn()
+                self.waitForContinue(fullScreenTap: false)
+                self.inputHandler = { [weak self] _ in self?.advanceCombat() }
+            }
+        }
+    }
+
+    private func performSpell(characterId: UUID, spell: Spell, targetIds: [UUID], surge: Bool) {
         guard let combat = currentCombat else { return }
 
         guard let report = combat.castSpell(casterId: characterId, spell: spell, targetIds: targetIds) else { return }
+        if surge, let caster = party.first(where: { $0.id == characterId }) {
+            // The magic surged: give back the slot the cast just used.
+            switch spell.level {
+            case .level1: caster.spellSlots.level1Current = min(caster.spellSlots.level1Max, caster.spellSlots.level1Current + 1)
+            case .level2: caster.spellSlots.level2Current = min(caster.spellSlots.level2Max, caster.spellSlots.level2Current + 1)
+            default: break
+            }
+        }
 
         clearTerminal()
         printCombatStatus()

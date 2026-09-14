@@ -813,6 +813,8 @@ class ShopEngine {
             guard offer >= floor else {
                 game.print("  \"\(offer) gold? You insult me.\" \(merchant.name) won't even consider it.", color: .red)
                 let canRetry = attempt < Self.maxHaggleAttempts
+                // Keep insulting them and they may snap.
+                if attempt >= 2, self.merchantMightLoseTemper(returnTo: returnTo) { return }
                 game.waitForContinue()
                 game.inputHandler = { _ in canRetry ? retry() : returnTo() }
                 return
@@ -964,6 +966,52 @@ class ShopEngine {
             }
             resolveOffer(offer)
         }
+    }
+
+    // MARK: - Temper
+
+    /// Argue with a merchant long enough and, now and then (30%, and only
+    /// once per merchant), they snap. If the party clearly outclasses them
+    /// you can laugh it off; otherwise apologise — or stand your ground and
+    /// deal with their bodyguard.
+    private func merchantMightLoseTemper(returnTo: @escaping () -> Void) -> Bool {
+        guard let game = game, let merchant = merchant,
+              !game.merchantsWhoLostTemper.contains(merchant.name),
+              Int.random(in: 1...100) <= 30 else { return false }
+        game.merchantsWhoLostTemper.insert(merchant.name)
+        let name = merchant.name
+        game.print("")
+        game.print("  \"That's IT!\" \(name) slams a fist on the counter. \"Out — or my bodyguard throws you out!\"", color: .red, bold: true)
+        game.print("")
+        let outclassed = game.partyOutclassesMerchant
+        if outclassed {
+            game.printWrapped("(Your party could flatten that bodyguard without breaking a sweat.)", indent: 2, color: .dimGreen)
+            game.print("")
+        }
+        var options = ["Apologise", "Stand Your Ground"]
+        if outclassed { options.insert("Laugh at Them", at: 0) }
+        game.showMenu(options)
+        game.closeHandler = returnTo
+        game.menuHandler = { [weak game] choice in
+            guard let game = game, choice >= 1, choice <= options.count else { return }
+            switch options[choice - 1] {
+            case "Laugh at Them":
+                game.print("")
+                game.printWrapped("You laugh. \(name) opens their mouth, looks your party up and down, and thinks better of it. \"...Fine. FINE. Browse, then.\"", indent: 2, color: .yellow)
+                game.logEvent("Laughed off \(name)'s threat", category: "SHOP")
+                game.waitForContinue()
+                game.inputHandler = { _ in returnTo() }
+            case "Apologise":
+                game.print("")
+                game.printWrapped("You apologise. \(name) grumbles, straightens a stack of goods, and lets it go.", indent: 2, color: .dimGreen)
+                game.logEvent("Apologised to \(name)", category: "SHOP")
+                game.waitForContinue()
+                game.inputHandler = { _ in returnTo() }
+            default:
+                game.startMerchantBrawl(merchantName: name)
+            }
+        }
+        return true
     }
 
     // MARK: - Rare Goods

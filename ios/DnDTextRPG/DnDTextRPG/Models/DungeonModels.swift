@@ -1234,7 +1234,14 @@ class Dungeon: ObservableObject, Codable {
     /// padding with blank rows when fewer than that are active.
     private func mapLegendLines(border: String, activeSymbols: Set<String>, maxSymbols: Int) -> [String] {
         let capped = max(1, maxSymbols)
-        let entries = Array(Self.mapLegendEntries.filter { Self.showsFullLegend || activeSymbols.contains($0.symbol) }.prefix(capped))
+        // Most informative first, so a short key never drops a shrine or a
+        // boss in favour of plain rooms; generic room types and "You" last.
+        let priority = ["!", "B", "\u{2191}", "\u{2193}", "*", "M", "G", "N", "+", "$", "L", "A", "P", "E", "K", "X", "{ }", "#", "=", ".", "@"]
+        let rank: (String) -> Int = { priority.firstIndex(of: $0) ?? priority.count }
+        let entries = Array(Self.mapLegendEntries
+            .filter { Self.showsFullLegend || activeSymbols.contains($0.symbol) }
+            .sorted { rank($0.symbol) < rank($1.symbol) }
+            .prefix(capped))
         let rowCount = Self.mapLegendRowCount(maxSymbols: capped)
         var lines: [String] = ["+\(border)+"]
         var entryIdx = 0

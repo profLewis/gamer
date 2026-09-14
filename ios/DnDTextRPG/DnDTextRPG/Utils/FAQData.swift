@@ -289,6 +289,11 @@ struct FAQData {
             keywords: ["are you sure", "confirm", "confirmation", "skip confirmation", "long-press", "long press", "quit without saving", "delete"]
         ),
         FAQEntry(
+            question: "What do the map symbols mean?",
+            answer: "Inside the brackets: @ you, ! danger (monsters or a trap), B boss, ↑ ↓ a way up or down, * teleport pad, M merchant, G gym, N someone you haven't met, + shrine, $ loot, L library, A armoury, P prison, E entrance, = hall, # room, . empty. {X} (braces instead of brackets) means more than one thing is there. Between rooms: -- or | is a passage, KK / K a locked door, XX / X a barred door. The + at the corners of the map box is just its border.",
+            keywords: ["map symbols", "map key", "legend", "what does + mean", "plus", "shrine", "symbols", "key"]
+        ),
+        FAQEntry(
             question: "Is there a bigger map?",
             answer: "Cartographers speak of an atlas for those patient enough to press — and hold — the map they already have. The gyms of the deep teach Map Training too, if you can afford it.",
             keywords: ["atlas", "world map", "bigger map", "whole map", "full map", "map explorer", "cartography", "map training"]

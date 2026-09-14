@@ -498,6 +498,9 @@ class Character: ObservableObject, Identifiable, Codable {
     @Published var wellFedAttacks: Int = 0   // Hearty food: +1 to hit/damage for this many attacks
     @Published var juiceCount: Int = 0       // Glasses of juice since the last rest/water/tea
     @Published var sluggishAttacks: Int = 0  // Too much juice: disadvantage on this many attacks
+    /// Spells whose true incantation this character has learned (arcane
+    /// gyms) — spoken right every time, so no incantation choice.
+    @Published var knownIncantations: Set<String> = []
 
     // AI control
     @Published var isComputerControlled: Bool
@@ -544,6 +547,7 @@ class Character: ObservableObject, Identifiable, Codable {
         case ethicalScore, ethicalLog
         case willpowerSurgeUsesRemaining
         case wellFedAttacks, juiceCount, sluggishAttacks
+        case knownIncantations
     }
 
     init(name: String, race: Race, characterClass: CharacterClass, abilityScores: AbilityScores, isComputerControlled: Bool = false) {
@@ -642,6 +646,7 @@ class Character: ObservableObject, Identifiable, Codable {
         wellFedAttacks = (try? container.decodeIfPresent(Int.self, forKey: .wellFedAttacks)) ?? 0
         juiceCount = (try? container.decodeIfPresent(Int.self, forKey: .juiceCount)) ?? 0
         sluggishAttacks = (try? container.decodeIfPresent(Int.self, forKey: .sluggishAttacks)) ?? 0
+        knownIncantations = (try? container.decodeIfPresent(Set<String>.self, forKey: .knownIncantations)) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -684,6 +689,7 @@ class Character: ObservableObject, Identifiable, Codable {
         try container.encode(wellFedAttacks, forKey: .wellFedAttacks)
         try container.encode(juiceCount, forKey: .juiceCount)
         try container.encode(sluggishAttacks, forKey: .sluggishAttacks)
+        try container.encode(knownIncantations, forKey: .knownIncantations)
     }
 
     var proficiencyBonus: Int {
