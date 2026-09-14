@@ -66,7 +66,13 @@ struct SaveSlot {
 class SaveGameManager {
     static let shared = SaveGameManager()
 
-    static let maxSlots = 10
+    /// How many separate adventures (slots) are kept — the "Max Saves"
+    /// option on the Game Saves settings screen. Was a hard-coded 10.
+    static let maxSlotsChoices = [10, 25, 50, 100]
+    static var maxSlots: Int {
+        let v = UserDefaults.standard.integer(forKey: "maxSaveSlots")
+        return v > 0 ? v : 25
+    }
     static let maxBreakpointsPerSlot = 5
 
     private var savesDirectory: URL {

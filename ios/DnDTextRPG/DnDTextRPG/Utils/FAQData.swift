@@ -413,25 +413,40 @@ struct FAQData {
     // MARK: - DM Knowledge Lookup
 
     /// Find FAQ entries relevant to a player's message (for DM to reference)
+    /// Filler words that shouldn't count as a match on their own.
+    private static let stopWords: Set<String> = [
+        "the", "and", "what", "how", "who", "why", "when", "where", "which", "does", "can", "you",
+        "your", "for", "with", "this", "that", "are", "was", "get", "got", "into", "out", "off",
+        "but", "not", "all", "any", "has", "have", "use", "now", "then", "there", "here", "let",
+    ]
+
     static func findRelevant(for message: String, limit: Int = 3) -> [FAQEntry] {
         let lower = message.lowercased()
-        let words = Set(lower.components(separatedBy: .alphanumerics.inverted).filter { $0.count > 2 })
+        let allWords = Set(lower.components(separatedBy: .alphanumerics.inverted).filter { !$0.isEmpty })
+        let words = allWords.filter { $0.count > 2 && !stopWords.contains($0) }
 
         var scored: [(entry: FAQEntry, score: Int)] = []
 
         for entry in allEntries {
             var score = 0
-            // Keyword matches (strongest signal)
+            // Keyword matches (strongest signal). Multi-word keywords match
+            // as a phrase; single-word ones must match a WHOLE word — plain
+            // substring matching let "con" fire on "continue", "int" on
+            // "into", "cha" on "chat", etc., so ordinary play input (e.g.
+            // leaving a shop) got answered with the ability-scores FAQ.
             for keyword in entry.keywords {
-                if lower.contains(keyword) {
-                    score += 10
-                }
+                let matched = keyword.contains(" ") ? lower.contains(keyword) : allWords.contains(keyword)
+                if matched { score += 10 }
             }
-            // Word overlap with question
-            let qWords = Set(entry.question.lowercased().components(separatedBy: .alphanumerics.inverted).filter { $0.count > 2 })
+            // Word overlap with the question, ignoring filler words — "the"
+            // or "what" in any sentence used to count as a match on its own.
+            let qWords = Set(entry.question.lowercased().components(separatedBy: .alphanumerics.inverted)
+                .filter { $0.count > 2 && !stopWords.contains($0) })
             score += words.intersection(qWords).count * 3
 
-            if score > 0 {
+            // Needs a real keyword hit, or at least two meaningful words in
+            // common with the question — not one incidental overlap.
+            if score >= 6 {
                 scored.append((entry, score))
             }
         }

@@ -1246,6 +1246,14 @@ struct TerminalView: View {
                 }
             } else if gameEngine.awaitingContinue {
                 gameEngine.handleContinue()
+            } else if gameEngine.awaitingTextInput {
+                // An empty Return while the game is waiting for typed text
+                // (e.g. text mode, where closeHandler is deliberately nil)
+                // is just an accidental tap — often right after text mode's
+                // 1.5s auto-submit already sent what was typed. It used to
+                // fall through to emergencyExit() below, which resets the
+                // whole game back to the dragon home screen.
+                return
             } else if gameEngine.closeHandler == nil {
                 // Nothing else applies and there's no closeHandler — an
                 // orphaned screen. Fall back to the same emergency exit the

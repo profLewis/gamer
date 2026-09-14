@@ -2523,6 +2523,34 @@ class GameEngine: ObservableObject {
             self.autoReadIfSpeakerMode()
         }
         resetIdleTimer()
+        scheduleAutoContinue()
+    }
+
+    /// Bumped on every waitForContinue() — lets a pending auto-continue
+    /// tell "still the same tap-to-continue screen I was armed for" apart
+    /// from a later one (many of these screens append rather than clear,
+    /// so clearTerminal's own generation counter can't tell them apart).
+    private static var continueGeneration = 0
+
+    /// Every tap-to-continue screen honours the Info Timeout setting (at
+    /// 2x, the same default multiplier waitForContinueWithTimeout uses),
+    /// not just the handful that used to opt in — otherwise screens like a
+    /// "Saved backup" confirmation sat waiting forever. Does exactly what a
+    /// tap would (handleContinue), and only if nothing has moved on since.
+    /// Off when Info Timeout is Off (0), and in speaker mode, where the
+    /// screen is being read aloud and cutting it short would lose text.
+    private func scheduleAutoContinue() {
+        Self.continueGeneration += 1
+        let myGeneration = Self.continueGeneration
+        let delay = infoTimeout * 2
+        guard delay > 0 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self = self,
+                  Self.continueGeneration == myGeneration,
+                  self.awaitingContinue,
+                  !self.speakerModeOn else { return }
+            self.handleContinue()
+        }
     }
 
     /// Wait for continue with auto-timeout — taps to continue immediately, or auto-continues after delay
@@ -7049,7 +7077,7 @@ class GameEngine: ObservableObject {
 
         // Use the active slot if we have one, otherwise create a new slot
         let slotId = activeSlotId ?? UUID()
-        let slotName = activeSlotName ?? "\(party.first?.name ?? "Unknown") — \(dungeon.name)"
+        let slotName = activeSlotName ?? uniqueSlotName("\(party.first?.name ?? "Unknown") — \(dungeon.name)")
 
         // Remember this slot for future autosaves
         if activeSlotId == nil {
@@ -7425,7 +7453,7 @@ class GameEngine: ObservableObject {
 
         print("INFO TIMEOUT:", color: .cyan, bold: true)
         print("  \(String(format: "%.1fs", infoTimeout))", color: .brightGreen)
-        printWrapped("How long information screens (search results, listen, examine) stay before auto-dismissing. Tap the ✕ icon to dismiss sooner.", indent: 2, color: .dimGreen)
+        printWrapped("How long information screens (search results, listen, examine) stay before auto-dismissing — and every other tap-to-continue screen moves on by itself after twice this. Off disables both. Tap the ✕ icon to dismiss sooner.", indent: 2, color: .dimGreen)
         print("")
 
         print("BUTTON LIMIT:", color: .cyan, bold: true)
@@ -8144,9 +8172,7 @@ class GameEngine: ObservableObject {
         printWrapped("Enter a name for this backup:", indent: 2, color: .dimGreen)
         print("")
 
-        let fmt = DateFormatter()
-        fmt.dateFormat = "d MMM yyyy"
-        let suggestion = fmt.string(from: Date())
+        let suggestion = "Settings " + Self.saveStamp()
 
         promptTextWithMenu("", options: [suggestion])
         closeHandler = { [weak self] in self?.showSettingsBackupMenu() }
@@ -8457,11 +8483,17 @@ class GameEngine: ObservableObject {
         print("")
 
         let saves = SaveGameManager.shared.listAllSaves()
+        let adventuresInUse = SaveGameManager.shared.listSlots().count
         print("GAME SAVES:", color: .cyan, bold: true)
-        print("  \(saves.count) save file\(saves.count == 1 ? "" : "s")", color: .dimGreen)
+        print("  \(adventuresInUse)/\(SaveGameManager.maxSlots) adventures (\(saves.count) save file\(saves.count == 1 ? "" : "s"))", color: .dimGreen)
         print("")
 
-        var options = ["Autosave"]
+        print("MAX SAVES:", color: .cyan, bold: true)
+        print("  \(SaveGameManager.maxSlots) adventures", color: .brightGreen)
+        printWrapped("How many separate adventures are kept at once.", indent: 2, color: .dimGreen)
+        print("")
+
+        var options = ["Autosave", "Max Saves"]
         if !saves.isEmpty {
             options.append("Manage Saves")
             options.append("Clear All Saves")
@@ -8486,10 +8518,50 @@ class GameEngine: ObservableObject {
             let selected = options[choice - 1]
             if selected == "Autosave" {
                 self.showAutosaveMenu()
+            } else if selected == "Max Saves" {
+                self.showMaxSavesMenu()
             } else if selected == "Manage Saves" {
                 self.showManageSavesMenu(returnTo: .settings)
             } else if selected == "Clear All Saves" {
                 self.confirmClearAllSaves()
+            }
+        }
+    }
+
+    /// Picker for SaveGameManager.maxSlots. Only offers limits at or above
+    /// the number of adventures already saved — picking a lower one would
+    /// make the very next save's slot trim silently delete the oldest
+    /// adventures, which is exactly the kind of quiet loss to avoid.
+    private func showMaxSavesMenu() {
+        clearTerminal()
+        printTitle("Max Saves")
+        let current = SaveGameManager.maxSlots
+        let inUse = SaveGameManager.shared.listSlots().count
+        printWrapped("How many separate adventures to keep. Currently \(current); \(inUse) in use.", indent: 2, color: .dimGreen)
+        printWrapped("Limits below the number you've already saved aren't offered — lowering it would delete your oldest adventures. Delete some first (Manage Saves) if you want a lower limit.", indent: 2, color: .dimGreen)
+        print("")
+
+        let allowed = SaveGameManager.maxSlotsChoices.filter { $0 >= inUse }
+        let choices = allowed.isEmpty ? [max(current, inUse)] : allowed
+        var opts = choices.map { MenuOption("\($0) adventures\($0 == current ? " ✓" : "")", isDefault: $0 == current) }
+        opts.append(MenuOption("?", tint: .navigation, compact: true))
+        opts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        showMenuOptions(opts)
+        closeHandler = { [weak self] in self?.showSaveSettings() }
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= opts.count else { return }
+            if choice <= choices.count {
+                UserDefaults.standard.set(choices[choice - 1], forKey: "maxSaveSlots")
+                self.showSaveSettings()
+            } else if opts[choice - 1].text == "?" {
+                self.showInlineHelp {
+                    self.printTitle("Max Saves — Help")
+                    self.print("")
+                    self.printWrapped("Each adventure keeps up to \(SaveGameManager.maxBreakpointsPerSlot) save points; this limits how many different adventures are kept at once. Once you're at the limit, saving a brand new adventure asks which existing one to replace.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else {
+                self.showSaveSettings()
             }
         }
     }
@@ -17855,6 +17927,7 @@ class GameEngine: ObservableObject {
             torchLit = true
             print("  [Torch lit!]", color: .yellow, bold: true)
             logEvent("DM lit torch", category: "DM")
+            refreshMapAfterTorchChange()
         } else {
             print("  [No torch to illuminate.]", color: .dimGreen)
         }
@@ -17872,6 +17945,7 @@ class GameEngine: ObservableObject {
         torchHolderId = nil
         print("  [Torch extinguished!]", color: .yellow, bold: true)
         logEvent("DM doused torch", category: "DM")
+        refreshMapAfterTorchChange()
     }
 
     private func applyDMUnsecure(_ dirName: String) {
@@ -23431,6 +23505,46 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// A light-hearted line about the unglamorous side of adventuring —
+    /// eating, washing, the one discreet corner — so a rest reads like the
+    /// party actually stopped to live a bit, not just a heal-over-time.
+    private func restFlavourLine(isLongRest: Bool) -> String {
+        let names = party.map { shortName(for: $0) }.shuffled()
+        let a = names.first ?? "Someone"
+        let b = names.count > 1 ? names[1] : "the echo"
+        let short = [
+            "\(a) wolfs down a heel of bread while \(b) pretends not to notice the crumbs.",
+            "\(a) slips behind a pillar for a moment of, ahem, privacy. Nobody mentions it.",
+            "\(a) splashes water on their face and declares themselves 'practically bathed'.",
+            "A flask goes round. \(a) gets the last, suspiciously warm, mouthful.",
+            "\(a) shakes a pebble out of a boot that has clearly been there since level one.",
+        ]
+        let long = [
+            "Dinner is \(a)'s famous dungeon stew. Nobody asks what's in it.",
+            "\(a) takes a proper wash in a bucket of cold water — loudly, and at length.",
+            "\(b) snores. \(a) throws a boot. Balance is restored.",
+            "Everyone finally takes their boots off. The torch flickers in protest.",
+            "\(a) brushes their teeth with a twig and a great deal of ceremony.",
+            "The party queues politely for the one discreet corner of the room.",
+            "\(a) darns a sock by torchlight. \(b) offers to 'help' and is firmly declined.",
+        ]
+        return (isLongRest ? long : short).randomElement()!
+    }
+
+    /// On a long rest, if anyone's carrying provisions (honey, bread,
+    /// mead... — see ItemCatalog.provisions), the party eats one of them.
+    private func eatProvisionDuringRest() -> String? {
+        let provisionNames = Set(ItemCatalog.provisions().map { $0.name })
+        for char in party {
+            if let item = char.inventory.first(where: { provisionNames.contains($0.name) }) {
+                char.removeItem(item)
+                logEvent("\(char.name) shared \(item.name) during a long rest", category: "REST")
+                return "\(shortName(for: char)) breaks out the \(item.name) — dinner is served."
+            }
+        }
+        return nil
+    }
+
     func performRest(isLongRest: Bool, fast: Bool = false) {
         let repeats = isLongRest ? 3 : 1
         let restDuration = isLongRest ? "8 hours" : "1 hour"
@@ -23480,6 +23594,7 @@ class GameEngine: ObservableObject {
                 self.advanceTime(60)
                 self.print("")
                 self.print("Short rest complete!", color: .cyan, bold: true)
+                self.printWrapped(self.restFlavourLine(isLongRest: false), indent: 2, color: .dimGreen)
                 self.print("")
                 var healed: [String] = []
                 for char in self.party {
@@ -23511,6 +23626,10 @@ class GameEngine: ObservableObject {
                 self.advanceTime(480)
                 self.print("")
                 self.print("Long rest complete!", color: .cyan, bold: true)
+                if let meal = self.eatProvisionDuringRest() {
+                    self.printWrapped(meal, indent: 2, color: .yellow)
+                }
+                self.printWrapped(self.restFlavourLine(isLongRest: true), indent: 2, color: .dimGreen)
                 self.print("")
                 for char in self.party {
                     char.heal(char.maxHP)
@@ -23958,9 +24077,13 @@ class GameEngine: ObservableObject {
         clearTerminal()
         suppressAutoScroll = false
 
-        // Map at top
-        printExplorationMap()
-        print("")
+        // Map at top — unless hidden with "map off" / "wax off"
+        if justDMMapVisible {
+            printExplorationMap()
+            print("")
+        } else {
+            pinnedMapLines = []
+        }
 
         // Room description
         if torchLit {
@@ -24044,7 +24167,10 @@ class GameEngine: ObservableObject {
             self.directionExits = [:]
             self.securedExits = []
         }
-        closeHandler = nil
+        // Not nil: with no closeHandler, the X icon / a horizontal swipe
+        // fell back to emergencyExit(), which resets the whole game to the
+        // home screen. Same destination as button mode's "< Leave" instead.
+        closeHandler = { [weak self] in self?.leaveExplorationTapped() }
         menuHandler = nil
 
         inputHandler = { [weak self] input in
@@ -24075,6 +24201,22 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped("  Still there? Try: \(Self.justDMHintExamples.randomElement()!)", indent: 2, color: .dimGreen)
         printWrapped("  Or type \"?\" for help, \"buttons on\" for menus.", indent: 2, color: .dimGreen)
+    }
+
+    /// Text mode's own map-visibility toggle ("map on/off", "show/hide
+    /// map", "wax on/off", "paint the fence") — remembered between sessions.
+    private var justDMMapVisible: Bool {
+        get { UserDefaults.standard.object(forKey: "justDMMapVisible") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "justDMMapVisible") }
+    }
+
+    /// Redraws the pinned map after the torch changes state, so lighting or
+    /// dousing it — from text mode or a DM command — shows immediately
+    /// instead of only after the next move.
+    private func refreshMapAfterTorchChange() {
+        guard dungeon != nil else { return }
+        if justDMMode && !justDMMapVisible { return }
+        printExplorationMap()
     }
 
     private func processJustDMInput(_ input: String) {
@@ -24116,8 +24258,27 @@ class GameEngine: ObservableObject {
             return
         }
         if lower == "map" || lower == "m" {
+            justDMMapVisible = true
             print("")
             printExplorationMap()
+            justDMPrompt()
+            return
+        }
+        let mapOnWords: Set<String> = ["map on", "show map", "wax on"]
+        let mapOffWords: Set<String> = ["map off", "hide map", "wax off"]
+        if mapOnWords.contains(lower) || mapOffWords.contains(lower) || lower == "paint the fence" {
+            let show = lower == "paint the fence" ? !justDMMapVisible : mapOnWords.contains(lower)
+            justDMMapVisible = show
+            print("")
+            if lower.hasPrefix("wax") {
+                print(show ? "  Wax on. The map gleams back into view." : "  Wax off. The map fades away.", color: .brightGreen)
+            } else if lower == "paint the fence" {
+                print("  Up... down... The map is now \(show ? "shown" : "hidden").", color: .brightGreen)
+            } else {
+                print("  Map \(show ? "shown" : "hidden").", color: .brightGreen)
+            }
+            if show { printExplorationMap() } else { pinnedMapLines = [] }
+            logEvent("Text mode map \(show ? "shown" : "hidden")", category: "SYSTEM")
             justDMPrompt()
             return
         }
@@ -28467,7 +28628,7 @@ class GameEngine: ObservableObject {
             clearActiveSlotIfDeleted()
             let saveId = UUID()
             let slotId = activeSlotId ?? UUID()
-            let slotName = activeSlotName ?? "\(party.first?.name ?? "Hero") — \(dungeon.name)"
+            let slotName = activeSlotName ?? uniqueSlotName("\(party.first?.name ?? "Hero") — \(dungeon.name)")
             let partyDesc = party.map { "\($0.name) (\($0.characterClass.rawValue))" }.joined(separator: ", ")
             let chatEntries = dmChatLog.map { DMChatEntry(isUser: $0.isUser, text: $0.text) }
             let hofSave = SaveGame(
@@ -29049,9 +29210,21 @@ class GameEngine: ObservableObject {
     }
 
     /// Returns a unique slot name, truncated to fit buttons. Appends " 002" etc. if a duplicate exists.
+    /// yyMMddHHmm date-time code, e.g. 2609132308 for 13 Sep 2026, 23:08.
+    static func saveStamp(_ date: Date = Date()) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyMMddHHmm"
+        return f.string(from: date)
+    }
+
+    /// Every new save name gets a date-time code (see saveStamp) appended
+    /// to the end of whatever name was chosen. The name itself is trimmed
+    /// to fit — never the code.
     private func uniqueSlotName(_ baseName: String) -> String {
-        let maxLen = Self.maxSlotNameLength
-        let truncated = String(baseName.prefix(maxLen))
+        let stamp = " " + Self.saveStamp()
+        let maxLen = Self.maxSlotNameLength + stamp.count
+        let truncated = String(baseName.prefix(Self.maxSlotNameLength)) + stamp
         let existingNames = Set(SaveGameManager.shared.listSlots().map { $0.slotName })
         if !existingNames.contains(truncated) { return truncated }
 
@@ -29147,10 +29320,10 @@ class GameEngine: ObservableObject {
         let slotName: String
         if let existingId = activeSlotId {
             slotId = existingId
-            slotName = activeSlotName ?? "\(party.first?.name ?? "Hero") — \(dungeon.name)"
+            slotName = activeSlotName ?? uniqueSlotName("\(party.first?.name ?? "Hero") — \(dungeon.name)")
         } else {
             slotId = UUID()
-            slotName = "\(party.first?.name ?? "Hero") — \(dungeon.name)"
+            slotName = uniqueSlotName("\(party.first?.name ?? "Hero") — \(dungeon.name)")
             activeSlotId = slotId
             activeSlotName = slotName
         }

@@ -834,8 +834,23 @@ class Character: ObservableObject, Identifiable, Codable {
 
     static let maxInventorySlots = 10
 
+    /// Pack weight limit. Strength is still the main driver (the classic
+    /// STR x 15 lb), but Constitution now matters too — stamina to haul a
+    /// load all day, +10 lb per point of CON modifier (or 5 lb less per
+    /// point below zero) — and small folk (halflings, gnomes) manage a bit
+    /// less for their size. Never below 30 lb, so nobody's left unable to
+    /// carry the basics.
     var carryCapacity: Double {
-        Double(abilityScores.strength) * 15.0
+        let base = Double(abilityScores.strength) * 15.0
+        let conMod = abilityScores.modifier(for: .constitution)
+        let stamina = conMod >= 0 ? Double(conMod) * 10.0 : Double(conMod) * 5.0
+        let isSmall: Bool
+        switch race {
+        case .lightfootHalfling, .stoutHalfling, .gnome: isSmall = true
+        default: isSmall = false
+        }
+        let sizeFactor = isSmall ? 0.85 : 1.0
+        return max(30.0, (base + stamina) * sizeFactor)
     }
 
     var currentWeight: Double {

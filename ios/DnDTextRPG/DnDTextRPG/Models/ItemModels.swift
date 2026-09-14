@@ -479,56 +479,52 @@ struct ItemCatalog {
 
     // MARK: Shop Stock
 
+    /// Every merchant used to carry the identical full list, so shops all
+    /// felt the same. Now: a few essentials every shop has, a random slice
+    /// of the level-appropriate gear pool, and a handful of everyday
+    /// provisions. Rolled once per merchant and remembered (see
+    /// ShopEngine.openShop), so each merchant keeps their own selection.
     static func shopStock(forLevel level: Int) -> [Item] {
-        var stock: [Item] = []
+        let essentials: [Item] = [healingPotion(), antidote(), torch()]
 
-        // Always available
-        stock.append(healingPotion())
-        stock.append(healingPotion())
-        stock.append(antidote())
-        stock.append(torch())
-        stock.append(rope())
-        stock.append(whetstone())
-        stock.append(dagger())
-        stock.append(leatherArmor())
-        stock.append(shortsword())
-        stock.append(mace())
-        stock.append(shield())
-        stock.append(spear())
-        stock.append(sling())
-        stock.append(paddedArmor())
-        stock.append(buckler())
-        stock.append(elixirOfClarity())
-
+        var pool: [Item] = [healingPotion(), rope(), whetstone(), dagger(), leatherArmor(), shortsword(),
+                            mace(), shield(), spear(), sling(), paddedArmor(), buckler(), elixirOfClarity()]
         if level >= 2 {
-            stock.append(greaterHealingPotion())
-            stock.append(longsword())
-            stock.append(scaleMail())
-            stock.append(rapier())
-            stock.append(studdedLeather())
-            stock.append(longbow())
-            stock.append(warhammer())
-            stock.append(battleaxe())
-            stock.append(scimitar())
-            stock.append(lightCrossbow())
-            stock.append(ringMail())
-            stock.append(potionOfFireResistance())
+            pool += [greaterHealingPotion(), longsword(), scaleMail(), rapier(), studdedLeather(), longbow(),
+                     warhammer(), battleaxe(), scimitar(), lightCrossbow(), ringMail(), potionOfFireResistance()]
         }
-
         if level >= 3 {
-            stock.append(greaterHealingPotion())
-            stock.append(chainMail())
-            stock.append(greataxe())
-            stock.append(whip())
-            stock.append(trident())
-            stock.append(potionOfGiantStrength())
+            pool += [greaterHealingPotion(), chainMail(), greataxe(), whip(), trident(), potionOfGiantStrength()]
         }
-
         if level >= 4 {
-            stock.append(superiorHealingPotion())
-            stock.append(plateArmor())
+            pool += [superiorHealingPotion(), plateArmor()]
         }
 
-        return stock
+        let gearCount = min(pool.count, 7 + level * 2)
+        let gear = Array(pool.shuffled().prefix(gearCount))
+        let goods = Array(provisions().shuffled().prefix(Int.random(in: 2...4)))
+        return essentials + gear + goods
+    }
+
+    // MARK: Provisions — everyday goods, for variety between merchants
+
+    static func provisions() -> [Item] {
+        func food(_ name: String, _ desc: String, value: Int, weight: Double, heal: String?, effect: String) -> Item {
+            Item(id: UUID(), name: name, description: desc, type: .potion, weight: weight, value: value,
+                 weaponStats: nil, armorStats: nil,
+                 potionStats: PotionStats(healAmount: heal, effect: effect))
+        }
+        return [
+            food("Jar of Honey", "Golden and thick, from hives at the dungeon's edge.", value: 3, weight: 1.0, heal: "1d4", effect: "Restores 1d4 HP — sweet and soothing"),
+            food("Pot of Jam", "Blackberry, with the odd seed.", value: 2, weight: 1.0, heal: "1d2", effect: "Restores 1d2 HP"),
+            food("Jar of Marmite", "Dark, salty and divisive. You either love it or hate it.", value: 2, weight: 0.5, heal: "1d3", effect: "Restores 1d3 HP (if you can stomach it)"),
+            food("Flask of Mead", "Honey wine. Warms the belly and loosens the tongue.", value: 4, weight: 1.0, heal: "1d4", effect: "Restores 1d4 HP; you feel bolder"),
+            food("Waterskin", "Clean water — worth more than gold in the deep dark.", value: 1, weight: 2.0, heal: "1d2", effect: "Restores 1d2 HP"),
+            food("Loaf of Bread", "Crusty, a day or two old.", value: 1, weight: 0.5, heal: "1d3", effect: "Restores 1d3 HP"),
+            food("Wheel of Cheese", "Pungent. Very pungent.", value: 5, weight: 2.0, heal: "1d6", effect: "Restores 1d6 HP"),
+            food("Bag of Apples", "Crisp, if slightly bruised.", value: 1, weight: 1.0, heal: "1d2", effect: "Restores 1d2 HP"),
+            food("Salt Pork", "Tough, salty trail rations.", value: 2, weight: 1.0, heal: "1d4", effect: "Restores 1d4 HP"),
+            food("Pot of Tea", "Strong enough to stand a spoon in.", value: 1, weight: 0.5, heal: nil, effect: "Feel refreshed"),
+        ]
     }
 }
