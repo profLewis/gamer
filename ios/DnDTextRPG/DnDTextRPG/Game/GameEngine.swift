@@ -316,6 +316,7 @@ class GameEngine: ObservableObject {
         guard autoCountdownEnd != nil || autoCountdownPausedRemaining != nil else { return }
         let remaining = autoCountdownPausedRemaining ?? autoCountdownEnd.map { max(0, $0.timeIntervalSinceNow) } ?? 0
         autoContinuePaused = false
+        removeAutoContinuePauseHelp()
         autoCountdownPausedRemaining = nil
         autoCountdownEnd = Date().addingTimeInterval(max(0.6, remaining / 4))
     }
@@ -325,16 +326,43 @@ class GameEngine: ObservableObject {
     /// The "?" beside "paused": a short how-to-carry-on note printed onto
     /// the current screen (once per screen), rather than a help page that
     /// would replace the screen that's waiting.
+    private var autoContinueHelpRange: Range<Int>?
+
     func printAutoContinuePauseHelp() {
-        guard autoContinueHelpShownGeneration != screenGeneration else { return }
+        // Tapping ? again takes the note away again.
+        if removeAutoContinuePauseHelp() { return }
         autoContinueHelpShownGeneration = screenGeneration
+        let start = terminalLines.count
         print("")
         print("  AUTO-CONTINUE IS PAUSED", color: .yellow, bold: true)
-        printWrapped("Tap anywhere on the screen to continue now — or wait for the hourglass by the > prompt to run out and the game moves on by itself. While the hourglass is orange it's paused: tap it (or ▶) to let it run again, or long-press it to hurry. Settings > Gameplay turns Auto-Continue off.", indent: 2, color: .dimGreen)
+        print("  (orange hourglass = paused)", color: .dimGreen)
+        print("")
+        print("  To carry on:", color: .cyan)
+        printWrapped("• Tap anywhere — continue now", indent: 3, color: .green)
+        printWrapped("• Tap the hourglass or ▶ — let the countdown run on", indent: 3, color: .green)
+        printWrapped("• Long-press the hourglass — hurry it", indent: 3, color: .green)
+        print("")
+        print("  Why is it here?", color: .cyan)
+        printWrapped("So a screen never moves on before you've finished reading.", indent: 3, color: .green)
+        print("")
+        print("  Turn it on or off:", color: .cyan)
+        printLink("Settings > Gameplay", to: "gameplay", indent: 3)
+        autoContinueHelpRange = start..<terminalLines.count
+    }
+
+    /// Takes the pause note off this screen if it's showing; true if it did.
+    @discardableResult
+    private func removeAutoContinuePauseHelp() -> Bool {
+        guard let range = autoContinueHelpRange else { return false }
+        autoContinueHelpRange = nil
+        guard autoContinueHelpShownGeneration == screenGeneration, range.upperBound <= terminalLines.count else { return false }
+        terminalLines.removeSubrange(range)
+        return true
     }
 
     func toggleAutoContinuePause() {
         autoContinuePaused.toggle()
+        if !autoContinuePaused { removeAutoContinuePauseHelp() }
         // Freeze / thaw the bar where it is — a pause picks up again from
         // the same point rather than starting the countdown over.
         if autoContinuePaused {
@@ -386,7 +414,7 @@ class GameEngine: ObservableObject {
     // friendlier default is off, not on. Purely a first-run default: once
     // UserDefaults has a stored value (the user toggled it, or the app has
     // simply run before), that value always wins, VoiceOver or not.
-    @Published var blinkingCursorEnabled: Bool = UserDefaults.standard.object(forKey: "blinkingCursorEnabled") == nil ? !GameEngine.systemVoiceOverRunning : UserDefaults.standard.bool(forKey: "blinkingCursorEnabled")
+    @Published var blinkingCursorEnabled: Bool = UserDefaults.standard.object(forKey: "blinkingCursorEnabled") == nil ? false : UserDefaults.standard.bool(forKey: "blinkingCursorEnabled")
 
     /// True only when the text/prompt area itself is what the player should
     /// act on — typing a response, or tapping to continue. Deliberately
@@ -1376,6 +1404,7 @@ class GameEngine: ObservableObject {
             for line in Dungeon.atlasKeyLines().dropFirst() { self.print("  " + line, color: .dimGreen) }
             self.print("")
             self.printWrapped("Only rooms you've visited are shown, unless Settings > Gameplay > World Map is set to All Rooms.", indent: 2, color: .dimGreen)
+            self.printLink("Settings > Gameplay", to: "gameplay", indent: 4)
             self.print("")
         }
     }
@@ -1788,6 +1817,10 @@ class GameEngine: ObservableObject {
     /// "< Back" behaves exactly as it always has.
     private func goForwardInHistory() {
         guard let snapshot = navigationHistory.popLast() else { return }
+        restoreScreenSnapshot(snapshot)
+    }
+
+    private func restoreScreenSnapshot(_ snapshot: ScreenSnapshot) {
         terminalLines = snapshot.terminalLines
         pinnedMapLines = snapshot.pinnedMapLines
         currentMenuOptions = snapshot.menuOptions
@@ -1815,6 +1848,67 @@ class GameEngine: ObservableObject {
         menuImageName = snapshot.menuImageName
         suppressAutoScroll = snapshot.suppressAutoScroll
         scrollLocked = snapshot.scrollLocked
+    }
+
+    // MARK: - In-text links
+    //
+    // printLink() prints an underlined "→ Settings > Gameplay" line that
+    // opens that screen when tapped (TerminalView routes the tap to
+    // followLink). The screen it was tapped on is remembered, so that
+    // screen's "< Back" / ✕ come straight back to it (returnFromLink)
+    // rather than up the linked screen's own menu tree. Followed links are
+    // remembered and drawn in the "visited" colour from then on.
+
+    @Published var visitedLinks: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "visitedLinks") ?? [])
+    private var linkReturnSnapshot: ScreenSnapshot?
+
+    private func linkTarget(_ key: String) -> (() -> Void)? {
+        switch key {
+        case "gameplay": return { [weak self] in self?.showGameplaySettings() }
+        case "accessibility": return { [weak self] in self?.showAccessibilityMenu() }
+        case "infoTimeout": return { [weak self] in self?.showInfoTimeoutMenu() }
+        case "saves": return { [weak self] in self?.showSaveSettings() }
+        case "dm": return { [weak self] in self?.showDMSettingsSubMenu() }
+        case "ai": return { [weak self] in self?.showAIProviderMenu(onBack: { [weak self] in self?.returnFromLink() }) }
+        case "howToPlay": return { [weak self] in self?.showHowToPlay() }
+        default: return nil
+        }
+    }
+
+    func printLink(_ label: String, to key: String, indent: Int = 2) {
+        print(String(repeating: " ", count: indent) + "→ " + label,
+              color: visitedLinks.contains(key) ? .magenta : .cyan, underlined: true)
+        if !terminalLines.isEmpty { terminalLines[terminalLines.count - 1].link = key }
+    }
+
+    func followLink(_ key: String) {
+        guard let open = linkTarget(key) else { return }
+        visitedLinks.insert(key)
+        UserDefaults.standard.set(Array(visitedLinks), forKey: "visitedLinks")
+        // A link followed from a linked screen keeps the ORIGINAL return point.
+        if linkReturnSnapshot == nil { linkReturnSnapshot = captureScreenSnapshot() }
+        open()
+    }
+
+    /// Back to the screen a link was followed from, if any. True if it did.
+    @discardableResult
+    func returnFromLink() -> Bool {
+        guard let snapshot = linkReturnSnapshot else { return false }
+        linkReturnSnapshot = nil
+        restoreScreenSnapshot(snapshot)
+        terminalLines = terminalLines.map { line in
+            var line = line
+            if let key = line.link, visitedLinks.contains(key) { line.color = .magenta }
+            return line
+        }
+        if snapshot.awaitingContinue { scheduleAutoContinue() }
+        return true
+    }
+
+    /// The ✕ icon / swipe-back: a linked screen returns to its launch point.
+    func invokeClose() {
+        if returnFromLink() { return }
+        closeHandler?()
     }
 
     func clearTerminal() {
@@ -3267,6 +3361,14 @@ class GameEngine: ObservableObject {
             return
         }
 
+        // A screen opened from an in-text link: its "< Back" returns to the
+        // screen the link was on, not up this screen's own menu tree.
+        if linkReturnSnapshot != nil && currentMenuOptions[choice - 1].text == "< Back" {
+            flashTitle()
+            returnFromLink()
+            return
+        }
+
         // Marks the NEXT clearTerminal() (whichever screen this tap leads
         // to) as a genuine Back navigation — see justNavigatedBack/
         // navigationHistory. Any other tap here means a normal forward
@@ -4539,6 +4641,7 @@ class GameEngine: ObservableObject {
     // MARK: - Main Menu
 
     func showMainMenu() {
+        linkReturnSnapshot = nil
         gameState = .mainMenu
         if self.musicEnabled { SoundManager.shared.startMusic(.menu, preference: self.menuMelodyChoice) }
 
@@ -5163,6 +5266,7 @@ class GameEngine: ObservableObject {
         print("")
         print("  • Auto-Continue", color: .brightGreen, bold: true)
         printWrapped("    Many screens move on by themselves after a few seconds. Tap anywhere to continue at once, or wait for the little hourglass beside the > prompt to run out. Tap the hourglass to pause it (orange means paused, and a ? explains how to carry on), tap again to let it run, long-press it to hurry. Settings > Gameplay turns Auto-Continue off, changes how long screens wait, or hides the hourglass.", color: .green)
+        printLink("Settings > Gameplay", to: "gameplay", indent: 4)
         print("")
 
         let helpTopics = ["Getting Started", "Exploration", "Combat",
@@ -5302,18 +5406,21 @@ class GameEngine: ObservableObject {
         } else {
             print("  Voice Menus: OFF", color: .red)
             printWrapped("Enable in Settings > Accessibility to use voice input and narration.", indent: 4, color: .dimGreen)
+            printLink("Settings > Accessibility", to: "accessibility", indent: 4)
         }
         print("")
         printWrapped("When there are more buttons than fit on one screen, a compact navigation bar appears in the bottom-right: [<< | ? | >>]. Tap << for the previous page, >> for the next page, and ? for help.", indent: 2, color: .dimGreen)
         print("")
         print("UNDO / REDO", color: .cyan, bold: true)
         printWrapped("On edit screens, labelled Undo/Redo buttons appear showing exactly what they will revert (e.g. 'Undo:STR'). Undo/Redo must be enabled in Settings > Gameplay (long-press this text to go there).", indent: 2, color: .dimGreen)
+        printLink("Settings > Gameplay", to: "gameplay", indent: 4)
         print("")
         print("MOVEMENT", color: .cyan, bold: true)
         printWrapped("You can move by typing a direction at any prompt: N, S, E, W, or north, south, east, west, or 'go north', 'move south', etc.", indent: 2, color: .dimGreen)
         print("")
         let voiceStatus = voiceMenuEnabled ? "currently on" : "currently off"
         printWrapped("You can also give directions by voice if Voice Menus is switched on (\(voiceStatus)). Change this in Settings > Accessibility > Voice Menus.", indent: 2, color: .dimGreen)
+        printLink("Settings > Accessibility", to: "accessibility", indent: 4)
         print("")
         print("BUTTON COLOURS", color: .cyan, bold: true)
         print("  Green — actions (attack, search,", color: .brightGreen)
@@ -5396,6 +5503,7 @@ class GameEngine: ObservableObject {
 
             self.print("  UNDO & REDO", color: .cyan, bold: true)
             self.printWrapped("During character creation and settings, labelled Undo/Redo buttons appear (e.g. 'Undo:STR', 'Redo:Name'). These show exactly what will change before you tap. After tapping, a message confirms what was reverted. Undo/Redo must be enabled in Settings > Gameplay.", indent: 2, color: .dimGreen)
+            self.printLink("Settings > Gameplay", to: "gameplay", indent: 4)
             self.print("")
 
             self.print("  SHORTCUTS", color: .cyan, bold: true)
@@ -5841,6 +5949,8 @@ class GameEngine: ObservableObject {
         printWrapped("Works on any device. Google Gemini is FREE (ages 18+). Also supports Claude and OpenAI.", indent: 4)
         print("")
         printWrapped("Set up in Settings > AI Provider. Adjust narration level in Settings > DM Ad-lib.", indent: 4, color: .dimGreen)
+        printLink("Settings > AI Provider", to: "ai", indent: 4)
+        printLink("Settings > DM Settings", to: "dm", indent: 4)
         print("")
         print("CHAT", color: .cyan, bold: true)
         printWrapped("Tap Chat during exploration to open the chat prompt. Just type naturally — ask questions, request actions, or roleplay.", indent: 2)
@@ -5858,9 +5968,11 @@ class GameEngine: ObservableObject {
         print("")
         print("TEXT MODE", color: .cyan, bold: true)
         printWrapped("Removes all buttons and menus. Type naturally to play — the DM interprets everything. Toggle in Settings > DM Settings, or type 'buttons off' / 'buttons on'.", indent: 2)
+        printLink("Settings > DM Settings", to: "dm", indent: 4)
         print("")
         print("DM VOICE", color: .cyan, bold: true)
         printWrapped("Enable text-to-speech in Settings > Accessibility > DM Voice to hear the DM's responses read aloud.", indent: 2)
+        printLink("Settings > Accessibility", to: "accessibility", indent: 4)
         print("")
         print("SPEAKER MODE", color: .cyan, bold: true)
         printWrapped("Tap the speaker icon in the input bar to toggle narration on. Story text is read aloud automatically as you play. Tap again to turn it off.", indent: 2)
@@ -7877,7 +7989,7 @@ class GameEngine: ObservableObject {
 
         print("FLASHING CURSOR:", color: .cyan, bold: true)
         print("  \(blinkingCursorEnabled ? "On" : "Off")", color: blinkingCursorEnabled ? .brightGreen : .red)
-        printWrapped("Blinks the cursor next to the > prompt — always, or not at all (the hourglass beside it shows when a screen will move on by itself). Turn this off if using VoiceOver — off automatically the first time this device has VoiceOver running.", indent: 2, color: .dimGreen)
+        printWrapped("Off (the default): no cursor by the > prompt, except the ⏸/▶ while a screen is counting down. On: the cursor always blinks there. Turn this off if using VoiceOver — off automatically the first time this device has VoiceOver running.", indent: 2, color: .dimGreen)
         print("")
 
         let displaySizeLabel = "Size \(displaySizeName)"
@@ -7982,7 +8094,7 @@ class GameEngine: ObservableObject {
             self.print("")
 
             self.print("  FLASHING CURSOR", color: .cyan, bold: true)
-            self.printWrapped("Blinks the cursor next to the > prompt — always, or not at all (the hourglass beside it shows when a screen will move on by itself). Off by default the first time VoiceOver is detected running on this device — turn it off yourself if you use VoiceOver and it's still on.", indent: 2, color: .dimGreen)
+            self.printWrapped("Off (the default): no cursor by the > prompt, except the ⏸/▶ while a screen is counting down. On: the cursor always blinks there. Off by default the first time VoiceOver is detected running on this device — turn it off yourself if you use VoiceOver and it's still on.", indent: 2, color: .dimGreen)
             self.print("")
         }
     }
@@ -8071,7 +8183,7 @@ class GameEngine: ObservableObject {
 
         print("BLINKING CURSOR:", color: .cyan, bold: true)
         print("  \(blinkingCursorEnabled ? "On" : "Off")", color: blinkingCursorEnabled ? .brightGreen : .red)
-        printWrapped("Blinks the cursor next to the > prompt — always, or not at all (the hourglass beside it shows when a screen will move on by itself).", indent: 2, color: .dimGreen)
+        printWrapped("Off (the default): no cursor by the > prompt, except the ⏸/▶ while a screen is counting down. On: the cursor always blinks there.", indent: 2, color: .dimGreen)
         print("")
 
         print("UNDO/REDO:", color: .cyan, bold: true)
@@ -8620,7 +8732,7 @@ class GameEngine: ObservableObject {
         iconScaleSetting = d.integer(forKey: "iconScaleSetting")
         useCustomKeyboard = d.object(forKey: "useCustomKeyboard") == nil ? true : d.bool(forKey: "useCustomKeyboard")
         idlePromptsEnabled = d.object(forKey: "idlePromptsEnabled") == nil ? true : d.bool(forKey: "idlePromptsEnabled")
-        blinkingCursorEnabled = d.object(forKey: "blinkingCursorEnabled") == nil ? !GameEngine.systemVoiceOverRunning : d.bool(forKey: "blinkingCursorEnabled")
+        blinkingCursorEnabled = d.object(forKey: "blinkingCursorEnabled") == nil ? false : d.bool(forKey: "blinkingCursorEnabled")
         justDMMode = d.bool(forKey: "justDMMode")
     }
 
@@ -9481,6 +9593,7 @@ class GameEngine: ObservableObject {
             self.print("")
             self.print("  UNDO / REDO", color: .cyan, bold: true)
             self.printWrapped("When you change a setting, labelled Undo/Redo buttons appear in the input bar showing what they will revert. Tap to step back or forward through changes. Undo/Redo must be enabled in Settings > Gameplay.", indent: 2, color: .dimGreen)
+            self.printLink("Settings > Gameplay", to: "gameplay", indent: 4)
             self.print("")
             self.print("  NAVIGATION BAR", color: .cyan, bold: true)
             self.printWrapped("The compact bar [<< | ? | >>] appears when options span multiple pages. << = previous page, >> = next page. Long-press to skip 3 pages.", indent: 2, color: .dimGreen)
@@ -9696,7 +9809,7 @@ class GameEngine: ObservableObject {
             iconScaleSetting = 0
             useCustomKeyboard = true
             idlePromptsEnabled = true
-            blinkingCursorEnabled = !GameEngine.systemVoiceOverRunning
+            blinkingCursorEnabled = false
             fontScale = FontSizeSetting.defaultSetting.scale
             justDMMode = false
             DMEngine.shared.justDMMode = false
@@ -9841,7 +9954,7 @@ class GameEngine: ObservableObject {
         add("useCustomKeyboard", "Keyboard", current: useCustomKeyboard ? "Custom" : "System", dflt: "Custom")
         #endif
         add("idlePromptsEnabled", "Idle Prompts", current: idlePromptsEnabled ? "On" : "Off", dflt: "On")
-        add("blinkingCursorEnabled", "Blinking Cursor", current: blinkingCursorEnabled ? "On" : "Off", dflt: "On")
+        add("blinkingCursorEnabled", "Blinking Cursor", current: blinkingCursorEnabled ? "On" : "Off", dflt: "Off")
 
         add("autosave_interval", "Autosave", current: autosaveInterval.displayName, dflt: AutosaveInterval.everyRoom.displayName)
 
@@ -9988,7 +10101,7 @@ class GameEngine: ObservableObject {
         if keys.contains("iconScaleSetting") { iconScaleSetting = 0 }
         if keys.contains("useCustomKeyboard") { useCustomKeyboard = true }
         if keys.contains("idlePromptsEnabled") { idlePromptsEnabled = true }
-        if keys.contains("blinkingCursorEnabled") { blinkingCursorEnabled = !GameEngine.systemVoiceOverRunning }
+        if keys.contains("blinkingCursorEnabled") { blinkingCursorEnabled = false }
         if keys.contains("fontSizeSetting") { fontScale = FontSizeSetting.defaultSetting.scale }
         if keys.contains("undoRedoEnabled") && !undoRedoEnabled { clearAllUndoRedo() }
 
@@ -14116,6 +14229,7 @@ class GameEngine: ObservableObject {
 
             self.print("  THINGS TO KNOW", color: .cyan, bold: true)
             self.printWrapped("Changing race or class re-generates the character's stats. The name stays the same. You can undo/redo changes if enabled in Settings > Gameplay.", indent: 2, color: .dimGreen)
+            self.printLink("Settings > Gameplay", to: "gameplay", indent: 4)
             self.printWrapped("At least one character must be Local (You) — you need someone to control!", indent: 2, color: .yellow)
             self.print("")
         }
@@ -14658,6 +14772,7 @@ class GameEngine: ObservableObject {
 
             self.print("  SETUP", color: .cyan, bold: true)
             self.printWrapped("1. Enable Multiplayer in Settings > Gameplay.", indent: 2, color: .dimGreen)
+            self.printLink("Settings > Gameplay", to: "gameplay", indent: 4)
             self.printWrapped("2. In Party Review, set a character to 'Remote'.", indent: 2, color: .dimGreen)
             self.printWrapped("3. Tap Start Matchmaker to invite via Game Centre.", indent: 2, color: .dimGreen)
             self.print("")
@@ -16131,6 +16246,7 @@ class GameEngine: ObservableObject {
             self.printWrapped("• Tap Auto to randomly select all remaining skills.", indent: 2)
             self.printWrapped("• Long-press any skill to pick it and auto-fill the rest.", indent: 2)
             self.printWrapped("• Use undo/redo to change your picks (must be enabled in Settings > Gameplay).", indent: 2)
+            self.printLink("Settings > Gameplay", to: "gameplay", indent: 4)
             self.printWrapped("• X icon goes back to ability scores.", indent: 2)
             self.print("")
         }
@@ -16930,6 +17046,7 @@ class GameEngine: ObservableObject {
             self.print("")
             self.print("  UNDO / REDO", color: .cyan, bold: true)
             self.printWrapped("Step back or forward through changes you've made to the dungeon name or difficulty on this screen. Undo/Redo must be enabled in Settings > Gameplay.", indent: 2, color: .dimGreen)
+            self.printLink("Settings > Gameplay", to: "gameplay", indent: 4)
             self.print("")
         }
     }
@@ -17135,6 +17252,7 @@ class GameEngine: ObservableObject {
             self.print("  BUTTONS", color: .cyan, bold: true)
             self.printWrapped("Search looks for hidden items. Listen reveals what's beyond exits. Rest (centre) heals — hold for long rest.", indent: 2, color: .dimGreen)
             self.printWrapped("Search/Listen results auto-continue after a delay (Settings > Info Timeout) — tap the result text to continue immediately instead of waiting.", indent: 2, color: .dimGreen)
+            self.printLink("Settings > Gameplay > Info Timeout", to: "infoTimeout", indent: 4)
             self.print("")
             self.print("  CLASS RELIABILITY", color: .cyan, bold: true)
             self.printWrapped("Some classes have a natural edge: Rogues and Engineers search more reliably, Wizards/Rangers/Scouts see further on the map, Clerics and Thieves negotiate better deals. Having one in the party helps everyone at that activity.", indent: 2, color: .dimGreen)
@@ -17144,6 +17262,7 @@ class GameEngine: ObservableObject {
             self.print("")
             self.print("  TELEPORT PAD", color: .cyan, bold: true)
             self.printWrapped("A purple target icon (bottom-right corner, where the NPC scroll icon normally sits) appears when the room has an active teleport pad — tap it to instantly travel to its linked room. Toggle in Settings > Gameplay.", indent: 2, color: .dimGreen)
+            self.printLink("Settings > Gameplay", to: "gameplay", indent: 4)
             self.print("")
             self.print("  CHAT", color: .cyan, bold: true)
             self.printWrapped("Type at the > prompt to chat with the DM. Tap ✕ to leave chat.", indent: 2, color: .dimGreen)
@@ -17166,6 +17285,7 @@ class GameEngine: ObservableObject {
             self.print("")
             self.print("  RESULT SCREENS", color: .cyan, bold: true)
             self.printWrapped("Search/Listen results auto-continue after a delay (Settings > Info Timeout) — tap the result text to continue right away instead of waiting.", indent: 2, color: .dimGreen)
+            self.printLink("Settings > Gameplay > Info Timeout", to: "infoTimeout", indent: 4)
             self.print("")
             self.print("  PICK UP / TAKE TREASURE", color: .cyan, bold: true)
             self.printWrapped("Appears when loot or gold is on the floor.", indent: 2, color: .dimGreen)
@@ -17270,6 +17390,7 @@ class GameEngine: ObservableObject {
     }
 
     func showExplorationView() {
+        linkReturnSnapshot = nil
         guard let dungeon = dungeon, let room = dungeon.currentRoom else { return }
         checkForMonsterRespawn(room: room)
         checkForMonsterWander(room: room)
@@ -22747,6 +22868,7 @@ class GameEngine: ObservableObject {
             printWrapped("You can tap the microphone icon to speak commands, or tap the text prompt (>) to type. The loudspeaker icon reads the screen aloud.", indent: 2, color: .dimGreen)
         } else {
             printWrapped("Tap the text prompt (>) to type commands. Enable Voice Menus in Settings > Accessibility to use voice input and screen reading.", indent: 2, color: .dimGreen)
+            printLink("Settings > Accessibility", to: "accessibility", indent: 4)
         }
         print("")
 
@@ -22755,6 +22877,7 @@ class GameEngine: ObservableObject {
         print("")
         print("  UNDO / REDO", color: .cyan, bold: true)
         printWrapped("When you make changes (settings, character edits), labelled Undo/Redo buttons appear in the input bar showing what they will revert. Tap to step back or forward through changes. Undo/Redo must be enabled in Settings > Gameplay.", indent: 2, color: .dimGreen)
+        printLink("Settings > Gameplay", to: "gameplay", indent: 4)
         print("")
     }
 
@@ -22906,7 +23029,12 @@ class GameEngine: ObservableObject {
             for (i, line) in lines.enumerated() {
                 for link in links {
                     if line.text.contains(link.text) {
-                        lineActions[i] = link.action
+                        let action = link.action
+                        lineActions[i] = { [weak self] in
+                            guard let self = self else { return }
+                            if self.linkReturnSnapshot == nil { self.linkReturnSnapshot = self.captureScreenSnapshot() }
+                            action()
+                        }
                         break
                     }
                 }
@@ -24021,6 +24149,7 @@ class GameEngine: ObservableObject {
                     self.printWrapped("Exports a \"Glitch in the Weave\" bug report — device/app info, recent log and DM chat, and (if the app crashed last launch) the crash details — as a text file you can share. Also saves this exact moment under its own name in Continue Adventure, so it can be replayed.", indent: 2, color: .dimGreen)
                     self.print("")
                     self.printWrapped("Settings > Gameplay lets you cap how many recent events are displayed if the log gets long.", indent: 2, color: .dimGreen)
+                    self.printLink("Settings > Gameplay", to: "gameplay", indent: 4)
                 }
             case 5: back()
             default: break
@@ -30095,6 +30224,7 @@ class GameEngine: ObservableObject {
 
             self.print("  AUTOSAVE", color: .cyan, bold: true)
             self.printWrapped("The game autosaves periodically. Change the frequency in Settings > Saving. Autosaves create breakpoints you can reload from.", indent: 2, color: .dimGreen)
+            self.printLink("Settings > Game Saves", to: "saves", indent: 4)
             self.print("")
 
             self.print("  BREAKPOINTS", color: .cyan, bold: true)

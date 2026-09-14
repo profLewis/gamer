@@ -278,7 +278,14 @@ struct TerminalView: View {
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 2) {
                                 ForEach(Array(gameEngine.terminalLines.enumerated()), id: \.element.id) { index, line in
-                                    if gameEngine.textTapEnabled {
+                                    if let link = line.link {
+                                        // In-text link — always its own tap target, whatever
+                                        // the screen's other tap handling is.
+                                        TerminalLineView(line: line, scale: scale)
+                                            .id(line.id)
+                                            .contentShape(Rectangle())
+                                            .onTapGesture { gameEngine.followLink(link) }
+                                    } else if gameEngine.textTapEnabled {
                                         TerminalLineView(line: line, scale: scale)
                                             .id(line.id)
                                             .contentShape(Rectangle())
@@ -487,8 +494,8 @@ struct TerminalView: View {
                                     // Swipe left = next card if available, else go back
                                     if let next = gameEngine.swipeLeftHandler {
                                         next()
-                                    } else if let close = gameEngine.closeHandler {
-                                        close()
+                                    } else if gameEngine.closeHandler != nil {
+                                        gameEngine.invokeClose()
                                     } else if !gameEngine.awaitingContinue {
                                         // No swipe handler and no closeHandler — an
                                         // orphaned screen; fall back to the same
@@ -746,8 +753,8 @@ struct TerminalView: View {
                                     if horizontal < 0 {
                                         if let next = gameEngine.swipeLeftHandler {
                                             next()
-                                        } else if let close = gameEngine.closeHandler {
-                                            close()
+                                        } else if gameEngine.closeHandler != nil {
+                                            gameEngine.invokeClose()
                                         }
                                     } else {
                                         if let prev = gameEngine.swipeRightHandler {
@@ -1057,7 +1064,7 @@ struct TerminalView: View {
                             }
                         } else if gameEngine.closeHandler != nil {
                             Button(action: {
-                                gameEngine.closeHandler?()
+                                gameEngine.invokeClose()
                             }) {
                                 Image(systemName: "xmark.circle")
                                     .font(.system(size: 20 * scale * gameEngine.iconScale))

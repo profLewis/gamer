@@ -21,6 +21,9 @@ struct TerminalLine: Identifiable {
     /// the Atlas's "[@]" so you can spot where you are at a glance.
     var highlightRange: Range<Int>? = nil
     var highlightColor: TerminalColor = .yellow
+    /// In-text link key (see GameEngine.printLink/followLink) — the whole
+    /// line is a tap target that opens that screen.
+    var link: String? = nil
 
     init(_ text: String, color: TerminalColor = .green, bold: Bool = false, underlined: Bool = false, size: CGFloat = 14, centered: Bool = false) {
         self.text = text
