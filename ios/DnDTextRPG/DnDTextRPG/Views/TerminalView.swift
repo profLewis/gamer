@@ -316,7 +316,12 @@ struct TerminalView: View {
                                     HStack {
                                         Spacer()
                                         AnimatedGIFView(gifName: gifName)
-                                            .frame(width: 280 * scale, height: 186 * scale)
+                                            // Fits its column and at most ~35% of the screen's
+                                            // height — landscape phones used to get the full
+                                            // portrait size, running off the screen.
+                                            .frame(width: landingDragonWidth(geometry.size, isLandscape: isLandscape),
+                                                   height: landingDragonWidth(geometry.size, isLandscape: isLandscape) * 186 / 280)
+                                            .clipped()
                                             .offset(x: -6 * scale) // Centre the dragon's head, not the image
                                         Spacer()
                                     }
@@ -1314,6 +1319,13 @@ struct TerminalView: View {
     }
     #endif
 
+    /// Landing-page dragon width: its natural 280pt (x text scale), but no
+    /// wider than 80% of its column nor taller than ~35% of the screen.
+    private func landingDragonWidth(_ size: CGSize, isLandscape: Bool) -> CGFloat {
+        let column = isLandscape ? size.width / 2 : size.width
+        return max(120, min(280 * scale, column * 0.8, size.height * 0.35 * 280 / 186))
+    }
+
     private func scrollToTop(_ proxy: ScrollViewProxy) {
         if let firstLine = gameEngine.terminalLines.first {
             withAnimation {
@@ -2121,6 +2133,15 @@ struct AnimatedGIFView: NSViewRepresentable {
         imageView.image = NSImage(data: data)
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.translatesAutoresizingMaskIntoConstraints = false
+        // NSImageView's intrinsic size is the GIF's full pixel size, held
+        // at required priority — that pushed the view far past the frame
+        // SwiftUI gave it (the splash dragon spilled over the title).
+        for axis in [NSLayoutConstraint.Orientation.horizontal, .vertical] {
+            imageView.setContentCompressionResistancePriority(.defaultLow, for: axis)
+            imageView.setContentHuggingPriority(.defaultLow, for: axis)
+        }
+        container.wantsLayer = true
+        container.layer?.masksToBounds = true
         container.addSubview(imageView)
         NSLayoutConstraint.activate([
             imageView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
