@@ -1808,6 +1808,15 @@ struct ArenaScene {
 }
 
 enum ArenaRenderer {
+    /// A short name that tells people apart: the "R." robot prefix dropped,
+    /// the surname when there is one ("Ada Stone" -> "Stone"), else the name.
+    static func shortName(_ name: String) -> String {
+        var parts = name.split(separator: " ").map(String.init)
+        if parts.first == "R." { parts.removeFirst() }
+        guard let last = parts.last else { return name }
+        return parts.count >= 2 && last.count > 1 ? last : (parts.first ?? name)
+    }
+
     struct Cell: Equatable {
         var ch: Swift.Character = " "
         var color: TerminalColor = .dimGreen
@@ -1838,7 +1847,7 @@ enum ArenaRenderer {
         // on theirs — in lined-up columns, over as many rows as it takes to
         // fit the width without wrapping.
         let barW = 5
-        func short(_ n: String) -> String { String(n.split(separator: " ").first ?? Substring(n)) }
+        func short(_ n: String) -> String { Self.shortName(n) }
         let everyone = scene.party + scene.enemies
         let nameW = min(8, max(3, everyone.map { short($0.name).count }.max() ?? 3))
         let entryW = nameW + barW + 3            // name, [bar], a space
@@ -1917,7 +1926,7 @@ enum ArenaRenderer {
             for (i, line) in lines.enumerated() { put(line, x, bottom - lines.count + 1 + i, color) }
         }
         func label(_ name: String, x: Int, w: Int, top: Int, color: TerminalColor) {
-            let n = String(name.split(separator: " ").first ?? Substring(name)).prefix(10)
+            let n = String(Self.shortName(name).prefix(10))
             put(String(n), x + (w - n.count) / 2, top - 1, color)
         }
 
@@ -1941,7 +1950,7 @@ enum ArenaRenderer {
         let bandBottom = feetY - maxSpriteHeight - 1   // just above the fighters' name labels
         let partyOthers = scene.party.filter { !$0.down && $0.name != leftF?.name }
         let enemyOthers = scene.enemies.filter { !$0.down && $0.name != rightF?.name }
-        func firstName(_ n: String) -> String { String(n.split(separator: " ").first ?? Substring(n)) }
+        func firstName(_ n: String) -> String { Self.shortName(n) }
         func pick(_ lines: [String], _ seed: Int) -> String { lines[abs(seed) % lines.count] }
         func bubble(isParty: Bool, index i: Int, count: Int) -> String? {
             if let m = move, playing {

@@ -665,6 +665,9 @@ struct TerminalView: View {
                         if !isLandscape && gameEngine.showCombatArena {
                             CombatArenaView(engine: gameEngine, scale: scale)
                                 .frame(height: max(170, min(240, geometry.size.height * 0.26)))
+                                // A tap on the fight counts as "tap anywhere" to move on.
+                                .contentShape(Rectangle())
+                                .onTapGesture { advanceFromStrip() }
                         }
                         // (VoiceOver: the buttons before the input line, whichever is on top.)
                         if isLandscape {
@@ -680,6 +683,9 @@ struct TerminalView: View {
                         if isLandscape && gameEngine.showCombatArena {
                             CombatArenaView(engine: gameEngine, scale: scale)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                // A tap on the fight counts as "tap anywhere" to move on.
+                                .contentShape(Rectangle())
+                                .onTapGesture { advanceFromStrip() }
                         }
                     }
                     .frame(maxWidth: isLandscape ? .infinity : nil, alignment: .top)
