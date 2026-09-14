@@ -178,6 +178,15 @@ struct AtlasRoom: Codable {
 }
 
 /// One dungeon level as the Atlas knows it.
+/// Where a level sits on the big map (see Dungeon.atlasFrames): the grid's
+/// top-left in that level's own coordinates, and the shared size.
+struct AtlasFrame {
+    let minX: Int
+    let minY: Int
+    let cols: Int
+    let rows: Int
+}
+
 struct AtlasLevel: Codable {
     let dungeonName: String
     let level: Int
@@ -914,7 +923,7 @@ class Dungeon: ObservableObject, Codable {
         // Teleport pads — shortcuts linking two distant rooms, about one pair
         // for every five rooms (see Dungeon.linkTeleportPads).
         if numRooms >= 6 {
-            Dungeon.linkTeleportPads(in: rooms, pairs: max(2, numRooms / 5))
+            Dungeon.linkTeleportPads(in: rooms, pairs: Dungeon.teleportPairsWanted(roomCount: numRooms))
         }
 
         // Vertical connections — a second "floor" reachable via stairs (free,
@@ -1235,15 +1244,68 @@ class Dungeon: ObservableObject, Codable {
         }
     }
 
-    /// Older maps had one pad or none — top them up to about one pair for
-    /// every five rooms.
+    /// Teleport pads at a roughly constant density: about one pair for every
+    /// 7-8 rooms — fewer on a small map, more on a big one.
+    static func teleportPairsWanted(roomCount: Int) -> Int {
+        max(1, Int((Double(roomCount) / 7.5).rounded()))
+    }
+
+    /// Keeps a map near that density: tops up older maps that had one pad or
+    /// none, and thins out maps that got too many (only pads nobody's used).
     func ensureTeleportPads() {
         guard rooms.count >= 6 else { return }
-        let wantedPairs = max(2, rooms.count / 5)
+        let wantedPairs = Dungeon.teleportPairsWanted(roomCount: rooms.count)
         let padRooms = rooms.values.filter { $0.teleportDestinationRoomId != nil }.count
         let havePairs = (padRooms + 1) / 2
-        guard havePairs < wantedPairs else { return }
-        Dungeon.linkTeleportPads(in: rooms, pairs: wantedPairs - havePairs)
+        if havePairs < wantedPairs {
+            Dungeon.linkTeleportPads(in: rooms, pairs: wantedPairs - havePairs)
+        } else if havePairs > wantedPairs + 1 {
+            var excess = havePairs - wantedPairs
+            for room in rooms.values.sorted(by: { $0.id < $1.id }) where excess > 0 {
+                guard let dest = room.teleportDestinationRoomId, let other = rooms[dest],
+                      !room.visited, !other.visited else { continue }
+                room.teleportDestinationRoomId = nil
+                if other.teleportDestinationRoomId == room.id { other.teleportDestinationRoomId = nil }
+                excess -= 1
+            }
+        }
+    }
+
+    /// Where each mapped level sits on the big map, so flicking between them
+    /// lines up: each level is shifted so its entrance lands exactly where
+    /// the party left the level above, and all share one frame.
+    static func atlasFrames(_ levels: [AtlasLevel], showAll: Bool) -> [AtlasFrame] {
+        var offsets: [(Int, Int)] = []
+        for (i, level) in levels.enumerated() {
+            guard i > 0 else { offsets.append((0, 0)); continue }
+            let prev = levels[i - 1]
+            let (pdx, pdy) = offsets[i - 1]
+            if let exitId = prev.exitRoomId, let exit = prev.rooms.first(where: { $0.id == exitId }),
+               let entrance = level.rooms.first(where: { $0.typeName.lowercased().contains("entrance") }) {
+                offsets.append((exit.x + pdx - entrance.x, exit.y + pdy - entrance.y))
+            } else {
+                offsets.append((pdx, pdy))
+            }
+        }
+        var gMinX = Int.max, gMinY = Int.max, gMaxX = Int.min, gMaxY = Int.min
+        for (i, level) in levels.enumerated() {
+            for room in level.rooms where room.visited || showAll {
+                gMinX = min(gMinX, room.x + offsets[i].0); gMaxX = max(gMaxX, room.x + offsets[i].0)
+                gMinY = min(gMinY, room.y + offsets[i].1); gMaxY = max(gMaxY, room.y + offsets[i].1)
+            }
+        }
+        guard gMinX <= gMaxX, gMinY <= gMaxY else { return levels.map { _ in AtlasFrame(minX: 0, minY: 0, cols: 1, rows: 1) } }
+        return levels.indices.map { i in
+            AtlasFrame(minX: gMinX - offsets[i].0, minY: gMinY - offsets[i].1, cols: gMaxX - gMinX + 1, rows: gMaxY - gMinY + 1)
+        }
+    }
+
+    /// The text map's cells for rooms you've been to (for colouring them in
+    /// The Whole Deep): line and first column of each "[X]".
+    static func atlasVisitedCells(_ level: AtlasLevel, frame: AtlasFrame) -> [(line: Int, column: Int)] {
+        level.rooms.filter { $0.visited }.map { room in
+            (3 + (room.y - frame.minY) * 2, 2 + (room.x - frame.minX) * 5)
+        }
     }
 
     static func mapLegendRowCount(maxSymbols: Int) -> Int {
@@ -1362,12 +1424,14 @@ class Dungeon: ObservableObject, Codable {
     /// The whole level drawn in the same [X]--[Y] style as the main map,
     /// sized to fit every shown room. `highlight` is the line/column of
     /// the "[@]" cell, for colouring where you are.
-    static func atlasMapLines(_ level: AtlasLevel, showAll: Bool) -> (lines: [String], highlight: (line: Int, column: Int)?) {
+    static func atlasMapLines(_ level: AtlasLevel, showAll: Bool, frame: AtlasFrame? = nil) -> (lines: [String], highlight: (line: Int, column: Int)?) {
         let shown = level.rooms.filter { $0.visited || showAll }
-        guard let minX = shown.map({ $0.x }).min(), let maxX = shown.map({ $0.x }).max(),
-              let minY = shown.map({ $0.y }).min(), let maxY = shown.map({ $0.y }).max() else {
+        guard var minX = shown.map({ $0.x }).min(), var maxX = shown.map({ $0.x }).max(),
+              var minY = shown.map({ $0.y }).min(), var maxY = shown.map({ $0.y }).max() else {
             return (["(nothing mapped yet)"], nil)
         }
+        // A shared frame lines this level up with the others (see atlasFrames).
+        if let f = frame { minX = f.minX; minY = f.minY; maxX = f.minX + f.cols - 1; maxY = f.minY + f.rows - 1 }
         let shownIds = Set(shown.map { $0.id })
         // Teleport pads: each linked pair gets its own number (1, 2, 3...)
         // on the map, so you can see which pad goes where — listed under
@@ -1453,7 +1517,7 @@ class Dungeon: ObservableObject, Codable {
         ("L", "Library"), ("B", "Boss"), ("A", "Armoury"), ("P", "Prison"),
         ("M", "Merchant"), ("G", "Gym"), ("N", "NPC"), ("1-9", "Teleport pads"),
         ("\u{2191}", "Way up"), ("\u{2193}", "Way down"), ("[ ]", "Unexplored"), ("--", "Passage"),
-        ("KK", "Locked door"), ("XX", "Barred door"), ("{ }", "More than one thing here"),
+        ("KK", "Locked door"), ("XX", "Barred door"), ("{ }", "Multiple"),
     ]
 
     static func atlasKeyLines() -> [String] {

@@ -1445,7 +1445,7 @@ struct TerminalView: View {
             ScrollView([.horizontal, .vertical], showsIndicators: true) {
                 Group {
                     if gameEngine.pictureMapOn, let level = gameEngine.overlayAtlasLevel {
-                        PictureMapView(level: level, fontSize: gameEngine.mapFontSize * scale * mapZoom, showAll: gameEngine.atlasShowAllRooms)
+                        PictureMapView(level: level, fontSize: gameEngine.mapFontSize * scale * mapZoom, showAll: gameEngine.atlasShowAllRooms, frame: gameEngine.overlayAtlasFrame)
                     } else {
                         VStack(alignment: .leading, spacing: 2) {
                             ForEach(gameEngine.mapOverlayLines) { line in
@@ -1477,13 +1477,12 @@ struct TerminalView: View {
                 HStack(spacing: 8) {
                     // Page between the levels you've mapped (the Atlas keeps
                     // every level you've left behind).
-                    if gameEngine.atlasLevelCount > 1 {
-                        overlayCapsule("Previous level", systemImage: "chevron.left", enabled: gameEngine.atlasLevelIndex > 0) {
-                            gameEngine.atlasShowLevel(offset: -1)
-                        }
-                        overlayCapsule("Next level", systemImage: "chevron.right", enabled: gameEngine.atlasLevelIndex < gameEngine.atlasLevelCount - 1) {
-                            gameEngine.atlasShowLevel(offset: 1)
-                        }
+                    // Always here — greyed until you've mapped another level.
+                    overlayCapsule("Previous level", systemImage: "chevron.left", enabled: gameEngine.atlasLevelIndex > 0) {
+                        gameEngine.atlasShowLevel(offset: -1)
+                    }
+                    overlayCapsule("Next level", systemImage: "chevron.right", enabled: gameEngine.atlasLevelIndex < gameEngine.atlasLevelCount - 1) {
+                        gameEngine.atlasShowLevel(offset: 1)
                     }
                     if gameEngine.atlasExploreAvailable && !gameEngine.atlasScreenActive {
                         overlayCapsule("Explore the rooms, one by one", systemImage: "book.closed") { gameEngine.openAtlasFromOverlay() }
@@ -1554,7 +1553,7 @@ struct TerminalView: View {
 
     /// What each of the big map's symbols means — the ? button's key.
     private static let mapButtonKey: [(symbol: String, meaning: String)] = [
-        ("chevron.left", "Previous level you've mapped"),
+        ("chevron.left", "Previous level (once you've been deeper; they line up)"),
         ("chevron.right", "Next level you've mapped"),
         ("book.closed", "Explore the rooms, one by one"),
         ("globe", "The Whole Deep — every room"),
@@ -1976,6 +1975,8 @@ struct PictureMapView: View {
     /// The Whole Deep (every room) or The Charted Reaches (only where
     /// you've been — passages into the unknown fade off into the rock).
     var showAll: Bool = true
+    /// Shared with the text map and the other levels, so everything lines up.
+    var frame: AtlasFrame? = nil
     private var rooms: [AtlasRoom] { showAll ? level.rooms : level.rooms.filter { $0.visited } }
 
     /// The text map's grid (see Dungeon.atlasMapLines): each room is 5
@@ -2014,10 +2015,11 @@ struct PictureMapView: View {
     }
 
     private var layout: Layout {
+        let m = metrics
+        if let f = frame { return Layout(minX: f.minX, minY: f.minY, cols: f.cols, rows: f.rows, charW: m.charW, lineH: m.lineH) }
         let xs = rooms.map { $0.x }, ys = rooms.map { $0.y }
         let minX = xs.min() ?? 0, maxX = xs.max() ?? 0
         let minY = ys.min() ?? 0, maxY = ys.max() ?? 0
-        let m = metrics
         return Layout(minX: minX, minY: minY, cols: maxX - minX + 1, rows: maxY - minY + 1, charW: m.charW, lineH: m.lineH)
     }
 
@@ -2062,71 +2064,90 @@ struct PictureMapView: View {
     }
 
     /// Ground textures by global pixel position, so neighbouring cells of the
-    /// same ground join seamlessly into one landscape.
+    /// same ground join seamlessly into one landscape. Tiles are bevelled
+    /// (light top-left edge, shaded bottom-right), with low-frequency noise
+    /// for clusters and patches.
     private static func texture(_ t: Terrain, _ x: Int, _ y: Int) -> RGB {
         let n = noise(x, y, 1)
         func pick(_ p: [RGB]) -> RGB { p[min(p.count - 1, Int(n * Double(p.count)))] }
+        func bevel(_ base: RGB, size: Int, tint: Double = 0.12) -> RGB {
+            let lx = ((x % size) + size) % size, ly = ((y % size) + size) % size
+            let tileTint = 1 + (noise(x / size, y / size, 11) - 0.5) * tint
+            let c = base.scaled(tileTint)
+            if lx == 0 || ly == 0 { return c.scaled(0.55) }                   // grout
+            if lx == 1 || ly == 1 { return c.scaled(1.18) }                   // lit edge
+            if lx == size - 1 || ly == size - 1 { return c.scaled(0.82) }     // shaded edge
+            return n > 0.93 ? c.scaled(0.9) : c
+        }
         switch t {
         case .bedrock:
-            if n > 0.97 { return RGB(0.22, 0.20, 0.17) }                       // pebbles
-            return pick([RGB(0.09, 0.08, 0.07), RGB(0.11, 0.10, 0.08), RGB(0.08, 0.07, 0.06), RGB(0.13, 0.11, 0.09)])
+            let cluster = noise(x / 3, y / 3, 2)
+            if cluster > 0.72 {
+                let edge = noise(x / 3, (y - 1) / 3, 2) <= 0.72
+                return edge ? RGB(0.30, 0.27, 0.23) : RGB(0.19, 0.17, 0.15)   // a rock, lit from above
+            }
+            if n > 0.975 { return RGB(0.26, 0.24, 0.20) }
+            return pick([RGB(0.08, 0.07, 0.06), RGB(0.10, 0.09, 0.07), RGB(0.07, 0.06, 0.05)])
         case .water:
-            if noise(x / 2, y, 5) > 0.9 { return RGB(0.45, 0.65, 0.85) }       // ripples
-            return pick([RGB(0.10, 0.22, 0.42), RGB(0.12, 0.26, 0.48), RGB(0.09, 0.20, 0.38)])
+            let wave = (y % 4 == 0) && noise(x / 2, y, 5) > 0.4
+            if wave { return RGB(0.50, 0.70, 0.90) }
+            return pick([RGB(0.10, 0.22, 0.45), RGB(0.12, 0.27, 0.50), RGB(0.09, 0.20, 0.40)])
         case .stone:
-            if x % 4 == 0 || y % 4 == 0 { return RGB(0.24, 0.24, 0.27) }       // grout between flagstones
-            return pick([RGB(0.38, 0.38, 0.42), RGB(0.34, 0.34, 0.38), RGB(0.42, 0.41, 0.45)])
+            return bevel(RGB(0.40, 0.40, 0.44), size: 4)
         case .corridor:
-            return pick([RGB(0.36, 0.27, 0.18), RGB(0.32, 0.24, 0.16), RGB(0.40, 0.30, 0.20), RGB(0.30, 0.23, 0.15)])
+            if n > 0.94 { return RGB(0.50, 0.42, 0.30) }                        // pebbles
+            return pick([RGB(0.35, 0.26, 0.17), RGB(0.31, 0.23, 0.15), RGB(0.39, 0.29, 0.19), RGB(0.29, 0.22, 0.14)])
         case .treasure:
-            if n > 0.95 { return RGB(1.0, 0.92, 0.45) }                         // glints
-            return pick([RGB(0.58, 0.46, 0.18), RGB(0.52, 0.41, 0.15), RGB(0.62, 0.50, 0.21)])
+            if n > 0.95 { return RGB(1.0, 0.95, 0.55) }                         // glints
+            return bevel(RGB(0.62, 0.49, 0.18), size: 4, tint: 0.2)
         case .library:
-            if y % 3 == 0 { return RGB(0.24, 0.15, 0.08) }                       // plank seams
-            return pick([RGB(0.46, 0.30, 0.16), RGB(0.42, 0.27, 0.14), RGB(0.50, 0.33, 0.18)])
+            if y % 3 == 0 { return RGB(0.22, 0.13, 0.07) }                       // plank seams
+            let grain = noise(x / 4, y, 7) > 0.6 ? 0.9 : 1.0
+            return RGB(0.47, 0.30, 0.16).scaled(grain * (1 + (noise(x / 8, y / 3, 9) - 0.5) * 0.2))
         case .shrine:
-            return ((x / 2) + (y / 2)) % 2 == 0 ? RGB(0.26, 0.36, 0.62) : RGB(0.20, 0.28, 0.52)
+            let checker = ((x / 3) + (y / 3)) % 2 == 0
+            return bevel(checker ? RGB(0.28, 0.38, 0.66) : RGB(0.20, 0.28, 0.54), size: 3, tint: 0.05)
         case .armoury:
-            if x % 6 == 0 || y % 6 == 0 { return RGB(0.18, 0.19, 0.21) }         // plate edges
-            if x % 6 == 2 && y % 6 == 2 { return RGB(0.55, 0.56, 0.60) }         // rivets
-            return pick([RGB(0.32, 0.33, 0.36), RGB(0.29, 0.30, 0.33)])
+            let c = bevel(RGB(0.33, 0.34, 0.38), size: 6, tint: 0.08)
+            return (x % 6 == 2 && y % 6 == 2) ? RGB(0.62, 0.63, 0.68) : c       // rivets
         case .prison:
-            if n > 0.93 { return RGB(0.55, 0.48, 0.20) }                         // straw
-            if x % 3 == 0 || y % 3 == 0 { return RGB(0.12, 0.12, 0.13) }
-            return pick([RGB(0.21, 0.21, 0.23), RGB(0.18, 0.18, 0.20)])
+            if n > 0.93 { return RGB(0.60, 0.52, 0.22) }                         // straw
+            return bevel(RGB(0.22, 0.22, 0.24), size: 3, tint: 0.1)
         case .shop:
-            if y % 3 == 0 { return RGB(0.30, 0.18, 0.09) }
-            return pick([RGB(0.55, 0.36, 0.18), RGB(0.50, 0.32, 0.16)])
+            if y % 3 == 0 { return RGB(0.28, 0.17, 0.08) }
+            return RGB(0.56, 0.37, 0.19).scaled(1 + (noise(x / 5, y / 3, 13) - 0.5) * 0.25)
         case .entrance:
-            if n > 0.96 { return RGB(0.95, 0.85, 0.30) }                          // flowers
-            return pick([RGB(0.18, 0.42, 0.16), RGB(0.15, 0.36, 0.13), RGB(0.22, 0.48, 0.19)])
+            if n > 0.965 { return [RGB(0.95, 0.85, 0.30), RGB(0.9, 0.5, 0.6), RGB(0.95, 0.95, 0.9)][Int(n * 1000) % 3] }  // flowers
+            if (x + y * 3) % 5 == 0 && noise(x, y, 8) > 0.4 { return RGB(0.30, 0.60, 0.26) }                            // blades
+            return pick([RGB(0.18, 0.42, 0.16), RGB(0.15, 0.36, 0.13), RGB(0.21, 0.47, 0.18)])
         case .boss:
-            if noise(x, y, 9) > 0.9 { return RGB(0.95, 0.40, 0.10) }              // embers in the cracks
-            return pick([RGB(0.20, 0.08, 0.07), RGB(0.16, 0.06, 0.05), RGB(0.25, 0.10, 0.08)])
+            let crack = abs(noise(x / 2, y / 2, 9) - 0.5) < 0.05
+            if crack { return noise(x, y, 10) > 0.5 ? RGB(1.0, 0.55, 0.12) : RGB(0.95, 0.30, 0.08) }  // glowing cracks
+            return pick([RGB(0.20, 0.08, 0.07), RGB(0.16, 0.06, 0.05), RGB(0.24, 0.10, 0.08)])
         case .trap:
-            if noise(x, y, 3) > 0.9 { return RGB(0.10, 0.10, 0.10) }              // cracks
-            return pick([RGB(0.36, 0.33, 0.30), RGB(0.32, 0.29, 0.26)])
+            if abs(noise(x / 2, y / 2, 3) - 0.5) < 0.04 { return RGB(0.08, 0.08, 0.08) }            // cracks
+            return bevel(RGB(0.36, 0.33, 0.30), size: 4)
         }
     }
 
-    // Tiny pixel sprites — one character per pixel, "." see-through.
+    // Pixel sprites — one character per pixel, "." see-through, K an outline.
     private static let spritePalette: [Swift.Character: RGB] = [
-        "Y": RGB(1.0, 0.84, 0.2), "O": RGB(0.45, 0.30, 0.06), "B": RGB(0.45, 0.27, 0.12), "W": RGB(0.92, 0.90, 0.85),
-        "G": RGB(0.66, 0.66, 0.70), "D": RGB(0.20, 0.20, 0.24), "R": RGB(0.72, 0.16, 0.16), "N": RGB(0.20, 0.55, 0.25),
-        "U": RGB(0.25, 0.45, 0.80), "K": RGB(0.07, 0.07, 0.07), "F": RGB(1.0, 0.60, 0.15), "C": RGB(0.3, 0.9, 0.9),
-        "P": RGB(0.75, 0.45, 1.0), "A": RGB(1.0, 0.9, 0.2),
+        "Y": RGB(1.0, 0.84, 0.2), "O": RGB(0.55, 0.38, 0.08), "B": RGB(0.50, 0.30, 0.13), "b": RGB(0.36, 0.21, 0.09),
+        "W": RGB(0.95, 0.93, 0.88), "G": RGB(0.70, 0.70, 0.74), "g": RGB(0.48, 0.48, 0.52), "D": RGB(0.24, 0.24, 0.28),
+        "R": RGB(0.75, 0.16, 0.16), "N": RGB(0.20, 0.55, 0.25), "U": RGB(0.25, 0.45, 0.80), "K": RGB(0.05, 0.05, 0.05),
+        "F": RGB(1.0, 0.62, 0.15), "f": RGB(1.0, 0.9, 0.4), "C": RGB(0.3, 0.9, 0.9), "P": RGB(0.75, 0.45, 1.0),
     ]
     private static func sprite(for t: Terrain) -> [String]? {
         switch t {
-        case .treasure: return ["..YY..", ".YOOY.", "BBBBBB", "BYBBYB", "BBBBBB"]
-        case .shrine:   return ["..F...", "..W...", "GGGGGG", ".GGGG.", ".G..G."]
-        case .armoury:  return ["DDDDDD", ".DDDDD", "..DD..", ".DDDD."]
-        case .library:  return ["RUNBRU", "RUNBRU", "RUNBRU", "KKKKKK"]
-        case .boss:     return [".WWWW.", "WKWWKW", "WWWWWW", ".WKWK.", "..WW.."]
-        case .shop:     return ["..KK..", ".YYYY.", "YYOYYY", "YYYYYY", ".YYYY."]
-        case .entrance: return [".GGGG.", "GKKKKG", "GKKKKG", "GKKKKG"]
-        case .prison:   return ["D.D.D.", "D.D.D.", "D.D.D.", "D.D.D."]
-        case .trap:     return ["......", "G..G..", "GG.GG.", "GGGGGG"]
+        case .treasure: return [".KKKKKK.", "KBBYYBBK", "KbbYYbbK", "KKKKKKKK", "KBBBBBBK", "KbbbbbbK", ".KKKKKK."]
+        case .shrine:   return ["...f....", "...F....", "...W....", ".KKKKKK.", "KGGGGGGK", ".KgggK..", ".KgKgK.."]
+        case .armoury:  return ["KKKKKKK.", "KDDDDDDK", ".KDDDDK.", "..KDDK..", ".KDDDDK.", "KKKKKKKK"]
+        case .library:  return ["KKKKKKKK", "KRUNYRUK", "KRUNYRUK", "KKKKKKKK", "KNRUYNRK", "KKKKKKKK"]
+        case .boss:     return [".KKKKKK.", "KWWWWWWK", "KWKWWKWK", "KWWWWWWK", ".KWKKWK.", "..KKKK.."]
+        case .shop:     return ["...KK...", "..KbbK..", ".KYYYYK.", "KYYOYYYK", "KYYYYYYK", ".KKKKKK."]
+        case .entrance: return [".KKKKKK.", "KGGGGGGK", "KGKKKKGK", "KGK..KGK", "KGK..KGK", "KGK..KGK"]
+        case .prison:   return ["KKKKKKKK", "KDKDKDKD", "KDKDKDKD", "KDKDKDKD", "KKKKKKKK"]
+        case .trap:     return ["........", ".K...K..", "KGK.KGK.", "KGGKGGGK", "KKKKKKKK"]
         default:        return nil
         }
     }
@@ -2193,11 +2214,14 @@ struct PictureMapView: View {
             let ri = roomIndex[k]
             if ri >= 0 {
                 let open = openSides[k]
-                // Walls round each room, except where a passage joins a neighbour.
+                // Walls round each room (two pixels deep, the top one with a
+                // lit face), except where a passage joins a neighbour.
                 if ly == 0 && open & 1 == 0 { return wall }
+                if ly == 1 && open & 1 == 0 { return RGB(0.30, 0.28, 0.26) }
                 if lx == P - 1 && open & 2 == 0 { return wall }
                 if ly == P - 1 && open & 4 == 0 { return wall }
                 if lx == 0 && open & 8 == 0 { return wall }
+                if lx == 1 && open & 8 == 0 { return RGB(0.20, 0.19, 0.18) }
                 // Near an open side the neighbour's ground frays in, so the
                 // rooms run together as one landscape.
                 var t = terrains[ri]
@@ -2206,8 +2230,10 @@ struct PictureMapView: View {
                 else if open & 2 != 0, lx > P - 4, n < 0.5 - Double(P - 1 - lx) * 0.15, let nb = neighbourTerrain(cx + 1, cy) { t = nb }
                 else if open & 4 != 0, ly > P - 4, n < 0.5 - Double(P - 1 - ly) * 0.15, let nb = neighbourTerrain(cx, cy + 1) { t = nb }
                 else if open & 8 != 0, lx < 3, n < 0.5 - Double(lx) * 0.15, let nb = neighbourTerrain(cx - 1, cy) { t = nb }
-                let c = Self.texture(t, gx, gy)
-                return rooms[ri].visited ? c : c.scaled(0.72)
+                var c = Self.texture(t, gx, gy)
+                // A little shadow cast by the wall above and to the left.
+                if ly == 2 && open & 1 == 0 { c = c.scaled(0.72) } else if lx == 2 && open & 8 == 0 { c = c.scaled(0.82) }
+                return rooms[ri].visited ? c : c.scaled(showAll ? 0.55 : 0.72)
             }
             // A passage leading off into rock you haven't charted — a dirt
             // track that fades into the dark.
@@ -2265,6 +2291,12 @@ struct PictureMapView: View {
             }
             if r.teleportTo != nil { drawSprite(["P.P", ".P.", "P.P"], cellX: r.x, cellY: r.y, offsetX: 1, offsetY: 1) }
             if r.danger { drawSprite(["R", "R", ".", "R"], cellX: r.x, cellY: r.y, offsetX: 1, offsetY: P - 5) }
+            // The Whole Deep: where you've been, outlined in green.
+            if showAll && r.visited && level.currentRoomId != r.id {
+                let o = l.origin(r.x, r.y)
+                ctx.stroke(Path(CGRect(x: o.x + pxW, y: o.y + pxH, width: l.cellW - 2 * pxW, height: l.cellH - 2 * pxH)),
+                           with: .color(Color(red: 0.0, green: 1.0, blue: 0.4).opacity(0.55)), lineWidth: max(1, pxH * 0.5))
+            }
             if level.currentRoomId == r.id {
                 let o = l.origin(r.x, r.y)
                 ctx.stroke(Path(CGRect(x: o.x + pxW * 0.5, y: o.y + pxH * 0.5, width: l.cellW - pxW, height: l.cellH - pxH)),
@@ -2361,6 +2393,12 @@ struct TerminalLineView: View {
         }
         if line.isUnderlined {
             result.underlineStyle = .single
+        }
+        for extra in line.extraHighlights where extra.range.lowerBound >= 0 && extra.range.upperBound <= line.text.count {
+            let chars = result.characters
+            let from = chars.index(chars.startIndex, offsetBy: extra.range.lowerBound)
+            let to = chars.index(chars.startIndex, offsetBy: extra.range.upperBound)
+            result[from..<to].foregroundColor = extra.color.swiftUIColor
         }
         if let range = line.highlightRange, range.lowerBound >= 0, range.upperBound <= line.text.count {
             let chars = result.characters

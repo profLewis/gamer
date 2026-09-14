@@ -145,6 +145,12 @@ class GameEngine: ObservableObject {
     /// The big map drawn as a picture — terrain for each room, names and
     /// little info panels — instead of text (see PictureMapView).
     @Published var pictureMapOn = false
+    /// The shared frame that lines the overlay's level up with the others.
+    var overlayAtlasFrame: AtlasFrame? {
+        let levels = atlasLevels()
+        guard levels.indices.contains(atlasLevelIndex) else { return nil }
+        return Dungeon.atlasFrames(levels, showAll: atlasShowAllRooms)[atlasLevelIndex]
+    }
     var overlayAtlasLevel: AtlasLevel? {
         let levels = atlasLevels()
         return levels.indices.contains(atlasLevelIndex) ? levels[atlasLevelIndex] : nil
@@ -1466,9 +1472,15 @@ class GameEngine: ObservableObject {
     private func presentAtlasMapOverlay() {
         let levels = atlasLevels()
         guard levels.indices.contains(atlasLevelIndex) else { return }
-        let map = Dungeon.atlasMapLines(levels[atlasLevelIndex], showAll: atlasShowAllRooms)
+        let frame = Dungeon.atlasFrames(levels, showAll: atlasShowAllRooms)[atlasLevelIndex]
+        let map = Dungeon.atlasMapLines(levels[atlasLevelIndex], showAll: atlasShowAllRooms, frame: frame)
+        // The Whole Deep: rooms you've been to bright, the rest dim.
+        let visited = atlasShowAllRooms ? Dungeon.atlasVisitedCells(levels[atlasLevelIndex], frame: frame) : []
         var out: [TerminalLine] = map.lines.enumerated().map { index, text in
-            var line = TerminalLine(text, color: .brightGreen, size: mapFontSize)
+            var line = TerminalLine(text, color: atlasShowAllRooms ? .dimGreen : .brightGreen, size: mapFontSize)
+            for cell in visited where cell.line == index && cell.column + 3 <= text.count {
+                line.extraHighlights.append((cell.column..<(cell.column + 3), .brightGreen))
+            }
             if let hl = map.highlight, hl.line == index { line.highlightRange = hl.column..<(hl.column + 3) }
             return line
         }
@@ -3766,6 +3778,11 @@ class GameEngine: ObservableObject {
         #endif
         let mapLines = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: verticalRadius, legendMaxSymbols: mapLegendMaxSymbols, hasTrapSense: partyHasTrapSense, capWidth: capWidth)
         printMap(mapLines, color: torchMapColor, size: mapFontSize)
+        // The big map, if it's open, follows the party (moves, stairs, a new level).
+        if mapOverlayVisible {
+            atlasLevelIndex = max(0, atlasLevelCount - 1)
+            presentAtlasMapOverlay()
+        }
     }
 
     /// Fixed-width card position label, e.g. " 3/30" always same length as "30/30"

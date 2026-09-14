@@ -29,6 +29,9 @@ struct TerminalLine: Identifiable {
     /// In-text link key (see GameEngine.printLink/followLink) — the whole
     /// line is a tap target that opens that screen.
     var link: String? = nil
+    /// More coloured stretches of the line (the big map's visited rooms),
+    /// under highlightRange.
+    var extraHighlights: [(range: Range<Int>, color: TerminalColor)] = []
 
     /// Mostly symbols — ASCII art, dice faces, borders. VoiceOver skips these
     /// (they read as a string of punctuation). Lines with numbers, like HP
