@@ -295,6 +295,20 @@ class GameEngine: ObservableObject {
     /// bar by the > prompt (or Space on a Mac) holds every countdown.
     @Published var autoContinueEnabled: Bool = UserDefaults.standard.object(forKey: "autoContinueEnabled") == nil ? true : UserDefaults.standard.bool(forKey: "autoContinueEnabled")
     @Published var autoContinuePaused: Bool = false
+    /// Accessibility > Animations: Reduced stops flashes, idle blinks, the
+    /// pack/hourglass animations, the countdown spin and pulsing buttons.
+    /// Until chosen, follows the system's Reduce Motion setting.
+    @Published var reduceAnimations: Bool = GameEngine.animationsReduced
+    static var animationsReduced: Bool {
+        if let chosen = UserDefaults.standard.object(forKey: "reduceAnimations") as? Bool { return chosen }
+        #if os(iOS) || os(tvOS)
+        return UIAccessibility.isReduceMotionEnabled
+        #elseif os(macOS)
+        return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        #else
+        return false
+        #endif
+    }
     /// Accessibility > Handedness — which side of the text is the free
     /// scrolling edge (the rest is tap-to-continue). Right-handed: scroll
     /// on the right. Left-handed: scroll on the left.
@@ -375,29 +389,39 @@ class GameEngine: ObservableObject {
         }
         guard continueHintCount < 3 else { return }
         let counting = autoContinueCountdownAvailable && !autoContinuePaused
-        let delay: Double = counting ? max(4, autoCountdownTotal * 0.5) : 8
+        let delay: Double = counting ? max(3, autoCountdownTotal * 0.35) : 5
         continueHintTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             guard let self = self, self.awaitingContinue, self.continueHintGeneration == self.screenGeneration else { return }
             self.continueHintCount += 1
-            self.print(self.continueHintText(), color: .dimGreen)
+            self.print("")
+            self.print("  Continue?", color: .cyan, bold: true)
+            self.print("")
+            for line in self.continueHintLines() {
+                self.printWrapped(line, indent: 4, color: .dimGreen)
+            }
             self.scheduleContinueHint()
         }
     }
 
-    private func continueHintText() -> String {
+    private func continueHintLines() -> [String] {
         // Still waiting after the first hint: "anywhere" deserves the small
         // print — the strip down one edge is kept for scrolling, not taps.
         if continueHintCount >= 2 {
             let side = leftHanded ? "left" : "right"
-            return "  (When I said anywhere: anywhere on the text except the narrow strip down the \(side) edge — that's kept for scrolling. Or type 'go on'.)"
+            return ["When I said anywhere: anywhere on the text except the narrow strip down the \(side) edge — that's kept for scrolling.",
+                    "• or type \"go on\""]
         }
         if autoContinuePaused {
-            return "  (Paused — tap anywhere or type 'go on' to continue, or tap the hourglass to let it run.)"
+            return ["• Tap anywhere on the text — continue now",
+                    "• or type \"go on\"",
+                    "• or tap the orange hourglass to let it run again"]
         }
         if autoContinueCountdownAvailable {
-            return "  (Tap anywhere or type 'go on' to continue now — or just wait for the hourglass.)"
+            return ["• Tap anywhere on the text — continue now",
+                    "• or type \"go on\"",
+                    "• or just wait for the hourglass"]
         }
-        return "  (Tap anywhere or type 'go on' to continue.)"
+        return ["• Tap anywhere on the text", "• or type \"go on\""]
     }
 
     private var autoContinueHelpShownGeneration = -1
@@ -1708,6 +1732,7 @@ class GameEngine: ObservableObject {
 
     /// Flash only the title lines — dim then restore
     func flashTitle() {
+        guard !reduceAnimations else { return }
         guard !titleLineIndices.isEmpty else { return }
         let indices = titleLineIndices
         // Save original colors, dim them
@@ -2620,6 +2645,8 @@ class GameEngine: ObservableObject {
             autoScrollSpeed = UserDefaults.standard.integer(forKey: key)
         case "leftHanded":
             leftHanded = UserDefaults.standard.bool(forKey: key)
+        case "reduceAnimations":
+            reduceAnimations = GameEngine.animationsReduced
         case "showCountdownControl":
             showCountdownControl = UserDefaults.standard.object(forKey: key) == nil ? true : UserDefaults.standard.bool(forKey: key)
         case "iconScaleSetting":
@@ -2665,6 +2692,7 @@ class GameEngine: ObservableObject {
         case "showCountdownControl": return showCountdownControl ? "On" : "Off"
         case "autoScrollSpeed": return autoScrollSpeedName
         case "leftHanded": return leftHanded ? "Left" : "Right"
+        case "reduceAnimations": return reduceAnimations ? "Reduced" : "Full"
         case "helpGlyph": return MenuOption.helpGlyph
         case "blinkingCursorEnabled": return blinkingCursorEnabled ? "On" : "Off"
         case "map_radius": return "\(mapRadius)"
@@ -4655,6 +4683,7 @@ class GameEngine: ObservableObject {
     }
 
     private func startIdleAnimations() {
+        guard !reduceAnimations else { return }
         idleAnimTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in
             self?.playIdleAnimation()
         }
@@ -5421,6 +5450,7 @@ class GameEngine: ObservableObject {
 
     /// Dim-then-restore pulse on the text area
     func flashText() {
+        guard !reduceAnimations else { return }
         DispatchQueue.main.async {
             self.textFlashOpacity = 0.3
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
@@ -8239,6 +8269,11 @@ class GameEngine: ObservableObject {
         printWrapped("New pages always open at the top, so you see the start of long text. With Auto-Scroll on, a long page then glides down by itself at this speed — touch it to stop. Off (the default): you scroll yourself. Try Auto-Scroll shows each speed.", indent: 2, color: .dimGreen)
         print("")
 
+        print("ANIMATIONS:", color: .cyan, bold: true)
+        print("  \(reduceAnimations ? "Reduced" : "Full")", color: .brightGreen)
+        printWrapped("Reduced stops the flashing, blinking and spinning — title and text flashes, idle eye-blinks, the pack and hourglass animations, the countdown's spin and pulsing buttons. Starts out matching your device's Reduce Motion setting.", indent: 2, color: .dimGreen)
+        print("")
+
         print("HANDEDNESS:", color: .cyan, bold: true)
         print("  \(leftHanded ? "Left-handed" : "Right-handed")", color: .brightGreen)
         printWrapped("On tap-to-continue screens, tapping the text moves on — except a narrow strip down one edge, kept free for scrolling. Right-handed keeps that strip on the right; left-handed on the left.", indent: 2, color: .dimGreen)
@@ -8257,6 +8292,7 @@ class GameEngine: ObservableObject {
         let autoScrollLabel = "Auto-Scroll: \(autoScrollSpeedName)"
         let options = [displaySizeLabel, hitsLabel, dmVoiceLabel, "Companion Voices", voiceMenuLabel, cursorLabel,
                        autoScrollLabel, "Try Auto-Scroll",
+                       reduceAnimations ? "Animations: Full" : "Animations: Reduced",
                        leftHanded ? "Right-Handed" : "Left-Handed",
                        "Help Button: \(MenuOption.helpGlyph)"]
 
@@ -8315,6 +8351,12 @@ class GameEngine: ObservableObject {
                 self.recordSettingChange(screen: "s:access", key: "autoScrollSpeed", name: "Auto-Scroll")
                 self.autoScrollSpeed = (self.autoScrollSpeed + 1) % 4
                 UserDefaults.standard.set(self.autoScrollSpeed, forKey: "autoScrollSpeed")
+                self.showAccessibilityMenu()
+            case let label where label.hasPrefix("Animations:"):
+                self.recordSettingChange(screen: "s:access", key: "reduceAnimations", name: "Animations")
+                self.reduceAnimations.toggle()
+                UserDefaults.standard.set(self.reduceAnimations, forKey: "reduceAnimations")
+                if self.reduceAnimations { self.stopIdleAnimations() }
                 self.showAccessibilityMenu()
             case "Right-Handed", "Left-Handed":
                 self.recordSettingChange(screen: "s:access", key: "leftHanded", name: "Handedness")
@@ -9004,7 +9046,7 @@ class GameEngine: ObservableObject {
 
     /// All UserDefaults keys used by the game
     private static let settingsKeys: [String] = [
-        "maxButtonsPerScreen", "longPressDuration", "infoTimeout", "customInfoTimeouts", "autoContinueEnabled", "showCountdownControl", "atlasShowAllRooms", "autoScrollSpeed", "leftHanded", "helpGlyph",
+        "maxButtonsPerScreen", "longPressDuration", "infoTimeout", "customInfoTimeouts", "autoContinueEnabled", "showCountdownControl", "atlasShowAllRooms", "autoScrollSpeed", "leftHanded", "helpGlyph", "reduceAnimations",
         "map_radius", "useArrowNavigation", "multiplayer_enabled", "npcs_enabled",
         "multiple_shops_enabled",
         "hit_animations", "voiceMenuEnabled", "iconScaleSetting", "adventureLogLimit",
@@ -21689,6 +21731,7 @@ class GameEngine: ObservableObject {
     }
 
     private func showPackAnimation(completion: @escaping () -> Void) {
+        guard !reduceAnimations else { completion(); return }
         clearTerminal()
         printExplorationMap()
         print("")
@@ -25308,6 +25351,7 @@ class GameEngine: ObservableObject {
     }
 
     private func playHourglassAnimation(repeats: Int, fast: Bool = false, onFrame: ((Double) -> Void)? = nil, completion: @escaping () -> Void) {
+        guard !reduceAnimations else { onFrame?(1.0); completion(); return }
         let frames = hourglassFrames
         let frameCount = frames.count
         let totalFrames = frameCount * repeats

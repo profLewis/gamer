@@ -873,7 +873,7 @@ struct TerminalView: View {
             let fraction = min(1, max(0, remaining / total))
             // A quick flip every two seconds while running; still when paused.
             let phase = t.truncatingRemainder(dividingBy: 2.0)
-            let angle = paused ? 0 : (phase < 0.45 ? phase / 0.45 * 180 : 180)
+            let angle = (paused || gameEngine.reduceAnimations) ? 0 : (phase < 0.45 ? phase / 0.45 * 180 : 180)
             // A soft pulse for "paused", not a blink.
             let pulse = 0.45 + 0.4 * (0.5 + 0.5 * sin(t * 2.6))
             HStack(spacing: 4) {
@@ -1781,7 +1781,7 @@ struct MenuButtonsView: View {
             }
         }
         .onAppear {
-            if options.contains(where: { $0.isAlert }) {
+            if options.contains(where: { $0.isAlert }) && !GameEngine.animationsReduced {
                 withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
                     alertPulse = true
                 }
