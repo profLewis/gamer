@@ -247,7 +247,7 @@ class GameEngine: ObservableObject {
     @Published var cardPositionLabel: String?
 
     /// Info screen auto-dismiss delay in seconds (configurable in Gameplay settings)
-    @Published var infoTimeout: Double = UserDefaults.standard.object(forKey: "infoTimeout") == nil ? 10.0 : UserDefaults.standard.double(forKey: "infoTimeout")
+    @Published var infoTimeout: Double = UserDefaults.standard.object(forKey: "infoTimeout") == nil ? 5.0 : UserDefaults.standard.double(forKey: "infoTimeout")
 
     /// Whether the DM is currently reading the screen aloud
     @Published var isSpeakingAloud: Bool = false
@@ -306,6 +306,16 @@ class GameEngine: ObservableObject {
     /// True when screens are actually counting down — i.e. when a pause
     /// control means something.
     var autoContinueCountdownAvailable: Bool { autoContinueEnabled && infoTimeout > 0 && !speakerModeOn }
+
+    /// Long-press on the countdown hourglass: hurry it along — a quarter of
+    /// the time left (at least a moment), un-pausing if it was paused.
+    func hurryAutoContinue() {
+        guard autoCountdownEnd != nil || autoCountdownPausedRemaining != nil else { return }
+        let remaining = autoCountdownPausedRemaining ?? autoCountdownEnd.map { max(0, $0.timeIntervalSinceNow) } ?? 0
+        autoContinuePaused = false
+        autoCountdownPausedRemaining = nil
+        autoCountdownEnd = Date().addingTimeInterval(max(0.6, remaining / 4))
+    }
 
     func toggleAutoContinuePause() {
         autoContinuePaused.toggle()
@@ -3025,6 +3035,9 @@ class GameEngine: ObservableObject {
                 deadline = Date().addingTimeInterval(remaining)
                 return
             }
+            // The live countdown follows the shared end time, so a pause,
+            // resume or long-press speed-up (hurryAutoContinue) applies to it.
+            if self.autoCountdownToken == token, let end = self.autoCountdownEnd { deadline = end }
             remaining = deadline.timeIntervalSinceNow
             if remaining <= 0 {
                 t.invalidate()
@@ -7838,7 +7851,7 @@ class GameEngine: ObservableObject {
 
         print("FLASHING CURSOR:", color: .cyan, bold: true)
         print("  \(blinkingCursorEnabled ? "On" : "Off")", color: blinkingCursorEnabled ? .brightGreen : .red)
-        printWrapped("Blinks the cursor next to the > prompt — always, or not at all (the countdown bar beside it shows when a screen will move on by itself). Turn this off if using VoiceOver — off automatically the first time this device has VoiceOver running.", indent: 2, color: .dimGreen)
+        printWrapped("Blinks the cursor next to the > prompt — always, or not at all (the hourglass beside it shows when a screen will move on by itself). Turn this off if using VoiceOver — off automatically the first time this device has VoiceOver running.", indent: 2, color: .dimGreen)
         print("")
 
         let displaySizeLabel = "Size \(displaySizeName)"
@@ -7943,7 +7956,7 @@ class GameEngine: ObservableObject {
             self.print("")
 
             self.print("  FLASHING CURSOR", color: .cyan, bold: true)
-            self.printWrapped("Blinks the cursor next to the > prompt — always, or not at all (the countdown bar beside it shows when a screen will move on by itself). Off by default the first time VoiceOver is detected running on this device — turn it off yourself if you use VoiceOver and it's still on.", indent: 2, color: .dimGreen)
+            self.printWrapped("Blinks the cursor next to the > prompt — always, or not at all (the hourglass beside it shows when a screen will move on by itself). Off by default the first time VoiceOver is detected running on this device — turn it off yourself if you use VoiceOver and it's still on.", indent: 2, color: .dimGreen)
             self.print("")
         }
     }
@@ -7973,7 +7986,7 @@ class GameEngine: ObservableObject {
 
         print("AUTO-CONTINUE:", color: .cyan, bold: true)
         print("  \(autoContinueEnabled ? "On" : "Off")\(autoContinuePaused ? " (paused)" : "")", color: autoContinueEnabled ? .brightGreen : .red)
-        printWrapped("Many screens wait for a tap so you can read them. With this on, they also move on by themselves after the Info Timeout. Tap the thin countdown bar by the > prompt to pause — or press Space on a Mac. See ? for more.", indent: 2, color: .dimGreen)
+        printWrapped("Many screens wait for a tap so you can read them. With this on, they also move on by themselves after the Info Timeout. Tap the little hourglass by the > prompt to pause, long-press it to hurry — or press Space on a Mac. See ? for more.", indent: 2, color: .dimGreen)
         print("")
 
         print("BUTTON LIMIT:", color: .cyan, bold: true)
@@ -8027,7 +8040,7 @@ class GameEngine: ObservableObject {
 
         print("BLINKING CURSOR:", color: .cyan, bold: true)
         print("  \(blinkingCursorEnabled ? "On" : "Off")", color: blinkingCursorEnabled ? .brightGreen : .red)
-        printWrapped("Blinks the cursor next to the > prompt — always, or not at all (the countdown bar beside it shows when a screen will move on by itself).", indent: 2, color: .dimGreen)
+        printWrapped("Blinks the cursor next to the > prompt — always, or not at all (the hourglass beside it shows when a screen will move on by itself).", indent: 2, color: .dimGreen)
         print("")
 
         print("UNDO/REDO:", color: .cyan, bold: true)
@@ -8214,7 +8227,7 @@ class GameEngine: ObservableObject {
 
             self.print("  AUTO-CONTINUE", color: .cyan, bold: true)
             self.printWrapped("Adventurers often want to stop and read — a combat result, a merchant's reply, the DM's description of a room — so many screens are tap-to-continue: nothing happens until you tap. With Auto-Continue on (the default), those screens also move on by themselves once the Info Timeout runs out, so the game keeps flowing if you look away. Turn it off and every such screen waits for your tap.", indent: 2, color: .dimGreen)
-            self.printWrapped("Need a moment? While a screen is counting down, a thin bar shrinks beside the > prompt. Tap the bar itself to pause (it turns amber): every screen then waits for you. Tap it again to carry on from where it stopped. Tapping anywhere else still moves on straight away. On a Mac, press Space to pause or resume. A pause lasts until you resume or restart the app.", indent: 2, color: .dimGreen)
+            self.printWrapped("Need a moment? While a screen is counting down, a little hourglass turns beside the > prompt, its ring showing the time left. Tap the hourglass to pause (it turns amber and says paused): every screen then waits for you. Tap it again to carry on from where it stopped. Long-press it to hurry things along. Tapping anywhere else still moves on straight away. On a Mac, press Space to pause or resume. A pause lasts until you resume or restart the app.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  BUTTON LIMIT", color: .cyan, bold: true)
@@ -8557,7 +8570,7 @@ class GameEngine: ObservableObject {
         let d = UserDefaults.standard
         voiceMenuEnabled = (d.object(forKey: "voiceMenuEnabled") as? Bool) ?? true
         useArrowNavigation = d.object(forKey: "useArrowNavigation") == nil ? false : d.bool(forKey: "useArrowNavigation")
-        infoTimeout = d.object(forKey: "infoTimeout") == nil ? 10.0 : d.double(forKey: "infoTimeout")
+        infoTimeout = d.object(forKey: "infoTimeout") == nil ? 5.0 : d.double(forKey: "infoTimeout")
         autoContinueEnabled = d.object(forKey: "autoContinueEnabled") == nil ? true : d.bool(forKey: "autoContinueEnabled")
         iconScaleSetting = d.integer(forKey: "iconScaleSetting")
         useCustomKeyboard = d.object(forKey: "useCustomKeyboard") == nil ? true : d.bool(forKey: "useCustomKeyboard")
@@ -9583,7 +9596,7 @@ class GameEngine: ObservableObject {
             }
             voiceMenuEnabled = true
             useArrowNavigation = false
-            infoTimeout = 10.0
+            infoTimeout = 5.0
             autoContinueEnabled = true
             autoContinuePaused = false
             iconScaleSetting = 0
@@ -9717,7 +9730,7 @@ class GameEngine: ObservableObject {
         add("undoRedoEnabled", "Undo/Redo", current: undoRedoEnabled ? "On" : "Off", dflt: "On")
 
         let infoStr = infoTimeout == 0 ? "Off" : String(format: "%.1fs", infoTimeout)
-        add("infoTimeout", "Info Timeout", current: infoStr, dflt: "10.0s")
+        add("infoTimeout", "Info Timeout", current: infoStr, dflt: "5.0s")
         add("autoContinueEnabled", "Auto-Continue", current: autoContinueEnabled ? "On" : "Off", dflt: "On")
 
         let lpStr = String(format: "%.1fs", longPressDuration)
@@ -9874,7 +9887,7 @@ class GameEngine: ObservableObject {
         // Re-sync cached properties
         if keys.contains("voiceMenuEnabled") { voiceMenuEnabled = true }
         if keys.contains("useArrowNavigation") { useArrowNavigation = false }
-        if keys.contains("infoTimeout") { infoTimeout = 10.0 }
+        if keys.contains("infoTimeout") { infoTimeout = 5.0 }
         if keys.contains("autoContinueEnabled") { autoContinueEnabled = true }
         if keys.contains("iconScaleSetting") { iconScaleSetting = 0 }
         if keys.contains("useCustomKeyboard") { useCustomKeyboard = true }

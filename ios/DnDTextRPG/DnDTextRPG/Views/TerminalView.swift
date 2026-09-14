@@ -762,31 +762,55 @@ struct TerminalView: View {
                     }
     }
 
-    /// Auto-continue countdown — a thin bar by the > prompt that empties as
-    /// the screen's timeout runs out. Tapping the bar itself (a generous
-    /// target around the thin line) pauses or resumes it — amber while
-    /// paused; tapping anywhere else still just continues.
+    /// Auto-continue countdown — a little hourglass by the > prompt that
+    /// turns over as the screen's timeout runs, with a thin ring showing the
+    /// time left. Tap it (and only it) to pause/resume — amber, still, with a
+    /// gently pulsing "paused" while held; long-press to hurry it along.
+    /// Tapping anywhere else still just continues.
     private var autoCountdownBar: some View {
         let paused = gameEngine.autoContinuePaused
-        let width = 64 * scale
-        return TimelineView(.periodic(from: .now, by: 0.1)) { context in
+        let amber = Color(red: 1.0, green: 0.72, blue: 0.0)
+        let size = 20 * scale
+        return TimelineView(.periodic(from: .now, by: 0.05)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
             let total = max(0.1, gameEngine.autoCountdownTotal)
             let remaining = gameEngine.autoCountdownPausedRemaining
                 ?? max(0, (gameEngine.autoCountdownEnd ?? context.date).timeIntervalSince(context.date))
             let fraction = min(1, max(0, remaining / total))
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.white.opacity(0.08))
-                Capsule()
-                    .fill(paused ? Color(red: 1.0, green: 0.72, blue: 0.0) : terminalDarkGreen.opacity(0.85))
-                    .frame(width: width * fraction)
+            // A quick flip every two seconds while running; still when paused.
+            let phase = t.truncatingRemainder(dividingBy: 2.0)
+            let angle = paused ? 0 : (phase < 0.45 ? phase / 0.45 * 180 : 180)
+            // A soft pulse for "paused", not a blink.
+            let pulse = 0.45 + 0.4 * (0.5 + 0.5 * sin(t * 2.6))
+            HStack(spacing: 4) {
+                ZStack {
+                    Circle()
+                        .stroke(Color.white.opacity(0.08), lineWidth: 2)
+                    Circle()
+                        .trim(from: 0, to: fraction)
+                        .stroke(paused ? amber : terminalDarkGreen.opacity(0.9),
+                                style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    Image(systemName: fraction > 0.5 ? "hourglass.tophalf.filled" : "hourglass.bottomhalf.filled")
+                        .font(.system(size: size * 0.55))
+                        .foregroundColor(paused ? amber : terminalGreen)
+                        .rotationEffect(.degrees(angle))
+                }
+                .frame(width: size, height: size)
+                if paused {
+                    Text("paused")
+                        .font(.system(size: 11 * scale, design: .monospaced))
+                        .foregroundColor(amber.opacity(pulse))
+                }
             }
-            .frame(width: width, height: paused ? 4 : 3)
         }
-        .frame(width: width, height: 26)
+        .frame(height: 26)
+        .padding(.horizontal, 2)
         .contentShape(Rectangle())
         .onTapGesture { gameEngine.toggleAutoContinuePause() }
+        .onLongPressGesture(minimumDuration: 0.45) { gameEngine.hurryAutoContinue() }
         .accessibilityElement()
-        .accessibilityLabel(paused ? "Auto-continue paused. Tap to resume." : "Auto-continue countdown. Tap to pause.")
+        .accessibilityLabel(paused ? "Auto-continue paused. Tap to resume." : "Auto-continue countdown. Tap to pause, long-press to hurry.")
         .accessibilityAddTraits(.isButton)
     }
 
