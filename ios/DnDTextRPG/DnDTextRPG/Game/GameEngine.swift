@@ -291,10 +291,17 @@ class GameEngine: ObservableObject {
 
     /// Auto-Continue — tap-to-continue screens also move on by themselves
     /// once the Info Timeout runs out (see scheduleAutoAdvance). On by
-    /// default. autoContinuePaused is session-only: the ⏸ icon next to ✕
-    /// (or Space on a Mac) holds every countdown until resumed.
+    /// default. autoContinuePaused is session-only: tapping the countdown
+    /// bar by the > prompt (or Space on a Mac) holds every countdown.
     @Published var autoContinueEnabled: Bool = UserDefaults.standard.object(forKey: "autoContinueEnabled") == nil ? true : UserDefaults.standard.bool(forKey: "autoContinueEnabled")
     @Published var autoContinuePaused: Bool = false
+
+    /// The countdown the input bar's progress line draws: when it ends,
+    /// its full length, and — while paused — how much was left.
+    @Published var autoCountdownEnd: Date? = nil
+    @Published var autoCountdownTotal: Double = 0
+    @Published var autoCountdownPausedRemaining: Double? = nil
+    private var autoCountdownToken = UUID()
 
     /// True when screens are actually counting down — i.e. when a pause
     /// control means something.
@@ -302,6 +309,14 @@ class GameEngine: ObservableObject {
 
     func toggleAutoContinuePause() {
         autoContinuePaused.toggle()
+        // Freeze / thaw the bar where it is — a pause picks up again from
+        // the same point rather than starting the countdown over.
+        if autoContinuePaused {
+            autoCountdownPausedRemaining = autoCountdownEnd.map { max(0, $0.timeIntervalSinceNow) }
+        } else {
+            if let remaining = autoCountdownPausedRemaining { autoCountdownEnd = Date().addingTimeInterval(remaining) }
+            autoCountdownPausedRemaining = nil
+        }
         logEvent(autoContinuePaused ? "Auto-continue paused" : "Auto-continue resumed", category: "SETTINGS")
     }
 
@@ -2914,7 +2929,7 @@ class GameEngine: ObservableObject {
         }
     }
 
-    func waitForContinue(fullScreenTap: Bool = true) {
+    func waitForContinue(fullScreenTap: Bool = true, autoContinue: Bool = true) {
         // Same reasoning as promptText — waitForContinue is meant to be a
         // clean "tap anywhere to continue" state (see TerminalView's
         // awaitingContinue branch), which only renders when textTapEnabled
@@ -2947,7 +2962,13 @@ class GameEngine: ObservableObject {
             self.autoReadIfSpeakerMode()
         }
         resetIdleTimer()
-        scheduleAutoContinue()
+        if autoContinue {
+            scheduleAutoContinue()
+        } else {
+            // The caller runs its own countdown (waitForContinueWithTimeout)
+            // — still bump the generation so any older one goes stale.
+            Self.continueGeneration += 1
+        }
     }
 
     /// Bumped on every waitForContinue() — lets a pending auto-continue
@@ -2975,21 +2996,43 @@ class GameEngine: ObservableObject {
 
     /// Every auto-continue countdown goes through here: after `delay`,
     /// runs `fire` if the screen is still the one it was armed for. With
-    /// Auto-Continue Off it never fires (the screen just waits for a tap);
-    /// while paused it waits out the pause, then gives a fresh full delay
-    /// rather than jumping on the instant the player resumes.
+    /// Auto-Continue Off it never fires (the screen just waits for a tap).
+    /// While paused the remaining time is frozen, and resumes from there.
+    /// Publishes autoCountdownEnd/Total for the input bar's progress line.
+    /// Ticks on the .common run-loop mode so it keeps counting while the
+    /// player is scrolling.
     private func scheduleAutoAdvance(after delay: Double, isStillValid: @escaping () -> Bool, fire: @escaping () -> Void) {
-        guard delay > 0 else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self = self, isStillValid(), self.autoContinueEnabled else { return }
-            if self.autoContinuePaused {
-                self.afterAutoContinuePause(isStillValid: isStillValid) { [weak self] in
-                    self?.scheduleAutoAdvance(after: delay, isStillValid: isStillValid, fire: fire)
-                }
+        guard delay > 0, autoContinueEnabled else { return }
+        let token = UUID()
+        autoCountdownToken = token
+        var remaining = delay
+        var deadline = Date().addingTimeInterval(delay)
+        autoCountdownTotal = delay
+        autoCountdownEnd = deadline
+        autoCountdownPausedRemaining = autoContinuePaused ? delay : nil
+        let clear: () -> Void = { [weak self] in
+            guard let self = self, self.autoCountdownToken == token else { return }
+            self.autoCountdownEnd = nil
+            self.autoCountdownPausedRemaining = nil
+        }
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] t in
+            guard let self = self, isStillValid(), self.autoContinueEnabled else {
+                t.invalidate()
+                clear()
                 return
             }
-            fire()
+            if self.autoContinuePaused {
+                deadline = Date().addingTimeInterval(remaining)
+                return
+            }
+            remaining = deadline.timeIntervalSinceNow
+            if remaining <= 0 {
+                t.invalidate()
+                clear()
+                fire()
+            }
         }
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     /// Checks twice a second until the player un-pauses, then runs
@@ -3007,7 +3050,7 @@ class GameEngine: ObservableObject {
 
     /// Wait for continue with auto-timeout — taps to continue immediately, or auto-continues after delay
     func waitForContinueWithTimeout(multiplier: Double = 2.0, fullScreenTap: Bool = true, action: @escaping () -> Void) {
-        waitForContinue(fullScreenTap: fullScreenTap)
+        waitForContinue(fullScreenTap: fullScreenTap, autoContinue: false)
 
         // Single-fire guard — without it, a tap landing at (or just before)
         // the exact moment the timer's dispatched block runs can fire
@@ -3114,7 +3157,14 @@ class GameEngine: ObservableObject {
         // simply stayed silent for all of them in speaker mode.
         autoReadIfSpeakerMode()
 
-        scheduleAutoReturnFallback(after: seconds, fire: fire, generation: myGeneration)
+        if speakerModeOn {
+            scheduleAutoReturnFallback(after: seconds, fire: fire, generation: myGeneration)
+        } else {
+            scheduleAutoAdvance(after: seconds, isStillValid: { [weak self] in
+                guard let self = self else { return false }
+                return self.autoReturnGeneration == myGeneration && self.closeHandler != nil
+            }, fire: fire)
+        }
     }
 
     /// Fallback timer for autoReturn() — the only path when speaker mode is
@@ -7446,8 +7496,13 @@ class GameEngine: ObservableObject {
     /// map never resizes based on how many symbol types happen to be nearby.
     var mapLegendMaxSymbols: Int {
         get {
+            #if os(macOS) || os(tvOS)
+            // Room to spare on a Mac or TV — always the full key.
+            return Dungeon.mapLegendEntries.count
+            #else
             let val = UserDefaults.standard.integer(forKey: "map_legend_max_symbols")
             return val > 0 ? min(val, Dungeon.mapLegendEntries.count) : 6
+            #endif
         }
         set {
             UserDefaults.standard.set(min(max(newValue, 3), Dungeon.mapLegendEntries.count), forKey: "map_legend_max_symbols")
@@ -7783,7 +7838,7 @@ class GameEngine: ObservableObject {
 
         print("FLASHING CURSOR:", color: .cyan, bold: true)
         print("  \(blinkingCursorEnabled ? "On" : "Off")", color: blinkingCursorEnabled ? .brightGreen : .red)
-        printWrapped("Blinks the cursor next to the > prompt while waiting for you to act. Turn this off if using VoiceOver — off automatically the first time this device has VoiceOver running.", indent: 2, color: .dimGreen)
+        printWrapped("Blinks the cursor next to the > prompt — always, or not at all (the countdown bar beside it shows when a screen will move on by itself). Turn this off if using VoiceOver — off automatically the first time this device has VoiceOver running.", indent: 2, color: .dimGreen)
         print("")
 
         let displaySizeLabel = "Size \(displaySizeName)"
@@ -7888,7 +7943,7 @@ class GameEngine: ObservableObject {
             self.print("")
 
             self.print("  FLASHING CURSOR", color: .cyan, bold: true)
-            self.printWrapped("Blinks the cursor next to the > prompt while waiting for you to act. Off by default the first time VoiceOver is detected running on this device — turn it off yourself if you use VoiceOver and it's still on.", indent: 2, color: .dimGreen)
+            self.printWrapped("Blinks the cursor next to the > prompt — always, or not at all (the countdown bar beside it shows when a screen will move on by itself). Off by default the first time VoiceOver is detected running on this device — turn it off yourself if you use VoiceOver and it's still on.", indent: 2, color: .dimGreen)
             self.print("")
         }
     }
@@ -7918,7 +7973,7 @@ class GameEngine: ObservableObject {
 
         print("AUTO-CONTINUE:", color: .cyan, bold: true)
         print("  \(autoContinueEnabled ? "On" : "Off")\(autoContinuePaused ? " (paused)" : "")", color: autoContinueEnabled ? .brightGreen : .red)
-        printWrapped("Many screens wait for a tap so you can read them. With this on, they also move on by themselves after the Info Timeout. Tap ⏸ (top right, next to ✕) to pause — or press Space on a Mac. See ? for more.", indent: 2, color: .dimGreen)
+        printWrapped("Many screens wait for a tap so you can read them. With this on, they also move on by themselves after the Info Timeout. Tap the thin countdown bar by the > prompt to pause — or press Space on a Mac. See ? for more.", indent: 2, color: .dimGreen)
         print("")
 
         print("BUTTON LIMIT:", color: .cyan, bold: true)
@@ -7972,7 +8027,7 @@ class GameEngine: ObservableObject {
 
         print("BLINKING CURSOR:", color: .cyan, bold: true)
         print("  \(blinkingCursorEnabled ? "On" : "Off")", color: blinkingCursorEnabled ? .brightGreen : .red)
-        printWrapped("Blinks the cursor next to the > prompt while waiting for you to act.", indent: 2, color: .dimGreen)
+        printWrapped("Blinks the cursor next to the > prompt — always, or not at all (the countdown bar beside it shows when a screen will move on by itself).", indent: 2, color: .dimGreen)
         print("")
 
         print("UNDO/REDO:", color: .cyan, bold: true)
@@ -8159,7 +8214,7 @@ class GameEngine: ObservableObject {
 
             self.print("  AUTO-CONTINUE", color: .cyan, bold: true)
             self.printWrapped("Adventurers often want to stop and read — a combat result, a merchant's reply, the DM's description of a room — so many screens are tap-to-continue: nothing happens until you tap. With Auto-Continue on (the default), those screens also move on by themselves once the Info Timeout runs out, so the game keeps flowing if you look away. Turn it off and every such screen waits for your tap.", indent: 2, color: .dimGreen)
-            self.printWrapped("Need a moment? While a screen is counting down, a ⏸ pause icon appears top right, next to ✕. Tap it to pause: every screen then waits for your tap. Tap ▶ to resume — the countdown starts afresh. On a Mac, press Space to pause or resume. A pause lasts until you resume or restart the app.", indent: 2, color: .dimGreen)
+            self.printWrapped("Need a moment? While a screen is counting down, a thin bar shrinks beside the > prompt. Tap the bar itself to pause (it turns amber): every screen then waits for you. Tap it again to carry on from where it stopped. Tapping anywhere else still moves on straight away. On a Mac, press Space to pause or resume. A pause lasts until you resume or restart the app.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  BUTTON LIMIT", color: .cyan, bold: true)

@@ -108,7 +108,12 @@ struct TerminalView: View {
     /// stack occupies the left half exactly as portrait shows it full-width,
     /// while the D-pad/buttons/input occupy the right half.
     private func adaptiveMapTextStack<Content: View>(isLandscape: Bool, @ViewBuilder content: () -> Content) -> some View {
+        #if os(macOS)
+        // Mac: a draggable divider between the map and the text.
+        VSplitView { content() }
+        #else
         VStack(spacing: 0) { content() }
+        #endif
     }
 
     /// The screen's two main regions — (A) map+text, (B) D-pad/buttons/
@@ -116,11 +121,16 @@ struct TerminalView: View {
     /// full-width as portrait always has.
     private func topLevelStack<Content: View>(isLandscape: Bool, @ViewBuilder content: () -> Content) -> some View {
         Group {
+            #if os(macOS)
+            // Mac: a draggable divider between map+text and the controls.
+            HSplitView { content() }
+            #else
             if isLandscape {
                 HStack(alignment: .top, spacing: 0) { content() }
             } else {
                 VStack(spacing: 0) { content() }
             }
+            #endif
         }
     }
 
@@ -223,7 +233,17 @@ struct TerminalView: View {
                         // ever taller than the space actually available (a
                         // small landscape column, a long Map
                         // Length, larger text scale...).
+                        #if os(macOS)
+                        // Mac: the whole map box (header, grid, full key), in a pane
+                        // the player can resize with the divider beneath it.
+                        .frame(minHeight: 80,
+                               idealHeight: CGFloat(gameEngine.pinnedMapLines.count) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 8,
+                               maxHeight: .infinity)
+                        #elseif os(tvOS)
+                        .frame(height: CGFloat(gameEngine.pinnedMapLines.count) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 8)
+                        #else
                         .frame(height: (CGFloat(gameEngine.mapOnlyLineCount) - 0.5) * (gameEngine.mapFontSize * mapScale * 1.3 + 2))
+                        #endif
                         .background(terminalBackground)
                         .contentShape(Rectangle())
                         .onLongPressGesture(minimumDuration: 0.5) {
@@ -703,6 +723,34 @@ struct TerminalView: View {
                     }
     }
 
+    /// Auto-continue countdown — a thin bar by the > prompt that empties as
+    /// the screen's timeout runs out. Tapping the bar itself (a generous
+    /// target around the thin line) pauses or resumes it — amber while
+    /// paused; tapping anywhere else still just continues.
+    private var autoCountdownBar: some View {
+        let paused = gameEngine.autoContinuePaused
+        let width = 64 * scale
+        return TimelineView(.periodic(from: .now, by: 0.1)) { context in
+            let total = max(0.1, gameEngine.autoCountdownTotal)
+            let remaining = gameEngine.autoCountdownPausedRemaining
+                ?? max(0, (gameEngine.autoCountdownEnd ?? context.date).timeIntervalSince(context.date))
+            let fraction = min(1, max(0, remaining / total))
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.white.opacity(0.08))
+                Capsule()
+                    .fill(paused ? Color(red: 1.0, green: 0.72, blue: 0.0) : terminalDarkGreen.opacity(0.85))
+                    .frame(width: width * fraction)
+            }
+            .frame(width: width, height: paused ? 4 : 3)
+        }
+        .frame(width: width, height: 26)
+        .contentShape(Rectangle())
+        .onTapGesture { gameEngine.toggleAutoContinuePause() }
+        .accessibilityElement()
+        .accessibilityLabel(paused ? "Auto-continue paused. Tap to resume." : "Auto-continue countdown. Tap to pause.")
+        .accessibilityAddTraits(.isButton)
+    }
+
     /// Text input bar + custom in-app keyboard — Region B's other block
     /// (see body and dpadAndMenuButtonsBlock).
     @ViewBuilder
@@ -714,10 +762,10 @@ struct TerminalView: View {
                                 .font(.system(size: 14 * scale, design: .monospaced))
                                 .foregroundColor(gameEngine.chatInputMode ? Color.orange : terminalGreen)
 
-                            // Blinking cursor block — only while genuinely waiting on the
-                            // player (menu/D-pad/text/continue prompt on screen) and the
-                            // field is empty, so it doesn't sit next to typed text.
-                            if gameEngine.blinkingCursorEnabled && inputText.isEmpty && gameEngine.isWaitingForInput && !GameEngine.systemVoiceOverRunning {
+                            // Blinking cursor block — a plain on/off setting now (the
+                            // countdown bar below is what signals a waiting screen);
+                            // hidden once there's typed text so it doesn't sit beside it.
+                            if gameEngine.blinkingCursorEnabled && inputText.isEmpty && !GameEngine.systemVoiceOverRunning {
                                 TimelineView(.periodic(from: .now, by: 0.53)) { context in
                                     let visible = Int(context.date.timeIntervalSinceReferenceDate / 0.53) % 2 == 0
                                     Text("█")
@@ -725,6 +773,10 @@ struct TerminalView: View {
                                         .foregroundColor(gameEngine.chatInputMode ? Color.orange : terminalGreen)
                                         .opacity(visible ? 1 : 0)
                                 }
+                            }
+
+                            if gameEngine.awaitingContinue && gameEngine.autoContinueCountdownAvailable && gameEngine.autoCountdownEnd != nil {
+                                autoCountdownBar
                             }
 
                             // Text field
@@ -904,18 +956,6 @@ struct TerminalView: View {
                             }
                         }
                         #endif
-
-                        // Auto-Continue pause — only while a tap-to-continue
-                        // screen is actually counting down. ⏸ holds every
-                        // countdown (screens then wait for a tap); ▶ resumes.
-                        if gameEngine.awaitingContinue && gameEngine.autoContinueCountdownAvailable && !gameEngine.chatInputMode {
-                            Button(action: { gameEngine.toggleAutoContinuePause() }) {
-                                Image(systemName: gameEngine.autoContinuePaused ? "play.circle.fill" : "pause.circle")
-                                    .font(.system(size: 20 * scale * gameEngine.iconScale))
-                                    .foregroundColor(gameEngine.autoContinuePaused ? Color(red: 1.0, green: 0.72, blue: 0.0) : Color(red: 0.0, green: 0.6, blue: 0.25))
-                            }
-                            .accessibilityLabel(gameEngine.autoContinuePaused ? "Resume auto-continue" : "Pause auto-continue")
-                        }
 
                         // Close button — closeHandler, chat exit, continue, or forced on combat/victory/gameOver
                         if gameEngine.chatInputMode {
@@ -1237,10 +1277,15 @@ struct TerminalView: View {
     /// never animates either.
     private func scrollMapPastHeader(_ proxy: ScrollViewProxy, isLandscape: Bool) {
         let lines = gameEngine.pinnedMapLines
+        #if os(macOS) || os(tvOS)
+        // Mac/TV show the whole box, header and key included — from the top.
+        if let first = lines.first { proxy.scrollTo(first.id, anchor: .top) }
+        #else
         let target = lines.count > 3 ? lines[3] : lines.first
         if let target {
             proxy.scrollTo(target.id, anchor: .top)
         }
+        #endif
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {

@@ -1211,6 +1211,15 @@ class Dungeon: ObservableObject, Codable {
         ("M", "Merchant"), ("G", "Gym"), ("N", "NPC"), ("X", "Secured"), ("K", "Locked")
     ]
 
+    /// Mac/TV have room for the whole key, not just nearby symbols.
+    static var showsFullLegend: Bool {
+        #if os(macOS) || os(tvOS)
+        return true
+        #else
+        return false
+        #endif
+    }
+
     static func mapLegendRowCount(maxSymbols: Int) -> Int {
         (max(1, maxSymbols) + 2) / 3
     }
@@ -1223,7 +1232,7 @@ class Dungeon: ObservableObject, Codable {
     /// padding with blank rows when fewer than that are active.
     private func mapLegendLines(border: String, activeSymbols: Set<String>, maxSymbols: Int) -> [String] {
         let capped = max(1, maxSymbols)
-        let entries = Array(Self.mapLegendEntries.filter { activeSymbols.contains($0.symbol) }.prefix(capped))
+        let entries = Array(Self.mapLegendEntries.filter { Self.showsFullLegend || activeSymbols.contains($0.symbol) }.prefix(capped))
         let rowCount = Self.mapLegendRowCount(maxSymbols: capped)
         var lines: [String] = ["+\(border)+"]
         var entryIdx = 0

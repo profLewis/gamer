@@ -290,7 +290,7 @@ struct FAQData {
         ),
         FAQEntry(
             question: "How do I stop screens moving on by themselves?",
-            answer: "Many screens wait for a tap so you can read them; with Auto-Continue on (the default) they also move on after the Info Timeout. To hold them, tap the ⏸ icon top right (next to ✕) while a screen is counting down — or press Space on a Mac. Tap ▶ to resume. To turn it off for good, go to Settings > Gameplay > Auto-Continue Off, or change how long screens wait with Info Timeout.",
+            answer: "Many screens wait for a tap so you can read them; with Auto-Continue on (the default) they also move on after the Info Timeout. To hold them, tap the thin countdown bar beside the > prompt while a screen is counting down (it turns amber) — or press Space on a Mac. Tap it again to carry on. To turn it off for good, go to Settings > Gameplay > Auto-Continue Off, or change how long screens wait with Info Timeout.",
             keywords: ["auto-continue", "auto continue", "autocontinue", "pause", "too fast", "timeout", "moves on", "keeps moving"]
         ),
         FAQEntry(
