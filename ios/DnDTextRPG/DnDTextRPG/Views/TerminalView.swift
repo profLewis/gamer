@@ -79,6 +79,9 @@ struct TerminalView: View {
     /// for — lets the scroll-to-top handler tell "brand new screen" apart
     /// from "same screen, more content appended" (see its own comment).
     @State private var lastScrolledGeneration: Int = -1
+    /// Measured D-pad height — lets the portrait controls block keep a
+    /// steady height with its spare room above the D-pad.
+    @State private var dpadMeasuredHeight: CGFloat = 0
     #if os(macOS)
     /// Mac pane sizes, set by dragging the small handles (remembered).
     /// 0 = map pane tall enough for the whole map box, key included.
@@ -665,6 +668,11 @@ struct TerminalView: View {
     /// as MenuButtonsView itself. A screen with fewer buttons just leaves
     /// blank space below them instead of the whole block (and the text
     /// ScrollView above it, which greedily fills whatever's left) shifting.
+    private var portraitControlsMinHeight: CGFloat {
+        let dpad = gameEngine.directionExits.isEmpty ? 0 : dpadMeasuredHeight + 6
+        return dpad + reservedButtonGridHeight + 12
+    }
+
     private var reservedButtonGridHeight: CGFloat {
         let maxButtons = max(1, gameEngine.maxButtonsPerScreen)
         let rows = Int(ceil(Double(maxButtons) / 2.0))
@@ -683,7 +691,7 @@ struct TerminalView: View {
                     // victory/defeat milestone screens — see forceInteractiveControls).
                     if (!gameEngine.isJustDMActive || gameEngine.forceInteractiveControls),
                        !gameEngine.directionExits.isEmpty || !gameEngine.currentMenuOptions.isEmpty {
-                        VStack(spacing: 12) {
+                        VStack(spacing: 6) {
                             // Direction D-pad (when exploring)
                             if !gameEngine.directionExits.isEmpty {
                                 DirectionPadView(exits: gameEngine.directionExits, secured: gameEngine.securedExits, scale: scale,
@@ -704,6 +712,11 @@ struct TerminalView: View {
                                     onSearchTap: gameEngine.dpadSearchHandler,
                                     onListenTap: gameEngine.dpadListenHandler
                                 )
+                                .background(GeometryReader { geo in
+                                    Color.clear
+                                        .onAppear { dpadMeasuredHeight = geo.size.height }
+                                        .onChange(of: geo.size.height) { dpadMeasuredHeight = $0 }
+                                })
                             }
 
                             // Action buttons
@@ -728,19 +741,24 @@ struct TerminalView: View {
                                     undoTargetIndex: gameEngine.undoTargetButtonIndex,
                                     redoTargetIndex: gameEngine.redoTargetButtonIndex
                                 )
-                                // Portrait: buttons sit at the BOTTOM of their reserved
-                                // space, right on top of the input bar — the unused part
-                                // of the reserve (fewer rows than the max) then sits above
-                                // them, next to the text, instead of as a dead black strip
-                                // between buttons and input. The bottom row (with the
-                                // 3-bar nav cell) stays in the same place on every screen.
-                                .frame(minHeight: reservedButtonGridHeight,
-                                       alignment: gameEngine.isLandscapeOrientation ? .top : .bottom)
+                                // Landscape reserves the grid's full height on the grid
+                                // itself; portrait reserves it on the whole controls block
+                                // below (portraitControlsMinHeight), so spare room sits
+                                // above the D-pad, next to the text.
+                                .frame(minHeight: gameEngine.isLandscapeOrientation ? reservedButtonGridHeight : 0,
+                                       alignment: .top)
                             }
 
                         }
                         .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                        .padding(.top, 8)
+                        .padding(.bottom, 4)
+                        // Portrait: a steady height (D-pad + the most button rows
+                        // this screen could need), bottom-aligned — spare room goes
+                        // ABOVE the D-pad, not between the D-pad and the buttons
+                        // or between the buttons and the input bar.
+                        .frame(minHeight: gameEngine.isLandscapeOrientation ? 0 : portraitControlsMinHeight,
+                               alignment: .bottom)
                         .background(Color.black.opacity(0.95))
                         #if !os(tvOS)
                         .simultaneousGesture(

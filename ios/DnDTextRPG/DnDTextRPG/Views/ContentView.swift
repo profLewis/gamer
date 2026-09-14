@@ -24,6 +24,10 @@ struct ContentView: View {
             if showingSplash {
                 SplashView(onDismiss: dismissSplash)
                     .opacity(splashOpacity)
+                    // Stop catching touches the moment it starts fading —
+                    // during the 0.5s fade it used to swallow the player's
+                    // first tap on the game underneath.
+                    .allowsHitTesting(splashOpacity == 1.0)
                     .transition(.opacity)
             }
         }

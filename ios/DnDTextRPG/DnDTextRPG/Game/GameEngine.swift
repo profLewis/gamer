@@ -451,6 +451,8 @@ class GameEngine: ObservableObject {
     private var manageSaveSelectMode: Bool = false
     private var manageSaveSelectedSlotIds: Set<UUID> = []
 
+    /// screenGeneration when the current inline help page was opened.
+    private var helpShownGeneration = -1
     private var savedHelpState: (lines: [TerminalLine], menu: [MenuOption],
                                   menuHandler: ((Int) -> Void)?, closeHandler: (() -> Void)?,
                                   menuLongPressHandler: ((Int) -> Void)?,
@@ -22888,6 +22890,14 @@ class GameEngine: ObservableObject {
     /// Pressing ?̸ restores the original screen. Menu buttons are preserved.
     /// - helpBuilder: closure that prints help text (should NOT call clearTerminal)
     func showInlineHelp(_ helpBuilder: () -> Void) {
+        // Only "close help" if the help page is still the screen showing.
+        // A help page left some other way (navigating elsewhere) used to
+        // leave savedHelpState behind, so the NEXT "?" took this branch —
+        // restoring a stale screen instead of opening help, i.e. the tap
+        // seemed to do nothing, and only the second press worked.
+        if savedHelpState != nil && screenGeneration != helpShownGeneration {
+            savedHelpState = nil
+        }
         if let saved = savedHelpState {
             // Restore previous state — remove help text, restore original lines and menu.
             // Synchronous, not DispatchQueue.main.async: a tap on an underlined
@@ -22922,6 +22932,7 @@ class GameEngine: ObservableObject {
             let savedUndoLabel = undoLabel
             let savedRedoLabel = redoLabel
 
+            helpShownGeneration = screenGeneration
             savedHelpState = (
                 savedLines, savedMenu,
                 savedMenuHandler, savedCloseHandler,
