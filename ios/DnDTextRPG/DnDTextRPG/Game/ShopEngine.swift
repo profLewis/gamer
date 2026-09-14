@@ -144,16 +144,21 @@ class ShopEngine {
         // auto-detection renders it as the standard compact 3-bar nav
         // button, like every other screen's back button — leaving a shop
         // is exactly a "< Back" action, not a distinct one.
-        game.showMenu(["Buy", "Sell", "Haggle", "Ask About Rare Goods", "?", "< Back"])
+        var shopOpts = ["Buy", "Sell", "Haggle", "Ask About Rare Goods"]
+        // Worn tools (whetstones, thieves' tools) can be mended here.
+        if game.party.contains(where: { $0.inventory.contains { $0.usesLeft != nil } }) { shopOpts.append("Mend Tools") }
+        shopOpts += ["?", "< Back"]
+        game.showMenu(shopOpts)
 
         game.menuHandler = { [weak self] choice in
-            guard let self = self, let game = self.game else { return }
-            switch choice {
-            case 1: self.showBuyMenu(completion: completion)
-            case 2: self.showSellMenu(completion: completion)
-            case 3: self.showHaggleMenu(completion: completion)
-            case 4: self.showRareGoods(completion: completion)
-            case 5:
+            guard let self = self, let game = self.game, choice >= 1, choice <= shopOpts.count else { return }
+            switch shopOpts[choice - 1] {
+            case "Buy": self.showBuyMenu(completion: completion)
+            case "Sell": self.showSellMenu(completion: completion)
+            case "Haggle": self.showHaggleMenu(completion: completion)
+            case "Ask About Rare Goods": self.showRareGoods(completion: completion)
+            case "Mend Tools": self.mendTools(completion: completion)
+            case "?":
                 game.showInlineHelp {
                     game.printTitle("\(merchant.shopName) — Help")
                     game.print("")
@@ -169,11 +174,36 @@ class ShopEngine {
                     game.print("  ASK ABOUT RARE GOODS", color: .cyan, bold: true)
                     game.printWrapped("A chance the merchant has something special under the counter, at a premium — also haggleable.", indent: 2, color: .dimGreen)
                     game.print("")
+                    game.print("  MEND TOOLS", color: .cyan, bold: true)
+                    game.printWrapped("Shown when someone's whetstone or thieves' tools are worn: 5 gold each makes them as good as new.", indent: 2, color: .dimGreen)
+                    game.print("")
                 }
             default:
                 self.showFarewell(completion: completion)
             }
         }
+    }
+
+    // MARK: - Mend Tools
+
+    /// An ironmonger's service: every worn tool in the party made as good as new.
+    private func mendTools(completion: @escaping () -> Void) {
+        guard let game = game, let character = character else { return }
+        let worn = game.party.flatMap { c in c.inventory.indices.filter { c.inventory[$0].usesLeft != nil }.map { (c, $0) } }
+        let cost = 5 * worn.count
+        game.clearTerminal()
+        game.printTitle("Mend Tools")
+        game.print("")
+        for (c, i) in worn { game.print("  \(c.name)'s \(c.inventory[i].name) — \(c.inventory[i].usesLeft ?? 0) uses left", color: .green) }
+        game.print("")
+        if character.gold < cost {
+            game.printWrapped("\"That'll be \(cost) gold for the lot — and you've only \(character.gold).\"", indent: 2, color: .yellow)
+        } else {
+            character.gold -= cost
+            for (c, i) in worn { c.inventory[i].usesLeft = nil }
+            game.printWrapped("\"There — good as new.\" \(character.name) pays \(cost) gold, and every tool is fresh again.", indent: 2, color: .brightGreen)
+        }
+        game.waitForContinueWithTimeout(multiplier: 1.0) { [weak self] in self?.showShopMain(completion: completion) }
     }
 
     // MARK: - Buy

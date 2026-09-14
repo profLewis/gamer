@@ -18467,6 +18467,62 @@ class GameEngine: ObservableObject {
         printWrapped(pairs.joined(separator: "   "), indent: 2, color: .green)
     }
 
+    // MARK: Bard performances
+    //
+    // A bard in the party can play for whoever's in the room — a merchant,
+    // a trainer, a traveller — once per audience: a Performance roll decides
+    // between boos and a standing ovation (and the tips that go with them).
+    private var performedRoomKeys = Set<String>()
+
+    private func performKey(_ room: Room) -> String { "\(dungeon?.name ?? "")#\(dungeon?.level ?? 0)#\(room.id)" }
+
+    private func bardAudience(_ room: Room) -> String? {
+        if let merchant = room.merchant { return merchant.name }
+        if let trainer = room.trainer { return trainer.name }
+        if let npc = room.npc, npcsEnabled { return npc.displayName }
+        return nil
+    }
+
+    private func bardPerform(_ bard: Character, audience: String, room: Room) {
+        performedRoomKeys.insert(performKey(room))
+        clearTerminal()
+        printExplorationMap()
+        print("")
+        printTitle("A Tune for \(audience)")
+        let mod = bard.skillModifier(for: .performance)
+        let roll = Dice.d20()
+        let total = roll + mod
+        print("  \(bard.name) strikes up a tune. Performance: d20[\(roll)] + \(mod) = \(total)", color: .cyan)
+        print("")
+        let tips: Int
+        let reaction: String
+        switch total {
+        case ..<8:
+            tips = 0
+            reaction = ["\(audience) winces and edges away. Perhaps another day.", "A string snaps mid-verse. Nobody claps."].randomElement()!
+        case 8..<13:
+            tips = Int.random(in: 1...5)
+            reaction = ["\(audience) taps along politely and tosses over a coin or two.", "A few polite nods, and a small clink of coins."].randomElement()!
+        case 13..<18:
+            tips = Int.random(in: 6...12)
+            reaction = ["\(audience) laughs, sings the chorus and pays for another.", "Toes tap, spirits lift — the hat fills nicely."].randomElement()!
+        default:
+            tips = Int.random(in: 13...25)
+            reaction = ["\(audience) is moved to tears and presses a purse into \(bard.name)'s hand!", "A standing ovation — even the rats stop to listen."].randomElement()!
+        }
+        printWrapped(reaction, indent: 2, color: tips > 0 ? .brightGreen : .yellow)
+        if tips > 0 {
+            bard.gold += tips
+            print("  +\(tips) gold for \(bard.name).", color: .yellow)
+            SoundManager.shared.playCrowdCheer()
+        } else {
+            SoundManager.shared.playCrowdJeer()
+        }
+        advanceTime(20)
+        logEvent("\(bard.name) performed for \(audience) (+\(tips) gold)", category: "EXPLORE")
+        waitForContinueWithTimeout(multiplier: 1.0) { [weak self] in self?.showExplorationView() }
+    }
+
     private func showExplorationHelp() {
         showInlineHelp {
             self.printTitle("Exploration Help")
@@ -19017,6 +19073,14 @@ class GameEngine: ObservableObject {
 
         menuOpts.append(MenuOption("Party Status"))
         actions.append { [weak self] in self?.showPartyStatus() }
+
+        // A bard can play for whoever's here — a coin or two for a good tune.
+        if let tuneRoom = self.dungeon?.currentRoom, tuneRoom.encounter == nil || tuneRoom.cleared,
+           let bard = party.first(where: { $0.characterClass == .bard && $0.isConscious }),
+           let audience = bardAudience(tuneRoom), !performedRoomKeys.contains(performKey(tuneRoom)) {
+            menuOpts.append(MenuOption("Play a Tune", tint: .cyan))
+            actions.append { [weak self] in self?.bardPerform(bard, audience: audience, room: tuneRoom) }
+        }
 
         // --- Bottom row: Help ---
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -19599,6 +19663,13 @@ class GameEngine: ObservableObject {
         let dc = 12 + (dungeon?.level ?? 1)
         print("")
         print("  Sleight of Hand: d20[\(roll)] + \(bestTools) vs DC \(dc)", color: .dimGreen)
+        // Picking locks wears Thieves' Tools too — slowly (about every other pick).
+        if Bool.random(),
+           let owner = party.filter({ $0.inventory.contains { $0.name == "Thieves' Tools" } })
+               .max(by: { $0.skillModifier(for: .sleightOfHand) < $1.skillModifier(for: .sleightOfHand) }),
+           let note = wearTool("Thieves' Tools", owner: owner, freshUses: 8...15, breakChance: 3) {
+            print("  \(note)", color: .dimGreen)
+        }
         if roll + bestTools >= dc {
             unlockDoor(direction: direction, room: room, method: "with a click of the lockpicks")
         } else {
@@ -22188,6 +22259,9 @@ class GameEngine: ObservableObject {
             return "\(owner.name)'s \(name) \(plural ? "snap" : "cracks in two") — no more uses, sadly."
         }
         owner.inventory[i].usesLeft = left
+        if left <= 3 {
+            return "\(owner.name)'s \(name) \(plural ? "are" : "is") getting worn (\(left) use\(left == 1 ? "" : "s") left) — an ironmonger or smith can mend \(plural ? "them" : "it")."
+        }
         return nil
     }
 
