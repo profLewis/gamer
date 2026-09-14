@@ -6601,8 +6601,8 @@ class GameEngine: ObservableObject {
         print("  Cloud AI (best)", color: .brightGreen, bold: true)
         printWrapped("Works on any device. Google Gemini is FREE (ages 18+). Also supports Claude and OpenAI.", indent: 4)
         print("")
-        printWrapped("Set up in Settings > AI Provider. Adjust narration level in Settings > DM Ad-lib.", indent: 4, color: .dimGreen)
-        printLink("Settings > AI Provider", to: "ai", indent: 4)
+        printWrapped("Set up in Settings > Change Brain. Adjust narration level in Settings > DM Ad-lib.", indent: 4, color: .dimGreen)
+        printLink("Settings > Change Brain", to: "ai", indent: 4)
         printLink("Settings > DM Settings", to: "dm", indent: 4)
         print("")
         print("CHAT", color: .cyan, bold: true)
@@ -8705,7 +8705,7 @@ class GameEngine: ObservableObject {
         print("  Autosave: \(autosaveInterval.displayName)", color: .dimGreen)
         print("")
 
-        var menuOpts = ["DM Settings", "Brain", "Accessibility", "Mood", "Gameplay", "Game Saves"].map { MenuOption($0) }
+        var menuOpts = ["DM Settings", "Change Brain", "Accessibility", "Mood", "Gameplay", "Game Saves"].map { MenuOption($0) }
         menuOpts.append(MenuOption("Save Settings"))
         menuOpts.append(MenuOption("Reset", tint: .danger))
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -8725,7 +8725,7 @@ class GameEngine: ObservableObject {
             let text = menuOpts[choice - 1].text
             switch text {
             case "DM Settings": self.showDMSettingsSubMenu()
-            case "Brain": self.showAIProviderMenu(onBack: { [weak self] in self?.showSettings() })
+            case "Change Brain": self.showAIProviderMenu(onBack: { [weak self] in self?.showSettings() })
             case "Accessibility": self.showAccessibilityMenu()
             case "Mood": self.showMusicSettings()
             case "Gameplay": self.showGameplaySettings()
@@ -11374,7 +11374,7 @@ class GameEngine: ObservableObject {
     func showAIProviderMenu(onBack: (() -> Void)? = nil) {
         let back = onBack ?? { [weak self] in self?.showDMSettingsSubMenu() }
         clearTerminal()
-        printTitle("AI Provider")
+        printTitle("Brain")
 
         let dm = DMEngine.shared
 
@@ -11464,7 +11464,7 @@ class GameEngine: ObservableObject {
             }
             if choice == helpIndex {
                 self?.showInlineHelp {
-                    self?.printTitle("AI Provider Help")
+                    self?.printTitle("Brain Help")
                     self?.print("")
                     self?.print("  APPLE ON-DEVICE AI", color: .cyan, bold: true)
                     self?.printWrapped("Runs locally on your device. Free, works offline, no account needed. Requires iOS 26+ on iPhone 16 or newer. May refuse some queries.", indent: 2, color: .dimGreen)
@@ -12879,7 +12879,7 @@ class GameEngine: ObservableObject {
     /// testing anyway is still the right call.
     private func keyFormatWarning(for provider: AIProvider, key: String) -> (message: String, blocking: Bool)? {
         if let detected = detectedProvider(forKeyFormat: key), detected != provider {
-            return ("This looks like a \(detected.displayName) key, not \(provider.displayName). Get an \(provider.displayName) key instead, or switch providers in AI Provider settings.", true)
+            return ("This looks like a \(detected.displayName) key, not \(provider.displayName). Get an \(provider.displayName) key instead, or switch providers in Settings > Change Brain.", true)
         }
         switch provider {
         case .openAI:
@@ -24668,7 +24668,7 @@ class GameEngine: ObservableObject {
         print("")
 
         // Build menu
-        // "Brain" (was "AI") — which mind runs the Dungeon Master.
+        // "Change Brain" (was "AI") — which mind runs the Dungeon Master.
         // Party Review first (the default); Brain now lives in Settings.
         var menuOpts = ["Party Review", "Opening Tale", "Progress Tale", "Save to Roster", "Adventure Log", "Lore", "Settings", "?", "< Back"]
         if dungeon?.hasCartography == true {
@@ -24724,7 +24724,7 @@ class GameEngine: ObservableObject {
                 self.showAtlas(onBack: { [weak self] in self?.showPartyStatus() })
             case "Lore":
                 self.showLoreBook()
-            case "Brain":
+            case "Change Brain":
                 self.showAIProviderMenu(onBack: { [weak self] in self?.showPartyStatus() })
             case "Settings":
                 self.showSettings()

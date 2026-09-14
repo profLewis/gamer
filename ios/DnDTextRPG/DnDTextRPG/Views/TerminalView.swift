@@ -726,6 +726,26 @@ struct TerminalView: View {
                 // affordance now — a visible, discoverable right-edge strip
                 // instead of an invisible full-screen trap.
             }
+            // In a fight: unmistakable — a red frame round the whole window
+            // and a COMBAT tag in the corner (decoration only; taps pass through).
+            .overlay(alignment: .topTrailing) {
+                if gameEngine.currentCombat != nil {
+                    ZStack(alignment: .topTrailing) {
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(Color.red.opacity(0.85), lineWidth: 3)
+                        Text("⚔ COMBAT")
+                            .font(.system(size: 11 * scale, weight: .heavy, design: .monospaced))
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.red))
+                            .padding(.top, 3)
+                            .padding(.trailing, 10)
+                    }
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
+            }
             .onAppear { gameEngine.isLandscapeOrientation = isLandscape }
             .onChange(of: isLandscape) { newValue in gameEngine.isLandscapeOrientation = newValue }
         }
@@ -1120,7 +1140,7 @@ struct TerminalView: View {
                                     gameEngine.objectWillChange.send()
                                 }
                                 Divider()
-                                Button("Change AI…") { gameEngine.followLink("ai") }
+                                Button("Change Brain…") { gameEngine.followLink("ai") }
                                 Button("DM & Voice…") { gameEngine.followLink("dm") }
                                 Button("Gameplay…") { gameEngine.followLink("gameplay") }
                                 Button("Accessibility…") { gameEngine.followLink("accessibility") }

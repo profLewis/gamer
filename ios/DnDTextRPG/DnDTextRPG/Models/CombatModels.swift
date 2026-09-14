@@ -2010,7 +2010,12 @@ enum ArenaRenderer {
         guard playing, let m = move else {
             if let l = leftF { drawSprite(leftLines, x: leftX, bottom: leftY, color: leftColor); label(l.name, x: leftX, w: lw, top: leftY - leftLines.count + 1, color: leftNameColor) }
             if let r = rightF { drawSprite(rightLines, x: rightX, bottom: rightY, color: rightColor); label(r.name, x: rightX, w: rw, top: rightY - rightLines.count + 1, color: rightNameColor) }
-            if let turn = scene.turnName { center("\(turn)'s turn", 0, .cyan) }
+            // Just after a move: say whose turn that was, then whose is next.
+            if let m = move, elapsed < m.duration + 1.6 {
+                center("End of \(m.attackerName)'s turn", 0, .dimGreen)
+            } else if let turn = scene.turnName {
+                center("\(turn)'s turn", 0, .cyan)
+            }
             return g
         }
 
