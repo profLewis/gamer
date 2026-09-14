@@ -22168,7 +22168,13 @@ class GameEngine: ObservableObject {
     private func autoAssignLoot(_ item: Item, source: String, narrative: String?, onDone: @escaping () -> Void) -> Bool {
         let eligible = combatLootEligible ?? party
         guard eligible.count > 1 else { return false }
-        var taker = eligible.first { $0.canCarry(item) }
+        // Important finds are the player's call: gear to equip, or anything
+        // valuable, always gets the "who takes it?" screen.
+        let important = item.type == .weapon || item.type == .armor || item.type == .shield || item.value >= 50
+        guard !important else { return false }
+        // Trivial things go to a companion the game controls if one has room —
+        // a player's own adventurer only if none can.
+        var taker = eligible.first { $0.isComputerControlled && $0.canCarry(item) } ?? eligible.first { $0.canCarry(item) }
         var madeRoom: String?
         if taker == nil {
             for char in eligible where char.isComputerControlled {
