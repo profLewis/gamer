@@ -1843,6 +1843,11 @@ struct TerminalView: View {
 
     private func submitInput() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        // For bug reports: what was typed (anything key-like kept out).
+        if !text.isEmpty {
+            let keyLike = text.hasPrefix("sk-") || text.hasPrefix("AIza") || (text.count >= 24 && !text.contains(" "))
+            gameEngine.recordAction(keyLike ? "typed [hidden]" : "typed \"\(text)\"")
+        }
         if text.isEmpty {
             // Empty return — press the default button, or move in a random direction
             if let hovered = gameEngine.hoveredMenuChoiceIfValid {

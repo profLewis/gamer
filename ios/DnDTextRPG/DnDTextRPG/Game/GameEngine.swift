@@ -3808,6 +3808,7 @@ class GameEngine: ObservableObject {
         // Ignore stale taps from a previous menu (e.g. finger-up after long-press
         // where the old menu had more options than the new one)
         guard choice >= 1 && choice <= currentMenuOptions.count else { return }
+        recordAction("pressed \"\(currentMenuOptions[choice - 1].text)\"")
 
         // "Fwd >" is injected generically (see withForwardOption) rather
         // than wired by each screen's own menuHandler — intercept it here,
@@ -4671,6 +4672,7 @@ class GameEngine: ObservableObject {
 
     func handleDirectionChoice(_ direction: Direction) {
         if timeFrozen { showFrozenNotice(); return }
+        recordAction("went \(direction.rawValue)")
         stopIdleAnimations()
         // Must be synchronous (runOnMain), not DispatchQueue.main.async: the
         // old async wipe was queued to run on a LATER turn of the run loop,
@@ -26361,8 +26363,24 @@ class GameEngine: ObservableObject {
             report += "\n\n"
         }
 
+        report += bugReportSettingsSnapshot()
+
+        if !actionTrail.isEmpty {
+            report += "ACTION TRAIL (last \(actionTrail.count) — what was pressed, typed or walked, and on which screen):\n"
+            report += actionTrail.joined(separator: "\n")
+            report += "\n\n"
+        }
+
         if dungeon != nil, let savedSlotName = performBugReportSave() {
-            report += "A save point named \"\(savedSlotName)\" was created for this report — find it under Continue Adventure to replay from this exact moment.\n"
+            report += "A save point named \"\(savedSlotName)\" was created for this report — find it under Continue Adventure to replay from this exact moment.\n\n"
+        }
+
+        // The whole game state, so it can be loaded elsewhere: Adventure Log >
+        // Import Log spots this block and turns it into a Continue Adventure slot.
+        // (Dice are rolled afresh, so a replay follows the trail, not the same luck.)
+        if let snapshot = makeSnapshotSave(slotName: "Bug Report"), let json = Self.encodeSaveForReport(snapshot) {
+            report += "To replay: Adventure Log > Import Log, and choose this file.\n"
+            report += Self.bugSaveBegin + "\n" + json + "\n" + Self.bugSaveEnd + "\n"
         }
 
         pendingLogExportText = report
@@ -26379,9 +26397,17 @@ class GameEngine: ObservableObject {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         let slotName = "Bug Report — \(formatter.string(from: Date()))"
+        guard let saveGame = makeSnapshotSave(slotName: slotName) else { return nil }
+        guard (try? SaveGameManager.shared.save(saveGame)) != nil else { return nil }
+        return slotName
+    }
+
+    /// The game exactly as it stands, as a save (not written anywhere).
+    private func makeSnapshotSave(slotName: String) -> SaveGame? {
+        guard let dungeon = dungeon else { return nil }
         let partyDesc = party.map { "\($0.name) (\($0.characterClass.rawValue))" }.joined(separator: ", ")
         let chatEntries = dmChatLog.map { DMChatEntry(isUser: $0.isUser, text: $0.text) }
-        let saveGame = SaveGame(
+        return SaveGame(
             id: UUID(), slotId: UUID(), savedAt: Date(), slotName: slotName,
             partyDescription: partyDesc, dungeonName: dungeon.name, dungeonLevel: dungeon.level,
             party: party, dungeon: dungeon, gameState: gameState,
@@ -26393,8 +26419,44 @@ class GameEngine: ObservableObject {
             combatsWon: combatsWon,
             activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest
         )
-        guard (try? SaveGameManager.shared.save(saveGame)) != nil else { return nil }
-        return slotName
+    }
+
+    static let bugSaveBegin = "=== SAVE DATA (BEGIN) ==="
+    static let bugSaveEnd = "=== SAVE DATA (END) ==="
+
+    private static func encodeSaveForReport(_ save: SaveGame) -> String? {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(save) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// The last 200 things the player did — buttons, moves, typed lines —
+    /// each with the screen it happened on, so a bug report shows the steps.
+    private(set) var actionTrail: [String] = []
+    private static let trailTime: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm:ss"; return f }()
+    func recordAction(_ what: String) {
+        actionTrail.append("[\(Self.trailTime.string(from: Date()))] [\(currentScreenTitle ?? "-")] \(what)")
+        if actionTrail.count > 200 { actionTrail.removeFirst(actionTrail.count - 200) }
+    }
+
+    /// The app's own settings, for a bug report — anything that could be a
+    /// key, token or password left out, and long values cut short.
+    private func bugReportSettingsSnapshot() -> String {
+        guard let bundleId = Bundle.main.bundleIdentifier,
+              let domain = UserDefaults.standard.persistentDomain(forName: bundleId) else { return "" }
+        let secret = ["key", "token", "secret", "password", "auth", "credential"]
+        var lines: [String] = []
+        for name in domain.keys.sorted() {
+            let lower = name.lowercased()
+            guard !secret.contains(where: lower.contains), let value = domain[name] else { continue }
+            if value is Data { continue }
+            var text = "\(value)".replacingOccurrences(of: "\n", with: " ")
+            if text.count > 80 { text = String(text.prefix(77)) + "..." }
+            lines.append("\(name) = \(text)")
+        }
+        return lines.isEmpty ? "" : "SETTINGS:\n" + lines.joined(separator: "\n") + "\n"
     }
 
     /// Called by TerminalView's .fileExporter completion. On success, just
@@ -26442,6 +26504,21 @@ class GameEngine: ObservableObject {
     /// log (never replaces it — importing is additive, so you can't lose
     /// the current run's history by mistake).
     func importAdventureLog(from text: String) {
+        // A bug report carries the whole game: load it as its own slot.
+        var text = text
+        var importedSlot: String?
+        if let begin = text.range(of: Self.bugSaveBegin), let end = text.range(of: Self.bugSaveEnd, range: begin.upperBound..<text.endIndex) {
+            let json = String(text[begin.upperBound..<end.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            importedSlot = importBugReportSave(json)
+            text.removeSubrange(begin.lowerBound..<end.upperBound)
+        }
+        defer {
+            if let slot = importedSlot {
+                print("")
+                print("  This was a bug report with a saved game in it — loaded as", color: .brightGreen)
+                print("  \"\(slot)\". Find it under Continue Adventure.", color: .brightGreen)
+            }
+        }
         let lines = text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
         guard !lines.isEmpty else { return }
         adventureLog.append("--- Imported log (\(lines.count) lines) ---")
@@ -26450,6 +26527,30 @@ class GameEngine: ObservableObject {
         if gameState == .exploring || dungeon != nil {
             showAdventureLog()
         }
+    }
+
+    /// Turns a bug report's saved game into a new Continue Adventure slot
+    /// (fresh ids, so it never replaces anything). Returns its name.
+    private func importBugReportSave(_ json: String) -> String? {
+        guard let data = json.data(using: .utf8),
+              var dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        let name = "Imported Bug Report — \(formatter.string(from: Date()))"
+        dict["id"] = UUID().uuidString
+        dict["slotId"] = UUID().uuidString
+        dict["slotName"] = name
+        dict["savedAt"] = ISO8601DateFormatter().string(from: Date())
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let fixed = try? JSONSerialization.data(withJSONObject: dict),
+              let save = try? decoder.decode(SaveGame.self, from: fixed),
+              (try? SaveGameManager.shared.save(save)) != nil else {
+            logEvent("A bug report's saved game couldn't be read", category: "SYSTEM")
+            return nil
+        }
+        logEvent("Loaded a bug report's saved game as \"\(name)\"", category: "SYSTEM")
+        return name
     }
 
     /// Rest screen "Eat & Drink" — any food or drink anyone in the party is
