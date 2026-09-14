@@ -299,14 +299,20 @@ class SoundManager {
     }
 
     /// Spell cast — magical shimmer
+    /// Spell cast — a whoosh: a burst of air that swells and fades, with a
+    /// faint sparkle as the magic lands.
     func playSpellCast() {
         guard battleSoundsEnabled else { return }
         playSequence([
-            (523, 0.06, 0.15, .sine),
-            (784, 0.06, 0.18, .sine),
-            (1047, 0.06, 0.2, .sine),
-            (1568, 0.08, 0.15, .sine),
-            (1047, 0.06, 0.12, .sine),
+            (0, 0.04, 0.03, .noise),
+            (0, 0.04, 0.07, .noise),
+            (0, 0.05, 0.12, .noise),
+            (0, 0.06, 0.16, .noise),
+            (0, 0.06, 0.13, .noise),
+            (0, 0.06, 0.08, .noise),
+            (0, 0.05, 0.04, .noise),
+            (1568, 0.05, 0.06, .sine),
+            (2093, 0.07, 0.04, .sine),
         ])
     }
 

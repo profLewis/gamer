@@ -27844,7 +27844,6 @@ class GameEngine: ObservableObject {
                     print(msg, color: .brightGreen)
                     let allyId = ally.id
                     if let report = combat.castSpell(casterId: character.id, spell: healSpell, targetIds: [allyId]) {
-                        SoundManager.shared.playSpellCast()
                         displaySpellReport(report) { [weak self] in
                             combat.checkCombatEnd()
                             combat.nextTurn()
@@ -27878,7 +27877,6 @@ class GameEngine: ObservableObject {
                 print(atkMsg, color: .yellow)
                 let targetId = weakestMonster.id
                 if let report = combat.castSpell(casterId: character.id, spell: attackSpell, targetIds: [targetId]) {
-                    SoundManager.shared.playSpellCast()
                     displaySpellReport(report) { [weak self] in
                         combat.checkCombatEnd()
                         combat.nextTurn()
@@ -28748,6 +28746,8 @@ class GameEngine: ObservableObject {
     }
 
     func displaySpellReport(_ report: SpellReport, completion: @escaping () -> Void) {
+        // Every spell cast — the player's own and companions' — gets its whoosh here.
+        SoundManager.shared.playSpellCast()
         logMultiplayerSpellReport(report)
 
         // Show spell casting animation if hit animations are on

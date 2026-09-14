@@ -1317,6 +1317,21 @@ class Dungeon: ObservableObject, Codable {
             return (["(nothing mapped yet)"], nil)
         }
         let shownIds = Set(shown.map { $0.id })
+        // Teleport pads: each linked pair gets its own number (1, 2, 3...)
+        // on the map, so you can see which pad goes where — listed under
+        // the map too. A pad's far end stays hidden until you've been
+        // there (or World Map shows every room).
+        let byId = Dictionary(uniqueKeysWithValues: level.rooms.map { ($0.id, $0) })
+        var padNumber: [Int: String] = [:]
+        var padPairs: [(from: Int, to: Int?)] = []
+        for room in level.rooms.sorted(by: { $0.id < $1.id })
+            where room.teleportTo != nil && padNumber[room.id] == nil && (room.visited || showAll) {
+            let n = padPairs.count
+            let label = n < 9 ? "\(n + 1)" : String(UnicodeScalar(UInt8(65 + min(n - 9, 25))))
+            padNumber[room.id] = label
+            if let dest = room.teleportTo, let far = byId[dest], far.visited || showAll { padNumber[dest] = label }
+            padPairs.append((room.id, room.teleportTo))
+        }
         let width = (maxX - minX + 1) * 5
         let height = (maxY - minY + 1) * 2 - 1
         var grid = Array(repeating: Array(repeating: Swift.Character(" "), count: width), count: height)
@@ -1326,7 +1341,11 @@ class Dungeon: ObservableObject, Codable {
         }
         for room in shown {
             let cx = (room.x - minX) * 5, cy = (room.y - minY) * 2
-            let glyph = room.id == level.currentRoomId ? "@" : (room.visited ? room.symbol : " ")
+            let glyph: String
+            if room.id == level.currentRoomId { glyph = "@" }
+            else if !room.visited { glyph = padNumber[room.id] ?? " " }
+            else if room.danger { glyph = "!" }
+            else { glyph = padNumber[room.id] ?? room.symbol }
             put("[\(glyph)]", cy, cx)
             for dir in Direction.allCases {
                 guard let targetId = room.exits[dir.rawValue] else { continue }
@@ -1358,6 +1377,16 @@ class Dungeon: ObservableObject, Codable {
             }
         }
         lines.append(border)
+        if !padPairs.isEmpty {
+            lines.append("")
+            lines.append("TELEPORT PADS")
+            for pair in padPairs {
+                let label = padNumber[pair.from] ?? "?"
+                let from = byId[pair.from]?.name ?? "?"
+                let to = pair.to.flatMap { byId[$0] }.map { ($0.visited || showAll) ? $0.name : "somewhere unexplored" } ?? "?"
+                lines.append("  \(label): \(from) ↔ \(to)")
+            }
+        }
         return (lines, highlight)
     }
 
@@ -1366,7 +1395,7 @@ class Dungeon: ObservableObject, Codable {
         ("@", "You are here"), ("!", "Danger / trap"), (".", "Empty"),
         ("E", "Entry"), ("=", "Hall"), ("#", "Room"), ("$", "Loot"), ("+", "Shrine"),
         ("L", "Library"), ("B", "Boss"), ("A", "Armoury"), ("P", "Prison"),
-        ("M", "Merchant"), ("G", "Gym"), ("N", "NPC"), ("*", "Teleport pad"),
+        ("M", "Merchant"), ("G", "Gym"), ("N", "NPC"), ("1-9", "Teleport pads"),
         ("\u{2191}", "Way up"), ("\u{2193}", "Way down"), ("[ ]", "Unexplored"), ("--", "Passage"),
         ("KK", "Locked door"), ("XX", "Barred door"),
     ]
