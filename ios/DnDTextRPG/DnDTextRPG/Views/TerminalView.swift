@@ -1960,6 +1960,11 @@ struct MenuButtonsView: View {
                         Button(action: { onSelect(index + 1) }) {
                             Text(option.text == "?" ? MenuOption.helpGlyph : option.text)
                                 .accessibilityLabel(MenuOption.spokenLabel(option.text))
+                                // Longer labels ("< Leave Game") wrap neatly onto two
+                                // centred lines, shrinking only a little if still needed.
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+                                .minimumScaleFactor(0.75)
                                 .font(.system(size: compactFontSize, design: .monospaced))
                                 .fontWeight(option.isDefault || option.isAlert ? .semibold : .regular)
                                 .foregroundColor(terminalDimGreen)

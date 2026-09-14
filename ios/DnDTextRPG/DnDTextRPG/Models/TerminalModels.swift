@@ -124,6 +124,7 @@ struct MenuOption: Identifiable {
         case ">>": return "Next page"
         case "Fwd >": return "Forward"
         case "< Leave": return "Leave"
+        case "< Leave Game": return "Leave game"
         default: return text
         }
     }

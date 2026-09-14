@@ -391,11 +391,17 @@ class GameEngine: ObservableObject {
         guard continueHintCount < 3 else { return }
         let counting = autoContinueCountdownAvailable && !autoContinuePaused
         let delay: Double = continueHintCount == 0 ? 1.5 : (counting ? max(3, autoCountdownTotal * 0.35) : 5)
+        // Only worth saying if there'll still be time to read it before the
+        // screen moves on by itself — not on short countdowns.
+        if counting, let end = autoCountdownEnd, end.timeIntervalSinceNow - delay < 4 { return }
         continueHintTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             guard let self = self, self.awaitingContinue, self.continueHintGeneration == self.screenGeneration else { return }
+            if self.autoContinueCountdownAvailable && !self.autoContinuePaused,
+               let end = self.autoCountdownEnd, end.timeIntervalSinceNow < 4 { return }
             self.continueHintCount += 1
             self.print("")
-            self.print("  Continue?", color: .cyan, bold: true)
+            let title = Self.pickVaried(["Continue?", "Ready to move on?", "Shall we carry on?", "Onward?", "Seen enough?"], avoiding: &self.lastContinueTitle)
+            self.print("  \(title)", color: .cyan, bold: true)
             self.print("")
             for line in self.continueHintLines() {
                 self.printWrapped(line, indent: 4, color: .dimGreen)
@@ -405,6 +411,8 @@ class GameEngine: ObservableObject {
     }
 
     private func continueHintLines() -> [String] {
+        let tapLine = ["• Tap anywhere on the text — continue now", "• Tap anywhere on the text to carry on",
+                       "• A tap anywhere on the text moves things along"].randomElement()!
         // Still waiting after the first hint: "anywhere" deserves the small
         // print — the strip down one edge is kept for scrolling, not taps.
         if continueHintCount >= 2 {
@@ -413,17 +421,29 @@ class GameEngine: ObservableObject {
                     "• or type \"go on\""]
         }
         if autoContinuePaused {
-            return ["• Tap anywhere on the text — continue now",
+            return [tapLine,
                     "• or type \"go on\"",
                     "• or tap the orange hourglass to let it run again"]
         }
         if autoContinueCountdownAvailable {
-            return ["• Tap anywhere on the text — continue now",
+            return [tapLine,
                     "• or type \"go on\"",
                     "• or just wait for the hourglass"]
         }
         return ["• Tap anywhere on the text", "• or type \"go on\""]
     }
+
+    /// Picks a random line, never the same one twice running.
+    static func pickVaried(_ options: [String], avoiding last: inout String?) -> String {
+        let pool = options.filter { $0 != last }
+        let pick = (pool.isEmpty ? options : pool).randomElement()!
+        last = pick
+        return pick
+    }
+    private var lastContinueTitle: String?
+    private var lastCombatNudge: String?
+    private var lastIdleOpener: String?
+    private var lastExplorationTip: String?
 
     private var autoContinueHelpShownGeneration = -1
 
@@ -4704,6 +4724,45 @@ class GameEngine: ObservableObject {
         idleTimer = Timer.scheduledTimer(withTimeInterval: 4.0, repeats: false) { [weak self] _ in
             self?.startIdleAnimations()
         }
+        scheduleExplorationTip()
+    }
+
+    // MARK: Exploration tips
+    //
+    // Idle on the exploration screen for a while (Idle Prompts on): one tip
+    // per screen — about this room if there's an NPC or a gym here, otherwise
+    // a varied general one (quests, gyms, merchants, food, torches).
+    private var explorationTipTimer: Timer?
+    private var explorationTipGeneration = -1
+
+    private func scheduleExplorationTip() {
+        explorationTipTimer?.invalidate()
+        explorationTipTimer = Timer.scheduledTimer(withTimeInterval: 25, repeats: false) { [weak self] _ in
+            guard let self = self, self.idlePromptsEnabled, !self.directionExits.isEmpty, !self.awaitingContinue,
+                  self.currentCombat == nil, !(self.isJustDMActive && self.inDMMode),
+                  self.explorationTipGeneration != self.screenGeneration else { return }
+            self.explorationTipGeneration = self.screenGeneration
+            self.print("")
+            self.printWrapped("Tip: \(self.explorationTip())", indent: 2, color: .dimGreen)
+        }
+    }
+
+    private func explorationTip() -> String {
+        let room = dungeon?.currentRoom
+        if let npc = room?.npc, !npc.hasBeenTalkedTo {
+            return "\(npc.displayName) is here. Ask if they have a quest for you — you'll win prizes and progress as a character."
+        }
+        if room?.trainer != nil {
+            return "There's a gym here — train to learn new skills or sharpen the ones you have."
+        }
+        return Self.pickVaried([
+            "Ask anyone you meet if they have a quest for you — quests win prizes and help you progress as a character.",
+            "Don't forget to train at any gyms you find: learn new skills, or enhance the ones you have.",
+            "Merchants sometimes keep rarer goods under the counter — it never hurts to ask.",
+            "Rest when you're hurt — and eat something: hearty food makes you feel strong.",
+            "A lit torch lets you see further on the map.",
+            "Stuck? Long-press a button to see what shortcut it has.",
+        ], avoiding: &lastExplorationTip)
     }
 
     private func startIdleAnimations() {
@@ -5504,6 +5563,12 @@ class GameEngine: ObservableObject {
         print("")
         print("  • Level Up", color: .brightGreen, bold: true)
         printWrapped("    your abilities with experience", color: .green)
+        print("")
+        print("  • Quests", color: .brightGreen, bold: true)
+        printWrapped("    ask anyone you meet if they have one for you — you'll win prizes and progress as a character", color: .green)
+        print("")
+        print("  • Train", color: .brightGreen, bold: true)
+        printWrapped("    at any gyms you find: learn new skills, or enhance the ones you have", color: .green)
         print("")
         printWrapped("  Make it into the Hall of Fame — your finished adventures, ranked in Continue Adventure — if you're good enough.", color: .brightGreen, bold: true)
         print("")
@@ -18169,7 +18234,7 @@ class GameEngine: ObservableObject {
         // Same destination as the corner X icon (see closeHandler below) —
         // this just gives that action a discoverable button too, since not
         // everyone taps the corner icon.
-        menuOpts.append(MenuOption("< Leave", tint: .navigation, compact: true))
+        menuOpts.append(MenuOption("< Leave Game", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.leaveExplorationTapped() }
 
         // --- Multiplayer ---
@@ -25651,13 +25716,13 @@ class GameEngine: ObservableObject {
             return "\(shortName(for: hurt)) is badly hurt — \"drink a potion\" or \"rest\" might be wise."
         }
         if let npc = room.npc, !npc.hasBeenTalkedTo {
-            return "\(npc.displayName) is here — try \"talk to \(npc.personalName ?? "the \(npc.name.lowercased())")\"."
+            return "\(npc.displayName) is here — try \"talk to \(npc.personalName ?? "the \(npc.name.lowercased())")\", and ask if they have a quest for you. Quests win prizes and help you progress as a character."
         }
         if room.merchant != nil {
             return "A merchant has wares laid out — try \"what do you sell?\" or \"let's trade\"."
         }
         if room.trainer != nil {
-            return "This is a gym — try \"train with the trainer\"."
+            return "This is a gym — try \"train with the trainer\": learn new skills, or sharpen the ones you have."
         }
         if room.teleportDestinationRoomId != nil {
             return "A glowing pad hums underfoot — try \"step on the pad\"."
@@ -25823,7 +25888,8 @@ class GameEngine: ObservableObject {
         guard justDMMode, awaitingTextInput else { return }
         print("")
         if let clue = justDMClue() {
-            printWrapped("  DM: Still there? \(clue)", indent: 2, color: .cyan)
+            let opener = Self.pickVaried(["Still there?", "Take your time —", "Stuck?", "Need an idea?", "Here's a thought:"], avoiding: &lastIdleOpener)
+            printWrapped("  DM: \(opener) \(clue)", indent: 2, color: .cyan)
         } else {
             printWrapped("  Still there? Try: \(Self.justDMHintExamples.randomElement()!)", indent: 2, color: .dimGreen)
         }
@@ -28363,8 +28429,44 @@ class GameEngine: ObservableObject {
 
     // MARK: - Combat Idle Timer
 
+    /// Your turn in combat and nothing's happening: a gentle nudge — twice
+    /// at most, worded differently each time — on what you can do.
+    private var combatNudgeTimer: Timer?
+
+    private func scheduleCombatNudge(characterId: UUID, count: Int) {
+        guard count < 2 else { return }
+        combatNudgeTimer = Timer.scheduledTimer(withTimeInterval: count == 0 ? 20 : 45, repeats: false) { [weak self] _ in
+            guard let self = self, self.currentCombat != nil, !self.awaitingContinue, !self.currentMenuOptions.isEmpty,
+                  let character = self.party.first(where: { $0.id == characterId }) else { return }
+            let name = self.shortName(for: character)
+            let opener = Self.pickVaried([
+                "Your move, \(name)!",
+                "\(name), the enemy is waiting...",
+                "What will \(name) do?",
+                "\(name) — act now, or the moment passes!",
+                "Steady, \(name). What's the plan?",
+            ], avoiding: &self.lastCombatNudge)
+            let how = [
+                "Tap one of the buttons below — or type its name at the > prompt (e.g. \"attack\").",
+                "Pick an action from the buttons below, or type it at the > prompt.",
+                "Choose from the buttons below, or type what you want to do at the > prompt.",
+            ].randomElement()!
+            let talk = [
+                "Type \"chat\" to talk tactics with your party or ask the DM — you'll come straight back to the fight.",
+                "Want advice? Type \"chat\" to ask your companions or the DM, then carry on fighting.",
+                "Type \"chat\" to confer with the party and the DM; the fight will wait for you.",
+            ].randomElement()!
+            self.print("")
+            self.print("  \(opener)", color: .cyan, bold: true)
+            self.printWrapped(how, indent: 4, color: .dimGreen)
+            self.printWrapped(talk, indent: 4, color: .dimGreen)
+            self.scheduleCombatNudge(characterId: characterId, count: count + 1)
+        }
+    }
+
     private func startCombatIdleTimer(characterId: UUID) {
         cancelCombatIdleTimer()
+        scheduleCombatNudge(characterId: characterId, count: 0)
         guard idlePromptsEnabled else { return }
         combatIdleTimer = Timer.scheduledTimer(withTimeInterval: 300.0, repeats: false) { [weak self] _ in
             guard let self = self, let combat = self.currentCombat else { return }
@@ -28409,6 +28511,8 @@ class GameEngine: ObservableObject {
     private func cancelCombatIdleTimer() {
         combatIdleTimer?.invalidate()
         combatIdleTimer = nil
+        combatNudgeTimer?.invalidate()
+        combatNudgeTimer = nil
     }
 
     // MARK: - Run Away
