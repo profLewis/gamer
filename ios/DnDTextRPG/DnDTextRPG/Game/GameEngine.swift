@@ -584,6 +584,13 @@ class GameEngine: ObservableObject {
     /// earlier version — add one line here per future case.
     private static func migrateDefaultsForNewVersion() {
         let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+        // Blinking cursor: off by default for everyone — a one-time switch-off
+        // (so installs that had it on from an older default get it off too);
+        // after that, the player's own choice in Settings stands.
+        if !UserDefaults.standard.bool(forKey: "cursorOffByDefaultApplied") {
+            UserDefaults.standard.set(false, forKey: "blinkingCursorEnabled")
+            UserDefaults.standard.set(true, forKey: "cursorOffByDefaultApplied")
+        }
         let lastMigrated = UserDefaults.standard.string(forKey: "lastMigratedDefaultsVersion")
         guard lastMigrated != currentVersion else { return }
 
