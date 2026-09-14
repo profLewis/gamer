@@ -872,7 +872,11 @@ class Dungeon: ObservableObject, Codable {
             // The flavour text names a merchant — give it an actual face:
             // the Dwarven Smith is the only NPC type that prefers armouries,
             // so this guarantees "Ask to Trade" has someone to ask.
-            armouryRoom.npc = DungeonNPC(type: .dwarvenSmith)
+            let smith = DungeonNPC(type: .dwarvenSmith)
+            armouryRoom.npc = smith
+            // One person, not two: the shop's keeper IS the smith, so
+            // "Visit Merchant" and talking to them name the same dwarf.
+            armouryRoom.merchant?.name = smith.displayName
         }
 
         // Riddle challenges — libraries and shrines occasionally pose one,

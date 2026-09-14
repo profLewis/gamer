@@ -18384,7 +18384,7 @@ class GameEngine: ObservableObject {
         // NPC presence — harder to notice without light
         if let npc = room.npc, npcsEnabled {
             if roomIsLit {
-                print("A \(npc.type.rawValue) is here.", color: .cyan)
+                print("\(npc.displayName) is here.", color: .cyan)
             } else if Bool.random() {
                 // 50% chance to notice NPC in the dark
                 print("You hear someone nearby...", color: .cyan)
@@ -18539,6 +18539,10 @@ class GameEngine: ObservableObject {
             }
             if room.npc == nil {
                 room.npc = DungeonNPC(type: .dwarvenSmith)
+            }
+            // The smith and the shopkeeper are one person (older saves had two names).
+            if let npc = room.npc, npc.type == .dwarvenSmith, room.merchant != nil, room.merchant?.name != npc.displayName {
+                room.merchant?.name = npc.displayName
             }
         }
 
@@ -21459,8 +21463,14 @@ class GameEngine: ObservableObject {
             printWrapped("\"Trade? ...Fine. Don't expect charity.\"", indent: 2, color: .yellow)
             offerOneOffNPCSale(item: ItemCatalog.dagger(), price: 15, npc: npc, room: room)
         case .dwarvenSmith:
-            printWrapped("\"Ha! Like my work, do you? I've a spare blade going.\"", indent: 2, color: .yellow)
-            offerOneOffNPCSale(item: ItemCatalog.longsword(), price: 20, npc: npc, room: room)
+            if room.merchant != nil {
+                // The smith keeps this shop — trading means their counter.
+                printWrapped("\"Trade? Step up to the bench and see what I've got.\"", indent: 2, color: .yellow)
+                visitShop()
+            } else {
+                printWrapped("\"Ha! Like my work, do you? I've a spare blade going.\"", indent: 2, color: .yellow)
+                offerOneOffNPCSale(item: ItemCatalog.longsword(), price: 20, npc: npc, room: room)
+            }
         case .elfScout:
             printWrapped("\"I carry a spare bow. Yours, for the right price.\"", indent: 2, color: .yellow)
             offerOneOffNPCSale(item: ItemCatalog.longbow(), price: 20, npc: npc, room: room)
