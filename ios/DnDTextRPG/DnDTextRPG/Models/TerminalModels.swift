@@ -25,6 +25,16 @@ struct TerminalLine: Identifiable {
     /// line is a tap target that opens that screen.
     var link: String? = nil
 
+    /// Mostly symbols — ASCII art, dice faces, borders. VoiceOver skips these
+    /// (they read as a string of punctuation). Lines with numbers, like HP
+    /// bars, still count as content.
+    var isDecorativeArt: Bool {
+        let visible = text.filter { !$0.isWhitespace }
+        guard visible.count >= 6 else { return false }
+        let meaningful = visible.filter { $0.isLetter || $0.isNumber }.count
+        return Double(meaningful) / Double(visible.count) < 0.2
+    }
+
     init(_ text: String, color: TerminalColor = .green, bold: Bool = false, underlined: Bool = false, size: CGFloat = 14, centered: Bool = false) {
         self.text = text
         self.color = color
@@ -104,6 +114,19 @@ struct MenuOption: Identifiable {
     /// What the help button shows (Settings > Accessibility > Help Button).
     /// Menus still use "?" internally; only the label changes.
     static let helpGlyphChoices = ["?", "ⓘ", "Help"]
+
+    /// What VoiceOver says for the terse nav-cell buttons.
+    static func spokenLabel(_ text: String) -> String {
+        switch text {
+        case "?": return "Help"
+        case "< Back": return "Back"
+        case "<<": return "Previous page"
+        case ">>": return "Next page"
+        case "Fwd >": return "Forward"
+        case "< Leave": return "Leave"
+        default: return text
+        }
+    }
     static var helpGlyph: String {
         let g = UserDefaults.standard.string(forKey: "helpGlyph") ?? "?"
         return helpGlyphChoices.contains(g) ? g : "?"

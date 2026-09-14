@@ -272,6 +272,10 @@ struct TerminalView: View {
                         .onLongPressGesture(minimumDuration: 0.5) {
                             gameEngine.showExpandedMapOverlay()
                         }
+                        // VoiceOver: a plain-words summary, not a string of ASCII.
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(gameEngine.mapAccessibilitySummary)
+                        .accessibilityHint("Long-press for the whole map")
 
                         // No on-screen resize control here — a drag handle
                         // was fiddly against the nearby scroll gestures, and
@@ -789,11 +793,11 @@ struct TerminalView: View {
                                         .onAppear { dpadMeasuredHeight = geo.size.height }
                                         .onChange(of: geo.size.height) { dpadMeasuredHeight = $0 }
                                 })
-                            } else if reserveControlSlots && dpadMeasuredHeight > 0 {
-                                // Keep the D-pad's place even on screens without it, so it
-                                // never jumps about from one screen to the next.
-                                Color.clear.frame(height: dpadMeasuredHeight)
                             }
+                            // (No blank D-pad placeholder: the controls sit on the input
+                            // bar and the button area has a fixed height, so the D-pad is
+                            // always in the same place when shown — screens without it
+                            // (Atlas, inventory...) give that space to the text instead.)
 
                             // Action buttons
                             if !gameEngine.currentMenuOptions.isEmpty {
@@ -1014,6 +1018,7 @@ struct TerminalView: View {
                                     if gameEngine.swipeRandomHandler != nil {
                                         Button(action: { gameEngine.swipeRandomHandler?() }) {
                                             Image(systemName: "dice")
+                                                .accessibilityLabel("Random")
                                                 .font(.system(size: 14 * scale * gameEngine.iconScale))
                                                 .foregroundColor(Color(red: 0.0, green: 0.6, blue: 0.25))
                                         }
@@ -1028,6 +1033,7 @@ struct TerminalView: View {
                                     if gameEngine.swipeRandomHandler != nil {
                                         Button(action: { gameEngine.swipeRandomHandler?() }) {
                                             Image(systemName: "dice")
+                                                .accessibilityLabel("Random")
                                                 .font(.system(size: 14 * scale * gameEngine.iconScale))
                                                 .foregroundColor(Color(red: 0.0, green: 0.6, blue: 0.25))
                                         }
@@ -1041,6 +1047,7 @@ struct TerminalView: View {
                             if gameEngine.rerollHandler != nil {
                                 Button(action: { gameEngine.rerollHandler?() }) {
                                     Image(systemName: "dice")
+                                        .accessibilityLabel("Random")
                                         .font(.system(size: 20 * scale * gameEngine.iconScale))
                                         .foregroundColor(.yellow)
                                 }
@@ -1075,6 +1082,7 @@ struct TerminalView: View {
                         if isInputFocused {
                             Button(action: { isInputFocused = false }) {
                                 Image(systemName: "keyboard.chevron.compact.down")
+                                    .accessibilityLabel("Hide keyboard")
                                     .font(.system(size: 18 * scale * gameEngine.iconScale))
                                     .foregroundColor(Color(red: 0.0, green: 0.6, blue: 0.25))
                             }
@@ -1127,6 +1135,7 @@ struct TerminalView: View {
                                 }
                             }) {
                                 Image(systemName: voiceInput.isListening ? "mic.fill" : "mic")
+                                    .accessibilityLabel(voiceInput.isListening ? "Stop listening" : "Voice input")
                                     .font(.system(size: 20 * scale * gameEngine.iconScale))
                                     .foregroundColor(voiceInput.isListening ? .red : Color(red: 0.0, green: 0.6, blue: 0.25))
                             }
@@ -1137,6 +1146,7 @@ struct TerminalView: View {
                         if gameEngine.chatInputMode {
                             Button(action: { gameEngine.handleChatExit() }) {
                                 Image(systemName: "xmark.circle")
+                                    .accessibilityLabel("Close")
                                     .font(.system(size: 20 * scale * gameEngine.iconScale))
                                     .foregroundColor(Color(red: 0.0, green: 0.6, blue: 0.25))
                             }
@@ -1145,6 +1155,7 @@ struct TerminalView: View {
                                 gameEngine.invokeClose()
                             }) {
                                 Image(systemName: "xmark.circle")
+                                    .accessibilityLabel("Close")
                                     .font(.system(size: 20 * scale * gameEngine.iconScale))
                                     .foregroundColor(Color(red: 0.0, green: 0.6, blue: 0.25))
                             }
@@ -1153,6 +1164,7 @@ struct TerminalView: View {
                                 gameEngine.handleContinue()
                             }) {
                                 Image(systemName: "xmark.circle")
+                                    .accessibilityLabel("Close")
                                     .font(.system(size: 20 * scale * gameEngine.iconScale))
                                     .foregroundColor(Color(red: 0.0, green: 0.6, blue: 0.25))
                             }
@@ -1168,6 +1180,7 @@ struct TerminalView: View {
                                 gameEngine.emergencyExit()
                             }) {
                                 Image(systemName: "xmark.circle")
+                                    .accessibilityLabel("Close")
                                     .font(.system(size: 20 * scale * gameEngine.iconScale))
                                     .foregroundColor(Color(red: 0.0, green: 0.6, blue: 0.25))
                             }
@@ -1641,12 +1654,14 @@ struct TerminalLineView: View {
                     .font(.system(size: scaledSize, design: .monospaced))
                     .fixedSize(horizontal: false, vertical: true)
                     .multilineTextAlignment(.center)
+                    .accessibilityHidden(line.isDecorativeArt)
                 Spacer()
             }
         } else {
             Text(attributedString)
                 .font(.system(size: scaledSize, design: .monospaced))
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityHidden(line.isDecorativeArt)
         }
     }
 
@@ -1944,6 +1959,7 @@ struct MenuButtonsView: View {
                         let option = options[index]
                         Button(action: { onSelect(index + 1) }) {
                             Text(option.text == "?" ? MenuOption.helpGlyph : option.text)
+                                .accessibilityLabel(MenuOption.spokenLabel(option.text))
                                 .font(.system(size: compactFontSize, design: .monospaced))
                                 .fontWeight(option.isDefault || option.isAlert ? .semibold : .regular)
                                 .foregroundColor(terminalDimGreen)
@@ -2117,8 +2133,23 @@ struct DirectionPadView: View {
                     )
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(iconLabel(systemName))
         } else {
             Color.clear.frame(width: effectiveCellWidth, height: max(44, 34 * scale))
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// What VoiceOver says for each corner icon.
+    private func iconLabel(_ systemName: String) -> String {
+        switch systemName {
+        case "target": return "Teleport pad"
+        case "sparkle.magnifyingglass": return "Search the room"
+        case "ear": return "Listen"
+        case "flame": return "Light torch"
+        case "flame.fill": return "Douse torch"
+        case "scroll": return "Talk to \(npcLabel ?? "someone here")"
+        default: return systemName
         }
     }
 
@@ -2234,6 +2265,7 @@ struct DirectionPadView: View {
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())
+        .accessibilityLabel(isDark ? "\(dir.rawValue), too dark to see" : (isSecured ? "\(dir.rawValue), barred" : (enabled ? "Go \(dir.rawValue)" : "\(dir.rawValue), no way through")))
         .simultaneousGesture(
             LongPressGesture(minimumDuration: longPressDuration)
                 .onEnded { _ in

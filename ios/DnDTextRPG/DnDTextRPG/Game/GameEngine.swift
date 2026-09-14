@@ -8395,6 +8395,11 @@ class GameEngine: ObservableObject {
             self.printTitle("Accessibility Help")
             self.print("")
 
+            self.print("  PLAYING YOUR WAY", color: .cyan, bold: true)
+            self.printWrapped("Vision: Display Size, DM Voice (reads the story aloud), and VoiceOver — buttons, the D-pad and the map all have spoken labels, and decorative ASCII art is skipped. Hearing: every sound has a text equivalent. Motor: Long Press length, Left/Right-Handed, typing or voice instead of tapping, and long-press to skip confirmations. Reading at your own pace: pause the hourglass, turn Auto-Continue off, Auto-Scroll, Reduce Animations, and the ? help on every screen.", indent: 2, color: .dimGreen)
+            self.printWrapped("With VoiceOver: set Card Navigation to Use Buttons (swipes clash with VoiceOver gestures), turn Auto-Continue off or lengthen Info Timeout, and turn Idle Prompts off so combat never penalises a slow turn. A long-press is VoiceOver's double-tap-and-hold. The full guide is in ACCESSIBILITY.md alongside the game.", indent: 2, color: .dimGreen)
+            self.print("")
+
             self.print("  DISPLAY SIZE", color: .cyan, bold: true)
             self.printWrapped("Cycles through Small, Medium, and Large. This adjusts both text size and icon size together for a consistent look.", indent: 2, color: .dimGreen)
             self.print("")
@@ -25553,6 +25558,27 @@ class GameEngine: ObservableObject {
     /// A clue about the current room for text mode — worked out locally from
     /// the game state (not the AI), so every DM brain gives one: what's here,
     /// what's worth trying, and how to phrase it.
+    /// What VoiceOver hears for the map pane: where you are, the ways on,
+    /// and anything notable here — instead of a string of ASCII symbols.
+    var mapAccessibilitySummary: String {
+        guard let room = dungeon?.currentRoom else { return "Map" }
+        var parts = ["Map. You are in \(room.name)."]
+        let exits = room.exits.keys.map { $0.rawValue }.sorted()
+        if !torchLit {
+            parts.append("It's dark — light a torch to see the way.")
+        } else if !exits.isEmpty {
+            parts.append("Exits: \(exits.joined(separator: ", ")).")
+        }
+        var here: [String] = []
+        if room.merchant != nil { here.append("a merchant") }
+        if room.trainer != nil { here.append("a gym") }
+        if let npc = room.npc, !npc.hasBeenTalkedTo { here.append(npc.displayName) }
+        if room.teleportDestinationRoomId != nil { here.append("a teleport pad") }
+        if let dir = room.verticalDirection { here.append("a way \(dir)") }
+        if !here.isEmpty { parts.append("Here: \(here.joined(separator: ", ")).") }
+        return parts.joined(separator: " ")
+    }
+
     private func justDMClue() -> String? {
         guard let room = dungeon?.currentRoom else { return nil }
         if !torchLit, partyHasTorch() {

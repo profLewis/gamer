@@ -166,6 +166,10 @@ While a screen is counting down you'll see a small **hourglass** at the right-ha
 - **Countdown Icon** On/Off — hides the hourglass. Auto-Continue itself carries on as set (Space still pauses on a Mac).
 - **Blinking Cursor** — the ordinary cursor by the prompt, on or off.
 
+## Accessibility
+
+Display size, DM narration, VoiceOver labels (D-pad, map summary, navigation), Reduce Animations, Auto-Scroll, a pausable auto-continue countdown, left/right-handed layout, typing or voice instead of tapping, and long-press shortcuts. See [ios/DnDTextRPG/ACCESSIBILITY.md](ios/DnDTextRPG/ACCESSIBILITY.md) for how to use each tool and notes on playing with VoiceOver.
+
 ## Building
 
 Requires Xcode 15.0+. Open `ios/DnDTextRPG/DnDTextRPG.xcodeproj` and build for iOS 16.0+ or macOS.
