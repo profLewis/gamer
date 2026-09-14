@@ -8404,6 +8404,7 @@ class GameEngine: ObservableObject {
         else if ["lightning", "thunder", "shock", "storm"].contains(where: key.contains) { glyph = "z"; color = .yellow }
         else if ["radiant", "sacred", "holy", "guiding"].contains(where: key.contains) { glyph = "+"; color = .yellow }
         else if ["necrotic", "poison", "acid", "chill"].contains(where: key.contains) { glyph = "%"; color = .magenta }
+        else if ["psychic", "mockery"].contains(where: key.contains) { glyph = "♪"; color = .magenta }
         else if ["force", "missile"].contains(where: key.contains) { glyph = casterIsParty ? ">" : "<"; color = .cyan }
         let supportive = r.spellType == .healing || r.spellType == .buff || r.spellType == .utility
         let target = supportive ? (r.targetName ?? r.casterName) : (r.targetsHit.first ?? r.targetName ?? r.targetStatuses.first?.name ?? "")
@@ -8691,6 +8692,10 @@ class GameEngine: ObservableObject {
         print("  CREATED BY", color: .cyan, bold: true)
         print("  Philip Lewis", color: .brightGreen)
         printWrapped("Game design, creative direction, and relentless testing.", indent: 2, color: .dimGreen)
+        print("")
+        print("  CO-AUTHOR", color: .cyan, bold: true)
+        print("  Beau Lewis", color: .brightGreen)
+        printWrapped("World creation and storytelling.", indent: 2, color: .dimGreen)
         print("")
         print("")
 
@@ -18005,6 +18010,7 @@ class GameEngine: ObservableObject {
             case .engineer: lines.append("\(n)'s gadgets have an answer for most locks — and most traps.")
             case .scout: lines.append("\(n) will see danger long before it sees them.")
             case .thief: lines.append("\(n)'s quick fingers will find the treasure others walk past.")
+            case .bard: lines.append("\(n)'s songs will lift tired spirits — and a quick tongue can talk the party out of trouble.")
             }
         }
         let classes = Set(party.map { $0.characterClass })
@@ -24786,6 +24792,7 @@ class GameEngine: ObservableObject {
         case .cleric:    return 5  // educated clergy
         case .engineer:  return 5  // trained craftsman-scholar
         case .wizard:    return 6  // scholarly elite
+        case .bard:      return 4  // travelling performer
         }
     }
 
@@ -28851,12 +28858,14 @@ class GameEngine: ObservableObject {
         }
 
         // 4. Spellcaster: use an attack cantrip or spell on weakest monster
-        if character.characterClass == .wizard || character.characterClass == .ranger {
+        if character.characterClass == .wizard || character.characterClass == .ranger || character.characterClass == .bard {
             let weakestMonster = aliveMonsters.min(by: { $0.currentHP < $1.currentHP })!
             let atkSpells = character.knownSpells
             let atkSlots = character.spellSlots.level1Current
             let foundAttackSpell: Spell? = atkSpells.first(where: { (s: Spell) -> Bool in
-                s.spellType == .attack && (s.level == .cantrip || atkSlots > 0)
+                // Bards fight with words: a single-target saving-throw cantrip (Vicious Mockery) counts too.
+                (s.spellType == .attack || (character.characterClass == .bard && s.spellType == .savingThrow && s.target == .singleEnemy))
+                    && (s.level == .cantrip || atkSlots > 0)
             })
             if let attackSpell = foundAttackSpell {
                 let atkMsg = "  \(character.name) casts \(attackSpell.name)!"
@@ -30363,6 +30372,8 @@ class GameEngine: ObservableObject {
             lines = ["🧭 spins a compass, grins, and points confidently ahead.", "🧭 crouches low, scans the horizon, then flashes a thumbs up."]
         case .thief:
             lines = ["🗝️ palms an invisible coin, winks, and it's gone.", "🗝️ flashes a sly grin and pockets something that wasn't there before."]
+        case .bard:
+            lines = ["🎵 strikes up a jaunty victory tune!", "🎵 makes up a verse about the fight on the spot, to groans and cheers."]
         }
         return lines.randomElement()!
     }
@@ -30375,6 +30386,7 @@ class GameEngine: ObservableObject {
         case .wizard, .engineer: return .intelligence
         case .rogue, .ranger, .scout, .thief: return .dexterity
         case .cleric: return .wisdom
+        case .bard: return .charisma
         }
     }
 
@@ -35870,7 +35882,7 @@ class GameEngine: ObservableObject {
         }
 
         // Low spell slots for casters
-        let casters = conscious.filter { ($0.characterClass == .wizard || $0.characterClass == .cleric) && $0.spellSlots.level1Current == 0 && $0.spellSlots.level2Current == 0 && $0.level > 0 }
+        let casters = conscious.filter { ($0.characterClass == .wizard || $0.characterClass == .cleric || $0.characterClass == .bard) && $0.spellSlots.level1Current == 0 && $0.spellSlots.level2Current == 0 && $0.level > 0 }
         if !casters.isEmpty {
             let names = casters.map { $0.name }.joined(separator: " and ")
             remarks.append("\(names) \(casters.count == 1 ? "has" : "have") no spell slots left. A long rest will restore them — hold the Rest button.")

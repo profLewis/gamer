@@ -123,12 +123,13 @@ enum CharacterClass: String, CaseIterable, Codable {
     case engineer = "Engineer"
     case scout = "Scout"
     case thief = "Thief"
+    case bard = "Bard"
 
     var hitDie: Int {
         switch self {
         case .barbarian: return 12
         case .fighter, .ranger: return 10
-        case .cleric, .rogue, .engineer, .scout, .thief: return 8
+        case .cleric, .rogue, .engineer, .scout, .thief, .bard: return 8
         case .wizard: return 6
         }
     }
@@ -139,6 +140,7 @@ enum CharacterClass: String, CaseIterable, Codable {
         case .wizard, .engineer: return .intelligence
         case .rogue, .ranger, .scout, .thief: return .dexterity
         case .cleric: return .wisdom
+        case .bard: return .charisma
         }
     }
 
@@ -157,6 +159,7 @@ enum CharacterClass: String, CaseIterable, Codable {
         case .engineer:  titles = ["Tinkerer", "Mechanist", "Artificer", "Machinist", "Grand Engineer"]
         case .scout:     titles = ["Wayfinder", "Trailblazer", "Outrider", "Vanguard", "Pathlord"]
         case .thief:     titles = ["Sneak", "Prowler", "Fence", "Cat Burglar", "Shadow Lord"]
+        case .bard:      titles = ["Busker", "Minstrel", "Troubadour", "Skald", "Master Bard"]
         }
         let idx = max(0, min(titles.count - 1, level - 1))
         return titles[idx]
@@ -174,6 +177,7 @@ enum CharacterClass: String, CaseIterable, Codable {
         case .engineer:  return [.intelligence, .dexterity, .constitution, .wisdom, .charisma, .strength]
         case .scout:     return [.dexterity, .wisdom, .constitution, .strength, .intelligence, .charisma]
         case .thief:     return [.dexterity, .charisma, .constitution, .wisdom, .intelligence, .strength]
+        case .bard:      return [.charisma, .dexterity, .constitution, .wisdom, .intelligence, .strength]
         }
     }
 
@@ -197,13 +201,15 @@ enum CharacterClass: String, CaseIterable, Codable {
             return [.athletics, .insight, .investigation, .nature, .perception, .stealth, .survival]
         case .thief:
             return [.deception, .insight, .intimidation, .performance, .persuasion, .sleightOfHand, .stealth]
+        case .bard:
+            return [.acrobatics, .deception, .history, .insight, .performance, .persuasion, .sleightOfHand, .stealth]
         }
     }
 
     var numSkillChoices: Int {
         switch self {
         case .rogue, .thief: return 4
-        case .ranger, .scout, .engineer: return 3
+        case .ranger, .scout, .engineer, .bard: return 3
         default: return 2
         }
     }
@@ -251,7 +257,7 @@ enum CharacterClass: String, CaseIterable, Codable {
     /// a trusted, persuasive, or street-smart edge negotiate better deals.
     var negotiateReliability: Int {
         switch self {
-        case .cleric, .thief: return 2
+        case .cleric, .thief, .bard: return 2
         default: return 0
         }
     }
@@ -323,6 +329,13 @@ enum CharacterClass: String, CaseIterable, Codable {
                 " /|>",
                 " / \\",
             ]
+        case .bard:
+            return [
+                "  o  ♪",
+                " /|\\",
+                " (O)|",
+                " / \\",
+            ]
         }
     }
 
@@ -382,6 +395,12 @@ enum CharacterClass: String, CaseIterable, Codable {
                 ["  o", " /|\\", " /|>", " / \\"],              // lurking
                 ["  o", " /|\\  >", " /|", " / \\"],            // snatch!
                 ["  o", " /|\\", " /|>", " / \\"],              // vanished
+            ]
+        case .bard:
+            return [
+                ["  o  ♪", " /|\\", " (O)|", " / \\"],      // strumming
+                ["  o ♫", " /|\\", " (O)/", " / \\"],       // a flourish
+                ["  o   ♪", " \\|/", " (O)|", " / \\"],     // arms up, singing
             ]
         }
     }
@@ -1019,6 +1038,7 @@ class Character: ObservableObject, Identifiable, Codable {
         switch characterClass {
         case .wizard: return .intelligence
         case .cleric, .ranger: return .wisdom
+        case .bard: return .charisma
         default: return nil
         }
     }

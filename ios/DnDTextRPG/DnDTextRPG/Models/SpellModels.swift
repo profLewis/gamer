@@ -249,6 +249,28 @@ struct SpellCatalog {
               description: "Heal 1d4 + WIS mod HP (bonus action)")
     }
 
+    // MARK: Bard
+
+    static func viciousMockery() -> Spell {
+        Spell(name: "Vicious Mockery", level: .cantrip, spellType: .savingThrow, target: .singleEnemy,
+              damage: "1d4", damageType: "psychic",
+              savingThrowAbility: "wisdom", halfDamageOnSave: false,
+              description: "1d4 psychic — an insult so cutting it hurts (WIS save)")
+    }
+
+    static func healingWordBard() -> Spell {
+        Spell(name: "Healing Word", level: .level1, spellType: .healing, target: .singleAlly,
+              healAmount: "1d4", usesCasterMod: true,
+              description: "Heal 1d4 + CHA mod HP — a few kind, sung words")
+    }
+
+    static func shatter() -> Spell {
+        Spell(name: "Shatter", level: .level2, spellType: .savingThrow, target: .allEnemies,
+              damage: "2d8", damageType: "thunder",
+              savingThrowAbility: "constitution", halfDamageOnSave: true,
+              description: "2d8 thunder to all enemies — one ringing note (CON save, half)")
+    }
+
     // MARK: Cleric Level 2
 
     static func spiritualWeapon() -> Spell {
@@ -309,6 +331,8 @@ struct SpellCatalog {
         case .cleric:
             return [sacredFlame(), tollTheDead(), spareTheDying(),
                     cureWounds(), guidingBolt(), healingWord()]
+        case .bard:
+            return [viciousMockery(), healingWordBard(), sleep()]
         default:
             return []
         }
@@ -317,7 +341,7 @@ struct SpellCatalog {
     static func startingSlots(for characterClass: CharacterClass, level: Int) -> SpellSlots {
         var slots = SpellSlots()
         switch characterClass {
-        case .wizard, .cleric:
+        case .wizard, .cleric, .bard:
             switch level {
             case 1: slots.level1Max = 2
             case 2: slots.level1Max = 3
@@ -358,6 +382,8 @@ struct SpellCatalog {
                 return [huntersMark(), cureWoundsRanger()]
             }
             return []
+        case .bard:
+            return newLevel == 3 ? [shatter()] : []
         default:
             return []
         }

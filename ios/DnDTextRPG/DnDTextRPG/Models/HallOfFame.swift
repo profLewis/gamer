@@ -538,6 +538,7 @@ class HallOfFameManager {
         case .engineer:   return AbilityScores(strength: 8, dexterity: 14, constitution: 12, intelligence: 16, wisdom: 13, charisma: 10)
         case .scout:      return AbilityScores(strength: 10, dexterity: 16, constitution: 13, intelligence: 10, wisdom: 14, charisma: 8)
         case .thief:      return AbilityScores(strength: 8, dexterity: 16, constitution: 12, intelligence: 10, wisdom: 10, charisma: 14)
+        case .bard:       return AbilityScores(strength: 8, dexterity: 14, constitution: 12, intelligence: 10, wisdom: 12, charisma: 16)
         }
     }
 

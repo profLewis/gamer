@@ -474,6 +474,11 @@ struct ItemCatalog {
                 ("Dagger + Leather Armour + Thieves' Tools", [dagger(), leatherArmor(), thievesTools(), healingPotion(), torch()]),
                 ("Rapier + Thieves' Tools + Extra Potions", [rapier(), thievesTools(), healingPotion(), healingPotion(), torch()]),
             ]
+        case .bard:
+            return [
+                ("Rapier + Leather Armour", [rapier(), leatherArmor(), healingPotion(), torch()]),
+                ("Two Daggers + Extra Potions", [dagger(), dagger(), healingPotion(), healingPotion(), torch()]),
+            ]
         }
     }
 
