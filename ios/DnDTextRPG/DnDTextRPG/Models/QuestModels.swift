@@ -163,3 +163,54 @@ struct SideQuest: Codable {
 }
 
 extension SideQuestType: CaseIterable {}
+
+
+// MARK: - Main Quest
+
+/// The adventure's own quest — why the party is here at all. Side quests
+/// are the errands picked up along the way; this one ends with its villain,
+/// the guardian waiting at the very bottom of the dungeon.
+struct MainQuest: Codable {
+    let villain: String
+    let goal: String
+    let stakes: String
+    let reward: String
+    let village: String
+
+    var summary: String { goal.prefix(1).uppercased() + goal.dropFirst() + " — " + stakes + "." }
+
+    static func random() -> MainQuest {
+        let village = Int.random(in: 1...3) == 1 ? "Lithlind"
+            : ["Brackenford", "Thistledown", "Emberholt", "Wyrmsby", "Millbrook", "Greywater", "Owlcombe"].randomElement()!
+        let villain = ["Gorrak the Bugbear King", "Mother Sable, the Hag of the Deep", "Vorkath the Ember Drake",
+                       "the Hollow King", "Skarn the Goblin Warlord", "Nightshade, the Lich's Apprentice",
+                       "Old Grimtooth the Cave Troll", "the Weaver in the Dark, a spider as big as a cart",
+                       "Baron Rot, the Mushroom Tyrant", "Caldra the Frost Wyrm"].randomElement()!
+        let goals: [(String) -> String] = [
+            { "rescue the children taken from \($0)" },
+            { "recover the Heartstone stolen from \($0)'s shrine" },
+            { "break the curse that has turned \($0)'s wells to salt" },
+            { "end the night raids on \($0) for good" },
+            { "bring back the Bell of \($0), whose ringing keeps the restless dead asleep" },
+            { "free the miners trapped beneath \($0)" },
+            { "find the cure for the sleeping sickness spreading through \($0)" },
+            { "return the crown stolen from \($0)'s young queen" },
+        ]
+        let stakes: [(String) -> String] = [
+            { _ in "before the first snows close the passes" },
+            { _ in "before the next full moon, when it will be too late" },
+            { "or \($0) will be abandoned by spring" },
+            { _ in "before the sickness reaches the castle" },
+            { _ in "or the whole valley falls under its shadow" },
+        ]
+        let rewards: [(String) -> String] = [
+            { _ in "a chest of the realm's gold and a title from the Lord of the Marches" },
+            { "the thanks of every family in \($0) — and the old hero's sword that hangs in the inn" },
+            { _ in "free lodging for life, and five hundred gold pieces" },
+            { _ in "a place in the King's own songbook" },
+            { _ in "the pick of any treasure found below" },
+        ]
+        return MainQuest(villain: villain, goal: goals.randomElement()!(village), stakes: stakes.randomElement()!(village),
+                         reward: rewards.randomElement()!(village), village: village)
+    }
+}

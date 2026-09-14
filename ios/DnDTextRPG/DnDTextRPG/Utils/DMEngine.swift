@@ -1307,10 +1307,35 @@ class DMEngine {
         }
     }
 
+    // MARK: - Story writer
+
+    /// Longer, one-off writing — the adventure's opening tale — on the most
+    /// capable model for the chosen provider (the everyday DM uses a quicker
+    /// one). nil if there's no key, the call fails, or it takes too long.
+    func writeStory(system: String, prompt: String, timeout: Double = 15, completion: @escaping (String?) -> Void) {
+        guard isConfigured, let key = apiKey, !key.isEmpty else { completion(nil); return }
+        var finished = false
+        let finish: (String?) -> Void = { text in
+            DispatchQueue.main.async {
+                guard !finished else { return }
+                finished = true
+                completion(text)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { finish(nil) }
+        let messages = [(role: "user", content: prompt)]
+        switch provider {
+        case .anthropic: callAnthropic(apiKey: key, system: system, messages: messages, model: "claude-opus-5", maxTokens: 900, completion: finish)
+        case .openAI: callOpenAI(apiKey: key, system: system, messages: messages, model: "gpt-4o", maxTokens: 900, completion: finish)
+        case .google: callGoogle(apiKey: key, system: system, messages: messages, maxTokens: 900, completion: finish)
+        }
+    }
+
     // MARK: - Anthropic (Claude)
 
     private func callAnthropic(apiKey: String, system: String,
                                 messages: [(role: String, content: String)],
+                                model: String? = nil, maxTokens: Int? = nil,
                                 completion: @escaping (String?) -> Void) {
         guard let url = URL(string: "https://api.anthropic.com/v1/messages") else {
             completion(nil)
@@ -1324,8 +1349,8 @@ class DMEngine {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let body: [String: Any] = [
-            "model": "claude-sonnet-4-5-20250929",
-            "max_tokens": effectiveMaxTokens,
+            "model": model ?? "claude-sonnet-4-5-20250929",
+            "max_tokens": maxTokens ?? effectiveMaxTokens,
             "system": system,
             "messages": messages.map { ["role": $0.role, "content": $0.content] }
         ]
@@ -1348,6 +1373,7 @@ class DMEngine {
 
     private func callOpenAI(apiKey: String, system: String,
                              messages: [(role: String, content: String)],
+                             model: String? = nil, maxTokens: Int? = nil,
                              completion: @escaping (String?) -> Void) {
         guard let url = URL(string: "https://api.openai.com/v1/chat/completions") else {
             completion(nil)
@@ -1363,8 +1389,8 @@ class DMEngine {
         oaiMessages += messages.map { ["role": $0.role, "content": $0.content] }
 
         let body: [String: Any] = [
-            "model": "gpt-4o-mini",
-            "max_tokens": effectiveMaxTokens,
+            "model": model ?? "gpt-4o-mini",
+            "max_tokens": maxTokens ?? effectiveMaxTokens,
             "messages": oaiMessages
         ]
 
@@ -1497,6 +1523,7 @@ class DMEngine {
 
     private func callGoogle(apiKey: String, system: String,
                              messages: [(role: String, content: String)],
+                             maxTokens: Int? = nil,
                              completion: @escaping (String?) -> Void) {
         // Gemini uses "contents" array with "parts". System instruction is separate.
         var contents: [[String: Any]] = []
@@ -1508,7 +1535,7 @@ class DMEngine {
         let body: [String: Any] = [
             "system_instruction": ["parts": [["text": system]]],
             "contents": contents,
-            "generationConfig": ["maxOutputTokens": effectiveMaxTokens]
+            "generationConfig": ["maxOutputTokens": maxTokens ?? effectiveMaxTokens]
         ]
 
         googlePost(apiKey: apiKey, body: body) { data, _, error in

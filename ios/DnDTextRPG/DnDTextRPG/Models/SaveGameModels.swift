@@ -56,6 +56,9 @@ struct SaveGame: Codable, Identifiable {
 
     // The adventure's opening tale, a line a page (nil in older saves)
     var introLines: [String]? = nil
+
+    // The adventure's main quest (nil in older saves)
+    var mainQuest: MainQuest? = nil
 }
 
 // MARK: - Save Slot (grouped view)
