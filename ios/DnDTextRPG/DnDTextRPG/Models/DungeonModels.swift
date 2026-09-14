@@ -911,30 +911,10 @@ class Dungeon: ObservableObject, Codable {
             luckyRoom.trainer = Trainer.random(specialty: specialty, dungeonLevel: level)
         }
 
-        // Teleport pads — a rare shortcut linking two distant rooms. A
-        // bidirectional pad works both ways; a one-way pad only leads out,
-        // with no pad back. Skipped in small dungeons where a shortcut
-        // wouldn't mean much.
-        if numRooms >= 12 {
-            let padCandidates = rooms.values.filter { $0.roomType != .entrance && $0.roomType != .boss }
-            var usedForPad: Set<Int> = []
-            let numPads = max(1, numRooms / 15)
-            for _ in 0..<numPads {
-                let available = padCandidates.filter { !usedForPad.contains($0.id) }
-                guard let roomA = available.randomElement() else { break }
-                let farEnough = available.filter {
-                    $0.id != roomA.id
-                        && (abs($0.x - roomA.x) + abs($0.y - roomA.y)) >= 4
-                        && !roomA.exits.values.contains($0.id)
-                }
-                guard let roomB = farEnough.randomElement() else { continue }
-                roomA.teleportDestinationRoomId = roomB.id
-                if Int.random(in: 1...100) <= 70 {
-                    roomB.teleportDestinationRoomId = roomA.id
-                }
-                usedForPad.insert(roomA.id)
-                usedForPad.insert(roomB.id)
-            }
+        // Teleport pads — shortcuts linking two distant rooms, about one pair
+        // for every five rooms (see Dungeon.linkTeleportPads).
+        if numRooms >= 6 {
+            Dungeon.linkTeleportPads(in: rooms, pairs: max(2, numRooms / 5))
         }
 
         // Vertical connections — a second "floor" reachable via stairs (free,
@@ -1228,6 +1208,42 @@ class Dungeon: ObservableObject, Codable {
         #else
         return false
         #endif
+    }
+
+    /// Links `pairs` more teleport pads between rooms far apart (most work
+    /// both ways; some only lead out). Never the entrance or the boss room,
+    /// never a room that already has a pad, never two rooms already joined.
+    static func linkTeleportPads(in rooms: [Int: Room], pairs: Int) {
+        let padCandidates = rooms.values.filter { $0.roomType != .entrance && $0.roomType != .boss }
+        var used = Set(rooms.values.filter { $0.teleportDestinationRoomId != nil }.map { $0.id })
+        used.formUnion(rooms.values.compactMap { $0.teleportDestinationRoomId })
+        for _ in 0..<max(0, pairs) {
+            let available = padCandidates.filter { !used.contains($0.id) }
+            guard let roomA = available.randomElement() else { break }
+            let farEnough = available.filter {
+                $0.id != roomA.id
+                    && (abs($0.x - roomA.x) + abs($0.y - roomA.y)) >= 3
+                    && !roomA.exits.values.contains($0.id)
+            }
+            guard let roomB = farEnough.randomElement() else { continue }
+            roomA.teleportDestinationRoomId = roomB.id
+            if Int.random(in: 1...100) <= 70 {
+                roomB.teleportDestinationRoomId = roomA.id
+            }
+            used.insert(roomA.id)
+            used.insert(roomB.id)
+        }
+    }
+
+    /// Older maps had one pad or none — top them up to about one pair for
+    /// every five rooms.
+    func ensureTeleportPads() {
+        guard rooms.count >= 6 else { return }
+        let wantedPairs = max(2, rooms.count / 5)
+        let padRooms = rooms.values.filter { $0.teleportDestinationRoomId != nil }.count
+        let havePairs = (padRooms + 1) / 2
+        guard havePairs < wantedPairs else { return }
+        Dungeon.linkTeleportPads(in: rooms, pairs: wantedPairs - havePairs)
     }
 
     static func mapLegendRowCount(maxSymbols: Int) -> Int {

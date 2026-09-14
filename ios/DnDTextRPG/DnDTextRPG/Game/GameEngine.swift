@@ -778,7 +778,19 @@ class GameEngine: ObservableObject {
     }
     var canTakeAnotherQuest: Bool { allQuests.count < questCapacity }
     func addQuest(_ quest: SideQuest) {
-        if activeQuest == nil { activeQuest = quest } else { otherQuests.append(quest) }
+        var q = quest
+        q.acceptedAt = gameTimeMinutes
+        if activeQuest == nil { activeQuest = q } else { otherQuests.append(q) }
+    }
+
+    /// Changes the quest at `index` in allQuests.
+    private func updateQuest(at index: Int, _ change: (inout SideQuest) -> Void) {
+        if activeQuest != nil {
+            if index == 0, var q = activeQuest { change(&q); activeQuest = q }
+            else if otherQuests.indices.contains(index - 1) { change(&otherQuests[index - 1]) }
+        } else if otherQuests.indices.contains(index) {
+            change(&otherQuests[index])
+        }
     }
 
     // Save slot tracking
@@ -18899,6 +18911,7 @@ class GameEngine: ObservableObject {
         // variants rolled at creation, before this was made unconditional).
         // Retrofit unconditionally so "a merchant has set up shop here" is
         // never a lie, no matter how old the save.
+        dungeon.ensureTeleportPads()   // older maps had one pad or none
         if room.roomType == .armory {
             if room.merchant == nil {
                 seedNameRegistry()
@@ -21302,8 +21315,9 @@ class GameEngine: ObservableObject {
         // separate "slay the boss" quest), decided once per NPC and only
         // shown while no other quest is active (one at a time).
         if npc.type != .gatekeeper, !npc.sideQuestOffered {
-            if npc.willOfferSideQuest == nil {
-                npc.willOfferSideQuest = Int.random(in: 1...100) <= 45
+            // Almost anyone will offer a quest (older saves re-roll a "no").
+            if npc.willOfferSideQuest != true {
+                npc.willOfferSideQuest = Int.random(in: 1...100) <= 90
                 room.npc = npc
             }
             if npc.willOfferSideQuest == true, canTakeAnotherQuest, !allQuests.contains(where: { $0.giverName == npc.type.rawValue }) {
@@ -21490,7 +21504,88 @@ class GameEngine: ObservableObject {
             showSideQuestComplete(quest)
             return true
         }
+        // Slow going? The quest-giver comes chasing.
+        if let i = overdueQuestIndex() {
+            showQuestChaser(index: i, quest: allQuests[i])
+            return true
+        }
         return false
+    }
+
+    /// A quest left too long: 8 game hours after taking it, then every 6
+    /// hours. (Quests from older saves start their clock now.)
+    private func overdueQuestIndex() -> Int? {
+        for (i, q) in allQuests.enumerated() where q.acceptedAt == nil {
+            updateQuest(at: i) { $0.acceptedAt = gameTimeMinutes }
+        }
+        for (i, q) in allQuests.enumerated() where q.type != .slayBoss {
+            guard let start = q.acceptedAt else { continue }
+            if gameTimeMinutes - start >= 8 * 60 + (q.chaseCount ?? 0) * 6 * 60 { return i }
+        }
+        return nil
+    }
+
+    /// The quest-giver's snotty reminder: carry on, ask for more, or give up.
+    private func showQuestChaser(index: Int, quest: SideQuest) {
+        updateQuest(at: index) { $0.chaseCount = ($0.chaseCount ?? 0) + 1 }
+        clearTerminal()
+        printExplorationMap()
+        print("")
+        printTitle("A Message from \(quest.giverName)")
+        let nags = [
+            "\"Well? I asked you to see to it — \(quest.description.lowercased()) — and here you are, dawdling. Are you doing it or not?\"",
+            "\"I don't suppose you've forgotten my little task? No? Then why isn't it done?\"",
+            "\"Word travels, you know. Word says you've been wandering about instead of helping me.\"",
+            "\"Tick tock, adventurers. My task won't finish itself.\"",
+        ]
+        printWrapped(nags.randomElement()!, indent: 2, color: .yellow)
+        print("")
+        printWrapped("Quest: \(quest.description) — \(sideQuestProgressDescription(quest))", indent: 2, color: .dimGreen)
+        print("")
+        showMenu(["We're On It", "Make It Worth Our While?", "Give It Up"])
+        closeHandler = { [weak self] in self?.showExplorationView() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1:
+                self.print("")
+                self.printWrapped("\"Hmph. See that you are.\"", indent: 2, color: .yellow)
+                self.waitForContinueWithTimeout(multiplier: 1.0) { self.showExplorationView() }
+            case 2:
+                let talker = self.party.filter { $0.isConscious }.max { $0.skillModifier(for: .persuasion) < $1.skillModifier(for: .persuasion) } ?? self.party.first
+                let mod = talker?.skillModifier(for: .persuasion) ?? 0
+                let roll = Dice.d20()
+                self.print("")
+                self.print("  \(talker?.name ?? "You") bargains: Persuasion d20[\(roll)] + \(mod) vs DC 13", color: .dimGreen)
+                if roll + mod >= 13 {
+                    let bonus = 20 + (self.dungeon?.level ?? 1) * 15
+                    self.updateQuest(at: index) { $0.extraGold = ($0.extraGold ?? 0) + bonus }
+                    self.printWrapped("\"Fine, FINE. Another \(bonus) gold when it's done. Now get on with it!\"", indent: 2, color: .brightGreen)
+                } else {
+                    self.printWrapped("\"More? The cheek of it! The reward stands — take it or leave it.\"", indent: 2, color: .yellow)
+                }
+                self.waitForContinueWithTimeout(multiplier: 1.2) { self.showExplorationView() }
+            default:
+                self.abandonQuest(at: index)
+            }
+        }
+    }
+
+    /// Drops one particular quest (not necessarily the first).
+    private func abandonQuest(at index: Int) {
+        let quests = allQuests
+        guard quests.indices.contains(index) else { showExplorationView(); return }
+        let quest = quests[index]
+        if activeQuest != nil && index == 0 {
+            activeQuest = otherQuests.isEmpty ? nil : otherQuests.removeFirst()
+        } else {
+            otherQuests.remove(at: activeQuest != nil ? index - 1 : index)
+        }
+        let charged = chargeQuestAbandonPenalty()
+        logEvent("Gave up quest: \(quest.description) (paid \(charged) gold in lost goodwill)", category: "QUEST")
+        print("")
+        printWrapped("\"Typical. I'll find someone who can.\" \(quest.giverName)'s task is dropped — the party's standing costs \(charged) gold.", indent: 2, color: .yellow)
+        waitForContinueWithTimeout(multiplier: 1.0) { [weak self] in self?.showExplorationView() }
     }
 
     /// Applies a quest reward immediately and returns a short description —
@@ -21546,6 +21641,14 @@ class GameEngine: ObservableObject {
         print("")
         print("  \(quest.giverName)'s task is done: \(quest.description)", color: .brightGreen, bold: true)
         print("")
+        if let extra = quest.extraGold, extra > 0 {
+            let eligible = party.filter { $0.isConscious }
+            let recipients = eligible.isEmpty ? party : eligible
+            let each = max(1, extra / max(1, recipients.count))
+            for c in recipients { c.gold += each }
+            print("  Plus the extra \(extra) gold you talked \(quest.giverName) into (\(each) each).", color: .yellow)
+            print("")
+        }
 
         // Instant level-up runs through the normal level-up flow (its own
         // screen, HP roll, spell/feature grants), so it manages its own

@@ -69,6 +69,12 @@ struct SideQuest: Codable {
     /// are absolute checks and ignore these).
     let startMonstersSlain: Int
     let startPartyGold: Int
+    /// When it was accepted (game minutes) — the giver chases slow progress.
+    var acceptedAt: Int? = nil
+    /// How many times the giver has chased so far.
+    var chaseCount: Int? = nil
+    /// Extra gold the giver was talked into adding (paid on completion).
+    var extraGold: Int? = nil
 
     var description: String { type.description(target: target, roomType: targetRoomType) }
 
