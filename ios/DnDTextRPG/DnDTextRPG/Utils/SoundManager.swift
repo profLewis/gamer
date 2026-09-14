@@ -316,6 +316,25 @@ class SoundManager {
         ])
     }
 
+    /// Fight Club: the party's supporters cheer — a rush of voices rising.
+    func playCrowdCheer() {
+        guard battleSoundsEnabled else { return }
+        playSequence([
+            (0, 0.05, 0.05, .noise), (0, 0.06, 0.10, .noise), (0, 0.08, 0.14, .noise),
+            (523, 0.06, 0.05, .triangle), (659, 0.06, 0.05, .triangle), (784, 0.10, 0.06, .triangle),
+            (0, 0.08, 0.10, .noise), (0, 0.06, 0.05, .noise),
+        ])
+    }
+
+    /// Fight Club: the other side jeers — a low, falling "boo".
+    func playCrowdJeer() {
+        guard battleSoundsEnabled else { return }
+        playSequence([
+            (196, 0.12, 0.08, .triangle), (185, 0.12, 0.08, .triangle), (165, 0.18, 0.07, .triangle),
+            (0, 0.06, 0.05, .noise), (147, 0.20, 0.05, .sine),
+        ])
+    }
+
     /// Death — grim descending tone
     func playDeath() {
         guard battleSoundsEnabled else { return }

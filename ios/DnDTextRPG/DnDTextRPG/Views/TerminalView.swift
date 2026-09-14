@@ -638,6 +638,11 @@ struct TerminalView: View {
                     // there's so much less vertical space to work with than
                     // portrait has.
                     VStack(spacing: 0) {
+                        // Fight Club (@) in portrait: above the buttons; the text gives way.
+                        if !isLandscape && gameEngine.showCombatArena {
+                            CombatArenaView(engine: gameEngine, scale: scale)
+                                .frame(height: max(170, min(240, geometry.size.height * 0.26)))
+                        }
                         // (VoiceOver: the buttons before the input line, whichever is on top.)
                         if isLandscape {
                             inputBarAndKeyboardBlock.accessibilitySortPriority(1)
@@ -655,6 +660,16 @@ struct TerminalView: View {
                         }
                     }
                     .frame(maxWidth: isLandscape ? .infinity : nil, alignment: .top)
+                    // The right-hand panel's empty space counts as "anywhere" for
+                    // tap-to-continue too (buttons and the input line keep their own taps).
+                    .frame(maxHeight: isLandscape ? .infinity : nil, alignment: .top)
+                    .background {
+                        if gameEngine.awaitingContinue || gameEngine.swipeLeftHandler != nil {
+                            Color.black.opacity(0.001)
+                                .contentShape(Rectangle())
+                                .onTapGesture { advanceFromStrip() }
+                        }
+                    }
                     .accessibilityElement(children: .contain)
                     .accessibilitySortPriority(1)
                 }
@@ -853,7 +868,8 @@ struct TerminalView: View {
                                     undoTargetIndex: gameEngine.undoTargetButtonIndex,
                                     redoTargetIndex: gameEngine.redoTargetButtonIndex,
                                     compactRows: gameEngine.maxButtonsPerScreen > 6,
-                                    onHover: { choice, inside in gameEngine.setMenuHover(choice, inside) }
+                                    onHover: { choice, inside in gameEngine.setMenuHover(choice, inside) },
+                                    maxGridHeight: reservedButtonGridHeight
                                 )
                                 // Buttons fill their area from the top — one row is always
                                 // the top row of a two-row layout, so nothing jumps about.
@@ -1022,8 +1038,20 @@ struct TerminalView: View {
                             // Auto-continue countdown — at the right of the line, clear of
                             // where you type. Tap to pause/resume, long-press to hurry.
                             // While time is frozen it always shows — it's how you unfreeze.
-                            if gameEngine.timeFrozen || (gameEngine.awaitingContinue && gameEngine.autoContinueCountdownAvailable && gameEngine.autoCountdownEnd != nil && gameEngine.showCountdownControl) {
+                            // Every waiting screen shows it (speaker mode and iOS included).
+                            if gameEngine.timeFrozen || (gameEngine.awaitingContinue && gameEngine.showCountdownControl) {
                                 autoCountdownBar
+                            }
+                            // Fight Club: @ shows or hides the fight acted out in ASCII.
+                            if gameEngine.fightClubAvailableNow {
+                                Button(action: { gameEngine.fightClubOn.toggle() }) {
+                                    Text("@")
+                                        .font(.system(size: 18 * scale, weight: gameEngine.fightClubOn ? .heavy : .regular, design: .monospaced))
+                                        .foregroundColor(gameEngine.fightClubOn ? terminalGreen : TerminalColor.dimGreen.swiftUIColor)
+                                        .padding(.horizontal, 4)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(gameEngine.fightClubOn ? "Hide Fight Club" : "Show Fight Club")
                             }
                             #if os(macOS)
                             // Settings, always to hand on the Mac — music, AI and the rest;
@@ -1877,8 +1905,25 @@ struct MenuButtonsView: View {
     var compactRows: Bool? = nil
     /// Mac: the pointer entering/leaving a button (Return presses the hovered one).
     var onHover: ((Int, Bool) -> Void)? = nil
+    /// The height kept for the grid; rows shrink to fit it.
+    var maxGridHeight: CGFloat? = nil
     private var isCompact: Bool { compactRows ?? (options.count > 6) }
-    private var buttonMinHeight: CGFloat { isCompact ? max(36, 32 * scale) * macControlScale : max(44, 38 * scale) * macControlScale }
+    private var baseButtonHeight: CGFloat { isCompact ? max(36, 32 * scale) * macControlScale : max(44, 38 * scale) * macControlScale }
+    /// Rows the grid lays out: regular buttons, a spacer, the nav cell and its padding.
+    private var gridRowCount: Int {
+        let regular = regularIndices.count
+        var cells = regular + (needsTrailingSpacer ? 1 : 0)
+        if !compactIndices.isEmpty { cells = regular <= 1 ? 4 : cells + (regular % 2 == 0 ? 2 : 1) }
+        return max(1, (cells + 1) / 2)
+    }
+    /// Buttons shrink (a little) rather than spill out of the space kept for
+    /// them — six buttons plus the ?/Back cell make a fourth row.
+    private var buttonMinHeight: CGFloat {
+        guard let maxH = maxGridHeight, maxH > 0 else { return baseButtonHeight }
+        let rows = CGFloat(gridRowCount)
+        let spacing: CGFloat = isCompact ? 4 : 6
+        return max(28, min(baseButtonHeight, (maxH - (rows - 1) * spacing) / rows))
+    }
     private var buttonVerticalPadding: CGFloat { isCompact ? 4 : 8 }
 
     @State private var alertPulse = false

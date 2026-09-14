@@ -419,13 +419,13 @@ class GameEngine: ObservableObject {
     }
 
     private func continueHintLines() -> [String] {
-        let tapLine = ["• Tap anywhere on the text — continue now", "• Tap anywhere on the text to carry on",
-                       "• A tap anywhere on the text moves things along"].randomElement()!
+        let tapLine = ["• Tap anywhere on the screen — continue now", "• Tap anywhere on the screen to carry on",
+                       "• A tap anywhere on the screen moves things along"].randomElement()!
         // Still waiting after the first hint: "anywhere" deserves the small
         // print — the strip down one edge is kept for scrolling, not taps.
         if continueHintCount >= 2 {
             let side = leftHanded ? "left" : "right"
-            return ["When I said anywhere: anywhere on the text except the narrow strip down the \(side) edge — that's kept for scrolling.",
+            return ["When I said anywhere: anywhere on the screen except the buttons, the input line and the narrow strip down the \(side) edge of the text — that's kept for scrolling.",
                     "• or type \"go on\""]
         }
         if autoContinuePaused {
@@ -438,7 +438,7 @@ class GameEngine: ObservableObject {
                     "• or type \"go on\"",
                     "• or just wait for the hourglass"]
         }
-        return ["• Tap anywhere on the text", "• or type \"go on\""]
+        return ["• Tap anywhere on the screen", "• or type \"go on\""]
     }
 
     /// Picks a random line, never the same one twice running.
@@ -4666,7 +4666,10 @@ class GameEngine: ObservableObject {
         // continue and silently drop what was typed.
         if awaitingContinue && !trimmed.isEmpty && !chatInputMode {
             let continueWords: Set<String> = ["go on", "continue", "next", "ok", "okay", "go", "on", "more", "c", "carry on", "onward", "onwards"]
-            if continueWords.contains(trimmed.lowercased()) {
+            // "g- -n", "g0 0n": the dragon's winks sometimes leave a dash (or
+            // a zero) where an o should be — still means go on.
+            let unwinked = trimmed.lowercased().replacingOccurrences(of: "-", with: "o").replacingOccurrences(of: "0", with: "o")
+            if continueWords.contains(trimmed.lowercased()) || continueWords.contains(unwinked) {
                 handleContinue()
                 return
             }
@@ -4935,6 +4938,9 @@ class GameEngine: ObservableObject {
             // Find lines with eye patterns (skip short patterns inside words)
             var candidates: [Int] = []
             for (i, line) in self.terminalLines.enumerated() {
+                // Only the pictures wink — unless Dungeon Quirks lets the
+                // winks wander into the words ("g- -n").
+                guard self.dungeonQuirksEnabled || line.isDecorativeArt else { continue }
                 if Self.eyePatterns.contains(where: {
                     line.text.contains($0.find) && self.isPatternInAsciiArt(line.text, pattern: $0.find)
                 }) {
@@ -6022,7 +6028,7 @@ class GameEngine: ObservableObject {
         printWrapped("Use Save/Quit from the exploration menu. When there's room, separate Save and Quit buttons appear. Save often before boss fights!", indent: 2)
         print("")
         print("PARTY STATUS", color: .cyan, bold: true)
-        printWrapped("Tap 'Party Status' from the exploration menu to see HP bars, stats, equipment, gold, XP, the dungeon map, and the Adventure Log. Use Party Review to edit characters or return to the main menu.", indent: 2)
+        printWrapped("Tap 'Party Status' from the exploration menu to see HP bars, stats, equipment, gold, XP, the dungeon map, and the Adventure Log. Use Party Review to edit adventurers or return to the main menu.", indent: 2)
         print("")
 
         let hasGame = dungeon != nil && !party.isEmpty
@@ -6065,7 +6071,7 @@ class GameEngine: ObservableObject {
         print("")
         let poisonHeadingLine = terminalLines.count
         print("POISON", color: .cyan, bold: true)
-        printWrapped("Some creatures inflict poison on a successful hit. Poisoned characters take damage each turn. Cure it with an Antidote, Healing Potion, or rest.", indent: 2)
+        printWrapped("Some creatures inflict poison on a successful hit. Poisoned adventurers take damage each turn. Cure it with an Antidote, Healing Potion, or rest.", indent: 2)
         print("  (long-press for Curing Poison page)", color: .dimGreen)
         let poisonHeadingEndLine = terminalLines.count
         print("")
@@ -6270,7 +6276,7 @@ class GameEngine: ObservableObject {
 
         let poisonStartLine = terminalLines.count
         print("POISON", color: .cyan, bold: true)
-        printWrapped("Poisoned characters take damage each turn in combat. Cure poison with an Antidote (consumable item from shops or loot), a Cleric's healing spell, or by visiting a Healer NPC. Poison wears off after several turns but can be deadly if ignored.", indent: 2, color: .green)
+        printWrapped("Poisoned adventurers take damage each turn in combat. Cure poison with an Antidote (consumable item from shops or loot), a Cleric's healing spell, or by visiting a Healer NPC. Poison wears off after several turns but can be deadly if ignored.", indent: 2, color: .green)
         print("  (long-press for details)", color: .dimGreen)
         print("")
         let poisonEndLine = terminalLines.count
@@ -6472,13 +6478,13 @@ class GameEngine: ObservableObject {
         printWrapped("Play with friends via Game Center turn-based multiplayer. Both players need the app and a Game Center account.", indent: 2)
         print("")
         print("SETTING UP", color: .cyan, bold: true)
-        printWrapped("From the Play menu, tap New Adventure. Choose your party size. By default all other characters are robot-controlled.", indent: 2)
+        printWrapped("From the Play menu, tap New Adventure. Choose your party size. By default all the other adventurers are robot-controlled.", indent: 2)
         print("")
         let partyReviewLine = terminalLines.count
         printWrapped("To add a remote player: in Party Review, tap the swap button on any robot character to mark them [Remote]. The Game Center matchmaker will invite a friend.", indent: 2, color: .yellow)
         let partyReviewEndLine = terminalLines.count
         print("")
-        printWrapped("Quick setup: long-press a party size to auto-create all characters, then swap one to Remote.", indent: 2, color: .dimGreen)
+        printWrapped("Quick setup: long-press a party size to auto-create all the adventurers, then swap one to Remote.", indent: 2, color: .dimGreen)
         print("")
         print("INVITING MID-GAME", color: .cyan, bold: true)
         let partyStatusLine = terminalLines.count
@@ -6492,7 +6498,7 @@ class GameEngine: ObservableObject {
         printWrapped("Use Party Chat (in the exploration menu) to message other players. Chat messages are saved and visible to all players regardless of whose turn it is.", indent: 2)
         print("")
         print("GAMEPLAY", color: .cyan, bold: true)
-        printWrapped("The host controls exploration. In combat, each player controls their own character when it's their turn. Robot characters act automatically.", indent: 2)
+        printWrapped("The host controls exploration. In combat, each player controls their own character when it's their turn. Robot adventurers act automatically.", indent: 2)
         print("")
         print("ASYNC PLAY", color: .cyan, bold: true)
         printWrapped("Turns are saved to Game Center. Play at your own pace — you don't need to be online at the same time. Use Nudge to remind a player it's their turn.", indent: 2)
@@ -8159,12 +8165,25 @@ class GameEngine: ObservableObject {
     // The fight acted out in ASCII below the buttons. Built for every
     // platform but only offered on the Mac for now — flip
     // combatArenaAvailable to bring it to the app.
-    static var combatArenaAvailable: Bool {
+    static var combatArenaAvailable: Bool { true }
+
+    /// Fight Club showing this fight — the @ on the input line toggles it
+    /// (on by itself on a Mac; on a phone, off until asked for).
+    @Published var fightClubOn = false
+    static var fightClubStartsOn: Bool {
         #if os(macOS)
         return true
         #else
         return false
         #endif
+    }
+    var fightClubAvailableNow: Bool { combatArenaEnabled && currentCombat != nil && gameState == .combat }
+
+    /// Gameplay > Dungeon Quirks (off by default): little oddities — the
+    /// dragon's winks wander out of the pictures into the words.
+    var dungeonQuirksEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: "dungeonQuirks") }
+        set { UserDefaults.standard.set(newValue, forKey: "dungeonQuirks"); objectWillChange.send() }
     }
     var combatArenaEnabled: Bool {
         get { UserDefaults.standard.object(forKey: "combatArena") == nil ? true : UserDefaults.standard.bool(forKey: "combatArena") }
@@ -8235,7 +8254,7 @@ class GameEngine: ObservableObject {
         objectWillChange.send()
     }
 
-    var showCombatArena: Bool { Self.combatArenaAvailable && combatArenaEnabled && currentCombat != nil && gameState == .combat }
+    var showCombatArena: Bool { fightClubAvailableNow && fightClubOn }
 
     func arenaScene() -> ArenaScene {
         guard let combat = currentCombat else { return ArenaScene(move: arenaMove) }
@@ -8281,6 +8300,16 @@ class GameEngine: ObservableObject {
                               attackerIsParty: r.isPlayerAttack, style: style, hits: r.hits, critical: r.isCritical,
                               fumble: r.isCriticalMiss, defeated: r.targetDefeated || r.targetUnconscious,
                               amount: r.hits ? (r.totalDamage ?? 0) : 0, glyph: "*", color: .yellow, started: Date())
+        arenaCrowdReacts(partyCheers: r.isPlayerAttack == r.hits)
+    }
+
+    /// The onlookers react as the blow lands — a cheer when it goes the
+    /// party's way (a hit, or a dodge), a jeer when it doesn't.
+    private func arenaCrowdReacts(partyCheers: Bool) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
+            guard let self = self, self.showCombatArena else { return }
+            if partyCheers { SoundManager.shared.playCrowdCheer() } else { SoundManager.shared.playCrowdJeer() }
+        }
     }
 
     /// A spell, as the arena shows it — coloured by its element.
@@ -8310,6 +8339,7 @@ class GameEngine: ObservableObject {
                               attackerIsParty: casterIsParty, style: supportive ? .heal : .spell, hits: hits, critical: r.isCritical,
                               fumble: false, defeated: !r.targetsDefeated.isEmpty,
                               amount: supportive ? r.healAmount : r.totalDamage, glyph: glyph, color: color, started: Date())
+        arenaCrowdReacts(partyCheers: casterIsParty == (hits || supportive))
     }
 
     var gameTimeLimit: Int {  // 0 = off, value in game-minutes
@@ -8962,7 +8992,7 @@ class GameEngine: ObservableObject {
 
         print("UNDO/REDO:", color: .cyan, bold: true)
         print("  \(undoRedoEnabled ? "On" : "Off")", color: undoRedoEnabled ? .brightGreen : .red)
-        printWrapped("Show labelled Undo/Redo buttons when you change settings or edit characters. The label shows what will be reverted.", indent: 2, color: .dimGreen)
+        printWrapped("Show labelled Undo/Redo buttons when you change settings or edit adventurers. The label shows what will be reverted.", indent: 2, color: .dimGreen)
         print("")
 
         print("LIST ORDER:", color: .cyan, bold: true)
@@ -8990,14 +9020,18 @@ class GameEngine: ObservableObject {
         printWrapped("Whether the D-pad's teleport icon appears in rooms with an active pad.", indent: 2, color: .dimGreen)
         print("")
 
-        print("COMBAT ARENA:", color: .cyan, bold: true)
-        if Self.combatArenaAvailable {
-            print("  \(combatArenaEnabled ? "On" : "Off")", color: combatArenaEnabled ? .brightGreen : .red)
-            printWrapped("During a fight, the space below the buttons acts it out in ASCII — lunges, arrows, thrown daggers, spells in their colours, sparks, damage rising off the struck, dodges and the fallen — with everyone's health along the bottom.", indent: 2, color: .dimGreen)
-        } else {
-            print("  Mac only (for now)", color: .gray)
-            printWrapped("On a Mac, fights are acted out in animated ASCII beside the text. Coming to this device in a future update.", indent: 2, color: .dimGreen)
-        }
+        print("FIGHT CLUB:", color: .cyan, bold: true)
+        print("  \(combatArenaEnabled ? "On" : "Off")", color: combatArenaEnabled ? .brightGreen : .red)
+        #if os(macOS)
+        printWrapped("During a fight, the space below the buttons acts it out in ASCII — lunges, arrows, spells, sparks, damage rising off the struck, the fallen — while the rest of each side cheers and jeers from the sidelines. Click @ on the input line to hide or show it.", indent: 2, color: .dimGreen)
+        #else
+        printWrapped("In a fight, tap @ on the input line to watch it acted out in ASCII above the buttons — lunges, arrows, spells, sparks, and both sides cheering and jeering. Tap @ again to hide it.", indent: 2, color: .dimGreen)
+        #endif
+        print("")
+
+        print("DUNGEON QUIRKS:", color: .cyan, bold: true)
+        print("  \(dungeonQuirksEnabled ? "On" : "Off")", color: dungeonQuirksEnabled ? .brightGreen : .red)
+        printWrapped("Little oddities, off by default: the dragon's winks wander out of the pictures and into the words (\"g- -n\" — the DM still understands). Best left off with VoiceOver.", indent: 2, color: .dimGreen)
         print("")
 
         // Grouped: Interface (5) → Features (6/7) → System (6)
@@ -9022,7 +9056,8 @@ class GameEngine: ObservableObject {
             multipleShopsEnabled ? "Multi-Shop Off" : "Multi-Shop On",
             blinkingCursorEnabled ? "Cursor Off" : "Cursor On",
             teleportPadsEnabled ? "Teleport Off" : "Teleport On",
-            Self.combatArenaAvailable ? (combatArenaEnabled ? "Arena Off" : "Arena On") : Self.arenaUnavailableLabel,
+            combatArenaEnabled ? "Fight Club Off" : "Fight Club On",
+            dungeonQuirksEnabled ? "Quirks Off" : "Quirks On",
             // Page 3 — System
             "Log Limit", "List Order",
             atlasShowAllRooms ? "World Map: Visited" : "World Map: All Rooms",
@@ -9062,9 +9097,11 @@ class GameEngine: ObservableObject {
                 self.showButtonLimitMenu()
             } else if selected == "Long Press" {
                 self.showLongPressMenu()
-            } else if selected.hasPrefix("Arena") {
-                // Greyed out where it isn't offered yet (never pressable there).
-                guard Self.combatArenaAvailable else { return }
+            } else if selected.hasPrefix("Quirks") {
+                self.recordSettingChange(screen: "s:gameplay", key: "dungeonQuirks", name: "Quirks")
+                self.dungeonQuirksEnabled.toggle()
+                self.showGameplaySettings(page: currentPage)
+            } else if selected.hasPrefix("Fight Club") {
                 self.recordSettingChange(screen: "s:gameplay", key: "combatArena", name: "Arena")
                 self.combatArenaEnabled.toggle()
                 self.showGameplaySettings(page: currentPage)
@@ -9529,7 +9566,7 @@ class GameEngine: ObservableObject {
         "speechEnabled", "companionVoiceMode",
         "menu_melody", "exploration_melody", "combat_melody", "chat_melody",
         "gameTimeLimit", "useCustomKeyboard", "undoRedoEnabled",
-        "justDMMode", "mac_map_rows", "combatArena", "followSystemTextSize",
+        "justDMMode", "mac_map_rows", "combatArena", "followSystemTextSize", "dungeonQuirks",
     ]
 
     private func exportSettings() -> [String: Any] {
@@ -10768,7 +10805,7 @@ class GameEngine: ObservableObject {
         #else
         add("map_radius", "Map Length", current: "\(mapRadius)", dflt: "1")
         #endif
-        if Self.combatArenaAvailable { add("combatArena", "Combat Arena", current: combatArenaEnabled ? "On" : "Off", dflt: "On") }
+        if Self.combatArenaAvailable { add("combatArena", "Fight Club", current: combatArenaEnabled ? "On" : "Off", dflt: "On") }
         add("npcs_enabled", "NPCs", current: npcsEnabled ? "On" : "Off", dflt: "Off")
         add("multiple_shops_enabled", "Multi-Shop", current: multipleShopsEnabled ? "On" : "Off", dflt: "On")
         add("multiplayer_enabled", "Multiplayer", current: multiplayerEnabled ? "On" : "Off", dflt: "Off")
@@ -15631,7 +15668,7 @@ class GameEngine: ObservableObject {
             self.print("  BUTTONS", color: .cyan, bold: true)
             self.printWrapped("Character Names — tap a character to view their full card and edit options (type, race, class, ability scores, skills, voice).", indent: 2, color: .dimGreen)
             self.printWrapped("Rest — short rest to recover HP. Long-press for a long rest (restores more HP and resources).", indent: 2, color: .dimGreen)
-            self.printWrapped("Random Party (dice icon) — re-rolls only the auto-generated characters. Anyone you built by hand or loaded from the Character Roster is left untouched.", indent: 2, color: .dimGreen)
+            self.printWrapped("Random Party (dice icon) — re-rolls only the auto-generated adventurers. Anyone you built by hand or loaded from the Character Roster is left untouched.", indent: 2, color: .dimGreen)
             self.printWrapped("Name Dungeon / Start Matchmaker — proceed to name your dungeon, choose difficulty, and begin exploring.", indent: 2, color: .dimGreen)
             self.print("")
 
@@ -15647,7 +15684,7 @@ class GameEngine: ObservableObject {
             self.print("")
 
             self.print("  INFORMATION", color: .cyan, bold: true)
-            self.printWrapped("Multiplayer uses Apple Game Centre. Each player controls one or more characters. Turns are asynchronous — you don't need to be online at the same time.", indent: 2, color: .dimGreen)
+            self.printWrapped("Multiplayer uses Apple Game Centre. Each player controls one or more adventurers. Turns are asynchronous — you don't need to be online at the same time.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  SETUP", color: .cyan, bold: true)
@@ -17702,7 +17739,7 @@ class GameEngine: ObservableObject {
             self.printWrapped("You can type any number, including decimals (e.g. 1.5, 2.5). Values between whole numbers blend difficulty smoothly.", indent: 2)
             self.print("")
             self.print("TIPS", color: .cyan, bold: true)
-            self.printWrapped("• A party of 1-2 characters should start on Easy.", indent: 2)
+            self.printWrapped("• A party of 1-2 adventurers should start on Easy.", indent: 2)
             self.printWrapped("• A full party of 4 can handle Medium comfortably.", indent: 2)
             self.printWrapped("• Long-press a difficulty to skip the confirmation screen.", indent: 2)
             self.print("")
@@ -23868,7 +23905,7 @@ class GameEngine: ObservableObject {
             self.printWrapped("Map + each character's HP, gold, XP. Green HP = healthy, yellow = wounded, red = critical.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  BUTTONS", color: .cyan, bold: true)
-            self.printWrapped("Party Review — edit characters and view stat cards. Save to Roster — persist a character's progress for future adventures. Adventure Log — event timeline. Lore — named merchants and NPCs you've actually met this adventure. AI — see which AI is running the DM (shown above as \"DM:\") and switch providers. Settings — game settings. Cure Poison — when poisoned. Give Up Quest — abandon your current quest (loses progress and costs some gold in lost goodwill) so a different NPC can offer you a new one.", indent: 2, color: .dimGreen)
+            self.printWrapped("Party Review — edit adventurers and view stat cards. Save to Roster — persist a character's progress for future adventures. Adventure Log — event timeline. Lore — named merchants and NPCs you've actually met this adventure. AI — see which AI is running the DM (shown above as \"DM:\") and switch providers. Settings — game settings. Cure Poison — when poisoned. Give Up Quest — abandon your current quest (loses progress and costs some gold in lost goodwill) so a different NPC can offer you a new one.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  MONSTER STRENGTH", color: .cyan, bold: true)
             self.printWrapped("Monsters scale up a little as your party's average level rises, on top of your chosen difficulty — the dungeon keeps pace with your growing skill instead of staying static.", indent: 2, color: .dimGreen)
@@ -28316,6 +28353,7 @@ class GameEngine: ObservableObject {
 
         currentCombat = Combat(party: party, encounter: balanced)
         arenaMove = nil
+        fightClubOn = Self.fightClubStartsOn
         isHandlingCombatVictory = false
         if self.musicEnabled { SoundManager.shared.startMusic(.combat, preference: self.combatMelodyChoice) }
         SoundManager.shared.playBattleStart()
@@ -31054,7 +31092,7 @@ class GameEngine: ObservableObject {
         }
 
         if records.isEmpty {
-            print("  No saved characters yet.", color: .yellow)
+            print("  No saved adventurers yet.", color: .yellow)
             print("")
             print("  Characters you save after creating them (or from Party Status during an adventure) will appear here, ready to bring into a future party.", color: .dimGreen)
             print("")
@@ -36691,7 +36729,7 @@ class GameEngine: ObservableObject {
 
             print("You can continue this adventure", color: .yellow)
             print("as a local game. Other players'", color: .yellow)
-            print("characters will become AI.", color: .yellow)
+            print("adventurers will become AI.", color: .yellow)
             print("")
 
             showMenu(["Continue as Local Game", "Back to Main Menu"])

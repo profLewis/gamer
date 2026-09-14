@@ -27,7 +27,8 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS and macOS, wit
 - **Flee** — escape to the previous room
 - Creative actions via the AI DM
 - Monsters grouped by type with numbered targeting
-- **Combat Arena** (Mac) — the space below the buttons acts each fight out in animated ASCII: fighters lunge, swoop, shoot, throw, lob gadgets and breathe fire; spells fly in their element's colour; hits spark and shake, crits flash, damage rises off the struck, misses are dodged and the fallen crumple — with everyone's health bars along the bottom. Settings > Gameplay > Arena (greyed out on iPhone/iPad for now)
+- **Fight Club** — each fight acted out in animated ASCII: fighters lunge, swoop, shoot, throw, lob gadgets and breathe fire; spells fly in their element's colour; hits spark and shake, crits flash, damage rises off the struck, misses are dodged and the fallen crumple — with everyone's health bars along the bottom. On a Mac it plays below the buttons; on iPhone/iPad tap **@** on the input line during a fight (tap again to hide). Onlookers on both sides cheer and jeer, with crowd sounds. Settings > Gameplay > Fight Club.
+- **Dungeon Quirks** (Settings > Gameplay, off by default) — little oddities, like the dragon's winks wandering into the words ("g- -n" still means go on)
 - **Poison** — venomous creatures can poison party members (CON save to recover)
 - **Dynamic Difficulty** — monster HP and accuracy scale up gradually as your party's average level rises, on top of your chosen difficulty, so the challenge keeps pace with your growing skill (shown on Party Status)
 

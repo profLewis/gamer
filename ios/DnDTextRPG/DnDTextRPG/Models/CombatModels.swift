@@ -1938,29 +1938,33 @@ enum ArenaRenderer {
         func pick(_ lines: [String], _ seed: Int) -> String { lines[abs(seed) % lines.count] }
         func bubble(isParty: Bool, index i: Int, count: Int) -> String? {
             if let m = move, playing {
-                guard e >= 0.8, e < m.duration, abs(m.id.hashValue) % count == i else { return nil }
-                let seed = m.id.hashValue / 7 + i
+                // Two onlookers a side react to every blow.
+                guard e >= 0.8, e < m.duration, (i + abs(m.id.hashValue)) % count < min(2, count) else { return nil }
+                let seed = m.id.hashValue / 7 + i * 3
                 let partyName = firstName(m.attackerIsParty ? m.attackerName : m.targetName)
-                if m.style == .heal { return isParty ? pick(["Thanks!", "Better?", "Much better!"], seed) : nil }
+                if m.style == .heal { return isParty ? pick(["Thanks!", "Better?", "Much better!", "Good as new!"], seed) : pick(["Bah!", "No fair!"], seed) }
                 if isParty {
                     if m.attackerIsParty {
-                        if m.defeated { return pick(["Hooray!", "Got it!", "Well fought!"], seed) }
-                        if m.critical { return pick(["What a blow!", "Brilliant!"], seed) }
-                        return m.hits ? pick(["Nice hit, \(partyName)!", "Go on!", "That's it!", "Again!"], seed)
-                                      : pick(["So close!", "Next time!", "Steady!"], seed)
+                        if m.defeated { return pick(["Hooray!", "Got it!", "Well fought!", "Huzzah!", "Next!"], seed) }
+                        if m.critical { return pick(["What a blow!", "Brilliant!", "WOW!", "Legend!"], seed) }
+                        return m.hits ? pick(["Nice hit, \(partyName)!", "Go on!", "That's it!", "Again!", "Woo!", "Get stuck in!", "For the party!"], seed)
+                                      : pick(["So close!", "Next time!", "Steady!", "Unlucky!", "Keep at it!"], seed)
                     }
-                    if m.defeated { return pick(["Get up, \(partyName)!", "Hold on, \(partyName)!"], seed) }
-                    return m.hits ? pick(["Ouch!", "I'll cover you!", "Hang in there!"], seed)
-                                  : pick(["Good dodge!", "Missed you!"], seed)
+                    if m.defeated { return pick(["Get up, \(partyName)!", "Hold on, \(partyName)!", "Nooo!"], seed) }
+                    return m.hits ? pick(["Ouch!", "I'll cover you!", "Hang in there!", "Shake it off!"], seed)
+                                  : pick(["Good dodge!", "Missed you!", "Ha, too slow!", "Is that all?"], seed)
                 }
-                if m.attackerIsParty { return m.hits ? pick(["Grr!", "Hss!", "Rargh!"], seed) : pick(["Ha!", "Missed!"], seed) }
-                return m.hits ? pick(["Ha!", "More!", "Heh heh!"], seed) : pick(["Bah!", "Grr..."], seed)
+                if m.attackerIsParty {
+                    if m.defeated { return pick(["Nooo!", "Grr... retreat?", "Boo!"], seed) }
+                    return m.hits ? pick(["Grr!", "Hss!", "Rargh!", "Boo!", "Cheat!"], seed) : pick(["Ha!", "Missed!", "Ha ha!", "Clumsy!"], seed)
+                }
+                return m.hits ? pick(["Ha!", "More!", "Heh heh!", "Squish 'em!", "Weaklings!"], seed) : pick(["Bah!", "Grr...", "Boo!", "Hit it!"], seed)
             }
-            // Between moves: now and then someone says something.
-            let window = Int(t / 4.5)
-            guard !reduced, t - Double(window) * 4.5 < 2.8, (window % 2 == 0) == isParty, window % count == i else { return nil }
-            return isParty ? pick(["Stay together!", "Watch its claws!", "I've got your back!", "Keep going!", "Careful now!", "Anyone got a potion?", "Nearly there!"], window)
-                           : pick(["Grr...", "Hss...", "*snarl*", "*growl*", "*hiss*"], window)
+            // Between moves: someone on each side pipes up every few seconds.
+            let window = Int(t / 3.0)
+            guard !reduced, t - Double(window) * 3.0 < 2.2, (window + (isParty ? 0 : 1)) % count == i else { return nil }
+            return isParty ? pick(["Stay together!", "Watch its claws!", "I've got your back!", "Keep going!", "Careful now!", "Anyone got a potion?", "Nearly there!", "Huzzah!", "You can do it!", "Mind the teeth!", "On three!"], window + i)
+                           : pick(["Grr...", "Hss...", "*snarl*", "*growl*", "*hiss*", "Boo!", "Grrraah!", "*cackle*", "Get them!"], window + i)
         }
         func drawBystanders(_ list: [ArenaFighter], isParty: Bool) {
             guard !list.isEmpty, bandBottom - 2 >= 2 else { return }
