@@ -1111,6 +1111,7 @@ struct TerminalView: View {
                             // Settings, always to hand on the Mac — music, AI and the rest;
                             // Back returns to where you were.
                             Menu {
+                                Button(gameEngine.speakerModeOn ? "Stop Reading Aloud" : "Read Aloud") { gameEngine.readScreenAloud() }
                                 Button(gameEngine.musicEnabled ? "Music Off" : "Music On") { gameEngine.toggleMusicQuick() }
                                 Button(gameEngine.battleSoundsEnabled ? "Sound Effects Off" : "Sound Effects On") { gameEngine.battleSoundsEnabled.toggle() }
                                 Button(gameEngine.combatArenaEnabled ? "Fight Club Off" : "Fight Club On") { gameEngine.combatArenaEnabled.toggle() }
@@ -1238,8 +1239,10 @@ struct TerminalView: View {
                             }
                         }
 
-                        // Read aloud icon — tap to toggle, long-press to pause this page
-                        if gameEngine.voiceMenuEnabled {
+                        // Read aloud icon — tap to toggle, long-press to pause this page.
+                        // Always shown: it's how to switch the voice on (before the
+                        // opening tale, say), not only with Voice Menus.
+                        do {
                             Button(action: {
                                 gameEngine.readScreenAloud()
                             }) {

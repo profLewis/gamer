@@ -18181,6 +18181,11 @@ class GameEngine: ObservableObject {
             }
         }
         typewrite(lines[i], color: last ? .yellow : .green)
+        if speakerModeOn {
+            speakerHasReadCurrentPage = true
+            SpeechEngine.shared.stop()
+            SpeechEngine.shared.speakAloud(lines[i])
+        }
         var opts: [String] = []
         if !last { opts.append("Next") } else if let label = finishLabel, onFinish != nil { opts.append(label) }
         if i > 0 { opts.append("Previous") }
@@ -18375,6 +18380,21 @@ class GameEngine: ObservableObject {
         waitForContinue(fullScreenTap: true, autoContinue: false)
         let token = UUID()
         cutsceneToken = token
+        // Read aloud: speak the paragraph itself (the screen's still typing it,
+        // so the usual read-the-screen would find it blank), and move on a
+        // moment after the voice finishes.
+        if speakerModeOn {
+            speakerHasReadCurrentPage = true
+            let speech = SpeechEngine.shared
+            speech.stop()
+            speech.onFinish = { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+                    guard let self = self, self.cutsceneToken == token, self.awaitingContinue else { return }
+                    self.handleContinue()
+                }
+            }
+            speech.speakAloud(lines[i])
+        }
         inputHandler = { [weak self] _ in self?.showCutsceneLine(i + 1, lines: lines, done: done) }
         // ✕ leaves the tale altogether — straight on into the dungeon.
         closeHandler = { [weak self] in
@@ -18390,6 +18410,7 @@ class GameEngine: ObservableObject {
         // Reading pace ~130 words a minute (at least 4s), after the typing;
         // the last paragraph lingers a little longer.
         let wait = typing + max(4.0, Double(words) / 2.2) + (i == lines.count - 1 ? 5.0 : 0)
+        guard !speakerModeOn else { return }   // the voice paces it instead
         scheduleAutoAdvance(after: wait, isStillValid: { [weak self] in
             guard let self = self else { return false }
             return self.cutsceneToken == token && self.awaitingContinue
