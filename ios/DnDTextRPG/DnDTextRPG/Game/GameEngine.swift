@@ -341,7 +341,10 @@ class GameEngine: ObservableObject {
         guard autoCountdownEnd != nil || autoCountdownPausedRemaining != nil else { return }
         let remaining = autoCountdownPausedRemaining ?? autoCountdownEnd.map { max(0, $0.timeIntervalSinceNow) } ?? 0
         autoContinuePaused = false
+        pausedForTyping = false
+        frozenPendingText = nil
         removeAutoContinuePauseHelp()
+        removeFrozenNotice()
         autoCountdownPausedRemaining = nil
         autoCountdownEnd = Date().addingTimeInterval(max(0.6, remaining / 4))
     }
@@ -396,6 +399,11 @@ class GameEngine: ObservableObject {
         if counting, let end = autoCountdownEnd, end.timeIntervalSinceNow - delay < 4 { return }
         continueHintTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             guard let self = self, self.awaitingContinue, self.continueHintGeneration == self.screenGeneration else { return }
+            if self.timeFrozen {
+                // Frozen: no "Continue?" nudges — just how to unfreeze, once.
+                if self.frozenNoticeRange == nil || self.frozenNoticeGeneration != self.screenGeneration { self.showFrozenNotice() }
+                return
+            }
             if self.autoContinueCountdownAvailable && !self.autoContinuePaused,
                let end = self.autoCountdownEnd, end.timeIntervalSinceNow < 4 { return }
             self.continueHintCount += 1
@@ -458,17 +466,21 @@ class GameEngine: ObservableObject {
         autoContinueHelpShownGeneration = screenGeneration
         let start = terminalLines.count
         print("")
-        print("  AUTO-CONTINUE IS PAUSED", color: .yellow, bold: true)
+        print("  TIME IS FROZEN", color: .yellow, bold: true)
         print("  (orange hourglass = paused)", color: .dimGreen)
         print("")
-        print("  To carry on:", color: .cyan)
-        printWrapped("• Tap anywhere — continue now", indent: 3, color: .green)
-        printWrapped("• Type 'go on' — same thing", indent: 3, color: .green)
-        printWrapped("• Tap the hourglass (right of the input line) — let the countdown run on", indent: 3, color: .green)
-        printWrapped("• Long-press the hourglass — hurry it", indent: 3, color: .green)
+        printWrapped("While it's orange nothing happens: the DM stays quiet, buttons and taps wait, and anything you type waits until you unfreeze.", indent: 3, color: .green)
         print("")
-        print("  Why is it here?", color: .cyan)
-        printWrapped("So a screen never moves on before you've finished reading.", indent: 3, color: .green)
+        print("  To unfreeze:", color: .cyan)
+        printWrapped("• Tap the orange hourglass (right of the input line) — time runs on from where it stopped", indent: 3, color: .green)
+        printWrapped("• Long-press it — unfreeze and hurry this screen along", indent: 3, color: .green)
+        printWrapped("• Type anything, then \"yes\" when asked", indent: 3, color: .green)
+        #if os(macOS)
+        printWrapped("• Or press Space", indent: 3, color: .green)
+        #endif
+        print("")
+        print("  Why freeze?", color: .cyan)
+        printWrapped("To read at your own pace, or step away — nothing moves on, and nobody takes advantage, while you're gone.", indent: 3, color: .green)
         print("")
         print("  Settings now:", color: .cyan)
         printWrapped("Auto-Continue \(autoContinueEnabled ? "On" : "Off") · wait \(Int((infoTimeout * 2).rounded()))s · hourglass \(showCountdownControl ? "On" : "Off")", indent: 3, color: .green)
@@ -486,6 +498,52 @@ class GameEngine: ObservableObject {
         return true
     }
 
+    // MARK: Time frozen
+    //
+    // Pausing the hourglass freezes time: nothing happens until it's
+    // unfrozen — no "Continue?" nudges from the DM, no combat hesitation,
+    // taps and buttons wait, and typing asks to unfreeze first. (A pause
+    // that only happened because you started typing isn't a freeze.)
+    var timeFrozen: Bool { autoContinuePaused && !pausedForTyping }
+    private var frozenNoticeRange: Range<Int>?
+    private var frozenNoticeGeneration = -1
+    private var frozenPendingText: String?
+
+    /// "Time is frozen" and how to unfreeze — moved to the bottom each
+    /// time, so a tap while frozen always shows it in view.
+    func showFrozenNotice() {
+        removeFrozenNotice()
+        let start = terminalLines.count
+        print("")
+        print("  TIME IS FROZEN", color: .yellow, bold: true)
+        #if os(macOS)
+        let how = "Click the orange hourglass (right of the input line), or press Space, to unfreeze time."
+        #else
+        let how = "Tap the orange hourglass (right of the input line) to unfreeze time."
+        #endif
+        printWrapped("Nothing happens while the hourglass is orange — not even the DM will stir. \(how)", indent: 4, color: .dimGreen)
+        frozenNoticeRange = start..<terminalLines.count
+        frozenNoticeGeneration = screenGeneration
+    }
+
+    @discardableResult
+    private func removeFrozenNotice() -> Bool {
+        guard let range = frozenNoticeRange else { return false }
+        frozenNoticeRange = nil
+        guard frozenNoticeGeneration == screenGeneration, range.upperBound <= terminalLines.count else { return false }
+        terminalLines.removeSubrange(range)
+        return true
+    }
+
+    /// Wraps a control's action so it does nothing (but says why) while time is frozen.
+    func frozenGuard(_ action: (() -> Void)?) -> (() -> Void)? {
+        guard let action = action else { return nil }
+        return { [weak self] in
+            guard let self = self else { return }
+            if self.timeFrozen { self.showFrozenNotice() } else { action() }
+        }
+    }
+
     func toggleAutoContinuePause() {
         autoContinuePaused.toggle()
         if !autoContinuePaused { removeAutoContinuePauseHelp() }
@@ -496,6 +554,14 @@ class GameEngine: ObservableObject {
         } else {
             if let remaining = autoCountdownPausedRemaining { autoCountdownEnd = Date().addingTimeInterval(remaining) }
             autoCountdownPausedRemaining = nil
+        }
+        if autoContinuePaused {
+            if !pausedForTyping { showFrozenNotice() }
+        } else {
+            pausedForTyping = false
+            frozenPendingText = nil
+            removeFrozenNotice()
+            if awaitingContinue { scheduleContinueHint() }
         }
         logEvent(autoContinuePaused ? "Auto-continue paused" : "Auto-continue resumed", category: "SETTINGS")
     }
@@ -3569,6 +3635,8 @@ class GameEngine: ObservableObject {
 
     func handleMenuChoice(_ choice: Int) {
         stopIdleAnimations()
+        // Frozen: buttons wait (a help/settings page opened from a link still works).
+        if timeFrozen && linkReturnSnapshot == nil { showFrozenNotice(); return }
         // Suppress taps briefly after a long-press screen transition
         guard Date() > suppressMenuUntil else { return }
 
@@ -3719,6 +3787,7 @@ class GameEngine: ObservableObject {
     private var lastMenuChoiceHandledAt: Date = .distantPast
 
     func handleMenuLongPress(_ choice: Int) {
+        if timeFrozen && linkReturnSnapshot == nil { showFrozenNotice(); return }
         stopIdleAnimations()
 
         // Long-press on disabled buttons = dark/forced actions
@@ -4442,6 +4511,7 @@ class GameEngine: ObservableObject {
     }
 
     func handleDirectionChoice(_ direction: Direction) {
+        if timeFrozen { showFrozenNotice(); return }
         stopIdleAnimations()
         // Must be synchronous (runOnMain), not DispatchQueue.main.async: the
         // old async wipe was queued to run on a LATER turn of the run loop,
@@ -4479,6 +4549,38 @@ class GameEngine: ObservableObject {
         // input is never altered.
         if Int(trimmed) == nil, let spoken = Self.parseSpokenNumber(trimmed) {
             trimmed = String(spoken)
+        }
+
+        // Time frozen: nobody can hear you — ask to unfreeze first, and send
+        // what was typed once they say yes.
+        if timeFrozen && !trimmed.isEmpty {
+            let answer = trimmed.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".!"))
+            let yes = ["yes", "y", "yes please", "yeah", "yep", "ok", "okay", "sure", "unfreeze", "unpause", "resume", "unfreeze time"]
+            let no = ["no", "n", "nope", "not yet", "stay frozen", "keep frozen"]
+            if yes.contains(answer) {
+                let pending = frozenPendingText
+                toggleAutoContinuePause()   // unfreezes (and forgets frozenPendingText)
+                print("")
+                print("  Time flows again.", color: .cyan, bold: true)
+                if let pending = pending { handleTextInput(pending) }
+                return
+            }
+            if no.contains(answer) && frozenPendingText != nil {
+                frozenPendingText = nil
+                removeFrozenNotice()
+                print("")
+                printWrapped("Time stays frozen. Tap the orange hourglass whenever you're ready.", indent: 2, color: .dimGreen)
+                return
+            }
+            frozenPendingText = trimmed
+            removeFrozenNotice()
+            let start = terminalLines.count
+            print("")
+            print("  TIME IS FROZEN", color: .yellow, bold: true)
+            printWrapped("Nobody can hear you while time stands still — not even the DM. Unfreeze time first? Type \"yes\" to unfreeze and carry on with \"\(trimmed)\", or tap the orange hourglass.", indent: 4, color: .dimGreen)
+            frozenNoticeRange = start..<terminalLines.count
+            frozenNoticeGeneration = screenGeneration
+            return
         }
 
         // Universal mode switch — always works regardless of screen
@@ -4674,6 +4776,7 @@ class GameEngine: ObservableObject {
 
     func handleContinue() {
         guard awaitingContinue else { return }
+        if timeFrozen { showFrozenNotice(); return }
         awaitingContinue = false
         continueHintTimer?.invalidate()
         if pausedForTyping {
@@ -4744,7 +4847,7 @@ class GameEngine: ObservableObject {
     private func scheduleExplorationTip() {
         explorationTipTimer?.invalidate()
         explorationTipTimer = Timer.scheduledTimer(withTimeInterval: 25, repeats: false) { [weak self] _ in
-            guard let self = self, self.idlePromptsEnabled, !self.directionExits.isEmpty, !self.awaitingContinue,
+            guard let self = self, self.idlePromptsEnabled, !self.timeFrozen, !self.directionExits.isEmpty, !self.awaitingContinue,
                   self.currentCombat == nil, !(self.isJustDMActive && self.inDMMode),
                   self.explorationTipGeneration != self.screenGeneration else { return }
             self.explorationTipGeneration = self.screenGeneration
@@ -25999,6 +26102,7 @@ class GameEngine: ObservableObject {
         justDMIdleHintTimer?.invalidate()
         if idlePromptsEnabled {
             justDMIdleHintTimer = Timer.scheduledTimer(withTimeInterval: 25.0, repeats: false) { [weak self] _ in
+                guard self?.timeFrozen != true else { return }
                 self?.showJustDMIdleHint()
             }
         }
@@ -28564,6 +28668,8 @@ class GameEngine: ObservableObject {
         combatNudgeTimer = Timer.scheduledTimer(withTimeInterval: count == 0 ? 20 : 45, repeats: false) { [weak self] _ in
             guard let self = self, self.currentCombat != nil, !self.awaitingContinue, !self.currentMenuOptions.isEmpty,
                   let character = self.party.first(where: { $0.id == characterId }) else { return }
+            // Frozen: the enemy waits too — try again later.
+            if self.timeFrozen { self.scheduleCombatNudge(characterId: characterId, count: count); return }
             let name = self.shortName(for: character)
             let opener = Self.pickVaried([
                 "Your move, \(name)!",
@@ -28596,6 +28702,8 @@ class GameEngine: ObservableObject {
         guard idlePromptsEnabled else { return }
         combatIdleTimer = Timer.scheduledTimer(withTimeInterval: 300.0, repeats: false) { [weak self] _ in
             guard let self = self, let combat = self.currentCombat else { return }
+            // No hesitation penalty while time is frozen.
+            if self.timeFrozen { self.startCombatIdleTimer(characterId: characterId); return }
             // First warning at 2 min — disadvantage on next attack
             if !self.combatHesitating {
                 self.combatHesitating = true
@@ -30923,6 +31031,7 @@ class GameEngine: ObservableObject {
         guard idlePromptsEnabled else { return }
         saveMenuIdleTimer = Timer.scheduledTimer(withTimeInterval: 90.0, repeats: true) { [weak self] _ in
             DispatchQueue.main.async {
+                guard self?.timeFrozen != true else { return }
                 self?.saveMenuIdleNag()
             }
         }

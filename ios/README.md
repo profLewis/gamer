@@ -16,7 +16,7 @@ A native iOS and macOS port of the D&D 5e Text-Based RPG, featuring a terminal-s
 - Custom on-screen keyboard
 - Undo/redo for character editing, party review, and settings
 - Colour-coded buttons: green (actions), dim green (navigation), cyan (chat/multiplayer), amber (NPCs/special), red (destructive)
-- Auto-Continue with a countdown hourglass at the right of the input line: tap anywhere to move on, wait for it to run out, tap it to pause (orange = paused), long-press to hurry (see *Auto-Continue* under Gameplay)
+- Auto-Continue with a countdown hourglass at the right of the input line: tap anywhere to move on, wait for it to run out, tap it to pause — orange means time is frozen: nothing happens, the DM goes quiet, typing asks to unfreeze first — long-press to hurry (see *Auto-Continue* under Gameplay)
 
 ### Full D&D 5e Implementation (OGL)
 - **12 Races**: Human, Elf (High/Wood), Dwarf (Hill/Mountain), Halfling (Lightfoot/Stout), Half-Elf, Half-Orc, Gnome, Tiefling, Dragonborn
@@ -242,7 +242,7 @@ Use **long-press** at any step to auto-fill all remaining choices.
 - Defeat all enemies to win — or suffer a party wipe
 
 ### Auto-Continue
-Tap-to-continue screens also move on by themselves after the Info Timeout (5 s by default). A small hourglass turns at the right of the input line while one counts down. Tap anywhere to continue at once, or wait for it to run out; tap the hourglass to pause — it turns orange and *paused* pulses — and tap again to carry on; long-press it to hurry. Space pauses on a Mac. It's there so a screen never moves on before you've finished reading, without giving up the hands-free flow. Settings > Gameplay: Auto-Continue, Info Timeout, Countdown Icon (hide it), Blinking Cursor. The main README explains the reasoning in full.
+Tap-to-continue screens also move on by themselves after the Info Timeout (5 s by default). A small hourglass turns at the right of the input line while one counts down. Tap anywhere to continue at once, or wait for it to run out; tap the hourglass to pause — it turns orange, *paused* pulses, and time is frozen: no DM nudges, buttons and taps wait, and typing asks whether to unfreeze first — and tap it again to unfreeze; long-press it to hurry. Space pauses and unfreezes on a Mac. It's there so a screen never moves on before you've finished reading, without giving up the hands-free flow. Settings > Gameplay: Auto-Continue, Info Timeout, Countdown Icon (hide it), Blinking Cursor. The main README explains the reasoning in full.
 
 ### Tips
 - Long-press buttons for hidden shortcuts throughout the game

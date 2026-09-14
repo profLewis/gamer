@@ -781,17 +781,17 @@ struct TerminalView: View {
                                     },
                                     onLongPress: gameEngine.directionLongPressHandler,
                                     centerLabel: gameEngine.dpadCenterLabel,
-                                    onCenterTap: gameEngine.dpadCenterHandler,
-                                    onCenterLongPress: gameEngine.dpadCenterLongPressHandler,
+                                    onCenterTap: gameEngine.frozenGuard(gameEngine.dpadCenterHandler),
+                                    onCenterLongPress: gameEngine.frozenGuard(gameEngine.dpadCenterLongPressHandler),
                                     longPressDuration: gameEngine.longPressDuration,
                                     torchOff: !gameEngine.torchLit,
                                     npcLabel: gameEngine.dpadNPCLabel,
-                                    onNPCTap: gameEngine.dpadNPCHandler,
-                                    onTeleportTap: gameEngine.dpadTeleportHandler,
+                                    onNPCTap: gameEngine.frozenGuard(gameEngine.dpadNPCHandler),
+                                    onTeleportTap: gameEngine.frozenGuard(gameEngine.dpadTeleportHandler),
                                     torchLabel: gameEngine.dpadTorchLabel,
-                                    onTorchTap: gameEngine.dpadTorchHandler,
-                                    onSearchTap: gameEngine.dpadSearchHandler,
-                                    onListenTap: gameEngine.dpadListenHandler
+                                    onTorchTap: gameEngine.frozenGuard(gameEngine.dpadTorchHandler),
+                                    onSearchTap: gameEngine.frozenGuard(gameEngine.dpadSearchHandler),
+                                    onListenTap: gameEngine.frozenGuard(gameEngine.dpadListenHandler)
                                 )
                                 .background(GeometryReader { geo in
                                     Color.clear
@@ -993,7 +993,8 @@ struct TerminalView: View {
 
                             // Auto-continue countdown — at the right of the line, clear of
                             // where you type. Tap to pause/resume, long-press to hurry.
-                            if gameEngine.awaitingContinue && gameEngine.autoContinueCountdownAvailable && gameEngine.autoCountdownEnd != nil && gameEngine.showCountdownControl {
+                            // While time is frozen it always shows — it's how you unfreeze.
+                            if gameEngine.timeFrozen || (gameEngine.awaitingContinue && gameEngine.autoContinueCountdownAvailable && gameEngine.autoCountdownEnd != nil && gameEngine.showCountdownControl) {
                                 autoCountdownBar
                             }
 
@@ -1387,6 +1388,12 @@ struct TerminalView: View {
         // Don't intercept when text input is active
         if gameEngine.awaitingTextInput {
             return .ignored
+        }
+
+        // Time frozen: Space unfreezes; any other key just says so.
+        if gameEngine.timeFrozen {
+            if press.key == .space { gameEngine.toggleAutoContinuePause() } else { gameEngine.showFrozenNotice() }
+            return .handled
         }
 
         // Continue: any key triggers continue — except Space, which

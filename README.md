@@ -151,7 +151,7 @@ While a screen is counting down you'll see a small **hourglass** at the right-ha
 
 - **Tap anywhere** on the screen to continue straight away.
 - **Wait** — when the hourglass runs out, the game moves on by itself.
-- **Tap the hourglass** to pause. It turns **orange** and *paused* pulses gently beside it; the screen now waits for you. Tap again to let it carry on from where it stopped. A **?** beside *paused* explains how to carry on.
+- **Tap the hourglass** to pause — this **freezes time**. It turns **orange** and *paused* pulses gently beside it. While frozen nothing happens: the DM stops nudging you to continue (it just says time is frozen and how to unfreeze), buttons and taps wait, combat hesitation doesn't count against you, and anything you type makes the game ask whether to unfreeze first (say *yes* and what you typed goes through). Tap the orange hourglass again (or press Space on a Mac) to unfreeze; it carries on from where it stopped. A **?** beside *paused* explains all this.
 - **Long-press the hourglass** to hurry the countdown along.
 - **Type** at the prompt: typing pauses the countdown; *go on* continues, and anything else continues and then does what you typed.
 - Wait a while and a dim hint reminds you of these options.

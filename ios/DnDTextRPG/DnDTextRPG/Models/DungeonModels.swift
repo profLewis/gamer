@@ -1244,15 +1244,31 @@ class Dungeon: ObservableObject, Codable {
             .prefix(capped))
         let rowCount = Self.mapLegendRowCount(maxSymbols: capped)
         var lines: [String] = ["+\(border)+"]
-        var entryIdx = 0
-        for _ in 0..<rowCount {
+        // Neat columns: each as wide as its widest entry, symbols
+        // right-aligned so every "=" in a column lines up. If that won't
+        // fit the box, entries are packed as tightly as before instead.
+        let columns = 3
+        let entryAt: (Int, Int) -> (symbol: String, label: String)? = { r, c in
+            let i = r * columns + c
+            return i < entries.count ? entries[i] : nil
+        }
+        var symbolWidth = [Int](repeating: 0, count: columns)
+        var itemWidth = [Int](repeating: 0, count: columns)
+        for r in 0..<rowCount { for c in 0..<columns { if let e = entryAt(r, c) { symbolWidth[c] = max(symbolWidth[c], e.symbol.count) } } }
+        for r in 0..<rowCount { for c in 0..<columns { if let e = entryAt(r, c) { itemWidth[c] = max(itemWidth[c], symbolWidth[c] + 1 + e.label.count) } } }
+        let aligned = itemWidth.reduce(0, +) + 2 * (columns - 1) <= border.count - 1
+        for r in 0..<rowCount {
             var row = ""
-            for _ in 0..<3 {
-                guard entryIdx < entries.count else { break }
-                let entry = entries[entryIdx]
-                let item = "\(entry.symbol)=\(entry.label)"
-                row = row.isEmpty ? item : row + "  \(item)"
-                entryIdx += 1
+            for c in 0..<columns {
+                guard let e = entryAt(r, c) else { break }
+                var item = "\(e.symbol)=\(e.label)"
+                if aligned {
+                    item = String(repeating: " ", count: symbolWidth[c] - e.symbol.count) + item
+                    if entryAt(r, c + 1) != nil && c + 1 < columns {
+                        item = item.padding(toLength: itemWidth[c], withPad: " ", startingAt: 0)
+                    }
+                }
+                row = c == 0 ? item : row + "  \(item)"
             }
             lines.append("| \(row)".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|")
         }
