@@ -18559,6 +18559,19 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// The input line's combat ? — only on a player's own turn, with the
+    /// action buttons up (not mid-report, not a companion's turn).
+    var combatHelpAvailable: Bool {
+        guard currentCombat != nil, gameState == .combat, !awaitingContinue,
+              let turn = currentCombat?.currentCombatant, turn.isPlayer else { return false }
+        return party.first(where: { $0.id == turn.id })?.isComputerControlled == false
+    }
+
+    func showCombatHelpFromBar() {
+        guard combatHelpAvailable, let id = currentCombat?.currentCombatant?.id else { return }
+        showCombatHelp(characterId: id)
+    }
+
     private func showCombatHelp(characterId: UUID) {
         showInlineHelp {
             self.printTitle("Combat — Help")

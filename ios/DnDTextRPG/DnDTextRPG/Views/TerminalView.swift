@@ -1077,6 +1077,17 @@ struct TerminalView: View {
                             if gameEngine.timeFrozen || (gameEngine.awaitingContinue && gameEngine.showCountdownControl) {
                                 autoCountdownBar
                             }
+                            // Combat help, among the other symbols on this line.
+                            if gameEngine.combatHelpAvailable {
+                                Button(action: { gameEngine.showCombatHelpFromBar() }) {
+                                    Text(MenuOption.helpGlyph == "Help" ? "?" : MenuOption.helpGlyph)
+                                        .font(.system(size: 17 * scale, weight: .semibold, design: .monospaced))
+                                        .foregroundColor(terminalGreen)
+                                        .padding(.horizontal, 4)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Combat help")
+                            }
                             // Fight Club: @ shows or hides the fight acted out in ASCII.
                             if gameEngine.fightClubAvailableNow {
                                 Button(action: { gameEngine.fightClubOn.toggle() }) {
