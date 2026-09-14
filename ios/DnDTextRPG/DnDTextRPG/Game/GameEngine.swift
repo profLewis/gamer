@@ -295,6 +295,10 @@ class GameEngine: ObservableObject {
     /// bar by the > prompt (or Space on a Mac) holds every countdown.
     @Published var autoContinueEnabled: Bool = UserDefaults.standard.object(forKey: "autoContinueEnabled") == nil ? true : UserDefaults.standard.bool(forKey: "autoContinueEnabled")
     @Published var autoContinuePaused: Bool = false
+    /// Accessibility > Handedness — which side of the text is the free
+    /// scrolling edge (the rest is tap-to-continue). Right-handed: scroll
+    /// on the right. Left-handed: scroll on the left.
+    @Published var leftHanded: Bool = UserDefaults.standard.bool(forKey: "leftHanded")
     /// Accessibility > Auto-Scroll — 0 Off (default), 1 Slow, 2 Medium,
     /// 3 Fast. Pages always open at their top; only with this on does a
     /// long page then glide down by itself.
@@ -2608,6 +2612,8 @@ class GameEngine: ObservableObject {
             autoContinueEnabled = UserDefaults.standard.object(forKey: key) == nil ? true : UserDefaults.standard.bool(forKey: key)
         case "autoScrollSpeed":
             autoScrollSpeed = UserDefaults.standard.integer(forKey: key)
+        case "leftHanded":
+            leftHanded = UserDefaults.standard.bool(forKey: key)
         case "showCountdownControl":
             showCountdownControl = UserDefaults.standard.object(forKey: key) == nil ? true : UserDefaults.standard.bool(forKey: key)
         case "iconScaleSetting":
@@ -2652,6 +2658,8 @@ class GameEngine: ObservableObject {
         case "autoContinueEnabled": return autoContinueEnabled ? "On" : "Off"
         case "showCountdownControl": return showCountdownControl ? "On" : "Off"
         case "autoScrollSpeed": return autoScrollSpeedName
+        case "leftHanded": return leftHanded ? "Left" : "Right"
+        case "helpGlyph": return MenuOption.helpGlyph
         case "blinkingCursorEnabled": return blinkingCursorEnabled ? "On" : "Off"
         case "map_radius": return "\(mapRadius)"
         case "maxButtonsPerScreen": return "\(maxButtonsPerScreen)"
@@ -8207,6 +8215,16 @@ class GameEngine: ObservableObject {
         printWrapped("New pages always open at the top, so you see the start of long text. With Auto-Scroll on, a long page then glides down by itself at this speed — touch it to stop. Off (the default): you scroll yourself. Try Auto-Scroll shows each speed.", indent: 2, color: .dimGreen)
         print("")
 
+        print("HANDEDNESS:", color: .cyan, bold: true)
+        print("  \(leftHanded ? "Left-handed" : "Right-handed")", color: .brightGreen)
+        printWrapped("On tap-to-continue screens, tapping the text moves on — except a narrow strip down one edge, kept free for scrolling. Right-handed keeps that strip on the right; left-handed on the left.", indent: 2, color: .dimGreen)
+        print("")
+
+        print("HELP BUTTON:", color: .cyan, bold: true)
+        print("  \(MenuOption.helpGlyph)", color: .brightGreen)
+        printWrapped("What the help button in the 3-bar cell shows: ?, ⓘ, or the word Help.", indent: 2, color: .dimGreen)
+        print("")
+
         let displaySizeLabel = "Size \(displaySizeName)"
         let hitsLabel = hitAnimationsEnabled ? "Hits Off" : "Hits On"
         let dmVoiceLabel = speech.isEnabled ? "DM Voice On" : "DM Voice Off"
@@ -8214,7 +8232,9 @@ class GameEngine: ObservableObject {
         let cursorLabel = blinkingCursorEnabled ? "Cursor Off" : "Cursor On"
         let autoScrollLabel = "Auto-Scroll: \(autoScrollSpeedName)"
         let options = [displaySizeLabel, hitsLabel, dmVoiceLabel, "Companion Voices", voiceMenuLabel, cursorLabel,
-                       autoScrollLabel, "Try Auto-Scroll"]
+                       autoScrollLabel, "Try Auto-Scroll",
+                       leftHanded ? "Right-Handed" : "Left-Handed",
+                       "Help Button: \(MenuOption.helpGlyph)"]
 
         var menuOpts = options.map { MenuOption($0) }
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -8271,6 +8291,17 @@ class GameEngine: ObservableObject {
                 self.recordSettingChange(screen: "s:access", key: "autoScrollSpeed", name: "Auto-Scroll")
                 self.autoScrollSpeed = (self.autoScrollSpeed + 1) % 4
                 UserDefaults.standard.set(self.autoScrollSpeed, forKey: "autoScrollSpeed")
+                self.showAccessibilityMenu()
+            case "Right-Handed", "Left-Handed":
+                self.recordSettingChange(screen: "s:access", key: "leftHanded", name: "Handedness")
+                self.leftHanded.toggle()
+                UserDefaults.standard.set(self.leftHanded, forKey: "leftHanded")
+                self.showAccessibilityMenu()
+            case let label where label.hasPrefix("Help Button:"):
+                self.recordSettingChange(screen: "s:access", key: "helpGlyph", name: "Help Button")
+                let glyphs = MenuOption.helpGlyphChoices
+                let next = glyphs[((glyphs.firstIndex(of: MenuOption.helpGlyph) ?? 0) + 1) % glyphs.count]
+                UserDefaults.standard.set(next, forKey: "helpGlyph")
                 self.showAccessibilityMenu()
             case "Try Auto-Scroll":
                 self.showAutoScrollDemo()
@@ -8909,7 +8940,7 @@ class GameEngine: ObservableObject {
 
     /// All UserDefaults keys used by the game
     private static let settingsKeys: [String] = [
-        "maxButtonsPerScreen", "longPressDuration", "infoTimeout", "customInfoTimeouts", "autoContinueEnabled", "showCountdownControl", "atlasShowAllRooms", "autoScrollSpeed",
+        "maxButtonsPerScreen", "longPressDuration", "infoTimeout", "customInfoTimeouts", "autoContinueEnabled", "showCountdownControl", "atlasShowAllRooms", "autoScrollSpeed", "leftHanded", "helpGlyph",
         "map_radius", "useArrowNavigation", "multiplayer_enabled", "npcs_enabled",
         "multiple_shops_enabled",
         "hit_animations", "voiceMenuEnabled", "iconScaleSetting", "adventureLogLimit",
@@ -13470,6 +13501,13 @@ class GameEngine: ObservableObject {
         clearTerminal()
         printTitle("Party Review")
 
+        // "1." is the Name Dungeon / Start Matchmaker button (top-left,
+        // default); the adventurers follow from 2 — same numbers as the buttons.
+        let startLabel = pendingRemoteSlots.isEmpty ? "Name Dungeon" : "Start Matchmaker"
+        print("  1. \(startLabel)", color: .cyan, bold: true)
+        printWrapped("Name your dungeon, pick a difficulty, and begin.", indent: 5, color: .dimGreen)
+        print("")
+
         // Display roster with type tags — aligned past the number
         for (i, char) in party.enumerated() {
             let tag: String
@@ -13480,8 +13518,8 @@ class GameEngine: ObservableObject {
             } else {
                 tag = " [You]"
             }
-            let num = "\(i + 1)"
-            // "  1. Name [Tag]"  then indented lines aligned under the name (past "1. ")
+            let num = "\(i + 2)"
+            // "  2. Name [Tag]"  then indented lines aligned under the name (past "1. ")
             let indentCount = 2 + num.count + 2  // "  " + number + ". "
             print("  \(num). \(char.name)\(tag)", color: .brightGreen)
             printWrapped("\(char.race.rawValue) \(char.characterClass.rawValue)", indent: indentCount, color: .dimGreen)
@@ -13494,6 +13532,15 @@ class GameEngine: ObservableObject {
         // Build menu options
         var opts: [String] = []
         var actions: [() -> Void] = []
+
+        // Start first — the likeliest next step, so it's button 1 (top-left)
+        // and the default. "Name Dungeon" says what actually happens next
+        // (name it, choose difficulty, then play).
+        opts.append(hasRemote ? "Start Matchmaker" : "Name Dungeon")
+        actions.append { [weak self] in
+            guard let self = self else { return }
+            if hasRemote { self.createMultiplayerMatch() } else { self.startAdventure() }
+        }
 
         // Per-character buttons — just the name, clicking shows card
         if party.count >= 1 {
@@ -13518,16 +13565,7 @@ class GameEngine: ObservableObject {
             if wasMultiplayer { self.showPlayMenu() } else { self.startNewGame() }
         }
 
-        // Bottom row: Start — "Begin Adventure" over-promised instant play;
-        // tapping it actually leads to two more screens first (name the
-        // dungeon, then choose difficulty) before gameplay starts. "Name
-        // Dungeon" says what actually happens next.
-        opts.append(hasRemote ? "Start Matchmaker" : "Name Dungeon")
-        actions.append { [weak self] in
-            guard let self = self else { return }
-            if hasRemote { self.createMultiplayerMatch() } else { self.startAdventure() }
-        }
-        showMenu(opts, defaultIndex: opts.count - 1)
+        showMenu(opts, defaultIndex: 0)
 
         closeHandler = { [weak self] in
             guard let self = self else { return }
@@ -13545,8 +13583,9 @@ class GameEngine: ObservableObject {
         if party.count >= 1 {
             menuLongPressHandler = { [weak self] choice in
                 guard let self = self else { return }
-                guard choice >= 1 && choice <= self.party.count else { return }
-                self.showCardForCharacter(named: self.party[choice - 1].name)
+                // Button 1 is Name Dungeon; adventurers are 2...
+                guard choice >= 2 && choice <= self.party.count + 1 else { return }
+                self.showCardForCharacter(named: self.party[choice - 2].name)
             }
         }
 
@@ -30184,9 +30223,14 @@ class GameEngine: ObservableObject {
             print("")
 
             // Help text
-            print("  Save: save and continue playing", color: .dimGreen)
-            print("  Quit+Save: save and exit to menu", color: .dimGreen)
-            print("  Quit-Save: exit without saving", color: .dimGreen)
+            print("  Save: save and keep playing", color: .dimGreen)
+            print("  Quit+Save: save, then close the app", color: .dimGreen)
+            if slots.count < SaveGameManager.maxSlots {
+                print("  Save+NewName: save as a new adventure", color: .dimGreen)
+            }
+            print("  Quit-Save: close the app without saving", color: .dimGreen)
+            print("  Main Menu: leave this adventure, stay in the app", color: .dimGreen)
+            print("  (Long-press Quit+Save / Quit-Save to skip the check.)", color: .dimGreen)
             print("")
 
             var options: [String] = []
@@ -30203,7 +30247,10 @@ class GameEngine: ObservableObject {
             options.append("?")
             options.append("< Back")
 
-            showMenu(options)
+            // ? and < Back live in the 3-bar nav cell, like every other screen.
+            showMenuOptions(options.map {
+                ($0 == "?" || $0 == "< Back") ? MenuOption($0, tint: .navigation, compact: true) : MenuOption($0)
+            })
             closeHandler = { [weak self] in
                 self?.closeHandler = nil
                 self?.cancelSaveMenuIdleTimer()

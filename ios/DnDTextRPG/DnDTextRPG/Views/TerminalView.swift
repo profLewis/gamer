@@ -729,6 +729,12 @@ struct TerminalView: View {
     /// as MenuButtonsView itself. A screen with fewer buttons just leaves
     /// blank space below them instead of the whole block (and the text
     /// ScrollView above it, which greedily fills whatever's left) shifting.
+    /// In a portrait adventure the D-pad and button areas keep their places
+    /// on every screen (blank when unused), so they never jump about.
+    private var reserveControlSlots: Bool {
+        gameEngine.dungeon != nil && !gameEngine.isLandscapeOrientation && !gameEngine.isJustDMActive
+    }
+
     private var portraitControlsMinHeight: CGFloat {
         let dpad = gameEngine.directionExits.isEmpty ? 0 : dpadMeasuredHeight + 6
         return dpad + reservedButtonGridHeight + 12
@@ -751,8 +757,8 @@ struct TerminalView: View {
                     // Direction pad + menu buttons (hidden in Just DM mode, except on
                     // victory/defeat milestone screens — see forceInteractiveControls).
                     if (!gameEngine.isJustDMActive || gameEngine.forceInteractiveControls),
-                       !gameEngine.directionExits.isEmpty || !gameEngine.currentMenuOptions.isEmpty {
-                        VStack(spacing: 6) {
+                       !gameEngine.directionExits.isEmpty || !gameEngine.currentMenuOptions.isEmpty || reserveControlSlots {
+                        VStack(spacing: 10) {
                             // Direction D-pad (when exploring)
                             if !gameEngine.directionExits.isEmpty {
                                 DirectionPadView(exits: gameEngine.directionExits, secured: gameEngine.securedExits, scale: scale,
@@ -778,6 +784,10 @@ struct TerminalView: View {
                                         .onAppear { dpadMeasuredHeight = geo.size.height }
                                         .onChange(of: geo.size.height) { dpadMeasuredHeight = $0 }
                                 })
+                            } else if reserveControlSlots && dpadMeasuredHeight > 0 {
+                                // Keep the D-pad's place even on screens without it, so it
+                                // never jumps about from one screen to the next.
+                                Color.clear.frame(height: dpadMeasuredHeight)
                             }
 
                             // Action buttons
@@ -802,24 +812,17 @@ struct TerminalView: View {
                                     undoTargetIndex: gameEngine.undoTargetButtonIndex,
                                     redoTargetIndex: gameEngine.redoTargetButtonIndex
                                 )
-                                // Landscape reserves the grid's full height on the grid
-                                // itself; portrait reserves it on the whole controls block
-                                // below (portraitControlsMinHeight), so spare room sits
-                                // above the D-pad, next to the text.
-                                .frame(minHeight: gameEngine.isLandscapeOrientation ? reservedButtonGridHeight : 0,
-                                       alignment: .top)
+                                // Buttons fill their area from the top — one row is always
+                                // the top row of a two-row layout, so nothing jumps about.
+                                .frame(minHeight: reservedButtonGridHeight, alignment: .top)
+                            } else if reserveControlSlots {
+                                Color.clear.frame(height: reservedButtonGridHeight)
                             }
 
                         }
                         .padding(.horizontal, 8)
-                        .padding(.top, 8)
+                        .padding(.top, 6)
                         .padding(.bottom, 4)
-                        // Portrait: a steady height (D-pad + the most button rows
-                        // this screen could need), bottom-aligned — spare room goes
-                        // ABOVE the D-pad, not between the D-pad and the buttons
-                        // or between the buttons and the input bar.
-                        .frame(minHeight: gameEngine.isLandscapeOrientation ? 0 : portraitControlsMinHeight,
-                               alignment: .bottom)
                         .background(Color.black.opacity(0.95))
                         #if !os(tvOS)
                         .simultaneousGesture(
@@ -1231,6 +1234,9 @@ struct TerminalView: View {
     private var tapToAdvanceStrip: some View {
         if gameEngine.swipeLeftHandler != nil || gameEngine.awaitingContinue {
             GeometryReader { geo in
+                HStack(spacing: 0) {
+                // Left-handed: the free scrolling edge is on the left instead.
+                if gameEngine.leftHanded { Spacer(minLength: 0) }
                 Color.clear
                     .frame(width: geo.size.width * 5 / 6)
                     .contentShape(Rectangle())
@@ -1247,6 +1253,8 @@ struct TerminalView: View {
                         }
                     }
                     #endif
+                if !gameEngine.leftHanded { Spacer(minLength: 0) }
+                }
             }
         }
     }
@@ -1930,7 +1938,7 @@ struct MenuButtonsView: View {
                     case .menuItem(let index):
                         let option = options[index]
                         Button(action: { onSelect(index + 1) }) {
-                            Text(option.text)
+                            Text(option.text == "?" ? MenuOption.helpGlyph : option.text)
                                 .font(.system(size: compactFontSize, design: .monospaced))
                                 .fontWeight(option.isDefault || option.isAlert ? .semibold : .regular)
                                 .foregroundColor(terminalDimGreen)

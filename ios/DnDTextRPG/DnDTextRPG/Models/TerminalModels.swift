@@ -101,6 +101,13 @@ struct MenuOption: Identifiable {
     var displayNumber: Int? = nil
 
     static let maxButtonLength = 22
+    /// What the help button shows (Settings > Accessibility > Help Button).
+    /// Menus still use "?" internally; only the label changes.
+    static let helpGlyphChoices = ["?", "ⓘ", "Help"]
+    static var helpGlyph: String {
+        let g = UserDefaults.standard.string(forKey: "helpGlyph") ?? "?"
+        return helpGlyphChoices.contains(g) ? g : "?"
+    }
 
     init(_ text: String, isDefault: Bool = false, isDisabled: Bool = false, isAlert: Bool = false, tint: MenuTint = .normal, compact: Bool = false, displayNumber: Int? = nil) {
         self.text = Self.trimToFit(text)
