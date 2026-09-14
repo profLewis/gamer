@@ -819,7 +819,8 @@ struct TerminalView: View {
                                     onUndo: gameEngine.undoHandler,
                                     onRedo: gameEngine.redoHandler,
                                     undoTargetIndex: gameEngine.undoTargetButtonIndex,
-                                    redoTargetIndex: gameEngine.redoTargetButtonIndex
+                                    redoTargetIndex: gameEngine.redoTargetButtonIndex,
+                                    compactRows: gameEngine.maxButtonsPerScreen > 6
                                 )
                                 // Buttons fill their area from the top — one row is always
                                 // the top row of a two-row layout, so nothing jumps about.
@@ -1722,7 +1723,11 @@ struct MenuButtonsView: View {
     let alertAmber = Color(red: 0.95, green: 0.7, blue: 0.1)
     let alertDarkAmber = Color(red: 0.5, green: 0.35, blue: 0.05)
 
-    private var isCompact: Bool { options.count > 6 }
+    /// Row size comes from the Button Limit setting (compactRows), not from
+    /// how many buttons this screen happens to have — so three rows are
+    /// always the same height from one screen to the next.
+    var compactRows: Bool? = nil
+    private var isCompact: Bool { compactRows ?? (options.count > 6) }
     private var buttonMinHeight: CGFloat { isCompact ? max(36, 32 * scale) : max(44, 38 * scale) }
     private var buttonVerticalPadding: CGFloat { isCompact ? 4 : 8 }
 
@@ -1773,7 +1778,7 @@ struct MenuButtonsView: View {
                 let option = options[index]
                 if index == spacerIndex {
                     Color.clear
-                        .frame(minHeight: buttonMinHeight)
+                        .frame(height: buttonMinHeight)
                 }
                 regularButton(option: option, index: index, fallbackDisplayNumber: displayPos + 1)
             }
@@ -1786,11 +1791,11 @@ struct MenuButtonsView: View {
                     // 2-column layout) — contiguous with the lone button's
                     // row rather than leaving a blank row above it.
                     ForEach(0..<max(0, 3 - regular.count), id: \.self) { _ in
-                        Color.clear.frame(minHeight: buttonMinHeight)
+                        Color.clear.frame(height: buttonMinHeight)
                     }
                 } else if regular.count % 2 == 0 {
                     // Push to right column if regular count is even
-                    Color.clear.frame(minHeight: buttonMinHeight)
+                    Color.clear.frame(height: buttonMinHeight)
                 }
                 compactNavCell(indices: compact)
             }
@@ -1851,8 +1856,8 @@ struct MenuButtonsView: View {
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, buttonVerticalPadding)
-            .frame(minHeight: buttonMinHeight)
+            // Fixed height — a row never grows (text shrinks to fit instead).
+            .frame(height: buttonMinHeight)
             .background(
                 RoundedRectangle(cornerRadius: 6)
                     .stroke(isUndoTarget || isRedoTarget ? terminalAmber.opacity(0.35) : buttonStrokeColor(option),
@@ -1966,9 +1971,9 @@ struct MenuButtonsView: View {
                                 .multilineTextAlignment(.center)
                                 .minimumScaleFactor(0.75)
                                 .font(.system(size: compactFontSize, design: .monospaced))
-                                .fontWeight(option.isDefault || option.isAlert ? .semibold : .regular)
-                                .foregroundColor(terminalDimGreen)
-                                .frame(maxWidth: .infinity, minHeight: buttonMinHeight)
+                                .fontWeight(option.text == "< Leave Game" ? .light : (option.isDefault || option.isAlert ? .semibold : .regular))
+                                .foregroundColor(option.text == "< Leave Game" ? terminalDimGreen.opacity(0.7) : terminalDimGreen)
+                                .frame(maxWidth: .infinity, minHeight: buttonMinHeight, maxHeight: buttonMinHeight)
                         }
                         .buttonStyle(.plain)
                         .scaleEffect(pressedIndex == index + 1 ? 0.92 : 1.0)
@@ -1982,7 +1987,7 @@ struct MenuButtonsView: View {
                         Text("·")
                             .font(.system(size: 10 * scale, design: .monospaced))
                             .foregroundColor(terminalDimGreen.opacity(0.2))
-                            .frame(maxWidth: .infinity, minHeight: buttonMinHeight)
+                            .frame(maxWidth: .infinity, minHeight: buttonMinHeight, maxHeight: buttonMinHeight)
                     }
                 }
                 // Divider between slots — always visible
@@ -1994,7 +1999,7 @@ struct MenuButtonsView: View {
                 }
             }
         }
-        .frame(minHeight: buttonMinHeight)
+        .frame(height: buttonMinHeight)
         .background(
             RoundedRectangle(cornerRadius: 6)
                 .stroke(terminalDimGreen.opacity(0.4), lineWidth: 1)

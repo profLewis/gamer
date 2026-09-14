@@ -346,41 +346,72 @@ class ShopEngine {
     private func showPostPurchaseOptions(item: Item, buyer: Character, returnTo: @escaping () -> Void, completion: @escaping () -> Void) {
         guard let game = game else { return }
 
-        let canEquip: Bool = [.weapon, .armor, .shield].contains(item.type)
-        let canDrink = item.type == .potion
         let canGift = party.count > 1
+        let isFood = ItemCatalog.foodKind(for: item) != nil
 
+        // Use it straight away — named for what it is.
         var options: [String] = []
-        if canEquip { options.append("Equip Now") }
-        if canDrink { options.append("Drink Now") }
+        switch item.type {
+        case .weapon: options.append("Equip It")
+        case .armor: options.append("Wear It")
+        case .shield: options.append("Strap It On")
+        case .potion: options.append(isFood && ItemCatalog.consumeVerb(for: item) == "eats" ? "Eat It" : "Drink It")
+        default: break
+        }
         if canGift { options.append("Give as a Present") }
-        options.append(options.isEmpty ? "Continue" : "Keep It For Later")
+        options.append("Keep It For Later")
 
         guard options.count > 1 else {
-            // Nothing applicable — same as before, just wait and return.
+            // Nothing to do with it but keep it — just wait and return.
             game.waitForContinueWithTimeout { returnTo() }
             return
         }
 
         game.print("")
         game.print("  What would you like to do with it?", color: .cyan)
-        game.showMenu(options)
+        var menuOpts = options.map { MenuOption($0) }
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        game.showMenuOptions(menuOpts)
         game.closeHandler = returnTo
         game.menuHandler = { [weak self] choice in
-            guard let self = self, choice >= 1, choice <= options.count else { return }
-            switch options[choice - 1] {
-            case "Equip Now":
+            guard let self = self, choice >= 1, choice <= menuOpts.count else { return }
+            switch menuOpts[choice - 1].text {
+            case "Equip It", "Wear It", "Strap It On":
                 self.equipNow(item: item, buyer: buyer, returnTo: returnTo)
-            case "Drink Now":
-                self.drinkNow(item: item, buyer: buyer, returnTo: returnTo)
+            case "Eat It":
+                self.eatNow(item: item, buyer: buyer, returnTo: returnTo)
+            case "Drink It":
+                if isFood { self.eatNow(item: item, buyer: buyer, returnTo: returnTo) } else { self.drinkNow(item: item, buyer: buyer, returnTo: returnTo) }
             case "Give as a Present":
                 self.giveAsPresent(item: item, from: buyer, returnTo: returnTo)
+            case "?":
+                game.showInlineHelp {
+                    game.printTitle("Just Bought — Help")
+                    game.print("")
+                    game.printWrapped("Use it now (equip a weapon, wear armour, strap on a shield, eat or drink it), give it to someone else in the party as a present, or keep it in \(buyer.name)'s pack for later. < Back keeps it too.", indent: 2, color: .dimGreen)
+                    game.print("")
+                }
             default:
                 game.print("")
                 game.print("  \(buyer.name) tucks the \(item.name) away for later.", color: .dimGreen)
                 game.waitForContinueWithTimeout { returnTo() }
             }
         }
+    }
+
+    /// Eat or drink food/drink straight after buying it — the same effects
+    /// as eating it from the pack (feeling strong, a sugary lift...).
+    private func eatNow(item: Item, buyer: Character, returnTo: @escaping () -> Void) {
+        guard let game = game, let food = game.consumeFood(item, by: buyer) else {
+            drinkNow(item: item, buyer: buyer, returnTo: returnTo)
+            return
+        }
+        buyer.removeItem(item)
+        game.print("")
+        for (line, color) in food.lines { game.print("  \(line)", color: color) }
+        game.logMultiplayerAction(food.summary)
+        game.waitForContinueWithTimeout { returnTo() }
     }
 
     /// Access to the full party — ShopEngine only ever deals with the one

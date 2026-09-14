@@ -5810,6 +5810,10 @@ class GameEngine: ObservableObject {
             self.printWrapped("Tap buttons to choose actions. Type text at the > prompt when asked (e.g. naming a character). Swipe left to go back from any screen. Swipe right to continue when there is a single option.", indent: 2, color: .dimGreen)
             self.print("")
 
+            self.print("  THE 3-BAR BUTTON", color: .cyan, bold: true)
+            self.printWrapped("The small three-part button at the bottom right of the buttons. Left: < Back — or < Leave Game on the exploring screen, which leaves this adventure for the Main Menu (you're asked about saving first; the app stays open). Middle: ? — help for whatever screen you're on. Right: >> — more buttons when they don't all fit (<< goes back). Long-press << or >> to jump three pages.", indent: 2, color: .dimGreen)
+            self.print("")
+
             self.print("  CARD NAVIGATION", color: .cyan, bold: true)
             self.printWrapped("On character cards, bestiary entries, and Hall of Fame tales, use the <</>> buttons to browse between entries. A dice button picks a random entry.", indent: 2, color: .dimGreen)
             self.print("")
@@ -10052,7 +10056,7 @@ class GameEngine: ObservableObject {
             self.printLink("Settings > Gameplay", to: "gameplay", indent: 4)
             self.print("")
             self.print("  NAVIGATION BAR", color: .cyan, bold: true)
-            self.printWrapped("The compact bar [<< | ? | >>] appears when options span multiple pages. << = previous page, >> = next page. Long-press to skip 3 pages.", indent: 2, color: .dimGreen)
+            self.printWrapped("The small three-part button at the bottom right [< Back | ? | >>]: back (or < Leave Game while exploring), help for this screen, and more buttons when they don't all fit (<< / >> page through; long-press to skip 3 pages).", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  BUTTONS", color: .cyan, bold: true)
             self.printWrapped("DM Settings — configure the AI Dungeon Master provider, API key, creativity level, and log context.", indent: 2, color: .dimGreen)
@@ -17705,6 +17709,9 @@ class GameEngine: ObservableObject {
     private func showExplorationHelp() {
         showInlineHelp {
             self.printTitle("Exploration Help")
+            self.print("")
+            self.print("  THE 3-BAR BUTTON", color: .cyan, bold: true)
+            self.printWrapped("The small three-part button at the bottom right of the buttons. Left: < Back — or < Leave Game on the exploring screen, which leaves this adventure for the Main Menu (you're asked about saving first; the app stays open). Middle: ? — help for whatever screen you're on. Right: >> — more buttons when they don't all fit (<< goes back). Long-press << or >> to jump three pages.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  THE MAP", color: .cyan, bold: true)
             self.printWrapped("@ is your party. XX = secured door, KK = locked door. Full symbol key:", indent: 2, color: .green)
