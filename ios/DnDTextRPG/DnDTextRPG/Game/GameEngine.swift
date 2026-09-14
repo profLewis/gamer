@@ -2151,6 +2151,7 @@ class GameEngine: ObservableObject {
     private func linkTarget(_ key: String) -> (() -> Void)? {
         switch key {
         case "settings": return { [weak self] in self?.showSettings() }
+        case "leaveGame": return { [weak self] in self?.leaveExplorationTapped() }
         case "gameplay": return { [weak self] in self?.showGameplaySettings() }
         case "autoContinue": return { [weak self] in self?.showAutoContinueSettingsPage() }
         case "accessibility": return { [weak self] in self?.showAccessibilityMenu() }
@@ -6077,7 +6078,7 @@ class GameEngine: ObservableObject {
             self.print("")
 
             self.print("  THE 3-BAR BUTTON", color: .cyan, bold: true)
-            self.printWrapped("The small three-part button at the bottom right of the buttons. Left: < Back — or < Leave Game on the exploring screen, which leaves this adventure for the Main Menu (you're asked about saving first; the app stays open). Middle: ? — help for whatever screen you're on. Right: >> — more buttons when they don't all fit (<< goes back). Long-press << or >> to jump three pages.", indent: 2, color: .dimGreen)
+            self.printWrapped("The small three-part button at the bottom right of the buttons. Left: < Back. (The exploring screen has no Back: to leave the adventure, tap ✕ at the right of the input line, or the Leave link on its ? help page — you're asked about saving first, and the app stays open.) Middle: ? — help for whatever screen you're on. Right: >> — more buttons when they don't all fit (<< goes back). Long-press << or >> to jump three pages.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  CARD NAVIGATION", color: .cyan, bold: true)
@@ -10581,7 +10582,7 @@ class GameEngine: ObservableObject {
             self.printLink("Settings > Gameplay", to: "gameplay", indent: 4)
             self.print("")
             self.print("  NAVIGATION BAR", color: .cyan, bold: true)
-            self.printWrapped("The small three-part button at the bottom right [< Back | ? | >>]: back (or < Leave Game while exploring), help for this screen, and more buttons when they don't all fit (<< / >> page through; long-press to skip 3 pages).", indent: 2, color: .dimGreen)
+            self.printWrapped("The small three-part button at the bottom right [< Back | ? | >>]: back (while exploring, leave with ✕ by the input line instead), help for this screen, and more buttons when they don't all fit (<< / >> page through; long-press to skip 3 pages).", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  BUTTONS", color: .cyan, bold: true)
             self.printWrapped("DM Settings — configure the AI Dungeon Master provider, API key, creativity level, and log context.", indent: 2, color: .dimGreen)
@@ -18441,7 +18442,9 @@ class GameEngine: ObservableObject {
             self.printTitle("Exploration Help")
             self.print("")
             self.print("  THE 3-BAR BUTTON", color: .cyan, bold: true)
-            self.printWrapped("The small three-part button at the bottom right of the buttons. Left: < Back — or < Leave Game on the exploring screen, which leaves this adventure for the Main Menu (you're asked about saving first; the app stays open). Middle: ? — help for whatever screen you're on. Right: >> — more buttons when they don't all fit (<< goes back). Long-press << or >> to jump three pages.", indent: 2, color: .dimGreen)
+            self.printWrapped("The small three-part button at the bottom right of the buttons. Left: < Back. (The exploring screen has no Back: to leave the adventure, tap ✕ at the right of the input line, or the Leave link on its ? help page — you're asked about saving first, and the app stays open.) Middle: ? — help for whatever screen you're on. Right: >> — more buttons when they don't all fit (<< goes back). Long-press << or >> to jump three pages.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printLink("Leave this adventure (you'll be asked about saving)", to: "leaveGame", indent: 2)
             self.print("")
             self.print("  THE MAP", color: .cyan, bold: true)
             self.printWrapped("@ is your party. XX = secured door, KK = locked door. Full symbol key:", indent: 2, color: .green)
@@ -18976,11 +18979,9 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showExplorationHelp() }
 
-        // Same destination as the corner X icon (see closeHandler below) —
-        // this just gives that action a discoverable button too, since not
-        // everyone taps the corner icon.
-        menuOpts.append(MenuOption("< Leave Game", tint: .navigation, compact: true))
-        actions.append { [weak self] in self?.leaveExplorationTapped() }
+        // No always-on "< Leave Game" button (it put people off): leaving
+        // takes a deliberate step — the ✕ by the input line (closeHandler
+        // below), or the link on this screen's ? help page.
 
         // --- Multiplayer ---
         if isMultiplayer {
