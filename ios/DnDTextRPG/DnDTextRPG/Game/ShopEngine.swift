@@ -46,7 +46,7 @@ class ShopEngine {
         ItemCatalog.thievesTools(),
         ItemCatalog.holySymbol(),
         ItemCatalog.spellComponentPouch(),
-    ]
+    ] + ItemCatalog.rareFoods()
 
     init(game: GameEngine) {
         self.game = game

@@ -1198,9 +1198,15 @@ final class Combat: ObservableObject {
         }
 
         let sharpenBonus = character.weaponSharpenedUses > 0 ? 1 : 0
-        let attackMod = attackAbilityMod + profBonus + sharpenBonus
-        let attack = Dice.attackRoll(modifier: attackMod, targetAC: monster.armorClass, disadvantage: disadvantage)
+        // Hearty food (cheese, jerky...) — a small +1, stacks with a whetstone.
+        let wellFedBonus = character.wellFedAttacks > 0 ? 1 : 0
+        // Too much juice — sloshing about gives disadvantage.
+        let sluggish = character.sluggishAttacks > 0
+        let attackMod = attackAbilityMod + profBonus + sharpenBonus + wellFedBonus
+        let attack = Dice.attackRoll(modifier: attackMod, targetAC: monster.armorClass, disadvantage: disadvantage || sluggish)
         if character.weaponSharpenedUses > 0 { character.weaponSharpenedUses -= 1 }
+        if character.wellFedAttacks > 0 { character.wellFedAttacks -= 1 }
+        if sluggish { character.sluggishAttacks -= 1 }
 
         let abilityLabel = (weaponStats?.isRanged == true) ? "DEX" : (weaponStats?.isFinesse == true && dexMod > strMod) ? "DEX" : "STR"
         let breakdown = "\(abilityLabel) \(attackAbilityMod >= 0 ? "+" : "")\(attackAbilityMod), Prof +\(profBonus)"
@@ -1212,7 +1218,7 @@ final class Combat: ObservableObject {
         var targetDefeated = false
 
         if attack.hits {
-            let damageMod = attackAbilityMod + sharpenBonus
+            let damageMod = attackAbilityMod + sharpenBonus + wellFedBonus
             let baseDice = weaponStats?.damage ?? "1d4"  // Unarmed fallback
             damageDice = baseDice
             damageModifier = damageMod
@@ -1685,7 +1691,7 @@ final class Combat: ObservableObject {
                 s = char.isComputerControlled ? "◆" : "●"  // ◆ = AI, ● = human
             }
             let n = String(char.name.prefix(16)).padding(toLength: maxPartyName, withPad: " ", startingAt: 0)
-            let statusTag = char.hasFledCombat ? " [fled]" : (char.isPlayingDead ? " [playing dead]" : (char.isMindControlled ? " [mind-controlled]" : ""))
+            let statusTag = char.hasFledCombat ? " [fled]" : (char.isPlayingDead ? " [playing dead]" : (char.isMindControlled ? " [mind-controlled]" : "")) + (char.sluggishAttacks > 0 ? " [sluggish]" : "")
             let hp = String("\(char.currentHP)/\(char.maxHP)").padding(toLength: 7, withPad: " ", startingAt: 0)
             let youTag = localCharacterIds.contains(char.id) ? " ◀" : ""
             lines.append(" \(s) \(n)  \(hp)\(statusTag)\(youTag)")

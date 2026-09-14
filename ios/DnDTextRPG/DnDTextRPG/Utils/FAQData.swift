@@ -284,6 +284,11 @@ struct FAQData {
             keywords: ["rare goods", "under the counter", "special item", "secret stock"]
         ),
         FAQEntry(
+            question: "What does food do?",
+            answer: "Use food and drink from your pack (Use Item), or in combat (Use Potion — it takes your turn). Everything restores a little HP. Hearty food like cheese, salt pork or jerky makes you feel strong: +1 to attack and damage for your next few attacks. Honey, jam and sweets give a sugary lift of 2 temporary HP. Juice is fine in moderation, but drink three glasses and you slosh about — sluggish, with disadvantage on your next 2 attacks. Water, tea or a rest settles it. Ask a merchant what's under the counter for stranger foods.",
+            keywords: ["food", "eat", "eating", "cheese", "juice", "drink", "hungry", "sluggish", "provisions", "honey", "jam"]
+        ),
+        FAQEntry(
             question: "What does a Whetstone do?",
             answer: "Use it from your pack on your currently equipped weapon to sharpen it — a +1 bonus to attack and damage rolls for your next 3 attacks. You need a weapon equipped to use it.",
             keywords: ["whetstone", "sharpen", "sharpen weapon", "sharpening stone"]

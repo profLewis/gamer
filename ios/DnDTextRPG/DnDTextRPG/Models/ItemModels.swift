@@ -502,29 +502,128 @@ struct ItemCatalog {
 
         let gearCount = min(pool.count, 7 + level * 2)
         let gear = Array(pool.shuffled().prefix(gearCount))
-        let goods = Array(provisions().shuffled().prefix(Int.random(in: 2...4)))
+        // Always a few cheeses (players asked for a proper cheese counter),
+        // plus a handful of other everyday goods.
+        let goods = Array(everydayProvisions().shuffled().prefix(Int.random(in: 2...3)))
+            + Array(cheeses().shuffled().prefix(Int.random(in: 2...3)))
         return essentials + gear + goods
     }
 
     // MARK: Provisions — everyday goods, for variety between merchants
 
-    static func provisions() -> [Item] {
-        func food(_ name: String, _ desc: String, value: Int, weight: Double, heal: String?, effect: String) -> Item {
-            Item(id: UUID(), name: name, description: desc, type: .potion, weight: weight, value: value,
-                 weaponStats: nil, armorStats: nil,
-                 potionStats: PotionStats(healAmount: heal, effect: effect))
-        }
-        return [
-            food("Jar of Honey", "Golden and thick, from hives at the dungeon's edge.", value: 3, weight: 1.0, heal: "1d4", effect: "Restores 1d4 HP — sweet and soothing"),
-            food("Pot of Jam", "Blackberry, with the odd seed.", value: 2, weight: 1.0, heal: "1d2", effect: "Restores 1d2 HP"),
+    private static func food(_ name: String, _ desc: String, value: Int, weight: Double, heal: String?, effect: String) -> Item {
+        Item(id: UUID(), name: name, description: desc, type: .potion, weight: weight, value: value,
+             weaponStats: nil, armorStats: nil,
+             potionStats: PotionStats(healAmount: heal, effect: effect))
+    }
+
+    /// Every food and drink a merchant might sell (everyday goods + cheeses).
+    static func provisions() -> [Item] { everydayProvisions() + cheeses() }
+
+    static func everydayProvisions() -> [Item] {
+        [
+            food("Jar of Honey", "Golden and thick, from hives at the dungeon's edge.", value: 3, weight: 1.0, heal: "1d4", effect: "Restores 1d4 HP + a sugary lift (2 temp HP)"),
+            food("Pot of Jam", "Blackberry, with the odd seed.", value: 2, weight: 1.0, heal: "1d2", effect: "Restores 1d2 HP + a sugary lift (2 temp HP)"),
             food("Jar of Marmite", "Dark, salty and divisive. You either love it or hate it.", value: 2, weight: 0.5, heal: "1d3", effect: "Restores 1d3 HP (if you can stomach it)"),
-            food("Flask of Mead", "Honey wine. Warms the belly and loosens the tongue.", value: 4, weight: 1.0, heal: "1d4", effect: "Restores 1d4 HP; you feel bolder"),
-            food("Waterskin", "Clean water — worth more than gold in the deep dark.", value: 1, weight: 2.0, heal: "1d2", effect: "Restores 1d2 HP"),
+            food("Flask of Apple Juice", "Cloudy, pressed from orchard apples.", value: 2, weight: 1.0, heal: "1d3", effect: "Restores 1d3 HP. Too much juice slows you down!"),
+            food("Bottle of Elderflower Cordial", "Fizzy, floral and faintly posh.", value: 3, weight: 1.0, heal: "1d3", effect: "Restores 1d3 HP. Too much juice slows you down!"),
+            food("Waterskin", "Clean water — worth more than gold in the deep dark.", value: 1, weight: 2.0, heal: "1d2", effect: "Restores 1d2 HP; settles a sloshing belly"),
             food("Loaf of Bread", "Crusty, a day or two old.", value: 1, weight: 0.5, heal: "1d3", effect: "Restores 1d3 HP"),
-            food("Wheel of Cheese", "Pungent. Very pungent.", value: 5, weight: 2.0, heal: "1d6", effect: "Restores 1d6 HP"),
             food("Bag of Apples", "Crisp, if slightly bruised.", value: 1, weight: 1.0, heal: "1d2", effect: "Restores 1d2 HP"),
-            food("Salt Pork", "Tough, salty trail rations.", value: 2, weight: 1.0, heal: "1d4", effect: "Restores 1d4 HP"),
-            food("Pot of Tea", "Strong enough to stand a spoon in.", value: 1, weight: 0.5, heal: nil, effect: "Feel refreshed"),
+            food("Salt Pork", "Tough, salty trail rations.", value: 2, weight: 1.0, heal: "1d4", effect: "Restores 1d4 HP; you feel strong (+1 attack/damage, 2 attacks)"),
+            food("Pot of Tea", "Strong enough to stand a spoon in.", value: 1, weight: 0.5, heal: nil, effect: "Feel refreshed; settles a sloshing belly"),
         ]
     }
+
+    /// A merchant always has a few of these — cheese is hearty food.
+    static func cheeses() -> [Item] {
+        [
+            food("Wheel of Cheese", "Pungent. Very pungent.", value: 5, weight: 2.0, heal: "1d6", effect: "Restores 1d6 HP; you feel strong (+1 attack/damage, 3 attacks)"),
+            food("Wedge of Cheddar", "Sharp and crumbly, aged in a cave.", value: 3, weight: 0.5, heal: "1d4", effect: "Restores 1d4 HP; you feel strong (+1 attack/damage, 2 attacks)"),
+            food("Slice of Wensleydale", "Mild and crumbly — goes well with cake, apparently.", value: 3, weight: 0.5, heal: "1d4", effect: "Restores 1d4 HP; you feel strong (+1 attack/damage, 2 attacks)"),
+            food("Round of Brie", "Soft, runny, and best eaten before it walks off.", value: 4, weight: 0.5, heal: "1d4", effect: "Restores 1d4 HP; you feel strong (+1 attack/damage, 2 attacks)"),
+            food("Goat's Cheese Log", "Tangy. The goat seemed very proud of it.", value: 3, weight: 0.5, heal: "1d3", effect: "Restores 1d3 HP; you feel strong (+1 attack/damage, 2 attacks)"),
+            food("Smoked Gouda", "Red wax rind, smoky inside.", value: 4, weight: 1.0, heal: "1d4", effect: "Restores 1d4 HP; you feel strong (+1 attack/damage, 2 attacks)"),
+            food("Blue Stilton", "Veined with blue — the mould is supposed to be there.", value: 6, weight: 1.0, heal: "1d6", effect: "Restores 1d6 HP; you feel strong (+1 attack/damage, 3 attacks)"),
+            food("Block of Halloumi", "Squeaks when you bite it.", value: 4, weight: 0.5, heal: "1d4", effect: "Restores 1d4 HP; you feel strong (+1 attack/damage, 2 attacks)"),
+        ]
+    }
+
+    /// Obscure foods a merchant only brings out from under the counter.
+    static func rareFoods() -> [Item] {
+        [
+            food("Stinking Bishop", "A cheese washed in pear juice. Smells like the inside of a boot.", value: 20, weight: 1.0, heal: "1d8", effect: "Restores 1d8 HP; you feel mighty (+1 attack/damage, 4 attacks)"),
+            food("Pickled Eel", "It wriggles slightly on the way down.", value: 12, weight: 1.0, heal: "1d6", effect: "Restores 1d6 HP; oddly invigorating (+1 attack/damage, 3 attacks)"),
+            food("Black Truffle", "Earthy, knobbly, and worth more than its weight in silver.", value: 25, weight: 0.5, heal: "1d8", effect: "Restores 1d8 HP; you feel strong (+1 attack/damage, 3 attacks)"),
+            food("Owlbear Jerky", "Chewy enough to count as a workout.", value: 18, weight: 1.0, heal: "1d6", effect: "Restores 1d6 HP; you feel mighty (+1 attack/damage, 4 attacks)"),
+            food("Cave Mushroom Pie", "Glows faintly. The baker swears that's normal.", value: 10, weight: 1.0, heal: "1d6", effect: "Restores 1d6 HP; you feel strong (+1 attack/damage, 3 attacks)"),
+            food("Highland Haggis", "Best not to ask what's in it.", value: 16, weight: 2.0, heal: "1d8", effect: "Restores 1d8 HP; you feel strong (+1 attack/damage, 3 attacks)"),
+            food("Dragonfruit", "Bright pink outside, speckled inside.", value: 15, weight: 1.0, heal: "1d8", effect: "Restores 1d8 HP; tastes faintly of sparks"),
+            food("Durian", "Spiky, and it smells like a troll's sock.", value: 14, weight: 2.0, heal: "1d8", effect: "Restores 1d8 HP — if you can get past the smell"),
+            food("Candied Violets", "Crystallised flowers in a tiny tin.", value: 12, weight: 0.2, heal: "1d4", effect: "Restores 1d4 HP + a sugary lift (2 temp HP)"),
+            food("Frost Giant Ice Cream", "Somehow still frozen. Don't ask how.", value: 12, weight: 1.0, heal: "1d6", effect: "Restores 1d6 HP + a sugary lift (2 temp HP)"),
+            food("Salted Liquorice", "Black, salty, and deeply suspicious.", value: 6, weight: 0.2, heal: "1d3", effect: "Restores 1d3 HP (love it or hate it)"),
+            food("Jar of Pickled Onions", "Eye-wateringly sharp.", value: 6, weight: 1.0, heal: "1d3", effect: "Restores 1d3 HP; your breath could now strip paint"),
+            food("Gnomish Fizzy Pop", "Violently fizzy. Counts double on the slosh-o-meter.", value: 8, weight: 1.0, heal: "1d4", effect: "Restores 1d4 HP. Very sloshy — too much slows you down!"),
+        ]
+    }
+
+    // MARK: Food effects
+
+    /// What eating/drinking a named food or drink does, beyond its dice of
+    /// HP. Looked up by name so items already sitting in old saves (which
+    /// carry their own copy of the item) keep working.
+    private static let foodKinds: [String: FoodKind] = [
+        "Jar of Honey": .sweet, "Pot of Jam": .sweet,
+        "Candied Violets": .sweet, "Frost Giant Ice Cream": .sweet,
+        "Jar of Marmite": .divisive, "Salted Liquorice": .divisive,
+        "Flask of Apple Juice": .juice(glasses: 1), "Bottle of Elderflower Cordial": .juice(glasses: 1),
+        "Flask of Mead": .juice(glasses: 1),   // legacy name — renamed on load
+        "Gnomish Fizzy Pop": .juice(glasses: 2),
+        "Waterskin": .refreshing, "Pot of Tea": .refreshing,
+        "Loaf of Bread": .plain, "Bag of Apples": .plain,
+        "Salt Pork": .hearty(attacks: 2),
+        "Wheel of Cheese": .hearty(attacks: 3), "Blue Stilton": .hearty(attacks: 3),
+        "Wedge of Cheddar": .hearty(attacks: 2), "Slice of Wensleydale": .hearty(attacks: 2),
+        "Round of Brie": .hearty(attacks: 2), "Goat's Cheese Log": .hearty(attacks: 2),
+        "Smoked Gouda": .hearty(attacks: 2), "Block of Halloumi": .hearty(attacks: 2),
+        "Stinking Bishop": .hearty(attacks: 4), "Owlbear Jerky": .hearty(attacks: 4),
+        "Black Truffle": .hearty(attacks: 3), "Cave Mushroom Pie": .hearty(attacks: 3),
+        "Highland Haggis": .hearty(attacks: 3),
+        "Pickled Eel": .strange(line: "It wriggles slightly on the way down. Oddly invigorating!", attacks: 3),
+        "Dragonfruit": .strange(line: "Tastes faintly of sparks. Your hair stands on end for a moment.", attacks: 0),
+        "Durian": .strange(line: "Smells like a troll's sock, tastes like custard. The party edges away.", attacks: 0),
+        "Jar of Pickled Onions": .strange(line: "Eye-watering! Your breath could now strip paint.", attacks: 0),
+    ]
+
+    static func foodKind(for item: Item) -> FoodKind? {
+        guard item.type == .potion else { return nil }
+        return foodKinds[item.name]
+    }
+
+    /// "drinks" for juices/water/tea (and ordinary potions), "eats" for food.
+    static func consumeVerb(for item: Item) -> String {
+        switch foodKind(for: item) {
+        case .none, .juice, .refreshing: return "drinks"
+        default: return "eats"
+        }
+    }
+
+    /// Old saves may still carry a "Flask of Mead" — swap it for the
+    /// age-appropriate juice it has become.
+    static func migrateLegacyFood(_ item: Item) -> Item {
+        guard item.name == "Flask of Mead", item.type == .potion else { return item }
+        return everydayProvisions().first { $0.name == "Flask of Apple Juice" } ?? item
+    }
+}
+
+/// What a food or drink does when used, on top of the HP it restores.
+enum FoodKind {
+    case plain                                  // just the HP
+    case hearty(attacks: Int)                   // feel strong: +1 attack & damage for N attacks
+    case sweet                                  // sugary lift: 2 temporary HP
+    case juice(glasses: Int)                    // 3+ glasses → sloshing and sluggish
+    case refreshing                             // water/tea: settles a sloshing belly
+    case divisive                               // love it or hate it
+    case strange(line: String, attacks: Int)    // odd under-the-counter foods
 }

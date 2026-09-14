@@ -17838,7 +17838,11 @@ class GameEngine: ObservableObject {
             }
             for pattern in usePatterns {
                 if lower.contains(pattern + iName) || lower.contains(pattern + iName.replacingOccurrences(of: " ", with: "")) {
-                    if let healStr = item.item.potionStats?.healAmount {
+                    if let food = consumeFood(item.item, by: item.char) {
+                        item.char.removeItem(item.item)
+                        print("  [Auto-applied: \(food.summary)]", color: .brightGreen)
+                        logEvent("DM (auto): \(food.summary)", category: "DM")
+                    } else if let healStr = item.item.potionStats?.healAmount {
                         item.char.removeItem(item.item)
                         let roll = Dice.rollDamage(healStr)
                         let amount = max(1, roll.total)
@@ -17892,6 +17896,10 @@ class GameEngine: ObservableObject {
                     } else {
                         print("  [\(char.name) drinks antidote (not poisoned).]", color: .dimGreen)
                     }
+                } else if let food = consumeFood(item, by: char) {
+                    char.removeItem(item)
+                    for (line, color) in food.lines { print("  [\(line)]", color: color) }
+                    logEvent("DM: \(food.summary)", category: "DM")
                 } else if let healStr = item.potionStats?.healAmount {
                     char.removeItem(item)
                     let roll = Dice.rollDamage(healStr)
@@ -20241,23 +20249,30 @@ class GameEngine: ObservableObject {
             }
         }
 
-        // Use option for potions
-        if item.type == .potion, let healStr = item.potionStats?.healAmount {
-            options.append("Use Now")
+        // Use option for potions (and food/drink — eat it on the spot)
+        let lootIsFood = ItemCatalog.foodKind(for: item) != nil
+        if item.type == .potion, lootIsFood || item.potionStats?.healAmount != nil {
+            let lootVerb = ItemCatalog.consumeVerb(for: item)
+            options.append(lootIsFood ? (lootVerb == "eats" ? "Eat Now" : "Drink Now") : "Use Now")
             actions.append { [weak self] in
                 guard let self = self else { return }
                 let doUse = { (char: Character) in
-                    let roll = Dice.rollDamage(healStr)
-                    let amount = max(1, roll.total)
-                    char.heal(amount)
-                    self.print("  \(char.name) drinks the \(item.name)!", color: .brightGreen)
-                    self.print("  Restored \(amount) HP! (\(char.currentHP)/\(char.maxHP))", color: .brightGreen)
-                    self.logEvent("\(char.name) used \(item.name) — healed \(amount) HP", category: "LOOT")
+                    if let food = self.consumeFood(item, by: char) {
+                        for (line, color) in food.lines { self.print("  \(line)", color: color) }
+                        self.logEvent(food.summary, category: "LOOT")
+                    } else if let healStr = item.potionStats?.healAmount {
+                        let roll = Dice.rollDamage(healStr)
+                        let amount = max(1, roll.total)
+                        char.heal(amount)
+                        self.print("  \(char.name) drinks the \(item.name)!", color: .brightGreen)
+                        self.print("  Restored \(amount) HP! (\(char.currentHP)/\(char.maxHP))", color: .brightGreen)
+                        self.logEvent("\(char.name) used \(item.name) — healed \(amount) HP", category: "LOOT")
+                    }
                     self.waitForContinueWithTimeout { onDone() }
                 }
                 let useEligible = self.combatLootEligible ?? self.party
                 if useEligible.count > 1 {
-                    self.pickCharacter(title: "Who drinks it?", from: useEligible) { char in doUse(char) }
+                    self.pickCharacter(title: "Who \(lootVerb) it?", from: useEligible) { char in doUse(char) }
                 } else if let char = useEligible.first {
                     doUse(char)
                 }
@@ -20849,6 +20864,10 @@ class GameEngine: ObservableObject {
                         self.print("  \(target.name) drinks the antidote.", color: .dimGreen)
                         self.print("  (Not poisoned — no effect.)", color: .dimGreen)
                     }
+                } else if let food = self.consumeFood(potion, by: target) {
+                    self.print("")
+                    for (line, color) in food.lines { self.print("  \(line)", color: color) }
+                    self.logMultiplayerAction(food.summary)
                 } else if let healStr = potion.potionStats?.healAmount {
                     let roll = Dice.rollDamage(healStr)
                     let amount = max(1, roll.total)
@@ -20878,7 +20897,7 @@ class GameEngine: ObservableObject {
 
             // Ask who should drink it when there are multiple party members
             if self.party.count > 1 {
-                self.pickCharacter(title: "Who drinks the \(potion.name)?", onBack: {
+                self.pickCharacter(title: "Who \(ItemCatalog.consumeVerb(for: potion)) the \(potion.name)?", onBack: {
                     self.showUsePotionMenu(character: character, onBack: onBack, fromDM: fromDM)
                 }) { target in
                     applyPotion(target)
@@ -23533,10 +23552,89 @@ class GameEngine: ObservableObject {
 
     /// On a long rest, if anyone's carrying provisions (honey, bread,
     /// mead... — see ItemCatalog.provisions), the party eats one of them.
+    /// Eats or drinks a food/drink item: rolls its HP, then applies its
+    /// FoodKind effect (feeling strong, sugary lift, juice slosh...). The
+    /// caller removes the item and logs `summary`. Returns nil for anything
+    /// that isn't food, so callers fall back to their normal potion path.
+    func consumeFood(_ item: Item, by target: Character) -> (lines: [(String, TerminalColor)], summary: String)? {
+        guard let kind = ItemCatalog.foodKind(for: item) else { return nil }
+        let verb = ItemCatalog.consumeVerb(for: item)
+        var lines: [(String, TerminalColor)] = [("\(target.name) \(verb) the \(item.name).", .brightGreen)]
+        var notes: [String] = []
+
+        var healAmount = 0
+        if let healStr = item.potionStats?.healAmount {
+            healAmount = max(1, Dice.rollDamage(healStr).total)
+        }
+        if case .divisive = kind {
+            if Bool.random() {
+                lines.append(("\(target.name) loves it, and goes back for another spoonful!", .brightGreen))
+                healAmount += 1
+            } else {
+                lines.append(("\(target.name) hates it and pulls a face. Still — it's food.", .yellow))
+                healAmount = min(healAmount, 1)
+            }
+        }
+        if healAmount > 0 {
+            let before = target.currentHP
+            target.heal(healAmount)
+            let gained = target.currentHP - before
+            if gained > 0 {
+                lines.append(("Restored \(gained) HP! (\(target.currentHP)/\(target.maxHP))", .brightGreen))
+                notes.append("+\(gained) HP")
+            } else {
+                lines.append(("Already at full health — but it was tasty.", .dimGreen))
+            }
+        }
+
+        func feelStrong(_ attacks: Int) {
+            guard attacks > 0 else { return }
+            target.wellFedAttacks = max(target.wellFedAttacks, attacks)
+            lines.append(("\(target.name) feels strong! +1 to attack and damage for the next \(attacks) attacks.", .yellow))
+            notes.append("feeling strong")
+        }
+
+        switch kind {
+        case .plain, .divisive:
+            break
+        case .hearty(let attacks):
+            feelStrong(attacks)
+        case .strange(let line, let attacks):
+            lines.append((line, .cyan))
+            feelStrong(attacks)
+        case .sweet:
+            target.tempHP = max(target.tempHP, 2)
+            lines.append(("A sugary lift: 2 temporary HP.", .yellow))
+            notes.append("sugary lift")
+        case .juice(let glasses):
+            target.juiceCount += glasses
+            if target.juiceCount >= 3 {
+                target.sluggishAttacks = max(target.sluggishAttacks, 2)
+                lines.append(("Too much juice! \(target.name) is full to the brim and sloshing about — sluggish: disadvantage on the next 2 attacks.", .yellow))
+                lines.append(("(Water, tea or a rest will settle it.)", .dimGreen))
+                notes.append("sluggish from too much juice")
+            } else if target.juiceCount == 2 {
+                lines.append(("\(target.name)'s belly gurgles. Any more juice and they'll start to slow down.", .dimGreen))
+            }
+        case .refreshing:
+            if target.sluggishAttacks > 0 || target.juiceCount > 0 {
+                target.juiceCount = 0
+                target.sluggishAttacks = 0
+                lines.append(("That settles things — \(target.name) no longer feels sloshy.", .brightGreen))
+                notes.append("no longer sluggish")
+            } else {
+                lines.append(("Refreshing.", .dimGreen))
+            }
+        }
+
+        let summary = "\(target.name) \(verb) \(item.name)" + (notes.isEmpty ? "" : " — " + notes.joined(separator: ", "))
+        return (lines, summary)
+    }
+
     private func eatProvisionDuringRest() -> String? {
-        let provisionNames = Set(ItemCatalog.provisions().map { $0.name })
         for char in party {
-            if let item = char.inventory.first(where: { provisionNames.contains($0.name) }) {
+            // A proper meal, not a drink — juice isn't dinner.
+            if let item = char.inventory.first(where: { ItemCatalog.foodKind(for: $0) != nil && ItemCatalog.consumeVerb(for: $0) == "eats" }) {
                 char.removeItem(item)
                 logEvent("\(char.name) shared \(item.name) during a long rest", category: "REST")
                 return "\(shortName(for: char)) breaks out the \(item.name) — dinner is served."
@@ -23560,6 +23658,8 @@ class GameEngine: ObservableObject {
 
         SoundManager.shared.stopMusic()
         print(header, color: .cyan, bold: true)
+        // Sleeping it off: a rest settles any juice overindulgence.
+        for char in party { char.juiceCount = 0; char.sluggishAttacks = 0 }
         if isHoldingScreen && !fast {
             print("(Hold screen to rest faster)", color: .dimGreen)
         }
@@ -26463,12 +26563,16 @@ class GameEngine: ObservableObject {
                 guard let self = self else { return }
                 let hasDisadvantage = self.combatHesitating
                 self.combatHesitating = false
+                let isSluggish = (self.party.first(where: { $0.id == characterId })?.sluggishAttacks ?? 0) > 0
                 if let report = combat.playerAttack(characterId: characterId, targetId: monsterRef.id, disadvantage: hasDisadvantage) {
                     self.clearTerminal()
                     self.printCombatStatus()
                     self.print("")
                     if hasDisadvantage {
                         self.print("  (Disadvantage — you hesitated!)", color: .yellow)
+                        self.print("")
+                    } else if isSluggish {
+                        self.print("  (Disadvantage — sloshing with juice!)", color: .yellow)
                         self.print("")
                     }
                     self.displayAttackReport(report) { [weak self] in
@@ -26506,7 +26610,7 @@ class GameEngine: ObservableObject {
         // yourself or any ally. Takes the whole turn, same as Cast Spell.
         // Only offered when this character is actually carrying something
         // usable — a Whetstone alone doesn't count, that's not a heal.
-        if character.inventory.contains(where: { $0.potionStats?.healAmount != nil || $0.name.lowercased().contains("antidote") }) {
+        if character.inventory.contains(where: { $0.potionStats?.healAmount != nil || $0.name.lowercased().contains("antidote") || ItemCatalog.foodKind(for: $0) != nil }) {
             options.append("Use Potion")
             actions.append { [weak self] in
                 self?.showCombatUsePotionMenu(characterId: characterId)
@@ -26586,7 +26690,7 @@ class GameEngine: ObservableObject {
     private func showCombatUsePotionMenu(characterId: UUID) {
         guard let combat = currentCombat,
               let character = party.first(where: { $0.id == characterId }) else { return }
-        let potions = character.inventory.filter { $0.potionStats?.healAmount != nil || $0.name.lowercased().contains("antidote") }
+        let potions = character.inventory.filter { $0.potionStats?.healAmount != nil || $0.name.lowercased().contains("antidote") || ItemCatalog.foodKind(for: $0) != nil }
         guard !potions.isEmpty else { showPlayerCombatMenu(characterId: characterId); return }
 
         clearTerminal()
@@ -26627,6 +26731,9 @@ class GameEngine: ObservableObject {
                     } else {
                         self.print("  \(target.name) drinks the antidote. (Not poisoned — no effect.)", color: .dimGreen)
                     }
+                } else if let food = self.consumeFood(potion, by: target) {
+                    for (line, color) in food.lines { self.print("  \(line)", color: color) }
+                    self.logMultiplayerAction(food.summary)
                 } else if let healStr = potion.potionStats?.healAmount {
                     let roll = Dice.rollDamage(healStr)
                     let amount = max(1, roll.total)
