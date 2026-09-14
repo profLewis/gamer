@@ -18317,7 +18317,11 @@ class GameEngine: ObservableObject {
     private var cutsceneToken = UUID()
 
     private func playAdventureCutscene(then done: @escaping () -> Void) {
-        if mainQuest == nil { mainQuest = MainQuest.random() }
+        // Half the time the quest comes from one of the adventure files (so an
+        // offline tale can be that file's own), otherwise it's rolled fresh.
+        if mainQuest == nil {
+            mainQuest = Bool.random() ? (AdventureLibrary.templates().randomElement()?.mainQuest ?? MainQuest.random()) : MainQuest.random()
+        }
         let play: ([String]) -> Void = { [weak self] lines in
             guard let self = self else { return }
             self.adventureIntroLines = lines
@@ -18326,7 +18330,7 @@ class GameEngine: ObservableObject {
             self.cutsceneActive = true
             self.showCutsceneLine(0, lines: lines, done: done)
         }
-        guard DMEngine.shared.isConfigured, storyWriterEnabled else { play(adventureBackstory()); return }
+        guard DMEngine.shared.isConfigured, storyWriterEnabled else { play(offlineOpeningTale()); return }
         clearTerminal()
         for _ in 0..<5 { print("") }
         print("The tale is being written…", color: .dimGreen, centered: true)
@@ -18334,7 +18338,12 @@ class GameEngine: ObservableObject {
         DMEngine.shared.writeStory(system: storySystemPrompt, prompt: storyPrompt()) { [weak self] text in
             guard let self = self else { return }
             self.stopWritingBar()
-            play(self.parseStory(text) ?? self.adventureBackstory())
+            if let lines = self.parseStory(text) {
+                self.keepWrittenTale(lines)
+                play(lines)
+            } else {
+                play(self.offlineOpeningTale())
+            }
         }
     }
 
@@ -18441,7 +18450,35 @@ class GameEngine: ObservableObject {
         What is at stake: \(mq.stakes)
         Reward: \(mq.reward)
         The party: \(partyText)
-        """
+        """ + storyStyleExamples()
+    }
+
+    /// A couple of tales from the adventure files, for the story writer to
+    /// learn the style from (not to copy).
+    private func storyStyleExamples() -> String {
+        let examples = AdventureLibrary.styleExamples().map { $0.filledTale(party: "the heroes", dungeon: "the dungeon").joined(separator: "\n") }
+        guard !examples.isEmpty else { return "" }
+        return "\n\nFor the style only, here are opening tales from other adventures. Match their voice and pace, but don't reuse their plots, names or lines:\n\n"
+            + examples.enumerated().map { "Example \($0.offset + 1):\n\($0.element)" }.joined(separator: "\n\n")
+    }
+
+    /// A tale the story writer wrote, kept as one more example for next time.
+    private func keepWrittenTale(_ lines: [String]) {
+        guard let mq = mainQuest else { return }
+        AdventureLibrary.saveGenerated(AdventureFile(title: "\(Dungeon.guardianName(mq.villain)) — \(dungeon?.name ?? "the dungeon")",
+                                                     village: mq.village, villain: mq.villain, goal: mq.goal, stakes: mq.stakes,
+                                                     reward: mq.reward, tale: lines, author: "Story writer", generated: true))
+    }
+
+    /// Without the story writer: the adventure file's own tale when the quest
+    /// came from one, else the tale built from the quest and the party.
+    private func offlineOpeningTale() -> [String] {
+        if let mq = mainQuest, let file = AdventureLibrary.templates().first(where: { $0.villain == mq.villain && $0.goal == mq.goal }) {
+            let names = party.map { shortName(for: $0) }
+            let together = names.count <= 1 ? (names.first ?? "a lone adventurer") : names.dropLast().joined(separator: ", ") + " and " + names.last!
+            return file.filledTale(party: together, dungeon: dungeon?.name ?? "the dungeon")
+        }
+        return adventureBackstory()
     }
 
     /// The story writer's reply as lines, or nil if it isn't usable.
@@ -26680,6 +26717,21 @@ class GameEngine: ObservableObject {
     /// log (never replaces it — importing is additive, so you can't lose
     /// the current run's history by mistake).
     func importAdventureLog(from text: String) {
+        // An adventure file (see AdventureLibrary): add it to the collection.
+        if let data = text.data(using: .utf8), let adventure = try? JSONDecoder().decode(AdventureFile.self, from: data),
+           (3...14).contains(adventure.tale.count), let dir = AdventureLibrary.folder {
+            var a = adventure
+            a.generated = false
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            if let out = try? encoder.encode(a) {
+                try? out.write(to: dir.appendingPathComponent("imported-\(Int(Date().timeIntervalSince1970)).json"), options: .atomic)
+                logEvent("Added the adventure \"\(a.title)\" to the collection", category: "SYSTEM")
+                print("")
+                print("  Adventure \"\(a.title)\" added — a new adventure may now use it.", color: .brightGreen)
+            }
+            return
+        }
         // A bug report carries the whole game: load it as its own slot.
         var text = text
         var importedSlot: String?
