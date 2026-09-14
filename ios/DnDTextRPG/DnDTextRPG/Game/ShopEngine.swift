@@ -355,7 +355,7 @@ class ShopEngine {
         case .weapon: options.append("Equip It")
         case .armor: options.append("Wear It")
         case .shield: options.append("Strap It On")
-        case .potion: options.append(isFood && ItemCatalog.consumeVerb(for: item) == "eats" ? "Eat It" : "Drink It")
+        case .potion: options.append(ItemCatalog.consumeVerb(for: item) == "eats" ? "Eat It" : "Drink It")
         default: break
         }
         if canGift { options.append("Give as a Present") }
@@ -403,8 +403,19 @@ class ShopEngine {
     /// Eat or drink food/drink straight after buying it — the same effects
     /// as eating it from the pack (feeling strong, a sugary lift...).
     private func eatNow(item: Item, buyer: Character, returnTo: @escaping () -> Void) {
-        guard let game = game, let food = game.consumeFood(item, by: buyer) else {
-            drinkNow(item: item, buyer: buyer, returnTo: returnTo)
+        guard let game = game else { return }
+        guard let food = game.consumeFood(item, by: buyer) else {
+            // Edible but not on the food list: its dice of HP, eaten (not drunk).
+            buyer.removeItem(item)
+            game.print("")
+            if let heal = item.potionStats?.healAmount {
+                let amount = max(1, Dice.rollDamage(heal).total)
+                buyer.heal(amount)
+                game.print("  \(buyer.name) eats the \(item.name). Restored \(amount) HP! (\(buyer.currentHP)/\(buyer.maxHP))", color: .brightGreen)
+            } else {
+                game.print("  \(buyer.name) eats the \(item.name).", color: .brightGreen)
+            }
+            game.waitForContinueWithTimeout { returnTo() }
             return
         }
         buyer.removeItem(item)

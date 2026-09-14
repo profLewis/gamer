@@ -604,9 +604,23 @@ struct ItemCatalog {
     /// "drinks" for juices/water/tea (and ordinary potions), "eats" for food.
     static func consumeVerb(for item: Item) -> String {
         switch foodKind(for: item) {
-        case .none, .juice, .refreshing: return "drinks"
+        case .juice, .refreshing: return "drinks"
+        case .none:
+            // Not on the food list: go by the name (cheese is eaten, even an
+            // unlisted one); anything else — potions, elixirs — is drunk.
+            return looksEdible(item) ? "eats" : "drinks"
         default: return "eats"
         }
+    }
+
+    /// Solid food by its name, for anything not on the food list.
+    static func looksEdible(_ item: Item) -> Bool {
+        let name = item.name.lowercased()
+        let eatWords = ["cheese", "cheddar", "brie", "gouda", "stilton", "halloumi", "wensleydale", "bread", "loaf",
+                        "ration", "meat", "pork", "beef", "jerky", "apple", "pie", "cake", "biscuit", "honey",
+                        "jam", "marmite", "fruit", "egg", "fish", "eel", "truffle", "mushroom", "sausage", "stew",
+                        "nut", "berries", "haggis", "onion", "liquorice", "violet", "durian", "ice cream"]
+        return eatWords.contains { name.contains($0) }
     }
 
     /// Old saves may still carry a "Flask of Mead" — swap it for the

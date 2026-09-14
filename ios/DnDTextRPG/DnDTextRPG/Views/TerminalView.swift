@@ -262,6 +262,18 @@ struct TerminalView: View {
                         .frame(height: macMapPaneHeight > 0
                                ? CGFloat(macMapPaneHeight)
                                : CGFloat(gameEngine.pinnedMapLines.count) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 8)
+                        // Tell the engine the pane's size, so the map's extent follows it.
+                        .background(GeometryReader { geo in
+                            Color.clear
+                                .onAppear {
+                                    gameEngine.macMapPaneChanged(width: geo.size.width,
+                                                                 userHeight: macMapPaneHeight > 0 ? CGFloat(macMapPaneHeight) : nil)
+                                }
+                                .onChange(of: geo.size) { size in
+                                    gameEngine.macMapPaneChanged(width: size.width,
+                                                                 userHeight: macMapPaneHeight > 0 ? CGFloat(macMapPaneHeight) : nil)
+                                }
+                        })
                         #elseif os(tvOS)
                         .frame(height: CGFloat(gameEngine.pinnedMapLines.count) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 8)
                         #else

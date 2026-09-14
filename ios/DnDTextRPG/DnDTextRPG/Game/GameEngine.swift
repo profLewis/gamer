@@ -3456,7 +3456,7 @@ class GameEngine: ObservableObject {
     /// unresponsive with no visible cause.
     private var autoReturnGeneration = 0
 
-    func autoReturn(after seconds: Double? = nil) {
+    func autoReturn(after seconds: Double? = nil, stretchForReading: Bool = true) {
         let seconds = seconds ?? infoTimeout
         let destination = autoReturnDestination ?? { [weak self] in self?.showExplorationView() }
         autoReturnDestination = nil
@@ -3512,7 +3512,7 @@ class GameEngine: ObservableObject {
         if speakerModeOn {
             scheduleAutoReturnFallback(after: seconds, fire: fire, generation: myGeneration)
         } else {
-            scheduleAutoAdvance(after: countdownDelay(base: seconds), isStillValid: { [weak self] in
+            scheduleAutoAdvance(after: stretchForReading ? countdownDelay(base: seconds) : seconds, isStillValid: { [weak self] in
                 guard let self = self else { return false }
                 return self.autoReturnGeneration == myGeneration && self.closeHandler != nil
             }, fire: fire)
@@ -3550,7 +3550,12 @@ class GameEngine: ObservableObject {
     func printExplorationMap() {
         guard let dungeon = dungeon else { return }
         let (radius, verticalRadius, compact) = bestMapRadius()
-        let mapLines = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: verticalRadius, legendMaxSymbols: mapLegendMaxSymbols, hasTrapSense: partyHasTrapSense)
+        #if os(macOS)
+        let capWidth = false   // the Mac map fills its pane's width (see bestMapRadius)
+        #else
+        let capWidth = true
+        #endif
+        let mapLines = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: verticalRadius, legendMaxSymbols: mapLegendMaxSymbols, hasTrapSense: partyHasTrapSense, capWidth: capWidth)
         printMap(mapLines, color: torchMapColor, size: mapFontSize)
     }
 
@@ -17625,6 +17630,23 @@ class GameEngine: ObservableObject {
     /// user's setting keeps the box — and @'s position in it — identical
     /// every time. Compact mode kicks in above the smallest radius to keep
     /// wider maps from needing much scroll.
+    #if os(macOS)
+    /// The Mac map pane's size, reported by TerminalView — the map's extent
+    /// follows it (see bestMapRadius). userHeight is nil while the pane is
+    /// at its default "fit the whole map" size.
+    private var macMapPaneWidth: CGFloat = 0
+    private var macMapPaneUserHeight: CGFloat? = nil
+
+    func macMapPaneChanged(width: CGFloat, userHeight: CGFloat?) {
+        let before = bestMapRadius()
+        macMapPaneWidth = width
+        macMapPaneUserHeight = userHeight
+        let after = bestMapRadius()
+        guard before != after, dungeon != nil, !pinnedMapLines.isEmpty else { return }
+        printExplorationMap()
+    }
+    #endif
+
     private func bestMapRadius() -> (radius: Int, verticalRadius: Int, compact: Bool) {
         // Always the configured radius, not effectiveMapRadius() — the
         // viewport SIZE shouldn't depend on the torch; getMapDisplay's own
@@ -17640,8 +17662,23 @@ class GameEngine: ObservableObject {
         // viewport (more of the dungeon visible at once), not a bigger
         // font stretched to fill the extra space (see mapFontSize, which
         // only bumps up a little for macOS).
-        let verticalRadius = mapRadius + 2
-        let horizontalRadius = min(mapRadius + 6, 10)
+        // The map fills its pane: as wide as the column, and — once the
+        // player has dragged the pane to a height of their own — as many
+        // rows as fit (header, grid, "@ here" line and full key). Always
+        // centred on the current room, so a bigger pane shows more around you.
+        let lineHeight = mapFontSize * fontScale * 1.3 + 2 + 2   // + the lines' 2pt spacing
+        var verticalRadius = mapRadius + 2
+        if let paneHeight = macMapPaneUserHeight {
+            let lines = Int((paneHeight - 8) / lineHeight)
+            let keyLines = 2 + Dungeon.mapLegendRowCount(maxSymbols: mapLegendMaxSymbols)
+            verticalRadius = max(1, (lines - 5 - keyLines) / 4)
+        }
+        var horizontalRadius = min(mapRadius + 6, 10)
+        if macMapPaneWidth > 0 {
+            let charWidth = mapFontSize * fontScale * 0.6
+            let columns = Int((macMapPaneWidth - 24) / charWidth) - 4
+            horizontalRadius = max(2, (columns / 5 - 1) / 2)
+        }
         return (horizontalRadius, verticalRadius, false)
         #else
         // The "Map Length" setting only ever governs vertical rows (how far
@@ -24935,12 +24972,26 @@ class GameEngine: ObservableObject {
                 "combs out a surprising amount of cobweb.",
                 "tidies up and feels almost civilised again.",
             ].shuffled()
+            // Washing in the pitch dark only half works.
+            let inDark = !torchLit && !(dungeon?.currentRoom?.isTorchlit ?? false)
+            var freshened = 0
             for (i, char) in party.filter({ $0.isConscious }).enumerated() {
+                if inDark && Bool.random() {
+                    printWrapped("\(shortName(for: char)) gropes about in the dark and mostly just gets their boots wet.", indent: 2, color: .dimGreen)
+                    continue
+                }
                 printWrapped("\(shortName(for: char)) \(flavour[i % flavour.count])", indent: 2, color: .green)
                 char.tempHP = max(char.tempHP, 1)
+                freshened += 1
             }
             print("")
-            printWrapped("Feeling fresh: everyone gains 1 temporary HP.", indent: 2, color: .yellow)
+            if !inDark {
+                printWrapped("Feeling fresh: everyone gains 1 temporary HP.", indent: 2, color: .yellow)
+            } else if freshened > 0 {
+                printWrapped("Washing in the dark only half works: \(freshened) of you feel fresher (1 temporary HP). A lit torch would help.", indent: 2, color: .yellow)
+            } else {
+                printWrapped("Washing in the pitch dark is hopeless — nobody feels much fresher. Light a torch first.", indent: 2, color: .yellow)
+            }
             logEvent("The party washed up during a rest", category: "REST")
             advanceTime(15)
         }
@@ -25072,6 +25123,14 @@ class GameEngine: ObservableObject {
         if let healStr = item.potionStats?.healAmount {
             healAmount = max(1, Dice.rollDamage(healStr).total)
         }
+        // In the dark it's hard to see what (or how much) you're eating —
+        // only half the good of it.
+        let inDark = !torchLit && !(dungeon?.currentRoom?.isTorchlit ?? false)
+        if inDark {
+            healAmount = healAmount > 0 ? max(1, healAmount / 2) : 0
+            lines.append(("It's too dark to see what you're \(verb == "drinks" ? "drinking" : "eating") — half of it ends up down \(target.name)'s front. (Only half the benefit.)", .yellow))
+            notes.append("in the dark")
+        }
         if case .divisive = kind {
             if Bool.random() {
                 lines.append(("\(target.name) loves it, and goes back for another spoonful!", .brightGreen))
@@ -25095,8 +25154,9 @@ class GameEngine: ObservableObject {
 
         func feelStrong(_ attacks: Int) {
             guard attacks > 0 else { return }
-            target.wellFedAttacks = max(target.wellFedAttacks, attacks)
-            lines.append(("\(target.name) feels strong! +1 to attack and damage for the next \(attacks) attacks.", .yellow))
+            let boosted = inDark ? max(1, attacks / 2) : attacks
+            target.wellFedAttacks = max(target.wellFedAttacks, boosted)
+            lines.append(("\(target.name) feels strong! +1 to attack and damage for the next \(boosted) attack\(boosted == 1 ? "" : "s").", .yellow))
             notes.append("feeling strong")
         }
 
@@ -25109,8 +25169,9 @@ class GameEngine: ObservableObject {
             lines.append((line, .cyan))
             feelStrong(attacks)
         case .sweet:
-            target.tempHP = max(target.tempHP, 2)
-            lines.append(("A sugary lift: 2 temporary HP.", .yellow))
+            let lift = inDark ? 1 : 2
+            target.tempHP = max(target.tempHP, lift)
+            lines.append(("A sugary lift: \(lift) temporary HP\(inDark ? " (less, in the dark)" : "").", .yellow))
             notes.append("sugary lift")
         case .juice(let glasses):
             target.juiceCount += glasses
@@ -32756,7 +32817,8 @@ class GameEngine: ObservableObject {
         print("Time: \(formattedGameTime())", color: .dimGreen)
         print("")
 
-        autoReturn(after: 1.0)
+        // Just a "welcome back" — move on promptly, not after a reading-time wait.
+        autoReturn(after: 1.5, stretchForReading: false)
     }
 
     // These three screens (reached from the Save menu's "Quit+Save"/
