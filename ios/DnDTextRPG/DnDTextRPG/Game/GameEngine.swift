@@ -2103,6 +2103,7 @@ class GameEngine: ObservableObject {
 
     private func linkTarget(_ key: String) -> (() -> Void)? {
         switch key {
+        case "settings": return { [weak self] in self?.showSettings() }
         case "gameplay": return { [weak self] in self?.showGameplaySettings() }
         case "autoContinue": return { [weak self] in self?.showAutoContinueSettingsPage() }
         case "accessibility": return { [weak self] in self?.showAccessibilityMenu() }
@@ -2967,7 +2968,7 @@ class GameEngine: ObservableObject {
                 let compact = text == "?" || text == "?\u{0338}" || text == "<<" || text == ">>" || text == "< Back"
                 return MenuOption(text, isDefault: index == defaultIndex, tint: tint, compact: compact)
             }
-            self.currentMenuOptions = self.withForwardOption(Self.applyAlwaysDisabled(mapped))
+            self.currentMenuOptions = self.withForwardOption(self.prepareMenu(mapped))
             self.awaitingTextInput = false
             self.awaitingContinue = false
             self.fullScreenTapToContinue = false
@@ -2996,7 +2997,7 @@ class GameEngine: ObservableObject {
                 }
                 return opt
             }
-            self.currentMenuOptions = self.withForwardOption(Self.applyAlwaysDisabled(mapped))
+            self.currentMenuOptions = self.withForwardOption(self.prepareMenu(mapped))
             self.awaitingTextInput = false
             self.awaitingContinue = false
             self.fullScreenTapToContinue = false
@@ -3334,7 +3335,7 @@ class GameEngine: ObservableObject {
                 }
                 return opt
             }
-            self.currentMenuOptions = self.withForwardOption(Self.applyAlwaysDisabled(mapped))
+            self.currentMenuOptions = self.withForwardOption(self.prepareMenu(mapped))
             self.awaitingTextInput = false
             self.awaitingContinue = false
             self.fullScreenTapToContinue = false
@@ -3376,7 +3377,7 @@ class GameEngine: ObservableObject {
                 let compact = text == "?" || text == "?\u{0338}" || text == "<<" || text == ">>" || text == "< Back"
                 return MenuOption(text, isDefault: index == 0, tint: Self.autoTint(text), compact: compact)
             }
-            self.currentMenuOptions = self.withForwardOption(Self.applyAlwaysDisabled(mapped))
+            self.currentMenuOptions = self.withForwardOption(self.prepareMenu(mapped))
             self.awaitingTextInput = true
             self.awaitingContinue = false
             self.fullScreenTapToContinue = false
@@ -3729,7 +3730,7 @@ class GameEngine: ObservableObject {
         setBreadcrumb("handleMenuChoice(choice:\(choice), options:\(currentMenuOptions.map { $0.text }), hasHandler:\(menuHandler != nil))")
 
         if let handler = menuHandler {
-            handler(choice)
+            handler(sourceChoice(choice))
         } else {
             // Buttons are visible (we passed the guard above) but nothing is
             // wired to handle them — an orphaned screen. Recover instead of
@@ -3870,7 +3871,7 @@ class GameEngine: ObservableObject {
         }
 
         if let handler = menuLongPressHandler {
-            handler(choice)
+            handler(sourceChoice(choice))
             suppressMenuUntil = Date().addingTimeInterval(0.8)
         } else if inHelpContext && menuHandler != nil {
             // Help pages: long-press any button → How to Play
@@ -8181,6 +8182,59 @@ class GameEngine: ObservableObject {
             return MenuOption(o.text, isDefault: false, isDisabled: true, isAlert: o.isAlert, tint: o.tint, compact: o.isCompactNav, displayNumber: o.displayNumber)
         }
     }
+    /// Every menu: greyed-out labels applied, a default always chosen (the
+    /// first ordinary button when the screen didn't name one), and the
+    /// default shown first — each moved button remembering where it was
+    /// (sourceIndex), so the screen's handler still gets the choice it expects.
+    func prepareMenu(_ options: [MenuOption]) -> [MenuOption] {
+        hoveredMenuChoice = nil
+        var opts = Self.applyAlwaysDisabled(options)
+        func regular(_ o: MenuOption) -> Bool { !o.isCompactNav && o.text != "Fwd >" && o.text != "<<" && o.text != ">>" }
+        if !opts.contains(where: { $0.isDefault }), let i = opts.firstIndex(where: { regular($0) && !$0.isDisabled }) {
+            let o = opts[i]
+            var d = MenuOption(o.text, isDefault: true, isDisabled: o.isDisabled, isAlert: o.isAlert, tint: o.tint, compact: o.isCompactNav, displayNumber: o.displayNumber)
+            d.sourceIndex = o.sourceIndex
+            opts[i] = d
+        }
+        guard let d = opts.firstIndex(where: { $0.isDefault && regular($0) }),
+              let f = opts.firstIndex(where: regular), d > f else { return opts }
+        var order = Array(opts.indices)
+        order.remove(at: d)
+        order.insert(d, at: f)
+        return order.map { i in var o = opts[i]; o.sourceIndex = i; return o }
+    }
+
+    /// The choice number the screen's handler expects for a button pressed
+    /// at `choice` on screen.
+    func sourceChoice(_ choice: Int) -> Int {
+        guard choice >= 1, choice <= currentMenuOptions.count, let s = currentMenuOptions[choice - 1].sourceIndex else { return choice }
+        return s + 1
+    }
+
+    /// Mac: the button under the mouse — Return presses it (else the default).
+    var hoveredMenuChoice: Int?
+    func setMenuHover(_ choice: Int, _ inside: Bool) {
+        if inside { hoveredMenuChoice = choice } else if hoveredMenuChoice == choice { hoveredMenuChoice = nil }
+    }
+    var hoveredMenuChoiceIfValid: Int? {
+        #if os(macOS)
+        guard let h = hoveredMenuChoice, h >= 1, h <= currentMenuOptions.count, !currentMenuOptions[h - 1].isDisabled else { return nil }
+        return h
+        #else
+        return nil
+        #endif
+    }
+
+    /// The ⚙ menu's music switch: takes effect at once.
+    func toggleMusicQuick() {
+        musicEnabled.toggle()
+        if musicEnabled {
+            if currentCombat != nil { SoundManager.shared.startMusic(.combat, preference: combatMelodyChoice) }
+            else { SoundManager.shared.startMusic(.exploration, preference: explorationMelodyChoice) }
+        }
+        objectWillChange.send()
+    }
+
     var showCombatArena: Bool { Self.combatArenaAvailable && combatArenaEnabled && currentCombat != nil && gameState == .combat }
 
     func arenaScene() -> ArenaScene {
@@ -18001,12 +18055,13 @@ class GameEngine: ObservableObject {
     /// (each map line `lineHeight` tall, as TerminalView lays them out).
     /// Saved as the Map Length setting, so Settings shows the same value.
     func macFitMapRows(toHeight height: CGFloat, lineHeight: CGFloat) {
-        guard let dungeon = dungeon else { return }
-        let (radius, _, compact) = bestMapRadius()
+        guard dungeon != nil else { return }
+        // The pane shows the dotted line under MAP, the grid, "@ here" and
+        // the dotted line under it (see TerminalView's Mac map frame).
         var best = Self.macMapRowsRange.lowerBound
         for rows in Self.macMapRowsRange {
-            let count = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: rows, legendMaxSymbols: mapLegendMaxSymbols, hasTrapSense: partyHasTrapSense, capWidth: false).count
-            if CGFloat(count) * lineHeight + 8 <= height { best = rows } else { break }
+            let visible = (2 * rows + 1) + (2 * rows) + 3
+            if CGFloat(visible) * lineHeight + 6 <= height { best = rows } else { break }
         }
         macSetMapRows(best)
     }
@@ -23941,7 +23996,9 @@ class GameEngine: ObservableObject {
             // Swap ? for ?̸ in the existing menu, keep all other buttons
             let updatedMenu = savedMenu.map { opt -> MenuOption in
                 if opt.text == "?" {
-                    return MenuOption("?\u{0338}", isDefault: opt.isDefault, tint: opt.tint, compact: opt.isCompactNav)
+                    var swapped = MenuOption("?\u{0338}", isDefault: opt.isDefault, tint: opt.tint, compact: opt.isCompactNav)
+                    swapped.sourceIndex = opt.sourceIndex
+                    return swapped
                 }
                 return opt
             }

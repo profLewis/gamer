@@ -147,6 +147,10 @@ struct MenuOption: Identifiable {
     /// number keeps the two in sync regardless of which page an item lands
     /// on. Leave nil for ordinary menus, which don't need this.
     var displayNumber: Int? = nil
+    /// Where this button was in the list the screen gave, when the default
+    /// has been moved to the front (see GameEngine.prepareMenu) — the
+    /// screen's handler still gets the choice number it expects.
+    var sourceIndex: Int? = nil
 
     static let maxButtonLength = 22
     /// What the help button shows (Settings > Accessibility > Help Button).

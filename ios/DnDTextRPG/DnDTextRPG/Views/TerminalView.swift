@@ -262,9 +262,11 @@ struct TerminalView: View {
                         // small landscape column, a long Map
                         // Length, larger text scale...).
                         #if os(macOS)
-                        // Mac: the whole map box (header, grid, full key). Its rows
-                        // are the Map Length setting — which the handle below sets.
-                        .frame(height: CGFloat(gameEngine.pinnedMapLines.count) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 8)
+                        // Mac: from the dotted line under MAP to the one under "@ here"
+                        // — the header and key are a scroll away, leaving more room
+                        // for text. Its rows are the Map Length setting (the handle
+                        // below sets it too).
+                        .frame(height: CGFloat(gameEngine.mapOnlyLineCount + 1) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 6)
                         // Tell the engine the pane's width, so the map's extent follows it.
                         .background(GeometryReader { geo in
                             Color.clear.preference(key: MacMapPaneWidthKey.self, value: geo.size.width)
@@ -301,7 +303,7 @@ struct TerminalView: View {
                             .gesture(DragGesture(minimumDistance: 1)
                                 .onChanged { value in
                                     let lineHeight = gameEngine.mapFontSize * mapScale * 1.3 + 2
-                                    let base = macDragBase ?? CGFloat(gameEngine.pinnedMapLines.count) * lineHeight + 8
+                                    let base = macDragBase ?? CGFloat(gameEngine.mapOnlyLineCount + 1) * lineHeight + 6
                                     macDragBase = base
                                     let target = max(80, min(geometry.size.height - 140, base + value.translation.height))
                                     gameEngine.macFitMapRows(toHeight: target, lineHeight: lineHeight)
@@ -781,7 +783,7 @@ struct TerminalView: View {
         let maxButtons = max(1, gameEngine.maxButtonsPerScreen)
         let rows = Int(ceil(Double(maxButtons) / 2.0))
         let isCompact = maxButtons > 6
-        let rowHeight: CGFloat = isCompact ? max(36, 32 * scale) : max(44, 38 * scale)
+        let rowHeight: CGFloat = isCompact ? max(36, 32 * scale) * macControlScale : max(44, 38 * scale) * macControlScale
         let spacing: CGFloat = isCompact ? 4 : 6
         return CGFloat(rows) * rowHeight + CGFloat(max(0, rows - 1)) * spacing
     }
@@ -850,7 +852,8 @@ struct TerminalView: View {
                                     onRedo: gameEngine.redoHandler,
                                     undoTargetIndex: gameEngine.undoTargetButtonIndex,
                                     redoTargetIndex: gameEngine.redoTargetButtonIndex,
-                                    compactRows: gameEngine.maxButtonsPerScreen > 6
+                                    compactRows: gameEngine.maxButtonsPerScreen > 6,
+                                    onHover: { choice, inside in gameEngine.setMenuHover(choice, inside) }
                                 )
                                 // Buttons fill their area from the top — one row is always
                                 // the top row of a two-row layout, so nothing jumps about.
@@ -1022,6 +1025,30 @@ struct TerminalView: View {
                             if gameEngine.timeFrozen || (gameEngine.awaitingContinue && gameEngine.autoContinueCountdownAvailable && gameEngine.autoCountdownEnd != nil && gameEngine.showCountdownControl) {
                                 autoCountdownBar
                             }
+                            #if os(macOS)
+                            // Settings, always to hand on the Mac — music, AI and the rest;
+                            // Back returns to where you were.
+                            Menu {
+                                Button(gameEngine.musicEnabled ? "Music Off" : "Music On") { gameEngine.toggleMusicQuick() }
+                                Button(gameEngine.battleSoundsEnabled ? "Sound Effects Off" : "Sound Effects On") { gameEngine.battleSoundsEnabled.toggle() }
+                                Divider()
+                                Button("Change AI…") { gameEngine.followLink("ai") }
+                                Button("DM & Voice…") { gameEngine.followLink("dm") }
+                                Button("Gameplay…") { gameEngine.followLink("gameplay") }
+                                Button("Accessibility…") { gameEngine.followLink("accessibility") }
+                                Divider()
+                                Button("All Settings…") { gameEngine.followLink("settings") }
+                            } label: {
+                                Image(systemName: "gearshape")
+                                    .font(.system(size: 17 * scale))
+                                    .foregroundColor(terminalGreen)
+                            }
+                            .menuStyle(.borderlessButton)
+                            .menuIndicator(.hidden)
+                            .fixedSize()
+                            .help("Settings — music, AI, gameplay (⌘,)")
+                            .accessibilityLabel("Settings")
+                            #endif
 
                         if !gameEngine.isJustDMActive || gameEngine.forceInteractiveControls || !gameEngine.inDMMode {
                         // Card navigation — <</>>/swipe mode
@@ -1518,6 +1545,15 @@ struct TerminalView: View {
 
         // Enter/Return for d-pad center button or default menu option
         if press.key == .return {
+            // The button under the mouse, if any; otherwise the default.
+            if let hovered = gameEngine.hoveredMenuChoiceIfValid {
+                gameEngine.handleMenuChoice(hovered)
+                return .handled
+            }
+            if hasMenu, let defaultIdx = gameEngine.currentMenuOptions.firstIndex(where: { $0.isDefault && !$0.isDisabled }) {
+                gameEngine.handleMenuChoice(defaultIdx + 1)
+                return .handled
+            }
             if let handler = gameEngine.dpadCenterHandler {
                 handler()
                 return .handled
@@ -1581,8 +1617,10 @@ struct TerminalView: View {
     /// never animates either.
     private func scrollMapPastHeader(_ proxy: ScrollViewProxy, isLandscape: Bool) {
         let lines = gameEngine.pinnedMapLines
-        #if os(macOS) || os(tvOS)
-        // Mac/TV show the whole box, header and key included — from the top.
+        #if os(macOS)
+        // Mac: start at the dotted line under MAP (header a scroll up).
+        if let target = lines.count > 2 ? lines[2] : lines.first { proxy.scrollTo(target.id, anchor: .top) }
+        #elseif os(tvOS)
         if let first = lines.first { proxy.scrollTo(first.id, anchor: .top) }
         #else
         // Landscape's panel is half a line taller — show that extra half
@@ -1623,7 +1661,9 @@ struct TerminalView: View {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.isEmpty {
             // Empty return — press the default button, or move in a random direction
-            if let defaultIdx = gameEngine.currentMenuOptions.firstIndex(where: { $0.isDefault }) {
+            if let hovered = gameEngine.hoveredMenuChoiceIfValid {
+                gameEngine.handleMenuChoice(hovered)
+            } else if let defaultIdx = gameEngine.currentMenuOptions.firstIndex(where: { $0.isDefault }) {
                 gameEngine.handleMenuChoice(defaultIdx + 1)
             } else if !gameEngine.directionExits.isEmpty {
                 // Pick a random enabled direction
@@ -1683,6 +1723,13 @@ struct TerminalView: View {
         }
     }
 }
+
+/// Mac: buttons, D-pad and their text a size up — there's room.
+#if os(macOS)
+let macControlScale: CGFloat = 1.2
+#else
+let macControlScale: CGFloat = 1.0
+#endif
 
 /// The Mac map pane's width — reported on every layout, the first included.
 struct MacMapPaneWidthKey: PreferenceKey {
@@ -1828,8 +1875,10 @@ struct MenuButtonsView: View {
     /// how many buttons this screen happens to have — so three rows are
     /// always the same height from one screen to the next.
     var compactRows: Bool? = nil
+    /// Mac: the pointer entering/leaving a button (Return presses the hovered one).
+    var onHover: ((Int, Bool) -> Void)? = nil
     private var isCompact: Bool { compactRows ?? (options.count > 6) }
-    private var buttonMinHeight: CGFloat { isCompact ? max(36, 32 * scale) : max(44, 38 * scale) }
+    private var buttonMinHeight: CGFloat { isCompact ? max(36, 32 * scale) * macControlScale : max(44, 38 * scale) * macControlScale }
     private var buttonVerticalPadding: CGFloat { isCompact ? 4 : 8 }
 
     @State private var alertPulse = false
@@ -1929,11 +1978,11 @@ struct MenuButtonsView: View {
         }) {
             HStack(spacing: 4) {
                 Text("\(shownNumber).")
-                    .font(.system(size: 11 * scale, design: .monospaced))
+                    .font(.system(size: 11 * scale * macControlScale, design: .monospaced))
                     .foregroundColor(buttonNumberColor(option))
 
                 styledOptionText(option, index: index)
-                    .font(.system(size: 13 * scale, design: .monospaced))
+                    .font(.system(size: 13 * scale * macControlScale, design: .monospaced))
                     .fontWeight(option.isDefault || option.isAlert ? .semibold : .regular)
                     .foregroundColor(buttonTextColor(option))
                     .lineLimit(1)
@@ -1970,6 +2019,9 @@ struct MenuButtonsView: View {
             )
         }
         .buttonStyle(.plain)
+        #if os(macOS)
+        .onHover { inside in onHover?(index + 1, inside) }
+        #endif
         .scaleEffect(pressedIndex == index + 1 ? 0.92 : 1.0)
         .brightness(pressedIndex == index + 1 ? 0.3 : 0.0)
         .animation(.easeInOut(duration: 0.15), value: pressedIndex)
@@ -2224,7 +2276,7 @@ struct DirectionPadView: View {
     private let searchAmber = Color(red: 0.8, green: 0.6, blue: 0.2)
     private let listenAmber = Color(red: 0.8, green: 0.6, blue: 0.2)
 
-    private var effectiveCellWidth: CGFloat { cellWidth ?? max(80, 80 * scale) }
+    private var effectiveCellWidth: CGFloat { cellWidth ?? max(80, 80 * scale) * macControlScale }
 
     @ViewBuilder
     private func cornerIconButton(systemName: String, color: Color, action: (() -> Void)?) -> some View {
@@ -2233,7 +2285,7 @@ struct DirectionPadView: View {
                 Image(systemName: systemName)
                     .font(.system(size: 16 * scale))
                     .foregroundColor(color)
-                    .frame(width: effectiveCellWidth, height: max(44, 34 * scale))
+                    .frame(width: effectiveCellWidth, height: max(44, 34 * scale) * macControlScale)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(color.opacity(0.6), lineWidth: 1)
@@ -2246,7 +2298,7 @@ struct DirectionPadView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(iconLabel(systemName))
         } else {
-            Color.clear.frame(width: effectiveCellWidth, height: max(44, 34 * scale))
+            Color.clear.frame(width: effectiveCellWidth, height: max(44, 34 * scale) * macControlScale)
                 .accessibilityHidden(true)
         }
     }
@@ -2292,7 +2344,7 @@ struct DirectionPadView: View {
                             .font(.system(size: 11 * scale, design: .monospaced))
                             .fontWeight(.semibold)
                             .foregroundColor(centerBlue)
-                            .frame(width: effectiveCellWidth, height: max(44, 34 * scale))
+                            .frame(width: effectiveCellWidth, height: max(44, 34 * scale) * macControlScale)
                             .background(
                                 RoundedRectangle(cornerRadius: 6)
                                     .stroke(centerBlue.opacity(0.6), lineWidth: 1)
@@ -2321,7 +2373,7 @@ struct DirectionPadView: View {
                 if npcLabel != nil {
                     cornerIconButton(systemName: "scroll", color: npcCyan, action: onNPCTap)
                 } else {
-                    Color.clear.frame(width: effectiveCellWidth, height: max(44, 34 * scale))
+                    Color.clear.frame(width: effectiveCellWidth, height: max(44, 34 * scale) * macControlScale)
                 }
             }
         }
@@ -2366,10 +2418,10 @@ struct DirectionPadView: View {
             ZStack {
                 Text(isDark ? "\(dir.rawValue)?" : dir.rawValue)
                     .accessibilityLabel(Self.spokenDirection(dir, dark: isDark, locked: isSecured, open: enabled))
-                    .font(.system(size: 11 * scale, design: .monospaced))
+                    .font(.system(size: 11 * scale * macControlScale, design: .monospaced))
                     .fontWeight(.semibold)
                     .foregroundColor(textColor)
-                    .frame(width: effectiveCellWidth, height: max(44, 34 * scale))
+                    .frame(width: effectiveCellWidth, height: max(44, 34 * scale) * macControlScale)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(strokeColor, lineWidth: 1)
