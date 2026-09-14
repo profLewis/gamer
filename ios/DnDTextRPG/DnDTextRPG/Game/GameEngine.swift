@@ -18783,10 +18783,15 @@ class GameEngine: ObservableObject {
             if room.roomDescription != Room.armouryMerchantVariant {
                 room.roomDescription = Room.armouryMerchantVariant
             }
-            if room.npc == nil {
-                room.npc = DungeonNPC(type: .dwarvenSmith)
+            // Saves from the last few builds put a Dwarven Smith in every
+            // armoury — keep about one in three (settled by the room, so it
+            // happens once) and give the rest a merchant of their own.
+            if let npc = room.npc, npc.type == .dwarvenSmith, room.id % 3 != 0 {
+                room.npc = nil
+                seedNameRegistry()
+                room.merchant = Merchant.random(tier: MerchantTier.forDungeonLevel(dungeon.level))
             }
-            // The smith and the shopkeeper are one person (older saves had two names).
+            // Where the smith stays, they and the shopkeeper are one person.
             if let npc = room.npc, npc.type == .dwarvenSmith, room.merchant != nil, room.merchant?.name != npc.displayName {
                 room.merchant?.name = npc.displayName
             }
