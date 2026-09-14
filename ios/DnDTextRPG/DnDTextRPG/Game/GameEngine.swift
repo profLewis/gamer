@@ -295,6 +295,13 @@ class GameEngine: ObservableObject {
     /// bar by the > prompt (or Space on a Mac) holds every countdown.
     @Published var autoContinueEnabled: Bool = UserDefaults.standard.object(forKey: "autoContinueEnabled") == nil ? true : UserDefaults.standard.bool(forKey: "autoContinueEnabled")
     @Published var autoContinuePaused: Bool = false
+    /// Accessibility > Auto-Scroll — 0 Off (default), 1 Slow, 2 Medium,
+    /// 3 Fast. Pages always open at their top; only with this on does a
+    /// long page then glide down by itself.
+    @Published var autoScrollSpeed: Int = UserDefaults.standard.integer(forKey: "autoScrollSpeed")
+    static let autoScrollSpeedNames = ["Off", "Slow", "Medium", "Fast"]
+    var autoScrollLinesPerSecond: Double { [0, 1.5, 3, 6][min(max(autoScrollSpeed, 0), 3)] }
+    var autoScrollSpeedName: String { Self.autoScrollSpeedNames[min(max(autoScrollSpeed, 0), 3)] }
     /// Settings > Gameplay > Countdown Icon — the hourglass + ⏸/▶ pause
     /// control by the > prompt. Hiding it doesn't change auto-continue.
     @Published var showCountdownControl: Bool = UserDefaults.standard.object(forKey: "showCountdownControl") == nil ? true : UserDefaults.standard.bool(forKey: "showCountdownControl")
@@ -321,6 +328,68 @@ class GameEngine: ObservableObject {
         autoCountdownEnd = Date().addingTimeInterval(max(0.6, remaining / 4))
     }
 
+    /// A countdown never runs out before the screen's text could be read —
+    /// about 200 words a minute on top of the Info Timeout (capped, so a
+    /// huge page can't park the game for minutes). Busy combat reports and
+    /// long DM replies get longer; a short "Nothing found." keeps the base.
+    private func countdownDelay(base: Double) -> Double {
+        guard base > 0 else { return base }
+        let words = terminalLines.reduce(0) { total, line in
+            total + line.text.split(separator: " ").filter { $0.contains(where: { $0.isLetter }) }.count
+        }
+        return max(base, min(25, Double(words) / 3.3))
+    }
+
+    /// Text mode: how long after you stop typing it sends — never less than
+    /// a few seconds (it used to go after 1.5s, mid-thought).
+    var textAutoSubmitDelay: Double { max(4.0, infoTimeout) }
+
+    /// Typing on a counting-down screen pauses it; released again when the
+    /// screen moves on (see handleContinue).
+    private var pausedForTyping = false
+    func pauseAutoContinueForTyping() {
+        guard !autoContinuePaused, autoCountdownEnd != nil else { return }
+        pausedForTyping = true
+        toggleAutoContinuePause()
+    }
+
+    // MARK: Continue hints
+    //
+    // Part of the idle-prompt family (Settings > Gameplay > Idle Prompts):
+    // on a tap-to-continue screen that's been sitting a while, a dim line
+    // says what to do — up to three times per screen.
+    private var continueHintTimer: Timer?
+    private var continueHintCount = 0
+    private var continueHintGeneration = -1
+
+    private func scheduleContinueHint() {
+        continueHintTimer?.invalidate()
+        guard idlePromptsEnabled, awaitingContinue else { return }
+        if continueHintGeneration != screenGeneration {
+            continueHintGeneration = screenGeneration
+            continueHintCount = 0
+        }
+        guard continueHintCount < 3 else { return }
+        let counting = autoContinueCountdownAvailable && !autoContinuePaused
+        let delay: Double = counting ? max(4, autoCountdownTotal * 0.5) : 8
+        continueHintTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            guard let self = self, self.awaitingContinue, self.continueHintGeneration == self.screenGeneration else { return }
+            self.continueHintCount += 1
+            self.print(self.continueHintText(), color: .dimGreen)
+            self.scheduleContinueHint()
+        }
+    }
+
+    private func continueHintText() -> String {
+        if autoContinuePaused {
+            return "  (Paused — tap anywhere or type 'go on' to continue, or tap the hourglass to let it run.)"
+        }
+        if autoContinueCountdownAvailable {
+            return "  (Tap anywhere or type 'go on' to continue now — or just wait for the hourglass.)"
+        }
+        return "  (Tap anywhere or type 'go on' to continue.)"
+    }
+
     private var autoContinueHelpShownGeneration = -1
 
     /// The "?" beside "paused": a short how-to-carry-on note printed onto
@@ -339,14 +408,16 @@ class GameEngine: ObservableObject {
         print("")
         print("  To carry on:", color: .cyan)
         printWrapped("• Tap anywhere — continue now", indent: 3, color: .green)
-        printWrapped("• Tap the hourglass or ▶ — let the countdown run on", indent: 3, color: .green)
+        printWrapped("• Type 'go on' — same thing", indent: 3, color: .green)
+        printWrapped("• Tap the hourglass (right of the input line) — let the countdown run on", indent: 3, color: .green)
         printWrapped("• Long-press the hourglass — hurry it", indent: 3, color: .green)
         print("")
         print("  Why is it here?", color: .cyan)
         printWrapped("So a screen never moves on before you've finished reading.", indent: 3, color: .green)
         print("")
-        print("  Turn it on or off:", color: .cyan)
-        printLink("Settings > Gameplay", to: "gameplay", indent: 3)
+        print("  Settings now:", color: .cyan)
+        printWrapped("Auto-Continue \(autoContinueEnabled ? "On" : "Off") · wait \(Int((infoTimeout * 2).rounded()))s · hourglass \(showCountdownControl ? "On" : "Off")", indent: 3, color: .green)
+        printLink("Change Auto-Continue settings", to: "autoContinue", indent: 3)
         autoContinueHelpRange = start..<terminalLines.count
     }
 
@@ -1052,6 +1123,7 @@ class GameEngine: ObservableObject {
     }
 
     func logEvent(_ message: String, category: String? = nil) {
+        if !["SYSTEM", "SETTINGS", "DM"].contains(category ?? "") { lastEventThisScreen = message }
         let timestamp = formattedGameTime()
         if let cat = category {
             adventureLog.append("[\(timestamp)] [\(cat)] \(message)")
@@ -1588,8 +1660,30 @@ class GameEngine: ObservableObject {
         #endif
     }
 
+    /// Breadcrumb at the top of each new titled page: the page we came from
+    /// and the last notable thing that happened there — e.g.
+    /// "↩ from Party Status · Bought a Wedge of Cheddar".
+    private var currentScreenTitle: String?
+    private var breadcrumbFrom: String?
+    private var breadcrumbDid: String?
+    private var lastEventThisScreen: String?
+
+    private func printBreadcrumb(for title: String) {
+        let from = breadcrumbFrom
+        let did = breadcrumbDid
+        breadcrumbFrom = nil
+        breadcrumbDid = nil
+        var parts: [String] = []
+        if let from = from, from != title { parts.append("from \(from)") }
+        if let did = did { parts.append(did.count > 44 ? String(did.prefix(43)) + "…" : did) }
+        guard !parts.isEmpty else { return }
+        print("↩ " + parts.joined(separator: " · "), color: .dimGreen)
+    }
+
     func printTitle(_ text: String, color: TerminalColor = .brightGreen) {
         let t = String(text.prefix(30))
+        printBreadcrumb(for: t)
+        currentScreenTitle = t
         let border = String(repeating: "═", count: t.count + 4)
         titleLineIndices.removeAll()
         let startIdx = terminalLines.count
@@ -1689,57 +1783,13 @@ class GameEngine: ObservableObject {
         }
     }
 
-    /// Runs a D-pad quick-action (e.g. Search Room, Listen) that's really a
-    /// full "show a result, tap to continue" screen under the hood, without
-    /// letting the D-pad itself vanish for that screen. showMenu()/
-    /// waitForContinue() reset directionExits as part of clearing every
-    /// other leftover handler for the new screen — correct for a real
-    /// screen change, but visually jarring for what's meant to read as an
-    /// in-place action. Re-fills directionExits/securedExits right after
-    /// ONLY if the action left them empty — if it legitimately set new ones
-    /// (e.g. it fully returned to exploration on a changed room), that's
-    /// left alone.
+    /// Runs a D-pad quick action (Search Room, Listen...) whose result is a
+    /// timed "read this, then back to exploring" screen. The D-pad is no
+    /// longer kept on that screen — a D-pad with no buttons under it read as
+    /// broken. The result shows just its text; the full exploration view
+    /// (D-pad and buttons) returns when it ends.
     private func runPreservingDirectionExits(_ action: () -> Void) {
-        // Preserves the WHOLE D-pad configuration, not just the direction
-        // arrows — showMenu()/showMenuOptions() (called somewhere inside
-        // most actions this wraps, e.g. a "nothing found" result screen)
-        // unconditionally nils out dpadSearchHandler/dpadListenHandler/
-        // dpadTorchHandler/dpadNPCHandler/dpadCenterHandler right alongside
-        // directionExits. Restoring only directionExits left the N/S/E/W
-        // arrows back but the corner icon buttons (search/listen/torch/NPC)
-        // silently gone — dead until the next full exploration re-render —
-        // which is what made the search icon look like it "used itself up"
-        // after one tap. All of this is safe to restore verbatim: every
-        // handler here is a closure that reads live state when invoked, not
-        // a snapshot, so putting the old references back just means the
-        // same buttons work again, not that they act on stale data.
-        let exits = directionExits
-        let secured = securedExits
-        let centerLabel = dpadCenterLabel
-        let centerHandler = dpadCenterHandler
-        let centerLongPress = dpadCenterLongPressHandler
-        let npcLabel = dpadNPCLabel
-        let npcHandler = dpadNPCHandler
-        let teleportHandler = dpadTeleportHandler
-        let torchLabel = dpadTorchLabel
-        let torchHandler = dpadTorchHandler
-        let searchHandler = dpadSearchHandler
-        let listenHandler = dpadListenHandler
         action()
-        if directionExits.isEmpty {
-            directionExits = exits
-            securedExits = secured
-            dpadCenterLabel = centerLabel
-            dpadCenterHandler = centerHandler
-            dpadCenterLongPressHandler = centerLongPress
-            dpadNPCLabel = npcLabel
-            dpadNPCHandler = npcHandler
-            dpadTeleportHandler = teleportHandler
-            dpadTorchLabel = torchLabel
-            dpadTorchHandler = torchHandler
-            dpadSearchHandler = searchHandler
-            dpadListenHandler = listenHandler
-        }
     }
 
     /// True whenever the compact nav cell's third slot would otherwise be
@@ -1863,10 +1913,14 @@ class GameEngine: ObservableObject {
 
     @Published var visitedLinks: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "visitedLinks") ?? [])
     private var linkReturnSnapshot: ScreenSnapshot?
+    /// Where the pause note sat on the launching screen, so it can be
+    /// redrawn with the current settings on the way back.
+    private var pauseHelpRangeAtLink: Range<Int>?
 
     private func linkTarget(_ key: String) -> (() -> Void)? {
         switch key {
         case "gameplay": return { [weak self] in self?.showGameplaySettings() }
+        case "autoContinue": return { [weak self] in self?.showAutoContinueSettingsPage() }
         case "accessibility": return { [weak self] in self?.showAccessibilityMenu() }
         case "infoTimeout": return { [weak self] in self?.showInfoTimeoutMenu() }
         case "saves": return { [weak self] in self?.showSaveSettings() }
@@ -1874,6 +1928,69 @@ class GameEngine: ObservableObject {
         case "ai": return { [weak self] in self?.showAIProviderMenu(onBack: { [weak self] in self?.returnFromLink() }) }
         case "howToPlay": return { [weak self] in self?.showHowToPlay() }
         default: return nil
+        }
+    }
+
+    /// Opened from the pause note's link. Play is paused, so this is a small
+    /// page of just the auto-continue settings — change them, and < Back
+    /// (or ✕) returns straight to the paused screen; nowhere else to go.
+    private func showAutoContinueSettingsPage() {
+        clearTerminal()
+        printTitle("Auto-Continue")
+        printWrapped("Play is paused while you're here. Change these, then < Back returns you to where you were.", indent: 2, color: .dimGreen)
+        print("")
+        print("  Auto-Continue: \(autoContinueEnabled ? "On" : "Off")", color: autoContinueEnabled ? .brightGreen : .red)
+        printWrapped("Tap-to-continue screens also move on by themselves after the wait below.", indent: 4, color: .dimGreen)
+        print("")
+        print("  Wait: \(String(format: "%.0fs", infoTimeout)) (about \(Int((infoTimeout * 2).rounded()))s on most screens)", color: .brightGreen)
+        printWrapped("Longer screens always get enough time to read them.", indent: 4, color: .dimGreen)
+        print("")
+        print("  Hourglass: \(showCountdownControl ? "On" : "Off")", color: showCountdownControl ? .brightGreen : .red)
+        printWrapped("The countdown at the right of the input line — tap it to pause, long-press to hurry.", indent: 4, color: .dimGreen)
+        print("")
+        let waits: [Double] = [2, 3, 5, 8, 10, 15]
+        let options = [
+            autoContinueEnabled ? "Auto-Continue Off" : "Auto-Continue On",
+            "Wait: \(String(format: "%.0fs", infoTimeout))",
+            showCountdownControl ? "Hourglass Off" : "Hourglass On",
+        ]
+        showPaginatedMenuOptions(options, pinned: ["?", "< Back"], handler: { [weak self] idx in
+            guard let self = self else { return }
+            switch idx {
+            case 0:
+                self.recordSettingChange(screen: "s:gameplay", key: "autoContinueEnabled", name: "Auto-Continue")
+                self.autoContinueEnabled.toggle()
+                UserDefaults.standard.set(self.autoContinueEnabled, forKey: "autoContinueEnabled")
+                self.logEvent("Auto-Continue turned \(self.autoContinueEnabled ? "on" : "off")", category: "SETTINGS")
+            case 1:
+                self.recordSettingChange(screen: "s:gameplay", key: "infoTimeout", name: "Timeout")
+                let next = waits.first(where: { $0 > self.infoTimeout + 0.01 }) ?? waits[0]
+                self.infoTimeout = next
+                UserDefaults.standard.set(next, forKey: "infoTimeout")
+                self.logEvent("Auto-Continue wait set to \(Int(next))s", category: "SETTINGS")
+            case 2:
+                self.recordSettingChange(screen: "s:gameplay", key: "showCountdownControl", name: "Countdown Icon")
+                self.showCountdownControl.toggle()
+                UserDefaults.standard.set(self.showCountdownControl, forKey: "showCountdownControl")
+                self.logEvent("Countdown hourglass turned \(self.showCountdownControl ? "on" : "off")", category: "SETTINGS")
+            default: break
+            }
+            self.showAutoContinueSettingsPage()
+        }, pinnedHandler: { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 0 {
+                self.showInlineHelp {
+                    self.printTitle("Auto-Continue — Help")
+                    self.print("")
+                    self.printWrapped("Many screens wait for a tap so you can read them. With Auto-Continue on they also move on by themselves after the wait — never before you've had time to read them. The hourglass at the right of the input line shows the time left: tap it to pause (orange = paused), tap again to carry on, long-press to hurry. Typing pauses it too; type 'go on' to continue.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else if !self.returnFromLink() {
+                self.showGameplaySettings()
+            }
+        })
+        closeHandler = { [weak self] in
+            if self?.returnFromLink() != true { self?.showGameplaySettings() }
         }
     }
 
@@ -1888,7 +2005,10 @@ class GameEngine: ObservableObject {
         visitedLinks.insert(key)
         UserDefaults.standard.set(Array(visitedLinks), forKey: "visitedLinks")
         // A link followed from a linked screen keeps the ORIGINAL return point.
-        if linkReturnSnapshot == nil { linkReturnSnapshot = captureScreenSnapshot() }
+        if linkReturnSnapshot == nil {
+            linkReturnSnapshot = captureScreenSnapshot()
+            pauseHelpRangeAtLink = autoContinueHelpShownGeneration == screenGeneration ? autoContinueHelpRange : nil
+        }
         open()
     }
 
@@ -1903,6 +2023,13 @@ class GameEngine: ObservableObject {
             if let key = line.link, visitedLinks.contains(key) { line.color = .magenta }
             return line
         }
+        if let range = pauseHelpRangeAtLink, range.upperBound <= terminalLines.count {
+            // Redraw the pause note so it shows the settings as they are now.
+            pauseHelpRangeAtLink = nil
+            terminalLines.removeSubrange(range)
+            autoContinueHelpRange = nil
+            printAutoContinuePauseHelp()
+        }
         if snapshot.awaitingContinue { scheduleAutoContinue() }
         return true
     }
@@ -1914,6 +2041,10 @@ class GameEngine: ObservableObject {
     }
 
     func clearTerminal() {
+        breadcrumbFrom = currentScreenTitle
+        breadcrumbDid = lastEventThisScreen
+        currentScreenTitle = nil
+        lastEventThisScreen = nil
         // "Fwd >" is an undo of the "< Back" that's about to happen, not a
         // general "recently visited" cache — only actually useful right
         // after a real Back tap. justNavigatedBack (set in handleMenuChoice,
@@ -2260,6 +2391,7 @@ class GameEngine: ObservableObject {
             }),
             ("autoContinueEnabled", "Auto-Continue", { ($0 as? Bool) == true ? "On" : "Off" }),
             ("showCountdownControl", "Countdown Icon", { ($0 as? Bool) == true ? "On" : "Off" }),
+            ("autoScrollSpeed", "Auto-Scroll", { v in GameEngine.autoScrollSpeedNames[min(max((v as? Int) ?? 0, 0), 3)] }),
             ("longPressDuration", "LongPress", { v in
                 let d = v as? Double ?? 0.5
                 return String(format: "%.1fs", d)
@@ -2474,6 +2606,8 @@ class GameEngine: ObservableObject {
             infoTimeout = UserDefaults.standard.double(forKey: key)
         case "autoContinueEnabled":
             autoContinueEnabled = UserDefaults.standard.object(forKey: key) == nil ? true : UserDefaults.standard.bool(forKey: key)
+        case "autoScrollSpeed":
+            autoScrollSpeed = UserDefaults.standard.integer(forKey: key)
         case "showCountdownControl":
             showCountdownControl = UserDefaults.standard.object(forKey: key) == nil ? true : UserDefaults.standard.bool(forKey: key)
         case "iconScaleSetting":
@@ -2517,6 +2651,7 @@ class GameEngine: ObservableObject {
         case "idlePromptsEnabled": return idlePromptsEnabled ? "On" : "Off"
         case "autoContinueEnabled": return autoContinueEnabled ? "On" : "Off"
         case "showCountdownControl": return showCountdownControl ? "On" : "Off"
+        case "autoScrollSpeed": return autoScrollSpeedName
         case "blinkingCursorEnabled": return blinkingCursorEnabled ? "On" : "Off"
         case "map_radius": return "\(mapRadius)"
         case "maxButtonsPerScreen": return "\(maxButtonsPerScreen)"
@@ -3095,6 +3230,7 @@ class GameEngine: ObservableObject {
             // — still bump the generation so any older one goes stale.
             Self.continueGeneration += 1
         }
+        scheduleContinueHint()
     }
 
     /// Bumped on every waitForContinue() — lets a pending auto-continue
@@ -3114,7 +3250,7 @@ class GameEngine: ObservableObject {
     private func scheduleAutoContinue() {
         Self.continueGeneration += 1
         let myGeneration = Self.continueGeneration
-        scheduleAutoAdvance(after: infoTimeout * 2, isStillValid: { [weak self] in
+        scheduleAutoAdvance(after: countdownDelay(base: infoTimeout * 2), isStillValid: { [weak self] in
             guard let self = self else { return false }
             return Self.continueGeneration == myGeneration && self.awaitingContinue && !self.speakerModeOn
         }, fire: { [weak self] in self?.handleContinue() })
@@ -3203,7 +3339,7 @@ class GameEngine: ObservableObject {
         // could fire well after the player has already moved on some other
         // way (e.g. the corner X), where `action` would no longer make sense.
         let myGeneration = Self.continueGeneration
-        scheduleAutoAdvance(after: infoTimeout * multiplier, isStillValid: { [weak self] in
+        scheduleAutoAdvance(after: countdownDelay(base: infoTimeout * multiplier), isStillValid: { [weak self] in
             !fired && self?.awaitingContinue == true && Self.continueGeneration == myGeneration
         }, fire: fire)
         inputHandler = { _ in fire() }
@@ -3267,6 +3403,7 @@ class GameEngine: ObservableObject {
         // whatever controls are already on screen without hiding them.
         awaitingContinue = true
         inputHandler = { _ in fire() }
+        scheduleContinueHint()
 
         // Registered BEFORE autoReadIfSpeakerMode() — its 0.3s startup
         // delay means speech can start and, for short text, even finish
@@ -3289,7 +3426,7 @@ class GameEngine: ObservableObject {
         if speakerModeOn {
             scheduleAutoReturnFallback(after: seconds, fire: fire, generation: myGeneration)
         } else {
-            scheduleAutoAdvance(after: seconds, isStillValid: { [weak self] in
+            scheduleAutoAdvance(after: countdownDelay(base: seconds), isStillValid: { [weak self] in
                 guard let self = self else { return false }
                 return self.autoReturnGeneration == myGeneration && self.closeHandler != nil
             }, fire: fire)
@@ -4286,6 +4423,26 @@ class GameEngine: ObservableObject {
             }
         }
 
+        // Typed on a tap-to-continue screen: 'go on' (and friends) simply
+        // continues; anything else is acknowledged, the screen moves on,
+        // and then it's acted on as a command there — it used to just
+        // continue and silently drop what was typed.
+        if awaitingContinue && !trimmed.isEmpty && !chatInputMode {
+            let continueWords: Set<String> = ["go on", "continue", "next", "ok", "okay", "go", "on", "more", "c", "carry on", "onward", "onwards"]
+            if continueWords.contains(trimmed.lowercased()) {
+                handleContinue()
+                return
+            }
+            print("> \(trimmed)", color: .dimGreen)
+            let command = trimmed
+            handleContinue()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                guard let self = self, !self.awaitingContinue else { return }
+                self.handleTextInput(command)
+            }
+            return
+        }
+
         // Keep keyboard open in chat mode; dismiss otherwise
         if !chatInputMode {
             DispatchQueue.main.async {
@@ -4417,6 +4574,13 @@ class GameEngine: ObservableObject {
     func handleContinue() {
         guard awaitingContinue else { return }
         awaitingContinue = false
+        continueHintTimer?.invalidate()
+        if pausedForTyping {
+            // A pause that only happened because you were typing ends here.
+            pausedForTyping = false
+            autoContinuePaused = false
+            autoCountdownPausedRemaining = nil
+        }
         fullScreenTapToContinue = false
         stopIdleAnimations()
         if let handler = inputHandler {
@@ -5267,7 +5431,7 @@ class GameEngine: ObservableObject {
         printWrapped("    a button for its shortcut — e.g. long-press Quit Without Saving, Delete or Give Up Quest to skip the \"are you sure?\" step, Long Rest to rest fast, or Continue Adventure to jump straight into your latest save.", color: .green)
         print("")
         print("  • Auto-Continue", color: .brightGreen, bold: true)
-        printWrapped("    Many screens move on by themselves after a few seconds. Tap anywhere to continue at once, or wait for the little hourglass beside the > prompt to run out. Tap the hourglass to pause it (orange means paused, and a ? explains how to carry on), tap again to let it run, long-press it to hurry. Settings > Gameplay turns Auto-Continue off, changes how long screens wait, or hides the hourglass.", color: .green)
+        printWrapped("    Many screens move on by themselves after a few seconds. Tap anywhere to continue at once, or wait for the little hourglass at the right of the input line to run out. Tap the hourglass to pause it (orange means paused, and a ? explains how to carry on), tap again to let it run, long-press it to hurry. Settings > Gameplay turns Auto-Continue off, changes how long screens wait, or hides the hourglass.", color: .green)
         printLink("Settings > Gameplay", to: "gameplay", indent: 4)
         print("")
 
@@ -7953,6 +8117,50 @@ class GameEngine: ObservableObject {
         closeHandler = onBack ?? { [weak self] in self?.showHowToPlay() }
     }
 
+    /// Accessibility > Try Auto-Scroll — a deliberately long page that
+    /// shows what each speed does; picking a speed replays it at that speed.
+    private func showAutoScrollDemo() {
+        clearTerminal()
+        printTitle("Auto-Scroll Demo")
+        if autoScrollSpeed == 0 {
+            printWrapped("Auto-Scroll is Off: this long page stays at the top and you scroll it yourself. Pick a speed below to watch it glide down.", indent: 2, color: .yellow)
+        } else {
+            printWrapped("Auto-Scroll is \(autoScrollSpeedName): in a moment this page glides down by itself. Touch or scroll it to stop. Pick another speed to compare.", indent: 2, color: .yellow)
+        }
+        print("")
+        let passage = [
+            "The torch gutters as you step into the long gallery.",
+            "Faded tapestries line the walls, each showing a hero long forgotten.",
+            "Dust lies thick on the floor — except for a narrow, recent path.",
+            "Somewhere ahead, water drips into a still pool: plink... plink...",
+            "A carved stone face watches from an archway, its eyes two dark pits.",
+            "Scratched beneath it, in a hurried hand: TURN BACK.",
+            "Your companions exchange a look. Nobody turns back.",
+            "The path bends left past a toppled statue of a winged lion.",
+            "Coins glint in a crack in the floor — old, and very cold.",
+            "The dripping grows louder. The air tastes of iron and moss.",
+            "A draught stirs the tapestries, and one of them seems to breathe.",
+            "At the gallery's end, a door of black oak waits, slightly open.",
+        ]
+        for (index, sentence) in passage.enumerated() {
+            print("  \(index + 1).", color: .cyan)
+            printWrapped(sentence, indent: 4, color: .green)
+            print("")
+        }
+        print("  — The end of the demo page. —", color: .yellow)
+        print("")
+        let speeds = Self.autoScrollSpeedNames
+        let labels = speeds.enumerated().map { $0.element + ($0.offset == autoScrollSpeed ? " ✓" : "") }
+        showPaginatedMenuOptions(labels, pinned: ["< Back"], handler: { [weak self] idx in
+            guard let self = self, idx >= 0, idx < speeds.count else { return }
+            self.recordSettingChange(screen: "s:access", key: "autoScrollSpeed", name: "Auto-Scroll")
+            self.autoScrollSpeed = idx
+            UserDefaults.standard.set(idx, forKey: "autoScrollSpeed")
+            self.showAutoScrollDemo()
+        }, pinnedHandler: { [weak self] _ in self?.showAccessibilityMenu() })
+        closeHandler = { [weak self] in self?.showAccessibilityMenu() }
+    }
+
     private func showAccessibilityMenu() {
         clearTerminal()
         printTitle("Accessibility")
@@ -7991,7 +8199,12 @@ class GameEngine: ObservableObject {
 
         print("FLASHING CURSOR:", color: .cyan, bold: true)
         print("  \(blinkingCursorEnabled ? "On" : "Off")", color: blinkingCursorEnabled ? .brightGreen : .red)
-        printWrapped("Off (the default): no cursor by the > prompt, except the ⏸/▶ while a screen is counting down. On: the cursor always blinks there. Turn this off if using VoiceOver — off automatically the first time this device has VoiceOver running.", indent: 2, color: .dimGreen)
+        printWrapped("Off (the default): no blinking block cursor by the > prompt. On: it blinks there until you tap to type. Turn this off if using VoiceOver — off automatically the first time this device has VoiceOver running.", indent: 2, color: .dimGreen)
+        print("")
+
+        print("AUTO-SCROLL:", color: .cyan, bold: true)
+        print("  \(autoScrollSpeedName)", color: autoScrollSpeed > 0 ? .brightGreen : .red)
+        printWrapped("New pages always open at the top, so you see the start of long text. With Auto-Scroll on, a long page then glides down by itself at this speed — touch it to stop. Off (the default): you scroll yourself. Try Auto-Scroll shows each speed.", indent: 2, color: .dimGreen)
         print("")
 
         let displaySizeLabel = "Size \(displaySizeName)"
@@ -7999,7 +8212,9 @@ class GameEngine: ObservableObject {
         let dmVoiceLabel = speech.isEnabled ? "DM Voice On" : "DM Voice Off"
         let voiceMenuLabel = voiceMenuEnabled ? "Voice Menus On" : "Voice Menus Off"
         let cursorLabel = blinkingCursorEnabled ? "Cursor Off" : "Cursor On"
-        let options = [displaySizeLabel, hitsLabel, dmVoiceLabel, "Companion Voices", voiceMenuLabel, cursorLabel]
+        let autoScrollLabel = "Auto-Scroll: \(autoScrollSpeedName)"
+        let options = [displaySizeLabel, hitsLabel, dmVoiceLabel, "Companion Voices", voiceMenuLabel, cursorLabel,
+                       autoScrollLabel, "Try Auto-Scroll"]
 
         var menuOpts = options.map { MenuOption($0) }
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -8052,6 +8267,13 @@ class GameEngine: ObservableObject {
                 self.voiceMenuEnabled.toggle()
                 UserDefaults.standard.set(self.voiceMenuEnabled, forKey: "voiceMenuEnabled")
                 self.showAccessibilityMenu()
+            case autoScrollLabel:
+                self.recordSettingChange(screen: "s:access", key: "autoScrollSpeed", name: "Auto-Scroll")
+                self.autoScrollSpeed = (self.autoScrollSpeed + 1) % 4
+                UserDefaults.standard.set(self.autoScrollSpeed, forKey: "autoScrollSpeed")
+                self.showAccessibilityMenu()
+            case "Try Auto-Scroll":
+                self.showAutoScrollDemo()
             case cursorLabel:
                 self.recordSettingChange(screen: "s:access", key: "blinkingCursorEnabled", name: "Cursor")
                 self.blinkingCursorEnabled.toggle()
@@ -8096,7 +8318,7 @@ class GameEngine: ObservableObject {
             self.print("")
 
             self.print("  FLASHING CURSOR", color: .cyan, bold: true)
-            self.printWrapped("Off (the default): no cursor by the > prompt, except the ⏸/▶ while a screen is counting down. On: the cursor always blinks there. Off by default the first time VoiceOver is detected running on this device — turn it off yourself if you use VoiceOver and it's still on.", indent: 2, color: .dimGreen)
+            self.printWrapped("Off (the default): no blinking block cursor by the > prompt. On: it blinks there until you tap to type. Off by default the first time VoiceOver is detected running on this device — turn it off yourself if you use VoiceOver and it's still on.", indent: 2, color: .dimGreen)
             self.print("")
         }
     }
@@ -8126,12 +8348,12 @@ class GameEngine: ObservableObject {
 
         print("AUTO-CONTINUE:", color: .cyan, bold: true)
         print("  \(autoContinueEnabled ? "On" : "Off")\(autoContinuePaused ? " (paused)" : "")", color: autoContinueEnabled ? .brightGreen : .red)
-        printWrapped("Many screens wait for a tap so you can read them. With this on, they also move on by themselves after the Info Timeout. Tap the little hourglass by the > prompt to pause, long-press it to hurry — or press Space on a Mac. See ? for more.", indent: 2, color: .dimGreen)
+        printWrapped("Many screens wait for a tap so you can read them. With this on, they also move on by themselves after the Info Timeout. Tap the little hourglass at the right of the input line to pause, long-press it to hurry — or press Space on a Mac. See ? for more.", indent: 2, color: .dimGreen)
         print("")
 
         print("COUNTDOWN ICON:", color: .cyan, bold: true)
         print("  \(showCountdownControl ? "On" : "Off")", color: showCountdownControl ? .brightGreen : .red)
-        printWrapped("The turning hourglass and ⏸/▶ by the > prompt while a screen counts down — tap to pause, long-press to hurry. Off hides them; screens still move on by themselves (Space on a Mac still pauses).", indent: 2, color: .dimGreen)
+        printWrapped("The turning hourglass at the right of the input line while a screen counts down — tap to pause, long-press to hurry. Off hides it; screens still move on by themselves (Space on a Mac still pauses).", indent: 2, color: .dimGreen)
         print("")
 
         print("BUTTON LIMIT:", color: .cyan, bold: true)
@@ -8185,7 +8407,7 @@ class GameEngine: ObservableObject {
 
         print("BLINKING CURSOR:", color: .cyan, bold: true)
         print("  \(blinkingCursorEnabled ? "On" : "Off")", color: blinkingCursorEnabled ? .brightGreen : .red)
-        printWrapped("Off (the default): no cursor by the > prompt, except the ⏸/▶ while a screen is counting down. On: the cursor always blinks there.", indent: 2, color: .dimGreen)
+        printWrapped("Off (the default): no blinking block cursor by the > prompt. On: it blinks there until you tap to type.", indent: 2, color: .dimGreen)
         print("")
 
         print("UNDO/REDO:", color: .cyan, bold: true)
@@ -8379,13 +8601,13 @@ class GameEngine: ObservableObject {
             self.print("")
 
             self.print("  COUNTDOWN ICON", color: .cyan, bold: true)
-            self.printWrapped("While a screen is counting down, a little hourglass turns beside the > prompt (its ring shows the time left) and the cursor becomes ⏸. Tap either to pause — they turn amber, the cursor becomes ▶ and 'paused' pulses gently; tap again to carry on from where it stopped. Long-press the hourglass to hurry. Tapping anywhere else still moves on at once. Turn Countdown Icon off to hide all of this; auto-continue itself carries on as set.", indent: 2, color: .dimGreen)
+            self.printWrapped("While a screen is counting down, a little hourglass turns at the right of the input line (its ring shows the time left). Tap it to pause — it turns orange and 'paused' pulses gently; tap again to carry on from where it stopped. Typing at the prompt pauses it too. Long-press the hourglass to hurry. Tapping anywhere else still moves on at once. Turn Countdown Icon off to hide all of this; auto-continue itself carries on as set.", indent: 2, color: .dimGreen)
             self.printWrapped("Why it's there: auto-continue keeps the game flowing when you look away, but a screen that moves on by itself can also snatch text away before you've finished reading it — a long combat report, a merchant's reply, a trap you need to think about. The hourglass makes the timer visible, so a screen never moves on as a surprise, and puts pause right where your eyes already are (the > prompt) instead of burying it in Settings. It matters most if you read slowly, get interrupted, use a screen reader or large text, or are just savouring the story.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  AUTO-CONTINUE", color: .cyan, bold: true)
             self.printWrapped("Adventurers often want to stop and read — a combat result, a merchant's reply, the DM's description of a room — so many screens are tap-to-continue: nothing happens until you tap. With Auto-Continue on (the default), those screens also move on by themselves once the Info Timeout runs out, so the game keeps flowing if you look away. Turn it off and every such screen waits for your tap.", indent: 2, color: .dimGreen)
-            self.printWrapped("Need a moment? While a screen is counting down, a little hourglass turns beside the > prompt, its ring showing the time left. Tap the hourglass to pause (it turns amber and says paused): every screen then waits for you. Tap it again to carry on from where it stopped. Long-press it to hurry things along. Tapping anywhere else still moves on straight away. On a Mac, press Space to pause or resume. A pause lasts until you resume or restart the app.", indent: 2, color: .dimGreen)
+            self.printWrapped("Need a moment? While a screen is counting down, a little hourglass turns at the right of the input line, its ring showing the time left. Tap the hourglass to pause (it turns amber and says paused): every screen then waits for you. Tap it again to carry on from where it stopped. Long-press it to hurry things along. Tapping anywhere else still moves on straight away. On a Mac, press Space to pause or resume. A pause lasts until you resume or restart the app.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  BUTTON LIMIT", color: .cyan, bold: true)
@@ -8687,7 +8909,7 @@ class GameEngine: ObservableObject {
 
     /// All UserDefaults keys used by the game
     private static let settingsKeys: [String] = [
-        "maxButtonsPerScreen", "longPressDuration", "infoTimeout", "customInfoTimeouts", "autoContinueEnabled", "showCountdownControl", "atlasShowAllRooms",
+        "maxButtonsPerScreen", "longPressDuration", "infoTimeout", "customInfoTimeouts", "autoContinueEnabled", "showCountdownControl", "atlasShowAllRooms", "autoScrollSpeed",
         "map_radius", "useArrowNavigation", "multiplayer_enabled", "npcs_enabled",
         "multiple_shops_enabled",
         "hit_animations", "voiceMenuEnabled", "iconScaleSetting", "adventureLogLimit",
@@ -8731,6 +8953,7 @@ class GameEngine: ObservableObject {
         infoTimeout = d.object(forKey: "infoTimeout") == nil ? 5.0 : d.double(forKey: "infoTimeout")
         autoContinueEnabled = d.object(forKey: "autoContinueEnabled") == nil ? true : d.bool(forKey: "autoContinueEnabled")
         showCountdownControl = d.object(forKey: "showCountdownControl") == nil ? true : d.bool(forKey: "showCountdownControl")
+        autoScrollSpeed = d.integer(forKey: "autoScrollSpeed")
         iconScaleSetting = d.integer(forKey: "iconScaleSetting")
         useCustomKeyboard = d.object(forKey: "useCustomKeyboard") == nil ? true : d.bool(forKey: "useCustomKeyboard")
         idlePromptsEnabled = d.object(forKey: "idlePromptsEnabled") == nil ? true : d.bool(forKey: "idlePromptsEnabled")
@@ -9808,6 +10031,7 @@ class GameEngine: ObservableObject {
             autoContinueEnabled = true
             autoContinuePaused = false
             showCountdownControl = true
+            autoScrollSpeed = 0
             iconScaleSetting = 0
             useCustomKeyboard = true
             idlePromptsEnabled = true
@@ -9942,6 +10166,7 @@ class GameEngine: ObservableObject {
         add("infoTimeout", "Info Timeout", current: infoStr, dflt: "5.0s")
         add("autoContinueEnabled", "Auto-Continue", current: autoContinueEnabled ? "On" : "Off", dflt: "On")
         add("showCountdownControl", "Countdown Icon", current: showCountdownControl ? "On" : "Off", dflt: "On")
+        add("autoScrollSpeed", "Auto-Scroll", current: autoScrollSpeedName, dflt: "Off")
 
         let lpStr = String(format: "%.1fs", longPressDuration)
         add("longPressDuration", "Long Press", current: lpStr, dflt: "0.5s")
@@ -10100,6 +10325,7 @@ class GameEngine: ObservableObject {
         if keys.contains("infoTimeout") { infoTimeout = 5.0 }
         if keys.contains("autoContinueEnabled") { autoContinueEnabled = true }
         if keys.contains("showCountdownControl") { showCountdownControl = true }
+        if keys.contains("autoScrollSpeed") { autoScrollSpeed = 0 }
         if keys.contains("iconScaleSetting") { iconScaleSetting = 0 }
         if keys.contains("useCustomKeyboard") { useCustomKeyboard = true }
         if keys.contains("idlePromptsEnabled") { idlePromptsEnabled = true }

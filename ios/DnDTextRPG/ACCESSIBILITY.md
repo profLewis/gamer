@@ -32,7 +32,7 @@ DnD Text RPG is committed to providing an inclusive gaming experience. The follo
 - **Context-Sensitive Tips** -- Gameplay hints appear periodically based on what you're currently doing.
 - **Comprehensive Help** -- 12 help topics, 50+ FAQ entries, in-game bestiary, and NPC guide available from the How to Play menu.
 
-- **Reading at your own pace** — screens that move on by themselves (Auto-Continue) show a countdown hourglass by the `>` prompt, so nothing disappears as a surprise. Tap it to pause (it turns orange) and the screen waits for you; long-press to hurry; tap anywhere to continue at once. Auto-Continue, its timeout, and the hourglass itself can each be changed or turned off in Settings > Gameplay.
+- **Reading at your own pace** — screens that move on by themselves (Auto-Continue) show a countdown hourglass at the right of the input line, so nothing disappears as a surprise. Tap it to pause (it turns orange) and the screen waits for you; long-press to hurry; tap anywhere to continue at once. Auto-Continue, its timeout, and the hourglass itself can each be changed or turned off in Settings > Gameplay.
 
 ## Feedback
 

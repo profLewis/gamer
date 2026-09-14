@@ -54,6 +54,21 @@ struct LogImporterModifier: ViewModifier {
 }
 #endif
 
+/// Where an in-text link line sits on screen — the text area's tap-to-
+/// continue strip lies on top of the text, so it checks these first and
+/// follows a tapped link instead of continuing.
+private struct LinkFrame: Equatable {
+    let key: String
+    let rect: CGRect
+}
+
+private struct LinkFramesKey: PreferenceKey {
+    static var defaultValue: [LinkFrame] = []
+    static func reduce(value: inout [LinkFrame], nextValue: () -> [LinkFrame]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
 struct TerminalView: View {
     @EnvironmentObject var gameEngine: GameEngine
     @ObservedObject private var voiceInput = VoiceInputManager.shared
@@ -82,6 +97,14 @@ struct TerminalView: View {
     /// Measured D-pad height — lets the portrait controls block keep a
     /// steady height with its spare room above the D-pad.
     @State private var dpadMeasuredHeight: CGFloat = 0
+    /// Scrolling rules (see the terminalLines.count handler): when this
+    /// page appeared, how many lines it had when last looked at, and a
+    /// token that cancels a pending Auto-Scroll glide once the page changes.
+    @State private var screenShownAt: Date = .distantPast
+    @State private var lastSeenLineCount: Int = 0
+    @State private var focusScheduled: Bool = false
+    @State private var glideToken = UUID()
+    @State private var linkFrames: [LinkFrame] = []
     #if os(macOS)
     /// Mac pane sizes, set by dragging the small handles (remembered).
     /// 0 = map pane tall enough for the whole map box, key included.
@@ -288,6 +311,10 @@ struct TerminalView: View {
                                             .id(line.id)
                                             .contentShape(Rectangle())
                                             .onTapGesture { gameEngine.followLink(link) }
+                                            .background(GeometryReader { geo in
+                                                Color.clear.preference(key: LinkFramesKey.self,
+                                                                       value: [LinkFrame(key: link, rect: geo.frame(in: .global))])
+                                            })
                                     } else if gameEngine.textTapEnabled {
                                         TerminalLineView(line: line, scale: scale)
                                             .id(line.id)
@@ -420,19 +447,52 @@ struct TerminalView: View {
                                     scrollToTop(scrollProxy)
                                 }
                             } else {
-                                // Chat/combat-style screens — follow the tail only while the
-                                // reader is actually at the bottom (isNearBottom, no timeout).
-                                // A deliberate scroll-up to reread an earlier round stays put
-                                // no matter how long the round takes to finish.
-                                scrollToBottom(scrollProxy)
-                                // Delayed re-scrolls for long pages where LazyVStack layout lags
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                    guard !gameEngine.suppressAutoScroll else { return }
-                                    scrollToBottom(scrollProxy)
+                                let count = gameEngine.terminalLines.count
+                                if gameEngine.screenGeneration != lastScrolledGeneration {
+                                    // A NEW PAGE always shows its start — the reader must see
+                                    // the top of long text (help, lore, results). Auto-Scroll
+                                    // (Accessibility) may then glide down it; otherwise the
+                                    // reader scrolls for themselves.
+                                    lastScrolledGeneration = gameEngine.screenGeneration
+                                    screenShownAt = Date()
+                                    lastSeenLineCount = count
+                                    let token = UUID()
+                                    glideToken = token
+                                    jumpToTop(scrollProxy)
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                        guard glideToken == token else { return }
+                                        jumpToTop(scrollProxy)
+                                    }
+                                    scheduleAutoGlide(scrollProxy, token: token)
+                                    return
                                 }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                // Same page: its own first burst of printing — stay at the top.
+                                if Date().timeIntervalSince(screenShownAt) < 0.5 {
+                                    lastSeenLineCount = count
+                                    return
+                                }
+                                // Text added afterwards — a result, a warning, the DM's reply:
+                                // bring it into view (usually the end of the page; the start of
+                                // the new block if it's long). The reader can still scroll back
+                                // up to see the rest.
+                                guard !focusScheduled else { return }
+                                focusScheduled = true
+                                let firstNew = lastSeenLineCount
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                                    focusScheduled = false
                                     guard !gameEngine.suppressAutoScroll else { return }
-                                    scrollToBottom(scrollProxy)
+                                    let lines = gameEngine.terminalLines
+                                    lastSeenLineCount = lines.count
+                                    let added = lines.count - firstNew
+                                    guard added > 0 else { return }
+                                    glideToken = UUID()   // new text takes over from any glide
+                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                        if added > 14 && firstNew >= 0 && firstNew < lines.count {
+                                            scrollProxy.scrollTo(lines[firstNew].id, anchor: .top)
+                                        } else {
+                                            scrollProxy.scrollTo("bottomSentinel", anchor: .bottom)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -471,6 +531,7 @@ struct TerminalView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .background(terminalBackground)
+                    .onPreferenceChange(LinkFramesKey.self) { linkFrames = $0 }
                     .overlay(alignment: .leading) { tapToAdvanceStrip }
                     #if !os(tvOS)
                     // tvOS has no touch/swipe input (remote + focus engine
@@ -861,27 +922,10 @@ struct TerminalView: View {
                                 .font(.system(size: 14 * scale, design: .monospaced))
                                 .foregroundColor(gameEngine.chatInputMode ? Color.orange : terminalGreen)
 
-                            // Blinking cursor block — a plain on/off setting now (the
-                            // countdown bar below is what signals a waiting screen);
-                            // hidden once there's typed text so it doesn't sit beside it.
-                            // While a screen is counting down, the cursor becomes the
-                            // pause control: a blinking ⏸ (tap to pause), or while
-                            // paused a blinking amber ▶ (tap to carry on).
-                            if gameEngine.awaitingContinue && gameEngine.autoContinueCountdownAvailable && gameEngine.autoCountdownEnd != nil && gameEngine.showCountdownControl {
-                                let paused = gameEngine.autoContinuePaused
-                                TimelineView(.periodic(from: .now, by: 0.53)) { context in
-                                    let visible = Int(context.date.timeIntervalSinceReferenceDate / 0.53) % 2 == 0
-                                    Image(systemName: paused ? "play.fill" : "pause.fill")
-                                        .font(.system(size: 12 * scale))
-                                        .foregroundColor(paused ? Color(red: 1.0, green: 0.72, blue: 0.0) : terminalGreen)
-                                        .opacity(visible ? 1 : 0.25)
-                                }
-                                .frame(width: 18 * scale, height: 26)
-                                .contentShape(Rectangle())
-                                .onTapGesture { gameEngine.toggleAutoContinuePause() }
-                                .accessibilityLabel(paused ? "Resume auto-continue" : "Pause auto-continue")
-                                .accessibilityAddTraits(.isButton)
-                            } else if gameEngine.blinkingCursorEnabled && inputText.isEmpty && !GameEngine.systemVoiceOverRunning {
+                            // Blinking block cursor — a plain on/off setting (Accessibility).
+                            // Hidden while the field has focus or holds text, so it never
+                            // sits beside the system's own text caret (two cursors at once).
+                            if gameEngine.blinkingCursorEnabled && inputText.isEmpty && !isInputFocused && !GameEngine.systemVoiceOverRunning {
                                 TimelineView(.periodic(from: .now, by: 0.53)) { context in
                                     let visible = Int(context.date.timeIntervalSinceReferenceDate / 0.53) % 2 == 0
                                     Text("█")
@@ -889,10 +933,6 @@ struct TerminalView: View {
                                         .foregroundColor(gameEngine.chatInputMode ? Color.orange : terminalGreen)
                                         .opacity(visible ? 1 : 0)
                                 }
-                            }
-
-                            if gameEngine.awaitingContinue && gameEngine.autoContinueCountdownAvailable && gameEngine.autoCountdownEnd != nil && gameEngine.showCountdownControl {
-                                autoCountdownBar
                             }
 
                             // Text field
@@ -911,8 +951,14 @@ struct TerminalView: View {
                                     // Text mode auto-submit: if typing stops for 1.5s, submit
                                     textModeAutoSubmitTimer?.invalidate()
                                     textModeAutoSubmitTimer = nil
-                                    if gameEngine.isJustDMActive && !newText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                        textModeAutoSubmitTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { _ in
+                                    // Typing on a counting-down screen pauses it — you're busy.
+                                    if !newText.isEmpty && gameEngine.awaitingContinue {
+                                        gameEngine.pauseAutoContinueForTyping()
+                                    }
+                                    // Text mode sends what you typed once you stop typing — only
+                                    // with Auto-Continue on, and never after a mere 1.5s pause.
+                                    if gameEngine.isJustDMActive && gameEngine.autoContinueEnabled && !newText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        textModeAutoSubmitTimer = Timer.scheduledTimer(withTimeInterval: gameEngine.textAutoSubmitDelay, repeats: false) { _ in
                                             DispatchQueue.main.async {
                                                 submitInput()
                                             }
@@ -926,6 +972,12 @@ struct TerminalView: View {
                                 }
 
                             Spacer()
+
+                            // Auto-continue countdown — at the right of the line, clear of
+                            // where you type. Tap to pause/resume, long-press to hurry.
+                            if gameEngine.awaitingContinue && gameEngine.autoContinueCountdownAvailable && gameEngine.autoCountdownEnd != nil && gameEngine.showCountdownControl {
+                                autoCountdownBar
+                            }
 
                         if !gameEngine.isJustDMActive || gameEngine.forceInteractiveControls {
                         // Card navigation — <</>>/swipe mode
@@ -1182,14 +1234,28 @@ struct TerminalView: View {
                 Color.clear
                     .frame(width: geo.size.width * 5 / 6)
                     .contentShape(Rectangle())
-                    .onTapGesture {
-                        if gameEngine.swipeLeftHandler != nil {
-                            gameEngine.swipeLeftHandler?()
+                    #if os(tvOS)
+                    .onTapGesture { advanceFromStrip() }
+                    #else
+                    // A tap on an in-text link follows the link rather than
+                    // continuing — this strip lies on top of the text.
+                    .onTapGesture(coordinateSpace: .global) { location in
+                        if let hit = linkFrames.first(where: { $0.rect.contains(location) }) {
+                            gameEngine.followLink(hit.key)
                         } else {
-                            gameEngine.handleContinue()
+                            advanceFromStrip()
                         }
                     }
+                    #endif
             }
+        }
+    }
+
+    private func advanceFromStrip() {
+        if gameEngine.swipeLeftHandler != nil {
+            gameEngine.swipeLeftHandler?()
+        } else {
+            gameEngine.handleContinue()
         }
     }
 
@@ -1401,6 +1467,32 @@ struct TerminalView: View {
     private func landingDragonWidth(_ size: CGSize, isLandscape: Bool) -> CGFloat {
         let column = isLandscape ? size.width / 2 : size.width
         return max(120, min(280 * scale, column * 0.8, size.height * 0.35 * 280 / 186))
+    }
+
+    /// New page: straight to its first line, no animation (it should simply
+    /// already be there, not visibly scroll into place).
+    private func jumpToTop(_ proxy: ScrollViewProxy) {
+        if let firstLine = gameEngine.terminalLines.first {
+            proxy.scrollTo(firstLine.id, anchor: .top)
+        }
+    }
+
+    /// Accessibility > Auto-Scroll: a moment after a long page appears,
+    /// glide down it at the chosen speed. Off by default — then scrolling
+    /// long text is entirely up to the reader. A touch/scroll by the reader
+    /// (or the page changing) stops it.
+    private func scheduleAutoGlide(_ proxy: ScrollViewProxy, token: UUID) {
+        let linesPerSecond = gameEngine.autoScrollLinesPerSecond
+        guard linesPerSecond > 0 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            guard glideToken == token, !isNearBottom,
+                  Date().timeIntervalSince(lastManualScrollAt) > 1.5 else { return }
+            let lines = gameEngine.terminalLines.count
+            let duration = max(0.8, Double(max(0, lines - 10)) / linesPerSecond)
+            withAnimation(.linear(duration: duration)) {
+                proxy.scrollTo("bottomSentinel", anchor: .bottom)
+            }
+        }
     }
 
     private func scrollToTop(_ proxy: ScrollViewProxy) {
