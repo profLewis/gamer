@@ -1949,14 +1949,14 @@ class GameEngine: ObservableObject {
         print("  Wait: \(String(format: "%.0fs", infoTimeout)) (about \(Int((infoTimeout * 2).rounded()))s on most screens)", color: .brightGreen)
         printWrapped("Longer screens always get enough time to read them.", indent: 4, color: .dimGreen)
         print("")
-        print("  Hourglass: \(showCountdownControl ? "On" : "Off")", color: showCountdownControl ? .brightGreen : .red)
+        print("  Countdown icon: \(showCountdownControl ? "On" : "Off")", color: showCountdownControl ? .brightGreen : .red)
         printWrapped("The countdown at the right of the input line — tap it to pause, long-press to hurry.", indent: 4, color: .dimGreen)
         print("")
         let waits: [Double] = [2, 3, 5, 8, 10, 15]
         let options = [
             autoContinueEnabled ? "Auto-Continue Off" : "Auto-Continue On",
             "Wait: \(String(format: "%.0fs", infoTimeout))",
-            showCountdownControl ? "Hourglass Off" : "Hourglass On",
+            showCountdownControl ? "Countdown Icon Off" : "Countdown Icon On",
         ]
         showPaginatedMenuOptions(options, pinned: ["?", "< Back"], handler: { [weak self] idx in
             guard let self = self else { return }
@@ -5427,7 +5427,7 @@ class GameEngine: ObservableObject {
         print("  • Level Up", color: .brightGreen, bold: true)
         printWrapped("    your abilities with experience", color: .green)
         print("")
-        printWrapped("  Make it to the Hall of Fame — if you're good enough.", color: .brightGreen, bold: true)
+        printWrapped("  Make it into the Hall of Fame — your finished adventures, ranked in Continue Adventure — if you're good enough.", color: .brightGreen, bold: true)
         print("")
         if voiceMenuEnabled {
             printWrapped("Navigate with buttons, type commands at the > prompt, or tap the mic to speak. Swipe left to go back, swipe right to continue.", indent: 2, color: .dimGreen)
@@ -8205,7 +8205,7 @@ class GameEngine: ObservableObject {
         printWrapped("Speaker and microphone icons for voice control.", indent: 2, color: .dimGreen)
         print("")
 
-        print("FLASHING CURSOR:", color: .cyan, bold: true)
+        print("BLINKING CURSOR:", color: .cyan, bold: true)
         print("  \(blinkingCursorEnabled ? "On" : "Off")", color: blinkingCursorEnabled ? .brightGreen : .red)
         printWrapped("Off (the default): no blinking block cursor by the > prompt. On: it blinks there until you tap to type. Turn this off if using VoiceOver — off automatically the first time this device has VoiceOver running.", indent: 2, color: .dimGreen)
         print("")
@@ -8358,7 +8358,7 @@ class GameEngine: ObservableObject {
         clearTerminal()
         printTitle("Gameplay")
 
-        print("MAP RADIUS:", color: .cyan, bold: true)
+        print("MAP LENGTH:", color: .cyan, bold: true)
         let hasTorch = party.contains { (char: Character) in
             char.inventory.contains { $0.name.lowercased().contains("torch") }
         }
@@ -8501,7 +8501,7 @@ class GameEngine: ObservableObject {
         ])
         options.append(undoRedoEnabled ? "Undo/Redo Off" : "Undo/Redo On")
 
-        showPaginatedMenuOptions(options, page: page, pinned: ["?", "< Back"], handler: { [weak self] idx in
+        let select: (Int) -> Void = { [weak self] idx in
             guard let self = self else { return }
             guard idx >= 0 && idx < options.count else { return }
             let currentPage = self.paginatedPage
@@ -8602,13 +8602,53 @@ class GameEngine: ObservableObject {
                 }
                 self.showGameplaySettings(page: currentPage)
             }
-        }, pinnedHandler: { [weak self] choice in
+        }
+        showPaginatedMenuOptions(options, page: page, pinned: ["?", "< Back"], handler: select, pinnedHandler: { [weak self] choice in
             guard let self = self else { return }
             switch choice {
             case 0: self.showGameplaySettingsHelp()
             default: self.showSettings()
             }
         })
+
+        // Tap a setting's own text (its heading or value line) to do what its
+        // button does — toggles flip in place, pickers open. Logged like any
+        // other settings change.
+        let textTargets: [(heading: String, matches: (String) -> Bool)] = [
+            ("MAP LENGTH:", { $0 == "Map Length" }),
+            ("CARD NAVIGATION:", { $0.hasPrefix("Use ") }),
+            ("INFO TIMEOUT:", { $0 == "Info Timeout" }),
+            ("AUTO-CONTINUE:", { $0.hasPrefix("Auto-Continue") }),
+            ("COUNTDOWN ICON:", { $0.hasPrefix("Countdown Icon") }),
+            ("BUTTON LIMIT:", { $0 == "Button Limit" }),
+            ("LONG PRESS:", { $0 == "Long Press" }),
+            ("NPCs:", { $0.hasPrefix("NPCs") }),
+            ("POISON:", { $0.hasPrefix("Poison") }),
+            ("MULTIPLAYER:", { $0 == "Multi On" || $0 == "Multi Off" }),
+            ("DEGRADE REMOTE→ROBOT:", { $0.hasPrefix("Remote→Robot") }),
+            ("ADVENTURE LOG:", { $0 == "Log Limit" }),
+            ("TIME LIMIT:", { $0 == "Time Limit" }),
+            ("IDLE PROMPTS:", { $0.hasPrefix("Idle") }),
+            ("BLINKING CURSOR:", { $0.hasPrefix("Cursor") }),
+            ("UNDO/REDO:", { $0.hasPrefix("Undo/Redo") }),
+            ("LIST ORDER:", { $0 == "List Order" }),
+            ("ROBOT PREFIX:", { $0.hasPrefix("Robot Prefix") }),
+            ("UNITS:", { $0.hasPrefix("Units:") }),
+            ("TELEPORT PADS:", { $0.hasPrefix("Teleport") }),
+            ("WORLD MAP:", { $0.hasPrefix("World Map") }),
+        ]
+        var lineTargets: [Int: (heading: String, option: Int)] = [:]
+        for (i, line) in terminalLines.enumerated() {
+            guard let target = textTargets.first(where: { line.text.hasPrefix($0.heading) }),
+                  let optionIndex = options.firstIndex(where: target.matches) else { continue }
+            lineTargets[i] = (target.heading, optionIndex)
+            if i + 1 < terminalLines.count { lineTargets[i + 1] = (target.heading, optionIndex) }
+        }
+        textLongPressHandler = { [weak self] lineIndex in
+            guard let target = lineTargets[lineIndex] else { return }
+            self?.logEvent("Changed \(target.heading.dropLast()) by tapping its text", category: "SETTINGS")
+            select(target.option)
+        }
         closeHandler = { [weak self] in self?.showSettings() }
         installSettingUndoRedo(screen: "s:gameplay") { [weak self] in self?.showGameplaySettings(page: self?.paginatedPage ?? 0) }
     }
@@ -8618,7 +8658,7 @@ class GameEngine: ObservableObject {
             self.printTitle("Gameplay Help")
             self.print("")
 
-            self.print("  MAP RADIUS", color: .cyan, bold: true)
+            self.print("  MAP LENGTH", color: .cyan, bold: true)
             self.printWrapped("How far you can see on the dungeon map. A larger radius reveals more rooms but may spoil surprises. Illuminate your torch to see further!", indent: 2, color: .dimGreen)
             self.printWrapped("Old cartographers say a patient hand, pressed upon the map, sees further than any torch.", indent: 2, color: .dimGreen)
             self.print("")
@@ -22880,7 +22920,7 @@ class GameEngine: ObservableObject {
         print("  Explored: \(roomsVisited)/\(totalRooms) rooms", color: .cyan)
         let dm = DMEngine.shared
         let aiLabel = dm.isConfigured ? dm.provider.displayName : (dm.isAppleModelAvailable ? "Apple On-Device AI" : "Basic DM (no AI)")
-        print("  DM: \(aiLabel)", color: .cyan)
+        print("  DM's brain: \(aiLabel)", color: .cyan)
         if partySkillMultiplier > 1.0 {
             let pct = Int(((partySkillMultiplier - 1.0) * 100).rounded())
             print("  Monster strength: +\(pct)% (your party has grown stronger)", color: .yellow)
@@ -22918,8 +22958,10 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        // Character summary
+        // Character summary — each character's lines are tappable (their card)
+        var characterLineRanges: [Range<Int>] = []
         for (partyIdx, char) in party.enumerated() {
+            let characterLineStart = terminalLines.count
             let charIsRemote = pendingRemoteSlots.contains(partyIdx)
             let isLocal = localControlledCharIds.contains(char.id)
             let typeTag: String
@@ -22955,11 +22997,13 @@ class GameEngine: ObservableObject {
                 let nextXP = Character.xpForLevel(char.level + 1)
                 print("    XP: \(char.experiencePoints)/\(nextXP) to Level \(char.level + 1)", color: .dimGreen)
             }
+            characterLineRanges.append(characterLineStart..<terminalLines.count)
         }
         print("")
 
         // Build menu
-        var menuOpts = ["Party Review", "Save to Roster", "Adventure Log", "Lore", "AI", "Settings", "?", "< Back"]
+        // "Brain" (was "AI") — which mind runs the Dungeon Master.
+        var menuOpts = ["Party Review", "Save to Roster", "Adventure Log", "Tell the Tale", "Lore", "Brain", "Settings", "?", "< Back"]
         if dungeon?.hasCartography == true {
             menuOpts.insert("Atlas", at: menuOpts.firstIndex(of: "Lore") ?? 0)
         }
@@ -22975,6 +23019,12 @@ class GameEngine: ObservableObject {
 
         closeHandler = { [weak self] in
             self?.showExplorationView()
+        }
+
+        // Tap a character's lines to open their character card.
+        textLongPressHandler = { [weak self] lineIndex in
+            guard let idx = characterLineRanges.firstIndex(where: { $0.contains(lineIndex) }) else { return }
+            self?.showCharacterCard(index: idx)
         }
 
         // Long-press Give Up Quest skips the "are you sure?" step.
@@ -22998,11 +23048,13 @@ class GameEngine: ObservableObject {
                 self.showSavePartyToRosterMenu()
             case "Adventure Log":
                 self.showAdventureLog()
+            case "Tell the Tale":
+                self.tellTaleSoFar(onBack: { [weak self] in self?.showPartyStatus() })
             case "Atlas":
                 self.showAtlas(onBack: { [weak self] in self?.showPartyStatus() })
             case "Lore":
                 self.showLoreBook()
-            case "AI":
+            case "Brain":
                 self.showAIProviderMenu(onBack: { [weak self] in self?.showPartyStatus() })
             case "Settings":
                 self.showSettings()
@@ -23017,6 +23069,26 @@ class GameEngine: ObservableObject {
     /// Lets the player pick which party member(s) to save/update in the
     /// Character Roster mid-adventure — e.g. after a level-up — so progress
     /// on that character carries into future parties.
+    /// The story of this adventure so far — the same tale Continue Adventure
+    /// tells, built from the game exactly as it stands right now.
+    private func tellTaleSoFar(onBack: @escaping () -> Void) {
+        guard let dungeon = dungeon else { onBack(); return }
+        let partyDesc = party.map { "\($0.name) (\($0.characterClass.rawValue))" }.joined(separator: ", ")
+        let snapshot = SaveGame(
+            id: UUID(), slotId: activeSlotId ?? UUID(), savedAt: Date(), slotName: activeSlotName ?? dungeon.name,
+            partyDescription: partyDesc, dungeonName: dungeon.name, dungeonLevel: dungeon.level,
+            party: party, dungeon: dungeon, gameState: gameState,
+            gameTimeMinutes: gameTimeMinutes, adventureLog: adventureLog,
+            dmChatLog: dmChatLog.map { DMChatEntry(isUser: $0.isUser, text: $0.text) }, torchLit: torchLit,
+            torchTurnsRemaining: torchTurnsRemaining,
+            partyChatLog: partyChatLog.suffix(20).map { $0 },
+            monstersSlain: monstersSlain,
+            combatsWon: combatsWon,
+            activeQuest: activeQuest
+        )
+        showAdventureTale(AdventureTaleData(inProgress: snapshot), onBack: onBack)
+    }
+
     private func showSavePartyToRosterMenu() {
         clearTerminal()
         printTitle("Save to Roster")
@@ -30224,24 +30296,24 @@ class GameEngine: ObservableObject {
 
             // Help text
             print("  Save: save and keep playing", color: .dimGreen)
-            print("  Quit+Save: save, then close the app", color: .dimGreen)
+            print("  Save & Quit App: save, then close the app", color: .dimGreen)
             if slots.count < SaveGameManager.maxSlots {
                 print("  Save+NewName: save as a new adventure", color: .dimGreen)
             }
-            print("  Quit-Save: close the app without saving", color: .dimGreen)
+            print("  Quit App: close the app without saving", color: .dimGreen)
             print("  Main Menu: leave this adventure, stay in the app", color: .dimGreen)
-            print("  (Long-press Quit+Save / Quit-Save to skip the check.)", color: .dimGreen)
+            print("  (Long-press either Quit button to skip the check.)", color: .dimGreen)
             print("")
 
             var options: [String] = []
             options.append("Save")              // 1
-            options.append("Quit+Save")         // 2
+            options.append("Save & Quit App")         // 2
             if slots.count < SaveGameManager.maxSlots {
                 options.append("Save+NewName")   // 3
-                options.append("Quit-Save")     // 4
+                options.append("Quit App")     // 4
                 options.append("Main Menu")     // 5
             } else {
-                options.append("Quit-Save")     // 3
+                options.append("Quit App")     // 3
                 options.append("Main Menu")     // 4
             }
             options.append("?")
@@ -30260,9 +30332,9 @@ class GameEngine: ObservableObject {
             menuLongPressHandler = { [weak self] choice in
                 guard let self = self, choice >= 1 && choice <= options.count, let slotId = self.activeSlotId else { return }
                 switch options[choice - 1] {
-                case "Quit-Save":
+                case "Quit App":
                     self.performQuit()
-                case "Quit+Save":
+                case "Save & Quit App":
                     self.performSave(slotId: slotId, slotName: slotName)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.performQuit() }
                 default: break
@@ -30275,11 +30347,11 @@ class GameEngine: ObservableObject {
                 switch selected {
                 case "Save":
                     self.performSave(slotId: self.activeSlotId!, slotName: slotName)
-                case "Quit+Save":
+                case "Save & Quit App":
                     self.confirmQuitAndSave(slotId: self.activeSlotId!, slotName: slotName)
                 case "Save+NewName":
                     self.askForNewSlotName()
-                case "Quit-Save":
+                case "Quit App":
                     self.confirmQuitWithoutSaving()
                 case "Main Menu":
                     self.confirmExitToMainMenu()
@@ -31870,71 +31942,92 @@ class GameEngine: ObservableObject {
         }
     }
 
-    /// - onCancel/onDone: where to go on an invalid name / a successful
-    ///   rename — defaults to the Settings-reached flow (showSlotActions /
-    ///   showManageSavesMenu); the Continue Adventure-reached flow
-    ///   (showSaveSlotManage) passes its own so renaming returns there
-    ///   instead of to the unrelated Settings screen.
+    /// Rename a save slot: tap a suggested name, roll the dice for new
+    /// ones, or type your own at the > prompt. Renames every save point in
+    /// place — it used to delete each one and then re-save it, and since a
+    /// deleted save's id is remembered for good (SaveGameManager's deletion
+    /// record), that silently threw the whole adventure away.
     private func renameSlot(slot: SaveSlot, returnTo origin: LoadGameOrigin, onCancel: (() -> Void)? = nil, onDone: (() -> Void)? = nil) {
         let cancelAction: () -> Void = onCancel ?? { [weak self] in self?.showSlotActions(slot: slot, returnTo: origin) }
         let doneAction: () -> Void = onDone ?? { [weak self] in self?.showManageSavesMenu(returnTo: origin) }
+        let suggestions = renameSuggestions(for: slot)
 
+        clearTerminal()
+        printTitle("Rename Adventure")
+        print("  Now: \(slot.slotName)", color: .brightGreen)
         print("")
-        promptText("Enter new name for this slot:")
+        printWrapped("Tap a suggestion, tap 🎲 for new ideas, or type your own name at the > prompt.", indent: 2, color: .dimGreen)
+        print("")
+        for (i, name) in suggestions.enumerated() {
+            print("  \(i + 1). \(name)", color: .green)
+        }
+        print("")
+        let options = suggestions + ["🎲 New Ideas", "?", "< Back"]
+        promptTextWithMenu("New name:", options: options)
         closeHandler = cancelAction
 
-        inputHandler = { [weak self] newName in
+        let apply: (String) -> Void = { [weak self] raw in
             guard let self = self else { return }
-            if self.isReservedWord(newName) {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !self.isReservedWord(trimmed) else {
                 cancelAction()
                 return
             }
-            let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else {
-                self.print("Name cannot be empty.", color: .yellow)
-                cancelAction()
-                return
-            }
-
-            // Rename all breakpoints in this slot
-            let breakpoints = SaveGameManager.shared.listBreakpoints(slotId: slot.slotId)
-            for bp in breakpoints {
-                let renamed = SaveGame(
-                    id: bp.id,
-                    slotId: bp.slotId,
-                    savedAt: bp.savedAt,
-                    slotName: trimmed,
-                    partyDescription: bp.partyDescription,
-                    dungeonName: bp.dungeonName,
-                    dungeonLevel: bp.dungeonLevel,
-                    party: bp.party,
-                    dungeon: bp.dungeon,
-                    gameState: bp.gameState,
-                    gameTimeMinutes: bp.gameTimeMinutes,
-                    adventureLog: bp.adventureLog,
-                    dmChatLog: bp.dmChatLog,
-                    torchLit: bp.torchLit,
-                    torchTurnsRemaining: bp.torchTurnsRemaining,
-                    partyChatLog: bp.partyChatLog,
-                    monstersSlain: bp.monstersSlain,
-                    combatsWon: bp.combatsWon,
-                    activeQuest: bp.activeQuest
-                )
-                SaveGameManager.shared.delete(id: bp.id)
-                try? SaveGameManager.shared.save(renamed)
-            }
-
-            // Update active slot name if this is our slot
-            if self.activeSlotId == slot.slotId {
-                self.activeSlotName = trimmed
-            }
-
+            self.applySlotRename(slot: slot, to: trimmed)
+            self.logEvent("Renamed adventure '\(slot.slotName)' to '\(trimmed)'", category: "SAVE")
             self.print("")
             self.print("Renamed to '\(trimmed)'", color: .brightGreen)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                doneAction()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { doneAction() }
+        }
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= options.count else { return }
+            switch options[choice - 1] {
+            case "🎲 New Ideas":
+                self.renameSlot(slot: slot, returnTo: origin, onCancel: onCancel, onDone: onDone)
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("Rename — Help")
+                    self.print("")
+                    self.printWrapped("Tap one of the suggested names, tap 🎲 New Ideas for another batch, or type any name at the > prompt and press Return. Only the name changes — every save point in the adventure is kept.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            case "< Back":
+                cancelAction()
+            default:
+                apply(options[choice - 1])
             }
         }
+        inputHandler = { newName in apply(newName) }
+    }
+
+    /// Three name ideas for a renamed adventure.
+    private func renameSuggestions(for slot: SaveSlot) -> [String] {
+        let leader = slot.latest.party.first.map { shortName(for: $0) } ?? "The Party"
+        let adjectives = ["Brave", "Lost", "Last", "Golden", "Shadowed", "Merry", "Reckless", "Silent", "Crimson", "Wandering", "Doomed", "Lucky"]
+        let nouns = ["Expedition", "Descent", "Delve", "Crusade", "Quest", "Venture", "Saga", "Gambit", "Pilgrimage", "Escapade", "Foray", "Odyssey"]
+        return [
+            "\(leader)'s \(nouns.randomElement()!)",
+            "The \(adjectives.randomElement()!) \(nouns.randomElement()!)",
+            "\(slot.latest.dungeonName) \(["Run", "Attempt", "Venture"].randomElement()!) \(Int.random(in: 2...9))",
+        ].map { String($0.prefix(30)) }
+    }
+
+    /// Writes every save point of a slot back under its new name — same
+    /// ids, so each file is simply overwritten in place.
+    private func applySlotRename(slot: SaveSlot, to newName: String) {
+        for bp in SaveGameManager.shared.listBreakpoints(slotId: slot.slotId) {
+            let renamed = SaveGame(
+                id: bp.id, slotId: bp.slotId, savedAt: bp.savedAt, slotName: newName,
+                partyDescription: bp.partyDescription, dungeonName: bp.dungeonName, dungeonLevel: bp.dungeonLevel,
+                party: bp.party, dungeon: bp.dungeon, gameState: bp.gameState,
+                gameTimeMinutes: bp.gameTimeMinutes, adventureLog: bp.adventureLog,
+                dmChatLog: bp.dmChatLog, torchLit: bp.torchLit, torchTurnsRemaining: bp.torchTurnsRemaining,
+                partyChatLog: bp.partyChatLog, monstersSlain: bp.monstersSlain, combatsWon: bp.combatsWon,
+                activeQuest: bp.activeQuest
+            )
+            try? SaveGameManager.shared.save(renamed)
+        }
+        if activeSlotId == slot.slotId { activeSlotName = newName }
     }
 
     /// - onBack: where closeHandler/"No, Keep It" go — defaults to the
@@ -32096,6 +32189,7 @@ class GameEngine: ObservableObject {
         print("")
 
         let opts = [MenuOption("Yes, Delete All", tint: .danger), MenuOption("No, Keep It"),
+                    MenuOption("Tell Me About It"),
                     MenuOption("?", tint: .navigation, compact: true)]
         showMenuOptions(opts)
         closeHandler = cancelAction
@@ -32109,6 +32203,13 @@ class GameEngine: ObservableObject {
                     doneAction()
                 }
             } else if choice == 3 {
+                // A last look at what's about to go — then back here.
+                if let entry = HallOfFameManager.shared.listEntries().first(where: { $0.saveGameId == slot.latest.id }) {
+                    self?.showAdventureTale(AdventureTaleData(hof: entry), onBack: cancelAction)
+                } else {
+                    self?.showAdventureTale(AdventureTaleData(inProgress: slot.latest), onBack: cancelAction)
+                }
+            } else if choice == 4 {
                 self?.showInlineHelp {
                     self?.printTitle("Delete Adventure — Help")
                     self?.print("")
