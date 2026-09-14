@@ -8277,7 +8277,9 @@ class GameEngine: ObservableObject {
 
     /// Fight Club showing this fight — the @ on the input line toggles it
     /// (on by itself on a Mac; on a phone, off until asked for).
-    @Published var fightClubOn = false
+    @Published var fightClubOn: Bool = UserDefaults.standard.object(forKey: "fightClubOn") as? Bool ?? GameEngine.fightClubStartsOn {
+        didSet { UserDefaults.standard.set(fightClubOn, forKey: "fightClubOn") }
+    }
     static var fightClubStartsOn: Bool {
         #if os(macOS)
         return true
@@ -9137,9 +9139,9 @@ class GameEngine: ObservableObject {
         print("FIGHT CLUB:", color: .cyan, bold: true)
         print("  \(combatArenaEnabled ? "On" : "Off")", color: combatArenaEnabled ? .brightGreen : .red)
         #if os(macOS)
-        printWrapped("During a fight, the space below the buttons acts it out in ASCII — lunges, arrows, spells, sparks, damage rising off the struck, the fallen — while the rest of each side cheers and jeers from the sidelines. Click @ on the input line to hide or show it.", indent: 2, color: .dimGreen)
+        printWrapped("During a fight, the space below the buttons acts it out in ASCII — lunges, arrows, spells, sparks, damage rising off the struck, the fallen — while the rest of each side cheers and jeers from the sidelines. Click @ on the input line to hide or show it — your choice stays for the next fight, even after a restart. Turn Fight Club Off here to remove the @ button altogether; best left off with VoiceOver, which can't describe the animation and may trip over it.", indent: 2, color: .dimGreen)
         #else
-        printWrapped("In a fight, tap @ on the input line to watch it acted out in ASCII above the buttons — lunges, arrows, spells, sparks, and both sides cheering and jeering. Tap @ again to hide it.", indent: 2, color: .dimGreen)
+        printWrapped("In a fight, tap @ on the input line to watch it acted out in ASCII above the buttons — lunges, arrows, spells, sparks, and both sides cheering and jeering. Tap @ again to hide it — your choice stays for the next fight, even after a restart. Turn Fight Club Off here to remove the @ button altogether; best left off with VoiceOver, which can't describe the animation and may trip over it.", indent: 2, color: .dimGreen)
         #endif
         print("")
 
@@ -9680,7 +9682,7 @@ class GameEngine: ObservableObject {
         "speechEnabled", "companionVoiceMode",
         "menu_melody", "exploration_melody", "combat_melody", "chat_melody",
         "gameTimeLimit", "useCustomKeyboard", "undoRedoEnabled",
-        "justDMMode", "mac_map_rows", "combatArena", "followSystemTextSize", "dungeonQuirks",
+        "justDMMode", "mac_map_rows", "combatArena", "followSystemTextSize", "dungeonQuirks", "fightClubOn",
     ]
 
     private func exportSettings() -> [String: Any] {
@@ -28705,7 +28707,6 @@ class GameEngine: ObservableObject {
 
         currentCombat = Combat(party: party, encounter: balanced)
         arenaMove = nil
-        fightClubOn = Self.fightClubStartsOn
         isHandlingCombatVictory = false
         if self.musicEnabled { SoundManager.shared.startMusic(.combat, preference: self.combatMelodyChoice) }
         SoundManager.shared.playBattleStart()
