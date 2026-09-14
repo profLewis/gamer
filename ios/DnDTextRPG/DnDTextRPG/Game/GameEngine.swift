@@ -18756,7 +18756,7 @@ class GameEngine: ObservableObject {
         return nil
     }
 
-    private func bardPerform(_ bard: Character, audience: String, room: Room) {
+    private func bardPerform(_ bard: Character, audience: String, room: Room, returnTo: (() -> Void)? = nil) {
         performedRoomKeys.insert(performKey(room))
         clearTerminal()
         printExplorationMap()
@@ -18793,7 +18793,9 @@ class GameEngine: ObservableObject {
         }
         advanceTime(20)
         logEvent("\(bard.name) performed for \(audience) (+\(tips) gold)", category: "EXPLORE")
-        waitForContinueWithTimeout(multiplier: 1.0) { [weak self] in self?.showExplorationView() }
+        waitForContinueWithTimeout(multiplier: 1.0) { [weak self] in
+            if let back = returnTo { back() } else { self?.showExplorationView() }
+        }
     }
 
     private func showExplorationHelp() {
@@ -19348,13 +19350,8 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("Party Status"))
         actions.append { [weak self] in self?.showPartyStatus() }
 
-        // A bard can play for whoever's here — a coin or two for a good tune.
-        if let tuneRoom = self.dungeon?.currentRoom, tuneRoom.encounter == nil || tuneRoom.cleared,
-           let bard = party.first(where: { $0.characterClass == .bard && $0.isConscious }),
-           let audience = bardAudience(tuneRoom), !performedRoomKeys.contains(performKey(tuneRoom)) {
-            menuOpts.append(MenuOption("Play a Tune", tint: .cyan))
-            actions.append { [weak self] in self?.bardPerform(bard, audience: audience, room: tuneRoom) }
-        }
+        // (A bard's "Play a Tune" lives in conversations now — see talkToNPC —
+        // not on the main buttons, where it turned up in almost every room.)
 
         // --- Bottom row: Help ---
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -21584,6 +21581,16 @@ class GameEngine: ObservableObject {
             if npc.willOfferSideQuest == true, canTakeAnotherQuest, !allQuests.contains(where: { $0.giverName == npc.type.rawValue }) {
                 options.append(MenuOption("Ask for a Quest", tint: .cyan))
                 actions.append { [weak self] in self?.offerSideQuest() }
+            }
+        }
+
+        // A bard in the party can play for them — once each.
+        if let bard = party.first(where: { $0.characterClass == .bard && $0.isConscious }),
+           !performedRoomKeys.contains(performKey(room)) {
+            let audience = npc.displayName
+            options.append(MenuOption("Play a Tune", tint: .cyan))
+            actions.append { [weak self] in
+                self?.bardPerform(bard, audience: audience, room: room, returnTo: { [weak self] in self?.talkToNPC() })
             }
         }
 
