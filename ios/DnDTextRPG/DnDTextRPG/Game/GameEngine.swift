@@ -373,23 +373,24 @@ class GameEngine: ObservableObject {
 
     // MARK: Continue hints
     //
-    // Part of the idle-prompt family (Settings > Gameplay > Idle Prompts):
-    // on a tap-to-continue screen that's been sitting a while, a dim line
-    // says what to do — up to three times per screen.
+    // Every tap-to-continue screen says "Continue?" and how, 1.5s in, then
+    // again if you're still waiting — up to three times per screen.
     private var continueHintTimer: Timer?
     private var continueHintCount = 0
     private var continueHintGeneration = -1
 
     private func scheduleContinueHint() {
         continueHintTimer?.invalidate()
-        guard idlePromptsEnabled, awaitingContinue else { return }
+        // Part of auto-continue itself (not the Idle Prompts setting): every
+        // waiting screen says "Continue?" and how, soon after it appears.
+        guard awaitingContinue else { return }
         if continueHintGeneration != screenGeneration {
             continueHintGeneration = screenGeneration
             continueHintCount = 0
         }
         guard continueHintCount < 3 else { return }
         let counting = autoContinueCountdownAvailable && !autoContinuePaused
-        let delay: Double = counting ? max(3, autoCountdownTotal * 0.35) : 5
+        let delay: Double = continueHintCount == 0 ? 1.5 : (counting ? max(3, autoCountdownTotal * 0.35) : 5)
         continueHintTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             guard let self = self, self.awaitingContinue, self.continueHintGeneration == self.screenGeneration else { return }
             self.continueHintCount += 1
