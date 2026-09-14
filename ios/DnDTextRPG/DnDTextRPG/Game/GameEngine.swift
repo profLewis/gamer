@@ -18971,7 +18971,7 @@ class GameEngine: ObservableObject {
             self.printWrapped("A room you've already cleared isn't guaranteed to stay empty — something dangerous next door can occasionally wander in.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  TELEPORT PAD", color: .cyan, bold: true)
-            self.printWrapped("A purple target icon (bottom-right corner, where the NPC scroll icon normally sits) appears when the room has an active teleport pad — tap it to instantly travel to its linked room. Toggle in Settings > Gameplay.", indent: 2, color: .dimGreen)
+            self.printWrapped("A purple target icon (bottom-right corner, where the NPC scroll icon normally sits) appears when the room has an active teleport pad — tap it to instantly travel to its linked room. Now and then a pad glows a deeper blue: that one can also carry you down to the next level, past its guardian (it asks first — and there's no pad back up). Toggle in Settings > Gameplay.", indent: 2, color: .dimGreen)
             self.printLink("Settings > Gameplay", to: "gameplay", indent: 4)
             self.print("")
             self.print("  CHAT", color: .cyan, bold: true)
@@ -19446,10 +19446,10 @@ class GameEngine: ObservableObject {
             self.dpadTeleportHandler = { [weak self] in
                 guard let self = self else { return }
                 if self.roomIsLit {
-                    self.useTeleportPad(from: room, to: destRoom)
+                    self.stepOnPad(from: room, to: destRoom)
                 } else {
                     // In the dark it's a fumble, not a silent no-op.
-                    self.attemptInTheDark("the teleport pad") { [weak self] in self?.useTeleportPad(from: room, to: destRoom) }
+                    self.attemptInTheDark("the teleport pad") { [weak self] in self?.stepOnPad(from: room, to: destRoom) }
                 }
             }
         } else {
@@ -19887,6 +19887,66 @@ class GameEngine: ObservableObject {
 
     /// Step through a teleport pad — see Dungeon.generateDungeon()'s
     /// placement (single-way or bidirectional) and Room.teleportDestinationRoomId.
+    /// A pad: most just hop across the level; a deep pad (see
+    /// Dungeon.deepPadRoomId) asks whether to ride it down a level instead.
+    private func stepOnPad(from room: Room, to destination: Room) {
+        guard let dungeon = dungeon, dungeon.deepPadRoomId == room.id else {
+            useTeleportPad(from: room, to: destination); return
+        }
+        let next = dungeon.level + 1
+        SoundManager.shared.playTeleport()
+        clearTerminal()
+        printTitle("A Deep Pad")
+        print("")
+        printLines(Self.deepPadArt("v"), color: .cyan)
+        print("")
+        printWrapped("This pad glows a deeper, colder blue than the others, and the runes round its rim point down, not across.", indent: 2, color: .cyan)
+        print("")
+        printWrapped("It could carry you down to Level \(next) of \(dungeon.name) — past this level's guardian, into harder fights and better treasure. Or it will hop you across to \(destination.name) like any other pad.", indent: 2, color: .brightGreen)
+        print("")
+        printWrapped("Worth saving first: there's no pad back up.", indent: 2, color: .dimGreen)
+        let opts = ["Ride It Down to Level \(next)", "Hop Across to \(destination.name)", "Leave It"]
+        showMenuOptions([MenuOption(opts[0]), MenuOption(opts[1]), MenuOption(opts[2], isDefault: true)])
+        closeHandler = { [weak self] in self?.showExplorationView() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1: self.rideDeepPad(from: room)
+            case 2: self.useTeleportPad(from: room, to: destination)
+            default: self.showExplorationView()
+            }
+        }
+    }
+
+    private static func deepPadArt(_ g: String) -> [String] {
+        let top = "      .-\"\"\"-."
+        let row1 = "     /  " + g + " " + g + " \\"
+        let row2 = "    | " + g + "  " + g + "  " + g + " |"
+        let row3 = "     \\  " + g + " " + g + " /"
+        return [top, row1, row2, row3, "      '-...-'"]
+    }
+
+    private func rideDeepPad(from room: Room) {
+        guard let dungeon = dungeon else { return }
+        let next = dungeon.level + 1, name = dungeon.name
+        SoundManager.shared.playTeleport()
+        logEvent("Rode the deep pad in \(room.name) down to Level \(next)", category: "EXPLORE")
+        logMultiplayerAction("The party rode a deep pad down to Level \(next)")
+        let spinFrames = ["v", "V", "|", "v", "V", "|", "v", "V", "|", "v"]
+        for (i, glyph) in spinFrames.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.1) { [weak self] in
+                guard let self = self else { return }
+                self.clearTerminal()
+                self.printTitle("A Deep Pad")
+                self.print("")
+                self.printLines(Self.deepPadArt(glyph), color: .cyan)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(spinFrames.count) * 0.1) { [weak self] in
+            self?.continueToNextLevel(next, dungeonName: name, viaDeepPad: true)
+        }
+    }
+
     private func useTeleportPad(from room: Room, to destination: Room) {
         guard dungeon != nil else { return }
         SoundManager.shared.playTeleport()
@@ -27281,6 +27341,7 @@ class GameEngine: ObservableObject {
             return "This is a gym — try \"train with the trainer\": learn new skills, or sharpen the ones you have."
         }
         if room.teleportDestinationRoomId != nil {
+            if dungeon?.deepPadRoomId == room.id { return "A pad glows a deep, cold blue underfoot — it might go further than the others. Try \"step on the pad\"." }
             return "A glowing pad hums underfoot — try \"step on the pad\"."
         }
         if let dir = room.verticalDirection {
@@ -31882,7 +31943,7 @@ class GameEngine: ObservableObject {
         // No auto-dismiss — victory is a major milestone, let the player read it
     }
 
-    private func continueToNextLevel(_ nextLevel: Int, dungeonName: String) {
+    private func continueToNextLevel(_ nextLevel: Int, dungeonName: String, viaDeepPad: Bool = false) {
         clearTerminal()
 
         // Level up any eligible characters before proceeding
@@ -31906,9 +31967,15 @@ class GameEngine: ObservableObject {
             self.logEvent("Descended to Level \(nextLevel) of \(dungeonName)", category: "EXPLORE")
 
             self.clearTerminal()
-            self.print("Your party descends deeper into \(dungeonName)...", color: .cyan)
-            self.print("")
-            self.print("The air grows heavier. Stronger foes await.", color: .dimGreen)
+            if viaDeepPad {
+                self.print("The floor drops away — and you land, hard, somewhere deeper in \(dungeonName).", color: .cyan)
+                self.print("")
+                self.print("Level \(nextLevel). You slipped past a guardian; the ones down here won't be so easy.", color: .dimGreen)
+            } else {
+                self.print("Your party descends deeper into \(dungeonName)...", color: .cyan)
+                self.print("")
+                self.print("The air grows heavier. Stronger foes await.", color: .dimGreen)
+            }
             self.print("")
 
             if self.musicEnabled { SoundManager.shared.startMusic(.exploration, preference: self.explorationMelodyChoice) }

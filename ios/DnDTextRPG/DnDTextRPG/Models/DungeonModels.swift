@@ -1271,6 +1271,18 @@ class Dungeon: ObservableObject, Codable {
         }
     }
 
+    /// A "deep pad": on some levels (about four in ten, fixed by the
+    /// dungeon's name and level, so it never changes on reload) one pad
+    /// can also carry the party down to the next level. Never on a map
+    /// too small to have pads to spare.
+    var deepPadRoomId: Int? {
+        guard rooms.count >= 8 else { return nil }
+        let seed = name.unicodeScalars.reduce(0) { $0 + Int($1.value) } + level * 7
+        guard seed % 10 < 4 else { return nil }
+        return rooms.values.filter { $0.teleportDestinationRoomId != nil && $0.roomType != .entrance && $0.roomType != .boss }
+            .map { $0.id }.max()
+    }
+
     /// Where each mapped level sits on the big map, so flicking between them
     /// lines up: each level is shifted so its entrance lands exactly where
     /// the party left the level above, and all share one frame.
