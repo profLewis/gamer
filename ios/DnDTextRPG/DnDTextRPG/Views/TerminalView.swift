@@ -249,9 +249,8 @@ struct TerminalView: View {
                         // clutter sitting on every screen with a map. Sizing
                         // lives entirely in Settings > Gameplay > Map Radius
                         // > Panel Size instead, out of the way until wanted.
-                        Rectangle()
-                            .fill(terminalDarkGreen.opacity(0.4))
-                            .frame(height: 1)
+                        // (No divider line under the map either — the map
+                        // panel's own background marks where it ends.)
                     }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -908,6 +907,18 @@ struct TerminalView: View {
                         }
                         #endif
 
+                        // Auto-Continue pause — only while a tap-to-continue
+                        // screen is actually counting down. ⏸ holds every
+                        // countdown (screens then wait for a tap); ▶ resumes.
+                        if gameEngine.awaitingContinue && gameEngine.autoContinueCountdownAvailable && !gameEngine.chatInputMode {
+                            Button(action: { gameEngine.toggleAutoContinuePause() }) {
+                                Image(systemName: gameEngine.autoContinuePaused ? "play.circle.fill" : "pause.circle")
+                                    .font(.system(size: 20 * scale * gameEngine.iconScale))
+                                    .foregroundColor(gameEngine.autoContinuePaused ? Color(red: 1.0, green: 0.72, blue: 0.0) : Color(red: 0.0, green: 0.6, blue: 0.25))
+                            }
+                            .accessibilityLabel(gameEngine.autoContinuePaused ? "Resume auto-continue" : "Pause auto-continue")
+                        }
+
                         // Close button — closeHandler, chat exit, continue, or forced on combat/victory/gameOver
                         if gameEngine.chatInputMode {
                             Button(action: { gameEngine.handleChatExit() }) {
@@ -1086,8 +1097,13 @@ struct TerminalView: View {
             return .ignored
         }
 
-        // Continue: any key triggers continue
+        // Continue: any key triggers continue — except Space, which
+        // pauses/resumes Auto-Continue while a screen is counting down.
         if gameEngine.awaitingContinue {
+            if press.key == .space && gameEngine.autoContinueCountdownAvailable {
+                gameEngine.toggleAutoContinuePause()
+                return .handled
+            }
             gameEngine.handleContinue()
             return .handled
         }

@@ -284,6 +284,11 @@ struct FAQData {
             keywords: ["rare goods", "under the counter", "special item", "secret stock"]
         ),
         FAQEntry(
+            question: "How do I stop screens moving on by themselves?",
+            answer: "Many screens wait for a tap so you can read them; with Auto-Continue on (the default) they also move on after the Info Timeout. To hold them, tap the ⏸ icon top right (next to ✕) while a screen is counting down — or press Space on a Mac. Tap ▶ to resume. To turn it off for good, go to Settings > Gameplay > Auto-Continue Off, or change how long screens wait with Info Timeout.",
+            keywords: ["auto-continue", "auto continue", "autocontinue", "pause", "too fast", "timeout", "moves on", "keeps moving"]
+        ),
+        FAQEntry(
             question: "What does food do?",
             answer: "Use food and drink from your pack (Use Item), or in combat (Use Potion — it takes your turn). Everything restores a little HP. Hearty food like cheese, salt pork or jerky makes you feel strong: +1 to attack and damage for your next few attacks. Honey, jam and sweets give a sugary lift of 2 temporary HP. Juice is fine in moderation, but drink three glasses and you slosh about — sluggish, with disadvantage on your next 2 attacks. Water, tea or a rest settles it. Ask a merchant what's under the counter for stranger foods.",
             keywords: ["food", "eat", "eating", "cheese", "juice", "drink", "hungry", "sluggish", "provisions", "honey", "jam"]

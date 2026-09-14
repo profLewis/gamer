@@ -269,6 +269,22 @@ class GameEngine: ObservableObject {
     /// by default as of the version below; see migrateDefaultsForNewVersion.
     @Published var idlePromptsEnabled: Bool = GameEngine.defaultIdlePromptsEnabled()
 
+    /// Auto-Continue — tap-to-continue screens also move on by themselves
+    /// once the Info Timeout runs out (see scheduleAutoAdvance). On by
+    /// default. autoContinuePaused is session-only: the ⏸ icon next to ✕
+    /// (or Space on a Mac) holds every countdown until resumed.
+    @Published var autoContinueEnabled: Bool = UserDefaults.standard.object(forKey: "autoContinueEnabled") == nil ? true : UserDefaults.standard.bool(forKey: "autoContinueEnabled")
+    @Published var autoContinuePaused: Bool = false
+
+    /// True when screens are actually counting down — i.e. when a pause
+    /// control means something.
+    var autoContinueCountdownAvailable: Bool { autoContinueEnabled && infoTimeout > 0 && !speakerModeOn }
+
+    func toggleAutoContinuePause() {
+        autoContinuePaused.toggle()
+        logEvent(autoContinuePaused ? "Auto-continue paused" : "Auto-continue resumed", category: "SETTINGS")
+    }
+
     /// Runs once per app version bump — applies a NEW default value only
     /// to a setting the user has genuinely never touched (its UserDefaults
     /// key is entirely absent), leaving any explicit choice — including an
@@ -1701,6 +1717,7 @@ class GameEngine: ObservableObject {
                 let d = v as? Double ?? 0
                 return d == 0 ? "Off" : String(format: "%.1fs", d)
             }),
+            ("autoContinueEnabled", "Auto-Continue", { ($0 as? Bool) == true ? "On" : "Off" }),
             ("longPressDuration", "LongPress", { v in
                 let d = v as? Double ?? 0.5
                 return String(format: "%.1fs", d)
@@ -1913,6 +1930,8 @@ class GameEngine: ObservableObject {
             useArrowNavigation = UserDefaults.standard.bool(forKey: key)
         case "infoTimeout":
             infoTimeout = UserDefaults.standard.double(forKey: key)
+        case "autoContinueEnabled":
+            autoContinueEnabled = UserDefaults.standard.object(forKey: key) == nil ? true : UserDefaults.standard.bool(forKey: key)
         case "iconScaleSetting":
             iconScaleSetting = UserDefaults.standard.integer(forKey: key)
         case "useCustomKeyboard":
@@ -1952,6 +1971,7 @@ class GameEngine: ObservableObject {
         case "undoRedoEnabled": return undoRedoEnabled ? "On" : "Off"
         case "useCustomKeyboard": return useCustomKeyboard ? "Custom" : "System"
         case "idlePromptsEnabled": return idlePromptsEnabled ? "On" : "Off"
+        case "autoContinueEnabled": return autoContinueEnabled ? "On" : "Off"
         case "blinkingCursorEnabled": return blinkingCursorEnabled ? "On" : "Off"
         case "map_radius": return "\(mapRadius)"
         case "maxButtonsPerScreen": return "\(maxButtonsPerScreen)"
@@ -2537,19 +2557,47 @@ class GameEngine: ObservableObject {
     /// not just the handful that used to opt in — otherwise screens like a
     /// "Saved backup" confirmation sat waiting forever. Does exactly what a
     /// tap would (handleContinue), and only if nothing has moved on since.
-    /// Off when Info Timeout is Off (0), and in speaker mode, where the
-    /// screen is being read aloud and cutting it short would lose text.
+    /// Off when Info Timeout is Off (0) or Auto-Continue is Off, and in
+    /// speaker mode, where the screen is being read aloud and cutting it
+    /// short would lose text.
     private func scheduleAutoContinue() {
         Self.continueGeneration += 1
         let myGeneration = Self.continueGeneration
-        let delay = infoTimeout * 2
+        scheduleAutoAdvance(after: infoTimeout * 2, isStillValid: { [weak self] in
+            guard let self = self else { return false }
+            return Self.continueGeneration == myGeneration && self.awaitingContinue && !self.speakerModeOn
+        }, fire: { [weak self] in self?.handleContinue() })
+    }
+
+    /// Every auto-continue countdown goes through here: after `delay`,
+    /// runs `fire` if the screen is still the one it was armed for. With
+    /// Auto-Continue Off it never fires (the screen just waits for a tap);
+    /// while paused it waits out the pause, then gives a fresh full delay
+    /// rather than jumping on the instant the player resumes.
+    private func scheduleAutoAdvance(after delay: Double, isStillValid: @escaping () -> Bool, fire: @escaping () -> Void) {
         guard delay > 0 else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self = self,
-                  Self.continueGeneration == myGeneration,
-                  self.awaitingContinue,
-                  !self.speakerModeOn else { return }
-            self.handleContinue()
+            guard let self = self, isStillValid(), self.autoContinueEnabled else { return }
+            if self.autoContinuePaused {
+                self.afterAutoContinuePause(isStillValid: isStillValid) { [weak self] in
+                    self?.scheduleAutoAdvance(after: delay, isStillValid: isStillValid, fire: fire)
+                }
+                return
+            }
+            fire()
+        }
+    }
+
+    /// Checks twice a second until the player un-pauses, then runs
+    /// `resume` — gives up as soon as the screen has moved on.
+    private func afterAutoContinuePause(isStillValid: @escaping () -> Bool, resume: @escaping () -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self, isStillValid() else { return }
+            if self.autoContinuePaused {
+                self.afterAutoContinuePause(isStillValid: isStillValid, resume: resume)
+            } else {
+                resume()
+            }
         }
     }
 
@@ -2574,21 +2622,15 @@ class GameEngine: ObservableObject {
             self?.inputHandler = nil
             action()
         }
-        let timer = Timer.scheduledTimer(withTimeInterval: infoTimeout * multiplier, repeats: false) { [weak self] _ in
-            DispatchQueue.main.async {
-                // Stale-screen check stays timer-only — a tap always means
-                // the player is acting on the CURRENT screen, but a pending
-                // timer could fire well after the player has already moved
-                // on some other way (e.g. the corner X), where `action`
-                // would no longer make sense to run.
-                guard self?.awaitingContinue == true else { return }
-                fire()
-            }
-        }
-        inputHandler = { _ in
-            timer.invalidate()
-            fire()
-        }
+        // Stale-screen check stays timer-only — a tap always means the
+        // player is acting on the CURRENT screen, but a pending countdown
+        // could fire well after the player has already moved on some other
+        // way (e.g. the corner X), where `action` would no longer make sense.
+        let myGeneration = Self.continueGeneration
+        scheduleAutoAdvance(after: infoTimeout * multiplier, isStillValid: { [weak self] in
+            !fired && self?.awaitingContinue == true && Self.continueGeneration == myGeneration
+        }, fire: fire)
+        inputHandler = { _ in fire() }
     }
 
     /// Auto-return to exploration after a delay. Sets closeHandler for manual dismiss too.
@@ -2654,7 +2696,12 @@ class GameEngine: ObservableObject {
         // delay means speech can start and, for short text, even finish
         // well within that window, so the handler must already be in place.
         if speakerModeOn {
-            speechReadCompleteHandler = fire
+            // Paused: finishing the read-aloud doesn't move on — the
+            // fallback below picks it up once the player resumes.
+            speechReadCompleteHandler = { [weak self] in
+                guard let self = self, !self.autoContinuePaused else { return }
+                fire()
+            }
         }
         // showMenu()/waitForContinue() etc. all trigger speaker mode's
         // auto-read of the screen's text, but this brief "print a result,
@@ -2663,20 +2710,29 @@ class GameEngine: ObservableObject {
         // simply stayed silent for all of them in speaker mode.
         autoReadIfSpeakerMode()
 
-        scheduleAutoReturnFallback(after: seconds, fire: fire)
+        scheduleAutoReturnFallback(after: seconds, fire: fire, generation: myGeneration)
     }
 
     /// Fallback timer for autoReturn() — the only path when speaker mode is
     /// off, and a safety net (rescheduling itself as a short poll) in the
     /// unlikely case the real speechReadCompleteHandler signal is ever
     /// missed (e.g. an audio session error swallows the delegate callback).
-    private func scheduleAutoReturnFallback(after seconds: Double, fire: @escaping () -> Void) {
+    private func scheduleAutoReturnFallback(after seconds: Double, fire: @escaping () -> Void, generation: Int) {
         Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
             DispatchQueue.main.async {
-                guard let self = self else { return }
+                guard let self = self, self.autoReturnGeneration == generation else { return }
+                // Auto-Continue Off (and not reading aloud): the screen
+                // stays until tapped or closed with ✕.
+                guard self.autoContinueEnabled || self.speakerModeOn else { return }
+                if self.autoContinuePaused {
+                    self.afterAutoContinuePause(isStillValid: { [weak self] in self?.autoReturnGeneration == generation }) { [weak self] in
+                        self?.scheduleAutoReturnFallback(after: max(seconds, 1.0), fire: fire, generation: generation)
+                    }
+                    return
+                }
                 let stillSpeaking = self.speakerModeOn && (self.isSpeakingAloud || !self.speakerHasReadCurrentPage)
                 if stillSpeaking {
-                    self.scheduleAutoReturnFallback(after: 0.5, fire: fire)
+                    self.scheduleAutoReturnFallback(after: 0.5, fire: fire, generation: generation)
                     return
                 }
                 fire()
@@ -7453,7 +7509,12 @@ class GameEngine: ObservableObject {
 
         print("INFO TIMEOUT:", color: .cyan, bold: true)
         print("  \(String(format: "%.1fs", infoTimeout))", color: .brightGreen)
-        printWrapped("How long information screens (search results, listen, examine) stay before auto-dismissing — and every other tap-to-continue screen moves on by itself after twice this. Off disables both. Tap the ✕ icon to dismiss sooner.", indent: 2, color: .dimGreen)
+        printWrapped("How long information screens (search results, listen, examine) stay before moving on — every other tap-to-continue screen waits twice this. Only used while Auto-Continue is on. Tap the ✕ icon to move on sooner.", indent: 2, color: .dimGreen)
+        print("")
+
+        print("AUTO-CONTINUE:", color: .cyan, bold: true)
+        print("  \(autoContinueEnabled ? "On" : "Off")\(autoContinuePaused ? " (paused)" : "")", color: autoContinueEnabled ? .brightGreen : .red)
+        printWrapped("Many screens wait for a tap so you can read them. With this on, they also move on by themselves after the Info Timeout. Tap ⏸ (top right, next to ✕) to pause — or press Space on a Mac. See ? for more.", indent: 2, color: .dimGreen)
         print("")
 
         print("BUTTON LIMIT:", color: .cyan, bold: true)
@@ -7539,7 +7600,8 @@ class GameEngine: ObservableObject {
         var options = [
             // Page 1 — Interface
             "Map Length", useArrowNavigation ? "Use Swipe" : "Use Buttons",
-            "Info Timeout", "Button Limit", "Long Press",
+            "Info Timeout", autoContinueEnabled ? "Auto-Continue Off" : "Auto-Continue On",
+            "Button Limit", "Long Press",
             // Page 2 — Features
             npcsEnabled ? "NPCs Off" : "NPCs On", poisonEnabled ? "Poison Off" : "Poison On",
             multiplayerEnabled ? "Multi Off" : "Multi On",
@@ -7576,6 +7638,12 @@ class GameEngine: ObservableObject {
                 self.showGameplaySettings(page: currentPage)
             } else if selected == "Info Timeout" {
                 self.showInfoTimeoutMenu()
+            } else if selected.hasPrefix("Auto-Continue") {
+                self.recordSettingChange(screen: "s:gameplay", key: "autoContinueEnabled", name: "Auto-Continue")
+                self.autoContinueEnabled.toggle()
+                UserDefaults.standard.set(self.autoContinueEnabled, forKey: "autoContinueEnabled")
+                if self.autoContinueEnabled { self.autoContinuePaused = false }
+                self.showGameplaySettings(page: currentPage)
             } else if selected == "Button Limit" {
                 self.showButtonLimitMenu()
             } else if selected == "Long Press" {
@@ -7671,7 +7739,12 @@ class GameEngine: ObservableObject {
             self.print("")
 
             self.print("  INFO TIMEOUT", color: .cyan, bold: true)
-            self.printWrapped("How long information screens (search results, listen, examine) stay before auto-dismissing. Shorter means faster gameplay; longer gives you more time to read. Tap the ✕ icon to dismiss sooner.", indent: 2, color: .dimGreen)
+            self.printWrapped("How long information screens (search results, listen, examine) stay before moving on by themselves; every other tap-to-continue screen waits twice as long. Only applies while Auto-Continue is on. Shorter means faster gameplay; longer gives you more time to read. Tap the ✕ icon to move on sooner.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  AUTO-CONTINUE", color: .cyan, bold: true)
+            self.printWrapped("Adventurers often want to stop and read — a combat result, a merchant's reply, the DM's description of a room — so many screens are tap-to-continue: nothing happens until you tap. With Auto-Continue on (the default), those screens also move on by themselves once the Info Timeout runs out, so the game keeps flowing if you look away. Turn it off and every such screen waits for your tap.", indent: 2, color: .dimGreen)
+            self.printWrapped("Need a moment? While a screen is counting down, a ⏸ pause icon appears top right, next to ✕. Tap it to pause: every screen then waits for your tap. Tap ▶ to resume — the countdown starts afresh. On a Mac, press Space to pause or resume. A pause lasts until you resume or restart the app.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  BUTTON LIMIT", color: .cyan, bold: true)
@@ -7838,7 +7911,7 @@ class GameEngine: ObservableObject {
     private func showInfoTimeoutMenu() {
         clearTerminal()
         printTitle("Info Timeout")
-        printWrapped("How long information screens stay before auto-dismissing. Shorter = faster gameplay, longer = more time to read.", indent: 2, color: .dimGreen)
+        printWrapped("How long information screens stay before moving on by themselves (other tap-to-continue screens wait twice this). Only used while Auto-Continue is on — see Gameplay Settings. Shorter = faster gameplay, longer = more time to read.", indent: 2, color: .dimGreen)
         print("")
         print("  Current: \(String(format: "%.1fs", infoTimeout))", color: .brightGreen)
         printWrapped("Type a number with 's' or a decimal (e.g. 1.5s, 4.0) to set a custom value.", indent: 2, color: .dimGreen)
@@ -7973,7 +8046,7 @@ class GameEngine: ObservableObject {
 
     /// All UserDefaults keys used by the game
     private static let settingsKeys: [String] = [
-        "maxButtonsPerScreen", "longPressDuration", "infoTimeout", "customInfoTimeouts",
+        "maxButtonsPerScreen", "longPressDuration", "infoTimeout", "customInfoTimeouts", "autoContinueEnabled",
         "map_radius", "useArrowNavigation", "multiplayer_enabled", "npcs_enabled",
         "multiple_shops_enabled",
         "hit_animations", "voiceMenuEnabled", "iconScaleSetting", "adventureLogLimit",
@@ -8015,6 +8088,7 @@ class GameEngine: ObservableObject {
         voiceMenuEnabled = (d.object(forKey: "voiceMenuEnabled") as? Bool) ?? true
         useArrowNavigation = d.object(forKey: "useArrowNavigation") == nil ? false : d.bool(forKey: "useArrowNavigation")
         infoTimeout = d.object(forKey: "infoTimeout") == nil ? 10.0 : d.double(forKey: "infoTimeout")
+        autoContinueEnabled = d.object(forKey: "autoContinueEnabled") == nil ? true : d.bool(forKey: "autoContinueEnabled")
         iconScaleSetting = d.integer(forKey: "iconScaleSetting")
         useCustomKeyboard = d.object(forKey: "useCustomKeyboard") == nil ? true : d.bool(forKey: "useCustomKeyboard")
         idlePromptsEnabled = d.object(forKey: "idlePromptsEnabled") == nil ? true : d.bool(forKey: "idlePromptsEnabled")
@@ -9040,6 +9114,8 @@ class GameEngine: ObservableObject {
             voiceMenuEnabled = true
             useArrowNavigation = false
             infoTimeout = 10.0
+            autoContinueEnabled = true
+            autoContinuePaused = false
             iconScaleSetting = 0
             useCustomKeyboard = true
             idlePromptsEnabled = true
@@ -9172,6 +9248,7 @@ class GameEngine: ObservableObject {
 
         let infoStr = infoTimeout == 0 ? "Off" : String(format: "%.1fs", infoTimeout)
         add("infoTimeout", "Info Timeout", current: infoStr, dflt: "10.0s")
+        add("autoContinueEnabled", "Auto-Continue", current: autoContinueEnabled ? "On" : "Off", dflt: "On")
 
         let lpStr = String(format: "%.1fs", longPressDuration)
         add("longPressDuration", "Long Press", current: lpStr, dflt: "0.5s")
@@ -9328,6 +9405,7 @@ class GameEngine: ObservableObject {
         if keys.contains("voiceMenuEnabled") { voiceMenuEnabled = true }
         if keys.contains("useArrowNavigation") { useArrowNavigation = false }
         if keys.contains("infoTimeout") { infoTimeout = 10.0 }
+        if keys.contains("autoContinueEnabled") { autoContinueEnabled = true }
         if keys.contains("iconScaleSetting") { iconScaleSetting = 0 }
         if keys.contains("useCustomKeyboard") { useCustomKeyboard = true }
         if keys.contains("idlePromptsEnabled") { idlePromptsEnabled = true }
