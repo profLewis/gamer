@@ -415,7 +415,9 @@ class GameEngine: ObservableObject {
                let end = self.autoCountdownEnd, end.timeIntervalSinceNow < 4 { return }
             self.continueHintCount += 1
             self.print("")
-            let title = Self.pickVaried(["Continue?", "Ready to move on?", "Shall we carry on?", "Onward?", "Seen enough?"], avoiding: &self.lastContinueTitle)
+            let title = Self.pickVaried(self.currentCombat != nil
+                ? ["Next blow?", "The fight goes on…", "Ready for the next move?", "Steel yourselves…", "What happens next?"]
+                : ["Continue?", "Ready to move on?", "Shall we carry on?", "Onward?", "Seen enough?"], avoiding: &self.lastContinueTitle)
             self.print("  \(title)", color: .cyan, bold: true)
             self.print("")
             for line in self.continueHintLines() {
@@ -426,6 +428,11 @@ class GameEngine: ObservableObject {
     }
 
     private func continueHintLines() -> [String] {
+        if currentCombat != nil && continueHintCount < 2 {
+            return [["• Tap the screen to see what happens next", "• Tap the screen — the battle goes on", "• A tap moves the fight along"].randomElement()!,
+                    "• or type \"go on\"",
+                    autoContinueCountdownAvailable && !autoContinuePaused ? "• or wait — the fight won't wait long" : "• or tap the orange hourglass to let time run again"]
+        }
         let tapLine = ["• Tap anywhere on the screen — continue now", "• Tap anywhere on the screen to carry on",
                        "• A tap anywhere on the screen moves things along"].randomElement()!
         // Still waiting after the first hint: "anywhere" deserves the small
@@ -3485,7 +3492,11 @@ class GameEngine: ObservableObject {
     private func scheduleAutoContinue() {
         Self.continueGeneration += 1
         let myGeneration = Self.continueGeneration
-        scheduleAutoAdvance(after: countdownDelay(base: infoTimeout * 2), isStillValid: { [weak self] in
+        let base = countdownDelay(base: infoTimeout * 2)
+        // In a fight things move on a little sooner — by a random amount,
+        // never slower than usual.
+        let delay = currentCombat != nil ? base * Double.random(in: 0.55...0.85) : base
+        scheduleAutoAdvance(after: delay, isStillValid: { [weak self] in
             guard let self = self else { return false }
             return Self.continueGeneration == myGeneration && self.awaitingContinue && !self.speakerModeOn
         }, fire: { [weak self] in self?.handleContinue() })
@@ -19605,6 +19616,7 @@ class GameEngine: ObservableObject {
             } else {
                 print("  \(user.name) tries to disarm it with their Thieves' Tools, but fumbles — \(trap.name) triggers anyway!", color: .yellow)
             }
+            if let note = wearTool("Thieves' Tools", owner: user, freshUses: 8...15, breakChance: 5) { print("  \(note)", color: .dimGreen) }
         }
 
         // Rope softens the fall from a Pit Trap specifically.
@@ -22113,7 +22125,65 @@ class GameEngine: ObservableObject {
     // MARK: - Item Pickup
 
     /// Show a menu for a found item — pick up, equip, use, or leave it
+    /// Tools wear out: each use counts down (a fresh one's count is rolled
+    /// from `freshUses`), and now and then one gives out early. Returns a
+    /// line to print when that use was its last.
+    @discardableResult
+    func wearTool(_ name: String, owner: Character, freshUses: ClosedRange<Int>, breakChance: Int) -> String? {
+        guard let i = owner.inventory.firstIndex(where: { $0.name == name }) else { return nil }
+        let plural = name.hasSuffix("Tools")
+        let left = (owner.inventory[i].usesLeft ?? Int.random(in: freshUses)) - 1
+        if left <= 0 {
+            owner.inventory.remove(at: i)
+            return "\(owner.name)'s \(name) \(plural ? "are" : "is") worn out — that was the last use."
+        }
+        if Int.random(in: 1...100) <= breakChance {
+            owner.inventory.remove(at: i)
+            return "\(owner.name)'s \(name) \(plural ? "snap" : "cracks in two") — no more uses, sadly."
+        }
+        owner.inventory[i].usesLeft = left
+        return nil
+    }
+
+    /// Trivial decisions don't hold up play: the first adventurer who can
+    /// carry a find simply takes it. If nobody has room, a companion under
+    /// the game's control makes room by using up a cheap potion or snack
+    /// (players' own adventurers are never made to). Only if that still
+    /// fails — or it's a party of one — does the pickup menu ask.
+    private func autoAssignLoot(_ item: Item, source: String, narrative: String?, onDone: @escaping () -> Void) -> Bool {
+        let eligible = combatLootEligible ?? party
+        guard eligible.count > 1 else { return false }
+        var taker = eligible.first { $0.canCarry(item) }
+        var madeRoom: String?
+        if taker == nil {
+            for char in eligible where char.isComputerControlled {
+                let usable = char.inventory.filter { $0.type == .potion && ($0.potionStats?.healAmount != nil || ItemCatalog.foodKind(for: $0) != nil) }
+                guard let snack = usable.min(by: { $0.value < $1.value }) else { continue }
+                char.removeItem(snack)
+                if let heal = snack.potionStats?.healAmount { char.heal(max(1, Dice.rollDamage(heal).total)) }
+                madeRoom = "\(char.name) \(ItemCatalog.consumeVerb(for: snack)) the \(snack.name) to make room."
+                if char.canCarry(item) { taker = char; break }
+            }
+        }
+        guard let who = taker else { return false }
+        _ = who.addItem(item)
+        clearTerminal()
+        if dungeon != nil { printExplorationMap(); print("") }
+        if let narrative = narrative {
+            for line in narrative.components(separatedBy: "\n") { printWrapped(line, indent: 2, color: .cyan) }
+            print("")
+        }
+        printSubtitle("Found: \(item.name)")
+        print("  \(source)", color: .dimGreen)
+        if let note = madeRoom { printWrapped(note, indent: 2, color: .dimGreen) }
+        print("  \(who.name) picks it up.", color: .brightGreen)
+        logEvent("\(who.name) picked up \(item.name)", category: "LOOT")
+        waitForContinueWithTimeout(multiplier: 0.8) { onDone() }
+        return true
+    }
+
     private func showItemPickupMenu(item: Item, source: String, narrative: String? = nil, onDone: @escaping () -> Void) {
+        if autoAssignLoot(item, source: source, narrative: narrative, onDone: onDone) { return }
         clearTerminal()
 
         if let dungeon = dungeon {
@@ -22209,7 +22279,7 @@ class GameEngine: ObservableObject {
                     _ = char.addItem(item)
                     self.print("  \(char.name) takes the \(item.name).", color: .brightGreen)
                     self.logEvent("\(char.name) picked up \(item.name)", category: "LOOT")
-                    self.waitForContinueWithTimeout { onDone() }
+                    self.waitForContinueWithTimeout(multiplier: 0.8) { onDone() }
                 } else {
                     if char.isInventoryFull {
                         self.print("  Bag is full! (\(char.inventory.count)/\(Character.maxInventorySlots))", color: .yellow)
@@ -22884,11 +22954,17 @@ class GameEngine: ObservableObject {
                     }
                     return
                 }
-                character.removeItem(potion)
                 character.weaponSharpenedUses = 3
+                // A whetstone lasts 5-10 sharpenings (and now and then cracks early).
+                let wornNote = self.wearTool("Whetstone", owner: character, freshUses: 5...10, breakChance: 5)
                 self.print("")
                 self.print("  \(character.name) sharpens \(character.equippedWeapon?.name ?? "their weapon") with the whetstone.", color: .brightGreen)
                 self.print("  +1 to attack and damage rolls for the next 3 attacks.", color: .yellow)
+                if let note = wornNote {
+                    self.print("  \(note)", color: .dimGreen)
+                } else if let left = character.inventory.first(where: { $0.name == "Whetstone" })?.usesLeft {
+                    self.print("  (About \(left) more sharpening\(left == 1 ? "" : "s") left in the stone.)", color: .dimGreen)
+                }
                 self.logMultiplayerAction("\(character.name) sharpens their weapon")
                 self.waitForContinue()
                 self.inputHandler = { [weak self] _ in
@@ -23183,7 +23259,7 @@ class GameEngine: ObservableObject {
     func itemUsageHint(_ item: Item) -> String {
         switch item.name {
         case "Whetstone":
-            return "Use: sharpens your equipped weapon (+1 to hit/damage, next 3 attacks)."
+            return "Use: sharpens your equipped weapon (+1 to hit/damage, next 3 attacks). Lasts 5–10 sharpenings, and may crack."
         case let name where item.type == .potion:
             if name.lowercased().contains("antidote") {
                 return "Use: cures poison. No effect if not poisoned."
@@ -23192,7 +23268,7 @@ class GameEngine: ObservableObject {
         case "Torch":
             return "Light or douse via the room Actions menu — lights your way and reveals more of the map."
         case "Thieves' Tools":
-            return "Passive: gives the party a chance to disarm traps instead of triggering them."
+            return "Passive: gives the party a chance to disarm traps instead of triggering them. Wears out after 8–15 uses, and may snap."
         case "Rope (50 ft)":
             return "Passive: halves damage from Pit Trap encounters."
         case "Spell Component Pouch", "Holy Symbol":

@@ -71,6 +71,10 @@ struct Item: Codable, Identifiable, Equatable {
     /// missing as "not broken" via `broken` below.
     var isBroken: Bool? = nil
 
+    /// Uses left in a tool that wears out (whetstone, thieves' tools).
+    /// nil = never used yet — a fresh one's count is rolled on first use.
+    var usesLeft: Int? = nil
+
     static let torchFullLife = 720  // 12 hours in minutes
 
     var isTorch: Bool { name.lowercased().contains("torch") }
@@ -98,6 +102,7 @@ struct Item: Codable, Identifiable, Equatable {
              weight: weight, value: value, weaponStats: weaponStats,
              armorStats: armorStats, potionStats: potionStats)
         copy.torchLife = torchLife
+        copy.usesLeft = usesLeft
         return copy
     }
 }
