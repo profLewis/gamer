@@ -393,7 +393,7 @@ class GameEngine: ObservableObject {
         continueHintTimer?.invalidate()
         // Part of auto-continue itself (not the Idle Prompts setting): every
         // waiting screen says "Continue?" and how, soon after it appears.
-        guard awaitingContinue else { return }
+        guard awaitingContinue, !cutsceneActive else { return }
         if continueHintGeneration != screenGeneration {
             continueHintGeneration = screenGeneration
             continueHintCount = 0
@@ -17933,13 +17933,99 @@ class GameEngine: ObservableObject {
             let diff = self.parseDifficulty(Double(choice))
             self.difficultyScale = diff.scale
             self.dungeon = Dungeon(name: dungeonName, level: diff.level)
-            self.enterDungeon()
+            self.playAdventureCutscene { [weak self] in self?.enterDungeon() }
         }
     }
 
     /// Stack of (name, level) states for undo/redo in adventure confirmation
     private var adventureUndoStack: [(String, Double)] = []
     private var adventureRedoStack: [(String, Double)] = []
+
+    // MARK: Adventure cutscene
+    //
+    // Before each new adventure: a blank screen and one line at a time —
+    // why this party is going down, what they're after, what they might
+    // gain, and what their particular skills should count for.
+    private var cutsceneActive = false
+    private var cutsceneToken = UUID()
+
+    private func playAdventureCutscene(then done: @escaping () -> Void) {
+        let lines = adventureBackstory()
+        logEvent("The tale begins: " + lines.joined(separator: " "), category: "STORY")
+        cutsceneActive = true
+        func show(_ i: Int) {
+            guard i < lines.count else {
+                cutsceneActive = false
+                done()
+                return
+            }
+            clearTerminal()
+            for _ in 0..<5 { print("") }
+            print(lines[i], color: i == lines.count - 1 ? .yellow : .brightGreen, centered: true)
+            waitForContinue(fullScreenTap: true, autoContinue: false)
+            let token = UUID()
+            cutsceneToken = token
+            inputHandler = { _ in show(i + 1) }
+            let words = lines[i].split(separator: " ").count
+            scheduleAutoAdvance(after: max(3.0, Double(words) / 2.6), isStillValid: { [weak self] in
+                guard let self = self else { return false }
+                return self.cutsceneToken == token && self.awaitingContinue
+            }, fire: { [weak self] in self?.handleContinue() })
+        }
+        show(0)
+    }
+
+    /// The party's reason for going in, their goal and reward, and a word on
+    /// what each kind of adventurer in this team brings.
+    private func adventureBackstory() -> [String] {
+        let place = dungeon?.name ?? "the dungeon"
+        let names = party.map { shortName(for: $0) }
+        let together = names.count <= 1 ? (names.first ?? "You")
+            : names.dropLast().joined(separator: ", ") + " and " + names.last!
+        var lines: [String] = []
+        lines.append([
+            "Word reached the village: the old seal on \(place) has cracked, and something below is stirring.",
+            "A merchant stumbled out of \(place) at dawn, clutching a torn map and babbling about a treasure lost for a hundred years.",
+            "The wells of Millbrook have run dry — and the water, folk say, is being drawn down into \(place).",
+            "Three nights ago the watchtower lanterns went out, one by one. The tracks led to \(place).",
+            "A half-burned letter arrived from an old friend: \"Meet me in \(place). Bring help. Tell no one.\"",
+            "The Guild of Cartographers will pay handsomely for the first true map of \(place). No map-maker has ever come back.",
+        ].randomElement()!)
+        lines.append("\(together) \(names.count == 1 ? "answers" : "answer") the call.")
+        var seen = Set<String>()
+        for c in party where lines.count < 5 && seen.insert(c.characterClass.rawValue).inserted {
+            let n = shortName(for: c)
+            switch c.characterClass {
+            case .fighter: lines.append("\(n)'s sword arm will hold the narrow corridors.")
+            case .wizard: lines.append("\(n)'s spells can light the dark — and burn what lurks in it.")
+            case .rogue: lines.append("\(n) knows how to slip past a sleeping guard, and open what others lock.")
+            case .cleric: lines.append("\(n)'s prayers will mend what the dungeon breaks.")
+            case .ranger: lines.append("\(n) can read a track in the dust and loose an arrow before trouble arrives.")
+            case .barbarian: lines.append("When all else fails, \(n)'s fury will do the rest.")
+            case .engineer: lines.append("\(n)'s gadgets have an answer for most locks — and most traps.")
+            case .scout: lines.append("\(n) will see danger long before it sees them.")
+            case .thief: lines.append("\(n)'s quick fingers will find the treasure others walk past.")
+            }
+        }
+        let classes = Set(party.map { $0.characterClass })
+        if !classes.contains(.cleric) {
+            lines.append("With no healer among them, every potion will count.")
+        } else if classes.isDisjoint(with: [.fighter, .barbarian]) {
+            lines.append("None of them is much of a brawler — cunning will have to win the day.")
+        }
+        lines.append([
+            "Somewhere in its depths waits the creature behind it all — a guardian no one has bested.",
+            "At the very bottom, they say, lies the Heart of the Deep: a gem that lights the dark for a hundred miles.",
+            "Find what lies at the bottom, and end the trouble for good.",
+        ].randomElement()!)
+        lines.append([
+            "Gold, certainly. Glory, perhaps. And songs sung about \(together) for years to come.",
+            "The reward: a chest of the realm's gold, a title from the Lord of the Marches — and the thanks of everyone who sleeps safer.",
+            "Whoever comes back will never buy their own supper in this town again.",
+        ].randomElement()!)
+        lines.append("The door groans open. \(place) awaits.")
+        return lines
+    }
 
     private func confirmAdventure(dungeonName: String, level: Double) {
         clearTerminal()
@@ -17991,7 +18077,7 @@ class GameEngine: ObservableObject {
                 let diff = self.parseDifficulty(level)
                 self.difficultyScale = diff.scale
                 self.dungeon = Dungeon(name: dungeonName, level: diff.level)
-                self.enterDungeon()
+                self.playAdventureCutscene { [weak self] in self?.enterDungeon() }
             case "Difficulty":
                 self.adventureUndoStack.append((dungeonName, level))
                 self.adventureRedoStack.removeAll()
