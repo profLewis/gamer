@@ -18260,6 +18260,14 @@ class GameEngine: ObservableObject {
         let token = UUID()
         cutsceneToken = token
         inputHandler = { [weak self] _ in self?.showCutsceneLine(i + 1, lines: lines, done: done) }
+        // ✕ leaves the tale altogether — straight on into the dungeon.
+        closeHandler = { [weak self] in
+            guard let self = self else { return }
+            self.cutsceneToken = UUID()   // the pending auto-advance no longer applies
+            self.cutsceneActive = false
+            self.closeHandler = nil
+            done()
+        }
         let words = lines[i].split(separator: " ").count
         scheduleAutoAdvance(after: max(3.5, Double(words) / 2.4), isStillValid: { [weak self] in
             guard let self = self else { return false }
