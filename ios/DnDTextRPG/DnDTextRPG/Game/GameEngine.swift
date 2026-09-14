@@ -3490,13 +3490,25 @@ class GameEngine: ObservableObject {
     /// Off when Info Timeout is Off (0) or Auto-Continue is Off, and in
     /// speaker mode, where the screen is being read aloud and cutting it
     /// short would lose text.
+    /// True while it's a computer-controlled companion's or a monster's turn in a fight.
+    private var aiTurnInProgress: Bool {
+        guard let turn = currentCombat?.currentCombatant else { return false }
+        if !turn.isPlayer { return true }
+        return party.first(where: { $0.id == turn.id })?.isComputerControlled ?? false
+    }
+
     private func scheduleAutoContinue() {
         Self.continueGeneration += 1
         let myGeneration = Self.continueGeneration
         let base = countdownDelay(base: infoTimeout * 2)
         // In a fight things move on a little sooner — by a random amount,
         // never slower than usual.
-        let delay = currentCombat != nil ? base * Double.random(in: 0.55...0.85) : base
+        // Computer-controlled companions' and monsters' turns move on quickest
+        // (a few seconds at most — the reading-time stretch made them drag).
+        let delay: Double
+        if currentCombat == nil { delay = base }
+        else if aiTurnInProgress { delay = min(base, 3.5) * Double.random(in: 0.7...1.0) }
+        else { delay = base * Double.random(in: 0.55...0.85) }
         scheduleAutoAdvance(after: delay, isStillValid: { [weak self] in
             guard let self = self else { return false }
             return Self.continueGeneration == myGeneration && self.awaitingContinue && !self.speakerModeOn
