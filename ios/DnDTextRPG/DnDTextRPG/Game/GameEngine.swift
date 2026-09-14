@@ -19423,8 +19423,13 @@ class GameEngine: ObservableObject {
         if teleportPadsEnabled, let destId = room.teleportDestinationRoomId, let destRoom = dungeon.rooms[destId],
            (room.cleared || room.encounter == nil) {
             self.dpadTeleportHandler = { [weak self] in
-                guard let self = self, self.roomIsLit else { return }
-                self.useTeleportPad(from: room, to: destRoom)
+                guard let self = self else { return }
+                if self.roomIsLit {
+                    self.useTeleportPad(from: room, to: destRoom)
+                } else {
+                    // In the dark it's a fumble, not a silent no-op.
+                    self.attemptInTheDark("the teleport pad") { [weak self] in self?.useTeleportPad(from: room, to: destRoom) }
+                }
             }
         } else {
             self.dpadTeleportHandler = nil
@@ -20946,16 +20951,28 @@ class GameEngine: ObservableObject {
     /// silent no-op with no torch, which read as the button simply not
     /// working. Now gives feedback either way, with a real (if reduced)
     /// chance of fumbling your way there anyway rather than an outright block.
+    /// Tries in the dark at the same thing, for escalating hints — and luck
+    /// that improves a little with each attempt.
+    private var darkFailStreak: [String: Int] = [:]
+
     private func attemptInTheDark(_ what: String, action: @escaping () -> Void) {
         clearTerminal()
         printWrapped("It's too dark to make out \(what) clearly...", indent: 2, color: .gray)
         print("")
         advanceTime(5)
-        if Int.random(in: 1...100) <= 35 {
+        let tries = darkFailStreak[what, default: 0]
+        if Int.random(in: 1...100) <= min(60, 35 + tries * 8) {
+            darkFailStreak[what] = 0
             print("  You feel your way there anyway.", color: .dimGreen)
             waitForContinueWithTimeout { action() }
         } else {
-            print("  You can't quite manage it in the dark. Light a torch and try again.", color: .yellow)
+            darkFailStreak[what] = tries + 1
+            print("  You can't quite manage it in the dark.", color: .yellow)
+            switch tries {
+            case 0: print("  Light a torch and try again.", color: .yellow)
+            case 1: printWrapped("Hint: tap the flame on the D-pad (bottom left) to light a torch — then it's easy.", indent: 2, color: .cyan)
+            default: printWrapped("Hint: no torch? Merchants sell them, and they sometimes turn up when you search. Or keep trying — now and then luck is on your side.", indent: 2, color: .cyan)
+            }
             waitForContinueWithTimeout { [weak self] in self?.showExplorationView() }
         }
     }
@@ -29498,6 +29515,22 @@ class GameEngine: ObservableObject {
 
     // MARK: - AI Combat Turn
 
+    /// Average of a dice expression like "2d6+1" (for comparing weapons and potions).
+    private func averageDamage(_ dice: String) -> Double {
+        var total = 0.0
+        for part in dice.lowercased().replacingOccurrences(of: " ", with: "").split(separator: "+") {
+            if part.contains("d") {
+                let bits = part.split(separator: "d", omittingEmptySubsequences: false)
+                let count = Double(bits.first ?? "1") ?? 1
+                let sides = Double(bits.last ?? "4") ?? 4
+                total += count * (sides + 1) / 2
+            } else {
+                total += Double(part) ?? 0
+            }
+        }
+        return total
+    }
+
     func runAICombatTurn(character: Character) {
         guard let combat = currentCombat else { return }
 
@@ -29573,8 +29606,64 @@ class GameEngine: ObservableObject {
             return
         }
 
-        // 2. Cleric healing — if any conscious ally is below 30% HP
-        if character.characterClass == .cleric {
+        // 1b. Badly hurt: something from their own pack — a potion, an
+        //     elixir, a salve, or a bite to eat.
+        if character.currentHP < character.maxHP * 35 / 100 {
+            let usable = character.inventory.filter { $0.type == .potion && $0.potionStats?.healAmount != nil }
+            if let item = usable.max(by: { averageDamage($0.potionStats?.healAmount ?? "0") < averageDamage($1.potionStats?.healAmount ?? "0") }),
+               let healStr = item.potionStats?.healAmount {
+                character.removeItem(item)
+                let amount = max(1, Dice.rollDamage(healStr).total)
+                character.heal(amount)
+                let lower = item.name.lowercased()
+                let verb = lower.contains("salve") || lower.contains("balm") ? "rubs on" : ItemCatalog.consumeVerb(for: item)
+                print("  \(character.name) \(verb) the \(item.name)! (+\(amount) HP — \(character.currentHP)/\(character.maxHP))", color: .brightGreen)
+                logMultiplayerAction("\(character.name) \(verb) \(item.name) (+\(amount) HP)")
+                combat.nextTurn()
+                waitForContinue(fullScreenTap: false)
+                inputHandler = { [weak self] _ in self?.advanceCombat() }
+                return
+            }
+        }
+
+        // 1c. The party's losing badly and there's nothing left to heal with:
+        //     sometimes a companion calls the retreat.
+        let standing = party.filter { $0.isConscious }
+        let partyHP = standing.reduce(0) { $0 + $1.currentHP }
+        let partyMaxHP = max(1, standing.reduce(0) { $0 + $1.maxHP })
+        let monsterHP = aliveMonsters.reduce(0) { $0 + $1.currentHP }
+        let anyHealing = party.contains { c in
+            c.inventory.contains { $0.potionStats?.healAmount != nil } || c.knownSpells.contains { $0.spellType == .healing }
+        }
+        if Double(partyHP) / Double(partyMaxHP) < 0.25, monsterHP > partyHP, !anyHealing, Int.random(in: 1...100) <= 50 {
+            print("  \(character.name) shouts: \"Run for it!\"", color: .yellow, bold: true)
+            logMultiplayerAction("\(character.name) calls for a retreat")
+            attemptRunAway()
+            return
+        }
+
+        // 1d. A clearly better weapon in the pack (or nothing in hand): swap to it.
+        let currentAvg = character.equippedWeapon.flatMap { $0.weaponStats?.damage }.map { averageDamage($0) } ?? 1
+        if let better = character.inventory.filter({ $0.type == .weapon && !$0.broken })
+            .max(by: { averageDamage($0.weaponStats?.damage ?? "0") < averageDamage($1.weaponStats?.damage ?? "0") }),
+           averageDamage(better.weaponStats?.damage ?? "0") > currentAvg + 1, Int.random(in: 1...100) <= 60 {
+            character.removeItem(better)
+            if let old = character.equippedWeapon {
+                character.equippedWeapon = nil
+                _ = character.addItem(old)
+            }
+            character.equipWeapon(better)
+            print("  \(character.name) swaps to the \(better.name).", color: .cyan)
+            logMultiplayerAction("\(character.name) swaps to \(better.name)")
+            combat.nextTurn()
+            waitForContinue(fullScreenTap: false)
+            inputHandler = { [weak self] _ in self?.advanceCombat() }
+            return
+        }
+
+        // 2. Healing — anyone with a healing spell (Cleric, Bard, Ranger) helps
+        //    a conscious ally below 30% HP.
+        if character.knownSpells.contains(where: { $0.spellType == .healing }) {
             let woundedAlly = party.first(where: {
                 $0.isConscious && $0.currentHP < $0.maxHP * 30 / 100
             })
