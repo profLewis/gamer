@@ -760,7 +760,9 @@ struct TerminalView: View {
                     // Direction pad + menu buttons (hidden in Just DM mode, except on
                     // victory/defeat milestone screens — see forceInteractiveControls).
                     if (!gameEngine.isJustDMActive || gameEngine.forceInteractiveControls || !gameEngine.inDMMode),
-                       !gameEngine.directionExits.isEmpty || !gameEngine.currentMenuOptions.isEmpty || reserveControlSlots {
+                       !gameEngine.directionExits.isEmpty || !gameEngine.currentMenuOptions.isEmpty {
+                        // (No controls at all — e.g. a tap-to-continue result — means
+                        // no block: the text takes the whole area, all of it tappable.)
                         VStack(spacing: 10) {
                             // Direction D-pad (when exploring)
                             if !gameEngine.directionExits.isEmpty {
