@@ -17927,6 +17927,7 @@ class GameEngine: ObservableObject {
         // never a lie, no matter how old the save.
         if room.roomType == .armory {
             if room.merchant == nil {
+                seedNameRegistry()
                 room.merchant = Merchant.random(tier: MerchantTier.forDungeonLevel(dungeon.level))
             }
             if room.roomDescription != Room.armouryMerchantVariant {
@@ -20796,6 +20797,7 @@ class GameEngine: ObservableObject {
             // Generate once and persist immediately — otherwise this
             // Wandering Trader would get a brand new name/stock every
             // single visit instead of being remembered as the same person.
+            seedNameRegistry()
             merchant = Merchant.random(tier: .wanderingPeddler)
             npc.merchant = merchant
             room.npc = npc
@@ -23149,6 +23151,23 @@ class GameEngine: ObservableObject {
     /// buildDMContext's partyStatus/lore section) so a named character it
     /// introduced stays consistent instead of being re-invented differently
     /// later in a long campaign.
+    /// Loads the current dungeon's names into NameRegistry before anyone new
+    /// is created mid-game — after a load, the registry only knows names
+    /// from dungeons generated this session.
+    private func seedNameRegistry() {
+        guard let dungeon = dungeon else { return }
+        var names: [String] = []
+        for room in dungeon.rooms.values {
+            if let merchant = room.merchant { names.append(merchant.name) }
+            if let trainer = room.trainer { names.append(trainer.name) }
+            if let npc = room.npc {
+                if let personal = npc.personalName { names.append(personal) }
+                if let merchant = npc.merchant { names.append(merchant.name) }
+            }
+        }
+        NameRegistry.reset(names)
+    }
+
     private func loreEntries() -> [(name: String, description: String)] {
         guard let dungeon = dungeon else { return [] }
         var entries: [(name: String, description: String)] = []
@@ -23168,11 +23187,14 @@ class GameEngine: ObservableObject {
                     if let trait = npc.type.personalityTraits.first {
                         desc += " (\(trait).)"
                     }
-                    entries.append((npc.name, desc))
+                    entries.append((npc.displayName, desc))
                 }
             }
         }
-        return entries.sorted { $0.name < $1.name }
+        // The same person is only listed once, however they were reached.
+        var seen = Set<String>()
+        let unique = entries.filter { seen.insert($0.name + "|" + $0.description).inserted }
+        return unique.sorted { $0.name < $1.name }
     }
 
     func showLoreBook() {
@@ -25495,7 +25517,7 @@ class GameEngine: ObservableObject {
             return "\(shortName(for: hurt)) is badly hurt — \"drink a potion\" or \"rest\" might be wise."
         }
         if let npc = room.npc, !npc.hasBeenTalkedTo {
-            return "Someone's here — try \"talk to the \(npc.name.lowercased())\"."
+            return "\(npc.displayName) is here — try \"talk to \(npc.personalName ?? "the \(npc.name.lowercased())")\"."
         }
         if room.merchant != nil {
             return "A merchant has wares laid out — try \"what do you sell?\" or \"let's trade\"."
@@ -29490,6 +29512,7 @@ class GameEngine: ObservableObject {
         if npcsEnabled, let room = dungeon?.currentRoom, room.npc == nil, room.roomType != .boss {
             if Int.random(in: 1...100) <= 15 {
                 if let npcType = NPCType.randomFor(roomType: room.roomType) ?? NPCType.allCases.randomElement() {
+                    seedNameRegistry()
                     room.npc = DungeonNPC(type: npcType)
                     print("")
                     print("A \(npcType.rawValue) emerges from the shadows...", color: .cyan)

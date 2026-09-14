@@ -153,9 +153,12 @@ struct Merchant: Codable, Equatable {
     }
 
     static func random(tier: MerchantTier) -> Merchant {
-        let persona = personas(for: tier).randomElement()!
+        // A persona not already in this dungeon, if there is one.
+        let all = personas(for: tier)
+        let fresh = all.filter { NameRegistry.isFree($0.name) }
+        let persona = (fresh.isEmpty ? all : fresh).randomElement()!
         return Merchant(
-            name: persona.name,
+            name: NameRegistry.claim(persona.name),
             shopName: persona.shopNames.randomElement()!,
             tier: tier,
             greeting: persona.greeting,

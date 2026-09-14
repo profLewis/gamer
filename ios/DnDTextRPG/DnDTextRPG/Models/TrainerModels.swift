@@ -55,9 +55,11 @@ struct Trainer: Codable, Equatable {
     }
 
     static func random(specialty: Skill, dungeonLevel: Int) -> Trainer {
-        let persona = personas(for: specialty).randomElement()!
+        let all = personas(for: specialty)
+        let fresh = all.filter { NameRegistry.isFree($0.name) }
+        let persona = (fresh.isEmpty ? all : fresh).randomElement()!
         return Trainer(
-            name: persona.name,
+            name: NameRegistry.claim(persona.name),
             gymName: persona.gymNames.randomElement()!,
             specialty: specialty,
             greeting: persona.greeting,

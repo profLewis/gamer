@@ -730,6 +730,7 @@ class Dungeon: ObservableObject, Codable {
     }
 
     private func generateDungeon() {
+        NameRegistry.reset()   // a fresh dungeon: every name is free again
         let numRooms = 20 + level * 5
 
         // Create entrance
@@ -1208,7 +1209,8 @@ class Dungeon: ObservableObject, Codable {
         ("E", "Entry"), ("=", "Hall"), ("#", "Room"),
         ("$", "Loot"), ("+", "Shrine"), ("L", "Library"),
         ("B", "Boss"), ("A", "Armoury"), ("P", "Prison"),
-        ("M", "Merchant"), ("G", "Gym"), ("N", "NPC"), ("X", "Secured"), ("K", "Locked")
+        ("M", "Merchant"), ("G", "Gym"), ("N", "NPC"), ("X", "Secured"), ("K", "Locked"),
+        ("*", "Teleport"), ("\u{2191}", "Way up"), ("\u{2193}", "Way down"), ("{ }", "More here")
     ]
 
     /// Mac/TV have room for the whole key, not just nearby symbols.
@@ -1282,12 +1284,15 @@ class Dungeon: ObservableObject, Codable {
         let atlasRooms = rooms.values.sorted { $0.id < $1.id }.map { room -> AtlasRoom in
             let danger = !room.cleared && room.encounter != nil
             let symbol: String
+            // Most important first: danger, the boss, a way up/down, a
+            // teleport pad — then merchant, gym, and an NPC you haven't met.
             if danger { symbol = "!" }
+            else if room.roomType == .boss { symbol = RoomType.boss.symbol }
+            else if room.verticalDestinationRoomId != nil { symbol = room.verticalDirection == "down" ? "\u{2193}" : "\u{2191}" }
+            else if room.teleportDestinationRoomId != nil { symbol = "*" }
             else if room.merchant != nil { symbol = "M" }
             else if room.trainer != nil { symbol = "G" }
             else if room.npc != nil && !(room.npc?.hasBeenTalkedTo ?? true) { symbol = "N" }
-            else if room.verticalDestinationRoomId != nil { symbol = room.verticalDirection == "down" ? "\u{2193}" : "\u{2191}" }
-            else if room.teleportDestinationRoomId != nil { symbol = "*" }
             else if room.roomType == .trap && !room.trapTriggered && !hasTrapSense { symbol = RoomType.empty.symbol }
             else { symbol = room.roomType.symbol }
             return AtlasRoom(
@@ -1344,9 +1349,13 @@ class Dungeon: ObservableObject, Codable {
             let glyph: String
             if room.id == level.currentRoomId { glyph = "@" }
             else if !room.visited { glyph = padNumber[room.id] ?? " " }
-            else if room.danger { glyph = "!" }
+            else if ["!", RoomType.boss.symbol, "\u{2191}", "\u{2193}"].contains(room.symbol) { glyph = room.symbol }
             else { glyph = padNumber[room.id] ?? room.symbol }
-            put("[\(glyph)]", cy, cx)
+            // {X} instead of [X]: more than one thing of note in this room.
+            let thingsHere = [room.danger, room.typeName == "Boss", room.verticalTo != nil, room.teleportTo != nil,
+                              room.merchantName != nil, room.gymName != nil, room.npcName != nil].filter { $0 }.count
+            let several = room.visited && thingsHere > 1
+            put(several ? "{\(glyph)}" : "[\(glyph)]", cy, cx)
             for dir in Direction.allCases {
                 guard let targetId = room.exits[dir.rawValue] else { continue }
                 // Each passage is drawn once — from its east/south end, or
@@ -1397,7 +1406,7 @@ class Dungeon: ObservableObject, Codable {
         ("L", "Library"), ("B", "Boss"), ("A", "Armoury"), ("P", "Prison"),
         ("M", "Merchant"), ("G", "Gym"), ("N", "NPC"), ("1-9", "Teleport pads"),
         ("\u{2191}", "Way up"), ("\u{2193}", "Way down"), ("[ ]", "Unexplored"), ("--", "Passage"),
-        ("KK", "Locked door"), ("XX", "Barred door"),
+        ("KK", "Locked door"), ("XX", "Barred door"), ("{ }", "More than one thing here"),
     ]
 
     static func atlasKeyLines() -> [String] {
@@ -1510,6 +1519,25 @@ class Dungeon: ObservableObject, Codable {
             return RoomType.empty.symbol
         }
 
+        // Priority: danger, boss, a way up/down, teleport pad, merchant,
+        // gym, an NPC you haven't met — then the room's own type. "N"
+        // not "?" for an NPC: "?" is the map's own Help symbol.
+        func cellGlyph(for room: Room) -> (glyph: String, several: Bool) {
+            let danger = !room.cleared && room.encounter != nil
+            let unmetNPC = room.npc != nil && !(room.npc?.hasBeenTalkedTo ?? true)
+            let things = [danger, room.roomType == .boss, room.verticalDestinationRoomId != nil,
+                          room.teleportDestinationRoomId != nil, room.merchant != nil, room.trainer != nil, unmetNPC]
+            let several = things.filter { $0 }.count > 1
+            if danger { return ("!", several) }
+            if room.roomType == .boss { return (RoomType.boss.symbol, several) }
+            if room.verticalDestinationRoomId != nil { return (room.verticalDirection == "down" ? "\u{2193}" : "\u{2191}", several) }
+            if room.teleportDestinationRoomId != nil { return ("*", several) }
+            if room.merchant != nil { return ("M", several) }
+            if room.trainer != nil { return ("G", several) }
+            if unmetNPC { return ("N", several) }
+            return (effectiveSymbol(for: room, hasTrapSense: hasTrapSense), several)
+        }
+
         // Corridors are only ever drawn once, from whichever side happens to
         // iterate first — the room being drawn's own east/south exits. A
         // north/west exit is only ever drawn as part of THAT neighbor's own
@@ -1538,18 +1566,10 @@ class Dungeon: ObservableObject, Codable {
                 if let room = visibleRooms.first(where: { $0.x == x && $0.y == y }) {
                     if room.id == currentRoomId {
                         roomRow += "[@]"
-                    } else if !room.cleared && room.encounter != nil {
-                        roomRow += "[!]"
-                    } else if room.merchant != nil {
-                        roomRow += "[M]"
-                    } else if room.trainer != nil {
-                        roomRow += "[G]"
-                    } else if room.npc != nil && !(room.npc?.hasBeenTalkedTo ?? true) {
-                        // "N" not "?" — "?" is the map's own Help symbol,
-                        // and doubling it up for "NPC here" read as confusing.
-                        roomRow += "[N]"
                     } else {
-                        roomRow += "[\(effectiveSymbol(for: room, hasTrapSense: hasTrapSense))]"
+                        // Most important thing in the room; {X} when there's more than one.
+                        let cell = cellGlyph(for: room)
+                        roomRow += cell.several ? "{\(cell.glyph)}" : "[\(cell.glyph)]"
                     }
 
                     // East corridor (XX = secured/barred, KK = locked door)
@@ -1669,19 +1689,10 @@ class Dungeon: ObservableObject, Codable {
         // the torch toggles, even though its contents do.
         var visibleSymbols = Set<String>()
         visibleSymbols.insert("@") // current room is always shown
-        for room in visibleRooms {
-            if room.id == currentRoomId {
-                // already added @
-            } else if !room.cleared && room.encounter != nil {
-                visibleSymbols.insert("!")
-            } else if room.merchant != nil {
-                // "M" alone, not also the room's base type — see the @ here:
-                // line above for why.
-                visibleSymbols.insert("M")
-            } else {
-                visibleSymbols.insert(effectiveSymbol(for: room, hasTrapSense: hasTrapSense))
-            }
-            if room.trainer != nil { visibleSymbols.insert("G") }
+        for room in visibleRooms where room.id != currentRoomId {
+            let cell = cellGlyph(for: room)
+            visibleSymbols.insert(cell.glyph)
+            if cell.several { visibleSymbols.insert("{ }") }
         }
         if visibleRooms.contains(where: { !$0.secured.isEmpty }) {
             visibleSymbols.insert("X")

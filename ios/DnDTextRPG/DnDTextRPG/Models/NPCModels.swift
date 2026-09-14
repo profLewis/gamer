@@ -1106,6 +1106,43 @@ enum NPCTrustworthiness: String, Codable {
     }
 }
 
+// MARK: - Name registry
+
+/// Names already handed out in the current dungeon — so no two merchants,
+/// trainers or NPCs share one (Lore used to list the same name several
+/// times). Reset when a dungeon is generated; reseeded from the current
+/// dungeon before anyone new is created mid-game (see GameEngine.seedNameRegistry).
+enum NameRegistry {
+    static var used: Set<String> = []
+
+    static func reset(_ names: [String] = []) { used = Set(names) }
+
+    static func isFree(_ name: String) -> Bool { !used.contains(name) }
+
+    /// `base` if it's free, otherwise a suffixed version ("Junior",
+    /// "the Younger", "the Third"...) — then marks it as taken.
+    static func claim(_ base: String) -> String {
+        let suffixes = ["Junior", "the Younger", "the Third", "the Fourth", "the Fifth"]
+        var name = base
+        var i = 0
+        while used.contains(name) {
+            name = i < suffixes.count ? "\(base) \(suffixes[i])" : "\(base) \(i + 2)"
+            i += 1
+        }
+        used.insert(name)
+        return name
+    }
+
+    /// First names for NPCs (Hermits, Guards...), who used to go by their
+    /// type alone.
+    static let npcFirstNames = [
+        "Maud", "Aldric", "Bree", "Corvin", "Dunstan", "Elspeth", "Fenwick", "Greta", "Hollis",
+        "Ingrid", "Jory", "Kestrel", "Lorcan", "Mirabel", "Nesta", "Osric", "Pell", "Quill",
+        "Rowan", "Sable", "Tamsin", "Ulric", "Vesper", "Wren", "Yarrow", "Zinnia", "Brom",
+        "Cressida", "Dagny", "Ewan", "Fern", "Godric", "Hester", "Idris", "Juniper", "Kaspar",
+    ]
+}
+
 // MARK: - NPC Instance (room-specific state)
 
 struct DungeonNPC: Codable {
@@ -1144,8 +1181,22 @@ struct DungeonNPC: Codable {
 
     var name: String { type.rawValue }
 
+    /// A first name of their own (e.g. "Maud"), unique within the dungeon.
+    /// nil for older saves and for Wandering Traders, who carry a merchant name.
+    var personalName: String? = nil
+
+    /// "Maud the Hermit" — for Lore, clues and anywhere a person is named.
+    var displayName: String {
+        if let personal = personalName { return "\(personal) the \(type.rawValue)" }
+        return merchant?.name ?? type.rawValue
+    }
+
     init(type: NPCType) {
         self.type = type
+        if type != .wanderingTrader {
+            let fresh = NameRegistry.npcFirstNames.filter { NameRegistry.isFree($0) }
+            personalName = NameRegistry.claim((fresh.isEmpty ? NameRegistry.npcFirstNames : fresh).randomElement()!)
+        }
         if type == .wanderingTrader {
             self.merchant = Merchant.random(tier: .wanderingPeddler)
         }
