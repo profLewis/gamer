@@ -3490,6 +3490,9 @@ class GameEngine: ObservableObject {
     /// Off when Info Timeout is Off (0) or Auto-Continue is Off, and in
     /// speaker mode, where the screen is being read aloud and cutting it
     /// short would lose text.
+    /// Set by a "defeated!" attack report: its countdown is kept short.
+    private var quickNextContinue = false
+
     /// True while it's a computer-controlled companion's or a monster's turn in a fight.
     private var aiTurnInProgress: Bool {
         guard let turn = currentCombat?.currentCombatant else { return false }
@@ -3509,7 +3512,10 @@ class GameEngine: ObservableObject {
         if currentCombat == nil { delay = base }
         else if aiTurnInProgress { delay = min(base, 3.5) * Double.random(in: 0.7...1.0) }
         else { delay = base * Double.random(in: 0.55...0.85) }
-        scheduleAutoAdvance(after: delay, isStillValid: { [weak self] in
+        // A "defeated!" report moves on sooner still.
+        let finalDelay = quickNextContinue ? min(delay, 3.0) : delay
+        quickNextContinue = false
+        scheduleAutoAdvance(after: finalDelay, isStillValid: { [weak self] in
             guard let self = self else { return false }
             return Self.continueGeneration == myGeneration && self.awaitingContinue && !self.speakerModeOn
         }, fire: { [weak self] in self?.handleContinue() })
@@ -28595,6 +28601,7 @@ class GameEngine: ObservableObject {
                         SoundManager.shared.playDeath()
                         self.renderDefeatFrame(report)
                         self.print("  \(report.targetName) is defeated!", color: .yellow, bold: true)
+                        self.quickNextContinue = true
                     } else if report.targetUnconscious {
                         SoundManager.shared.playDeath()
                         self.renderDefeatFrame(report)
@@ -30823,7 +30830,8 @@ class GameEngine: ObservableObject {
         // cleared specifically for THIS destination, not shared with
         // whatever screen comes after.
         autoReturnDestination = continueAction
-        autoReturn(after: infoTimeout * 3)
+        // Victory moves on reasonably briskly — no reading-time stretch.
+        autoReturn(after: max(3.0, infoTimeout * 1.5), stretchForReading: false)
     }
 
     /// "Emergency Drop" — a rare, automatic anti-total-party-wipe save.
