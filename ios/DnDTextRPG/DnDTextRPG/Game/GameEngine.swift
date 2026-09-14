@@ -20426,7 +20426,7 @@ class GameEngine: ObservableObject {
             printWrapped(observation, indent: 2, color: .dimGreen)
         }
 
-        autoReturn()
+        autoReturn(after: max(2.5, infoTimeout * 0.8), stretchForReading: false)   // search results move on briskly
     }
 
     /// Room-type flavour text (merged from former Examine action)
@@ -20553,7 +20553,7 @@ class GameEngine: ObservableObject {
             logEvent("Dark search — nothing to find in \(room.name)", category: "EXPLORE")
         }
 
-        autoReturn()
+        autoReturn(after: max(2.5, infoTimeout * 0.8), stretchForReading: false)   // search results move on briskly
     }
 
     /// Long-press Examine in the dark — risky fumbling examination
@@ -20997,7 +20997,7 @@ class GameEngine: ObservableObject {
             printExplorationMap()
             print("")
             printWrapped("You've already scavenged this room — nothing left to find.", indent: 2, color: .yellow)
-            autoReturn()
+            autoReturn(after: max(2.5, infoTimeout * 0.8), stretchForReading: false)   // search results move on briskly
             return
         }
 
@@ -21096,7 +21096,7 @@ class GameEngine: ObservableObject {
         logEvent("Foraged \(room.name) — nothing found", category: "EXPLORE")
         logMultiplayerAction("Foraged supplies in \(room.name)")
 
-        autoReturn()
+        autoReturn(after: max(2.5, infoTimeout * 0.8), stretchForReading: false)   // search results move on briskly
     }
 
     // MARK: - Talk to NPC
