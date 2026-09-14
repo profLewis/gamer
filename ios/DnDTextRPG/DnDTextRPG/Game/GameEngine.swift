@@ -18076,31 +18076,45 @@ class GameEngine: ObservableObject {
         }
     }
 
-    /// The adventure's opening tale again, a page at a time — typed out
-    /// like a typewriter; swipe (or Next / Previous) between pages.
-    func showOpeningTale(page: Int, onBack: @escaping () -> Void) {
-        let lines = adventureIntroLines.isEmpty ? recoveredIntroLines() : adventureIntroLines
+    /// A tale shown a page (line) at a time, typed out like a typewriter:
+    /// Next/Previous or swipe, with the page counter. At the last page,
+    /// `finishLabel` (and a swipe onward) goes to `onFinish` — the Opening
+    /// Tale leads straight on to the Progress Tale.
+    private func showTalePages(title: String, lines: [String], page: Int, onBack: @escaping () -> Void,
+                               emptyMessage: String = "There's no tale to tell yet.",
+                               finishLabel: String? = nil, onFinish: (() -> Void)? = nil) {
         clearTerminal()
-        printTitle("The Tale Begins")
+        printTitle(title)
         print("")
         guard !lines.isEmpty else {
-            printWrapped("This adventure began before tales were told — there's no opening tale to tell.", indent: 2, color: .dimGreen)
-            showMenu(["< Back"])
+            printWrapped(emptyMessage, indent: 2, color: .dimGreen)
+            var opts: [String] = []
+            if let label = finishLabel, onFinish != nil { opts.append(label) }
+            opts.append("< Back")
+            showMenu(opts)
             closeHandler = onBack
-            menuHandler = { _ in onBack() }
+            menuHandler = { choice in
+                guard choice >= 1, choice <= opts.count else { return }
+                if opts[choice - 1] == "< Back" { onBack() } else { onFinish?() }
+            }
             return
         }
         let i = min(max(0, page), lines.count - 1)
-        typewrite(lines[i], color: i == lines.count - 1 ? .yellow : .green)
+        let last = i == lines.count - 1
+        typewrite(lines[i], color: last ? .yellow : .green)
         var opts: [String] = []
-        if i < lines.count - 1 { opts.append("Next") }
+        if !last { opts.append("Next") } else if let label = finishLabel, onFinish != nil { opts.append(label) }
         if i > 0 { opts.append("Previous") }
         opts.append("< Back")
         showMenu(opts)
-        let next: () -> Void = { [weak self] in self?.showOpeningTale(page: i + 1, onBack: onBack) }
-        let previous: () -> Void = { [weak self] in self?.showOpeningTale(page: i - 1, onBack: onBack) }
+        let next: () -> Void = { [weak self] in
+            self?.showTalePages(title: title, lines: lines, page: i + 1, onBack: onBack, emptyMessage: emptyMessage, finishLabel: finishLabel, onFinish: onFinish)
+        }
+        let previous: () -> Void = { [weak self] in
+            self?.showTalePages(title: title, lines: lines, page: i - 1, onBack: onBack, emptyMessage: emptyMessage, finishLabel: finishLabel, onFinish: onFinish)
+        }
         cardPositionLabel = "\(i + 1)/\(lines.count)"
-        swipeLeftHandler = i < lines.count - 1 ? next : nil
+        swipeLeftHandler = last ? onFinish : next
         swipeRightHandler = i > 0 ? previous : nil
         closeHandler = onBack
         menuHandler = { choice in
@@ -18108,9 +18122,108 @@ class GameEngine: ObservableObject {
             switch opts[choice - 1] {
             case "Next": next()
             case "Previous": previous()
-            default: onBack()
+            case "< Back": onBack()
+            default: onFinish?()
             }
         }
+    }
+
+    /// The adventure's opening tale again — then on into the Progress Tale.
+    func showOpeningTale(page: Int, onBack: @escaping () -> Void) {
+        let lines = adventureIntroLines.isEmpty ? recoveredIntroLines() : adventureIntroLines
+        showTalePages(title: "The Tale Begins", lines: lines, page: page, onBack: onBack,
+                      emptyMessage: "This adventure began before tales were told — there's no opening tale to tell.",
+                      finishLabel: "Progress Tale >", onFinish: { [weak self] in self?.showProgressTale(onBack: onBack) })
+    }
+
+    // MARK: Progress Tale
+
+    /// Kept until something new happens, so reopening it doesn't ask the AI again.
+    private var progressTaleCache: (logCount: Int, lines: [String])?
+
+    /// The story so far, told like the opening tale — page by page, typed
+    /// out; written by the story model when an AI is set up.
+    func showProgressTale(onBack: @escaping () -> Void) {
+        let open: ([String]) -> Void = { [weak self] lines in
+            guard let self = self else { return }
+            self.progressTaleCache = (self.adventureLog.count, lines)
+            self.showTalePages(title: "The Tale So Far", lines: lines, page: 0, onBack: onBack)
+        }
+        if let cached = progressTaleCache, cached.logCount == adventureLog.count, !cached.lines.isEmpty {
+            showTalePages(title: "The Tale So Far", lines: cached.lines, page: 0, onBack: onBack)
+            return
+        }
+        guard DMEngine.shared.isConfigured, storyWriterEnabled else { open(progressTaleOffline()); return }
+        clearTerminal()
+        for _ in 0..<5 { print("") }
+        print("The tale is being written…", color: .dimGreen, centered: true)
+        DMEngine.shared.writeStory(system: storySystemPrompt, prompt: progressPrompt()) { [weak self] text in
+            guard let self = self else { return }
+            open(self.parseStory(text) ?? self.progressTaleOffline())
+        }
+    }
+
+    /// Adventure Log highlights, without their "[time] [CATEGORY]" prefixes.
+    private func progressHighlights(limit: Int) -> [String] {
+        let wanted = ["QUEST", "LOOT", "COMBAT", "TRAP", "EXPLORE", "NPC", "SHOP"]
+        let picked = adventureLog.filter { entry in wanted.contains { entry.contains("[\($0)]") } }
+        return picked.suffix(limit).map { entry in
+            var text = entry
+            while text.hasPrefix("["), let close = text.firstIndex(of: "]") {
+                text = String(text[text.index(after: close)...]).trimmingCharacters(in: .whitespaces)
+            }
+            return text
+        }
+    }
+
+    private func progressPrompt() -> String {
+        let mq = mainQuest
+        let partyText = party.map { "\(shortName(for: $0)) (\($0.race.rawValue) \($0.characterClass.rawValue), level \($0.level))" }.joined(separator: ", ")
+        let explored = dungeon?.rooms.values.filter { $0.visited }.count ?? 0
+        let total = dungeon?.rooms.count ?? 0
+        let gold = party.reduce(0) { $0 + $1.gold }
+        let events = progressHighlights(limit: 40).map { "- \($0)" }.joined(separator: "\n")
+        return """
+        Tell the story of this adventure so far, carrying on from its opening tale (below) in exactly the same style, as 6 to 9 short lines — one sentence each, at most 30 words — one per line, with no numbering, headings or blank lines.
+        Say what the party has done towards the main quest, their notable fights, finds and side quests, and end with where they stand now and what still lies ahead.
+
+        Opening tale: \(adventureIntroLines.joined(separator: " "))
+        Main quest: \(mq.map { "\($0.goal) — \($0.stakes); reward: \($0.reward); villain: \($0.villain)" } ?? "unknown")
+        The party: \(partyText)
+        So far: day \(gameTimeMinutes / 1440 + 1); level \(dungeon?.level ?? 1) of \(dungeon?.name ?? "the dungeon"); \(explored) of \(total) rooms explored; \(monstersSlain) monsters defeated in \(combatsWon) fights; \(gold) gold between them.
+        Recent events (oldest first):
+        \(events.isEmpty ? "- (nothing much yet)" : events)
+        """
+    }
+
+    /// The Progress Tale written without an AI, from the same facts.
+    private func progressTaleOffline() -> [String] {
+        guard let dungeon = dungeon else { return [] }
+        let names = party.map { shortName(for: $0) }
+        let together = names.count <= 1 ? (names.first ?? "You") : names.dropLast().joined(separator: ", ") + " and " + names.last!
+        let explored = dungeon.rooms.values.filter { $0.visited }.count
+        let gold = party.reduce(0) { $0 + $1.gold }
+        var lines: [String] = []
+        if let mq = mainQuest {
+            lines.append("It is day \(gameTimeMinutes / 1440 + 1) of the quest to \(mq.goal).")
+        } else {
+            lines.append("It is day \(gameTimeMinutes / 1440 + 1) of the adventure in \(dungeon.name).")
+        }
+        lines.append("\(together) \(names.count == 1 ? "has" : "have") explored \(explored) of the \(dungeon.rooms.count) rooms on level \(dungeon.level) of \(dungeon.name).")
+        if monstersSlain > 0 {
+            lines.append("They have faced down \(monstersSlain) creature\(monstersSlain == 1 ? "" : "s"), winning \(combatsWon) fight\(combatsWon == 1 ? "" : "s") in the dark.")
+        } else {
+            lines.append("Not a blade has been drawn in anger yet — but the dark is watching, and waiting.")
+        }
+        for event in progressHighlights(limit: 30).filter({ $0.lowercased().contains("quest") }).suffix(3) {
+            lines.append(event.hasSuffix(".") ? event : event + ".")
+        }
+        lines.append("Their purses hold \(gold) gold between them.")
+        if let mq = mainQuest {
+            lines.append("Still ahead, somewhere below, waits \(mq.villain) — and it must be done \(mq.stakes).")
+        }
+        lines.append(["The torches burn lower. The adventure goes on.", "Onward, then — the deep is not done with them yet."].randomElement()!)
+        return lines
     }
     private var cutsceneToken = UUID()
 
@@ -24383,7 +24496,7 @@ class GameEngine: ObservableObject {
         // Build menu
         // "Brain" (was "AI") — which mind runs the Dungeon Master.
         // Party Review first (the default); Brain now lives in Settings.
-        var menuOpts = ["Party Review", "Tell the Tale", "Opening Tale", "Save to Roster", "Adventure Log", "Lore", "Settings", "?", "< Back"]
+        var menuOpts = ["Party Review", "Opening Tale", "Progress Tale", "Save to Roster", "Adventure Log", "Lore", "Settings", "?", "< Back"]
         if dungeon?.hasCartography == true {
             menuOpts.insert("Atlas", at: menuOpts.firstIndex(of: "Lore") ?? 0)
         }
@@ -24429,8 +24542,8 @@ class GameEngine: ObservableObject {
                 self.showSavePartyToRosterMenu()
             case "Adventure Log":
                 self.showAdventureLog()
-            case "Tell the Tale":
-                self.tellTaleSoFar(onBack: { [weak self] in self?.showPartyStatus() })
+            case "Progress Tale":
+                self.showProgressTale(onBack: { [weak self] in self?.showPartyStatus() })
             case "Opening Tale":
                 self.showOpeningTale(page: 0, onBack: { [weak self] in self?.showPartyStatus() })
             case "Atlas":
@@ -24623,8 +24736,8 @@ class GameEngine: ObservableObject {
             self.print("  BUTTONS", color: .cyan, bold: true)
             for (name, what) in [
                 ("Party Review", "edit adventurers and see their stat cards"),
-                ("Tell the Tale", "the story of this adventure so far"),
-                ("Opening Tale", "the tale that began this adventure, again — swipe for the next page"),
+                ("Opening Tale", "the tale that began this adventure, again — swipe for the next page, and on into the Progress Tale"),
+                ("Progress Tale", "the story so far, told the same way"),
                 ("Save to Roster", "keep an adventurer's progress for future adventures"),
                 ("Adventure Log", "a timeline of what's happened"),
                 ("Lore", "the named merchants and folk you've met"),

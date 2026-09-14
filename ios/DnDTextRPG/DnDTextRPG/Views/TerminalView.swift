@@ -1112,6 +1112,11 @@ struct TerminalView: View {
                             Menu {
                                 Button(gameEngine.musicEnabled ? "Music Off" : "Music On") { gameEngine.toggleMusicQuick() }
                                 Button(gameEngine.battleSoundsEnabled ? "Sound Effects Off" : "Sound Effects On") { gameEngine.battleSoundsEnabled.toggle() }
+                                Button(gameEngine.combatArenaEnabled ? "Fight Club Off" : "Fight Club On") { gameEngine.combatArenaEnabled.toggle() }
+                                Button(gameEngine.hitAnimationsEnabled ? "Hit Animations Off" : "Hit Animations On") {
+                                    gameEngine.hitAnimationsEnabled.toggle()
+                                    gameEngine.objectWillChange.send()
+                                }
                                 Divider()
                                 Button("Change AI…") { gameEngine.followLink("ai") }
                                 Button("DM & Voice…") { gameEngine.followLink("dm") }
