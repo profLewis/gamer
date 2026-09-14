@@ -732,7 +732,10 @@ struct TerminalView: View {
     /// In a portrait adventure the D-pad and button areas keep their places
     /// on every screen (blank when unused), so they never jump about.
     private var reserveControlSlots: Bool {
-        gameEngine.dungeon != nil && !gameEngine.isLandscapeOrientation && !gameEngine.isJustDMActive
+        // Not in combat — there's no D-pad there, and a blank D-pad-sized
+        // slot squeezed the combat text into a sliver.
+        gameEngine.dungeon != nil && gameEngine.currentCombat == nil
+            && !gameEngine.isLandscapeOrientation && !gameEngine.isJustDMActive
     }
 
     private var portraitControlsMinHeight: CGFloat {
