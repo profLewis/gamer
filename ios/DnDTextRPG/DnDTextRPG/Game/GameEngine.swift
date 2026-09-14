@@ -18219,8 +18219,10 @@ class GameEngine: ObservableObject {
         clearTerminal()
         for _ in 0..<5 { print("") }
         print("The tale is being written…", color: .dimGreen, centered: true)
+        startWritingBar(seconds: 15)
         DMEngine.shared.writeStory(system: storySystemPrompt, prompt: progressPrompt()) { [weak self] text in
             guard let self = self else { return }
+            self.stopWritingBar()
             open(self.parseStory(text) ?? self.progressTaleOffline())
         }
     }
@@ -18303,10 +18305,38 @@ class GameEngine: ObservableObject {
         clearTerminal()
         for _ in 0..<5 { print("") }
         print("The tale is being written…", color: .dimGreen, centered: true)
+        startWritingBar(seconds: 15)
         DMEngine.shared.writeStory(system: storySystemPrompt, prompt: storyPrompt()) { [weak self] text in
             guard let self = self else { return }
+            self.stopWritingBar()
             play(self.parseStory(text) ?? self.adventureBackstory())
         }
+    }
+
+    /// A little hourglass and progress bar under "The tale is being
+    /// written…" — fills over the story writer's time limit, and stops the
+    /// moment the tale arrives.
+    private var writingBarTimer: Timer?
+
+    private func startWritingBar(seconds: Double) {
+        writingBarTimer?.invalidate()
+        print("")
+        let index = terminalLines.count
+        print("⏳ [" + String(repeating: "·", count: 20) + "]", color: .dimGreen, centered: true)
+        let generation = screenGeneration
+        let start = Date()
+        writingBarTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] timer in
+            guard let self = self, self.screenGeneration == generation, index < self.terminalLines.count else { timer.invalidate(); return }
+            let elapsed = Date().timeIntervalSince(start)
+            let filled = Int(min(1, elapsed / seconds) * 20)
+            let glass = Int(elapsed * 1.5) % 2 == 0 ? "⏳" : "⌛"
+            self.terminalLines[index].text = "\(glass) [" + String(repeating: "■", count: filled) + String(repeating: "·", count: 20 - filled) + "]"
+        }
+    }
+
+    private func stopWritingBar() {
+        writingBarTimer?.invalidate()
+        writingBarTimer = nil
     }
 
     private func showCutsceneLine(_ i: Int, lines: [String], done: @escaping () -> Void) {
@@ -18340,7 +18370,9 @@ class GameEngine: ObservableObject {
         // Long enough to type and read it — a little longer at the very end.
         let words = lines[i].split(separator: " ").count
         let typing = reduceAnimations ? 0 : Double(lines[i].count) * 0.028
-        let wait = typing + max(2.5, Double(words) / 3.2) + (i == lines.count - 1 ? 4.0 : 0)
+        // Reading pace ~130 words a minute (at least 4s), after the typing;
+        // the last paragraph lingers a little longer.
+        let wait = typing + max(4.0, Double(words) / 2.2) + (i == lines.count - 1 ? 5.0 : 0)
         scheduleAutoAdvance(after: wait, isStillValid: { [weak self] in
             guard let self = self else { return false }
             return self.cutsceneToken == token && self.awaitingContinue
