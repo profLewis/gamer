@@ -235,7 +235,7 @@ struct FAQData {
     static let character = FAQCategory(title: "Characters & Party", contexts: ["exploration", "combat", "rest"], entries: [
         FAQEntry(
             question: "Which class should I pick?",
-            answer: "Fighter: tanky melee. Wizard: powerful spells but fragile. Rogue: sneaky with high damage. Cleric: healer with decent combat. Ranger: ranged attacks. Barbarian: high damage, low defence. A balanced party of 3-4 is recommended.",
+            answer: "Fighter: tanky melee. Wizard: powerful spells but fragile. Rogue: sneaky with high damage. Cleric: healer with decent combat. Ranger: ranged attacks. Barbarian: high damage, low defence. Engineer: gadgets, traps and locks. Scout: sees danger first. Thief: quick fingers, good deals. Bard: music and words — Vicious Mockery, Healing Word, and Play a Tune for tips. Each has a rank title that rises with level (a Bard goes Busker, Minstrel, Troubadour, Skald, Master Bard). A balanced party of 3-4 is recommended.",
             keywords: ["class", "which class", "best class", "fighter", "wizard", "rogue", "cleric", "ranger", "barbarian"]
         ),
         FAQEntry(

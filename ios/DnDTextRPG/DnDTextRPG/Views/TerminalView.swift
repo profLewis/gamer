@@ -662,20 +662,21 @@ struct TerminalView: View {
                     // there's so much less vertical space to work with than
                     // portrait has.
                     VStack(spacing: 0) {
-                        // Fight Club (@) in portrait: above the buttons; the text gives way.
-                        if !isLandscape && gameEngine.showCombatArena {
-                            CombatArenaView(engine: gameEngine, scale: scale)
-                                .frame(height: max(170, min(240, geometry.size.height * 0.26)))
-                                // A tap on the fight counts as "tap anywhere" to move on.
-                                .contentShape(Rectangle())
-                                .onTapGesture { advanceFromStrip() }
-                        }
                         // (VoiceOver: the buttons before the input line, whichever is on top.)
                         if isLandscape {
                             inputBarAndKeyboardBlock.accessibilitySortPriority(1)
                             dpadAndMenuButtonsBlock.accessibilitySortPriority(2)
                         } else {
                             dpadAndMenuButtonsBlock.accessibilitySortPriority(2)
+                            // Fight Club (@) in portrait: below the buttons, so the fight
+                            // stays put however the buttons change; the text gives way.
+                            if gameEngine.showCombatArena {
+                                CombatArenaView(engine: gameEngine, scale: scale)
+                                    .frame(height: max(170, min(240, geometry.size.height * 0.26)))
+                                    // A tap on the fight counts as "tap anywhere" to move on.
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { advanceFromStrip() }
+                            }
                             inputBarAndKeyboardBlock.accessibilitySortPriority(1)
                         }
                         // Combat Arena: the fight acted out in ASCII in the space

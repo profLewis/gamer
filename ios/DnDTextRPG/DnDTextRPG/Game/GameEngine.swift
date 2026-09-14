@@ -2294,6 +2294,11 @@ class GameEngine: ObservableObject {
     }
 
     func clearTerminal() {
+        // Leaving the fight's running account for another screen: keep it, to put back.
+        if combatLogShowing {
+            combatLogBuffer = terminalLines
+            combatLogShowing = false
+        }
         pendingAnnouncement.removeAll()   // a new page: only its own text is announced
         breadcrumbFrom = currentScreenTitle
         breadcrumbDid = lastEventThisScreen
@@ -6358,7 +6363,8 @@ class GameEngine: ObservableObject {
         printWrapped("Human, Elf, Dwarf, Halfling, Half-Orc, Tiefling, Dragonborn. Each has unique ability bonuses.", indent: 2)
         print("")
         print("CLASSES", color: .cyan, bold: true)
-        printWrapped("Fighter, Wizard, Cleric, Rogue, Ranger, Barbarian. Each has a primary ability and unique features.", indent: 2)
+        printWrapped("Fighter, Wizard, Cleric, Rogue, Ranger, Barbarian, Engineer, Scout, Thief and Bard. Each has a primary ability and unique features — and a rank title that rises with their level, shown under their name as ✦.", indent: 2)
+        printWrapped("Bards (Busker → Minstrel → Troubadour → Skald → Master Bard) fight with music and words: Vicious Mockery (an insult so cutting it hurts), Healing Word and Sleep, and Shatter at level 3. When you're talking to someone, a Bard can Play a Tune — a Performance roll earns tips, once per person. They haggle well, too.", indent: 2)
         print("")
         print("ABILITY SCORES", color: .cyan, bold: true)
         printWrapped("STR, DEX, CON, INT, WIS, CHA. Higher scores give better modifiers. Assign your best scores to your class's primary ability.", indent: 2)
@@ -18023,6 +18029,32 @@ class GameEngine: ObservableObject {
     // Before each new adventure: a blank screen and one line at a time —
     // why this party is going down, what they're after, what they might
     // gain, and what their particular skills should count for.
+    // MARK: Combat log
+    //
+    // A fight reads as one long, scrollable account: each turn adds a small
+    // divider and carries on below instead of clearing the screen, and
+    // after a sub-screen (spells, potions, targets) the account so far is
+    // put back before the next turn.
+    private var combatLogShowing = false
+    private var combatLogBuffer: [TerminalLine] = []
+
+    private func combatPageBreak() {
+        guard currentCombat != nil else { clearTerminal(); return }
+        if !combatLogShowing {
+            let saved = combatLogBuffer
+            clearTerminal()
+            terminalLines = saved
+        }
+        if !terminalLines.isEmpty {
+            print("")
+            print("  · · · · · · · · · · · ·", color: .dimGreen)
+            print("")
+        }
+        if terminalLines.count > 600 { terminalLines.removeFirst(terminalLines.count - 600) }
+        combatLogShowing = true
+        suppressAutoScroll = false
+    }
+
     private var cutsceneActive = false
     /// This adventure's opening tale, a line a page (Party Status > Opening Tale).
     var adventureIntroLines: [String] = []
@@ -18863,7 +18895,7 @@ class GameEngine: ObservableObject {
             self.printLink("Settings > Gameplay > Info Timeout", to: "infoTimeout", indent: 4)
             self.print("")
             self.print("  CLASS RELIABILITY", color: .cyan, bold: true)
-            self.printWrapped("Some classes have a natural edge: Rogues and Engineers search more reliably, Wizards/Rangers/Scouts see further on the map, Clerics and Thieves negotiate better deals. Having one in the party helps everyone at that activity.", indent: 2, color: .dimGreen)
+            self.printWrapped("Some classes have a natural edge: Rogues and Engineers search more reliably, Wizards/Rangers/Scouts see further on the map, Clerics, Thieves and Bards negotiate better deals. Having one in the party helps everyone at that activity.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  WANDERING MONSTERS", color: .cyan, bold: true)
             self.printWrapped("A room you've already cleared isn't guaranteed to stay empty — something dangerous next door can occasionally wander in.", indent: 2, color: .dimGreen)
@@ -24786,7 +24818,7 @@ class GameEngine: ObservableObject {
             self.printTitle("Party Status — Help")
             self.print("")
             self.print("  INFORMATION", color: .cyan, bold: true)
-            self.printWrapped("Map + each character's HP, gold, XP. Green HP = healthy, yellow = wounded, red = critical.", indent: 2, color: .dimGreen)
+            self.printWrapped("Map + each adventurer's HP, gold, XP. Green HP = healthy, yellow = wounded, red = critical. The ✦ line under each name is their rank, which rises with their level — a Bard, say, goes Busker, Minstrel, Troubadour, Skald, Master Bard.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  BUTTONS", color: .cyan, bold: true)
             for (name, what) in [
@@ -29261,6 +29293,8 @@ class GameEngine: ObservableObject {
         logMultiplayerAction("Encountered \(monsterNames)!")
 
         clearTerminal()
+        combatLogBuffer = []
+        combatLogShowing = true   // this fight's running account starts here
         suppressAutoScroll = false
         printLines(asciiSwords, color: .red)
         print("")
@@ -29332,7 +29366,7 @@ class GameEngine: ObservableObject {
             return
         }
 
-        clearTerminal()
+        combatPageBreak()
         printCombatStatus()
         print("")
 
@@ -29599,7 +29633,7 @@ class GameEngine: ObservableObject {
                 self.combatHesitating = false
                 let isSluggish = (self.party.first(where: { $0.id == characterId })?.sluggishAttacks ?? 0) > 0
                 if let report = combat.playerAttack(characterId: characterId, targetId: monsterRef.id, disadvantage: hasDisadvantage) {
-                    self.clearTerminal()
+                    self.combatPageBreak()
                     self.printCombatStatus()
                     self.print("")
                     if hasDisadvantage {
@@ -29671,7 +29705,7 @@ class GameEngine: ObservableObject {
         options.append("Dodge")
         actions.append { [weak self] in
             guard let self = self else { return }
-            self.clearTerminal()
+            self.combatPageBreak()
             self.printCombatStatus()
             self.print("")
             self.printLines(self.asciiDodge, color: .cyan)
