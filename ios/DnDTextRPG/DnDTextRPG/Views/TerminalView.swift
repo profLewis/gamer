@@ -1836,7 +1836,7 @@ struct CombatArenaView: View {
     var body: some View {
         GeometryReader { geo in
             let fontSize = 13 * scale
-            let charWidth = fontSize * 0.602
+            let charWidth = Self.charWidth(fontSize)
             let lineHeight = (fontSize * 1.22).rounded(.up)
             let cols = max(10, Int((geo.size.width - 12) / charWidth))
             let rows = max(4, Int((geo.size.height - 8) / lineHeight))
@@ -1860,6 +1860,17 @@ struct CombatArenaView: View {
         .clipped()
         // The text log says the same thing in words.
         .accessibilityHidden(true)
+    }
+
+    /// The monospaced font's real character width — the panel's column
+    /// count comes from it, so a row never runs past the edge and wraps.
+    static func charWidth(_ fontSize: CGFloat) -> CGFloat {
+        #if os(macOS)
+        let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        #else
+        let font = UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        #endif
+        return max(1, ("M" as NSString).size(withAttributes: [.font: font]).width)
     }
 
     static func attributed(_ row: [ArenaRenderer.Cell]) -> AttributedString {

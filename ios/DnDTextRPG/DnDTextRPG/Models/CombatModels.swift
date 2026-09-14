@@ -1833,37 +1833,44 @@ enum ArenaRenderer {
         }
         let t = now.timeIntervalSinceReferenceDate
 
-        // Rows: caption at the top, fighters standing on the ground, and the
-        // two rosters (party, then enemies) underneath.
-        let partyRow = H - 2, enemyRow = H - 1
-        let groundY = H - 3
+        // Rows: caption at the top, fighters standing on the ground, then the
+        // rosters underneath — allies on their own row(s), then the monsters
+        // on theirs — in lined-up columns, over as many rows as it takes to
+        // fit the width without wrapping.
+        let barW = 5
+        func short(_ n: String) -> String { String(n.split(separator: " ").first ?? Substring(n)) }
+        let everyone = scene.party + scene.enemies
+        let nameW = min(8, max(3, everyone.map { short($0.name).count }.max() ?? 3))
+        let entryW = nameW + barW + 3            // name, [bar], a space
+        let perRow = max(1, (W + 1) / entryW)
+        let allyRows = (scene.party.count + perRow - 1) / perRow
+        let foeRows = (scene.enemies.count + perRow - 1) / perRow
+        let groundY = H - allyRows - foeRows - 1
+        guard groundY >= 7 else {
+            center("(a taller panel shows the fight)", H / 2, .dimGreen)
+            return g
+        }
         let feetY = groundY - 1
         let chestOffset = 2
 
         for x in 0..<W { g[groundY][x] = Cell(ch: (x * 37 + 11) % 13 == 0 ? "." : "_", color: .dimGreen) }
 
-        // Rosters — a name and a little HP bar for everyone.
-        func entry(_ f: ArenaFighter) -> [(String, TerminalColor)] {
-            let bw = 5
-            let frac = f.maxHP > 0 ? Double(max(0, f.hp)) / Double(f.maxHP) : 0
-            let filled = f.down ? 0 : max(1, Int((frac * Double(bw)).rounded(.up)))
-            let barColor: TerminalColor = f.down ? .gray : (frac > 0.5 ? .green : (frac > 0.25 ? .yellow : .red))
-            let name = String(f.name.split(separator: " ").first ?? Substring(f.name)).prefix(8)
-            return [(String(name), f.down ? .gray : f.color), ("[", .dimGreen),
-                    (String(repeating: "#", count: min(bw, filled)), barColor),
-                    (String(repeating: "-", count: max(0, bw - filled)), .dimGreen), ("]", .dimGreen)]
-        }
-        func roster(_ list: [ArenaFighter], y: Int, alignRight: Bool) {
-            let parts = list.map(entry)
-            let total = parts.reduce(0) { $0 + $1.reduce(0) { $0 + $1.0.count } } + max(0, parts.count - 1)
-            var x = alignRight ? max(0, W - total - 1) : 1
-            for p in parts {
-                for (s, c) in p { put(s, x, y, c, opaque: true); x += s.count }
-                x += 1
+        func drawRoster(_ list: [ArenaFighter], firstRow: Int) {
+            for (i, f) in list.enumerated() {
+                let y = firstRow + i / perRow, x = (i % perRow) * entryW
+                let frac = f.maxHP > 0 ? Double(max(0, f.hp)) / Double(f.maxHP) : 0
+                let filled = f.down ? 0 : min(barW, max(1, Int((frac * Double(barW)).rounded(.up))))
+                let barColor: TerminalColor = f.down ? .gray : (frac > 0.5 ? .green : (frac > 0.25 ? .yellow : .red))
+                let name = String(short(f.name).prefix(nameW)).padding(toLength: nameW, withPad: " ", startingAt: 0)
+                put(name, x, y, f.down ? .gray : f.color, opaque: true)
+                put("[", x + nameW, y, .dimGreen, opaque: true)
+                put(String(repeating: "#", count: filled), x + nameW + 1, y, barColor, opaque: true)
+                put(String(repeating: "-", count: barW - filled), x + nameW + 1 + filled, y, .dimGreen, opaque: true)
+                put("]", x + nameW + 1 + barW, y, .dimGreen, opaque: true)
             }
         }
-        roster(scene.party, y: partyRow, alignRight: false)
-        roster(scene.enemies, y: enemyRow, alignRight: true)
+        drawRoster(scene.party, firstRow: groundY + 1)
+        drawRoster(scene.enemies, firstRow: groundY + 1 + allyRows)
 
         // Who stands where: the move's two fighters while it plays, else
         // whoever's turn it is against the nearest foe.
