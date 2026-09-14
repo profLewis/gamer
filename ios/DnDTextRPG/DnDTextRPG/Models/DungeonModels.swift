@@ -147,6 +147,45 @@ enum RoomType: String, CaseIterable, Codable {
     }
 }
 
+// MARK: - Atlas (map explorer)
+
+/// A lightweight record of one room — enough for the Atlas to draw and
+/// describe it. Built from the live dungeon on demand, and kept (as part of
+/// an AtlasLevel) for every level the party has already left behind.
+struct AtlasRoom: Codable {
+    let id: Int
+    let x: Int
+    let y: Int
+    let symbol: String          // the glyph the Atlas draws for it
+    let name: String
+    let typeName: String
+    let visited: Bool
+    let cleared: Bool
+    let danger: Bool            // an encounter still waiting here
+    let defeated: [String]
+    let exits: [String: Int]    // Direction.rawValue -> room id
+    let lockedExits: [String]
+    let securedExits: [String]
+    let teleportTo: Int?
+    let verticalTo: Int?
+    let verticalDirection: String?
+    let verticalMethod: String?
+    let merchantName: String?
+    let gymName: String?
+    let npcName: String?
+    let treasureLeft: Bool
+    let droppedItems: [String]
+}
+
+/// One dungeon level as the Atlas knows it.
+struct AtlasLevel: Codable {
+    let dungeonName: String
+    let level: Int
+    let rooms: [AtlasRoom]
+    let currentRoomId: Int?     // where you are (nil for a level you've left)
+    let exitRoomId: Int?        // where you left a finished level from
+}
+
 // MARK: - Room
 
 class Room: Identifiable, ObservableObject, Codable {
@@ -596,6 +635,14 @@ class Dungeon: ObservableObject, Codable {
     /// membershipPaid individually.
     @Published var hasMultiGymPass: Bool = false
 
+    /// Atlas snapshots of every earlier level of this adventure, oldest
+    /// first — carried forward each time the party goes deeper, so the
+    /// Atlas can page back through the whole descent.
+    @Published var archivedLevels: [AtlasLevel] = []
+    /// Map Training (bought at a gym) — unlocks the Atlas from Party
+    /// Status. Carried forward to deeper levels along with archivedLevels.
+    @Published var hasCartography: Bool = false
+
     /// True if this dungeon has at least one stairs/rope/levitation link.
     var hasVerticalConnections: Bool {
         rooms.values.contains { $0.verticalDestinationRoomId != nil }
@@ -618,6 +665,7 @@ class Dungeon: ObservableObject, Codable {
 
     enum CodingKeys: String, CodingKey {
         case name, level, rooms, currentRoomId, previousRoomId, nextRoomId, currentFloor, emergencyDropUsed, hasMultiGymPass
+        case archivedLevels, hasCartography
     }
 
     init(name: String, level: Int) {
@@ -648,6 +696,8 @@ class Dungeon: ObservableObject, Codable {
         currentFloor = try container.decodeIfPresent(Int.self, forKey: .currentFloor) ?? 1
         emergencyDropUsed = (try? container.decodeIfPresent(Bool.self, forKey: .emergencyDropUsed)) ?? false
         hasMultiGymPass = (try? container.decodeIfPresent(Bool.self, forKey: .hasMultiGymPass)) ?? false
+        archivedLevels = (try? container.decodeIfPresent([AtlasLevel].self, forKey: .archivedLevels)) ?? []
+        hasCartography = (try? container.decodeIfPresent(Bool.self, forKey: .hasCartography)) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -662,6 +712,8 @@ class Dungeon: ObservableObject, Codable {
         try container.encode(currentFloor, forKey: .currentFloor)
         try container.encode(emergencyDropUsed, forKey: .emergencyDropUsed)
         try container.encode(hasMultiGymPass, forKey: .hasMultiGymPass)
+        try container.encode(archivedLevels, forKey: .archivedLevels)
+        try container.encode(hasCartography, forKey: .hasCartography)
     }
 
     /// Next room ID for dynamic expansion
@@ -1211,6 +1263,113 @@ class Dungeon: ObservableObject, Codable {
         let dx = visited.map { abs($0.x - current.x) }.max() ?? 0
         let dy = visited.map { abs($0.y - current.y) }.max() ?? 0
         return max(dx, dy)
+    }
+
+    // MARK: Atlas
+
+    /// This level as the Atlas sees it. `archived` marks a level being left
+    /// behind: no "you are here", but remembers where you left from.
+    func atlasLevel(hasTrapSense: Bool, archived: Bool = false) -> AtlasLevel {
+        let atlasRooms = rooms.values.sorted { $0.id < $1.id }.map { room -> AtlasRoom in
+            let danger = !room.cleared && room.encounter != nil
+            let symbol: String
+            if danger { symbol = "!" }
+            else if room.merchant != nil { symbol = "M" }
+            else if room.trainer != nil { symbol = "G" }
+            else if room.npc != nil && !(room.npc?.hasBeenTalkedTo ?? true) { symbol = "N" }
+            else if room.verticalDestinationRoomId != nil { symbol = room.verticalDirection == "down" ? "\u{2193}" : "\u{2191}" }
+            else if room.teleportDestinationRoomId != nil { symbol = "*" }
+            else if room.roomType == .trap && !room.trapTriggered && !hasTrapSense { symbol = RoomType.empty.symbol }
+            else { symbol = room.roomType.symbol }
+            return AtlasRoom(
+                id: room.id, x: room.x, y: room.y, symbol: symbol, name: room.name,
+                typeName: room.roomType.rawValue.capitalized, visited: room.visited, cleared: room.cleared,
+                danger: danger, defeated: room.defeatedMonsterNames,
+                exits: Dictionary(uniqueKeysWithValues: room.exits.map { ($0.key.rawValue, $0.value) }),
+                lockedExits: room.exits.keys.filter { room.isLockedShut($0) }.map { $0.rawValue },
+                securedExits: room.secured.map { $0.rawValue },
+                teleportTo: room.teleportDestinationRoomId, verticalTo: room.verticalDestinationRoomId,
+                verticalDirection: room.verticalDirection, verticalMethod: room.verticalMethod,
+                merchantName: room.merchant?.name, gymName: room.trainer?.gymName, npcName: room.npc?.name,
+                treasureLeft: !room.treasure.isEmpty, droppedItems: room.droppedItems.map { $0.name })
+        }
+        return AtlasLevel(dungeonName: name, level: level, rooms: atlasRooms,
+                          currentRoomId: archived ? nil : currentRoomId,
+                          exitRoomId: archived ? currentRoomId : nil)
+    }
+
+    /// The whole level drawn in the same [X]--[Y] style as the main map,
+    /// sized to fit every shown room. `highlight` is the line/column of
+    /// the "[@]" cell, for colouring where you are.
+    static func atlasMapLines(_ level: AtlasLevel, showAll: Bool) -> (lines: [String], highlight: (line: Int, column: Int)?) {
+        let shown = level.rooms.filter { $0.visited || showAll }
+        guard let minX = shown.map({ $0.x }).min(), let maxX = shown.map({ $0.x }).max(),
+              let minY = shown.map({ $0.y }).min(), let maxY = shown.map({ $0.y }).max() else {
+            return (["(nothing mapped yet)"], nil)
+        }
+        let shownIds = Set(shown.map { $0.id })
+        let width = (maxX - minX + 1) * 5
+        let height = (maxY - minY + 1) * 2 - 1
+        var grid = Array(repeating: Array(repeating: Swift.Character(" "), count: width), count: height)
+        func put(_ s: String, _ row: Int, _ col: Int) {
+            guard row >= 0, row < height else { return }
+            for (i, ch) in s.enumerated() where col + i >= 0 && col + i < width { grid[row][col + i] = ch }
+        }
+        for room in shown {
+            let cx = (room.x - minX) * 5, cy = (room.y - minY) * 2
+            let glyph = room.id == level.currentRoomId ? "@" : (room.visited ? room.symbol : " ")
+            put("[\(glyph)]", cy, cx)
+            for dir in Direction.allCases {
+                guard let targetId = room.exits[dir.rawValue] else { continue }
+                // Each passage is drawn once — from its east/south end, or
+                // from this end when the room beyond isn't on the map.
+                if (dir == .west || dir == .north) && shownIds.contains(targetId) { continue }
+                let locked = room.lockedExits.contains(dir.rawValue)
+                let barred = room.securedExits.contains(dir.rawValue)
+                let across = locked ? "KK" : (barred ? "XX" : "--")
+                let upDown = locked ? "K" : (barred ? "X" : "|")
+                switch dir {
+                case .east: put(across, cy, cx + 3)
+                case .west: put(across, cy, cx - 2)
+                case .south: put(upDown, cy + 1, cx + 1)
+                case .north: put(upDown, cy - 1, cx + 1)
+                }
+            }
+        }
+        let title = " ATLAS — Level \(level.level): \(level.dungeonName)"
+        let inner = max(width + 2, title.count + 1, 28)
+        let border = "+" + String(repeating: "-", count: inner) + "+"
+        var lines = [border, "|" + title.padding(toLength: inner, withPad: " ", startingAt: 0) + "|", border]
+        var highlight: (line: Int, column: Int)? = nil
+        let current = shown.first { $0.id == level.currentRoomId }
+        for (row, chars) in grid.enumerated() {
+            lines.append("| " + String(chars).padding(toLength: inner - 1, withPad: " ", startingAt: 0) + "|")
+            if let current = current, row == (current.y - minY) * 2 {
+                highlight = (lines.count - 1, 2 + (current.x - minX) * 5)
+            }
+        }
+        lines.append(border)
+        return (lines, highlight)
+    }
+
+    /// The Atlas's full key — every symbol it can draw, not just nearby ones.
+    static let atlasKeyEntries: [(symbol: String, label: String)] = [
+        ("@", "You are here"), ("!", "Danger / trap"), (".", "Empty"),
+        ("E", "Entry"), ("=", "Hall"), ("#", "Room"), ("$", "Loot"), ("+", "Shrine"),
+        ("L", "Library"), ("B", "Boss"), ("A", "Armoury"), ("P", "Prison"),
+        ("M", "Merchant"), ("G", "Gym"), ("N", "NPC"), ("*", "Teleport pad"),
+        ("\u{2191}", "Way up"), ("\u{2193}", "Way down"), ("[ ]", "Unexplored"), ("--", "Passage"),
+        ("KK", "Locked door"), ("XX", "Barred door"),
+    ]
+
+    static func atlasKeyLines() -> [String] {
+        let cells = atlasKeyEntries.map { $0.symbol.padding(toLength: 3, withPad: " ", startingAt: 0) + " " + $0.label }
+        var out = ["KEY"]
+        for i in stride(from: 0, to: cells.count, by: 2) {
+            let left = cells[i].padding(toLength: 20, withPad: " ", startingAt: 0)
+            out.append(left + (i + 1 < cells.count ? cells[i + 1] : ""))
+        }
+        return out
     }
 
     func getMapDisplay(visibilityRadius: Int = 3, torchLit: Bool = true, compact: Bool = false, verticalRadius: Int? = nil, legendMaxSymbols: Int = mapLegendEntries.count, hasTrapSense: Bool = false, capWidth: Bool = true) -> [String] {

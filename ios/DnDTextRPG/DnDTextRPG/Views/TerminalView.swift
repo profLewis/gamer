@@ -149,19 +149,6 @@ struct TerminalView: View {
                     if !gameEngine.pinnedMapLines.isEmpty {
                         let mapContent = VStack(alignment: .leading, spacing: 2) {
                             ForEach(Array(gameEngine.pinnedMapLines.enumerated()), id: \.element.id) { index, line in
-                                // Landscape's panel is half a line taller than
-                                // portrait's (see its .frame(height:) below) —
-                                // this half-line spacer is what the initial
-                                // scroll actually targets there (see
-                                // scrollMapPastHeader), so the extra height
-                                // shows as breathing room above the grid
-                                // instead of just extra blank space at the
-                                // bottom.
-                                if isLandscape && index == 3 {
-                                    Color.clear
-                                        .frame(height: (gameEngine.mapFontSize * mapScale * 1.3 + 2) / 2)
-                                        .id("landscapeMapHalfLineSpacer")
-                                }
                                 TerminalLineView(line: line, scale: mapScale)
                             }
                         }
@@ -236,7 +223,7 @@ struct TerminalView: View {
                         // ever taller than the space actually available (a
                         // small landscape column, a long Map
                         // Length, larger text scale...).
-                        .frame(height: (CGFloat(gameEngine.mapOnlyLineCount) - (isLandscape ? 0.0 : 0.5)) * (gameEngine.mapFontSize * mapScale * 1.3 + 2))
+                        .frame(height: (CGFloat(gameEngine.mapOnlyLineCount) - 0.5) * (gameEngine.mapFontSize * mapScale * 1.3 + 2))
                         .background(terminalBackground)
                         .contentShape(Rectangle())
                         .onLongPressGesture(minimumDuration: 0.5) {
@@ -599,6 +586,17 @@ struct TerminalView: View {
                 fullMapOverlay
             }
         }
+        #if !os(tvOS)
+        .background(
+            Color.clear
+                .fileExporter(isPresented: $gameEngine.showAtlasPDFExporter,
+                              document: PDFFileDocument(data: gameEngine.pendingAtlasPDF),
+                              contentType: .pdf,
+                              defaultFilename: gameEngine.pendingAtlasPDFName) { result in
+                    gameEngine.handleAtlasExportResult(result)
+                }
+        )
+        #endif
     }
 
     /// Reserves stable vertical space for the button grid so its position
@@ -1051,23 +1049,44 @@ struct TerminalView: View {
                     }
                 }
                 .padding(16)
+                .padding(.top, 44)
             }
-            Button(action: { gameEngine.recentreMap() }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "xmark.circle.fill")
-                    Text("Close")
-                        .font(.system(size: 13 * scale, design: .monospaced))
-                        .fontWeight(.semibold)
+            HStack(spacing: 8) {
+                // Page between the levels you've mapped (the Atlas keeps
+                // every level you've left behind).
+                if gameEngine.atlasLevelCount > 1 {
+                    overlayCapsule("Lv", systemImage: "chevron.left", enabled: gameEngine.atlasLevelIndex > 0) {
+                        gameEngine.atlasShowLevel(offset: -1)
+                    }
+                    overlayCapsule("Lv", systemImage: "chevron.right", enabled: gameEngine.atlasLevelIndex < gameEngine.atlasLevelCount - 1) {
+                        gameEngine.atlasShowLevel(offset: 1)
+                    }
                 }
-                .foregroundColor(.black)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Capsule().fill(Color.green))
+                if gameEngine.atlasExploreAvailable && !gameEngine.atlasScreenActive {
+                    overlayCapsule("Explore", systemImage: "book.closed") { gameEngine.openAtlasFromOverlay() }
+                }
+                overlayCapsule("Close", systemImage: "xmark.circle.fill") { gameEngine.recentreMap() }
             }
-            .buttonStyle(.plain)
             .padding(16)
         }
         .transition(.opacity)
+    }
+
+    private func overlayCapsule(_ title: String, systemImage: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: systemImage)
+                Text(title)
+                    .font(.system(size: 13 * scale, design: .monospaced))
+                    .fontWeight(.semibold)
+            }
+            .foregroundColor(.black)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Capsule().fill(Color.green.opacity(enabled ? 1.0 : 0.35)))
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
     }
 
     // MARK: - Shortcut Positions (for button underlines)
@@ -1218,14 +1237,6 @@ struct TerminalView: View {
     /// never animates either.
     private func scrollMapPastHeader(_ proxy: ScrollViewProxy, isLandscape: Bool) {
         let lines = gameEngine.pinnedMapLines
-        // Landscape targets the half-line spacer injected just before the
-        // first grid row (see mapContent) instead of the row itself, so its
-        // taller panel shows a half-line of breathing room above the grid
-        // rather than just extra blank space at the bottom.
-        if isLandscape, lines.count > 3 {
-            proxy.scrollTo("landscapeMapHalfLineSpacer", anchor: .top)
-            return
-        }
         let target = lines.count > 3 ? lines[3] : lines.first
         if let target {
             proxy.scrollTo(target.id, anchor: .top)
@@ -1343,6 +1354,13 @@ struct TerminalLineView: View {
         }
         if line.isUnderlined {
             result.underlineStyle = .single
+        }
+        if let range = line.highlightRange, range.lowerBound >= 0, range.upperBound <= line.text.count {
+            let chars = result.characters
+            let start = chars.index(chars.startIndex, offsetBy: range.lowerBound)
+            let end = chars.index(chars.startIndex, offsetBy: range.upperBound)
+            result[start..<end].foregroundColor = line.highlightColor.swiftUIColor
+            result[start..<end].font = .system(size: scaledSize, design: .monospaced).bold()
         }
         return result
     }

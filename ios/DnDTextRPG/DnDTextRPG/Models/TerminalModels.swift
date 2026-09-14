@@ -17,6 +17,10 @@ struct TerminalLine: Identifiable {
     let isUnderlined: Bool
     let fontSize: CGFloat
     let isCentered: Bool
+    /// Optional character range drawn in `highlightColor` (bold) — e.g.
+    /// the Atlas's "[@]" so you can spot where you are at a glance.
+    var highlightRange: Range<Int>? = nil
+    var highlightColor: TerminalColor = .yellow
 
     init(_ text: String, color: TerminalColor = .green, bold: Bool = false, underlined: Bool = false, size: CGFloat = 14, centered: Bool = false) {
         self.text = text

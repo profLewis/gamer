@@ -284,6 +284,11 @@ struct FAQData {
             keywords: ["rare goods", "under the counter", "special item", "secret stock"]
         ),
         FAQEntry(
+            question: "Is there a bigger map?",
+            answer: "Cartographers speak of an atlas for those patient enough to press — and hold — the map they already have. The gyms of the deep teach Map Training too, if you can afford it.",
+            keywords: ["atlas", "world map", "bigger map", "whole map", "full map", "map explorer", "cartography", "map training"]
+        ),
+        FAQEntry(
             question: "How do I stop screens moving on by themselves?",
             answer: "Many screens wait for a tap so you can read them; with Auto-Continue on (the default) they also move on after the Info Timeout. To hold them, tap the ⏸ icon top right (next to ✕) while a screen is counting down — or press Space on a Mac. Tap ▶ to resume. To turn it off for good, go to Settings > Gameplay > Auto-Continue Off, or change how long screens wait with Info Timeout.",
             keywords: ["auto-continue", "auto continue", "autocontinue", "pause", "too fast", "timeout", "moves on", "keeps moving"]

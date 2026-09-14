@@ -10,8 +10,10 @@ import Combine
 import AVFoundation
 import GameKit
 import UniformTypeIdentifiers
+import CoreText
 #if os(macOS)
 import AppKit
+import PDFKit
 #else
 import UIKit
 #endif
@@ -39,6 +41,24 @@ struct LogFileDocument: FileDocument {
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         FileWrapper(regularFileWithContents: Data(text.utf8))
+    }
+}
+
+/// The Atlas's "Save as PDF" export (see GameEngine.showAtlasSaveWarning).
+struct PDFFileDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.pdf] }
+    var data: Data
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        data = configuration.file.regularFileContents ?? Data()
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
     }
 }
 #endif
@@ -1044,26 +1064,410 @@ class GameEngine: ObservableObject {
         }
     }
 
-    /// Easter egg triggered by long-pressing the map pane — shows the whole
-    /// explored floor at once (uncapped width, radius sized to fit every
-    /// visited room), scrollable/pannable, instead of just the normal
-    /// radius-limited viewport centered on the player.
+    // MARK: - Atlas (map explorer easter egg)
+    //
+    // Long-pressing the map pane shows the whole level (the old "big map"
+    // easter egg), now with every symbol keyed, you highlighted, and an
+    // Explore button into the Atlas proper: stats, every room you've been
+    // in (tap one for what you know about it), and every earlier level of
+    // the descent. Map Training at a gym unlocks it legitimately from
+    // Party Status.
+
+    /// Index into atlasLevels(): earlier (archived) levels first, the level
+    /// you're on last.
+    @Published var atlasLevelIndex: Int = 0
+    /// True while the Atlas's own screen is up — the map overlay's Explore
+    /// button is then redundant, and closing the overlay redraws it.
+    @Published var atlasScreenActive: Bool = false
+    private var atlasOnBack: (() -> Void)?
+    @Published var showAtlasPDFExporter: Bool = false
+    var pendingAtlasPDF = Data()
+    var pendingAtlasPDFName = "atlas"
+
+    /// Settings > Gameplay > World Map — every room, or only those visited.
+    var atlasShowAllRooms: Bool {
+        get { UserDefaults.standard.bool(forKey: "atlasShowAllRooms") }
+        set { UserDefaults.standard.set(newValue, forKey: "atlasShowAllRooms") }
+    }
+
+    func atlasLevels() -> [AtlasLevel] {
+        guard let dungeon = dungeon else { return [] }
+        return dungeon.archivedLevels + [dungeon.atlasLevel(hasTrapSense: partyHasTrapSense)]
+    }
+
+    var atlasLevelCount: Int { dungeon.map { $0.archivedLevels.count + 1 } ?? 0 }
+
+    /// Explore only from the exploration screen itself — not mid-combat,
+    /// or from a shop/dialogue screen that also shows the map pane.
+    var atlasExploreAvailable: Bool {
+        atlasScreenActive || (dungeon != nil && currentCombat == nil && !directionExits.isEmpty)
+    }
+
+    /// Easter egg triggered by long-pressing the map pane.
     func showExpandedMapOverlay() {
-        guard let dungeon = dungeon else { return }
-        let lines = dungeon.getMapDisplay(visibilityRadius: max(3, dungeon.exploredRadius), torchLit: torchLit,
-                                           legendMaxSymbols: mapLegendMaxSymbols, hasTrapSense: partyHasTrapSense, capWidth: false)
-        let maxLen = lines.map { $0.count }.max() ?? 0
-        mapOverlayLines = lines.map { line in
-            let padded = maxLen > 0 ? line.padding(toLength: maxLen, withPad: " ", startingAt: 0) : line
-            return TerminalLine(padded, color: torchMapColor, size: mapFontSize)
+        guard dungeon != nil else { return }
+        atlasLevelIndex = max(0, atlasLevelCount - 1)
+        presentAtlasMapOverlay()
+    }
+
+    private func presentAtlasMapOverlay() {
+        let levels = atlasLevels()
+        guard levels.indices.contains(atlasLevelIndex) else { return }
+        let map = Dungeon.atlasMapLines(levels[atlasLevelIndex], showAll: atlasShowAllRooms)
+        var out: [TerminalLine] = map.lines.enumerated().map { index, text in
+            var line = TerminalLine(text, color: .brightGreen, size: mapFontSize)
+            if let hl = map.highlight, hl.line == index { line.highlightRange = hl.column..<(hl.column + 3) }
+            return line
         }
+        out.append(TerminalLine(" ", size: mapFontSize))
+        out += Dungeon.atlasKeyLines().map { TerminalLine($0, color: .dimGreen, size: mapFontSize) }
+        mapOverlayLines = out
         mapOverlayVisible = true
     }
 
-    /// "Recentre" — dismiss the full-map overlay back to the normal pinned
-    /// viewport, same as Google Maps' recentre control.
+    func atlasShowLevel(offset: Int) {
+        let count = atlasLevelCount
+        guard count > 1 else { return }
+        atlasLevelIndex = min(max(0, atlasLevelIndex + offset), count - 1)
+        presentAtlasMapOverlay()
+    }
+
+    func openAtlasFromOverlay() {
+        mapOverlayVisible = false
+        if atlasScreenActive, let back = atlasOnBack { showAtlas(onBack: back); return }
+        guard atlasExploreAvailable else { return }
+        showAtlas(onBack: { [weak self] in self?.showExplorationView() })
+    }
+
+    /// Dismiss the full-map overlay (its Close button).
     func recentreMap() {
         mapOverlayVisible = false
+        // The overlay may have paged to another level — keep the Atlas
+        // screen underneath in step with it.
+        if atlasScreenActive, let back = atlasOnBack { showAtlas(onBack: back) }
+    }
+
+    func showAtlas(onBack: @escaping () -> Void) {
+        let levels = atlasLevels()
+        guard !levels.isEmpty else { onBack(); return }
+        atlasLevelIndex = min(max(0, atlasLevelIndex), levels.count - 1)
+        atlasOnBack = onBack
+        atlasScreenActive = true
+        let leave: () -> Void = { [weak self] in
+            self?.atlasScreenActive = false
+            self?.atlasOnBack = nil
+            onBack()
+        }
+        let level = levels[atlasLevelIndex]
+        let isCurrent = atlasLevelIndex == levels.count - 1
+        let showAll = atlasShowAllRooms
+
+        clearTerminal()
+        printTitle("Atlas")
+        printWrapped("Level \(level.level): \(level.dungeonName)\(isCurrent ? " — you are here" : "")", indent: 2, color: .cyan, bold: true)
+        if levels.count > 1 {
+            print("  (\(atlasLevelIndex + 1) of \(levels.count) levels mapped)", color: .dimGreen)
+        }
+        print("")
+        for line in atlasStatsLines(level, showAll: showAll) { printWrapped(line, indent: 2, color: .green) }
+        print("")
+        printWrapped("Tap a room for what you know about it. View Map shows the whole level.", indent: 2, color: .dimGreen)
+        print("")
+
+        let shown = atlasSortedRooms(level, showAll: showAll)
+        var entryLineRanges: [Range<Int>] = []
+        for room in shown {
+            let start = terminalLines.count
+            let here = room.id == level.currentRoomId
+            let color: TerminalColor = here ? .yellow : (!room.visited ? .dimGreen : (room.danger ? .red : .brightGreen))
+            printWrapped(atlasRoomLabel(room, level: level), indent: 2, color: color, bold: here)
+            entryLineRanges.append(start..<terminalLines.count)
+        }
+        if shown.isEmpty { print("  Nothing mapped yet.", color: .dimGreen) }
+        print("")
+
+        var options = ["View Map"]
+        if atlasLevelIndex > 0 { options.append("< Earlier Level") }
+        if atlasLevelIndex < levels.count - 1 { options.append("Later Level >") }
+        #if !os(tvOS)
+        options.append("Save Map")
+        #endif
+        showPaginatedMenuOptions(options, pinned: ["?", "< Back"], handler: { [weak self] idx in
+            guard let self = self, idx >= 0, idx < options.count else { return }
+            switch options[idx] {
+            case "View Map": self.presentAtlasMapOverlay()
+            case "< Earlier Level": self.atlasLevelIndex -= 1; self.showAtlas(onBack: onBack)
+            case "Later Level >": self.atlasLevelIndex += 1; self.showAtlas(onBack: onBack)
+            case "Save Map": self.showAtlasSaveWarning(level: level, onBack: onBack)
+            default: break
+            }
+        }, pinnedHandler: { [weak self] choice in
+            if choice == 0 { self?.showAtlasHelp() } else { leave() }
+        })
+        textLongPressHandler = { [weak self] lineIndex in
+            guard let idx = entryLineRanges.firstIndex(where: { $0.contains(lineIndex) }), idx < shown.count else { return }
+            self?.showAtlasRoom(shown[idx], level: level, onBack: onBack)
+        }
+        closeHandler = leave
+    }
+
+    private func atlasStatsLines(_ level: AtlasLevel, showAll: Bool) -> [String] {
+        let visited = level.rooms.filter { $0.visited }
+        var lines = ["Rooms explored: \(visited.count)" + (showAll ? " of \(level.rooms.count) known" : "")]
+        let slain = visited.reduce(0) { $0 + $1.defeated.count }
+        if slain > 0 {
+            let rooms = visited.filter { !$0.defeated.isEmpty }.count
+            lines.append("Foes defeated: \(slain), in \(rooms) room\(rooms == 1 ? "" : "s")")
+        }
+        let danger = visited.filter { $0.danger }.count
+        lines.append(danger > 0 ? "Still dangerous: \(danger) room\(danger == 1 ? "" : "s") (!)" : "No known dangers left.")
+        func tally(_ label: String, _ test: (AtlasRoom) -> Bool) -> String? {
+            let n = visited.filter(test).count
+            return n > 0 ? "\(n) \(label)\(n == 1 ? "" : "s")" : nil
+        }
+        let found = [
+            tally("merchant") { $0.merchantName != nil },
+            tally("gym") { $0.gymName != nil },
+            tally("teleport pad") { $0.teleportTo != nil },
+            tally("way up or down") { $0.verticalTo != nil },
+            tally("room with loot left") { $0.treasureLeft },
+        ].compactMap { $0 }
+        if !found.isEmpty { lines.append("Found: " + found.joined(separator: ", ")) }
+        return lines
+    }
+
+    /// Where you are first, then danger, then anything notable, then the rest.
+    private func atlasSortedRooms(_ level: AtlasLevel, showAll: Bool) -> [AtlasRoom] {
+        func rank(_ r: AtlasRoom) -> Int {
+            if r.id == level.currentRoomId || r.id == level.exitRoomId { return 0 }
+            if !r.visited { return 5 }
+            if r.danger { return 1 }
+            if r.merchantName != nil || r.gymName != nil || r.npcName != nil || r.teleportTo != nil || r.verticalTo != nil { return 2 }
+            if !r.defeated.isEmpty || r.treasureLeft { return 3 }
+            return 4
+        }
+        return level.rooms.filter { $0.visited || showAll }.sorted { (rank($0), $0.name) < (rank($1), $1.name) }
+    }
+
+    private func atlasRoomLabel(_ room: AtlasRoom, level: AtlasLevel) -> String {
+        let here = room.id == level.currentRoomId
+        let glyph = here ? "@" : (room.visited ? room.symbol : " ")
+        var tags: [String] = []
+        if here { tags.append("you are here") }
+        if room.id == level.exitRoomId { tags.append("you left from here") }
+        if !room.visited {
+            tags.append("unexplored")
+        } else {
+            if room.danger { tags.append("danger") }
+            if !room.defeated.isEmpty { tags.append("\(room.defeated.count) slain") }
+            if room.teleportTo != nil { tags.append("teleport") }
+            if let dir = room.verticalDirection { tags.append(dir == "down" ? "way down" : "way up") }
+            if room.merchantName != nil { tags.append("merchant") }
+            if room.gymName != nil { tags.append("gym") }
+            if room.treasureLeft { tags.append("loot") }
+        }
+        return "[\(glyph)] \(room.name)" + (tags.isEmpty ? "" : " — " + tags.joined(separator: ", "))
+    }
+
+    private func showAtlasRoom(_ room: AtlasRoom, level: AtlasLevel, onBack: @escaping () -> Void) {
+        let byId = Dictionary(uniqueKeysWithValues: level.rooms.map { ($0.id, $0) })
+        let showAll = atlasShowAllRooms
+        func place(_ id: Int?) -> String {
+            guard let id = id, let other = byId[id] else { return "somewhere unknown" }
+            return (other.visited || showAll) ? other.name : "somewhere you haven't been"
+        }
+
+        clearTerminal()
+        printTitle(String(room.name.prefix(26)))
+        print("  Level \(level.level) · \(room.typeName)", color: .dimGreen)
+        print("")
+        if room.id == level.currentRoomId { print("  You are here.", color: .yellow, bold: true) }
+        if room.id == level.exitRoomId { print("  You left this level from here.", color: .yellow) }
+        if !room.visited {
+            printWrapped("Unexplored. Who knows what waits inside?", indent: 2, color: .dimGreen)
+        } else {
+            if room.danger {
+                printWrapped("Something still lurks here!", indent: 2, color: .red)
+            } else if room.cleared {
+                print("  Cleared.", color: .green)
+            }
+            if !room.defeated.isEmpty {
+                var counts: [String: Int] = [:]
+                for name in room.defeated { counts[name, default: 0] += 1 }
+                let text = counts.sorted { $0.key < $1.key }
+                    .map { $0.value > 1 ? "\($0.key) ×\($0.value)" : $0.key }
+                    .joined(separator: ", ")
+                printWrapped("Defeated here: \(text)", indent: 2, color: .green)
+            }
+            if let merchant = room.merchantName { printWrapped("Merchant: \(merchant)", indent: 2, color: .cyan) }
+            if let gym = room.gymName { printWrapped("Gym: \(gym)", indent: 2, color: .cyan) }
+            if let npc = room.npcName { printWrapped("Someone here: \(npc)", indent: 2, color: .cyan) }
+            if room.teleportTo != nil { printWrapped("Teleport pad → \(place(room.teleportTo))", indent: 2, color: .magenta) }
+            if let dir = room.verticalDirection {
+                let how = room.verticalMethod == "rope" ? "A rope leads" : "Stairs lead"
+                printWrapped("\(how) \(dir) → \(place(room.verticalTo))", indent: 2, color: .magenta)
+            }
+            if room.treasureLeft { printWrapped("Treasure may still be here.", indent: 2, color: .yellow) }
+            if !room.droppedItems.isEmpty {
+                printWrapped("You left behind: \(room.droppedItems.joined(separator: ", "))", indent: 2, color: .dimGreen)
+            }
+            let exits = room.exits.keys.sorted().map { dir -> String in
+                room.lockedExits.contains(dir) ? "\(dir) (locked)" : (room.securedExits.contains(dir) ? "\(dir) (barred)" : dir)
+            }
+            if !exits.isEmpty { printWrapped("Exits: \(exits.joined(separator: ", "))", indent: 2, color: .dimGreen) }
+        }
+        print("")
+        showMenu(["View Map", "< Back"])
+        closeHandler = { [weak self] in self?.showAtlas(onBack: onBack) }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 { self.presentAtlasMapOverlay() } else { self.showAtlas(onBack: onBack) }
+        }
+    }
+
+    private func showAtlasHelp() {
+        showInlineHelp {
+            self.printTitle("Atlas — Help")
+            self.print("")
+            self.printWrapped("A cartographer's record of everywhere you've set foot, level by level — including the levels above you. Tap a room for what you know about it; View Map (or holding the map pane) shows the whole level, with you in yellow.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  KEY", color: .cyan, bold: true)
+            for line in Dungeon.atlasKeyLines().dropFirst() { self.print("  " + line, color: .dimGreen) }
+            self.print("")
+            self.printWrapped("Only rooms you've visited are shown, unless Settings > Gameplay > World Map is set to All Rooms.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
+    }
+
+    /// Saving/printing the map works — but the Guild would rather you didn't.
+    private func showAtlasSaveWarning(level: AtlasLevel, onBack: @escaping () -> Void) {
+        clearTerminal()
+        printTitle("Save Map")
+        printWrapped("The Cartographers' Guild clears its throat...", indent: 2, color: .yellow)
+        print("")
+        printWrapped("Saving or printing the map isn't really in the spirit of the game — half the fun is finding your own way (and getting a little lost). But it's your adventure, so you can if you want to.", indent: 2, color: .dimGreen)
+        print("")
+        var options = ["Save as PDF"]
+        #if os(iOS) || os(macOS)
+        options.append("Print")
+        #endif
+        options.append("< Back")
+        showMenu(options)
+        closeHandler = { [weak self] in self?.showAtlas(onBack: onBack) }
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= options.count else { return }
+            switch options[choice - 1] {
+            case "Save as PDF":
+                self.logEvent("Saved the Atlas of Level \(level.level) as a PDF", category: "SYSTEM")
+                self.pendingAtlasPDF = self.atlasPDFData(level: level)
+                self.pendingAtlasPDFName = "atlas-level\(level.level)-\(Self.saveStamp())"
+                self.showAtlas(onBack: onBack)
+                self.showAtlasPDFExporter = true
+            case "Print":
+                self.logEvent("Printed the Atlas of Level \(level.level)", category: "SYSTEM")
+                let pdf = self.atlasPDFData(level: level)
+                self.showAtlas(onBack: onBack)
+                self.printAtlasPDF(pdf)
+            default:
+                self.showAtlas(onBack: onBack)
+            }
+        }
+    }
+
+    private func atlasPDFData(level: AtlasLevel) -> Data {
+        let showAll = atlasShowAllRooms
+        var lines = ["\(level.dungeonName) — Level \(level.level)", ""]
+        lines += atlasStatsLines(level, showAll: showAll)
+        lines.append("")
+        lines += Dungeon.atlasMapLines(level, showAll: showAll).lines
+        lines.append("")
+        lines += Dungeon.atlasKeyLines()
+        lines.append("")
+        lines.append("ROOMS")
+        lines += atlasSortedRooms(level, showAll: showAll).map { String(atlasRoomLabel($0, level: level).prefix(90)) }
+        lines.append("")
+        lines.append("(Not really in the spirit of the game — but it's your map.)")
+        return Self.monospacedPDF(lines: lines)
+    }
+
+    /// Plain monospaced text laid out onto US-Letter PDF pages — the font
+    /// shrinks (within reason) so the widest line, usually the map, fits.
+    static func monospacedPDF(lines: [String]) -> Data {
+        let page = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let margin: CGFloat = 36
+        let data = NSMutableData()
+        guard let consumer = CGDataConsumer(data: data as CFMutableData) else { return Data() }
+        var mediaBox = page
+        guard let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else { return Data() }
+        let longest = CGFloat(max(1, lines.map { $0.count }.max() ?? 1))
+        let fontSize = min(11, max(5, (page.width - 2 * margin) / (longest * 0.61)))
+        let font = CTFontCreateWithName("Menlo" as CFString, fontSize, nil)
+        let lineHeight = fontSize * 1.3
+        let linesPerPage = max(1, Int((page.height - 2 * margin) / lineHeight))
+        var start = 0
+        repeat {
+            context.beginPDFPage(nil)
+            context.textMatrix = .identity
+            var y = page.height - margin - fontSize
+            for text in lines[start..<min(lines.count, start + linesPerPage)] {
+                let attributed = NSAttributedString(string: text, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font])
+                context.textPosition = CGPoint(x: margin, y: y)
+                CTLineDraw(CTLineCreateWithAttributedString(attributed), context)
+                y -= lineHeight
+            }
+            context.endPDFPage()
+            start += linesPerPage
+        } while start < lines.count
+        context.closePDF()
+        return data as Data
+    }
+
+    private func printAtlasPDF(_ data: Data) {
+        #if os(iOS)
+        let controller = UIPrintInteractionController.shared
+        let info = UIPrintInfo(dictionary: nil)
+        info.outputType = .grayscale
+        info.jobName = "Atlas"
+        controller.printInfo = info
+        controller.printingItem = data
+        controller.present(animated: true)
+        #elseif os(macOS)
+        if let document = PDFDocument(data: data),
+           let operation = document.printOperation(for: NSPrintInfo.shared, scalingMode: .pageScaleToFit, autoRotate: true) {
+            operation.run()
+        }
+        #endif
+    }
+
+    /// TerminalView's Atlas .fileExporter completion.
+    func handleAtlasExportResult(_ result: Result<URL, Error>) {
+        switch result {
+        case .success(let url):
+            print("  Map saved to \(url.lastPathComponent).", color: .brightGreen)
+        case .failure(let error):
+            let nsError = error as NSError
+            if nsError.domain == NSCocoaErrorDomain && nsError.code == NSUserCancelledError { return }
+            print("  Couldn't save the map.", color: .red)
+        }
+    }
+
+    /// Map Training (a gym's most expensive lesson) — unlocks the Atlas.
+    private func buyMapTraining(character: Character, trainer: Trainer, room: Room, price: Int) {
+        print("")
+        guard character.gold >= price else {
+            print("  \"The cartographer's art isn't cheap, friend. \(price)gp.\"", color: .red)
+            waitForContinue()
+            inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
+            return
+        }
+        character.gold -= price
+        dungeon?.hasCartography = true
+        printWrapped("\(trainer.name) unrolls a sheet of vellum and spends an hour teaching \(character.name) to keep a proper atlas — every room, every passage, level after level.", indent: 2, color: .brightGreen)
+        printWrapped("(Party Status now has an Atlas.)", indent: 2, color: .yellow)
+        logEvent("\(character.name) paid \(price)gp for Map Training", category: "TRAINING")
+        advanceTime(60)
+        waitForContinue()
+        inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
     }
 
     /// IDs of characters the local player directly controls
@@ -7581,6 +7985,11 @@ class GameEngine: ObservableObject {
         printWrapped("How Continue Adventure and Hall of Fame sort their lists — by date, points, name, or dungeon level.", indent: 2, color: .dimGreen)
         print("")
 
+        print("WORLD MAP:", color: .cyan, bold: true)
+        print("  \(atlasShowAllRooms ? "All Rooms" : "Visited Only")", color: .brightGreen)
+        printWrapped("Whether the world map shows only rooms you've set foot in, or every room. Where's the world map? Cartographers keep their secrets — though a patient hand on the map, or a gym's dearest lesson, may tell.", indent: 2, color: .dimGreen)
+        print("")
+
         print("ROBOT PREFIX:", color: .cyan, bold: true)
         print("  \(robotPrefixEnabled ? "On" : "Off")", color: robotPrefixEnabled ? .brightGreen : .red)
         printWrapped("Whether Computer (AI)-controlled party members get an \"R. \" name prefix — a nod to the robot characters in Isaac Asimov's novels.", indent: 2, color: .dimGreen)
@@ -7619,6 +8028,7 @@ class GameEngine: ObservableObject {
             teleportPadsEnabled ? "Teleport Off" : "Teleport On",
             // Page 3 — System
             "Log Limit", "List Order",
+            atlasShowAllRooms ? "World Map: Visited" : "World Map: All Rooms",
             robotPrefixEnabled ? "Robot Prefix Off" : "Robot Prefix On",
             useMetricUnits ? "Units: Imperial" : "Units: Metric",
         ])
@@ -7677,6 +8087,10 @@ class GameEngine: ObservableObject {
                 self.recordSettingChange(screen: "s:gameplay", key: "teleport_pads_enabled", name: "Teleport")
                 self.teleportPadsEnabled.toggle()
                 self.showGameplaySettings(page: currentPage)
+            } else if selected.hasPrefix("World Map") {
+                self.recordSettingChange(screen: "s:gameplay", key: "atlasShowAllRooms", name: "World Map")
+                self.atlasShowAllRooms.toggle()
+                self.showGameplaySettings(page: currentPage)
             } else if selected == "Log Limit" {
                 self.showLogLimitMenu()
             } else if selected == "List Order" {
@@ -7732,6 +8146,7 @@ class GameEngine: ObservableObject {
 
             self.print("  MAP RADIUS", color: .cyan, bold: true)
             self.printWrapped("How far you can see on the dungeon map. A larger radius reveals more rooms but may spoil surprises. Illuminate your torch to see further!", indent: 2, color: .dimGreen)
+            self.printWrapped("Old cartographers say a patient hand, pressed upon the map, sees further than any torch.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  CARD NAVIGATION", color: .cyan, bold: true)
@@ -8046,7 +8461,7 @@ class GameEngine: ObservableObject {
 
     /// All UserDefaults keys used by the game
     private static let settingsKeys: [String] = [
-        "maxButtonsPerScreen", "longPressDuration", "infoTimeout", "customInfoTimeouts", "autoContinueEnabled",
+        "maxButtonsPerScreen", "longPressDuration", "infoTimeout", "customInfoTimeouts", "autoContinueEnabled", "atlasShowAllRooms",
         "map_radius", "useArrowNavigation", "multiplayer_enabled", "npcs_enabled",
         "multiple_shops_enabled",
         "hit_animations", "voiceMenuEnabled", "iconScaleSetting", "adventureLogLimit",
@@ -16616,6 +17031,12 @@ class GameEngine: ObservableObject {
             self.print("  LONG REST", color: .cyan, bold: true)
             self.printWrapped("8 hours. Full HP, spell slots, abilities. Risks ambush.", indent: 2, color: .dimGreen)
             self.print("")
+            self.print("  EAT & DRINK", color: .cyan, bold: true)
+            self.printWrapped("Share out food and drink from anyone's pack. Everything restores a little HP; hearty food (cheese, jerky, salt pork) makes you feel strong (+1 attack and damage for a few attacks), sweets give a sugary lift (2 temporary HP), and tea or water settles a belly sloshing with too much juice.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  WASH", color: .cyan, bold: true)
+            self.printWrapped("Freshen up (15 minutes). Everyone feels better for it — 1 temporary HP each. Once every few hours is plenty.", indent: 2, color: .dimGreen)
+            self.print("")
             self.print("  AMBUSH RISK", color: .cyan, bold: true)
             self.printWrapped("Monsters may attack! Barricade doors first (long-press Listen).", indent: 2, color: .dimGreen)
             self.print("")
@@ -19758,7 +20179,16 @@ class GameEngine: ObservableObject {
         }
 
         // Open the shop with NPC-specific inventory
-        pickCharacter(title: "Who trades with \(merchant.name)?", cancelLabel: "Don't Trade", showGold: true) { [weak self] character in
+        // 3-bar ? | < Back instead of a separate "Don't Trade" button —
+        // Back returns to the conversation with the trader.
+        pickCharacter(title: "Who trades with \(merchant.name)?", onBack: { [weak self] in self?.talkToNPC() }, showGold: true, helpAction: { [weak self] in
+            self?.showInlineHelp {
+                self?.printTitle("Trading — Help")
+                self?.print("")
+                self?.printWrapped("Pick who does the trading — it's their gold that pays and their pack the goods go into (the gold shown next to each name). Back returns to the conversation.", indent: 2, color: .dimGreen)
+                self?.print("")
+            }
+        }) { [weak self] character in
             guard let self = self else { return }
             self.shopEngine.openShop(character: character, dungeonLevel: dungeon.level, merchant: merchant) { [weak self] in
                 npc.hasTraded = true
@@ -21603,9 +22033,22 @@ class GameEngine: ObservableObject {
                     ? "\(skill.rawValue) (already trained, \(trainer.lessonFee)gp)"
                     : "\(skill.rawValue) (\(trainer.lessonFee)gp)"
             }
-            self.showMenu(options + ["< Done"])
+            // Map Training — the gym's priciest lesson, once per adventure
+            // (it carries to deeper levels): unlocks the Atlas.
+            let mapTrainingPrice = trainer.lessonFee * 8
+            let offersMapTraining = !(self.dungeon?.hasCartography ?? true)
+            if offersMapTraining {
+                self.printWrapped("\(trainer.name) also teaches Map Training — the cartographer's art — for \(mapTrainingPrice)gp. Expensive, but you'll never look at a map the same way again.", indent: 2, color: .dimGreen)
+                self.print("")
+            }
+            let trainingMenu = options + (offersMapTraining ? ["Map Training (\(mapTrainingPrice)gp)"] : [])
+            self.showMenu(trainingMenu + ["< Done"])
             self.menuHandler = { [weak self] choice in
                 guard let self = self else { return }
+                if offersMapTraining && choice == offered.count + 1 {
+                    self.buyMapTraining(character: character, trainer: trainer, room: room, price: mapTrainingPrice)
+                    return
+                }
                 guard choice >= 1 && choice <= offered.count else {
                     self.showExplorationView()
                     return
@@ -21927,6 +22370,9 @@ class GameEngine: ObservableObject {
 
         // Build menu
         var menuOpts = ["Party Review", "Save to Roster", "Adventure Log", "Lore", "AI", "Settings", "?", "< Back"]
+        if dungeon?.hasCartography == true {
+            menuOpts.insert("Atlas", at: menuOpts.firstIndex(of: "Lore") ?? 0)
+        }
         let hasPoisoned = party.contains(where: { $0.isPoisoned })
         if hasPoisoned {
             menuOpts.insert("Cure Poison", at: 0)
@@ -21955,6 +22401,8 @@ class GameEngine: ObservableObject {
                 self.showSavePartyToRosterMenu()
             case "Adventure Log":
                 self.showAdventureLog()
+            case "Atlas":
+                self.showAtlas(onBack: { [weak self] in self?.showPartyStatus() })
             case "Lore":
                 self.showLoreBook()
             case "AI":
@@ -23527,6 +23975,88 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Rest screen "Eat & Drink" — any food or drink anyone in the party is
+    /// carrying, eaten by whoever you choose (see consumeFood).
+    private func showRestMeal() {
+        var entries: [(owner: Character, item: Item)] = []
+        for char in party {
+            for item in char.inventory where ItemCatalog.foodKind(for: item) != nil { entries.append((char, item)) }
+        }
+        clearTerminal()
+        printTitle("Eat & Drink")
+        closeHandler = { [weak self] in self?.rest() }
+        guard !entries.isEmpty else {
+            printWrapped("Nobody has anything to eat or drink. A merchant's counter is the place to fix that.", indent: 2, color: .dimGreen)
+            print("")
+            showMenu(["< Back"])
+            menuHandler = { [weak self] _ in self?.rest() }
+            return
+        }
+        printWrapped("A bite or a drink restores a little HP. Hearty food, sweets and a cup of tea each do a bit more — but too much juice and you'll slosh.", indent: 2, color: .dimGreen)
+        print("")
+        for entry in entries {
+            if let effect = entry.item.potionStats?.effect {
+                printWrapped("\(entry.item.name) (\(shortName(for: entry.owner))): \(effect)", indent: 2, color: .green)
+            }
+        }
+        print("")
+        let labels = entries.map { "\($0.item.name) · \(shortName(for: $0.owner))" }
+        showPaginatedMenuOptions(labels, pinned: ["< Back"], handler: { [weak self] idx in
+            guard let self = self, idx >= 0, idx < entries.count else { return }
+            let entry = entries[idx]
+            let eat: (Character) -> Void = { target in
+                guard let food = self.consumeFood(entry.item, by: target) else { return }
+                entry.owner.removeItem(entry.item)
+                self.print("")
+                for (line, color) in food.lines { self.printWrapped(line, indent: 2, color: color) }
+                self.logEvent(food.summary, category: "REST")
+                self.advanceTime(10)
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in self?.showRestMeal() }
+            }
+            if self.party.count > 1 {
+                self.pickCharacter(title: "Who \(ItemCatalog.consumeVerb(for: entry.item)) the \(entry.item.name)?", onBack: {
+                    self.showRestMeal()
+                }) { target in eat(target) }
+            } else {
+                eat(entry.owner)
+            }
+        }, pinnedHandler: { [weak self] _ in self?.rest() })
+    }
+
+    /// Game time of the party's last wash — a proper scrub only helps so often.
+    private var lastWashGameMinutes: Int?
+
+    /// Rest screen "Wash" — a light-hearted freshen-up worth 1 temporary HP each.
+    private func restWash() {
+        clearTerminal()
+        printTitle("Wash")
+        if let last = lastWashGameMinutes, gameTimeMinutes - last < 240 {
+            printWrapped("You're all still squeaky clean from the last scrub. Any cleaner and the monsters won't recognise you.", indent: 2, color: .dimGreen)
+        } else {
+            lastWashGameMinutes = gameTimeMinutes
+            let flavour = [
+                "splashes cold water on their face and yelps.",
+                "scrubs behind their ears — somebody had to.",
+                "wrings out their socks. The smell improves slightly.",
+                "finds a trickle of clean water and makes the most of it.",
+                "combs out a surprising amount of cobweb.",
+                "tidies up and feels almost civilised again.",
+            ].shuffled()
+            for (i, char) in party.filter({ $0.isConscious }).enumerated() {
+                printWrapped("\(shortName(for: char)) \(flavour[i % flavour.count])", indent: 2, color: .green)
+                char.tempHP = max(char.tempHP, 1)
+            }
+            print("")
+            printWrapped("Feeling fresh: everyone gains 1 temporary HP.", indent: 2, color: .yellow)
+            logEvent("The party washed up during a rest", category: "REST")
+            advanceTime(15)
+        }
+        print("")
+        waitForContinue()
+        inputHandler = { [weak self] _ in self?.rest() }
+    }
+
     func rest() {
         clearTerminal()
 
@@ -23536,21 +24066,23 @@ class GameEngine: ObservableObject {
             print("")
         }
 
-        print("Choose rest type:")
+        print("Choose rest type:", color: .cyan, bold: true)
         if torchLit {
-            print("  Tip: Douse your torch before resting to save fuel.", color: .dimGreen)
+            printWrapped("Tip: Douse your torch before resting to save fuel.", indent: 2, color: .dimGreen)
         }
         // Check for unsecured exits and warn
         if let room = dungeon?.currentRoom {
             let openExits = room.exits.keys.filter { !room.secured.contains($0) }
             if !openExits.isEmpty {
-                print("  Tip: Barricade doors before resting to reduce attack risk.", color: .dimGreen)
+                printWrapped("Tip: Barricade doors before resting to reduce attack risk.", indent: 2, color: .dimGreen)
             } else {
-                print("  All doors barricaded — safer to rest here.", color: .dimGreen)
+                printWrapped("All doors barricaded — safer to rest here.", indent: 2, color: .dimGreen)
             }
         }
 
-        var options: [String] = ["Short Rest", "Long Rest"]
+        printWrapped("While you rest you can also eat, drink or wash — a little well-being goes a long way.", indent: 2, color: .dimGreen)
+
+        var options: [String] = ["Short Rest", "Long Rest", "Eat & Drink", "Wash"]
         if torchLit {
             options.append("Douse Torch")
         } else if partyHasTorch() {
@@ -23579,6 +24111,10 @@ class GameEngine: ObservableObject {
                 self.performRest(isLongRest: false)
             case "Long Rest":
                 self.performRest(isLongRest: true)
+            case "Eat & Drink":
+                self.showRestMeal()
+            case "Wash":
+                self.restWash()
             case "Douse Torch":
                 self.torchLit = false
                 self.print("")
@@ -28605,8 +29141,14 @@ class GameEngine: ObservableObject {
         checkAndShowLevelUp { [weak self] in
             guard let self = self else { return }
 
-            // Generate new dungeon at next level, keeping the party
+            // Generate new dungeon at next level, keeping the party — and
+            // the Atlas: the level being left is archived onto the new one.
+            let previousDungeon = self.dungeon
             self.dungeon = Dungeon(name: dungeonName, level: nextLevel)
+            if let previous = previousDungeon, let next = self.dungeon {
+                next.archivedLevels = previous.archivedLevels + [previous.atlasLevel(hasTrapSense: self.partyHasTrapSense, archived: true)]
+                next.hasCartography = previous.hasCartography
+            }
             self.currentCombat = nil
             self.roomsSinceLastSave = 0
             DMEngine.shared.clearHistory()
