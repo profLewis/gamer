@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "puzzles": [
+    {
+      "id": "pack1-two-coins",
+      "tier": 2,
+      "kind": "logic",
+      "question": "Two coins add up to 15 gold pieces, and one of them is not a 5-gold piece. What are the two coins?",
+      "options": ["A 10-gold piece and a 5-gold piece", "Two 7-and-a-half-gold pieces", "A 15-gold piece and a blank", "It can't be done"],
+      "hints": ["Read it again: ONE of them is not a 5-gold piece.", "What about the other one?"],
+      "source": "Traditional trick question, retold for the game"
+    },
+    {
+      "id": "pack1-three-doors",
+      "tier": 2,
+      "kind": "logic",
+      "question": "Three doors. Behind one is the way out. The red door says: 'The way out is behind the blue door.' The blue door says: 'The way out is not behind me.' The green door says: 'The way out is not behind me.' Only one door tells the truth. Which door leads out?",
+      "options": ["The green door", "The red door", "The blue door", "None of them"],
+      "hints": ["Try each door as the way out, and count how many signs would then be true."],
+      "source": "Written for the game"
+    },
+    {
+      "id": "pack1-torch",
+      "tier": 3,
+      "kind": "word",
+      "question": "Rearrange the letters of CHORT to find something that lights a dark corridor.",
+      "answers": ["torch", "torches"],
+      "hints": ["You'd carry it in your hand, burning.", "It begins with T."],
+      "source": "Written for the game"
+    },
+    {
+      "id": "pack1-key-word",
+      "tier": 3,
+      "kind": "word",
+      "question": "What word can come before HOLE, STONE and NOTE?",
+      "answers": ["key"],
+      "hints": ["You'd need one for a locked door."],
+      "source": "Written for the game"
+    },
+    {
+      "id": "pack1-shield",
+      "tier": 4,
+      "kind": "cryptic",
+      "question": "Hides left, all jumbled: it guards you in battle (6)",
+      "answers": ["shield"],
+      "hints": ["'Left' is often just the letter L.", "Jumble the letters of HIDES and L.", "You carry it on your arm."],
+      "source": "Written for the game"
+    },
+    {
+      "id": "pack1-ogre",
+      "tier": 4,
+      "kind": "cryptic",
+      "question": "Gore spilt by a brute (4)",
+      "answers": ["ogre"],
+      "hints": ["'Spilt' tells you to jumble the letters.", "Rearrange GORE.", "A big, dim-witted monster."],
+      "source": "Written for the game"
+    }
+  ]
+}

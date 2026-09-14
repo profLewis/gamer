@@ -8707,7 +8707,7 @@ class GameEngine: ObservableObject {
         print("  Autosave: \(autosaveInterval.displayName)", color: .dimGreen)
         print("")
 
-        var menuOpts = ["DM Settings", "Change Brain", "Accessibility", "Mood", "Gameplay", "Game Saves"].map { MenuOption($0) }
+        var menuOpts = ["DM Settings", "Change Brain", "Accessibility", "Mood", "Gameplay", "Puzzles", "Game Saves"].map { MenuOption($0) }
         menuOpts.append(MenuOption("Save Settings"))
         menuOpts.append(MenuOption("Reset", tint: .danger))
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -8728,6 +8728,7 @@ class GameEngine: ObservableObject {
             switch text {
             case "DM Settings": self.showDMSettingsSubMenu()
             case "Change Brain": self.showAIProviderMenu(onBack: { [weak self] in self?.showSettings() })
+            case "Puzzles": self.showPuzzleSettings(onBack: { [weak self] in self?.showSettings() })
             case "Accessibility": self.showAccessibilityMenu()
             case "Mood": self.showMusicSettings()
             case "Gameplay": self.showGameplaySettings()
@@ -19366,6 +19367,14 @@ class GameEngine: ObservableObject {
             }
         }
 
+        if let pid = room.puzzleId, !room.riddleResolved, (room.cleared || room.encounter == nil), let puzzle = PuzzleBank.puzzle(id: pid) {
+            menuOpts.append(MenuOption("Solve Puzzle"))
+            actions.append { [weak self] in
+                guard let self = self else { return }
+                if self.roomIsLit { self.presentPuzzle(puzzle, room: room) } else { self.attemptInTheDark("the inscription") { self.presentPuzzle(puzzle, room: room) } }
+            }
+        }
+
         if let idx = room.riddleIndex, !room.riddleResolved, (room.cleared || room.encounter == nil) {
             menuOpts.append(MenuOption("Solve Riddle"))
             actions.append { [weak self] in
@@ -24617,6 +24626,172 @@ class GameEngine: ObservableObject {
                     self.inputHandler = { [weak self] _ in self?.presentRiddle(index: index, room: room, attemptsUsed: attempts) }
                 }
             }
+        }
+    }
+
+    /// A puzzle from PuzzleBank — deeper levels' answer to the riddles:
+    /// logic (pick one), word and cryptic (type it). Hints help, but each
+    /// one takes a quarter off the gold. Wrong answers use up tries; it never
+    /// blocks the way on, it's only a prize.
+    func presentPuzzle(_ puzzle: Puzzle, room: Room, attempts: Int = 0, hintsUsed: Int = 0, shuffled: (options: [String], correctIndex: Int)? = nil) {
+        let maxTries = puzzle.isTyped ? 3 : 2
+        let order = shuffled ?? puzzle.shuffledOptions()
+        clearTerminal()
+        printTitle(Puzzle.kindName(puzzle.tier))
+        print("")
+        printWrapped("\"\(puzzle.question)\"", indent: 2, color: .yellow)
+        if puzzle.tier == 4 && hintsUsed == 0 && attempts == 0 {
+            print("")
+            printWrapped("(A cryptic clue: one part means the answer, the rest is wordplay that builds it. The number is how many letters.)", indent: 2, color: .dimGreen)
+        }
+        for i in 0..<min(hintsUsed, puzzle.hintList.count) {
+            print("")
+            printWrapped("Hint \(i + 1): \(puzzle.hintList[i])", indent: 2, color: .cyan)
+        }
+        if attempts > 0 {
+            print("")
+            print("  \(maxTries - attempts) \(maxTries - attempts == 1 ? "try" : "tries") left.", color: .dimGreen)
+        }
+        print("")
+
+        let hintsLeft = puzzle.hintList.count - hintsUsed
+        let hintLabel = "Hint (\(hintsLeft) left)"
+        let leave = { [weak self] in
+            guard let self = self else { return }
+            self.print("")
+            self.print("  You leave it for now — it'll still be here.", color: .dimGreen)
+            self.waitForContinue()
+            self.inputHandler = { [weak self] _ in self?.showExplorationView() }
+        }
+        let takeHint = { [weak self] in
+            self?.presentPuzzle(puzzle, room: room, attempts: attempts, hintsUsed: hintsUsed + 1, shuffled: order)
+        }
+        let answered: (Bool) -> Void = { [weak self] right in
+            guard let self = self else { return }
+            if right {
+                room.riddleResolved = true
+                let level = self.dungeon?.level ?? 1
+                let base = Dice.rollSum(2, d: 6) * level * (puzzle.tier + 1) / 2
+                let gold = max(1, base * max(1, 4 - hintsUsed) / 4)
+                let reward = ItemCatalog.greaterHealingPotion()
+                self.print("")
+                self.print("  Correct! \"\(puzzle.correctAnswer)\"", color: .brightGreen, bold: true)
+                if let source = puzzle.source, !source.isEmpty { self.printWrapped("(\(source))", indent: 2, color: .dimGreen) }
+                self.print("")
+                self.print("  You find \(gold) gold and \(reward.name) left for the clever.", color: .yellow)
+                self.logEvent("Solved a puzzle (\(puzzle.id)) for \(gold) gold and \(reward.name)", category: "EXPLORE")
+                self.logMultiplayerAction("Solved a puzzle — found \(gold) gold and \(reward.name)")
+                self.showGoldPickupMenu(gold: gold, source: "Puzzle reward", narrative: nil) { [weak self] in
+                    self?.showItemPickupMenu(item: reward, source: "Puzzle reward", narrative: nil) { [weak self] in
+                        self?.showExplorationView()
+                    }
+                }
+            } else if attempts + 1 >= maxTries {
+                room.riddleResolved = true
+                self.print("")
+                self.print("  Wrong. The inscription fades — the answer was \"\(puzzle.correctAnswer)\".", color: .red)
+                self.logEvent("Couldn't solve a puzzle (\(puzzle.id))", category: "EXPLORE")
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in self?.showExplorationView() }
+            } else {
+                self.print("")
+                self.print("  Not quite. Try again.", color: .red)
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.presentPuzzle(puzzle, room: room, attempts: attempts + 1, hintsUsed: hintsUsed, shuffled: order)
+                }
+            }
+        }
+        closeHandler = { [weak self] in self?.showExplorationView() }
+
+        if puzzle.isTyped {
+            var buttons: [String] = []
+            if hintsLeft > 0 { buttons.append(hintLabel) }
+            buttons.append("< Leave it")
+            promptTextWithMenu("  Type your answer:", options: buttons)
+            inputHandler = { text in
+                let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !t.isEmpty else { return }
+                answered(puzzle.accepts(t))
+            }
+            menuHandler = { choice in
+                guard choice >= 1, choice <= buttons.count else { return }
+                if buttons[choice - 1] == hintLabel { takeHint() } else { leave() }
+            }
+        } else {
+            var buttons = order.options
+            if hintsLeft > 0 { buttons.append(hintLabel) }
+            buttons.append("< Leave it")
+            showMenu(buttons)
+            menuHandler = { choice in
+                guard choice >= 1, choice <= buttons.count else { return }
+                if choice - 1 < order.options.count { answered(choice - 1 == order.correctIndex) }
+                else if buttons[choice - 1] == hintLabel { takeHint() }
+                else { leave() }
+            }
+        }
+    }
+
+    /// Settings > Puzzles: what's installed, fetch new ones, suggest one.
+    func showPuzzleSettings(onBack: @escaping () -> Void) {
+        clearTerminal()
+        printTitle("Puzzles")
+        print("")
+        printWrapped("Libraries and shrines pose puzzles, harder the deeper you go: riddles on Levels 1-2, logic puzzles on 3-4, word puzzles on 5-6 (type the answer) and cryptic clues on Level 7. Hints help, but each costs a little of the prize.", indent: 2, color: .green)
+        print("")
+        let pack = PuzzlePackManager.shared
+        let counts = (2...4).map { t in PuzzleBank.all.filter { $0.tier == t }.count }
+        printWrapped("Puzzles: \(RiddleData.all.count) riddles, \(counts[0]) logic, \(counts[1]) word, \(counts[2]) cryptic.", indent: 2, color: .brightGreen)
+        printWrapped(pack.version > 0 ? "Puzzle pack v\(pack.version) installed (checked and signed)." : "Built-in puzzles only — no pack downloaded yet.", indent: 2, color: .dimGreen)
+        print("")
+        printWrapped("New puzzles arrive now and then as a small signed pack. The game checks for one once a day, and only accepts a pack that carries the author's signature.", indent: 2, color: .dimGreen)
+        print("")
+        let opts = ["Check for New Puzzles", "Suggest a Puzzle", "< Back"]
+        showMenu(opts)
+        closeHandler = onBack
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1:
+                self.print("  Checking…", color: .dimGreen)
+                PuzzlePackManager.shared.check { [weak self] message in
+                    self?.print("  \(message)", color: .cyan)
+                }
+            case 2:
+                self.openPuzzleSuggestion()
+                self.print("  Opening a suggestion form on GitHub in your browser…", color: .cyan)
+            default:
+                onBack()
+            }
+        }
+    }
+
+    /// A pre-filled GitHub issue — the puzzle's author fills in the blanks.
+    private func openPuzzleSuggestion() {
+        var c = URLComponents(string: "https://github.com/profLewis/gamer/issues/new")
+        let body = """
+        **Question:**
+
+        **Answer** (plus any other answers that should count):
+
+        **Multiple choice?** If so, list 3 wrong options:
+
+        **Hints** (up to 3, easiest last):
+
+        **Suits levels** (1-2 riddle, 3-4 logic, 5-6 word, 7 cryptic):
+
+        **Source** (your own, or traditional/public domain):
+        """
+        c?.queryItems = [URLQueryItem(name: "title", value: "Puzzle suggestion: "),
+                         URLQueryItem(name: "labels", value: "puzzle-suggestion"),
+                         URLQueryItem(name: "body", value: body)]
+        guard let url = c?.url else { return }
+        DispatchQueue.main.async {
+            #if canImport(UIKit)
+            UIApplication.shared.open(url)
+            #elseif os(macOS)
+            NSWorkspace.shared.open(url)
+            #endif
         }
     }
 

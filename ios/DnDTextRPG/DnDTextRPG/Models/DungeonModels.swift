@@ -241,6 +241,9 @@ class Room: Identifiable, ObservableObject, Codable {
     @Published var merchant: Merchant?      // Shopkeeper present in this room (shop/armoury rooms)
     @Published var riddleIndex: Int?        // Index into RiddleData.all, nil = no riddle challenge here
     @Published var riddleResolved: Bool = false  // Solved OR given up on (button hidden either way)
+    /// A puzzle from PuzzleBank (levels 3+: logic, word, cryptic) — shares
+    /// riddleResolved, since a room poses one or the other.
+    @Published var puzzleId: String? = nil
     @Published var trainer: Trainer?        // Training gym present in this room
     /// Doors with a lock mechanism — direction → a lock id shared by both
     /// rooms on either side of that door. This entry is permanent (the lock
@@ -297,7 +300,7 @@ class Room: Identifiable, ObservableObject, Codable {
         case encounter, treasure, isLocked, searchedFor, trapTriggered
         case hiddenItems, hiddenGold, droppedItems, npc, secured, merchant, trainer
         case defeatedMonsterNames, respawnEligibleMonsterNames
-        case riddleIndex, riddleResolved, doorLockIds, openedLocks
+        case riddleIndex, riddleResolved, puzzleId, doorLockIds, openedLocks
         case teleportDestinationRoomId
         case verticalDestinationRoomId, verticalMethod, verticalDirection, verticalRopeHintRoomName
         case isTorchlit, expansionConsidered
@@ -328,6 +331,7 @@ class Room: Identifiable, ObservableObject, Codable {
         self.merchant = nil
         self.riddleIndex = nil
         self.riddleResolved = false
+        self.puzzleId = nil
         self.trainer = nil
         self.doorLockIds = [:]
         self.openedLocks = []
@@ -368,6 +372,7 @@ class Room: Identifiable, ObservableObject, Codable {
         merchant = try container.decodeIfPresent(Merchant.self, forKey: .merchant)
         riddleIndex = try container.decodeIfPresent(Int.self, forKey: .riddleIndex)
         riddleResolved = try container.decodeIfPresent(Bool.self, forKey: .riddleResolved) ?? false
+        puzzleId = try container.decodeIfPresent(String.self, forKey: .puzzleId)
         trainer = try container.decodeIfPresent(Trainer.self, forKey: .trainer)
         doorLockIds = try container.decodeIfPresent([Direction: UUID].self, forKey: .doorLockIds) ?? [:]
         openedLocks = try container.decodeIfPresent(Set<Direction>.self, forKey: .openedLocks) ?? []
@@ -406,6 +411,7 @@ class Room: Identifiable, ObservableObject, Codable {
         try container.encodeIfPresent(merchant, forKey: .merchant)
         try container.encodeIfPresent(riddleIndex, forKey: .riddleIndex)
         try container.encode(riddleResolved, forKey: .riddleResolved)
+        try container.encodeIfPresent(puzzleId, forKey: .puzzleId)
         try container.encodeIfPresent(trainer, forKey: .trainer)
         try container.encode(doorLockIds, forKey: .doorLockIds)
         try container.encode(openedLocks, forKey: .openedLocks)
@@ -896,7 +902,12 @@ class Dungeon: ObservableObject, Codable {
         // offering a bonus reward for a correct answer.
         for room in rooms.values where room.roomType == .library || room.roomType == .shrine {
             if Int.random(in: 1...100) <= 35 {
-                room.riddleIndex = RiddleData.nextIndex()
+                // Riddles near the top; deeper down, harder puzzles (see PuzzleBank).
+                if level >= 3, let pid = PuzzleBank.nextId(tier: Puzzle.tier(forLevel: level)) {
+                    room.puzzleId = pid
+                } else {
+                    room.riddleIndex = RiddleData.nextIndex()
+                }
             }
         }
 
