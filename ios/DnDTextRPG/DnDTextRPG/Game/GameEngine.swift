@@ -31677,9 +31677,8 @@ class GameEngine: ObservableObject {
 
     private func confirmQuitWithoutSaving() {
         clearTerminal()
-        print("Quit Without Saving?", color: .yellow, bold: true)
-        print("")
-        print("Unsaved progress will be lost. The app will close.", color: .red)
+        printTitle("Quit Without Saving?")
+        printWrapped("Unsaved progress will be lost, and the app will close.", indent: 2, color: .red)
         print("")
 
         showMenu(["Yes, Quit", "No, Stay"])
@@ -31694,17 +31693,28 @@ class GameEngine: ObservableObject {
 
     func confirmExitToMainMenu() {
         clearTerminal()
-        print("Leave This Adventure?", color: .yellow, bold: true)
+        printTitle("Leave Adventure")
+        printWrapped("Leave returns to the Main Menu — the app stays open. Quit closes the app.", indent: 2, color: .cyan)
         print("")
-        printWrapped("LEAVE stays in the app and returns to its Main Menu. QUIT closes the app entirely.", indent: 2, color: .dimGreen)
-        printWrapped("Save & Quit saves your game first. Quit Without Saving and Leave Without Saving both discard anything since your last save.", indent: 2, color: .dimGreen)
-        print("")
+        // One short block per button, in the same order as the buttons.
+        let choices: [(String, String)] = [
+            ("SAVE & LEAVE", "Save this adventure, then go to the Main Menu."),
+            ("LEAVE WITHOUT SAVING", "Go to the Main Menu. Anything since your last save is lost."),
+            ("SAVE & QUIT", "Save this adventure, then close the app."),
+            ("QUIT WITHOUT SAVING", "Close the app. Anything since your last save is lost."),
+        ]
+        for (label, detail) in choices {
+            print("  \(label)", color: .brightGreen, bold: true)
+            printWrapped(detail, indent: 4, color: .dimGreen)
+            print("")
+        }
 
         // "Leave" is the one option here that does NOT call performQuit() —
         // it stays in the app (resetGame() → showMainMenu()). Both "Quit"
         // options close the app via performQuit() — see the note on
         // performQuit() for where the actual app-exit action lives.
         var menuOpts = [
+            MenuOption("Save & Leave", isDefault: true),
             MenuOption("Leave Without Saving", tint: .danger),
             MenuOption("Save & Quit"),
             MenuOption("Quit Without Saving", tint: .danger),
@@ -31717,6 +31727,9 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             let text = menuOpts[choice - 1].text
             switch text {
+            case "Save & Leave":
+                self.performQuickSave()
+                self.resetGame()
             case "Leave Without Saving":
                 self.resetGame()
             case "Save & Quit":
@@ -31740,6 +31753,10 @@ class GameEngine: ObservableObject {
 
             self.print("  LEAVE vs QUIT", color: .cyan, bold: true)
             self.printWrapped("Leave stays in the app — you land back on the Main Menu and can start or continue any adventure. Quit closes the app completely.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  SAVE & LEAVE", color: .cyan, bold: true)
+            self.printWrapped("Saves your game to the current slot, then returns to the Main Menu with the app still open.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  LEAVE WITHOUT SAVING", color: .cyan, bold: true)

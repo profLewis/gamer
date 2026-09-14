@@ -79,6 +79,13 @@ struct TerminalView: View {
     /// for — lets the scroll-to-top handler tell "brand new screen" apart
     /// from "same screen, more content appended" (see its own comment).
     @State private var lastScrolledGeneration: Int = -1
+    #if os(macOS)
+    /// Mac pane sizes, set by dragging the small handles (remembered).
+    /// 0 = map pane tall enough for the whole map box, key included.
+    @AppStorage("macMapPaneHeight") private var macMapPaneHeight: Double = 0
+    @AppStorage("macLeftPaneFraction") private var macLeftPaneFraction: Double = 0.5
+    @State private var macDragBase: CGFloat? = nil
+    #endif
     #if os(iOS)
     @State private var showCustomKeyboard: Bool = false
     @State private var keyboardCollapsedAt: Date = .distantPast
@@ -108,12 +115,7 @@ struct TerminalView: View {
     /// stack occupies the left half exactly as portrait shows it full-width,
     /// while the D-pad/buttons/input occupy the right half.
     private func adaptiveMapTextStack<Content: View>(isLandscape: Bool, @ViewBuilder content: () -> Content) -> some View {
-        #if os(macOS)
-        // Mac: a draggable divider between the map and the text.
-        VSplitView { content() }
-        #else
         VStack(spacing: 0) { content() }
-        #endif
     }
 
     /// The screen's two main regions — (A) map+text, (B) D-pad/buttons/
@@ -121,16 +123,11 @@ struct TerminalView: View {
     /// full-width as portrait always has.
     private func topLevelStack<Content: View>(isLandscape: Bool, @ViewBuilder content: () -> Content) -> some View {
         Group {
-            #if os(macOS)
-            // Mac: a draggable divider between map+text and the controls.
-            HSplitView { content() }
-            #else
             if isLandscape {
                 HStack(alignment: .top, spacing: 0) { content() }
             } else {
                 VStack(spacing: 0) { content() }
             }
-            #endif
         }
     }
 
@@ -234,15 +231,15 @@ struct TerminalView: View {
                         // small landscape column, a long Map
                         // Length, larger text scale...).
                         #if os(macOS)
-                        // Mac: the whole map box (header, grid, full key), in a pane
-                        // the player can resize with the divider beneath it.
-                        .frame(minHeight: 80,
-                               idealHeight: CGFloat(gameEngine.pinnedMapLines.count) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 8,
-                               maxHeight: .infinity)
+                        // Mac: the whole map box (header, grid, full key) unless the
+                        // player has dragged the handle below to another height.
+                        .frame(height: macMapPaneHeight > 0
+                               ? CGFloat(macMapPaneHeight)
+                               : CGFloat(gameEngine.pinnedMapLines.count) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 8)
                         #elseif os(tvOS)
                         .frame(height: CGFloat(gameEngine.pinnedMapLines.count) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 8)
                         #else
-                        .frame(height: (CGFloat(gameEngine.mapOnlyLineCount) - 0.5) * (gameEngine.mapFontSize * mapScale * 1.3 + 2))
+                        .frame(height: (CGFloat(gameEngine.mapOnlyLineCount) - (isLandscape ? 0.0 : 0.5)) * (gameEngine.mapFontSize * mapScale * 1.3 + 2))
                         #endif
                         .background(terminalBackground)
                         .contentShape(Rectangle())
@@ -258,6 +255,20 @@ struct TerminalView: View {
                         // > Panel Size instead, out of the way until wanted.
                         // (No divider line under the map either — the map
                         // panel's own background marks where it ends.)
+                        #if os(macOS)
+                        // Mac: drag this small handle to make the map pane taller
+                        // or shorter (double-click: back to fitting the whole map).
+                        macPaneHandle(vertical: false)
+                            .gesture(DragGesture(minimumDistance: 1)
+                                .onChanged { value in
+                                    let full = CGFloat(gameEngine.pinnedMapLines.count) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 8
+                                    let base = macDragBase ?? (macMapPaneHeight > 0 ? CGFloat(macMapPaneHeight) : full)
+                                    macDragBase = base
+                                    macMapPaneHeight = Double(max(80, min(geometry.size.height - 140, base + value.translation.height)))
+                                }
+                                .onEnded { _ in macDragBase = nil })
+                            .onTapGesture(count: 2) { macMapPaneHeight = 0 }
+                        #endif
                     }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -504,6 +515,22 @@ struct TerminalView: View {
                     // as "the combat window doesn't scroll" — there was
                     // barely any visible height for it to scroll within).
                     .frame(maxWidth: isLandscape ? .infinity : nil, maxHeight: isLandscape ? .infinity : nil, alignment: .leading)
+                    #if os(macOS)
+                    // Mac: map+text width set by the handle on its right edge.
+                    .frame(width: geometry.size.width * CGFloat(macLeftPaneFraction))
+                    .overlay(alignment: .trailing) {
+                        macPaneHandle(vertical: true)
+                            .gesture(DragGesture(minimumDistance: 1)
+                                .onChanged { value in
+                                    let base = macDragBase ?? geometry.size.width * CGFloat(macLeftPaneFraction)
+                                    macDragBase = base
+                                    let width = max(1, geometry.size.width)
+                                    macLeftPaneFraction = Double(min(0.75, max(0.3, (base + value.translation.width) / width)))
+                                }
+                                .onEnded { _ in macDragBase = nil })
+                            .onTapGesture(count: 2) { macLeftPaneFraction = 0.5 }
+                    }
+                    #endif
 
                     // Button row + input bar + custom keyboard — right half
                     // in landscape (see the HStack/VStack split below), full
@@ -689,7 +716,14 @@ struct TerminalView: View {
                                     undoTargetIndex: gameEngine.undoTargetButtonIndex,
                                     redoTargetIndex: gameEngine.redoTargetButtonIndex
                                 )
-                                .frame(minHeight: reservedButtonGridHeight, alignment: .top)
+                                // Portrait: buttons sit at the BOTTOM of their reserved
+                                // space, right on top of the input bar — the unused part
+                                // of the reserve (fewer rows than the max) then sits above
+                                // them, next to the text, instead of as a dead black strip
+                                // between buttons and input. The bottom row (with the
+                                // 3-bar nav cell) stays in the same place on every screen.
+                                .frame(minHeight: reservedButtonGridHeight,
+                                       alignment: gameEngine.isLandscapeOrientation ? .top : .bottom)
                             }
 
                         }
@@ -1112,6 +1146,25 @@ struct TerminalView: View {
         .transition(.opacity)
     }
 
+    #if os(macOS)
+    /// A small grab handle for resizing Mac panes — a short capsule, not a
+    /// full-width line, with the matching resize cursor on hover.
+    private func macPaneHandle(vertical: Bool) -> some View {
+        ZStack {
+            Color.clear
+            Capsule()
+                .fill(terminalDarkGreen.opacity(0.55))
+                .frame(width: vertical ? 3 : 40, height: vertical ? 40 : 3)
+        }
+        .frame(width: vertical ? 10 : nil, height: vertical ? nil : 10)
+        .frame(maxWidth: vertical ? nil : .infinity, maxHeight: vertical ? .infinity : nil)
+        .contentShape(Rectangle())
+        .onHover { inside in
+            if inside { (vertical ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).push() } else { NSCursor.pop() }
+        }
+    }
+    #endif
+
     private func overlayCapsule(_ title: String, systemImage: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 4) {
@@ -1281,6 +1334,18 @@ struct TerminalView: View {
         // Mac/TV show the whole box, header and key included — from the top.
         if let first = lines.first { proxy.scrollTo(first.id, anchor: .top) }
         #else
+        // Landscape's panel is half a line taller — show that extra half
+        // line ABOVE the first grid row (a little of what's above the map)
+        // rather than as blank space below it. scrollTo's anchor lines up
+        // the same relative point of the row and the panel, so solve for
+        // the one that puts the row's top half a line down.
+        if isLandscape, lines.count > 3 {
+            let lineHeight = gameEngine.mapFontSize * scale * 1.3 + 2
+            let panelHeight = CGFloat(gameEngine.mapOnlyLineCount) * lineHeight
+            let k = (lineHeight / 2) / max(1, panelHeight - lineHeight)
+            proxy.scrollTo(lines[3].id, anchor: UnitPoint(x: 0, y: min(1, k)))
+            return
+        }
         let target = lines.count > 3 ? lines[3] : lines.first
         if let target {
             proxy.scrollTo(target.id, anchor: .top)
