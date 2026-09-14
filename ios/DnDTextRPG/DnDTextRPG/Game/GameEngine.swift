@@ -20725,7 +20725,7 @@ class GameEngine: ObservableObject {
                         }
                         self.print("  Make room or choose someone else.", color: .dimGreen)
                         self.print("")
-                        self.showMenu(["Inventory", "Choose Again", "Leave It"])
+                        self.showMenu(["Check Pack", "Choose Again", "Leave It"])
                         self.menuHandler = { [weak self] choice in
                             guard let self = self else { return }
                             if choice == 1 {
@@ -20765,7 +20765,7 @@ class GameEngine: ObservableObject {
                     }
                     self.print("  Make room or leave it.", color: .dimGreen)
                     self.print("")
-                    self.showMenu(["Inventory", "Try Again", "Leave It"])
+                    self.showMenu(["Check Pack", "Try Again", "Leave It"])
                     self.menuHandler = { [weak self] choice in
                         guard let self = self else { return }
                         if choice == 1 {
@@ -20842,20 +20842,51 @@ class GameEngine: ObservableObject {
             }
         }
 
-        // Leave it — item stays in the room
-        options.append("Leave It")
-        actions.append { [weak self] in
+        // "Leave It" is now the 3-bar Back (and the corner ✕) — its old
+        // button slot opens a pack instead, to make room before choosing.
+        let leaveIt: () -> Void = { [weak self] in
             if let room = self?.dungeon?.currentRoom {
                 room.droppedItems.append(item)
             }
             self?.print("  You leave the \(item.name) behind.", color: .dimGreen)
             self?.waitForContinueWithTimeout { onDone() }
         }
+        let reshow: () -> Void = { [weak self] in
+            self?.showItemPickupMenu(item: item, source: source, narrative: nil, onDone: onDone)
+        }
+        options.append(eligible.count > 1 ? "Check Packs" : "Check Pack")
+        actions.append { [weak self] in
+            guard let self = self else { return }
+            if eligible.count > 1 {
+                self.pickCharacter(title: "Whose pack?", from: eligible, onBack: reshow) { char in
+                    self.showInventoryFor(char, onBack: reshow)
+                }
+            } else if let char = eligible.first ?? self.party.first {
+                self.showInventoryFor(char, onBack: reshow)
+            }
+        }
 
-        showMenu(options)
-        menuHandler = { choice in
+        var menuOpts = options.map { MenuOption($0) }
+        menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        menuOpts.append(MenuOption("< Leave", tint: .navigation, compact: true))
+        showMenuOptions(menuOpts)
+        closeHandler = leaveIt
+        menuHandler = { [weak self] choice in
             if choice > 0 && choice <= actions.count {
                 actions[choice - 1]()
+            } else if choice == actions.count + 1 {
+                self?.showInlineHelp {
+                    self?.printTitle("Picking Up — Help")
+                    self?.print("")
+                    self?.printWrapped("Choose who carries the \(item.name). [full] means that adventurer's pack has no free slots; [heavy] means it would take them over their carry weight.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                    self?.printWrapped("Check Pack lets you look inside a pack and drop or use things to make room, then brings you straight back here.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                    self?.printWrapped("< Leave leaves it where it lies — you can come back for it later.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                }
+            } else if choice == actions.count + 2 {
+                leaveIt()
             }
         }
     }
