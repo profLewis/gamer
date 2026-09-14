@@ -1755,3 +1755,358 @@ extension Combat: Codable {
         self.party = fullParty
     }
 }
+
+// MARK: - Combat Arena
+//
+// An animated ASCII picture of the fight — Mac only for now, in the space
+// below the buttons (see GameEngine.combatArenaAvailable and
+// CombatArenaView). Every attack and spell becomes an ArenaMove; the
+// renderer draws the two fighters, the move and its outcome at any moment.
+
+/// One move for the arena to act out.
+struct ArenaMove: Equatable {
+    enum Style: Equatable { case melee, swoop, thrown, arrow, bolt, gadget, breath, spell, heal }
+    let id = UUID()
+    let attackerName: String
+    let targetName: String
+    let attackerFrames: [[String]]
+    let targetFrames: [[String]]
+    let attackerIsParty: Bool
+    let style: Style
+    let hits: Bool
+    let critical: Bool
+    let fumble: Bool
+    let defeated: Bool
+    /// Damage dealt, or HP healed.
+    let amount: Int
+    /// What flies across (spells) — and its colour.
+    let glyph: String
+    let color: TerminalColor
+    let started: Date
+    /// Includes a moment holding the final pose.
+    var duration: Double { defeated ? 2.8 : (critical ? 2.3 : 1.9) }
+}
+
+struct ArenaFighter {
+    let name: String
+    let frames: [[String]]
+    let hp: Int
+    let maxHP: Int
+    let isParty: Bool
+    let down: Bool
+}
+
+struct ArenaScene {
+    var left: ArenaFighter?      // the party's side
+    var right: ArenaFighter?     // the enemy's side
+    var party: [ArenaFighter] = []
+    var enemies: [ArenaFighter] = []
+    var turnName: String?
+    var move: ArenaMove?
+}
+
+enum ArenaRenderer {
+    struct Cell: Equatable {
+        var ch: Swift.Character = " "
+        var color: TerminalColor = .dimGreen
+    }
+
+    static func render(_ scene: ArenaScene, width W: Int, height H: Int, now: Date, reduced: Bool) -> [[Cell]] {
+        var g = [[Cell]](repeating: [Cell](repeating: Cell(), count: max(1, W)), count: max(1, H))
+        func put(_ s: String, _ x: Int, _ y: Int, _ c: TerminalColor, opaque: Bool = false) {
+            guard y >= 0, y < H else { return }
+            var cx = x
+            for ch in s {
+                if cx >= 0 && cx < W && (opaque || ch != " ") { g[y][cx] = Cell(ch: ch, color: c) }
+                cx += 1
+            }
+        }
+        func center(_ s: String, _ y: Int, _ c: TerminalColor) {
+            let text = s.count > W ? String(s.prefix(W)) : s
+            put(text, (W - text.count) / 2, y, c, opaque: true)
+        }
+        guard W >= 24, H >= 9 else {
+            center("(a bigger panel shows the fight)", H / 2, .dimGreen)
+            return g
+        }
+        let t = now.timeIntervalSinceReferenceDate
+
+        // Rows: caption at the top, fighters standing on the ground, and the
+        // two rosters (party, then enemies) underneath.
+        let partyRow = H - 2, enemyRow = H - 1
+        let groundY = H - 3
+        let feetY = groundY - 1
+        let chestOffset = 2
+
+        for x in 0..<W { g[groundY][x] = Cell(ch: (x * 37 + 11) % 13 == 0 ? "." : "_", color: .dimGreen) }
+
+        // Rosters — a name and a little HP bar for everyone.
+        func entry(_ f: ArenaFighter) -> [(String, TerminalColor)] {
+            let bw = 5
+            let frac = f.maxHP > 0 ? Double(max(0, f.hp)) / Double(f.maxHP) : 0
+            let filled = f.down ? 0 : max(1, Int((frac * Double(bw)).rounded(.up)))
+            let barColor: TerminalColor = f.down ? .gray : (frac > 0.5 ? .green : (frac > 0.25 ? .yellow : .red))
+            let name = String(f.name.split(separator: " ").first ?? Substring(f.name)).prefix(8)
+            return [(String(name), f.down ? .gray : (f.isParty ? .brightGreen : .red)), ("[", .dimGreen),
+                    (String(repeating: "#", count: min(bw, filled)), barColor),
+                    (String(repeating: "-", count: max(0, bw - filled)), .dimGreen), ("]", .dimGreen)]
+        }
+        func roster(_ list: [ArenaFighter], y: Int, alignRight: Bool) {
+            let parts = list.map(entry)
+            let total = parts.reduce(0) { $0 + $1.reduce(0) { $0 + $1.0.count } } + max(0, parts.count - 1)
+            var x = alignRight ? max(0, W - total - 1) : 1
+            for p in parts {
+                for (s, c) in p { put(s, x, y, c, opaque: true); x += s.count }
+                x += 1
+            }
+        }
+        roster(scene.party, y: partyRow, alignRight: false)
+        roster(scene.enemies, y: enemyRow, alignRight: true)
+
+        // Who stands where: the move's two fighters while it plays, else
+        // whoever's turn it is against the nearest foe.
+        let move = scene.move
+        let elapsed = move.map { now.timeIntervalSince($0.started) } ?? .infinity
+        let playing = move != nil && elapsed < move!.duration
+        let e: Double = reduced ? 1.05 : elapsed   // Reduced Animations: just the result
+
+        var leftF: (name: String, frames: [[String]], down: Bool)? = scene.left.map { ($0.name, $0.frames, $0.down) }
+        var rightF: (name: String, frames: [[String]], down: Bool)? = scene.right.map { ($0.name, $0.frames, $0.down) }
+        if playing, let m = move {
+            if m.style == .heal {
+                leftF = (m.attackerName, m.attackerFrames, false)
+            } else if m.attackerIsParty {
+                leftF = (m.attackerName, m.attackerFrames, false)
+                rightF = (m.targetName, m.targetFrames, false)
+            } else {
+                leftF = (m.targetName, m.targetFrames, false)
+                rightF = (m.attackerName, m.attackerFrames, false)
+            }
+        }
+        func width(_ frames: [[String]]) -> Int { frames.flatMap { $0 }.map { $0.count }.max() ?? 1 }
+        let lw = leftF.map { width($0.frames) } ?? 0
+        let rw = rightF.map { width($0.frames) } ?? 0
+        var leftHome = max(1, W / 5 - lw / 2)
+        var rightHome = min(W - rw - 1, W - W / 5 - rw / 2)
+        if leftHome + lw + 6 > rightHome { leftHome = 1; rightHome = max(leftHome + lw + 2, W - rw - 1) }
+        let gap = max(0, rightHome - (leftHome + lw))
+        let chestY = feetY - chestOffset
+
+        // Idle breathing: each side cycles its frames at its own pace.
+        func idleFrame(_ frames: [[String]], seed: Double) -> [String] {
+            guard !frames.isEmpty else { return ["?"] }
+            if reduced { return frames[0] }
+            return frames[Int(t * 1.4 + seed) % frames.count]
+        }
+        func frame(_ frames: [[String]], _ i: Int) -> [String] {
+            frames.isEmpty ? ["?"] : frames[min(i, frames.count - 1)]
+        }
+        func deadEyes(_ line: String) -> String {
+            String(line.map { ["o", "O", "@", "."].contains($0) ? "x" : $0 })
+        }
+        func drawSprite(_ lines: [String], x: Int, bottom: Int, color: TerminalColor) {
+            for (i, line) in lines.enumerated() { put(line, x, bottom - lines.count + 1 + i, color) }
+        }
+        func label(_ name: String, x: Int, w: Int, top: Int, color: TerminalColor) {
+            let n = String(name.split(separator: " ").first ?? Substring(name)).prefix(10)
+            put(String(n), x + (w - n.count) / 2, top - 1, color)
+        }
+
+        let ease: (Double) -> Double = { p in let c = min(1, max(0, p)); return c * c * (3 - 2 * c) }
+        let windEnd = 0.3, strikeEnd = 0.8, impactEnd = 1.35, backEnd = 1.8
+
+        var leftX = leftHome, rightX = rightHome
+        var leftY = feetY, rightY = feetY
+        var leftLines = leftF.map { idleFrame($0.frames, seed: 0) } ?? []
+        var rightLines = rightF.map { idleFrame($0.frames, seed: 0.5) } ?? []
+        var leftColor: TerminalColor = (leftF?.down ?? false) ? .gray : .brightGreen
+        var rightColor: TerminalColor = (rightF?.down ?? false) ? .gray : .red
+
+        guard playing, let m = move else {
+            if let l = leftF { drawSprite(leftLines, x: leftX, bottom: leftY, color: leftColor); label(l.name, x: leftX, w: lw, top: leftY - leftLines.count + 1, color: .dimGreen) }
+            if let r = rightF { drawSprite(rightLines, x: rightX, bottom: rightY, color: rightColor); label(r.name, x: rightX, w: rw, top: rightY - rightLines.count + 1, color: .dimGreen) }
+            if let turn = scene.turnName { center("\(turn)'s turn", 0, .cyan) }
+            return g
+        }
+
+        let dir = m.attackerIsParty ? 1 : -1
+        let melee = m.style == .melee || m.style == .swoop
+        // Attacker movement: lean back, lunge (melee) or hold (ranged), return.
+        var attackerDX = 0, attackerDY = 0
+        if m.style != .heal {
+            if e < windEnd {
+                attackerDX = -dir
+            } else if melee && e < strikeEnd {
+                let p = ease((e - windEnd) / (strikeEnd - windEnd))
+                attackerDX = dir * Int(Double(max(0, gap - 1)) * p)
+                if m.style == .swoop { attackerDY = -Int((sin(p * .pi) * 2).rounded()) }
+            } else if melee && e < impactEnd {
+                attackerDX = dir * max(0, gap - 1)
+            } else if melee && e < backEnd {
+                let p = ease((e - impactEnd) / (backEnd - impactEnd))
+                attackerDX = dir * Int(Double(max(0, gap - 1)) * (1 - p))
+            }
+        }
+        let attackerPose = (e >= windEnd && e < impactEnd) ? 1 : 0
+        let impacting = e >= strikeEnd && e < impactEnd + 0.4
+
+        // The target: shaken by a hit, hopping aside from a miss, crumpling if beaten.
+        var targetDX = 0, targetDY = 0
+        if m.style != .heal && e >= strikeEnd {
+            if m.hits && e < impactEnd && !reduced {
+                targetDX = (Int(e * 28) % 2 == 0 ? 1 : -1) * (m.critical ? 2 : 1)
+            } else if !m.hits && !m.fumble && e < impactEnd + 0.2 {
+                targetDX = dir * 2
+                targetDY = -1
+            }
+        }
+        if m.style == .heal {
+            leftLines = frame(m.attackerFrames, e < backEnd ? 2 : 0)
+        } else if m.attackerIsParty {
+            leftLines = frame(m.attackerFrames, attackerPose)
+            leftX += attackerDX; leftY += attackerDY
+            rightX += targetDX; rightY += targetDY
+            rightLines = idleFrame(m.targetFrames, seed: 0.5)
+        } else {
+            rightLines = frame(m.attackerFrames, attackerPose)
+            rightX += attackerDX; rightY += attackerDY
+            leftX += targetDX; leftY += targetDY
+            leftLines = idleFrame(m.targetFrames, seed: 0)
+        }
+        if m.hits && e >= strikeEnd && e < strikeEnd + 0.12 && !reduced {
+            if m.attackerIsParty { rightColor = .white } else { leftColor = .white }
+        }
+        if m.defeated && e >= 1.1 {
+            let collapse = reduced ? 99 : Int((e - 1.1) / 0.18)
+            func crumple(_ lines: [String]) -> [String] {
+                let dead = lines.map(deadEyes)
+                let keep = max(1, dead.count - collapse)
+                return Array(dead.suffix(keep).enumerated().map { i, l in i == 0 && keep < dead.count ? String(repeating: " ", count: 1) + l : l })
+            }
+            if m.attackerIsParty { rightLines = crumple(rightLines); rightColor = .gray } else { leftLines = crumple(leftLines); leftColor = .gray }
+        }
+
+        if let l = leftF {
+            drawSprite(leftLines, x: leftX, bottom: leftY, color: leftColor)
+            label(l.name, x: leftX, w: lw, top: leftY - leftLines.count + 1, color: .dimGreen)
+        }
+        if let r = rightF {
+            drawSprite(rightLines, x: rightX, bottom: rightY, color: rightColor)
+            label(r.name, x: rightX, w: rw, top: rightY - rightLines.count + 1, color: .dimGreen)
+        }
+        if m.defeated && e >= 1.1 + 0.18 * 4 {
+            let (x, w) = m.attackerIsParty ? (rightX, rw) : (leftX, lw)
+            put("x_x", x + w / 2 - 1, feetY - 1, .gray)
+        }
+
+        // Where things fly from and to.
+        let fromX = m.attackerIsParty ? leftHome + lw : rightHome - 1
+        let toX = m.attackerIsParty ? rightHome - 1 : leftHome + lw
+        let span = toX - fromX
+        let targetFrontX = toX
+
+        // The move itself.
+        if !reduced && e >= windEnd && e < impactEnd + 0.3 {
+            let p = min(1.2, (e - windEnd) / (strikeEnd - windEnd))
+            let flightX = fromX + Int(Double(span) * min(p, 1))
+            let pastX = !m.hits && p > 1 ? flightX + dir * Int((p - 1) * 20) : flightX
+            let pastY = !m.hits && p > 1 ? chestY - Int((p - 1) * 10) : chestY
+            switch m.style {
+            case .melee, .swoop:
+                // A blade flash just in front of the attacker at the moment of the blow.
+                if e >= strikeEnd - 0.15 && e < impactEnd {
+                    let bladeX = m.attackerIsParty ? leftX + lw : rightX - 3
+                    let slash = m.attackerIsParty ? ["  /", " / ", "/  "] : ["\\  ", " \\ ", "  \\"]
+                    for (i, s) in slash.enumerated() { put(s, bladeX, chestY - 1 + i, .yellow) }
+                }
+            case .arrow, .bolt:
+                if p <= 1.2 { put(m.style == .arrow ? (dir > 0 ? "-->" : "<--") : (dir > 0 ? "=>" : "<="), pastX, pastY, .yellow) }
+            case .thrown:
+                let spin = ["-", "\\", "|", "/"][Int(e * 20) % 4]
+                if p <= 1.2 { put(spin, pastX, pastY, .yellow) }
+            case .gadget:
+                if p <= 1 { put("o", flightX, chestY - Int(sin(min(p, 1) * .pi) * 3), .orange) }
+                else if m.hits && e < impactEnd { put("(*)", targetFrontX - 1, chestY, .orange); put("\\|/", targetFrontX - 1, chestY - 1, .yellow) }
+            case .breath:
+                if p > 0 {
+                    let reach = Int(Double(span) * min(p, 1))
+                    for k in 0...max(0, abs(reach)) {
+                        let ch: Swift.Character = (k + Int(e * 12)) % 3 == 0 ? "*" : "~"
+                        put(String(ch), fromX + dir * k, chestY + ((k + Int(e * 10)) % 5 == 0 ? -1 : 0), k % 2 == 0 ? .orange : .red)
+                    }
+                }
+            case .spell:
+                if p <= 1.2 {
+                    put(m.glyph, pastX, pastY, m.color)
+                    put("·", pastX - dir, pastY, m.color)
+                    put(".", pastX - 2 * dir, pastY, .dimGreen)
+                }
+            case .heal:
+                break
+            }
+        }
+
+        // Outcome effects.
+        if m.style == .heal {
+            if e >= windEnd {
+                for i in 0..<6 {
+                    let rise = reduced ? i % 3 : Int((e - windEnd - Double(i) * 0.12) * 5)
+                    guard rise >= 0 else { continue }
+                    let px = leftHome - 1 + (i * 3) % (lw + 3)
+                    put(i % 2 == 0 ? "+" : "*", px, feetY - rise, m.amount > 0 ? .brightGreen : .cyan)
+                }
+                if m.amount > 0 { put("+\(m.amount)", leftHome + lw / 2 - 1, max(1, feetY - 5 - Int(min(e, 1.8) * 1.5)), .brightGreen) }
+            }
+        } else if e >= strikeEnd {
+            let topY = (m.attackerIsParty ? rightY - rightLines.count : leftY - leftLines.count)
+            if m.hits {
+                if impacting {
+                    let sparks = m.critical
+                        ? ["\\  |  /", " \\ | / ", "--*#*--", " / | \\ ", "/  |  \\"]
+                        : (Int(e * 10) % 2 == 0 ? ["\\ | /", "- * -", "/ | \\"] : [" \\|/ ", "--*--", " /|\\ "])
+                    let sx = targetFrontX - sparks[0].count / 2
+                    for (i, s) in sparks.enumerated() { put(s, sx, chestY - sparks.count / 2 + i, m.critical ? .yellow : .orange) }
+                }
+                if m.amount > 0 {
+                    let rise = reduced ? 1 : min(4, Int((e - strikeEnd) * 4))
+                    let fx = m.attackerIsParty ? rightX + rw / 2 - 1 : leftX + lw / 2 - 1
+                    put("-\(m.amount)", fx, max(1, topY - 1 - rise), m.attackerIsParty ? .yellow : .red)
+                }
+                if m.critical && (reduced || Int(e * 7) % 2 == 0) {
+                    center("*  CRITICAL HIT!  *", 1, .yellow)
+                }
+            } else if m.fumble {
+                let ax = m.attackerIsParty ? leftX + lw / 2 - 3 : rightX + rw / 2 - 3
+                put("fumble!", ax, max(1, (m.attackerIsParty ? leftY - leftLines.count : rightY - rightLines.count) - 1), .red)
+            } else {
+                let mx = m.attackerIsParty ? rightX + rw / 2 - 2 : leftX + lw / 2 - 2
+                put("miss!", mx, max(1, topY - 1), .dimGreen)
+            }
+        }
+
+        // Caption: the matchup, then what happened.
+        let caption: String
+        let captionColor: TerminalColor
+        if m.style == .heal {
+            caption = m.amount > 0 ? "\(m.attackerName) heals \(m.targetName) +\(m.amount)" : "\(m.attackerName) casts a blessing"
+            captionColor = .brightGreen
+        } else if e < strikeEnd {
+            caption = "\(m.attackerName) -> \(m.targetName)"
+            captionColor = .cyan
+        } else if m.defeated {
+            caption = m.attackerIsParty ? "\(m.targetName) is defeated!" : "\(m.targetName) falls!"
+            captionColor = .yellow
+        } else if m.hits {
+            caption = "\(m.critical ? "CRIT" : "HIT") \(m.targetName) -\(m.amount)"
+            captionColor = m.attackerIsParty ? .brightGreen : .red
+        } else if m.fumble {
+            caption = "\(m.attackerName) fumbles!"
+            captionColor = .red
+        } else {
+            caption = "\(m.attackerName) misses"
+            captionColor = .dimGreen
+        }
+        center(caption, 0, captionColor)
+        return g
+    }
+}

@@ -640,6 +640,13 @@ struct TerminalView: View {
                             dpadAndMenuButtonsBlock
                             inputBarAndKeyboardBlock
                         }
+                        // Combat Arena: the fight acted out in ASCII in the space
+                        // below the buttons (Mac only for now — see
+                        // GameEngine.combatArenaAvailable).
+                        if isLandscape && gameEngine.showCombatArena {
+                            CombatArenaView(engine: gameEngine, scale: scale)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
                     }
                     .frame(maxWidth: isLandscape ? .infinity : nil, alignment: .top)
                 }
@@ -1656,6 +1663,56 @@ struct TerminalView: View {
             isInputFocused = false
             gameEngine.handleContinue()
         }
+    }
+}
+
+/// The Combat Arena panel: redraws ArenaRenderer's grid many times a second.
+struct CombatArenaView: View {
+    let engine: GameEngine
+    let scale: CGFloat
+
+    var body: some View {
+        GeometryReader { geo in
+            let fontSize = 13 * scale
+            let charWidth = fontSize * 0.602
+            let lineHeight = (fontSize * 1.22).rounded(.up)
+            let cols = max(10, Int((geo.size.width - 12) / charWidth))
+            let rows = max(4, Int((geo.size.height - 8) / lineHeight))
+            TimelineView(.periodic(from: .now, by: engine.reduceAnimations ? 0.5 : 1.0 / 24)) { context in
+                let grid = ArenaRenderer.render(engine.arenaScene(), width: cols, height: rows, now: context.date, reduced: engine.reduceAnimations)
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(0..<grid.count, id: \.self) { r in
+                        Text(Self.attributed(grid[r]))
+                            .font(.system(size: fontSize, design: .monospaced))
+                            .lineLimit(1)
+                            .fixedSize()
+                            .frame(height: lineHeight)
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            }
+        }
+        .background(Color.black)
+        .clipped()
+        // The text log says the same thing in words.
+        .accessibilityHidden(true)
+    }
+
+    static func attributed(_ row: [ArenaRenderer.Cell]) -> AttributedString {
+        var out = AttributedString()
+        var i = 0
+        while i < row.count {
+            var j = i
+            var run = ""
+            while j < row.count && row[j].color == row[i].color { run.append(row[j].ch); j += 1 }
+            var part = AttributedString(run)
+            part.foregroundColor = row[i].color.swiftUIColor
+            out += part
+            i = j
+        }
+        return out
     }
 }
 

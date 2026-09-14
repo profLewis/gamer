@@ -723,6 +723,8 @@ class GameEngine: ObservableObject {
     @Published var party: [Character] = []
     @Published var dungeon: Dungeon?
     @Published var currentCombat: Combat?
+    /// The move the Combat Arena is acting out (see ArenaRenderer).
+    @Published var arenaMove: ArenaMove?
 
     // Time & history
     @Published var gameTimeMinutes: Int = 360  // Start at Day 1, 6:00 AM
@@ -2807,6 +2809,7 @@ class GameEngine: ObservableObject {
         case "blinkingCursorEnabled": return blinkingCursorEnabled ? "On" : "Off"
         case "map_radius": return "\(mapRadius)"
         case "mac_map_rows": return "\(macMapRows)"
+        case "combatArena": return combatArenaEnabled ? "On" : "Off"
         case "maxButtonsPerScreen": return "\(maxButtonsPerScreen)"
         case "autosave_interval": return autosaveInterval.displayName
         case "dmAdLibLevel": return DMEngine.shared.adLibLevel.displayName
@@ -2926,7 +2929,7 @@ class GameEngine: ObservableObject {
                 let compact = text == "?" || text == "?\u{0338}" || text == "<<" || text == ">>" || text == "< Back"
                 return MenuOption(text, isDefault: index == defaultIndex, tint: tint, compact: compact)
             }
-            self.currentMenuOptions = self.withForwardOption(mapped)
+            self.currentMenuOptions = self.withForwardOption(Self.applyAlwaysDisabled(mapped))
             self.awaitingTextInput = false
             self.awaitingContinue = false
             self.fullScreenTapToContinue = false
@@ -2955,7 +2958,7 @@ class GameEngine: ObservableObject {
                 }
                 return opt
             }
-            self.currentMenuOptions = self.withForwardOption(mapped)
+            self.currentMenuOptions = self.withForwardOption(Self.applyAlwaysDisabled(mapped))
             self.awaitingTextInput = false
             self.awaitingContinue = false
             self.fullScreenTapToContinue = false
@@ -3293,7 +3296,7 @@ class GameEngine: ObservableObject {
                 }
                 return opt
             }
-            self.currentMenuOptions = self.withForwardOption(mapped)
+            self.currentMenuOptions = self.withForwardOption(Self.applyAlwaysDisabled(mapped))
             self.awaitingTextInput = false
             self.awaitingContinue = false
             self.fullScreenTapToContinue = false
@@ -3335,7 +3338,7 @@ class GameEngine: ObservableObject {
                 let compact = text == "?" || text == "?\u{0338}" || text == "<<" || text == ">>" || text == "< Back"
                 return MenuOption(text, isDefault: index == 0, tint: Self.autoTint(text), compact: compact)
             }
-            self.currentMenuOptions = self.withForwardOption(mapped)
+            self.currentMenuOptions = self.withForwardOption(Self.applyAlwaysDisabled(mapped))
             self.awaitingTextInput = true
             self.awaitingContinue = false
             self.fullScreenTapToContinue = false
@@ -8089,6 +8092,107 @@ class GameEngine: ObservableObject {
         #endif
     }
 
+    // MARK: Combat Arena
+    //
+    // The fight acted out in ASCII below the buttons. Built for every
+    // platform but only offered on the Mac for now — flip
+    // combatArenaAvailable to bring it to the app.
+    static var combatArenaAvailable: Bool {
+        #if os(macOS)
+        return true
+        #else
+        return false
+        #endif
+    }
+    var combatArenaEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: "combatArena") == nil ? true : UserDefaults.standard.bool(forKey: "combatArena") }
+        set { UserDefaults.standard.set(newValue, forKey: "combatArena"); objectWillChange.send() }
+    }
+    /// Settings > Gameplay's arena button where it isn't offered yet —
+    /// shown greyed out, as a hint of what's coming.
+    static let arenaUnavailableLabel = "Arena (Mac only)"
+    /// Buttons that always show greyed out (can't be pressed).
+    static let alwaysDisabledOptionTexts: Set<String> = combatArenaAvailable ? [] : [arenaUnavailableLabel]
+    static func applyAlwaysDisabled(_ options: [MenuOption]) -> [MenuOption] {
+        guard !alwaysDisabledOptionTexts.isEmpty else { return options }
+        return options.map { o in
+            guard alwaysDisabledOptionTexts.contains(o.text) else { return o }
+            return MenuOption(o.text, isDefault: false, isDisabled: true, isAlert: o.isAlert, tint: o.tint, compact: o.isCompactNav, displayNumber: o.displayNumber)
+        }
+    }
+    var showCombatArena: Bool { Self.combatArenaAvailable && combatArenaEnabled && currentCombat != nil && gameState == .combat }
+
+    func arenaScene() -> ArenaScene {
+        guard let combat = currentCombat else { return ArenaScene(move: arenaMove) }
+        let partyF = party.map { ArenaFighter(name: $0.name, frames: $0.characterClass.asciiArtFrames, hp: $0.currentHP, maxHP: $0.maxHP, isParty: true, down: !$0.isConscious) }
+        let enemies = combat.encounter.monsters.map { ArenaFighter(name: $0.name, frames: $0.type.asciiArtFrames, hp: $0.currentHP, maxHP: $0.maxHP, isParty: false, down: !$0.isAlive) }
+        let turn = combat.currentCombatant
+        let left = (turn?.isPlayer == true ? partyF.first { $0.name == turn?.name && !$0.down } : nil) ?? partyF.first { !$0.down } ?? partyF.first
+        let right = (turn?.isPlayer == false ? enemies.first { $0.name == turn?.name && !$0.down } : nil) ?? enemies.first { !$0.down }
+        return ArenaScene(left: left, right: right, party: partyF, enemies: enemies, turnName: turn?.name, move: arenaMove)
+    }
+
+    private func arenaFrames(for name: String, fallback: [String]) -> [[String]] {
+        if let c = party.first(where: { $0.name == name }) { return c.characterClass.asciiArtFrames }
+        if let m = currentCombat?.encounter.monsters.first(where: { $0.name == name }) { return m.type.asciiArtFrames }
+        return [fallback]
+    }
+
+    /// A weapon attack, as the arena shows it — the style from the weapon
+    /// and class (or, for monsters, what sort of creature it is).
+    private func arenaPlayAttack(_ r: AttackReport) {
+        guard showCombatArena else { return }
+        let wn = r.weaponName.lowercased()
+        var style: ArenaMove.Style = .melee
+        if r.isPlayerAttack {
+            let cls = party.first { $0.name == r.attackerName }?.characterClass
+            if wn.contains("crossbow") { style = .bolt }
+            else if wn.contains("bow") { style = .arrow }
+            else if wn.contains("dart") || wn.contains("sling") || wn.contains("javelin") || (wn.contains("dagger") && (cls == .rogue || cls == .thief)) { style = .thrown }
+            else if cls == .engineer && !wn.contains("hammer") && !wn.contains("sword") && !wn.contains("axe") { style = .gadget }
+        } else {
+            let mn = r.attackerName.lowercased()
+            if ["dragon", "wyrm", "drake", "hell hound", "salamander"].contains(where: mn.contains) { style = .breath }
+            else if ["bat", "stirge", "harpy", "wasp", "hawk", "wyvern", "imp", "ghost", "wraith", "spectre", "specter", "will-o"].contains(where: mn.contains) { style = .swoop }
+            else if mn.contains("archer") || wn.contains("bow") { style = .arrow }
+        }
+        arenaMove = ArenaMove(attackerName: r.attackerName, targetName: r.targetName,
+                              attackerFrames: arenaFrames(for: r.attackerName, fallback: r.attackerArt),
+                              targetFrames: arenaFrames(for: r.targetName, fallback: r.defenderArt),
+                              attackerIsParty: r.isPlayerAttack, style: style, hits: r.hits, critical: r.isCritical,
+                              fumble: r.isCriticalMiss, defeated: r.targetDefeated || r.targetUnconscious,
+                              amount: r.hits ? (r.totalDamage ?? 0) : 0, glyph: "*", color: .yellow, started: Date())
+    }
+
+    /// A spell, as the arena shows it — coloured by its element.
+    private func arenaPlaySpell(_ r: SpellReport) {
+        guard showCombatArena else { return }
+        let casterIsParty = party.contains { $0.name == r.casterName }
+        let key = ((r.damageType ?? "") + " " + r.spellName).lowercased()
+        var glyph = "o", color: TerminalColor = .magenta
+        if ["fire", "flame", "burn", "scorch"].contains(where: key.contains) { glyph = "*"; color = .orange }
+        else if ["cold", "frost", "ice"].contains(where: key.contains) { glyph = "*"; color = .cyan }
+        else if ["lightning", "thunder", "shock", "storm"].contains(where: key.contains) { glyph = "z"; color = .yellow }
+        else if ["radiant", "sacred", "holy", "guiding"].contains(where: key.contains) { glyph = "+"; color = .yellow }
+        else if ["necrotic", "poison", "acid", "chill"].contains(where: key.contains) { glyph = "%"; color = .magenta }
+        else if ["force", "missile"].contains(where: key.contains) { glyph = casterIsParty ? ">" : "<"; color = .cyan }
+        let supportive = r.spellType == .healing || r.spellType == .buff || r.spellType == .utility
+        let target = supportive ? (r.targetName ?? r.casterName) : (r.targetsHit.first ?? r.targetName ?? r.targetStatuses.first?.name ?? "")
+        let hits: Bool
+        switch r.spellType {
+        case .attack: hits = r.hits ?? false
+        case .autoHit: hits = true
+        case .savingThrow: hits = !r.targetsHit.isEmpty || r.totalDamage > 0
+        default: hits = true
+        }
+        arenaMove = ArenaMove(attackerName: r.casterName, targetName: target,
+                              attackerFrames: arenaFrames(for: r.casterName, fallback: [" o ", "/|\\", "/ \\"]),
+                              targetFrames: arenaFrames(for: target, fallback: [" ? "]),
+                              attackerIsParty: casterIsParty, style: supportive ? .heal : .spell, hits: hits, critical: r.isCritical,
+                              fumble: false, defeated: !r.targetsDefeated.isEmpty,
+                              amount: supportive ? r.healAmount : r.totalDamage, glyph: glyph, color: color, started: Date())
+    }
+
     var gameTimeLimit: Int {  // 0 = off, value in game-minutes
         get { UserDefaults.standard.integer(forKey: "gameTimeLimit") }
         set { UserDefaults.standard.set(newValue, forKey: "gameTimeLimit") }
@@ -8767,6 +8871,16 @@ class GameEngine: ObservableObject {
         printWrapped("Whether the D-pad's teleport icon appears in rooms with an active pad.", indent: 2, color: .dimGreen)
         print("")
 
+        print("COMBAT ARENA:", color: .cyan, bold: true)
+        if Self.combatArenaAvailable {
+            print("  \(combatArenaEnabled ? "On" : "Off")", color: combatArenaEnabled ? .brightGreen : .red)
+            printWrapped("During a fight, the space below the buttons acts it out in ASCII — lunges, arrows, thrown daggers, spells in their colours, sparks, damage rising off the struck, dodges and the fallen — with everyone's health along the bottom.", indent: 2, color: .dimGreen)
+        } else {
+            print("  Mac only (for now)", color: .gray)
+            printWrapped("On a Mac, fights are acted out in animated ASCII beside the text. Coming to this device in a future update.", indent: 2, color: .dimGreen)
+        }
+        print("")
+
         // Grouped: Interface (5) → Features (6/7) → System (6)
         var options = [
             // Page 1 — Interface
@@ -8789,6 +8903,7 @@ class GameEngine: ObservableObject {
             multipleShopsEnabled ? "Multi-Shop Off" : "Multi-Shop On",
             blinkingCursorEnabled ? "Cursor Off" : "Cursor On",
             teleportPadsEnabled ? "Teleport Off" : "Teleport On",
+            Self.combatArenaAvailable ? (combatArenaEnabled ? "Arena Off" : "Arena On") : Self.arenaUnavailableLabel,
             // Page 3 — System
             "Log Limit", "List Order",
             atlasShowAllRooms ? "World Map: Visited" : "World Map: All Rooms",
@@ -8828,6 +8943,12 @@ class GameEngine: ObservableObject {
                 self.showButtonLimitMenu()
             } else if selected == "Long Press" {
                 self.showLongPressMenu()
+            } else if selected.hasPrefix("Arena") {
+                // Greyed out where it isn't offered yet (never pressable there).
+                guard Self.combatArenaAvailable else { return }
+                self.recordSettingChange(screen: "s:gameplay", key: "combatArena", name: "Arena")
+                self.combatArenaEnabled.toggle()
+                self.showGameplaySettings(page: currentPage)
             } else if selected.hasPrefix("NPCs") {
                 self.recordSettingChange(screen: "s:gameplay", key: "npcs_enabled", name: "NPCs")
                 self.npcsEnabled.toggle()
@@ -9289,7 +9410,7 @@ class GameEngine: ObservableObject {
         "speechEnabled", "companionVoiceMode",
         "menu_melody", "exploration_melody", "combat_melody", "chat_melody",
         "gameTimeLimit", "useCustomKeyboard", "undoRedoEnabled",
-        "justDMMode", "mac_map_rows",
+        "justDMMode", "mac_map_rows", "combatArena",
     ]
 
     private func exportSettings() -> [String: Any] {
@@ -10528,6 +10649,7 @@ class GameEngine: ObservableObject {
         #else
         add("map_radius", "Map Length", current: "\(mapRadius)", dflt: "1")
         #endif
+        if Self.combatArenaAvailable { add("combatArena", "Combat Arena", current: combatArenaEnabled ? "On" : "Off", dflt: "On") }
         add("npcs_enabled", "NPCs", current: npcsEnabled ? "On" : "Off", dflt: "Off")
         add("multiple_shops_enabled", "Multi-Shop", current: multipleShopsEnabled ? "On" : "Off", dflt: "On")
         add("multiplayer_enabled", "Multiplayer", current: multiplayerEnabled ? "On" : "Off", dflt: "Off")
@@ -27817,6 +27939,7 @@ class GameEngine: ObservableObject {
     }
 
     func displayAttackReport(_ report: AttackReport, completion: @escaping () -> Void) {
+        arenaPlayAttack(report)
         let attackColor: TerminalColor = report.isPlayerAttack ? .brightGreen : .red
 
         // Show animated battle scene
@@ -28042,6 +28165,7 @@ class GameEngine: ObservableObject {
         }
 
         currentCombat = Combat(party: party, encounter: balanced)
+        arenaMove = nil
         isHandlingCombatVictory = false
         if self.musicEnabled { SoundManager.shared.startMusic(.combat, preference: self.combatMelodyChoice) }
         SoundManager.shared.playBattleStart()
@@ -29327,6 +29451,7 @@ class GameEngine: ObservableObject {
     }
 
     func displaySpellReport(_ report: SpellReport, completion: @escaping () -> Void) {
+        arenaPlaySpell(report)
         // Every spell cast — the player's own and companions' — gets its whoosh here.
         SoundManager.shared.playSpellCast()
         logMultiplayerSpellReport(report)
