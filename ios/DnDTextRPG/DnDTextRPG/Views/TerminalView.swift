@@ -842,7 +842,7 @@ struct TerminalView: View {
                             // While a screen is counting down, the cursor becomes the
                             // pause control: a blinking ⏸ (tap to pause), or while
                             // paused a blinking amber ▶ (tap to carry on).
-                            if gameEngine.awaitingContinue && gameEngine.autoContinueCountdownAvailable && gameEngine.autoCountdownEnd != nil {
+                            if gameEngine.awaitingContinue && gameEngine.autoContinueCountdownAvailable && gameEngine.autoCountdownEnd != nil && gameEngine.showCountdownControl {
                                 let paused = gameEngine.autoContinuePaused
                                 TimelineView(.periodic(from: .now, by: 0.53)) { context in
                                     let visible = Int(context.date.timeIntervalSinceReferenceDate / 0.53) % 2 == 0
@@ -866,7 +866,7 @@ struct TerminalView: View {
                                 }
                             }
 
-                            if gameEngine.awaitingContinue && gameEngine.autoContinueCountdownAvailable && gameEngine.autoCountdownEnd != nil {
+                            if gameEngine.awaitingContinue && gameEngine.autoContinueCountdownAvailable && gameEngine.autoCountdownEnd != nil && gameEngine.showCountdownControl {
                                 autoCountdownBar
                             }
 

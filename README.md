@@ -137,7 +137,29 @@ Green-on-black terminal aesthetic with monospaced text, ASCII art for characters
 - Custom on-screen keyboard
 - Undo/redo for character editing and settings
 - macOS keyboard shortcuts (arrow keys, WASD, letter keys for menus)
-- Long-press shortcuts throughout the UI
+- Long-press shortcuts throughout the UI (e.g. long-press Quit Without Saving or Delete to skip "are you sure?")
+- Auto-Continue with a countdown hourglass by the `>` prompt — see below
+
+## Auto-Continue & the Countdown Hourglass
+
+Many screens — a combat round, a search result, a merchant's reply — are *tap-to-continue*: nothing happens until you tap. With **Auto-Continue** on (the default), those screens also move on by themselves after a short wait: the **Info Timeout** (5 seconds by default; other tap-to-continue screens wait twice that).
+
+While a screen is counting down you'll see a small **hourglass** beside the `>` prompt — it turns over, and a thin ring around it shows the time left — and the cursor becomes **⏸**. You can:
+
+- **Tap anywhere** on the screen to continue straight away.
+- **Wait** — when the hourglass runs out, the game moves on by itself.
+- **Tap the hourglass (or ⏸)** to pause. It turns **orange**, the cursor becomes **▶**, and *paused* pulses gently beside it; the screen now waits for you. Tap again to let it carry on from where it stopped. A **?** beside *paused* explains how to carry on.
+- **Long-press the hourglass** to hurry the countdown along.
+- On a Mac, press **Space** to pause or resume.
+
+**Why we do it.** Auto-Continue keeps the game flowing if you glance away, play one-handed, or listen with speaker mode — you're never stuck on a screen. But a screen that moves on by itself can also snatch text away before you've finished reading it: a long combat report, a merchant's counter-offer, a trap you want to think about. The hourglass makes the timer *visible*, so a screen never moves on as a surprise, and it puts pause right where your eyes already are — the `>` prompt — instead of burying it in Settings. That matters most if you read at your own pace, get interrupted, use a screen reader or large text, or simply want to savour the story.
+
+**Settings** (Settings > Gameplay):
+
+- **Auto-Continue** On/Off — Off means every such screen waits for your tap.
+- **Info Timeout** — how long screens wait before moving on.
+- **Countdown Icon** On/Off — hides the hourglass and ⏸/▶. Auto-Continue itself carries on as set (Space still pauses on a Mac).
+- **Blinking Cursor** — the ordinary cursor by the prompt, on or off.
 
 ## Building
 

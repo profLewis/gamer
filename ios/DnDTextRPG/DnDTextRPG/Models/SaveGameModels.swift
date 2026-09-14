@@ -68,12 +68,67 @@ class SaveGameManager {
 
     /// How many separate adventures (slots) are kept — the "Max Saves"
     /// option on the Game Saves settings screen. Was a hard-coded 10.
-    static let maxSlotsChoices = [10, 25, 50, 100]
-    static var maxSlots: Int {
+    /// -1 = Unlimited in both pickers (0 means "never set" in UserDefaults).
+    static let unlimited = -1
+    static let maxSlotsChoices = [10, 25, 50, 100, unlimited]
+    static var maxSlotsSetting: Int {
         let v = UserDefaults.standard.integer(forKey: "maxSaveSlots")
-        return v > 0 ? v : 25
+        return v == unlimited ? unlimited : (v > 0 ? v : 25)
     }
-    static let maxBreakpointsPerSlot = 5
+    static var maxSlots: Int { maxSlotsSetting == unlimited ? Int.max : maxSlotsSetting }
+
+    /// Save points kept per adventure ("Save Points" on Game Saves) —
+    /// was a fixed 5.
+    static let savePointChoices = [3, 5, 10, 20, unlimited]
+    static var savePointsSetting: Int {
+        let v = UserDefaults.standard.integer(forKey: "maxSavePointsPerAdventure")
+        return v == unlimited ? unlimited : (v > 0 ? v : 5)
+    }
+    static var maxBreakpointsPerSlot: Int { savePointsSetting == unlimited ? Int.max : savePointsSetting }
+
+    /// "10" / "Unlimited" for a limit setting.
+    static func limitLabel(_ value: Int) -> String { value == unlimited ? "Unlimited" : "\(value)" }
+
+    /// Which save points survive once an adventure has more than its limit:
+    /// the newest N, or a spread — recent ones kept densely, older ones at
+    /// ever-wider gaps, so you can still go back a long way.
+    enum KeepStrategy: String {
+        case newest, spread
+        var label: String { self == .newest ? "Newest" : "Spread Out" }
+    }
+    static var keepStrategy: KeepStrategy {
+        get { KeepStrategy(rawValue: UserDefaults.standard.string(forKey: "saveKeepStrategy") ?? "") ?? .newest }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "saveKeepStrategy") }
+    }
+    /// Won adventures (Hall of Fame victories) are never trimmed to make room.
+    static var protectWins: Bool {
+        get { UserDefaults.standard.object(forKey: "protectWonAdventures") == nil ? true : UserDefaults.standard.bool(forKey: "protectWonAdventures") }
+        set { UserDefaults.standard.set(newValue, forKey: "protectWonAdventures") }
+    }
+
+    /// Indices (into a newest-first list of `count` saves) to keep for a
+    /// limit of `limit`.
+    static func indicesToKeep(count: Int, limit: Int, strategy: KeepStrategy) -> Set<Int> {
+        guard count > limit else { return Set(0..<count) }
+        switch strategy {
+        case .newest:
+            return Set(0..<limit)
+        case .spread:
+            // Newest half kept as-is, then 2, 4, 8... saves further back.
+            let dense = max(1, (limit + 1) / 2)
+            var keep = Set(0..<dense)
+            var index = dense - 1
+            var gap = 2
+            while keep.count < limit && index + gap < count {
+                index += gap
+                keep.insert(index)
+                gap *= 2
+            }
+            // Always keep the very first save point if there's room left.
+            if keep.count < limit { keep.insert(count - 1) }
+            return keep
+        }
+    }
 
     private var savesDirectory: URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
@@ -218,11 +273,11 @@ class SaveGameManager {
     /// Keep only the N most recent breakpoints per slot
     private func trimBreakpoints(slotId: UUID) {
         let breakpoints = listBreakpoints(slotId: slotId)
-        if breakpoints.count > SaveGameManager.maxBreakpointsPerSlot {
-            let toDelete = breakpoints.suffix(from: SaveGameManager.maxBreakpointsPerSlot)
-            for save in toDelete {
-                delete(id: save.id)
-            }
+        let keep = SaveGameManager.indicesToKeep(count: breakpoints.count,
+                                                  limit: SaveGameManager.maxBreakpointsPerSlot,
+                                                  strategy: SaveGameManager.keepStrategy)
+        for (index, save) in breakpoints.enumerated() where !keep.contains(index) {
+            delete(id: save.id)
         }
     }
 
@@ -230,9 +285,17 @@ class SaveGameManager {
     private func trimExcessSlots() {
         let slots = listSlots()
         guard slots.count > SaveGameManager.maxSlots else { return }
+        // Won adventures are exempt (Protect Wins) — they don't count
+        // towards the limit and are never trimmed.
+        let wonSaveIds: Set<UUID> = SaveGameManager.protectWins
+            ? Set(HallOfFameManager.shared.listEntries().filter { $0.outcome == .victory }.compactMap { $0.saveGameId })
+            : []
+        let trimmable = slots.filter { slot in
+            !listBreakpoints(slotId: slot.slotId).contains { wonSaveIds.contains($0.id) }
+        }
+        guard trimmable.count > SaveGameManager.maxSlots else { return }
         // Slots are sorted newest first — delete from the end
-        let excess = slots.suffix(from: SaveGameManager.maxSlots)
-        for slot in excess {
+        for slot in trimmable.suffix(from: SaveGameManager.maxSlots) {
             deleteSlot(slotId: slot.slotId)
         }
     }

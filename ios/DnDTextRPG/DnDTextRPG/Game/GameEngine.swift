@@ -295,6 +295,9 @@ class GameEngine: ObservableObject {
     /// bar by the > prompt (or Space on a Mac) holds every countdown.
     @Published var autoContinueEnabled: Bool = UserDefaults.standard.object(forKey: "autoContinueEnabled") == nil ? true : UserDefaults.standard.bool(forKey: "autoContinueEnabled")
     @Published var autoContinuePaused: Bool = false
+    /// Settings > Gameplay > Countdown Icon — the hourglass + ⏸/▶ pause
+    /// control by the > prompt. Hiding it doesn't change auto-continue.
+    @Published var showCountdownControl: Bool = UserDefaults.standard.object(forKey: "showCountdownControl") == nil ? true : UserDefaults.standard.bool(forKey: "showCountdownControl")
 
     /// The countdown the input bar's progress line draws: when it ends,
     /// its full length, and — while paused — how much was left.
@@ -327,7 +330,7 @@ class GameEngine: ObservableObject {
         autoContinueHelpShownGeneration = screenGeneration
         print("")
         print("  AUTO-CONTINUE IS PAUSED", color: .yellow, bold: true)
-        printWrapped("Tap ▶ (or the hourglass) by the > prompt to carry on counting down, or long-press the hourglass to hurry. Tap the text to move on right now. Settings > Gameplay turns Auto-Continue off.", indent: 2, color: .dimGreen)
+        printWrapped("Tap anywhere on the screen to continue now — or wait for the hourglass by the > prompt to run out and the game moves on by itself. While the hourglass is orange it's paused: tap it (or ▶) to let it run again, or long-press it to hurry. Settings > Gameplay turns Auto-Continue off.", indent: 2, color: .dimGreen)
     }
 
     func toggleAutoContinuePause() {
@@ -2160,6 +2163,7 @@ class GameEngine: ObservableObject {
                 return d == 0 ? "Off" : String(format: "%.1fs", d)
             }),
             ("autoContinueEnabled", "Auto-Continue", { ($0 as? Bool) == true ? "On" : "Off" }),
+            ("showCountdownControl", "Countdown Icon", { ($0 as? Bool) == true ? "On" : "Off" }),
             ("longPressDuration", "LongPress", { v in
                 let d = v as? Double ?? 0.5
                 return String(format: "%.1fs", d)
@@ -2374,6 +2378,8 @@ class GameEngine: ObservableObject {
             infoTimeout = UserDefaults.standard.double(forKey: key)
         case "autoContinueEnabled":
             autoContinueEnabled = UserDefaults.standard.object(forKey: key) == nil ? true : UserDefaults.standard.bool(forKey: key)
+        case "showCountdownControl":
+            showCountdownControl = UserDefaults.standard.object(forKey: key) == nil ? true : UserDefaults.standard.bool(forKey: key)
         case "iconScaleSetting":
             iconScaleSetting = UserDefaults.standard.integer(forKey: key)
         case "useCustomKeyboard":
@@ -2414,6 +2420,7 @@ class GameEngine: ObservableObject {
         case "useCustomKeyboard": return useCustomKeyboard ? "Custom" : "System"
         case "idlePromptsEnabled": return idlePromptsEnabled ? "On" : "Off"
         case "autoContinueEnabled": return autoContinueEnabled ? "On" : "Off"
+        case "showCountdownControl": return showCountdownControl ? "On" : "Off"
         case "blinkingCursorEnabled": return blinkingCursorEnabled ? "On" : "Off"
         case "map_radius": return "\(mapRadius)"
         case "maxButtonsPerScreen": return "\(maxButtonsPerScreen)"
@@ -5155,7 +5162,7 @@ class GameEngine: ObservableObject {
         printWrapped("    a button for its shortcut — e.g. long-press Quit Without Saving, Delete or Give Up Quest to skip the \"are you sure?\" step, Long Rest to rest fast, or Continue Adventure to jump straight into your latest save.", color: .green)
         print("")
         print("  • Auto-Continue", color: .brightGreen, bold: true)
-        printWrapped("    Many screens move on by themselves after a few seconds. A little hourglass turns beside the > prompt while they count down: tap it to pause (it says paused), tap again to carry on, long-press it to hurry. Settings > Gameplay turns Auto-Continue off or changes how long screens wait.", color: .green)
+        printWrapped("    Many screens move on by themselves after a few seconds. Tap anywhere to continue at once, or wait for the little hourglass beside the > prompt to run out. Tap the hourglass to pause it (orange means paused, and a ? explains how to carry on), tap again to let it run, long-press it to hurry. Settings > Gameplay turns Auto-Continue off, changes how long screens wait, or hides the hourglass.", color: .green)
         print("")
 
         let helpTopics = ["Getting Started", "Exploration", "Combat",
@@ -8008,6 +8015,11 @@ class GameEngine: ObservableObject {
         printWrapped("Many screens wait for a tap so you can read them. With this on, they also move on by themselves after the Info Timeout. Tap the little hourglass by the > prompt to pause, long-press it to hurry — or press Space on a Mac. See ? for more.", indent: 2, color: .dimGreen)
         print("")
 
+        print("COUNTDOWN ICON:", color: .cyan, bold: true)
+        print("  \(showCountdownControl ? "On" : "Off")", color: showCountdownControl ? .brightGreen : .red)
+        printWrapped("The turning hourglass and ⏸/▶ by the > prompt while a screen counts down — tap to pause, long-press to hurry. Off hides them; screens still move on by themselves (Space on a Mac still pauses).", indent: 2, color: .dimGreen)
+        print("")
+
         print("BUTTON LIMIT:", color: .cyan, bold: true)
         print("  \(maxButtonsPerScreen) per screen", color: .brightGreen)
         printWrapped("Maximum buttons shown at once. When a screen has more options, << and >> buttons let you page through them. Long-press to skip 3 pages.", indent: 2, color: .dimGreen)
@@ -8097,6 +8109,7 @@ class GameEngine: ObservableObject {
             // Page 1 — Interface
             "Map Length", useArrowNavigation ? "Use Swipe" : "Use Buttons",
             "Info Timeout", autoContinueEnabled ? "Auto-Continue Off" : "Auto-Continue On",
+            showCountdownControl ? "Countdown Icon Off" : "Countdown Icon On",
             "Button Limit", "Long Press",
             // Page 2 — Features
             npcsEnabled ? "NPCs Off" : "NPCs On", poisonEnabled ? "Poison Off" : "Poison On",
@@ -8135,6 +8148,13 @@ class GameEngine: ObservableObject {
                 self.showGameplaySettings(page: currentPage)
             } else if selected == "Info Timeout" {
                 self.showInfoTimeoutMenu()
+            } else if selected.hasPrefix("Countdown Icon") {
+                self.recordSettingChange(screen: "s:gameplay", key: "showCountdownControl", name: "Countdown Icon")
+                self.showCountdownControl.toggle()
+                UserDefaults.standard.set(self.showCountdownControl, forKey: "showCountdownControl")
+                // Hidden = no way to un-pause from the screen, so never leave it paused.
+                if !self.showCountdownControl { self.autoContinuePaused = false }
+                self.showGameplaySettings(page: currentPage)
             } else if selected.hasPrefix("Auto-Continue") {
                 self.recordSettingChange(screen: "s:gameplay", key: "autoContinueEnabled", name: "Auto-Continue")
                 self.autoContinueEnabled.toggle()
@@ -8242,6 +8262,11 @@ class GameEngine: ObservableObject {
 
             self.print("  INFO TIMEOUT", color: .cyan, bold: true)
             self.printWrapped("How long information screens (search results, listen, examine) stay before moving on by themselves; every other tap-to-continue screen waits twice as long. Only applies while Auto-Continue is on. Shorter means faster gameplay; longer gives you more time to read. Tap the ✕ icon to move on sooner.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  COUNTDOWN ICON", color: .cyan, bold: true)
+            self.printWrapped("While a screen is counting down, a little hourglass turns beside the > prompt (its ring shows the time left) and the cursor becomes ⏸. Tap either to pause — they turn amber, the cursor becomes ▶ and 'paused' pulses gently; tap again to carry on from where it stopped. Long-press the hourglass to hurry. Tapping anywhere else still moves on at once. Turn Countdown Icon off to hide all of this; auto-continue itself carries on as set.", indent: 2, color: .dimGreen)
+            self.printWrapped("Why it's there: auto-continue keeps the game flowing when you look away, but a screen that moves on by itself can also snatch text away before you've finished reading it — a long combat report, a merchant's reply, a trap you need to think about. The hourglass makes the timer visible, so a screen never moves on as a surprise, and puts pause right where your eyes already are (the > prompt) instead of burying it in Settings. It matters most if you read slowly, get interrupted, use a screen reader or large text, or are just savouring the story.", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  AUTO-CONTINUE", color: .cyan, bold: true)
@@ -8548,7 +8573,7 @@ class GameEngine: ObservableObject {
 
     /// All UserDefaults keys used by the game
     private static let settingsKeys: [String] = [
-        "maxButtonsPerScreen", "longPressDuration", "infoTimeout", "customInfoTimeouts", "autoContinueEnabled", "atlasShowAllRooms",
+        "maxButtonsPerScreen", "longPressDuration", "infoTimeout", "customInfoTimeouts", "autoContinueEnabled", "showCountdownControl", "atlasShowAllRooms",
         "map_radius", "useArrowNavigation", "multiplayer_enabled", "npcs_enabled",
         "multiple_shops_enabled",
         "hit_animations", "voiceMenuEnabled", "iconScaleSetting", "adventureLogLimit",
@@ -8591,6 +8616,7 @@ class GameEngine: ObservableObject {
         useArrowNavigation = d.object(forKey: "useArrowNavigation") == nil ? false : d.bool(forKey: "useArrowNavigation")
         infoTimeout = d.object(forKey: "infoTimeout") == nil ? 5.0 : d.double(forKey: "infoTimeout")
         autoContinueEnabled = d.object(forKey: "autoContinueEnabled") == nil ? true : d.bool(forKey: "autoContinueEnabled")
+        showCountdownControl = d.object(forKey: "showCountdownControl") == nil ? true : d.bool(forKey: "showCountdownControl")
         iconScaleSetting = d.integer(forKey: "iconScaleSetting")
         useCustomKeyboard = d.object(forKey: "useCustomKeyboard") == nil ? true : d.bool(forKey: "useCustomKeyboard")
         idlePromptsEnabled = d.object(forKey: "idlePromptsEnabled") == nil ? true : d.bool(forKey: "idlePromptsEnabled")
@@ -9061,15 +9087,19 @@ class GameEngine: ObservableObject {
         let saves = SaveGameManager.shared.listAllSaves()
         let adventuresInUse = SaveGameManager.shared.listSlots().count
         print("GAME SAVES:", color: .cyan, bold: true)
-        print("  \(adventuresInUse)/\(SaveGameManager.maxSlots) adventures (\(saves.count) save file\(saves.count == 1 ? "" : "s"))", color: .dimGreen)
+        print("  \(adventuresInUse)/\(SaveGameManager.limitLabel(SaveGameManager.maxSlotsSetting)) adventures (\(saves.count) save file\(saves.count == 1 ? "" : "s"))", color: .dimGreen)
         print("")
 
-        print("MAX SAVES:", color: .cyan, bold: true)
-        print("  \(SaveGameManager.maxSlots) adventures", color: .brightGreen)
-        printWrapped("How many separate adventures are kept at once.", indent: 2, color: .dimGreen)
+        print("KEEPING SAVES:", color: .cyan, bold: true)
+        print("  Adventures: \(SaveGameManager.limitLabel(SaveGameManager.maxSlotsSetting))", color: .brightGreen)
+        print("  Save points each: \(SaveGameManager.limitLabel(SaveGameManager.savePointsSetting))", color: .brightGreen)
+        print("  Keep: \(SaveGameManager.keepStrategy.label)   Protect wins: \(SaveGameManager.protectWins ? "On" : "Off")", color: .brightGreen)
+        printWrapped("Max Saves limits how many adventures are kept; Save Points how many save points each keeps. Keep: Newest keeps the most recent ones; Spread Out keeps recent ones plus a few from further back. Protect Wins never trims an adventure you won.", indent: 2, color: .dimGreen)
         print("")
 
-        var options = ["Autosave", "Max Saves"]
+        var options = ["Autosave", "Max Saves", "Save Points",
+                       SaveGameManager.keepStrategy == .newest ? "Keep: Spread Out" : "Keep: Newest",
+                       SaveGameManager.protectWins ? "Protect Wins Off" : "Protect Wins On"]
         if !saves.isEmpty {
             options.append("Manage Saves")
             options.append("Clear All Saves")
@@ -9103,6 +9133,14 @@ class GameEngine: ObservableObject {
                 self.showAutosaveMenu()
             } else if selected == "Max Saves" {
                 self.showMaxSavesMenu()
+            } else if selected == "Save Points" {
+                self.showSavePointsMenu()
+            } else if selected.hasPrefix("Keep:") {
+                SaveGameManager.keepStrategy = SaveGameManager.keepStrategy == .newest ? .spread : .newest
+                self.showSaveSettings()
+            } else if selected.hasPrefix("Protect Wins") {
+                SaveGameManager.protectWins.toggle()
+                self.showSaveSettings()
             } else if selected == "Manage Saves" {
                 self.showManageSavesMenu(returnTo: .settings)
             } else if selected == "Clear All Saves" {
@@ -9118,15 +9156,18 @@ class GameEngine: ObservableObject {
     private func showMaxSavesMenu() {
         clearTerminal()
         printTitle("Max Saves")
-        let current = SaveGameManager.maxSlots
+        let current = SaveGameManager.maxSlotsSetting
         let inUse = SaveGameManager.shared.listSlots().count
-        printWrapped("How many separate adventures to keep. Currently \(current); \(inUse) in use.", indent: 2, color: .dimGreen)
+        printWrapped("How many separate adventures to keep. Currently \(SaveGameManager.limitLabel(current)); \(inUse) in use.", indent: 2, color: .dimGreen)
         printWrapped("Limits below the number you've already saved aren't offered — lowering it would delete your oldest adventures. Delete some first (Manage Saves) if you want a lower limit.", indent: 2, color: .dimGreen)
         print("")
 
-        let allowed = SaveGameManager.maxSlotsChoices.filter { $0 >= inUse }
-        let choices = allowed.isEmpty ? [max(current, inUse)] : allowed
-        var opts = choices.map { MenuOption("\($0) adventures\($0 == current ? " ✓" : "")", isDefault: $0 == current) }
+        let allowed = SaveGameManager.maxSlotsChoices.filter { $0 == SaveGameManager.unlimited || $0 >= inUse }
+        let choices = allowed
+        var opts = choices.map { value -> MenuOption in
+            let label = value == SaveGameManager.unlimited ? "Unlimited" : "\(value) adventures"
+            return MenuOption(label + (value == current ? " ✓" : ""), isDefault: value == current)
+        }
         opts.append(MenuOption("?", tint: .navigation, compact: true))
         opts.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(opts)
@@ -9140,12 +9181,38 @@ class GameEngine: ObservableObject {
                 self.showInlineHelp {
                     self.printTitle("Max Saves — Help")
                     self.print("")
-                    self.printWrapped("Each adventure keeps up to \(SaveGameManager.maxBreakpointsPerSlot) save points; this limits how many different adventures are kept at once. Once you're at the limit, saving a brand new adventure asks which existing one to replace.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Each adventure keeps up to \(SaveGameManager.limitLabel(SaveGameManager.savePointsSetting)) save points (see Save Points); this limits how many different adventures are kept at once. Once you're at the limit, saving a brand new adventure asks which existing one to replace. Unlimited never asks — just keep an eye on storage. Won adventures don't count towards the limit while Protect Wins is on.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             } else {
                 self.showSaveSettings()
             }
+        }
+    }
+
+    /// Picker for SaveGameManager.savePointsSetting — save points kept per
+    /// adventure. Lowering it trims each adventure the next time it saves.
+    private func showSavePointsMenu() {
+        clearTerminal()
+        printTitle("Save Points")
+        let current = SaveGameManager.savePointsSetting
+        printWrapped("How many save points each adventure keeps — every save you make is a point you can go back to. Currently \(SaveGameManager.limitLabel(current)).", indent: 2, color: .dimGreen)
+        printWrapped("Which ones survive is set by Keep (\(SaveGameManager.keepStrategy.label)). A lower limit trims each adventure the next time it's saved.", indent: 2, color: .dimGreen)
+        print("")
+        let choices = SaveGameManager.savePointChoices
+        var opts = choices.map { value -> MenuOption in
+            let label = value == SaveGameManager.unlimited ? "Unlimited" : "\(value) save points"
+            return MenuOption(label + (value == current ? " ✓" : ""), isDefault: value == current)
+        }
+        opts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        showMenuOptions(opts)
+        closeHandler = { [weak self] in self?.showSaveSettings() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice >= 1 && choice <= choices.count {
+                UserDefaults.standard.set(choices[choice - 1], forKey: "maxSavePointsPerAdventure")
+            }
+            self.showSaveSettings()
         }
     }
 
@@ -9625,6 +9692,7 @@ class GameEngine: ObservableObject {
             infoTimeout = 5.0
             autoContinueEnabled = true
             autoContinuePaused = false
+            showCountdownControl = true
             iconScaleSetting = 0
             useCustomKeyboard = true
             idlePromptsEnabled = true
@@ -9758,6 +9826,7 @@ class GameEngine: ObservableObject {
         let infoStr = infoTimeout == 0 ? "Off" : String(format: "%.1fs", infoTimeout)
         add("infoTimeout", "Info Timeout", current: infoStr, dflt: "5.0s")
         add("autoContinueEnabled", "Auto-Continue", current: autoContinueEnabled ? "On" : "Off", dflt: "On")
+        add("showCountdownControl", "Countdown Icon", current: showCountdownControl ? "On" : "Off", dflt: "On")
 
         let lpStr = String(format: "%.1fs", longPressDuration)
         add("longPressDuration", "Long Press", current: lpStr, dflt: "0.5s")
@@ -9915,6 +9984,7 @@ class GameEngine: ObservableObject {
         if keys.contains("useArrowNavigation") { useArrowNavigation = false }
         if keys.contains("infoTimeout") { infoTimeout = 5.0 }
         if keys.contains("autoContinueEnabled") { autoContinueEnabled = true }
+        if keys.contains("showCountdownControl") { showCountdownControl = true }
         if keys.contains("iconScaleSetting") { iconScaleSetting = 0 }
         if keys.contains("useCustomKeyboard") { useCustomKeyboard = true }
         if keys.contains("idlePromptsEnabled") { idlePromptsEnabled = true }
@@ -30120,7 +30190,7 @@ class GameEngine: ObservableObject {
     }
 
     private func showOverwriteSlotMenu(slots: [SaveSlot]) {
-        print("All \(SaveGameManager.maxSlots) adventure slots are full.", color: .yellow)
+        print("All \(SaveGameManager.limitLabel(SaveGameManager.maxSlotsSetting)) adventure slots are full.", color: .yellow)
         print("Choose an adventure to replace, or quit without saving:", color: .cyan)
         print("")
 
@@ -30293,7 +30363,7 @@ class GameEngine: ObservableObject {
             print("")
             let bpWord = breakpoints.count == 1 ? "save" : "saves"
             print("  \(breakpoints.count) \(bpWord) in this adventure", color: .dimGreen)
-            print("  \(slotCount)/\(SaveGameManager.maxSlots) adventures saved", color: .dimGreen)
+            print("  \(slotCount)/\(SaveGameManager.limitLabel(SaveGameManager.maxSlotsSetting)) adventures saved", color: .dimGreen)
         } catch {
             print("Failed to save: \(error.localizedDescription)", color: .red)
         }
