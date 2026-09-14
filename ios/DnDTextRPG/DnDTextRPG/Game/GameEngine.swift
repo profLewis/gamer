@@ -1295,8 +1295,45 @@ class GameEngine: ObservableObject {
         // now-unblocked ones instead of after a real clear, so both screens'
         // content appended together — "the map shows twice."
         runOnMain {
-            self.terminalLines.append(TerminalLine(text, color: color, bold: bold, underlined: underlined, size: size, centered: centered))
+            let line = TerminalLine(text, color: color, bold: bold, underlined: underlined, size: size, centered: centered)
+            self.terminalLines.append(line)
+            self.queueAnnouncement(line)
         }
+    }
+
+    // MARK: VoiceOver announcements
+    //
+    // New story text is read out as it arrives, even while VoiceOver's focus
+    // is down on a button: gathered for a moment, then announced in one go,
+    // queued behind whatever VoiceOver is already saying. Not in speaker
+    // mode, which reads everything aloud itself.
+    private var pendingAnnouncement: [String] = []
+    private var announcementTimer: Timer?
+
+    private func queueAnnouncement(_ line: TerminalLine) {
+        guard Self.systemVoiceOverRunning, !speakerModeOn, !line.isDecorativeArt else { return }
+        let spoken = TerminalLine.spokenText(line.text)
+        guard spoken.contains(where: { $0.isLetter || $0.isNumber }) else { return }
+        pendingAnnouncement.append(spoken)
+        announcementTimer?.invalidate()
+        announcementTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { [weak self] _ in
+            self?.flushAnnouncement()
+        }
+    }
+
+    private func flushAnnouncement() {
+        guard !pendingAnnouncement.isEmpty else { return }
+        var text = pendingAnnouncement.joined(separator: ". ").replacingOccurrences(of: "..", with: ".")
+        pendingAnnouncement.removeAll()
+        if text.count > 900 { text = String(text.prefix(900)) + "… More on screen." }
+        #if os(macOS)
+        let element: Any = NSApplication.shared.mainWindow ?? NSApplication.shared
+        NSAccessibility.post(element: element, notification: .announcementRequested,
+                             userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+        #elseif os(iOS)
+        UIAccessibility.post(notification: .announcement,
+                             argument: NSAttributedString(string: text, attributes: [.accessibilitySpeechQueueAnnouncement: true]))
+        #endif
     }
 
     func printLines(_ lines: [String], color: TerminalColor = .green, size: CGFloat = 14) {
@@ -2188,6 +2225,7 @@ class GameEngine: ObservableObject {
     }
 
     func clearTerminal() {
+        pendingAnnouncement.removeAll()   // a new page: only its own text is announced
         breadcrumbFrom = currentScreenTitle
         breadcrumbDid = lastEventThisScreen
         currentScreenTitle = nil
@@ -3620,6 +3658,7 @@ class GameEngine: ObservableObject {
     func printExplorationMap() {
         guard let dungeon = dungeon else { return }
         let (radius, verticalRadius, compact) = bestMapRadius()
+        lastMapExtent = (radius, verticalRadius)
         #if os(macOS)
         let capWidth = false   // the Mac map fills its pane's width (see bestMapRadius)
         #else
@@ -7773,13 +7812,35 @@ class GameEngine: ObservableObject {
         }
     }
 
-    @Published var fontScale: CGFloat = {
+    @Published var fontScale: CGFloat = GameEngine.computedFontScale()
+
+    /// Display Size, times the system text size (iOS Settings > Display &
+    /// Brightness > Text Size, or Accessibility > Larger Text) unless
+    /// that's switched off — capped so text never spills off the screen.
+    static func computedFontScale() -> CGFloat {
         let raw = UserDefaults.standard.object(forKey: "font_size_setting") as? Int
-        if let raw = raw, let setting = FontSizeSetting(rawValue: raw) {
-            return setting.scale
-        }
-        return FontSizeSetting.defaultSetting.scale
-    }()
+        let base = raw.flatMap { FontSizeSetting(rawValue: $0) }?.scale ?? FontSizeSetting.defaultSetting.scale
+        let follow = UserDefaults.standard.object(forKey: "followSystemTextSize") == nil ? true : UserDefaults.standard.bool(forKey: "followSystemTextSize")
+        return min(2.2, base * (follow ? systemTextScale : 1))
+    }
+
+    static var systemTextScale: CGFloat {
+        #if os(iOS)
+        return min(1.6, max(0.85, UIFontMetrics(forTextStyle: .body).scaledValue(for: 100) / 100))
+        #else
+        return 1
+        #endif
+    }
+
+    var followSystemTextSize: Bool {
+        get { UserDefaults.standard.object(forKey: "followSystemTextSize") == nil ? true : UserDefaults.standard.bool(forKey: "followSystemTextSize") }
+        set { UserDefaults.standard.set(newValue, forKey: "followSystemTextSize"); refreshFontScale() }
+    }
+
+    func refreshFontScale() {
+        let scale = Self.computedFontScale()
+        if scale != fontScale { fontScale = scale }
+    }
 
     var fontSizeSetting: FontSizeSetting {
         get {
@@ -7791,7 +7852,7 @@ class GameEngine: ObservableObject {
         }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: "font_size_setting")
-            fontScale = newValue.scale
+            refreshFontScale()
         }
     }
 
@@ -8124,8 +8185,12 @@ class GameEngine: ObservableObject {
 
     func arenaScene() -> ArenaScene {
         guard let combat = currentCombat else { return ArenaScene(move: arenaMove) }
-        let partyF = party.map { ArenaFighter(name: $0.name, frames: $0.characterClass.asciiArtFrames, hp: $0.currentHP, maxHP: $0.maxHP, isParty: true, down: !$0.isConscious) }
-        let enemies = combat.encounter.monsters.map { ArenaFighter(name: $0.name, frames: $0.type.asciiArtFrames, hp: $0.currentHP, maxHP: $0.maxHP, isParty: false, down: !$0.isAlive) }
+        // A colour each, so several fighters can be told apart (never the
+        // enemy's red for a friend).
+        let partyColors: [TerminalColor] = [.brightGreen, .cyan, .yellow, .magenta, .white, .orange]
+        let enemyColors: [TerminalColor] = [.red, .orange, .magenta, .yellow, .white]
+        let partyF = party.enumerated().map { i, c in ArenaFighter(name: c.name, frames: c.characterClass.asciiArtFrames, hp: c.currentHP, maxHP: c.maxHP, isParty: true, down: !c.isConscious, color: partyColors[i % partyColors.count]) }
+        let enemies = combat.encounter.monsters.enumerated().map { i, m in ArenaFighter(name: m.name, frames: m.type.asciiArtFrames, hp: m.currentHP, maxHP: m.maxHP, isParty: false, down: !m.isAlive, color: enemyColors[i % enemyColors.count]) }
         let turn = combat.currentCombatant
         let left = (turn?.isPlayer == true ? partyF.first { $0.name == turn?.name && !$0.down } : nil) ?? partyF.first { !$0.down } ?? partyF.first
         let right = (turn?.isPlayer == false ? enemies.first { $0.name == turn?.name && !$0.down } : nil) ?? enemies.first { !$0.down }
@@ -9410,7 +9475,7 @@ class GameEngine: ObservableObject {
         "speechEnabled", "companionVoiceMode",
         "menu_melody", "exploration_melody", "combat_melody", "chat_melody",
         "gameTimeLimit", "useCustomKeyboard", "undoRedoEnabled",
-        "justDMMode", "mac_map_rows", "combatArena",
+        "justDMMode", "mac_map_rows", "combatArena", "followSystemTextSize",
     ]
 
     private func exportSettings() -> [String: Any] {
@@ -12465,11 +12530,24 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        let options = FontSizeSetting.allCases.map { $0.displayName }
+        var options = FontSizeSetting.allCases.map { $0.displayName }
+        #if os(iOS)
+        print("FOLLOW SYSTEM TEXT SIZE:", color: .cyan, bold: true)
+        print("  \(followSystemTextSize ? "On" : "Off")", color: followSystemTextSize ? .brightGreen : .red)
+        printWrapped("On: the size above is scaled by your iPhone's own text size (Settings > Display & Brightness > Text Size, or Accessibility > Larger Text).", indent: 2, color: .dimGreen)
+        print("")
+        options.append(followSystemTextSize ? "System Size Off" : "System Size On")
+        #endif
         showMenu(options)
 
         closeHandler = { [weak self] in self?.showFontAndIconsMenu() }
         menuHandler = { [weak self] choice in
+            if choice > FontSizeSetting.allCases.count {
+                self?.recordSettingChange(screen: "s:font", key: "followSystemTextSize", name: "System Size")
+                self?.followSystemTextSize.toggle()
+                self?.showFontSizeMenu()
+                return
+            }
             let selected = FontSizeSetting.allCases[choice - 1]
             self?.recordSettingChange(screen: "s:font", key: "fontSizeSetting", name: "Font")
             self?.fontSizeSetting = selected
@@ -17909,10 +17987,14 @@ class GameEngine: ObservableObject {
     private var macMapPaneWidth: CGFloat = 0
 
     func macMapPaneChanged(width: CGFloat) {
-        let before = bestMapRadius()
+        guard width > 0, abs(width - macMapPaneWidth) >= 1 else { return }
         macMapPaneWidth = width
-        guard before != bestMapRadius(), dungeon != nil, !pinnedMapLines.isEmpty else { return }
-        printExplorationMap()
+        // Redraw if the map on screen was drawn for another size — including
+        // the very first map, drawn before the pane had reported its width.
+        let now = bestMapRadius()
+        guard dungeon != nil, !pinnedMapLines.isEmpty,
+              lastMapExtent.map({ $0.0 != now.radius || $0.1 != now.verticalRadius }) ?? true else { return }
+        DispatchQueue.main.async { [weak self] in self?.printExplorationMap() }
     }
 
     /// Dragging the map pane's handle: as many rows as fit in `height`
@@ -17935,6 +18017,9 @@ class GameEngine: ObservableObject {
         if dungeon != nil && !pinnedMapLines.isEmpty { printExplorationMap() }
     }
     #endif
+
+    /// The (radius, rows) the pinned map was last drawn at.
+    private var lastMapExtent: (Int, Int)?
 
     private func bestMapRadius() -> (radius: Int, verticalRadius: Int, compact: Bool) {
         // Always the configured radius, not effectiveMapRadius() — the
@@ -18204,9 +18289,8 @@ class GameEngine: ObservableObject {
         suppressAutoScroll = false
 
         // Dynamically size the map to fill screen without scrolling
-        let (radius, verticalRadius, compact) = bestMapRadius()
-        let mapLines = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: verticalRadius, legendMaxSymbols: mapLegendMaxSymbols, hasTrapSense: partyHasTrapSense)
-        printMap(mapLines, color: torchMapColor, size: mapFontSize)
+        _ = dungeon
+        printExplorationMap()   // same map everywhere (fills the Mac pane's width)
         if !torchLit {
             if partyHasTorch() {
                 print("  Torch unlit — illuminate it to see further!", color: .yellow)
@@ -19679,9 +19763,8 @@ class GameEngine: ObservableObject {
         clearTerminal()
 
         // Same layout as exploration view — map, room info, party status
-        let (radius, verticalRadius, compact) = bestMapRadius()
-        let mapLines = dungeon.getMapDisplay(visibilityRadius: radius, torchLit: torchLit, compact: compact, verticalRadius: verticalRadius, legendMaxSymbols: mapLegendMaxSymbols, hasTrapSense: partyHasTrapSense)
-        printMap(mapLines, color: torchMapColor, size: mapFontSize)
+        _ = dungeon
+        printExplorationMap()   // same map everywhere (fills the Mac pane's width)
         if !torchLit {
             if partyHasTorch() {
                 print("  Torch unlit — illuminate it to see further!", color: .yellow)

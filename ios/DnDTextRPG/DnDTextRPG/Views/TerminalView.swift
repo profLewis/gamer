@@ -267,10 +267,9 @@ struct TerminalView: View {
                         .frame(height: CGFloat(gameEngine.pinnedMapLines.count) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 8)
                         // Tell the engine the pane's width, so the map's extent follows it.
                         .background(GeometryReader { geo in
-                            Color.clear
-                                .onAppear { gameEngine.macMapPaneChanged(width: geo.size.width) }
-                                .onChange(of: geo.size.width) { width in gameEngine.macMapPaneChanged(width: width) }
+                            Color.clear.preference(key: MacMapPaneWidthKey.self, value: geo.size.width)
                         })
+                        .onPreferenceChange(MacMapPaneWidthKey.self) { width in gameEngine.macMapPaneChanged(width: width) }
                         #elseif os(tvOS)
                         .frame(height: CGFloat(gameEngine.pinnedMapLines.count) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 8)
                         #else
@@ -313,6 +312,7 @@ struct TerminalView: View {
                     }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilitySortPriority(2)   // VoiceOver: the map, then the story
 
                     // Terminal output area
                     ScrollViewReader { scrollProxy in
@@ -606,6 +606,9 @@ struct TerminalView: View {
                     // as "the combat window doesn't scroll" — there was
                     // barely any visible height for it to scroll within).
                     .frame(maxWidth: isLandscape ? .infinity : nil, maxHeight: isLandscape ? .infinity : nil, alignment: .leading)
+                    // VoiceOver reads top to bottom: map and story, then the controls.
+                    .accessibilityElement(children: .contain)
+                    .accessibilitySortPriority(2)
                     #if os(macOS)
                     // Mac: map+text width set by the handle on its right edge.
                     .frame(width: geometry.size.width * CGFloat(macLeftPaneFraction))
@@ -633,12 +636,13 @@ struct TerminalView: View {
                     // there's so much less vertical space to work with than
                     // portrait has.
                     VStack(spacing: 0) {
+                        // (VoiceOver: the buttons before the input line, whichever is on top.)
                         if isLandscape {
-                            inputBarAndKeyboardBlock
-                            dpadAndMenuButtonsBlock
+                            inputBarAndKeyboardBlock.accessibilitySortPriority(1)
+                            dpadAndMenuButtonsBlock.accessibilitySortPriority(2)
                         } else {
-                            dpadAndMenuButtonsBlock
-                            inputBarAndKeyboardBlock
+                            dpadAndMenuButtonsBlock.accessibilitySortPriority(2)
+                            inputBarAndKeyboardBlock.accessibilitySortPriority(1)
                         }
                         // Combat Arena: the fight acted out in ASCII in the space
                         // below the buttons (Mac only for now — see
@@ -649,6 +653,8 @@ struct TerminalView: View {
                         }
                     }
                     .frame(maxWidth: isLandscape ? .infinity : nil, alignment: .top)
+                    .accessibilityElement(children: .contain)
+                    .accessibilitySortPriority(1)
                 }
                 .background(terminalBackground)
                 // A full-screen tap-anywhere-to-continue catcher used to live
@@ -702,6 +708,12 @@ struct TerminalView: View {
                     isMainViewFocused = true
                 }
             }
+        }
+        #endif
+        #if os(iOS)
+        // The system text size changed — terminal text follows it.
+        .onReceive(NotificationCenter.default.publisher(for: UIContentSizeCategory.didChangeNotification)) { _ in
+            gameEngine.refreshFontScale()
         }
         #endif
         .onChange(of: gameEngine.prefillInputText) { newVal in
@@ -1018,6 +1030,7 @@ struct TerminalView: View {
                                 HStack(spacing: 2) {
                                     Button(action: { gameEngine.swipeRightHandler?() }) {
                                         Text("<<")
+                                            .accessibilityLabel("Previous card")
                                             .font(.system(size: 13 * scale, design: .monospaced))
                                             .foregroundColor(gameEngine.swipeRightHandler != nil
                                                 ? Color(red: 0.0, green: 0.6, blue: 0.25)
@@ -1026,9 +1039,10 @@ struct TerminalView: View {
                                     .disabled(gameEngine.swipeRightHandler == nil)
                                     Text(posLabel)
                                         .font(.system(size: 13 * scale, design: .monospaced))
-                                        .foregroundColor(Color(red: 0.0, green: 0.5, blue: 0.2))
+                                        .foregroundColor(TerminalColor.dimGreen.swiftUIColor)
                                     Button(action: { gameEngine.swipeLeftHandler?() }) {
                                         Text(">>")
+                                            .accessibilityLabel("Next card")
                                             .font(.system(size: 13 * scale, design: .monospaced))
                                             .foregroundColor(gameEngine.swipeLeftHandler != nil
                                                 ? Color(red: 0.0, green: 0.6, blue: 0.25)
@@ -1049,7 +1063,7 @@ struct TerminalView: View {
                                 HStack(spacing: 4) {
                                     Text(posLabel)
                                         .font(.system(size: 13 * scale, design: .monospaced))
-                                        .foregroundColor(Color(red: 0.0, green: 0.5, blue: 0.2))
+                                        .foregroundColor(TerminalColor.dimGreen.swiftUIColor)
                                     if gameEngine.swipeRandomHandler != nil {
                                         Button(action: { gameEngine.swipeRandomHandler?() }) {
                                             Image(systemName: "dice")
@@ -1078,6 +1092,7 @@ struct TerminalView: View {
                         if gameEngine.undoHandler != nil {
                             Button(action: { gameEngine.undoHandler?() }) {
                                 Image(systemName: "arrow.uturn.backward")
+                                    .accessibilityLabel("Undo")
                                     .font(.system(size: 18 * scale * gameEngine.iconScale))
                                     .foregroundColor(Color(red: 0.95, green: 0.7, blue: 0.2))
                             }
@@ -1092,6 +1107,7 @@ struct TerminalView: View {
                         if gameEngine.redoHandler != nil {
                             Button(action: { gameEngine.redoHandler?() }) {
                                 Image(systemName: "arrow.uturn.forward")
+                                    .accessibilityLabel("Redo")
                                     .font(.system(size: 18 * scale * gameEngine.iconScale))
                                     .foregroundColor(Color(red: 0.95, green: 0.7, blue: 0.2))
                             }
@@ -1118,6 +1134,8 @@ struct TerminalView: View {
                                     : "speaker.wave.2")
                                     .font(.system(size: 20 * scale * gameEngine.iconScale))
                                     .foregroundColor(gameEngine.speakerModeOn ? Color(red: 0.0, green: 0.8, blue: 0.4) : Color(red: 0.0, green: 0.6, blue: 0.25))
+                                    .accessibilityLabel(gameEngine.speakerModeOn ? "Stop reading aloud" : "Read the screen aloud")
+                                    .accessibilityHint("Long-press to pause this page")
                             }
                             .simultaneousGesture(
                                 LongPressGesture(minimumDuration: 0.5).onEnded { _ in
@@ -1666,6 +1684,12 @@ struct TerminalView: View {
     }
 }
 
+/// The Mac map pane's width — reported on every layout, the first included.
+struct MacMapPaneWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
 /// The Combat Arena panel: redraws ArenaRenderer's grid many times a second.
 struct CombatArenaView: View {
     let engine: GameEngine
@@ -1730,6 +1754,7 @@ struct TerminalLineView: View {
                     .font(.system(size: scaledSize, design: .monospaced))
                     .fixedSize(horizontal: false, vertical: true)
                     .multilineTextAlignment(.center)
+                    .accessibilityLabel(TerminalLine.spokenText(line.text))
                     .accessibilityHidden(line.isDecorativeArt)
                 Spacer()
             }
@@ -1737,6 +1762,7 @@ struct TerminalLineView: View {
             Text(attributedString)
                 .font(.system(size: scaledSize, design: .monospaced))
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel(TerminalLine.spokenText(line.text))
                 .accessibilityHidden(line.isDecorativeArt)
         }
     }
@@ -2189,7 +2215,7 @@ struct DirectionPadView: View {
     let terminalDarkGreen = Color(red: 0.0, green: 0.4, blue: 0.15)
     let disabledGreen = Color(red: 0.1, green: 0.25, blue: 0.1)
     let centerBlue = Color(red: 0.2, green: 0.5, blue: 0.8)
-    let uncertainGrey = Color(red: 0.35, green: 0.35, blue: 0.35)
+    let uncertainGrey = Color(red: 0.55, green: 0.55, blue: 0.55)   // 6:1 on black (was 3:1)
     let securedAmber = Color(red: 0.8, green: 0.6, blue: 0.1)
 
     private let npcCyan = Color(red: 0.2, green: 0.7, blue: 0.9)
@@ -2301,6 +2327,16 @@ struct DirectionPadView: View {
         }
     }
 
+    /// "Go north", "North, locked", "North, can't see in the dark"...
+    static func spokenDirection(_ dir: Direction, dark: Bool, locked: Bool, open: Bool) -> String {
+        let names = ["N": "north", "S": "south", "E": "east", "W": "west", "U": "up", "D": "down",
+                     "NE": "north-east", "NW": "north-west", "SE": "south-east", "SW": "south-west"]
+        let name = names[dir.rawValue.uppercased()] ?? dir.rawValue.lowercased()
+        if dark { return "\(name.capitalized), can't see in the dark" }
+        if locked { return "\(name.capitalized), locked" }
+        return open ? "Go \(name)" : "\(name.capitalized), no way through"
+    }
+
     @ViewBuilder
     private func dirButton(_ dir: Direction) -> some View {
         let hasExit = (exits[dir] ?? false) || secured.contains(dir)
@@ -2329,6 +2365,7 @@ struct DirectionPadView: View {
         }) {
             ZStack {
                 Text(isDark ? "\(dir.rawValue)?" : dir.rawValue)
+                    .accessibilityLabel(Self.spokenDirection(dir, dark: isDark, locked: isSecured, open: enabled))
                     .font(.system(size: 11 * scale, design: .monospaced))
                     .fontWeight(.semibold)
                     .foregroundColor(textColor)
@@ -2343,6 +2380,7 @@ struct DirectionPadView: View {
                     )
                 if isSecured && !isDark {
                     Text("🔒")
+                        .accessibilityHidden(true)
                         .font(.system(size: 10 * scale))
                         .offset(x: 25 * scale, y: -10 * scale)
                 }

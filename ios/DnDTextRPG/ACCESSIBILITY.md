@@ -4,8 +4,8 @@ DnD Text RPG is committed to providing an inclusive gaming experience. The follo
 
 ## Visual Accessibility
 
-- **Adjustable Text Size** -- Font size can be set to Small, Medium, Large, or Extra Large in Settings > Accessibility. The entire terminal interface scales accordingly.
-- **High-Contrast Display** -- The terminal-style interface uses bright text on a dark background for strong contrast. Button colours are distinct and meaningful: green for actions, cyan for chat, amber for NPCs, red for destructive actions.
+- **Adjustable Text Size** -- Font size can be set to Small, Medium, or Large in Settings > Accessibility, and on iPhone/iPad it also follows the system text size (Dynamic Type: Settings > Display & Brightness > Text Size, or Accessibility > Larger Text), capped so text never spills off the screen. *System Size Off* in Font Size turns that off. The entire terminal interface scales accordingly.
+- **High-Contrast Display** -- The terminal-style interface uses bright text on a dark background. Every text colour meets WCAG AA contrast (at least 4.5:1 on black — the dimmest green is 5:1); with the system's *Increase Contrast* setting on, the dim colours step up to AAA (7:1 or more). Button colours are distinct and meaningful: green for actions, cyan for chat, amber for NPCs, red for destructive actions.
 
 ## Audio Accessibility
 
@@ -67,6 +67,10 @@ What should work well
 - Every menu choice is a real button with its full name ("1. Actions"), including the 3-bar navigation ("Back", "Help").
 - The D-pad, corner icons, close and microphone buttons all have spoken labels.
 - The story text is ordinary text, read line by line; ASCII art is skipped; the map pane is a spoken summary.
+- **New text is announced**: when a result, warning or new page appears, VoiceOver reads it out even if your focus is down on a button (gathered for a moment, then queued behind whatever VoiceOver is saying). Off in speaker mode, which reads aloud itself.
+- **Stats are read with their values**: box lines and bar graphics are dropped and shorthand spelt out — a character card's "STR ████░░ 16" is read "strength 16", "HP 12/20" "hit points 12 of 20".
+- **Reading order** is top to bottom: the map, the story, then the buttons, then the input line — in both portrait and landscape.
+- Icon buttons all have names: Undo, Redo, Read the screen aloud, Next/Previous card, Random, Hide keyboard; D-pad directions say "Go north", "North, locked", "North, can't see in the dark".
 - The auto-continue hourglass is a labelled button ("Auto-continue countdown. Tap to pause, long-press to hurry").
 
 Recommended settings
@@ -77,7 +81,6 @@ Recommended settings
 - Long-press = VoiceOver double-tap-and-hold.
 
 Known gaps / ideas for improvement
-- New text isn't yet announced automatically (a VoiceOver "announcement" when a result or warning appears would help).
 - Screen titles aren't marked as headings, so the VoiceOver rotor can't jump between sections yet.
 - The Atlas map overlay is visual; its room list (Explore) is the accessible way to use it.
 - Combat hesitation should probably switch itself off whenever VoiceOver is running.

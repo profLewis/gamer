@@ -1794,6 +1794,8 @@ struct ArenaFighter {
     let maxHP: Int
     let isParty: Bool
     let down: Bool
+    /// Each character's own colour — sprite, name and roster entry.
+    var color: TerminalColor = .brightGreen
 }
 
 struct ArenaScene {
@@ -1847,7 +1849,7 @@ enum ArenaRenderer {
             let filled = f.down ? 0 : max(1, Int((frac * Double(bw)).rounded(.up)))
             let barColor: TerminalColor = f.down ? .gray : (frac > 0.5 ? .green : (frac > 0.25 ? .yellow : .red))
             let name = String(f.name.split(separator: " ").first ?? Substring(f.name)).prefix(8)
-            return [(String(name), f.down ? .gray : (f.isParty ? .brightGreen : .red)), ("[", .dimGreen),
+            return [(String(name), f.down ? .gray : f.color), ("[", .dimGreen),
                     (String(repeating: "#", count: min(bw, filled)), barColor),
                     (String(repeating: "-", count: max(0, bw - filled)), .dimGreen), ("]", .dimGreen)]
         }
@@ -1919,12 +1921,75 @@ enum ArenaRenderer {
         var leftY = feetY, rightY = feetY
         var leftLines = leftF.map { idleFrame($0.frames, seed: 0) } ?? []
         var rightLines = rightF.map { idleFrame($0.frames, seed: 0.5) } ?? []
-        var leftColor: TerminalColor = (leftF?.down ?? false) ? .gray : .brightGreen
-        var rightColor: TerminalColor = (rightF?.down ?? false) ? .gray : .red
+        func colorOf(_ name: String?, party: Bool) -> TerminalColor {
+            (party ? scene.party : scene.enemies).first { $0.name == name }?.color ?? (party ? .brightGreen : .red)
+        }
+        var leftColor: TerminalColor = (leftF?.down ?? false) ? .gray : colorOf(leftF?.name, party: true)
+        var rightColor: TerminalColor = (rightF?.down ?? false) ? .gray : colorOf(rightF?.name, party: false)
+        let leftNameColor = leftColor, rightNameColor = rightColor
+
+        // Everyone not in this exchange mills about above the fight, on their
+        // own side, cheering their friends on (clean words only).
+        let maxSpriteHeight = max(leftLines.count, rightLines.count, 1)
+        let bandBottom = feetY - maxSpriteHeight - 1   // just above the fighters' name labels
+        let partyOthers = scene.party.filter { !$0.down && $0.name != leftF?.name }
+        let enemyOthers = scene.enemies.filter { !$0.down && $0.name != rightF?.name }
+        func firstName(_ n: String) -> String { String(n.split(separator: " ").first ?? Substring(n)) }
+        func pick(_ lines: [String], _ seed: Int) -> String { lines[abs(seed) % lines.count] }
+        func bubble(isParty: Bool, index i: Int, count: Int) -> String? {
+            if let m = move, playing {
+                guard e >= 0.8, e < m.duration, abs(m.id.hashValue) % count == i else { return nil }
+                let seed = m.id.hashValue / 7 + i
+                let partyName = firstName(m.attackerIsParty ? m.attackerName : m.targetName)
+                if m.style == .heal { return isParty ? pick(["Thanks!", "Better?", "Much better!"], seed) : nil }
+                if isParty {
+                    if m.attackerIsParty {
+                        if m.defeated { return pick(["Hooray!", "Got it!", "Well fought!"], seed) }
+                        if m.critical { return pick(["What a blow!", "Brilliant!"], seed) }
+                        return m.hits ? pick(["Nice hit, \(partyName)!", "Go on!", "That's it!", "Again!"], seed)
+                                      : pick(["So close!", "Next time!", "Steady!"], seed)
+                    }
+                    if m.defeated { return pick(["Get up, \(partyName)!", "Hold on, \(partyName)!"], seed) }
+                    return m.hits ? pick(["Ouch!", "I'll cover you!", "Hang in there!"], seed)
+                                  : pick(["Good dodge!", "Missed you!"], seed)
+                }
+                if m.attackerIsParty { return m.hits ? pick(["Grr!", "Hss!", "Rargh!"], seed) : pick(["Ha!", "Missed!"], seed) }
+                return m.hits ? pick(["Ha!", "More!", "Heh heh!"], seed) : pick(["Bah!", "Grr..."], seed)
+            }
+            // Between moves: now and then someone says something.
+            let window = Int(t / 4.5)
+            guard !reduced, t - Double(window) * 4.5 < 2.8, (window % 2 == 0) == isParty, window % count == i else { return nil }
+            return isParty ? pick(["Stay together!", "Watch its claws!", "I've got your back!", "Keep going!", "Careful now!", "Anyone got a potion?", "Nearly there!"], window)
+                           : pick(["Grr...", "Hss...", "*snarl*", "*growl*", "*hiss*"], window)
+        }
+        func drawBystanders(_ list: [ArenaFighter], isParty: Bool) {
+            guard !list.isEmpty, bandBottom - 2 >= 2 else { return }
+            let half = W / 2
+            let x0 = isParty ? 1 : half + 1
+            let slot = max(5, (half - 2) / list.count)
+            for (i, f) in list.enumerated() {
+                let seed = Double(i) * 1.7 + (isParty ? 0 : 0.9)
+                let wander = reduced ? 0 : Int((sin(t * 0.6 + seed) * Double(slot) / 3).rounded())
+                let cx = min(x0 + half - 3, max(x0 + 1, x0 + slot * i + slot / 2 + wander))
+                let step = reduced ? 0 : Int(t * 2 + seed) % 2
+                let said = bubble(isParty: isParty, index: i, count: list.count)
+                let initial = String(f.name.prefix(1)).lowercased()
+                let head = isParty ? " o " : "{\(initial)}"
+                let body = isParty ? (said != nil ? "\\|/" : (step == 0 ? "/|\\" : "/|)")) : (step == 0 ? "/^\\" : "/^|")
+                put(head, cx - 1, bandBottom - 1, f.color)
+                put(body, cx - 1, bandBottom, f.color)
+                let text = said.map { "\"\($0)\"" } ?? String(firstName(f.name).prefix(8))
+                let lo = isParty ? 0 : half, hi = isParty ? half - 1 : W - 1
+                let tx = min(max(lo, cx - text.count / 2), max(lo, hi - text.count))
+                put(text, tx, bandBottom - 2, said != nil ? .white : f.color)
+            }
+        }
+        drawBystanders(partyOthers, isParty: true)
+        drawBystanders(enemyOthers, isParty: false)
 
         guard playing, let m = move else {
-            if let l = leftF { drawSprite(leftLines, x: leftX, bottom: leftY, color: leftColor); label(l.name, x: leftX, w: lw, top: leftY - leftLines.count + 1, color: .dimGreen) }
-            if let r = rightF { drawSprite(rightLines, x: rightX, bottom: rightY, color: rightColor); label(r.name, x: rightX, w: rw, top: rightY - rightLines.count + 1, color: .dimGreen) }
+            if let l = leftF { drawSprite(leftLines, x: leftX, bottom: leftY, color: leftColor); label(l.name, x: leftX, w: lw, top: leftY - leftLines.count + 1, color: leftNameColor) }
+            if let r = rightF { drawSprite(rightLines, x: rightX, bottom: rightY, color: rightColor); label(r.name, x: rightX, w: rw, top: rightY - rightLines.count + 1, color: rightNameColor) }
             if let turn = scene.turnName { center("\(turn)'s turn", 0, .cyan) }
             return g
         }
@@ -1988,11 +2053,11 @@ enum ArenaRenderer {
 
         if let l = leftF {
             drawSprite(leftLines, x: leftX, bottom: leftY, color: leftColor)
-            label(l.name, x: leftX, w: lw, top: leftY - leftLines.count + 1, color: .dimGreen)
+            label(l.name, x: leftX, w: lw, top: leftY - leftLines.count + 1, color: leftNameColor)
         }
         if let r = rightF {
             drawSprite(rightLines, x: rightX, bottom: rightY, color: rightColor)
-            label(r.name, x: rightX, w: rw, top: rightY - rightLines.count + 1, color: .dimGreen)
+            label(r.name, x: rightX, w: rw, top: rightY - rightLines.count + 1, color: rightNameColor)
         }
         if m.defeated && e >= 1.1 + 0.18 * 4 {
             let (x, w) = m.attackerIsParty ? (rightX, rw) : (leftX, lw)
