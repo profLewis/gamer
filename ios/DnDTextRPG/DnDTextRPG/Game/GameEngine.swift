@@ -142,6 +142,13 @@ class GameEngine: ObservableObject {
     /// Google Maps' recentre control.
     @Published var mapOverlayVisible: Bool = false
     @Published var mapOverlayLines: [TerminalLine] = []
+    /// The big map drawn as a picture — terrain for each room, names and
+    /// little info panels — instead of text (see PictureMapView).
+    @Published var pictureMapOn = false
+    var overlayAtlasLevel: AtlasLevel? {
+        let levels = atlasLevels()
+        return levels.indices.contains(atlasLevelIndex) ? levels[atlasLevelIndex] : nil
+    }
     @Published var currentMenuOptions: [MenuOption] = []
     @Published var directionExits: [Direction: Bool] = [:]  // direction -> enabled
     @Published var securedExits: Set<Direction> = []  // directions that are barred
