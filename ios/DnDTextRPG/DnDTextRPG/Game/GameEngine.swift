@@ -742,6 +742,23 @@ class GameEngine: ObservableObject {
     /// The one active side quest, if any — an NPC won't offer another while
     /// this is set (see talkToNPC()'s "Ask for a Quest" gating).
     @Published var activeQuest: SideQuest? = nil
+    /// Quests beyond the first — a strong enough party can carry several.
+    @Published var otherQuests: [SideQuest] = []
+    var allQuests: [SideQuest] { (activeQuest.map { [$0] } ?? []) + otherQuests }
+    /// How many quests the party can take on at once: 1; 2 for a party of
+    /// two or more averaging level 2+; 3 for three or more averaging level 4+.
+    var questCapacity: Int {
+        guard !party.isEmpty else { return 1 }
+        let average = party.map { $0.level }.reduce(0, +) / party.count
+        var capacity = 1
+        if party.count >= 2 && average >= 2 { capacity += 1 }
+        if party.count >= 3 && average >= 4 { capacity += 1 }
+        return capacity
+    }
+    var canTakeAnotherQuest: Bool { allQuests.count < questCapacity }
+    func addQuest(_ quest: SideQuest) {
+        if activeQuest == nil { activeQuest = quest } else { otherQuests.append(quest) }
+    }
 
     // Save slot tracking
     private var activeSlotId: UUID?
@@ -4902,8 +4919,65 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// From here to the nearest room matching `want`, through open passages:
+    /// the first direction to take and how many rooms away. nil if none.
+    func routeToNearest(where want: (Room) -> Bool) -> (direction: Direction, rooms: Int, room: Room)? {
+        guard let dungeon = dungeon, let start = dungeon.currentRoom else { return nil }
+        var seen: Set<Int> = [start.id]
+        var queue: [(id: Int, first: Direction?, dist: Int)] = [(start.id, nil, 0)]
+        var head = 0
+        while head < queue.count {
+            let (id, first, dist) = queue[head]
+            head += 1
+            guard let room = dungeon.rooms[id] else { continue }
+            if dist > 0, let first = first, want(room) { return (first, dist, room) }
+            for (dir, next) in room.exits where !seen.contains(next) {
+                seen.insert(next)
+                queue.append((next, first ?? dir, dist + 1))
+            }
+        }
+        return nil
+    }
+
+    func directionWord(_ dir: Direction) -> String {
+        let names = ["N": "north", "S": "south", "E": "east", "W": "west", "U": "up", "D": "down"]
+        return names[dir.rawValue.uppercased()] ?? dir.rawValue.lowercased()
+    }
+
+    /// "head north, 3 rooms away" / "just through the north passage".
+    private func wayThere(_ route: (direction: Direction, rooms: Int, room: Room)) -> String {
+        let dir = directionWord(route.direction)
+        return route.rooms == 1 ? "just through the \(dir) passage" : "head \(dir) — about \(route.rooms) rooms away"
+    }
+
+    /// A pointer towards something worth doing: a quest-giver if the party
+    /// has room for a quest, else where a quest's target lies.
+    private func questPointer() -> String? {
+        if canTakeAnotherQuest, npcsEnabled,
+           let route = routeToNearest(where: { room in
+               guard let npc = room.npc else { return false }
+               return npc.type != .gatekeeper && !npc.sideQuestOffered && npc.willOfferSideQuest != false
+                   && !self.allQuests.contains { $0.giverName == npc.type.rawValue }
+           }), let npc = route.room.npc {
+            let opener = allQuests.isEmpty ? "You're not on a quest yet." : "There's room for another quest."
+            return "\(opener) \(npc.displayName) might have one — \(wayThere(route))."
+        }
+        if let quest = allQuests.first(where: { $0.type == .visitRoomType && !isSideQuestComplete($0) }),
+           let type = quest.targetRoomType, let route = routeToNearest(where: { $0.roomType == type }) {
+            return "For \(quest.giverName)'s quest, a \(type.rawValue.lowercased()) lies that way: \(wayThere(route))."
+        }
+        if let quest = allQuests.randomElement() {
+            return "Quest for \(quest.giverName): \(quest.description). \(sideQuestProgressDescription(quest))."
+        }
+        return nil
+    }
+
     private func explorationTip() -> String {
         let room = dungeon?.currentRoom
+        // Mostly, adventurers should be on a quest — point the way.
+        if let pointer = questPointer(), room?.npc == nil || room?.npc?.hasBeenTalkedTo == true, Int.random(in: 1...10) <= 7 {
+            return pointer
+        }
         if let npc = room?.npc, !npc.hasBeenTalkedTo {
             return "\(npc.displayName) is here. Ask if they have a quest for you — you'll win prizes and progress as a character."
         }
@@ -8477,7 +8551,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest
+            activeQuest: activeQuest, otherQuests: otherQuests
         )
 
         try? SaveGameManager.shared.save(saveGame)
@@ -20954,7 +21028,7 @@ class GameEngine: ObservableObject {
                 npc.willOfferSideQuest = Int.random(in: 1...100) <= 45
                 room.npc = npc
             }
-            if npc.willOfferSideQuest == true, activeQuest == nil {
+            if npc.willOfferSideQuest == true, canTakeAnotherQuest, !allQuests.contains(where: { $0.giverName == npc.type.rawValue }) {
                 options.append(MenuOption("Ask for a Quest", tint: .cyan))
                 actions.append { [weak self] in self?.offerSideQuest() }
             }
@@ -21010,7 +21084,7 @@ class GameEngine: ObservableObject {
         guard let quest = activeQuest else { returnTo(); return }
         let charged = chargeQuestAbandonPenalty()
         logEvent("Gave up quest: \(quest.description) (paid \(charged) gold in lost goodwill)", category: "QUEST")
-        activeQuest = nil
+        activeQuest = otherQuests.isEmpty ? nil : otherQuests.removeFirst()
         print("  The party's reputation takes a hit — \(charged) gold poorer for it.", color: .yellow)
         waitForContinueWithTimeout { returnTo() }
     }
@@ -21058,8 +21132,11 @@ class GameEngine: ObservableObject {
             npc.sideQuestOffered = true
             room.npc = npc
             if choice == 1 {
-                self.activeQuest = quest
+                self.addQuest(quest)
                 self.print("  Quest accepted: \(quest.description)", color: .brightGreen)
+                if self.allQuests.count > 1 {
+                    self.print("  The party is now on \(self.allQuests.count) quests at once (room for \(self.questCapacity)).", color: .cyan)
+                }
                 self.logEvent("Accepted quest from \(quest.giverName): \(quest.description)", category: "QUEST")
                 self.waitForContinueWithTimeout { self.talkToNPC() }
             } else {
@@ -21125,10 +21202,17 @@ class GameEngine: ObservableObject {
     /// completion screen. Returns true when it did — callers (mainly
     /// showExplorationView()) should skip their own render in that case.
     private func checkAndShowSideQuestCompletion() -> Bool {
-        guard let quest = activeQuest, isSideQuestComplete(quest) else { return false }
-        activeQuest = nil
-        showSideQuestComplete(quest)
-        return true
+        if let quest = activeQuest, isSideQuestComplete(quest) {
+            activeQuest = otherQuests.isEmpty ? nil : otherQuests.removeFirst()
+            showSideQuestComplete(quest)
+            return true
+        }
+        if let i = otherQuests.firstIndex(where: { self.isSideQuestComplete($0) }) {
+            let quest = otherQuests.remove(at: i)
+            showSideQuestComplete(quest)
+            return true
+        }
+        return false
     }
 
     /// Applies a quest reward immediately and returns a short description —
@@ -22152,7 +22236,7 @@ class GameEngine: ObservableObject {
         // — this is only the "getting closer" nudge for a collectGold quest
         // still in progress.
         let announceGoldQuestProgress: () -> Void = { [weak self] in
-            guard let self = self, let quest = self.activeQuest, quest.type == .collectGold else { return }
+            guard let self = self, let quest = self.allQuests.first(where: { $0.type == .collectGold }) else { return }
             let totalGold = self.party.reduce(0) { $0 + $1.gold }
             let done = min(quest.target, totalGold - quest.startPartyGold)
             guard done < quest.target else { return }
@@ -23622,10 +23706,13 @@ class GameEngine: ObservableObject {
         // Active quest — the only place besides the offer/completion
         // screens where progress is visible, so a player who accepted a
         // quest and moved on has somewhere to check back in.
-        if let quest = activeQuest {
+        for quest in allQuests {
             print("")
             printWrapped("QUEST from \(quest.giverName): \(quest.description)", indent: 2, color: .cyan, bold: true)
             printWrapped(sideQuestProgressDescription(quest), indent: 4, color: .dimGreen)
+        }
+        if !allQuests.isEmpty && canTakeAnotherQuest {
+            printWrapped("Room for another quest (\(allQuests.count) of \(questCapacity)) — ask the folk you meet.", indent: 4, color: .dimGreen)
         }
 
         // Torch status
@@ -23777,7 +23864,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest
+            activeQuest: activeQuest, otherQuests: otherQuests
         )
         showAdventureTale(AdventureTaleData(inProgress: snapshot), onBack: onBack)
     }
@@ -24005,7 +24092,7 @@ class GameEngine: ObservableObject {
             // A quest already accepted is easy to forget about mid-adventure
             // — show a reminder of it and its progress before every screen's
             // own help content, rather than only on Party Status.
-            if let quest = activeQuest {
+            for quest in allQuests {
                 print("  QUEST from \(quest.giverName): \(quest.description)", color: .cyan, bold: true)
                 print("  \(sideQuestProgressDescription(quest))", color: .dimGreen)
                 print("")
@@ -25315,7 +25402,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest
+            activeQuest: activeQuest, otherQuests: otherQuests
         )
         guard (try? SaveGameManager.shared.save(saveGame)) != nil else { return nil }
         return slotName
@@ -30302,7 +30389,7 @@ class GameEngine: ObservableObject {
         // A quest that just completed gets its own big celebration screen
         // once showExplorationView() runs checkAndShowSideQuestCompletion()
         // — this is only the "getting closer" nudge for one still in progress.
-        if let quest = activeQuest, quest.type == .defeatMonsters {
+        if let quest = allQuests.first(where: { $0.type == .defeatMonsters }) {
             let done = min(quest.target, monstersSlain - quest.startMonstersSlain)
             if done < quest.target {
                 print("  ✦ Quest progress: \(done)/\(quest.target) monsters defeated", color: .cyan, bold: true)
@@ -31019,7 +31106,7 @@ class GameEngine: ObservableObject {
                 torchTurnsRemaining: torchTurnsRemaining,
                 partyChatLog: partyChatLog.suffix(20).map { $0 },
                 monstersSlain: monstersSlain, combatsWon: combatsWon,
-                activeQuest: activeQuest
+                activeQuest: activeQuest, otherQuests: otherQuests
             )
             try? SaveGameManager.shared.save(hofSave)
             linkedSaveId = saveId
@@ -31748,7 +31835,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest
+            activeQuest: activeQuest, otherQuests: otherQuests
         )
 
         do {
@@ -31796,7 +31883,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest
+            activeQuest: activeQuest, otherQuests: otherQuests
         )
 
         do {
@@ -32426,7 +32513,7 @@ class GameEngine: ObservableObject {
                 partyChatLog: bp.partyChatLog,
                 monstersSlain: bp.monstersSlain,
                 combatsWon: bp.combatsWon,
-                activeQuest: bp.activeQuest
+                activeQuest: bp.activeQuest, otherQuests: bp.otherQuests
             )
             try? SaveGameManager.shared.save(copy)
         }
@@ -33004,7 +33091,7 @@ class GameEngine: ObservableObject {
                 gameTimeMinutes: bp.gameTimeMinutes, adventureLog: bp.adventureLog,
                 dmChatLog: bp.dmChatLog, torchLit: bp.torchLit, torchTurnsRemaining: bp.torchTurnsRemaining,
                 partyChatLog: bp.partyChatLog, monstersSlain: bp.monstersSlain, combatsWon: bp.combatsWon,
-                activeQuest: bp.activeQuest
+                activeQuest: bp.activeQuest, otherQuests: bp.otherQuests
             )
             try? SaveGameManager.shared.save(renamed)
         }
@@ -33246,6 +33333,7 @@ class GameEngine: ObservableObject {
         monstersSlain = save.monstersSlain
         combatsWon = save.combatsWon
         activeQuest = save.activeQuest
+        otherQuests = save.otherQuests ?? []
         // Restore torch state — if not saved, auto-light if anyone has a torch
         if let savedTorchLit = save.torchLit {
             torchLit = savedTorchLit
@@ -33491,6 +33579,7 @@ class GameEngine: ObservableObject {
         monstersSlain = 0
         combatsWon = 0
         activeQuest = nil
+        otherQuests = []
         activeSlotId = nil
         activeSlotName = nil
         torchLit = false

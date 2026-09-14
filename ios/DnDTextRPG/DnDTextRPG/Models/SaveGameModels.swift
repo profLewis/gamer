@@ -50,6 +50,9 @@ struct SaveGame: Codable, Identifiable {
 
     // Active side quest, if any
     let activeQuest: SideQuest?
+
+    // Further quests a strong party is carrying at the same time (nil in older saves)
+    var otherQuests: [SideQuest]? = nil
 }
 
 // MARK: - Save Slot (grouped view)
