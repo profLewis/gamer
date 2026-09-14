@@ -801,6 +801,17 @@ struct TerminalView: View {
                     Text("paused")
                         .font(.system(size: 11 * scale, design: .monospaced))
                         .foregroundColor(amber.opacity(pulse))
+                    // Help on un-pausing, printed onto the current screen.
+                    Button(action: { gameEngine.printAutoContinuePauseHelp() }) {
+                        Text("?")
+                            .font(.system(size: 12 * scale, weight: .semibold, design: .monospaced))
+                            .foregroundColor(amber)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .overlay(Capsule().stroke(amber.opacity(0.5), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("How to un-pause")
                 }
             }
         }
@@ -828,7 +839,24 @@ struct TerminalView: View {
                             // Blinking cursor block — a plain on/off setting now (the
                             // countdown bar below is what signals a waiting screen);
                             // hidden once there's typed text so it doesn't sit beside it.
-                            if gameEngine.blinkingCursorEnabled && inputText.isEmpty && !GameEngine.systemVoiceOverRunning {
+                            // While a screen is counting down, the cursor becomes the
+                            // pause control: a blinking ⏸ (tap to pause), or while
+                            // paused a blinking amber ▶ (tap to carry on).
+                            if gameEngine.awaitingContinue && gameEngine.autoContinueCountdownAvailable && gameEngine.autoCountdownEnd != nil {
+                                let paused = gameEngine.autoContinuePaused
+                                TimelineView(.periodic(from: .now, by: 0.53)) { context in
+                                    let visible = Int(context.date.timeIntervalSinceReferenceDate / 0.53) % 2 == 0
+                                    Image(systemName: paused ? "play.fill" : "pause.fill")
+                                        .font(.system(size: 12 * scale))
+                                        .foregroundColor(paused ? Color(red: 1.0, green: 0.72, blue: 0.0) : terminalGreen)
+                                        .opacity(visible ? 1 : 0.25)
+                                }
+                                .frame(width: 18 * scale, height: 26)
+                                .contentShape(Rectangle())
+                                .onTapGesture { gameEngine.toggleAutoContinuePause() }
+                                .accessibilityLabel(paused ? "Resume auto-continue" : "Pause auto-continue")
+                                .accessibilityAddTraits(.isButton)
+                            } else if gameEngine.blinkingCursorEnabled && inputText.isEmpty && !GameEngine.systemVoiceOverRunning {
                                 TimelineView(.periodic(from: .now, by: 0.53)) { context in
                                     let visible = Int(context.date.timeIntervalSinceReferenceDate / 0.53) % 2 == 0
                                     Text("█")

@@ -317,6 +317,19 @@ class GameEngine: ObservableObject {
         autoCountdownEnd = Date().addingTimeInterval(max(0.6, remaining / 4))
     }
 
+    private var autoContinueHelpShownGeneration = -1
+
+    /// The "?" beside "paused": a short how-to-carry-on note printed onto
+    /// the current screen (once per screen), rather than a help page that
+    /// would replace the screen that's waiting.
+    func printAutoContinuePauseHelp() {
+        guard autoContinueHelpShownGeneration != screenGeneration else { return }
+        autoContinueHelpShownGeneration = screenGeneration
+        print("")
+        print("  AUTO-CONTINUE IS PAUSED", color: .yellow, bold: true)
+        printWrapped("Tap ▶ (or the hourglass) by the > prompt to carry on counting down, or long-press the hourglass to hurry. Tap the text to move on right now. Settings > Gameplay turns Auto-Continue off.", indent: 2, color: .dimGreen)
+    }
+
     func toggleAutoContinuePause() {
         autoContinuePaused.toggle()
         // Freeze / thaw the bar where it is — a pause picks up again from
