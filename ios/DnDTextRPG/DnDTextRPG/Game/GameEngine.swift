@@ -19319,6 +19319,7 @@ class GameEngine: ObservableObject {
         // Retrofit unconditionally so "a merchant has set up shop here" is
         // never a lie, no matter how old the save.
         dungeon.ensureTeleportPads()   // older maps had one pad or none
+        if let villain = mainQuest?.villain { dungeon.crownFinalGuardian(villain: villain) }
         if room.roomType == .armory {
             if room.merchant == nil {
                 seedNameRegistry()
@@ -31928,7 +31929,10 @@ class GameEngine: ObservableObject {
         let totalRooms = dungeon?.rooms.count ?? 0
         let explorationPct = totalRooms > 0 ? (roomsExplored * 100 / totalRooms) : 0
         let day = gameTimeMinutes / 1440 + 1
-        let bossName = dungeon?.rooms.values.first(where: { $0.roomType == .boss })?.encounter?.monsters.first?.type.rawValue
+        let bossMonster = dungeon?.rooms.values.first(where: { $0.roomType == .boss })?.encounter?.monsters.first
+        let isFinal = dungeon?.isFinalLevel ?? false
+        let bossName = isFinal ? bossMonster?.name : bossMonster?.type.rawValue
+        let guardian = mainQuest.map { Dungeon.guardianName($0.villain) }
 
         // --- ASCII Trophy ---
         printLines(asciiTrophy, color: .yellow)
@@ -31952,6 +31956,10 @@ class GameEngine: ObservableObject {
             printWrapped("The dreaded \(boss) lies defeated, its reign of terror ended by steel, spell, and courage.", indent: 2, color: .green)
         } else {
             printWrapped("The dungeon boss lies vanquished. Its dark power is broken.", indent: 2, color: .green)
+        }
+        // Every guardian before the last serves the villain — and says so.
+        if !isFinal, let g = guardian {
+            printWrapped("With its last breath it gasps a name — \(g) — as if that should frighten you. It does, a little.", indent: 2, color: .yellow)
         }
         print("")
 
@@ -32009,10 +32017,39 @@ class GameEngine: ObservableObject {
         print("  Recorded in the Hall of Fame!", color: .yellow)
         print("")
 
+        // --- The end of the tale: the villain is beaten, nothing lies deeper ---
+        if isFinal {
+            print("  ┌─ The Tale Is Told ─────────────┐", color: .yellow, bold: true)
+            if let q = mainQuest {
+                printWrapped("\(Dungeon.guardianName(q.villain)) is no more. You came down here to \(q.goal) — and it is done.", indent: 2, color: .yellow)
+                print("")
+                printWrapped("Word runs ahead of you all the way to \(q.village). They promised you \(q.reward). It's yours, and so is every song they'll sing about this.", indent: 2, color: .brightGreen)
+            } else {
+                printWrapped("The last guardian of \(dungeonName) has fallen. There is nothing deeper — this was the bottom of the world, and you conquered it.", indent: 2, color: .yellow)
+            }
+            print("  └───────────────────────────────┘", color: .yellow)
+            print("")
+            printWrapped("THE END — of this adventure. Your heroes are in the Hall of Fame; a new tale starts whenever you like.", indent: 2, color: .dimGreen)
+            print("")
+            logEvent("THE END: the final guardian of \(dungeonName) is defeated", category: "EXPLORE")
+            showMenu(["Save & End Adventure", "End Adventure"])
+            menuHandler = { [weak self] choice in
+                guard let self = self else { return }
+                if choice == 1 { self.performQuickSave() }
+                self.resetGame()
+            }
+            return
+        }
+
         // --- What lies ahead ---
         let nextLevel = currentLevel + 1
         print("  ┌─ The Depths Beckon ────────────┐", color: .cyan, bold: true)
         printWrapped("Level \(nextLevel) of \(dungeonName) awaits. Darker corridors, deadlier foes, and greater treasures lie below. Your party is stronger now — but so are the monsters.", indent: 2, color: .cyan)
+        if let g = guardian {
+            let left = Dungeon.finalLevel - currentLevel
+            printWrapped(left <= 1 ? "Level \(nextLevel) is the last. \(g) waits at the bottom."
+                                   : "\(g) waits at the bottom, \(left) levels down. Every guardian between here and there is stronger than the last.", indent: 2, color: .yellow)
+        }
         print("  └───────────────────────────────┘", color: .cyan)
         print("")
         printWrapped("Save your progress before descending — the deeper levels show no mercy to the unprepared.", indent: 2, color: .dimGreen)
@@ -32078,6 +32115,12 @@ class GameEngine: ObservableObject {
                 self.print("The air grows heavier. Stronger foes await.", color: .dimGreen)
             }
             self.print("")
+
+            if nextLevel >= Dungeon.finalLevel {
+                self.print("")
+                let g = self.mainQuest.map { Dungeon.guardianName($0.villain) } ?? "its last guardian"
+                self.printWrapped("This is the last level — the bottom of the world. Somewhere down here, \(g) is waiting.", indent: 0, color: .yellow)
+            }
 
             if self.musicEnabled { SoundManager.shared.startMusic(.exploration, preference: self.explorationMelodyChoice) }
 

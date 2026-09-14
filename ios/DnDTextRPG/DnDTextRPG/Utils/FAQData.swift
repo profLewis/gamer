@@ -64,6 +64,11 @@ struct FAQData {
             keywords: ["move", "walk", "direction", "navigate", "go north", "go south", "go east", "go west", "how to move"]
         ),
         FAQEntry(
+            question: "Is there an end? How deep does it go?",
+            answer: "Seven levels. Beat a level's guardian (the B room) to go down to the next — each guardian stronger than the last, every one serving the villain from your Opening Tale. On Level 7 that villain is waiting: beat them and your quest is done, and so is the adventure. (A rare deep-blue teleport pad can also drop you a level early.)",
+            keywords: ["end", "ending", "how deep", "how many levels", "final boss", "last level", "top", "bottom", "villain", "finish"]
+        ),
+        FAQEntry(
             question: "How do I search a room?",
             answer: "Tap 'Search Room' from the exploration menu. You need a lit torch to search properly. Rooms can be searched multiple times — you might find hidden treasure on a second or third look!",
             keywords: ["search", "find items", "hidden", "treasure", "loot", "search room"]

@@ -1271,12 +1271,40 @@ class Dungeon: ObservableObject, Codable {
         }
     }
 
+    /// The bottom of the world: this level's guardian is the villain from
+    /// the opening tale, and beating it ends the adventure.
+    static let finalLevel = 7
+    var isFinalLevel: Bool { level >= Dungeon.finalLevel }
+
+    /// What the villain is called in a fight: "Mother Sable, the Hag of the
+    /// Deep" -> "Mother Sable"; "the Hollow King" -> "The Hollow King".
+    static func guardianName(_ villain: String) -> String {
+        let n = villain.components(separatedBy: ",").first?.trimmingCharacters(in: .whitespaces) ?? villain
+        return n.prefix(1).uppercased() + n.dropFirst()
+    }
+
+    /// On the final level the boss becomes the villain itself — named, and
+    /// tougher than any guardian before it. Safe to call again and again.
+    func crownFinalGuardian(villain: String) {
+        guard isFinalLevel else { return }
+        let name = Dungeon.guardianName(villain)
+        for room in rooms.values where room.roomType == .boss && !room.cleared {
+            guard var enc = room.encounter, let boss = enc.monsters.first, boss.name != name else { continue }
+            let hp = Int(Double(boss.maxHP) * 1.3)
+            enc.monsters[0] = Monster(id: boss.id, name: name, type: boss.type, currentHP: hp, maxHP: hp,
+                                      armorClass: boss.armorClass + 1, attackBonus: boss.attackBonus + 1,
+                                      damage: boss.damage, challengeRating: boss.challengeRating,
+                                      experiencePoints: boss.experiencePoints * 2)
+            room.encounter = enc
+        }
+    }
+
     /// A "deep pad": on some levels (about four in ten, fixed by the
     /// dungeon's name and level, so it never changes on reload) one pad
     /// can also carry the party down to the next level. Never on a map
     /// too small to have pads to spare.
     var deepPadRoomId: Int? {
-        guard rooms.count >= 8 else { return nil }
+        guard rooms.count >= 8, level < Dungeon.finalLevel else { return nil }
         let seed = name.unicodeScalars.reduce(0) { $0 + Int($1.value) } + level * 7
         guard seed % 10 < 4 else { return nil }
         return rooms.values.filter { $0.teleportDestinationRoomId != nil && $0.roomType != .entrance && $0.roomType != .boss }
