@@ -362,6 +362,76 @@ class GameEngine: ObservableObject {
         autoCountdownEnd = Date().addingTimeInterval(max(0.6, remaining / 4))
     }
 
+    /// Timeouts page: each kind of timed screen can run quicker or slower
+    /// than the Auto-Continue wait — a multiplier, 1 = as it is.
+    enum TimeoutKind: String, CaseIterable {
+        case reading, fights, loot, search, tales, results
+        var label: String {
+            switch self {
+            case .reading: return "Reading screens"
+            case .fights: return "Fights"
+            case .loot: return "Loot & pick-ups"
+            case .search: return "Search & listen"
+            case .tales: return "Tales"
+            case .results: return "Victory & defeat"
+            }
+        }
+        var help: String {
+            switch self {
+            case .reading: return "Most tap-to-continue screens: messages, conversations, results."
+            case .fights: return "Each turn in a fight — companions' and monsters' turns, and yours."
+            case .loot: return "Who picked up what, after a fight or a find."
+            case .search: return "Search, listen and similar quick results."
+            case .tales: return "Turning the pages of the Opening and Progress Tales."
+            case .results: return "The screens after a battle is won or lost."
+            }
+        }
+    }
+    static let timeoutScales: [Double] = [0.5, 0.75, 1.0, 1.5, 2.0, 3.0]
+    func timeoutScale(_ kind: TimeoutKind) -> Double {
+        let v = UserDefaults.standard.double(forKey: "timeoutScale." + kind.rawValue)
+        return v > 0 ? v : 1.0
+    }
+    static func timeoutScaleLabel(_ v: Double) -> String {
+        v == 1 ? "normal" : "×" + String(format: "%g", v) + (v < 1 ? " (quicker)" : " (slower)")
+    }
+    /// Set just before a timed screen to say what kind it is (used once).
+    private var pendingTimeoutKind: TimeoutKind?
+
+    func showTimeoutsSettings(onBack: @escaping () -> Void) {
+        clearTerminal()
+        printTitle("Timeouts")
+        printWrapped("How long timed screens wait before moving on by themselves. Each kind below runs at its own speed on top of the base wait, and every screen still gets time to be read. Tap the hourglass on any screen to pause it.", indent: 2, color: .dimGreen)
+        print("")
+        print("  Auto-Continue: \(autoContinueEnabled ? "On" : "Off")   Base wait: \(String(format: "%.0fs", infoTimeout))", color: autoContinueEnabled ? .brightGreen : .red)
+        print("")
+        for k in TimeoutKind.allCases {
+            print("  \(k.label): \(Self.timeoutScaleLabel(timeoutScale(k)))", color: .brightGreen)
+            printWrapped(k.help, indent: 4, color: .dimGreen)
+        }
+        print("")
+        let kinds = TimeoutKind.allCases
+        let options = kinds.map { "\($0.label): \(Self.timeoutScaleLabel(timeoutScale($0)))" } + ["Base Wait", "Reset All"]
+        closeHandler = onBack
+        showPaginatedMenuOptions(options, pinned: ["< Back"], handler: { [weak self] idx in
+            guard let self = self else { return }
+            if idx < kinds.count {
+                let k = kinds[idx]
+                let now = self.timeoutScale(k)
+                let next = Self.timeoutScales.first(where: { $0 > now + 0.001 }) ?? Self.timeoutScales[0]
+                UserDefaults.standard.set(next, forKey: "timeoutScale." + k.rawValue)
+                self.logEvent("\(k.label) timeouts set to \(Self.timeoutScaleLabel(next))", category: "SETTINGS")
+                self.showTimeoutsSettings(onBack: onBack)
+            } else if idx == kinds.count {
+                self.showInfoTimeoutMenu()
+            } else {
+                for k in kinds { UserDefaults.standard.removeObject(forKey: "timeoutScale." + k.rawValue) }
+                self.logEvent("Timeouts reset to normal", category: "SETTINGS")
+                self.showTimeoutsSettings(onBack: onBack)
+            }
+        }, pinnedHandler: { _ in onBack() })
+    }
+
     /// A countdown never runs out before the screen's text could be read —
     /// about 200 words a minute on top of the Info Timeout (capped, so a
     /// huge page can't park the game for minutes). Busy combat reports and
@@ -2188,6 +2258,7 @@ class GameEngine: ObservableObject {
         case "autoContinue": return { [weak self] in self?.showAutoContinueSettingsPage() }
         case "accessibility": return { [weak self] in self?.showAccessibilityMenu() }
         case "infoTimeout": return { [weak self] in self?.showInfoTimeoutMenu() }
+        case "timeouts": return { [weak self] in self?.showTimeoutsSettings(onBack: { [weak self] in self?.returnFromLink() }) }
         case "saves": return { [weak self] in self?.showSaveSettings() }
         case "dm": return { [weak self] in self?.showDMSettingsSubMenu() }
         case "ai": return { [weak self] in self?.showAIProviderMenu(onBack: { [weak self] in self?.returnFromLink() }) }
@@ -2218,6 +2289,7 @@ class GameEngine: ObservableObject {
             autoContinueEnabled ? "Auto-Continue Off" : "Auto-Continue On",
             "Wait: \(String(format: "%.0fs", infoTimeout))",
             showCountdownControl ? "Countdown Icon Off" : "Countdown Icon On",
+            "Timeouts",
         ]
         showPaginatedMenuOptions(options, pinned: ["?", "< Back"], handler: { [weak self] idx in
             guard let self = self else { return }
@@ -2238,6 +2310,9 @@ class GameEngine: ObservableObject {
                 self.showCountdownControl.toggle()
                 UserDefaults.standard.set(self.showCountdownControl, forKey: "showCountdownControl")
                 self.logEvent("Countdown hourglass turned \(self.showCountdownControl ? "on" : "off")", category: "SETTINGS")
+            case 3:
+                self.showTimeoutsSettings(onBack: { [weak self] in self?.showAutoContinueSettingsPage() })
+                return
             default: break
             }
             self.showAutoContinueSettingsPage()
@@ -3547,11 +3622,11 @@ class GameEngine: ObservableObject {
         // Computer-controlled companions' and monsters' turns move on quickest
         // (a few seconds at most — the reading-time stretch made them drag).
         let delay: Double
-        if currentCombat == nil { delay = base }
-        else if aiTurnInProgress { delay = min(base, 3.5) * Double.random(in: 0.7...1.0) }
-        else { delay = base * Double.random(in: 0.55...0.85) }
+        if currentCombat == nil { delay = base * timeoutScale(.reading) }
+        else if aiTurnInProgress { delay = min(base, 3.5) * Double.random(in: 0.7...1.0) * timeoutScale(.fights) }
+        else { delay = base * Double.random(in: 0.55...0.85) * timeoutScale(.fights) }
         // A "defeated!" report moves on sooner still.
-        let finalDelay = quickNextContinue ? min(delay, 3.0) : delay
+        let finalDelay = quickNextContinue ? min(delay, 3.0 * timeoutScale(.fights)) : delay
         quickNextContinue = false
         scheduleAutoAdvance(after: finalDelay, isStillValid: { [weak self] in
             guard let self = self else { return false }
@@ -3646,6 +3721,8 @@ class GameEngine: ObservableObject {
         // Picking up the spoils after a fight: move along quicker (still
         // time to read who took what).
         if combatLootEligible != nil { delay = max(1.5, min(delay, 4.0) * 0.6) }
+        delay *= timeoutScale(pendingTimeoutKind ?? (combatLootEligible != nil ? .loot : .reading))
+        pendingTimeoutKind = nil
         scheduleAutoAdvance(after: delay, isStillValid: { [weak self] in
             !fired && self?.awaitingContinue == true && Self.continueGeneration == myGeneration
         }, fire: fire)
@@ -3678,7 +3755,8 @@ class GameEngine: ObservableObject {
     private var autoReturnGeneration = 0
 
     func autoReturn(after seconds: Double? = nil, stretchForReading: Bool = true) {
-        let seconds = seconds ?? infoTimeout
+        let seconds = (seconds ?? infoTimeout) * timeoutScale(pendingTimeoutKind ?? .reading)
+        pendingTimeoutKind = nil
         let destination = autoReturnDestination ?? { [weak self] in self?.showExplorationView() }
         autoReturnDestination = nil
         closeHandler = destination
@@ -9112,6 +9190,10 @@ class GameEngine: ObservableObject {
         printWrapped("How long information screens (search results, listen, examine) stay before moving on — every other tap-to-continue screen waits twice this. Only used while Auto-Continue is on. Tap the ✕ icon to move on sooner.", indent: 2, color: .dimGreen)
         print("")
 
+        print("TIMEOUTS:", color: .cyan, bold: true)
+        printWrapped("Make fights, loot, search results, tales and the rest quicker or slower, each on its own — see Timeouts.", indent: 2, color: .dimGreen)
+        print("")
+
         print("AUTO-CONTINUE:", color: .cyan, bold: true)
         print("  \(autoContinueEnabled ? "On" : "Off")\(autoContinuePaused ? " (paused)" : "")", color: autoContinueEnabled ? .brightGreen : .red)
         printWrapped("Many screens wait for a tap so you can read them. With this on, they also move on by themselves after the Info Timeout. Tap the little hourglass at the right of the input line to pause, long-press it to hurry — or press Space on a Mac. See ? for more.", indent: 2, color: .dimGreen)
@@ -9224,7 +9306,7 @@ class GameEngine: ObservableObject {
         var options = [
             // Page 1 — Interface
             "Map Length", useArrowNavigation ? "Use Swipe" : "Use Buttons",
-            "Info Timeout", autoContinueEnabled ? "Auto-Continue Off" : "Auto-Continue On",
+            "Info Timeout", "Timeouts", autoContinueEnabled ? "Auto-Continue Off" : "Auto-Continue On",
             showCountdownControl ? "Countdown Icon Off" : "Countdown Icon On",
             "Button Limit", "Long Press",
             // Page 2 — Features
@@ -9264,6 +9346,8 @@ class GameEngine: ObservableObject {
                 self.useArrowNavigation.toggle()
                 UserDefaults.standard.set(self.useArrowNavigation, forKey: "useArrowNavigation")
                 self.showGameplaySettings(page: currentPage)
+            } else if selected == "Timeouts" {
+                self.showTimeoutsSettings(onBack: { [weak self] in self?.showGameplaySettings() })
             } else if selected == "Info Timeout" {
                 self.showInfoTimeoutMenu()
             } else if selected.hasPrefix("Countdown Icon") {
@@ -18236,7 +18320,7 @@ class GameEngine: ObservableObject {
         } else {
             let words = lines[i].split(separator: " ").count
             let typing = reduceAnimations ? 0 : Double(lines[i].count) * 0.028
-            let wait = typing + max(4.0, Double(words) / 2.2) + (last ? 5.0 : 0)
+            let wait = (typing + max(4.0, Double(words) / 2.2) + (last ? 5.0 : 0)) * timeoutScale(.tales)
             taleCountdownOn = autoContinueEnabled
             scheduleAutoAdvance(after: wait, isStillValid: stillHere, fire: turn)
         }
@@ -18311,6 +18395,7 @@ class GameEngine: ObservableObject {
 
         Opening tale: \(adventureIntroLines.joined(separator: " "))
         Main quest: \(mq.map { "\($0.goal) — \($0.stakes); reward: \($0.reward); villain: \($0.villain)" } ?? "unknown")
+        What they have found out on the way down: \(mq.map { $0.beatsSoFar(level: dungeon?.level ?? 1).joined(separator: " ") } ?? "nothing yet")
         The party: \(partyText)
         So far: day \(gameTimeMinutes / 1440 + 1); level \(dungeon?.level ?? 1) of \(dungeon?.name ?? "the dungeon"); \(explored) of \(total) rooms explored; \(monstersSlain) monsters defeated in \(combatsWon) fights; \(gold) gold between them.
         Recent events (oldest first):
@@ -18454,7 +18539,7 @@ class GameEngine: ObservableObject {
         let typing = reduceAnimations ? 0 : Double(lines[i].count) * 0.028
         // Reading pace ~130 words a minute (at least 4s), after the typing;
         // the last paragraph lingers a little longer.
-        let wait = typing + max(4.0, Double(words) / 2.2) + (i == lines.count - 1 ? 5.0 : 0)
+        let wait = (typing + max(4.0, Double(words) / 2.2) + (i == lines.count - 1 ? 5.0 : 0)) * timeoutScale(.tales)
         guard !speakerModeOn else { return }   // the voice paces it instead
         scheduleAutoAdvance(after: wait, isStillValid: { [weak self] in
             guard let self = self else { return false }
@@ -18484,11 +18569,26 @@ class GameEngine: ObservableObject {
         Villain (the guardian waiting at the very bottom): \(mq.villain)
         What the villain is doing to the village: \(mq.harm ?? "(invent something that fits the goal)")
         Why the villain is doing it: \(mq.motive ?? "(invent a reason that fits)")
+        Where it is found: \(mq.place ?? "(somewhere deep — invent a place that fits)")
+        What must be done at the end: \(mq.finale ?? "(invent something fitting)")
+        Who down there knows things: \(mq.informant ?? "(invent someone)")
+        Mention who might know more, as a hint for the journey; keep the ending itself for later.
+        \(storyKindNote(mq))
         Main quest: \(mq.goal)
         What is at stake: \(mq.stakes)
         Reward: \(mq.reward)
         The party: \(partyText)
         """ + storyStyleExamples()
+    }
+
+    /// Quests whose tale must keep a secret.
+    private func storyKindNote(_ mq: MainQuest) -> String {
+        switch mq.kind {
+        case "mystery": return "This is a mystery: nobody knows who is behind it yet. Do NOT name the villain in the tale — say only that someone is, and that the trail leads into the dungeon."
+        case "twist": return "Secret twist: the villain is the very person who asks the party for help. Present them as a worried, generous patron, and don't reveal the truth — just one small odd detail."
+        case "rival": return "The villain is a rival band of adventurers racing the party for the same prize."
+        default: return ""
+        }
     }
 
     /// A couple of tales from the adventure files, for the story writer to
@@ -18599,14 +18699,22 @@ class GameEngine: ObservableObject {
         let villainName = Dungeon.guardianName(mq.villain)
         var lines: [String] = []
         lines.append("In the village of \(mq.village), \(mq.harm ?? "something has gone badly wrong, and nobody can put it right").")
-        lines.append("Everyone knows who is to blame: \(mq.villain), who \(mq.motive ?? "wants the whole valley for itself").")
-        lines.append("\(villainName) has a lair deep in \(place), and the few who went after it came back empty-handed, or not at all.")
+        switch mq.kind {
+        case "mystery":
+            lines.append("Nobody knows who is behind it. The only clue is a trail that leads into \(place).")
+        case "twist":
+            lines.append("\(villainName), who owns the land around \(mq.village), is beside himself with worry, and offers a handsome purse to anyone who can help.")
+        default:
+            lines.append("Everyone knows who is to blame: \(mq.villain), who \(mq.motive ?? "wants the whole valley for itself").")
+            lines.append("\(villainName) has a lair deep in \(place), and the few who went after it came back empty-handed, or not at all.")
+        }
         lines.append([
             "That evening \(together) \(solo ? "arrives" : "arrive") at the inn, and the village elder comes straight to their table.",
             "The elder of \(mq.village) has been waiting at the crossroads for anyone with a sword, and \(together) \(solo ? "is" : "are") the first to come along.",
             "A child from \(mq.village) runs up to \(together), out of breath, and begs them to come and see the elder.",
         ].randomElement()!)
         lines.append("The task: to \(mq.goal), \(mq.stakes).")
+        if let who = mq.informant { lines.append("Down there, the elder says, \(who) know more than they let on. Ask them.") }
         lines.append("The reward: \(mq.reward).")
         lines += team
         lines.append("\(together) \(solo ? "lights a torch and steps" : "light their torches and step") through the door of \(place).")
@@ -21082,7 +21190,7 @@ class GameEngine: ObservableObject {
             printWrapped(observation, indent: 2, color: .dimGreen)
         }
 
-        autoReturn(after: max(2.5, infoTimeout * 0.8), stretchForReading: false)   // search results move on briskly
+        pendingTimeoutKind = .search; autoReturn(after: max(2.5, infoTimeout * 0.8), stretchForReading: false)   // search results move on briskly
     }
 
     /// Room-type flavour text (merged from former Examine action)
@@ -21221,7 +21329,7 @@ class GameEngine: ObservableObject {
             logEvent("Dark search — nothing to find in \(room.name)", category: "EXPLORE")
         }
 
-        autoReturn(after: max(2.5, infoTimeout * 0.8), stretchForReading: false)   // search results move on briskly
+        pendingTimeoutKind = .search; autoReturn(after: max(2.5, infoTimeout * 0.8), stretchForReading: false)   // search results move on briskly
     }
 
     /// Long-press Examine in the dark — risky fumbling examination
@@ -21665,7 +21773,7 @@ class GameEngine: ObservableObject {
             printExplorationMap()
             print("")
             printWrapped("You've already scavenged this room — nothing left to find.", indent: 2, color: .yellow)
-            autoReturn(after: max(2.5, infoTimeout * 0.8), stretchForReading: false)   // search results move on briskly
+            pendingTimeoutKind = .search; autoReturn(after: max(2.5, infoTimeout * 0.8), stretchForReading: false)   // search results move on briskly
             return
         }
 
@@ -21764,10 +21872,38 @@ class GameEngine: ObservableObject {
         logEvent("Foraged \(room.name) — nothing found", category: "EXPLORE")
         logMultiplayerAction("Foraged supplies in \(room.name)")
 
-        autoReturn(after: max(2.5, infoTimeout * 0.8), stretchForReading: false)   // search results move on briskly
+        pendingTimeoutKind = .search; autoReturn(after: max(2.5, infoTimeout * 0.8), stretchForReading: false)   // search results move on briskly
     }
 
     // MARK: - Talk to NPC
+
+    /// Rooms whose NPC has already been asked about the main quest.
+    private var questAskedRooms = Set<Int>()
+
+    /// Someone down here may know where the prize is kept, or what to do
+    /// with it — or at least who to ask. Each person answers once.
+    private func askAboutMainQuest(npc: DungeonNPC, roomId: Int) {
+        guard var mq = mainQuest else { return }
+        let who = npc.type.rawValue.lowercased()
+        print("")
+        if questAskedRooms.contains(roomId) {
+            printWrapped("\"I've told you all I know,\" says the \(who).", indent: 2, color: .yellow)
+        } else if Int.random(in: 1...10) <= 6, let clue = mq.nextClue {
+            questAskedRooms.insert(roomId)
+            mq.cluesLearned = (mq.cluesLearned ?? []) + [clue]
+            mainQuest = mq
+            printWrapped("The \(who) looks around, then lowers their voice. \"\(clue)\"", indent: 2, color: .yellow)
+            print("")
+            printWrapped("(Noted under your main quest in Party Status.)", indent: 2, color: .dimGreen)
+            logEvent("Quest clue from the \(who): \(clue)", category: "QUEST")
+        } else {
+            questAskedRooms.insert(roomId)
+            let pointer = mq.informant.map { "Ask \($0) — they'd know." } ?? "Keep going down. The answers are always further down."
+            printWrapped("The \(who) shrugs. \"Not my business. \(pointer)\"", indent: 2, color: .yellow)
+        }
+        waitForContinue()
+        inputHandler = { [weak self] _ in self?.talkToNPC() }
+    }
 
     private func talkToNPC() {
         guard let room = dungeon?.currentRoom, var npc = room.npc, let dungeon = dungeon else { return }
@@ -21840,6 +21976,13 @@ class GameEngine: ObservableObject {
             actions.append { [weak self] in
                 self?.askNPCAbout(topic: topic)
             }
+        }
+
+        // The main quest: anyone down here might know something.
+        if mainQuest != nil, npc.type != .gatekeeper {
+            let roomId = room.id
+            options.append(MenuOption("Ask About Our Quest", tint: .cyan))
+            actions.append { [weak self] in self?.askAboutMainQuest(npc: npc, roomId: roomId) }
         }
 
         // Capability buttons
@@ -22980,7 +23123,7 @@ class GameEngine: ObservableObject {
         if let note = madeRoom { printWrapped(note, indent: 2, color: .dimGreen) }
         print("  \(who.name) picks it up.", color: .brightGreen)
         logEvent("\(who.name) picked up \(item.name)", category: "LOOT")
-        waitForContinueWithTimeout(multiplier: 0.8) { onDone() }
+        pendingTimeoutKind = .loot; waitForContinueWithTimeout(multiplier: 0.8) { onDone() }
         return true
     }
 
@@ -23081,7 +23224,7 @@ class GameEngine: ObservableObject {
                     _ = char.addItem(item)
                     self.print("  \(char.name) takes the \(item.name).", color: .brightGreen)
                     self.logEvent("\(char.name) picked up \(item.name)", category: "LOOT")
-                    self.waitForContinueWithTimeout(multiplier: 0.8) { onDone() }
+                    self.pendingTimeoutKind = .loot; self.waitForContinueWithTimeout(multiplier: 0.8) { onDone() }
                 } else {
                     if char.isInventoryFull {
                         self.print("  Bag is full! (\(self.formatWeightPair(char.currentWeight, char.carryCapacity)))", color: .yellow)
@@ -24874,26 +25017,55 @@ class GameEngine: ObservableObject {
     /// any side quests stay as they are.
     private func confirmNewMainQuest() {
         clearTerminal()
-        printTitle("A New Main Quest?")
+        printTitle("By the Campfire")
         print("")
+        let names = party.map { shortName(for: $0) }
+        let together = names.count <= 1 ? (names.first ?? "You") : names.dropLast().joined(separator: ", ") + " and " + names.last!
         if let mq = mainQuest {
-            printWrapped("Your quest now: to \(mq.goal), \(mq.stakes). The villain: \(mq.villain).", indent: 2, color: .green)
+            printWrapped("\(together) sit around a small fire in the dark, a long way from \(mq.village). You swore to \(mq.goal), \(mq.stakes).", indent: 2, color: .green)
             print("")
         }
-        printWrapped("A new main quest gives this adventure a new story: a different village in trouble, a different villain waiting at the bottom, and a new Opening Tale. Your party, everything they carry, the dungeon and any side quests stay just as they are.", indent: 2, color: .dimGreen)
+        printWrapped("Someone asks what nobody wants to: is this still the quest worth risking everything for? Other villages need heroes too.", indent: 2, color: .green)
         print("")
-        showMenu(["Yes, a New Quest", "No, Keep This One"])
+        printWrapped("Seek a new quest and word of someone else's trouble will find you. Errands you've taken on stay as they are.", indent: 2, color: .dimGreen)
+        print("")
+        printWrapped("But be warned: the dungeon doesn't like oath-breakers. Turn your back on a quest and its magic may fling you all the way back to the entrance — and things have a way of falling out of packs on the way.", indent: 2, color: .yellow)
+        print("")
+        showMenu(["Hold to Our Oath", "Seek a New Quest"])
         closeHandler = { [weak self] in self?.showPartyStatus() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
-            guard choice == 1 else { self.showPartyStatus(); return }
+            guard choice == 2 else { self.showPartyStatus(); return }
             let old = self.mainQuest
             var next = MainQuest.random()
-            for _ in 0..<6 where next.villain == old?.villain { next = MainQuest.random() }
+            for _ in 0..<8 where next.villain == old?.villain { next = MainQuest.random() }
             self.mainQuest = next
             self.progressTaleCache = nil
             self.logEvent("A new main quest: \(next.summary) (\(next.villain))", category: "QUEST")
-            self.playAdventureCutscene { [weak self] in self?.showPartyStatus() }
+            // One time in three the dungeon takes its toll.
+            if Int.random(in: 1...3) == 1 {
+                self.print("")
+                self.printWrapped("The ground lurches. The fire gutters out, the walls spin — and you're lying in a heap by the entrance.", indent: 2, color: .red)
+                self.applyTeleportToEntrance()
+                var dropped: [String] = []
+                for _ in 0..<Int.random(in: 1...2) {
+                    let carriers = self.party.filter { c in c.inventory.contains { i in i.id != c.equippedWeapon?.id && i.id != c.equippedArmor?.id && i.id != c.equippedShield?.id } }
+                    guard let c = carriers.randomElement(),
+                          let item = c.inventory.filter({ i in i.id != c.equippedWeapon?.id && i.id != c.equippedArmor?.id && i.id != c.equippedShield?.id }).randomElement() else { break }
+                    c.removeItem(item)
+                    dropped.append("\(item.name) (\(self.shortName(for: c)))")
+                }
+                if !dropped.isEmpty {
+                    self.printWrapped("Lost on the way: \(dropped.joined(separator: ", ")).", indent: 2, color: .red)
+                }
+                self.logEvent("Changing quest cost the party: back to the entrance\(dropped.isEmpty ? "" : ", lost " + dropped.joined(separator: ", "))", category: "QUEST")
+            }
+            self.print("")
+            self.printWrapped("Before the fire burns down, a bedraggled messenger bird drops out of the dark and lands on \(names.first ?? "your")'s pack, a scrap of parchment tied to its leg. It's from \(next.village).", indent: 2, color: .yellow)
+            self.waitForContinue()
+            self.inputHandler = { [weak self] _ in
+                self?.playAdventureCutscene { [weak self] in self?.showPartyStatus() }
+            }
         }
     }
 
@@ -24930,6 +25102,9 @@ class GameEngine: ObservableObject {
         if let mq = mainQuest {
             print("")
             printWrapped("MAIN QUEST: \(mq.summary)", indent: 2, color: .yellow, bold: true)
+            for found in mq.beatsSoFar(level: dungeon?.level ?? 1) { printWrapped("· \(found)", indent: 4, color: .dimGreen) }
+            for clue in mq.cluesLearned ?? [] { printWrapped("· \(clue)", indent: 4, color: .cyan) }
+            if let who = mq.informant { printWrapped("Who might know more: \(who).", indent: 4, color: .dimGreen) }
             printWrapped("The one behind it all: \(mq.villain), waiting at the very bottom. Reward: \(mq.reward).", indent: 4, color: .dimGreen)
         }
         for quest in allQuests {
@@ -31995,7 +32170,7 @@ class GameEngine: ObservableObject {
         // whatever screen comes after.
         autoReturnDestination = continueAction
         // Victory moves on reasonably briskly — no reading-time stretch.
-        autoReturn(after: max(3.0, infoTimeout * 1.5), stretchForReading: false)
+        pendingTimeoutKind = .results; autoReturn(after: max(3.0, infoTimeout * 1.5), stretchForReading: false)
     }
 
     /// "Emergency Drop" — a rare, automatic anti-total-party-wipe save.
@@ -32316,6 +32491,10 @@ class GameEngine: ObservableObject {
             print("  ┌─ The Tale Is Told ─────────────┐", color: .yellow, bold: true)
             if let q = mainQuest {
                 printWrapped("\(Dungeon.guardianName(q.villain)) is no more. You came down here to \(q.goal) — and it is done.", indent: 2, color: .yellow)
+                if let finale = q.finale {
+                    print("")
+                    printWrapped("Then, just as you were told, you \(finale).", indent: 2, color: .yellow)
+                }
                 print("")
                 printWrapped("Word runs ahead of you all the way to \(q.village). They promised you \(q.reward). It's yours, and so is every song they'll sing about this.", indent: 2, color: .brightGreen)
             } else {
@@ -32410,6 +32589,11 @@ class GameEngine: ObservableObject {
             }
             self.print("")
 
+            if let beat = self.mainQuest?.beat(forLevel: nextLevel) {
+                self.print("")
+                self.printWrapped(beat, indent: 0, color: .yellow)
+                self.logEvent("Quest: \(beat)", category: "QUEST")
+            }
             if nextLevel >= Dungeon.finalLevel {
                 self.print("")
                 let g = self.mainQuest.map { Dungeon.guardianName($0.villain) } ?? "its last guardian"

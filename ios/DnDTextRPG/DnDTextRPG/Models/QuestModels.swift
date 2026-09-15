@@ -180,70 +180,257 @@ struct MainQuest: Codable {
     /// can tell one story that makes sense. (Older saves don't have them.)
     var harm: String? = nil
     var motive: String? = nil
+    /// What sort of quest (rescue, mystery, rival, twist...), and what the
+    /// party finds out on the way down — one beat each on Levels 2, 4, 6.
+    var kind: String? = nil
+    var beats: [String]? = nil
+    /// Where the prize (or the villain) is found, what must be done once
+    /// it is, and who down there knows things — plus what the party has
+    /// been told so far by asking around.
+    var place: String? = nil
+    var finale: String? = nil
+    var informant: String? = nil
+    var cluesLearned: [String]? = nil
+
+    /// The next thing someone could tell you, or nil once you know it all.
+    var nextClue: String? {
+        let learned = cluesLearned ?? []
+        var all: [String] = []
+        if let place = place { all.append("It's kept in \(place).") }
+        if let finale = finale { all.append("When you find it, you must \(finale).") }
+        return all.first { !learned.contains($0) }
+    }
+
+    /// The discovery waiting on arriving at this level, if any.
+    func beat(forLevel level: Int) -> String? {
+        guard level >= 2, level % 2 == 0, level <= 6 else { return nil }
+        let all = beats ?? MainQuest.genericBeats(villain: villain)
+        let i = level / 2 - 1
+        return i < all.count ? all[i] : nil
+    }
+
+    /// Everything found out by this level, in order.
+    func beatsSoFar(level: Int) -> [String] {
+        guard level >= 2 else { return [] }
+        return stride(from: 2, through: min(level, 6), by: 2).compactMap { beat(forLevel: $0) }
+    }
+
+    static func genericBeats(villain: String) -> [String] {
+        let g = Dungeon.guardianName(villain)
+        return ["Scratched on the wall by the stairs, in an old hand: '\(g) is below. Turn back.' You don't.",
+                "You find the camp of the last party who tried. They left in a hurry, and they left their supplies behind.",
+                "\(g)'s creatures grow thicker the deeper you go. You must be close."]
+    }
 
     var summary: String { goal.prefix(1).uppercased() + goal.dropFirst() + " — " + stakes + "." }
 
     /// A quest where everything fits together: who the villain is, what
     /// they're doing to the village and why — and so what must be done, by
-    /// when, and for what reward.
+    /// when, for what reward — plus what's found out on the way down.
     static func random() -> MainQuest {
         let village = Int.random(in: 1...3) == 1 ? "Lithlind"
             : ["Brackenford", "Thistledown", "Emberholt", "Wyrmsby", "Millbrook", "Greywater", "Owlcombe"].randomElement()!
         let s = scenarios.randomElement()!
-        return MainQuest(villain: s.villain, goal: s.goal(village), stakes: s.stakes, reward: s.reward,
-                         village: village, harm: s.harm, motive: s.motive)
+        return MainQuest(villain: s.villain, goal: s.goal(village), stakes: s.stakes, reward: s.reward, village: village,
+                         harm: s.harm, motive: s.motive, kind: s.kind, beats: s.beats(village, Dungeon.guardianName(s.villain)),
+                         place: s.place, finale: s.finale, informant: s.informant)
     }
 
     private struct Scenario {
+        let kind: String
         let villain: String
         let harm: String        // "In <village>, <harm>."
         let motive: String      // "<villain>, who <motive>."
         let goal: (String) -> String
         let stakes: String
         let reward: String
+        let beats: (String, String) -> [String]   // (village, villain's short name) -> Levels 2, 4, 6
+        var place = ""          // "It's kept in <place>."
+        var finale = ""         // "When you find it, you must <finale>."
+        var informant = ""      // "<informant> know more than they let on."
     }
 
     private static let scenarios: [Scenario] = [
-        Scenario(villain: "Gorrak the Bugbear King", harm: "children have been vanishing from their beds at night",
+        Scenario(kind: "rescue", villain: "Gorrak the Bugbear King",
+                 harm: "children have been vanishing from their beds at night",
                  motive: "is digging himself an underground kingdom and wants the children as his servants",
                  goal: { "rescue the children taken from \($0)" }, stakes: "before Gorrak's tunnels are finished and he carries them deeper still",
-                 reward: "the village's savings, and a feast in the heroes' honour"),
-        Scenario(villain: "Mother Sable, the Hag of the Deep", harm: "the Heartstone that warms every hearth has been stolen from the shrine",
+                 reward: "the village's savings, and a feast in the heroes' honour",
+                 beats: { v, g in ["Scratched low on the wall by the stairs: a row of tally marks, and the name '\(v)'. The children came this way.",
+                   "A goblin cook, sick of \(g)'s temper, trades you a secret for your rations: the children are kept at the bottom, digging.",
+                   "You hear small voices singing a village song to keep their spirits up. They're close now."] },
+                 place: "a half-dug hall at the very bottom, where the new tunnels begin", finale: "unlock the children's chains with Gorrak's own key and lead them out the way you came, carrying the smallest", informant: "the goblin cooks, who are sick of Gorrak's temper"),
+        Scenario(kind: "theft", villain: "Mother Sable, the Hag of the Deep",
+                 harm: "the Heartstone that warms every hearth has been stolen from the shrine",
                  motive: "wants its warmth for her own cold, drowned halls",
                  goal: { "recover the Heartstone stolen from \($0)'s shrine" }, stakes: "before winter comes and the village freezes",
-                 reward: "the smith's finest blade and three hundred gold"),
-        Scenario(villain: "Vorkath the Ember Drake", harm: "the outlying farms are being burned and the cattle carried off",
+                 reward: "the smith's finest blade and three hundred gold",
+                 beats: { v, g in ["One patch of wall here is warm to the touch. The Heartstone was carried past, not long ago.",
+                   "A drowned lantern-bearer, one of \(g)'s servants, drifts by and whispers that the stone is fading in her cold halls.",
+                   "Frost creeps across the floor from below. She is using the stone's warmth up fast — hurry."] },
+                 place: "a drowned hall where the water is so cold it smokes", finale: "wrap the Heartstone in wool, carry it home and set it back in the shrine's hollow — every hearth in the village lights at once", informant: "Sable's lantern-bearers, the drowned servants who drift about her halls"),
+        Scenario(kind: "raids", villain: "Vorkath the Ember Drake",
+                 harm: "the outlying farms are being burned and the cattle carried off",
                  motive: "is fattening itself up before its hundred-year sleep",
                  goal: { "end the drake's raids on \($0) for good" }, stakes: "before every farm in the valley is ash",
-                 reward: "a share of the drake's hoard"),
-        Scenario(villain: "the Hollow King", harm: "the dead walk out of the churchyard every night, because the old bell that kept them asleep has been stolen",
+                 reward: "a share of the drake's hoard",
+                 beats: { v, g in ["Scorch marks and a trail of cattle bones lead down the stairs. The drake has been this way.",
+                   "A shepherd hiding in a side tunnel saw \(g) fly down past him, heavy and slow with food.",
+                   "The air is hot enough to sting your eyes. The drake is settling down to sleep, and it will wake up hungry."] },
+                 place: "the drake's nest, a cavern as hot as an oven, heaped with bones and stolen coins", finale: "carry the hoard back up to repay the farmers — with nothing left to guard, no drake stays", informant: "the shepherds and farmhands hiding in the side tunnels"),
+        Scenario(kind: "curse", villain: "the Hollow King",
+                 harm: "the dead walk out of the churchyard every night, because the old bell that kept them asleep has been stolen",
                  motive: "stole the bell to wake the dead and raise an army",
                  goal: { "bring back the Bell of \($0), whose ringing keeps the dead asleep" }, stakes: "before the new moon, when every grave will open at once",
-                 reward: "the pick of the old king's armoury"),
-        Scenario(villain: "Skarn the Goblin Warlord", harm: "goblins raid the farms every night, taking food and tools",
+                 reward: "the pick of the old king's armoury",
+                 beats: { v, g in ["A bell-shaped ring is pressed into the dust. The bell was set down here to rest.",
+                   "The ghost of an old bell-ringer drifts up to you. 'Ring it at the bottom,' she says, 'and his army sleeps again.'",
+                   "Rows of empty coffins line the walls. The King's army is gathering, and it is nearly complete."] },
+                 place: "the King's throne room, among rows of empty coffins", finale: "ring the Bell three times at the bottom of the dungeon, then carry it home and hang it back in the tower", informant: "the ghosts of the old bell-ringers"),
+        Scenario(kind: "raids", villain: "Skarn the Goblin Warlord",
+                 harm: "goblins raid the farms every night, taking food and tools",
                  motive: "is gathering supplies for a war on the whole valley",
                  goal: { "stop Skarn's raids on \($0) for good" }, stakes: "before his warband is big enough to march",
-                 reward: "five hundred gold from the Lord of the Marches"),
-        Scenario(villain: "Nightshade, the Lich's Apprentice", harm: "half the village has fallen into a sleep that nobody can wake them from",
+                 reward: "five hundred gold from the Lord of the Marches",
+                 beats: { v, g in ["A goblin cart lies tipped over, full of stolen spades and turnips from \(v).",
+                   "Painted on a wall: \(g)'s plan of attack, with \(v) circled three times. Badly.",
+                   "War drums start up below. The warband is nearly ready to march."] },
+                 place: "the war camp at the bottom, under a banner painted with Skarn's face", finale: "tear down Skarn's banner — goblins won't follow a warlord whose banner has fallen", informant: "goblin deserters who don't fancy a war"),
+        Scenario(kind: "plague", villain: "Nightshade, the Lich's Apprentice",
+                 harm: "half the village has fallen into a sleep that nobody can wake them from",
                  motive: "is stealing the sleepers' dreams to make herself into a lich",
                  goal: { "find the cure for the sleeping sickness in \($0)" }, stakes: "before the sleepers are lost for good",
-                 reward: "the herbalists' gold, and free healing for life"),
-        Scenario(villain: "Old Grimtooth the Cave Troll", harm: "the deep tunnels of the mine have collapsed, trapping twelve miners",
+                 reward: "the herbalists' gold, and free healing for life",
+                 beats: { v, g in ["Black petals lie on the steps, the same as on every sleeper's pillow in \(v).",
+                   "You find a jar of bottled dreams, labelled in neat handwriting: '\(v) — the baker'. So that's where they go.",
+                   "\(g)'s garden of black flowers glows below. The cure must grow from the same roots."] },
+                 place: "a garden of black flowers glowing in the dark, deep down", finale: "pick the one white flower at the heart of her garden and brew it into tea — a sip each wakes the sleepers", informant: "the moth-folk who flutter round her flowers"),
+        Scenario(kind: "trapped", villain: "Old Grimtooth the Cave Troll",
+                 harm: "the deep tunnels of the mine have collapsed, trapping twelve miners",
                  motive: "brought the tunnels down to keep the silver seam for itself",
                  goal: { "free the miners trapped beneath \($0)" }, stakes: "while there is still air in the tunnels",
-                 reward: "a share in the silver seam"),
-        Scenario(villain: "the Weaver in the Dark, a spider as big as a cart", harm: "travellers on the road keep disappearing, and only strands of silk are left behind",
+                 reward: "a share in the silver seam",
+                 beats: { v, g in ["You find a miner's helmet with a note inside: 'Still twelve of us. Water running low.'",
+                   "Troll footprints the size of cartwheels lead towards the silver seam.",
+                   "Tapping on the rock: three knocks, then three more. The miners are alive, and very near."] },
+                 place: "the silver seam, behind a wall of fallen rock", finale: "dig through the last of the rubble and bring the miners up the rope, one at a time", informant: "the knockers, the little mine spirits who tap on the rock"),
+        Scenario(kind: "missing", villain: "the Weaver in the Dark, a spider as big as a cart",
+                 harm: "travellers on the road keep disappearing, and only strands of silk are left behind",
                  motive: "is gathering food for a nest of hatching young",
                  goal: { "free the travellers taken on the road to \($0)" }, stakes: "before the eggs hatch",
-                 reward: "the merchants' guild reward of four hundred gold"),
-        Scenario(villain: "Baron Rot, the Mushroom Tyrant", harm: "the wells have turned grey, and anyone who drinks from them falls sick",
+                 reward: "the merchants' guild reward of four hundred gold",
+                 beats: { v, g in ["Silk strands hang across the corridor, still sticky. A traveller's hat is caught in one.",
+                   "A merchant, wrapped up tight but alive, tells you the others are kept in a larder further down.",
+                   "Hundreds of pale eggs cover the ceiling, and some of them are twitching."] },
+                 place: "a larder of silk cocoons hung from the roof of the deepest cave", finale: "cut the travellers down, carefully, and burn the silk so the nest can never be rebuilt", informant: "travellers who were caught and got away"),
+        Scenario(kind: "poison", villain: "Baron Rot, the Mushroom Tyrant",
+                 harm: "the wells have turned grey, and anyone who drinks from them falls sick",
                  motive: "is spreading his spores to turn the whole valley into one great fungus garden",
                  goal: { "cleanse the wells of \($0)" }, stakes: "before the spores reach the fields and spoil the harvest",
-                 reward: "a year of free supplies from every shop in the village"),
-        Scenario(villain: "Caldra the Frost Wyrm", harm: "the river has frozen solid in midsummer, and the mill has stopped",
+                 reward: "a year of free supplies from every shop in the village",
+                 beats: { v, g in ["The walls are furred with grey mould, the same colour as \(v)'s wells.",
+                   "A cheerful mushroom-man, who has had enough of the Baron, says the spores all come from one great toadstool below.",
+                   "The great toadstool is swelling. When it bursts, the spores will reach the fields."] },
+                 place: "a cavern full of spores, around a toadstool as tall as a house", finale: "sprinkle salt on the great toadstool's roots — it shrivels, and the wells run clear within a day", informant: "the mushroom-folk who have had enough of the Baron"),
+        Scenario(kind: "nature", villain: "Caldra the Frost Wyrm",
+                 harm: "the river has frozen solid in midsummer, and the mill has stopped",
                  motive: "has made her nest at the river's source and freezes it to keep her eggs cold",
                  goal: { "drive Caldra from the river's source and thaw \($0)'s river" }, stakes: "before the harvest rots for want of flour",
-                 reward: "the miller's savings, and the thanks of the whole valley"),
+                 reward: "the miller's savings, and the thanks of the whole valley",
+                 beats: { v, g in ["Icicles hang from the ceiling in midsummer. The wyrm has been through here.",
+                   "You find the miller's lost apprentice, half frozen, who followed the ice down. The river starts in a cavern at the very bottom, she says.",
+                   "The cold here hurts your teeth. The eggs must be close to hatching."] },
+                 place: "the river's source, a frozen cavern where the eggs lie in the ice", finale: "carry the eggs to a cold spring far from the river, so they can hatch there and the river can flow again", informant: "the frost sprites who dance on the ice"),
+        Scenario(kind: "mystery", villain: "Grandmother Wick, the Candle Witch",
+                 harm: "people keep forgetting things — names, faces, the way home — and nobody knows why",
+                 motive: "has been stealing memories to make candles that let her live for ever",
+                 goal: { "find out who is stealing the memories of \($0), and stop them" }, stakes: "before the whole village forgets itself",
+                 reward: "four hundred gold and a portrait in the town hall, so nobody forgets you",
+                 beats: { v, g in ["You find a candle stub that smells of fresh bread. When you light it, you remember a bakery you've never seen.",
+                   "Wax footprints lead downwards. Somebody down here is making a great many candles.",
+                   "A room full of candles, each labelled with a name from \(v). A tall one, burning brightest, says: '\(g)'."] },
+                 place: "a candle-maker's workshop somewhere deep, which smells of honey and forgotten things", finale: "snuff out the tallest candle — every memory it holds flies home", informant: "the lost-looking folk wandering the halls, who can't remember why they came"),
+        Scenario(kind: "rival", villain: "Sir Roderick Vane and his Gilded Company",
+                 harm: "a rival band of adventurers stole the village's old map and has gone after the treasure the village needs to pay its debts",
+                 motive: "want the treasure for themselves, and don't care who goes hungry",
+                 goal: { "reach the Founders' Hoard of \($0) before Sir Roderick does" }, stakes: "before the tax collector comes at the end of the month",
+                 reward: "a tenth of the hoard, which is a great deal",
+                 beats: { v, g in ["Fresh boot prints and a gilded button on the stairs. The Gilded Company is a day ahead of you.",
+                   "You find one of Sir Roderick's men tied up by his own friends — they left him when he twisted his ankle. He tells you their plan.",
+                   "Voices ahead, arguing about how to split the gold. They're nearly there."] },
+                 place: "a vault behind a door carved with the village's crest", finale: "press the village's old seal onto the chest to claim the hoard in its name, then carry it home", informant: "members of the Gilded Company who have fallen out with Sir Roderick"),
+        Scenario(kind: "heir", villain: "Morthrax the Warden",
+                 harm: "the young lord of the manor went into the dungeon to prove himself a month ago, and never came back",
+                 motive: "keeps prisoners to guard his treasure, and the young lord is his newest",
+                 goal: { "find the young lord of \($0) and bring him home" }, stakes: "before the manor passes to his greedy uncle at midwinter",
+                 reward: "the young lord's thanks, and a fine horse each from the manor stables",
+                 beats: { v, g in ["Carved into a pillar: a stag, the young lord's family crest, with an arrow pointing down.",
+                   "You find the young lord's sword, dropped in a hurry. The blade is notched — he put up a fight.",
+                   "A voice echoes up, reciting the names of his ancestors to stay brave. It's him."] },
+                 place: "the Warden's treasure vault, where prisoners are chained up to guard the gold", finale: "free the young lord, give him back his sword and let him walk out first — he wants to come home a hero", informant: "other prisoners who have escaped the Warden"),
+        Scenario(kind: "ritual", villain: "Voss the Eclipse Priest",
+                 harm: "the stars have been going out, one by one, over the village",
+                 motive: "is trying to summon an endless night so that his master can rule in the dark",
+                 goal: { "stop Voss's ritual and bring back the stars over \($0)" }, stakes: "before the eclipse at the end of the week",
+                 reward: "a telescope from the Royal Observatory, and five hundred gold",
+                 beats: { v, g in ["Chalk circles on the floor, carefully drawn and carefully rubbed out. Someone has been practising.",
+                   "A frightened acolyte asks you to let him go home. He tells you \(g)'s ritual needs three candles, lit at the very bottom.",
+                   "Two of the three candles are lit. There isn't long."] },
+                 place: "an altar ringed with three tall candles, under the lowest vault of the dungeon", finale: "blow out the candles in the reverse order they were lit — and the stars come back, one by one", informant: "Voss's acolytes, many of whom would rather go home"),
+        Scenario(kind: "hunt", villain: "the Grey Widow, a wolf as tall as a horse",
+                 harm: "a huge wolf has been taking sheep, then dogs, and last night it came right up to the school door",
+                 motive: "is feeding a litter of cubs in the caves and grows bolder every night",
+                 goal: { "hunt down the Grey Widow before she takes a child from \($0)" }, stakes: "before the full moon, when she hunts at her boldest",
+                 reward: "the hunters' guild prize of three hundred gold, and a wolf-fur cloak each",
+                 beats: { v, g in ["Tufts of grey fur and sheep's wool on the steps. She comes and goes this way.",
+                   "An abandoned trapper's camp. His diary says her den is at the bottom, where it's warm.",
+                   "Cubs whine somewhere below — and something much bigger growls at them to be quiet."] },
+                 place: "a warm den at the bottom, lined with stolen blankets", finale: "bring back her collar of stolen dog tags, so the whole village knows it's over", informant: "the trappers and hunters who have tried before"),
+        Scenario(kind: "twist", villain: "Lord Mallory",
+                 harm: "the village's Luckstone has been stolen, and bad luck has fallen on every family",
+                 motive: "stole it himself, then hired heroes to take the blame when they failed",
+                 goal: { "recover the Luckstone of \($0)" }, stakes: "before the harvest fails",
+                 reward: "the purse Lord Mallory promised — though there's something odd about his smile",
+                 beats: { v, g in ["A servant's note, dropped on the stairs: 'He never kept the stone in the vault at all.'",
+                   "In a thieves' camp you find a letter paying them for the job — in \(g)'s own handwriting.",
+                   "Fresh footprints come down a hidden stair from the surface. \(g) is here, ahead of you, to make sure the stone is never found."] },
+                 place: "a hidden vault that only Lord Mallory knew about", finale: "set the Luckstone back on its old stone on the village green, for everyone to see — and tell them who took it", informant: "Lord Mallory's servants, who have their suspicions"),
+        Scenario(kind: "prison", villain: "Warden Krell",
+                 harm: "the village blacksmith was dragged off by goblin jailers, accused of a crime he didn't commit",
+                 motive: "runs a prison-mine in the deep and needs a smith to make his chains",
+                 goal: { "free \($0)'s blacksmith from Warden Krell's prison" }, stakes: "before he's sent down to the mines, where nobody comes back from",
+                 reward: "a suit of armour each, made to measure by the blacksmith himself",
+                 beats: { v, g in ["A broken shackle lies on the floor, with the smith's initials scratched into it. He's alive.",
+                   "An escaped prisoner stops long enough to warn you: \(g) keeps the keys on his own belt, and never takes it off.",
+                   "The ring of a hammer on an anvil. The smith is being made to forge chains, somewhere close."] },
+                 place: "the cells beside Krell's forge, at the very bottom", finale: "take the keys from Krell's belt and unlock every cell, not just the smith's", informant: "escaped prisoners, and the rats who carry messages between the cells"),
+        Scenario(kind: "debt", villain: "Nick Crook, the Goblin Moneylender",
+                 harm: "the whole village owes money to a goblin moneylender, and he adds a little more every day",
+                 motive: "wants to own the village, house by house",
+                 goal: { "find the moneylender's ledger and burn every page of \($0)'s debts" }, stakes: "before he takes the mill, the inn and the school",
+                 reward: "every family's debts gone, and a free dinner at every table in town",
+                 beats: { v, g in ["A goblin clerk's lost page: \(v)'s mill, marked 'nearly mine'.",
+                   "You find the counting room: abacuses, ink, and a great many locks. The ledger isn't here.",
+                   "A weary goblin clerk tells you \(g) sleeps with the ledger under his pillow, right at the bottom."] },
+                 place: "the moneylender's bedroom, at the bottom of a counting house full of locks", finale: "burn the ledger page by page in the village square, so everyone can watch their debts go up in smoke", informant: "Crook's overworked goblin clerks"),
+        Scenario(kind: "knowledge", villain: "the Librarian Who Eats Books",
+                 harm: "every book in the village school has been stolen, and the children can't learn to read",
+                 motive: "eats knowledge to grow cleverer, and is nearly clever enough to escape the dungeon",
+                 goal: { "bring back the stolen books of \($0)'s school" }, stakes: "before the Librarian finishes the last of them",
+                 reward: "a scholar's library ticket for life, and three hundred gold",
+                 beats: { v, g in ["A trail of torn pages leads downwards. There are teeth marks on them.",
+                   "A talking bookmark, rescued from a half-eaten atlas, says the school's books are being saved for pudding.",
+                   "Someone below is reading aloud in a growling voice, faster and faster. It's nearly finished."] },
+                 place: "a library carved into the rock, its shelves half empty", finale: "read the Librarian's last page aloud — it's a binding spell — then carry the books home to the school", informant: "the books themselves: old pages and bookmarks still whisper"),
+        Scenario(kind: "haunting", villain: "the Pale Piper",
+                 harm: "every night sweet piping drifts up from the old well, and the village's cats and dogs follow it and don't come back",
+                 motive: "is gathering an army of enchanted animals",
+                 goal: { "silence the Pale Piper and bring home \($0)'s animals" }, stakes: "before the Piper learns the tune that calls people",
+                 reward: "a basket of kittens (optional) and four hundred gold",
+                 beats: { v, g in ["A single cat sits on the stairs, staring down and purring, as if it hears something.",
+                   "Paw prints — hundreds of them — all heading the same way.",
+                   "The piping is loud now, and your feet want to dance towards it. Stuff your ears and keep going."] },
+                 place: "a cavern of echoes where the animals sit in rows, listening", finale: "snap the Piper's pipe in two — the animals wake up and follow you home", informant: "the animals who haven't quite fallen under the spell — especially cats"),
     ]
 }
 
