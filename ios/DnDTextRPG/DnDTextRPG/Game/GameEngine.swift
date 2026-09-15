@@ -2306,6 +2306,7 @@ class GameEngine: ObservableObject {
     }
 
     func clearTerminal() {
+        taleCountdownOn = false
         // Leaving the fight's running account for another screen: keep it, to put back.
         if combatLogShowing {
             combatLogBuffer = terminalLines
@@ -18190,7 +18191,7 @@ class GameEngine: ObservableObject {
             SpeechEngine.shared.speakAloud(lines[i])
         }
         var opts: [String] = []
-        if !last { opts.append("Next") } else if let label = finishLabel, onFinish != nil { opts.append(label) }
+        if !last { opts.append("Next") } else if let label = finishLabel, onFinish != nil { opts.append(label) } else { opts.append("End Tale") }
         if i > 0 { opts.append("Previous") }
         opts.append("< Back")
         showMenu(opts)
@@ -18201,7 +18202,7 @@ class GameEngine: ObservableObject {
             self?.showTalePages(title: title, lines: lines, page: i - 1, onBack: onBack, emptyMessage: emptyMessage, finishLabel: finishLabel, onFinish: onFinish)
         }
         cardPositionLabel = "\(i + 1)/\(lines.count)"
-        swipeLeftHandler = last ? onFinish : next
+        swipeLeftHandler = last ? (onFinish ?? onBack) : next
         swipeRightHandler = i > 0 ? previous : nil
         closeHandler = onBack
         menuHandler = { choice in
@@ -18209,9 +18210,35 @@ class GameEngine: ObservableObject {
             switch opts[choice - 1] {
             case "Next": next()
             case "Previous": previous()
-            case "< Back": onBack()
+            case "< Back", "End Tale": onBack()
             default: onFinish?()
             }
+        }
+
+        // Turns itself, like other timed screens: long enough to type the
+        // paragraph out and read it (longer on the last page), with the
+        // hourglass to pause it. With Read Aloud, when the voice finishes.
+        let token = UUID()
+        talePageToken = token
+        let generation = screenGeneration
+        let stillHere: () -> Bool = { [weak self] in
+            guard let self = self else { return false }
+            return self.talePageToken == token && self.screenGeneration == generation
+        }
+        let turn: () -> Void = last ? (onFinish ?? onBack) : next
+        if speakerModeOn {
+            SpeechEngine.shared.onFinish = { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + (last ? 3.0 : 0.9)) {
+                    guard stillHere(), self?.autoContinuePaused == false else { return }
+                    turn()
+                }
+            }
+        } else {
+            let words = lines[i].split(separator: " ").count
+            let typing = reduceAnimations ? 0 : Double(lines[i].count) * 0.028
+            let wait = typing + max(4.0, Double(words) / 2.2) + (last ? 5.0 : 0)
+            taleCountdownOn = autoContinueEnabled
+            scheduleAutoAdvance(after: wait, isStillValid: stillHere, fire: turn)
         }
     }
 
@@ -18227,6 +18254,11 @@ class GameEngine: ObservableObject {
 
     /// Kept until something new happens, so reopening it doesn't ask the AI again.
     private var progressTaleCache: (logCount: Int, lines: [String])?
+
+    /// A tale page is counting down to turn itself (shows the hourglass bar
+    /// on a page that has buttons); cleared by the next screen.
+    @Published var taleCountdownOn = false
+    private var talePageToken = UUID()
 
     /// The story so far, told like the opening tale — page by page, typed
     /// out; written by the story model when an AI is set up.

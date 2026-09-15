@@ -1112,7 +1112,7 @@ struct TerminalView: View {
                             // where you type. Tap to pause/resume, long-press to hurry.
                             // While time is frozen it always shows — it's how you unfreeze.
                             // Every waiting screen shows it (speaker mode and iOS included).
-                            if gameEngine.timeFrozen || (gameEngine.awaitingContinue && gameEngine.showCountdownControl) {
+                            if gameEngine.timeFrozen || ((gameEngine.awaitingContinue || gameEngine.taleCountdownOn) && gameEngine.showCountdownControl) {
                                 autoCountdownBar
                             }
                             // Combat help, among the other symbols on this line.
