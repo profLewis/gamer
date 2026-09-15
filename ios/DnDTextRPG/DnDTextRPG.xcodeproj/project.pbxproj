@@ -20,6 +20,7 @@
 		011 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 111 /* PrivacyInfo.xcprivacy */; };
 		012 /* SaveGameModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 112 /* SaveGameModels.swift */; };
 		013 /* SoundManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 113 /* SoundManager.swift */; };
+		97E29516739B4A9F81D64FF2 /* DevAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0230D8888F2F4E22A31C02B8 /* DevAccess.swift */; };
 		014 /* HallOfFame.swift in Sources */ = {isa = PBXBuildFile; fileRef = 114 /* HallOfFame.swift */; };
 		015 /* GameCenterManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 115 /* GameCenterManager.swift */; };
 		016 /* DMEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 116 /* DMEngine.swift */; };
@@ -92,6 +93,7 @@
 		111 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		112 /* SaveGameModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaveGameModels.swift; sourceTree = "<group>"; };
 		113 /* SoundManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundManager.swift; sourceTree = "<group>"; };
+		0230D8888F2F4E22A31C02B8 /* DevAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevAccess.swift; sourceTree = "<group>"; };
 		114 /* HallOfFame.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HallOfFame.swift; sourceTree = "<group>"; };
 		115 /* GameCenterManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameCenterManager.swift; sourceTree = "<group>"; };
 		116 /* DMEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMEngine.swift; sourceTree = "<group>"; };
@@ -233,6 +235,7 @@
 			children = (
 				109 /* Dice.swift */,
 				113 /* SoundManager.swift */,
+				0230D8888F2F4E22A31C02B8 /* DevAccess.swift */,
 				115 /* GameCenterManager.swift */,
 				116 /* DMEngine.swift */,
 				120 /* SpeechEngine.swift */,
@@ -372,6 +375,7 @@
 				009 /* Dice.swift in Sources */,
 				012 /* SaveGameModels.swift in Sources */,
 				013 /* SoundManager.swift in Sources */,
+				97E29516739B4A9F81D64FF2 /* DevAccess.swift in Sources */,
 				014 /* HallOfFame.swift in Sources */,
 				015 /* GameCenterManager.swift in Sources */,
 				016 /* DMEngine.swift in Sources */,

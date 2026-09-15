@@ -860,7 +860,9 @@ class GameEngine: ObservableObject {
     /// screen width as a band above the text (landscape instead gives it its
     /// own narrower left column, so doesn't need the same widening).
     @Published var isLandscapeOrientation: Bool = false
-    @Published var gameState: GameState = .mainMenu
+    @Published var gameState: GameState = .mainMenu {
+        didSet { if gameState != oldValue { syncMusicToCombatState() } }
+    }
 
     /// Victory/defeat are meta-game milestones (save/continue, return to menu) —
     /// not narrative moments — so they always need real buttons and a close
@@ -2107,6 +2109,7 @@ class GameEngine: ObservableObject {
             printWrapped(preamble, indent: 2, color: .cyan)
             print("")
         }
+        if text.hasSuffix("Help"), let note = DevAccess.helpReminder { printWrapped(note, indent: 2, color: .yellow); print("") }   // DevAccess
     }
 
     /// Flash only the title lines — dim then restore
@@ -2227,7 +2230,7 @@ class GameEngine: ObservableObject {
     /// both already present, "Fwd >" would get pulled into whichever empty
     /// slot comes first instead of the rightmost one (see TerminalView's
     /// compactNavCell "other" fallback) — and isn't already using `>>`.
-    private func withForwardOption(_ options: [MenuOption]) -> [MenuOption] {
+    func withForwardOption(_ options: [MenuOption]) -> [MenuOption] {
         auditCompactNavMiddleSlot(options)
         guard canShowForwardOption else { return options }
         guard !options.contains(where: { $0.text == ">>" }) else { return options }
@@ -8665,6 +8668,9 @@ class GameEngine: ObservableObject {
     /// default shown first — each moved button remembering where it was
     /// (sourceIndex), so the screen's handler still gets the choice it expects.
     func prepareMenu(_ options: [MenuOption]) -> [MenuOption] {
+        DevAccess.filter(prepareMenuCore(options))   // DevAccess: hidden buttons (without it: return prepareMenuCore(options))
+    }
+    private func prepareMenuCore(_ options: [MenuOption]) -> [MenuOption] {
         hoveredMenuChoice = nil
         var opts = Self.applyAlwaysDisabled(options)
         func regular(_ o: MenuOption) -> Bool { !o.isCompactNav && o.text != "Fwd >" && o.text != "<<" && o.text != ">>" }
@@ -11703,6 +11709,15 @@ class GameEngine: ObservableObject {
             self.printWrapped("Toggle music and battle sounds individually. Music On/Off controls background tunes; Sounds On/Off controls combat sound effects.", indent: 2, color: .dimGreen)
             self.print("")
         }
+    }
+
+    /// Combat music belongs to a fight and nothing else. Whenever the game
+    /// leaves combat — by any route: victory, flight, a save, the ✕, a
+    /// talk-down — the combat track gives way to the exploration one.
+    private func syncMusicToCombatState() {
+        guard musicEnabled, gameState != .combat, SoundManager.shared.playingMusic == .combat else { return }
+        if gameState == .exploring { SoundManager.shared.startMusic(.exploration, preference: explorationMelodyChoice) }
+        else { SoundManager.shared.stopMusic() }
     }
 
     /// Start music appropriate for current game state, respecting preferences
@@ -14906,12 +14921,14 @@ class GameEngine: ObservableObject {
         // ── Spells ──
         if !char.knownSpells.isEmpty {
             print("  ╟\(String(repeating: "─", count: cardWidth))╢", color: .cyan)
-            let spellNames = char.knownSpells.prefix(4).map { $0.name }
-            for spell in spellNames {
-                printCardRow("✦", spell, width: cardWidth, color: .magenta)
+            // Rare techniques (quest rewards) first — a new one used to be
+            // hidden under "+N more" at the end of the list.
+            let ordered = char.knownSpells.filter { SpellCatalog.isRareTechnique($0) } + char.knownSpells.filter { !SpellCatalog.isRareTechnique($0) }
+            for spell in ordered.prefix(6) {
+                printCardRow(SpellCatalog.isRareTechnique(spell) ? "★" : "✦", spell.name, width: cardWidth, color: .magenta)
             }
-            if char.knownSpells.count > 4 {
-                printCardRow("", "+\(char.knownSpells.count - 4) more", width: cardWidth, color: .gray)
+            if ordered.count > 6 {
+                printCardRow("", "+\(ordered.count - 6) more", width: cardWidth, color: .gray)
             }
         }
 
@@ -17974,18 +17991,12 @@ class GameEngine: ObservableObject {
             }
         }
 
-        showMenu(["Continue", "Save to Roster"])
+        // Straight into the Character Roster — it used to be an optional
+        // extra tap, and a hero was lost to an accidental quit.
+        if !isMultiplayer { saveCharacterToRoster(character) }
+        showMenu(["Continue"])
         closeHandler = advance
-        menuHandler = { [weak self] choice in
-            guard let self = self else { return }
-            if choice == 2 {
-                self.saveCharacterToRoster(character)
-                self.waitForContinue()
-                self.inputHandler = { _ in advance() }
-            } else {
-                advance()
-            }
-        }
+        menuHandler = { _ in advance() }
     }
 
     func chooseStartingEquipment(for character: Character) {
@@ -19798,6 +19809,9 @@ class GameEngine: ObservableObject {
     func showExplorationView() {
         linkReturnSnapshot = nil
         guard let dungeon = dungeon, let room = dungeon.currentRoom else { return }
+        // A fight that ended without saying so (no currentCombat any more)
+        // mustn't leave the game — and its music — stuck in combat.
+        if gameState == .combat && currentCombat == nil { gameState = .exploring }
         checkForMonsterRespawn(room: room)
         checkForMonsterWander(room: room)
 
@@ -19917,7 +19931,8 @@ class GameEngine: ObservableObject {
 
         // Check for encounter — darkness gives a chance to sneak past
         if !room.cleared, let encounter = room.encounter {
-            if !roomIsLit && Int.random(in: 1...100) <= 30 {
+            // Never the boss: slipping past it would leave the level unwinnable.
+            if !roomIsLit && room.roomType != .boss && Int.random(in: 1...100) <= 30 {
                 room.cleared = true
                 room.encounter = nil
                 logEvent("Sneaked past enemies in \(room.name) (darkness)", category: "EXPLORE")
@@ -20003,6 +20018,16 @@ class GameEngine: ObservableObject {
         // Retrofit unconditionally so "a merchant has set up shop here" is
         // never a lie, no matter how old the save.
         dungeon.ensureTeleportPads()   // older maps had one pad or none
+        // A boss room that's "cleared" but was never won (slipped past in
+        // the dark, or its boss wandered off, in older versions) left the
+        // level unwinnable — a play-tester ran out of fights. Bring it back.
+        if gameState != .victory {
+            for r in dungeon.rooms.values where r.roomType == .boss && r.cleared && r.encounter == nil && r.defeatedMonsterNames.isEmpty {
+                r.encounter = Encounter.generateBoss(level: dungeon.level)
+                r.cleared = false
+                logEvent("The guardian of \(r.name) returned (it was never beaten)", category: "EXPLORE")
+            }
+        }
         if let villain = mainQuest?.villain { dungeon.crownFinalGuardian(villain: villain) }
         if room.roomType == .armory {
             if room.merchant == nil {
@@ -20298,17 +20323,27 @@ class GameEngine: ObservableObject {
             showExplorationView()
             return
         }
-        let item = room.droppedItems[0]
-        room.droppedItems.removeFirst()
-        showItemPickupMenu(item: item, source: "Left on the floor") { [weak self] in
-            guard let self = self else { return }
-            if let room = self.dungeon?.currentRoom, !room.droppedItems.isEmpty {
-                self.pickUpDroppedItems()
-            } else {
-                self.showExplorationView()
+        // Offer each item once. "Leave It" puts it back on the floor, so
+        // re-checking the floor offered the same thing again, forever.
+        var queue = room.droppedItems.map { $0.id }
+        var offerNext: (() -> Void)?
+        offerNext = { [weak self] in
+            guard let self = self, let room = self.dungeon?.currentRoom else { return }
+            while let id = queue.first {
+                queue.removeFirst()
+                if let i = room.droppedItems.firstIndex(where: { $0.id == id }) {
+                    let item = room.droppedItems.remove(at: i)
+                    self.showItemPickupMenu(item: item, source: Self.floorSource) { offerNext?() }
+                    return
+                }
             }
+            offerNext = nil
+            self.showExplorationView()
         }
+        offerNext?()
     }
+    private static let floorSource = "Left on the floor"
+
 
     // MARK: - Torch Mechanics
 
@@ -21359,7 +21394,7 @@ class GameEngine: ObservableObject {
         guard Int.random(in: 1...100) <= 10 else { return }
 
         let neighborRooms = room.exits.values.compactMap { dungeon.rooms[$0] }
-        let candidates = neighborRooms.filter { ($0.encounter?.aliveMonsters.count ?? 0) > 0 }
+        let candidates = neighborRooms.filter { $0.roomType != .boss && ($0.encounter?.aliveMonsters.count ?? 0) > 0 }   // the boss stays put
         guard let sourceRoom = candidates.randomElement(),
               var sourceEncounter = sourceRoom.encounter,
               let movingIndex = sourceEncounter.monsters.firstIndex(where: { $0.currentHP > 0 }) else { return }
@@ -23618,6 +23653,8 @@ class GameEngine: ObservableObject {
     private func autoAssignLoot(_ item: Item, source: String, narrative: String?, onDone: @escaping () -> Void) -> Bool {
         let eligible = combatLootEligible ?? party
         guard eligible.count > 1 else { return false }
+        // Something the party chose to leave is never picked up behind its back.
+        guard source != Self.floorSource else { return false }
         // Important finds are the player's call: gear to equip, or anything
         // valuable, always gets the "who takes it?" screen.
         let important = item.type == .weapon || item.type == .armor || item.type == .shield || item.value >= 50
@@ -29969,11 +30006,11 @@ class GameEngine: ObservableObject {
 
         // Check spell slots for levelled spells
         if spell.level != .cantrip {
-            if !character.spellSlots.hasSlot(level: spell.level) {
+            guard let slot = character.spellSlots.slotToSpend(for: spell) else {
                 print("  [No spell slots remaining for \(spell.name)!]", color: .yellow)
                 return
             }
-            character.spellSlots.useSlot(level: spell.level)
+            character.spellSlots.useSlot(level: slot)
         }
 
         // Find target
@@ -32355,6 +32392,7 @@ class GameEngine: ObservableObject {
         let cantrips = character.knownSpells.filter { $0.level == .cantrip }
         let level1Spells = character.knownSpells.filter { $0.level == .level1 && character.canCastSpell($0) }
         let level2Spells = character.knownSpells.filter { $0.level == .level2 && character.canCastSpell($0) }
+        let spent = character.knownSpells.filter { !character.canCastSpell($0) }
 
         var spellOptions: [Spell] = []
 
@@ -32386,6 +32424,12 @@ class GameEngine: ObservableObject {
                 print("    \(s.name) — \(s.description)", color: .dimGreen)
             }
             spellOptions.append(contentsOf: level2Spells)
+            print("")
+        }
+
+        // Known but out of slots: listed, so a spell never seems forgotten.
+        if !spent.isEmpty {
+            printWrapped("No slot left for: \(spent.map { $0.name }.joined(separator: ", ")) — a rest restores them.", indent: 2, color: .gray)
             print("")
         }
 
@@ -32533,7 +32577,7 @@ class GameEngine: ObservableObject {
                 }
             } else {
                 // Wrong words: the slot's spent either way.
-                if spell.level != .cantrip { caster.spellSlots.useSlot(level: spell.level) }
+                if let slot = caster.spellSlots.slotToSpend(for: spell), slot != .cantrip { caster.spellSlots.useSlot(level: slot) }
                 if Bool.random() {
                     self.print("  \"\(said)!\" — nothing. The spell fizzles.", color: .yellow)
                     self.logEvent("\(caster.name)'s \(spell.name) fizzled (wrong words)", category: "COMBAT")
@@ -34795,6 +34839,7 @@ class GameEngine: ObservableObject {
 
         do {
             try SaveGameManager.shared.save(saveGame)
+            keepPartyInRoster()
             SoundManager.shared.playSave()
             logEvent("Quick save: \(slotName)", category: "SYSTEM")
             explorationStatusMessage = ("Game saved! (\"\(slotName)\" — find it under Continue Adventure.)", .brightGreen)
@@ -34809,7 +34854,7 @@ class GameEngine: ObservableObject {
 
         // If saving during combat, clear the current room's encounter so
         // loading won't immediately throw the player back into battle.
-        if gameState == .combat, let room = dungeon.currentRoom, !room.cleared {
+        if gameState == .combat, let room = dungeon.currentRoom, !room.cleared, room.roomType != .boss {
             room.cleared = true
             room.encounter = nil
         }
@@ -34843,6 +34888,7 @@ class GameEngine: ObservableObject {
 
         do {
             try SaveGameManager.shared.save(saveGame)
+            keepPartyInRoster()
             lastSaveTime = Date()
             SoundManager.shared.playSave()
             printLines(asciiScroll, color: .brightGreen)
@@ -36272,6 +36318,8 @@ class GameEngine: ObservableObject {
             }
         }
         // If no safe room found, just clear the current room's encounter
+        // (never the boss's — the self-heal would only bring it back).
+        guard dungeon.rooms[dungeon.currentRoomId]?.roomType != .boss else { return }
         dungeon.rooms[dungeon.currentRoomId]?.encounter = nil
         dungeon.rooms[dungeon.currentRoomId]?.cleared = true
     }
@@ -36522,12 +36570,52 @@ class GameEngine: ObservableObject {
             } else {
                 resetGame()
             }
+        } else if dungeon != nil && !party.isEmpty && !isMultiplayer {
+            confirmLeaveAdventure()
         } else {
             resetGame()
         }
     }
 
+    /// The ✕ on a screen that lost its own way back used to drop straight
+    /// to the title and throw the whole adventure away (a play-tester lost
+    /// one just leaving a shop). Now it asks first.
+    private func confirmLeaveAdventure() {
+        clearTerminal()
+        printTitle("Leave the Adventure?")
+        print("")
+        printWrapped("This goes back to the title screen. Anything since your last save will be lost.", indent: 2, color: .yellow)
+        if let saved = lastSaveTime {
+            let mins = Int(Date().timeIntervalSince(saved) / 60)
+            print("  Last saved \(mins < 1 ? "moments" : "\(mins) min") ago.", color: .dimGreen)
+        } else {
+            print("  Not saved yet.", color: .dimGreen)
+        }
+        print("")
+        printWrapped("Your adventurers are kept in the Character Roster either way.", indent: 2, color: .dimGreen)
+        print("")
+        showMenu(["Keep Playing", "Save First", "Leave Without Saving"], defaultIndex: 0)
+        closeHandler = { [weak self] in self?.showExplorationView() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 2: self.showSaveMenu()
+            case 3: self.resetGame()
+            default: self.showExplorationView()
+            }
+        }
+    }
+
+    /// Every adventurer is kept in the Character Roster automatically — on
+    /// each save and whenever the adventure ends — so an accidental quit
+    /// never loses a hero. (Updates the same record; never duplicates.)
+    private func keepPartyInRoster() {
+        guard !isMultiplayer else { return }
+        for c in party where c.currentHP > 0 { saveCharacterToRoster(c, silent: true) }
+    }
+
     func resetGame() {
+        if dungeon != nil { keepPartyInRoster() }
         party = []
         dungeon = nil
         currentCombat = nil
@@ -39017,7 +39105,7 @@ class GameEngine: ObservableObject {
                         }
                         // Check for encounter
                         if !newRoom.cleared, newRoom.encounter != nil {
-                            if !self.torchLit && Int.random(in: 1...100) <= 30 {
+                            if !self.torchLit && newRoom.roomType != .boss && Int.random(in: 1...100) <= 30 {
                                 newRoom.cleared = true
                                 newRoom.encounter = nil
                                 self.addChatMessage(senderName: "Dungeon Master",

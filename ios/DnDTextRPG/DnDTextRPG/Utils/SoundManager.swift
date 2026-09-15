@@ -18,6 +18,8 @@ class SoundManager {
 
     // Music state
     private var musicPlaying = false
+    /// The track playing now, if any.
+    var playingMusic: MusicType? { musicPlaying ? currentMusic : nil }
     private var currentMusic: MusicType?
     private var musicQueue: DispatchQueue = DispatchQueue(label: "com.dnd.music", qos: .background)
 

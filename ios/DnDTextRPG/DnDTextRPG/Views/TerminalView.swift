@@ -1896,6 +1896,8 @@ struct TerminalView: View {
 
     private func submitInput() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        // DevAccess: the hidden-buttons phrase — acted on here, never echoed or logged.
+        if let command = DevAccess.command(for: text) { inputText = ""; gameEngine.recordAction("typed [hidden]"); gameEngine.applyDevAccess(command, typed: text); return }
         // For bug reports: what was typed (anything key-like kept out).
         if !text.isEmpty {
             let keyLike = text.hasPrefix("sk-") || text.hasPrefix("AIza") || (text.count >= 24 && !text.contains(" "))
