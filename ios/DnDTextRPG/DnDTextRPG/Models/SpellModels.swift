@@ -99,6 +99,15 @@ struct SpellSlots: Codable {
         }
     }
 
+    /// The slot a spell would spend now, or nil if none. A rare technique
+    /// (a quest reward, learned whatever the hero's level) can run on a
+    /// level-1 slot when there's no level-2 one.
+    func slotToSpend(for spell: Spell) -> SpellLevel? {
+        if spell.level == .cantrip || hasSlot(level: spell.level) { return spell.level }
+        if spell.level == .level2 && SpellCatalog.isRareTechnique(spell) && hasSlot(level: .level1) { return .level1 }
+        return nil
+    }
+
     func hasSlot(level: SpellLevel) -> Bool {
         switch level {
         case .cantrip: return true
@@ -299,6 +308,10 @@ struct SpellCatalog {
     }
 
     // MARK: - Special Spells (quest rewards only, not learned via normal level-up)
+
+    static func isRareTechnique(_ spell: Spell) -> Bool {
+        [CharacterClass.wizard, .cleric, .ranger].contains { specialSpellFor(characterClass: $0)?.name == spell.name }
+    }
 
     static func specialSpellFor(characterClass: CharacterClass) -> Spell? {
         switch characterClass {

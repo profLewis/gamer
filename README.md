@@ -209,7 +209,7 @@ See [ios/README.md](ios/README.md) for detailed build instructions.
 ## Credits
 
 - **Created by** Prof. Lewis
-- **Co-author — world creation and storytelling:** Beau Lewis
+- **Co-author — world creation, storytelling and game testing:** Beau Lewis
 - **AI assistance** by Claude (Anthropic) and Codex (OpenAI)
 - **A Timbaloo app**
 

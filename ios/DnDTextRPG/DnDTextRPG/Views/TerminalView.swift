@@ -110,6 +110,8 @@ struct TerminalView: View {
     /// 0 = map pane tall enough for the whole map box, key included.
     @AppStorage("macLeftPaneFraction") private var macLeftPaneFraction: Double = 0.5
     @State private var macDragBase: CGFloat? = nil
+    /// Mac: the measured height of the map box (0 until first measured).
+    @State private var macMapBoxHeight: CGFloat = 0
     #endif
     #if os(iOS)
     @State private var showCustomKeyboard: Bool = false
@@ -167,6 +169,24 @@ struct TerminalView: View {
         }
     }
 
+    /// The Mac map box's closing +---+ line — the first border after "@ here"
+    /// (found by content, so a map clipped at the dungeon's edge still fits).
+    private var macMapBoxLastIndex: Int {
+        let lines = gameEngine.pinnedMapLines
+        guard let here = lines.firstIndex(where: { $0.text.contains("@ here") }) else { return gameEngine.mapOnlyLineCount + 2 }
+        return lines[(here + 1)...].firstIndex(where: { $0.text.trimmingCharacters(in: .whitespaces).hasPrefix("+") }) ?? here
+    }
+
+    /// The red "you're in a fight" frame and tag — Mac only. On the phone
+    /// the combat screen already says so, and a frame just crowds it.
+    private var combatFrameOn: Bool {
+        #if os(macOS)
+        return gameEngine.currentCombat != nil
+        #else
+        return false
+        #endif
+    }
+
     var body: some View {
         GeometryReader { geometry in
             let isLandscape = geometry.size.width > geometry.size.height
@@ -189,12 +209,21 @@ struct TerminalView: View {
                     // down slightly so it starts below where the text
                     // column's first (title) line sits, not flush at the top.
                     Group {
-                    if !gameEngine.pinnedMapLines.isEmpty {
+                    if !gameEngine.pinnedMapLines.isEmpty && !gameEngine.storyScreenActive {
                         let mapContent = VStack(alignment: .leading, spacing: 2) {
                             ForEach(Array(gameEngine.pinnedMapLines.enumerated()), id: \.element.id) { index, line in
                                 TerminalLineView(line: line, scale: mapScale)
+                                    #if os(macOS)
+                                    // Mac: report where the box's closing +---+ line ends, so
+                                    // the pane can fit the box exactly (top edge to bottom edge).
+                                    .background(GeometryReader { g in
+                                        Color.clear.preference(key: MacMapBoxBottomKey.self,
+                                                               value: index == macMapBoxLastIndex ? g.frame(in: .named("macMapBox")).maxY : 0)
+                                    })
+                                    #endif
                             }
                         }
+                        .coordinateSpace(name: "macMapBox")
                         #if os(macOS)
                         // Mac: the box sits in the middle of its pane, so @ (always
                         // the middle of the grid) is the middle of the map area too.
@@ -277,7 +306,14 @@ struct TerminalView: View {
                         // — the header and key are a scroll away, leaving more room
                         // for text. Its rows are the Map Length setting (the handle
                         // below sets it too).
-                        .frame(height: CGFloat(gameEngine.mapOnlyLineCount + 1) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 6)
+                        // Mac: exactly the map box, from its top +---+ edge to the one
+                        // under "@ here" — measured (see MacMapBoxBottomKey), so it
+                        // refits itself on launch, window resizes and Map Length changes.
+                        .frame(height: macMapBoxHeight > 0 ? macMapBoxHeight + 6
+                               : CGFloat(gameEngine.mapOnlyLineCount + 3) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 8)
+                        .onPreferenceChange(MacMapBoxBottomKey.self) { h in
+                            if h > 0, abs(h - macMapBoxHeight) > 0.5 { macMapBoxHeight = h }
+                        }
                         // Tell the engine the pane's width, so the map's extent follows it.
                         .background(GeometryReader { geo in
                             Color.clear.preference(key: MacMapPaneWidthKey.self, value: geo.size.width)
@@ -314,7 +350,7 @@ struct TerminalView: View {
                             .gesture(DragGesture(minimumDistance: 1)
                                 .onChanged { value in
                                     let lineHeight = gameEngine.mapFontSize * mapScale * 1.3 + 2
-                                    let base = macDragBase ?? CGFloat(gameEngine.mapOnlyLineCount + 1) * lineHeight + 6
+                                    let base = macDragBase ?? (macMapBoxHeight > 0 ? macMapBoxHeight + 6 : CGFloat(gameEngine.mapOnlyLineCount + 3) * lineHeight + 8)
                                     macDragBase = base
                                     let target = max(80, min(geometry.size.height - 140, base + value.translation.height))
                                     gameEngine.macFitMapRows(toHeight: target, lineHeight: lineHeight)
@@ -392,6 +428,10 @@ struct TerminalView: View {
                                                    height: landingDragonWidth(geometry.size, isLandscape: isLandscape) * 186 / 280)
                                             .clipped()
                                             .offset(x: -6 * scale) // Centre the dragon's head, not the image
+                                            // Tap the picture: About & credits.
+                                            .contentShape(Rectangle())
+                                            .onTapGesture { gameEngine.followLink("about") }
+                                            .accessibilityHint("Tap for About and credits")
                                         Spacer()
                                     }
                                     if let caption = gameEngine.currentPoseCaption {
@@ -413,6 +453,9 @@ struct TerminalView: View {
                                             .frame(maxWidth: 340 * scale, maxHeight: 220 * scale)
                                             .cornerRadius(8)
                                             .opacity(0.85)
+                                            .contentShape(Rectangle())
+                                            .onTapGesture { gameEngine.followLink("about") }
+                                            .accessibilityHint("Tap for About and credits")
                                         Spacer()
                                     }
                                     if let caption = gameEngine.currentPoseCaption {
@@ -729,7 +772,7 @@ struct TerminalView: View {
             // In a fight: unmistakable — a red frame round the whole window
             // and a COMBAT tag in the corner (decoration only; taps pass through).
             .overlay(alignment: .topTrailing) {
-                if gameEngine.currentCombat != nil {
+                if combatFrameOn {
                     ZStack(alignment: .topTrailing) {
                         RoundedRectangle(cornerRadius: 4)
                             .stroke(Color.red.opacity(0.85), lineWidth: 3)
@@ -823,6 +866,26 @@ struct TerminalView: View {
                 fullMapOverlay
             }
         }
+        // The endgame certificate — over everything until it's closed.
+        .overlay {
+            if let cert = gameEngine.certificate {
+                CertificateView(cert: cert, scale: scale,
+                                onClose: { gameEngine.closeCertificate() },
+                                onPDF: { kind, style in gameEngine.showCertificatePDF(kind, style: style) })
+            }
+        }
+        // The End: fireworks over everything, never in the way of a tap.
+        .overlay {
+            if let until = gameEngine.fireworksUntil {
+                FireworksView(start: until.addingTimeInterval(-GameEngine.fireworksLength), until: until)
+            }
+        }
+        #if canImport(PDFKit) && !os(tvOS)
+        .sheet(item: $gameEngine.pdfPreview) { item in
+            PDFPreviewSheet(item: item, onSave: { gameEngine.savePreviewedPDF() },
+                            onPrint: { gameEngine.printPreviewedPDF() }, onClose: { gameEngine.pdfPreview = nil })
+        }
+        #endif
         #if !os(tvOS)
         .background(
             Color.clear
@@ -850,6 +913,7 @@ struct TerminalView: View {
         // slot squeezed the combat text into a sliver.
         gameEngine.dungeon != nil && gameEngine.currentCombat == nil
             && !gameEngine.isLandscapeOrientation && !gameEngine.isJustDMActive
+            && !gameEngine.storyScreenActive   // tales and quest offers: no play-screen controls
     }
 
     private var portraitControlsMinHeight: CGFloat {
@@ -1102,11 +1166,12 @@ struct TerminalView: View {
                             // where you type. Tap to pause/resume, long-press to hurry.
                             // While time is frozen it always shows — it's how you unfreeze.
                             // Every waiting screen shows it (speaker mode and iOS included).
-                            if gameEngine.timeFrozen || (gameEngine.awaitingContinue && gameEngine.showCountdownControl) {
+                            if gameEngine.timeFrozen || ((gameEngine.awaitingContinue || gameEngine.taleCountdownOn) && gameEngine.showCountdownControl) {
                                 autoCountdownBar
                             }
                             // Combat help, among the other symbols on this line.
-                            if gameEngine.combatHelpAvailable {
+                            // (Not when the buttons' 3-bar row has its own ? already.)
+                            if gameEngine.combatHelpAvailable && !gameEngine.currentMenuOptions.contains(where: { $0.text == "?" }) {
                                 Button(action: { gameEngine.showCombatHelpFromBar() }) {
                                     Text(MenuOption.helpGlyph == "Help" ? "?" : MenuOption.helpGlyph)
                                         .font(.system(size: 17 * scale, weight: .semibold, design: .monospaced))
@@ -1802,8 +1867,8 @@ struct TerminalView: View {
     private func scrollMapPastHeader(_ proxy: ScrollViewProxy, isLandscape: Bool) {
         let lines = gameEngine.pinnedMapLines
         #if os(macOS)
-        // Mac: start at the dotted line under MAP (header a scroll up).
-        if let target = lines.count > 2 ? lines[2] : lines.first { proxy.scrollTo(target.id, anchor: .top) }
+        // Mac: the whole box, from its top +---+ edge.
+        if let target = lines.first { proxy.scrollTo(target.id, anchor: .top) }
         #elseif os(tvOS)
         if let first = lines.first { proxy.scrollTo(first.id, anchor: .top) }
         #else
@@ -1843,6 +1908,8 @@ struct TerminalView: View {
 
     private func submitInput() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        // DevAccess: the hidden-buttons phrase — acted on here, never echoed or logged.
+        if let command = DevAccess.command(for: text) { inputText = ""; gameEngine.recordAction("typed [hidden]"); gameEngine.applyDevAccess(command, typed: text); return }
         // For bug reports: what was typed (anything key-like kept out).
         if !text.isEmpty {
             let keyLike = text.hasPrefix("sk-") || text.hasPrefix("AIza") || (text.count >= 24 && !text.contains(" "))
@@ -3179,5 +3246,154 @@ struct TerminalView_Previews: PreviewProvider {
     static var previews: some View {
         TerminalView()
             .environmentObject(GameEngine())
+    }
+}
+
+#if os(macOS)
+/// Where the Mac map box's closing +---+ line ends (in the map's own
+/// coordinates), so the pane can be sized to fit the box exactly.
+struct MacMapBoxBottomKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+#endif
+
+/// The certificate at the end of an adventure: the heroes, what they did,
+/// the numbers, and a map of every level they walked — in gold on black,
+/// black on parchment, or blood red on parchment.
+struct CertificateView: View {
+    let cert: GameEngine.EndgameCertificate
+    let scale: CGFloat
+    let onClose: () -> Void
+    let onPDF: (GameEngine.CertificatePDFKind, Int) -> Void
+    @State private var style = 0
+    @State private var pdfOptions = false
+
+    typealias Palette = (bg: Color, ink: Color, accent: Color, border: Color)
+    private var palette: Palette { Self.palette(style) }
+
+    /// Gold on black, black on parchment, or blood red on parchment.
+    static func palette(_ style: Int) -> Palette {
+        let gold = Color(red: 0.86, green: 0.69, blue: 0.24)
+        let blood = Color(red: 0.55, green: 0.02, blue: 0.05)
+        let parchment = Color(red: 0.95, green: 0.90, blue: 0.78)
+        switch style {
+        case 1: return (parchment, .black, blood, .black)
+        case 2: return (parchment, blood, .black, blood)
+        default: return (.black, gold, Color(red: 0.8, green: 0.1, blue: 0.1), gold)
+        }
+    }
+
+    var body: some View {
+        let p = palette
+        ZStack(alignment: .topTrailing) {
+            p.bg.ignoresSafeArea()
+            ScrollView {
+                VStack(spacing: 12 * scale) {
+                    Text("✦ \(cert.title) ✦")
+                        .font(.system(size: 26 * scale, weight: .bold, design: .serif))
+                        .foregroundColor(p.ink)
+                        .multilineTextAlignment(.center)
+                    Text("This is to certify that")
+                        .font(.system(size: 14 * scale, design: .serif).italic())
+                        .foregroundColor(p.ink.opacity(0.85))
+                    ForEach(Array(cert.heroes.enumerated()), id: \.offset) { _, hero in
+                        VStack(spacing: 2) {
+                            Text(hero.name)
+                                .font(.system(size: 22 * scale, weight: .heavy, design: .serif))
+                                .foregroundColor(p.accent)
+                            Text(hero.detail)
+                                .font(.system(size: 12 * scale, design: .serif))
+                                .foregroundColor(p.ink.opacity(0.8))
+                        }
+                    }
+                    Text(cert.quest)
+                        .font(.system(size: 15 * scale, design: .serif))
+                        .foregroundColor(p.ink)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 12 * scale)
+                    Rectangle().fill(p.border).frame(height: 2).padding(.horizontal, 40 * scale)
+                    VStack(spacing: 4) {
+                        ForEach(Array(cert.stats.enumerated()), id: \.offset) { _, stat in
+                            HStack {
+                                Text(stat.0).foregroundColor(p.ink.opacity(0.85))
+                                Spacer()
+                                Text(stat.1).foregroundColor(p.accent).bold()
+                            }
+                            .font(.system(size: 14 * scale, design: .serif))
+                        }
+                    }
+                    .frame(maxWidth: 360 * scale)
+                    Text("The Journey")
+                        .font(.system(size: 18 * scale, weight: .bold, design: .serif))
+                        .foregroundColor(p.ink)
+                        .padding(.top, 6 * scale)
+                    ScrollView(.horizontal, showsIndicators: true) {
+                        HStack(alignment: .top, spacing: 18 * scale) {
+                            ForEach(Array(cert.levels.enumerated()), id: \.offset) { _, level in
+                                VStack(spacing: 4) {
+                                    Text("Level \(level.level)")
+                                        .font(.system(size: 13 * scale, weight: .semibold, design: .serif))
+                                        .foregroundColor(p.accent)
+                                    PictureMapView(level: level, fontSize: 8 * scale, showAll: false)
+                                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(p.border.opacity(0.7), lineWidth: 1))
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 8)
+                    }
+                    Text(cert.date)
+                        .font(.system(size: 13 * scale, design: .serif).italic())
+                        .foregroundColor(p.ink.opacity(0.85))
+                    HStack(spacing: 30 * scale) {
+                        signature("The Dungeon Master", p)
+                        signature(cert.village.map { "The Elder of \($0)" } ?? "The Bards of the Realm", p)
+                    }
+                    if cert.preview {
+                        Text("(a preview — not a real adventure)")
+                            .font(.system(size: 11 * scale, design: .serif).italic())
+                            .foregroundColor(p.ink.opacity(0.6))
+                    }
+                }
+                .padding(.vertical, 40 * scale)
+                .padding(.horizontal, 24 * scale)
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(p.border, lineWidth: 4).padding(8))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(p.border.opacity(0.5), lineWidth: 1).padding(16))
+            }
+            VStack(alignment: .trailing, spacing: 8) {
+                HStack(spacing: 10) {
+                    button("Style", p) { style = (style + 1) % 3 }
+                    button(pdfOptions ? "Cancel" : "Save PDF", p) { pdfOptions.toggle() }
+                    button("✕", p, action: onClose)
+                }
+                // The PDF three ways — each opens a preview before it's kept.
+                if pdfOptions {
+                    button("Illustrated — as shown", p) { pdfOptions = false; onPDF(.illustrated, style) }
+                    button("Text — maps kept whole", p) { pdfOptions = false; onPDF(.text, style) }
+                    button("Text — compact", p) { pdfOptions = false; onPDF(.textCompact, style) }
+                }
+            }
+            .padding(12)
+        }
+    }
+
+    private func signature(_ who: String, _ p: (bg: Color, ink: Color, accent: Color, border: Color)) -> some View {
+        VStack(spacing: 2) {
+            Text("~ signed ~").font(.system(size: 14 * scale, design: .serif).italic()).foregroundColor(p.accent)
+            Rectangle().fill(p.ink.opacity(0.6)).frame(width: 120 * scale, height: 1)
+            Text(who).font(.system(size: 11 * scale, design: .serif)).foregroundColor(p.ink.opacity(0.85))
+        }
+    }
+
+    private func button(_ label: String, _ p: (bg: Color, ink: Color, accent: Color, border: Color), action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 13 * scale, weight: .semibold, design: .serif))
+                .foregroundColor(p.bg)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(p.ink))
+        }
+        .buttonStyle(.plain)
     }
 }
