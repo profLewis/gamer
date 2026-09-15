@@ -110,6 +110,8 @@ struct TerminalView: View {
     /// 0 = map pane tall enough for the whole map box, key included.
     @AppStorage("macLeftPaneFraction") private var macLeftPaneFraction: Double = 0.5
     @State private var macDragBase: CGFloat? = nil
+    /// Mac: the measured height of the map box (0 until first measured).
+    @State private var macMapBoxHeight: CGFloat = 0
     #endif
     #if os(iOS)
     @State private var showCustomKeyboard: Bool = false
@@ -203,8 +205,17 @@ struct TerminalView: View {
                         let mapContent = VStack(alignment: .leading, spacing: 2) {
                             ForEach(Array(gameEngine.pinnedMapLines.enumerated()), id: \.element.id) { index, line in
                                 TerminalLineView(line: line, scale: mapScale)
+                                    #if os(macOS)
+                                    // Mac: report where the box's closing +---+ line ends, so
+                                    // the pane can fit the box exactly (top edge to bottom edge).
+                                    .background(GeometryReader { g in
+                                        Color.clear.preference(key: MacMapBoxBottomKey.self,
+                                                               value: index == gameEngine.mapOnlyLineCount + 2 ? g.frame(in: .named("macMapBox")).maxY : 0)
+                                    })
+                                    #endif
                             }
                         }
+                        .coordinateSpace(name: "macMapBox")
                         #if os(macOS)
                         // Mac: the box sits in the middle of its pane, so @ (always
                         // the middle of the grid) is the middle of the map area too.
@@ -287,7 +298,14 @@ struct TerminalView: View {
                         // — the header and key are a scroll away, leaving more room
                         // for text. Its rows are the Map Length setting (the handle
                         // below sets it too).
-                        .frame(height: CGFloat(gameEngine.mapOnlyLineCount + 1) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 6)
+                        // Mac: exactly the map box, from its top +---+ edge to the one
+                        // under "@ here" — measured (see MacMapBoxBottomKey), so it
+                        // refits itself on launch, window resizes and Map Length changes.
+                        .frame(height: macMapBoxHeight > 0 ? macMapBoxHeight + 6
+                               : CGFloat(gameEngine.mapOnlyLineCount + 3) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 8)
+                        .onPreferenceChange(MacMapBoxBottomKey.self) { h in
+                            if h > 0, abs(h - macMapBoxHeight) > 0.5 { macMapBoxHeight = h }
+                        }
                         // Tell the engine the pane's width, so the map's extent follows it.
                         .background(GeometryReader { geo in
                             Color.clear.preference(key: MacMapPaneWidthKey.self, value: geo.size.width)
@@ -324,7 +342,7 @@ struct TerminalView: View {
                             .gesture(DragGesture(minimumDistance: 1)
                                 .onChanged { value in
                                     let lineHeight = gameEngine.mapFontSize * mapScale * 1.3 + 2
-                                    let base = macDragBase ?? CGFloat(gameEngine.mapOnlyLineCount + 1) * lineHeight + 6
+                                    let base = macDragBase ?? (macMapBoxHeight > 0 ? macMapBoxHeight + 6 : CGFloat(gameEngine.mapOnlyLineCount + 3) * lineHeight + 8)
                                     macDragBase = base
                                     let target = max(80, min(geometry.size.height - 140, base + value.translation.height))
                                     gameEngine.macFitMapRows(toHeight: target, lineHeight: lineHeight)
@@ -1813,8 +1831,8 @@ struct TerminalView: View {
     private func scrollMapPastHeader(_ proxy: ScrollViewProxy, isLandscape: Bool) {
         let lines = gameEngine.pinnedMapLines
         #if os(macOS)
-        // Mac: start at the dotted line under MAP (header a scroll up).
-        if let target = lines.count > 2 ? lines[2] : lines.first { proxy.scrollTo(target.id, anchor: .top) }
+        // Mac: the whole box, from its top +---+ edge.
+        if let target = lines.first { proxy.scrollTo(target.id, anchor: .top) }
         #elseif os(tvOS)
         if let first = lines.first { proxy.scrollTo(first.id, anchor: .top) }
         #else
@@ -3192,3 +3210,12 @@ struct TerminalView_Previews: PreviewProvider {
             .environmentObject(GameEngine())
     }
 }
+
+#if os(macOS)
+/// Where the Mac map box's closing +---+ line ends (in the map's own
+/// coordinates), so the pane can be sized to fit the box exactly.
+struct MacMapBoxBottomKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+#endif

@@ -18236,7 +18236,7 @@ class GameEngine: ObservableObject {
     /// Tale leads straight on to the Progress Tale.
     private func showTalePages(title: String, lines: [String], page: Int, onBack: @escaping () -> Void,
                                emptyMessage: String = "There's no tale to tell yet.",
-                               finishLabel: String? = nil, onFinish: (() -> Void)? = nil, appendOnly: Bool = false) {
+                               finishLabel: String? = nil, onFinish: (() -> Void)? = nil, appendOnly: Bool = false, pace: Double = 1.0) {
         if !appendOnly || lines.isEmpty {
             clearTerminal()
             printTitle(title)
@@ -18275,10 +18275,10 @@ class GameEngine: ObservableObject {
         opts.append("< Back")
         showMenu(opts)
         let next: () -> Void = { [weak self] in
-            self?.showTalePages(title: title, lines: lines, page: i + 1, onBack: onBack, emptyMessage: emptyMessage, finishLabel: finishLabel, onFinish: onFinish, appendOnly: true)
+            self?.showTalePages(title: title, lines: lines, page: i + 1, onBack: onBack, emptyMessage: emptyMessage, finishLabel: finishLabel, onFinish: onFinish, appendOnly: true, pace: pace)
         }
         let previous: () -> Void = { [weak self] in
-            self?.showTalePages(title: title, lines: lines, page: i - 1, onBack: onBack, emptyMessage: emptyMessage, finishLabel: finishLabel, onFinish: onFinish)
+            self?.showTalePages(title: title, lines: lines, page: i - 1, onBack: onBack, emptyMessage: emptyMessage, finishLabel: finishLabel, onFinish: onFinish, pace: pace)
         }
         cardPositionLabel = "\(i + 1)/\(lines.count)"
         swipeLeftHandler = last ? (onFinish ?? onBack) : next
@@ -18305,7 +18305,7 @@ class GameEngine: ObservableObject {
             return self.talePageToken == token && self.screenGeneration == generation
         }
         let turn: () -> Void = last ? (onFinish ?? onBack) : next
-        paceTaleParagraph(lines[i], last: last, isStillValid: stillHere, turn: turn)
+        paceTaleParagraph(lines[i], last: last, paceScale: pace, isStillValid: stillHere, turn: turn)
     }
 
     /// The adventure's opening tale again — then on into the Progress Tale.
@@ -18332,10 +18332,10 @@ class GameEngine: ObservableObject {
         let open: ([String]) -> Void = { [weak self] lines in
             guard let self = self else { return }
             self.progressTaleCache = (self.adventureLog.count, lines)
-            self.showTalePages(title: "The Tale So Far", lines: lines, page: 0, onBack: onBack)
+            self.showTalePages(title: "The Tale So Far", lines: lines, page: 0, onBack: onBack, pace: 1.8)
         }
         if let cached = progressTaleCache, cached.logCount == adventureLog.count, !cached.lines.isEmpty {
-            showTalePages(title: "The Tale So Far", lines: cached.lines, page: 0, onBack: onBack)
+            showTalePages(title: "The Tale So Far", lines: cached.lines, page: 0, onBack: onBack, pace: 1.8)
             return
         }
         guard DMEngine.shared.isConfigured, storyWriterEnabled else { open(progressTaleOffline()); return }
@@ -18516,11 +18516,11 @@ class GameEngine: ObservableObject {
     /// off, it waits as long as the voice would take (never less than the
     /// typing), then the same pause. The hourglass pauses it, and Timeouts >
     /// Tales stretches or shortens it.
-    private func paceTaleParagraph(_ text: String, last: Bool, isStillValid: @escaping () -> Bool, turn: @escaping () -> Void) {
+    private func paceTaleParagraph(_ text: String, last: Bool, paceScale: Double = 1.0, isStillValid: @escaping () -> Bool, turn: @escaping () -> Void) {
         let speech = SpeechEngine.shared
         let spoken = speech.estimatedDuration(of: text)
         let typing = reduceAnimations ? 0 : Double(text.count) * 0.028
-        let pause = (last ? 4.0 : 1.5) * timeoutScale(.tales)
+        let pause = (last ? 6.0 : 2.5) * timeoutScale(.tales) * paceScale
         let go: () -> Void = { [weak self] in
             guard let self = self, isStillValid() else { return }
             if self.autoContinuePaused {
@@ -18544,7 +18544,7 @@ class GameEngine: ObservableObject {
             }
         } else {
             taleCountdownOn = autoContinueEnabled
-            scheduleAutoAdvance(after: max(typing, spoken) * timeoutScale(.tales) + pause, isStillValid: isStillValid, fire: turn)
+            scheduleAutoAdvance(after: max(typing, spoken) * timeoutScale(.tales) * paceScale + pause, isStillValid: isStillValid, fire: turn)
         }
     }
 
@@ -18960,7 +18960,7 @@ class GameEngine: ObservableObject {
         // the dotted line under it (see TerminalView's Mac map frame).
         var best = Self.macMapRowsRange.lowerBound
         for rows in Self.macMapRowsRange {
-            let visible = (2 * rows + 1) + (2 * rows) + 3
+            let visible = (2 * rows + 1) + (2 * rows) + 5   // + top edge, title, divider, @ here, bottom edge
             if CGFloat(visible) * lineHeight + 6 <= height { best = rows } else { break }
         }
         macSetMapRows(best)
