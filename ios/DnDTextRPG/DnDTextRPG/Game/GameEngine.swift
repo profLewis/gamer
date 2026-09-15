@@ -18269,11 +18269,6 @@ class GameEngine: ObservableObject {
             }
         }
         typewrite(lines[i], color: last ? .yellow : .green)
-        if speakerModeOn {
-            speakerHasReadCurrentPage = true
-            SpeechEngine.shared.stop()
-            SpeechEngine.shared.speakAloud(lines[i])
-        }
         var opts: [String] = []
         if !last { opts.append("Next") } else if let label = finishLabel, onFinish != nil { opts.append(label) } else { opts.append("End Tale") }
         if i > 0 { opts.append("Previous") }
@@ -18310,20 +18305,7 @@ class GameEngine: ObservableObject {
             return self.talePageToken == token && self.screenGeneration == generation
         }
         let turn: () -> Void = last ? (onFinish ?? onBack) : next
-        if speakerModeOn {
-            SpeechEngine.shared.onFinish = { [weak self] in
-                DispatchQueue.main.asyncAfter(deadline: .now() + (last ? 3.0 : 0.9)) {
-                    guard stillHere(), self?.autoContinuePaused == false else { return }
-                    turn()
-                }
-            }
-        } else {
-            let words = lines[i].split(separator: " ").count
-            let typing = reduceAnimations ? 0 : Double(lines[i].count) * 0.028
-            let wait = (typing + max(4.0, Double(words) / 2.2) + (last ? 5.0 : 0)) * timeoutScale(.tales)
-            taleCountdownOn = autoContinueEnabled
-            scheduleAutoAdvance(after: wait, isStillValid: stillHere, fire: turn)
-        }
+        paceTaleParagraph(lines[i], last: last, isStillValid: stillHere, turn: turn)
     }
 
     /// The adventure's opening tale again — then on into the Progress Tale.
@@ -18513,18 +18495,6 @@ class GameEngine: ObservableObject {
         // Read aloud: speak the paragraph itself (the screen's still typing it,
         // so the usual read-the-screen would find it blank), and move on a
         // moment after the voice finishes.
-        if speakerModeOn {
-            speakerHasReadCurrentPage = true
-            let speech = SpeechEngine.shared
-            speech.stop()
-            speech.onFinish = { [weak self] in
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
-                    guard let self = self, self.cutsceneToken == token, self.awaitingContinue else { return }
-                    self.handleContinue()
-                }
-            }
-            speech.speakAloud(lines[i])
-        }
         inputHandler = { [weak self] _ in self?.showCutsceneLine(i + 1, lines: lines, done: done) }
         // ✕ leaves the tale altogether — straight on into the dungeon.
         closeHandler = { [weak self] in
@@ -18534,17 +18504,48 @@ class GameEngine: ObservableObject {
             self.closeHandler = nil
             done()
         }
-        // Long enough to type and read it — a little longer at the very end.
-        let words = lines[i].split(separator: " ").count
-        let typing = reduceAnimations ? 0 : Double(lines[i].count) * 0.028
-        // Reading pace ~130 words a minute (at least 4s), after the typing;
-        // the last paragraph lingers a little longer.
-        let wait = (typing + max(4.0, Double(words) / 2.2) + (i == lines.count - 1 ? 5.0 : 0)) * timeoutScale(.tales)
-        guard !speakerModeOn else { return }   // the voice paces it instead
-        scheduleAutoAdvance(after: wait, isStillValid: { [weak self] in
+        // Each paragraph stays until it's been read (see paceTaleParagraph).
+        paceTaleParagraph(lines[i], last: i == lines.count - 1, isStillValid: { [weak self] in
             guard let self = self else { return false }
             return self.cutsceneToken == token && self.awaitingContinue
-        }, fire: { [weak self] in self?.handleContinue() })
+        }, turn: { [weak self] in self?.handleContinue() })
+    }
+
+    /// A tale paragraph's pace: with Read Aloud on, the page waits until the
+    /// voice has read this paragraph to the end, then a short pause; with it
+    /// off, it waits as long as the voice would take (never less than the
+    /// typing), then the same pause. The hourglass pauses it, and Timeouts >
+    /// Tales stretches or shortens it.
+    private func paceTaleParagraph(_ text: String, last: Bool, isStillValid: @escaping () -> Bool, turn: @escaping () -> Void) {
+        let speech = SpeechEngine.shared
+        let spoken = speech.estimatedDuration(of: text)
+        let typing = reduceAnimations ? 0 : Double(text.count) * 0.028
+        let pause = (last ? 4.0 : 1.5) * timeoutScale(.tales)
+        let go: () -> Void = { [weak self] in
+            guard let self = self, isStillValid() else { return }
+            if self.autoContinuePaused {
+                self.afterAutoContinuePause(isStillValid: isStillValid, resume: turn)
+            } else {
+                turn()
+            }
+        }
+        if speakerModeOn {
+            speakerHasReadCurrentPage = true
+            speech.stop()
+            var finished = false
+            speech.speakAloud(text) {
+                finished = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + max(0, typing - spoken) + pause) { go() }
+            }
+            // If the voice gets cut off rather than finishing, don't stall.
+            DispatchQueue.main.asyncAfter(deadline: .now() + max(typing, spoken) * 1.6 + pause + 3) {
+                guard !finished, !speech.isSpeaking else { return }
+                go()
+            }
+        } else {
+            taleCountdownOn = autoContinueEnabled
+            scheduleAutoAdvance(after: max(typing, spoken) * timeoutScale(.tales) + pause, isStillValid: isStillValid, fire: turn)
+        }
     }
 
     private var storySystemPrompt: String {
