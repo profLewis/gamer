@@ -18555,7 +18555,7 @@ class GameEngine: ObservableObject {
         let gold = party.reduce(0) { $0 + $1.gold }
         let events = progressHighlights(limit: 40).map { "- \($0)" }.joined(separator: "\n")
         return """
-        Tell the story of this adventure so far, carrying on from its opening tale (below) in exactly the same style, as 6 to 9 short lines — one sentence each, at most 30 words — one per line, with no numbering, headings or blank lines.
+        Tell the story of this adventure so far, carrying on from its opening tale (below) in exactly the same style, as 6 to 9 short lines — one sentence each, at most 30 words — one per line, with no title, introduction, numbering, headings or blank lines — start straight in with the story.
         Say what the party has done towards the main quest, their notable fights, finds and side quests, and end with where they stand now and what still lies ahead.
         Keep it plain and concrete: the real events, in order, each following from the last. No prophecies, omens or vague mystical phrases.
 
@@ -18816,7 +18816,7 @@ class GameEngine: ObservableObject {
         let mq = mainQuest ?? MainQuest.random()
         let partyText = party.map { "\(shortName(for: $0)) (\($0.race.rawValue) \($0.characterClass.rawValue))" }.joined(separator: ", ")
         return """
-        Write the opening tale for this adventure as 7 to 9 short lines — one sentence each, at most 30 words — one per line, with no numbering, headings or blank lines.
+        Write the opening tale for this adventure as 7 to 9 short lines — one sentence each, at most 30 words — one per line, with no title, introduction, numbering, headings or blank lines — start straight in with the story.
         The tale must: tell why this party is going into the dungeon; state the main quest clearly (the goal, what is at stake, and the reward); name the villain; mention every adventurer by name and what their class or people bring; and end on the plea itself — the party hasn't said yes yet, so don't have them accept or set off.
         It must read as one clear story, in this order: what is going wrong in the village; who is behind it and why; who asks the party for help; the quest (goal, deadline, reward); what each adventurer brings; setting off into the dungeon.
         Every sentence must follow from the one before, with concrete, everyday details. Vary the details (who asks, the weather, the mood) so it doesn't feel like every other tale.
@@ -18925,7 +18925,18 @@ class GameEngine: ObservableObject {
                 }
                 return l
             }
+            .map { $0.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "__", with: "") }
+            // No preface ("Here is the tale:"), sign-off or title — just the story.
+            .filter { l in
+                let lower = l.lowercased()
+                if l.hasSuffix(":") { return false }
+                return !["here is", "here's", "sure", "certainly", "of course", "title:", "the end", "opening tale", "progress tale"].contains { lower.hasPrefix($0) }
+            }
             .filter { $0.count >= 8 }
+        if let first = lines.first, first.split(separator: " ").count < 9,
+           let end = first.last, !".!?\"”’…".contains(end) {
+            lines.removeFirst()   // a title line
+        }
         if lines.count > 10 { lines = Array(lines.prefix(10)) }
         return lines.count >= 4 ? lines.map { String($0.prefix(260)) } : nil
     }
