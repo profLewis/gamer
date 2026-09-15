@@ -16167,6 +16167,9 @@ class GameEngine: ObservableObject {
     /// Ask if this character is human, AI, or remote player, then proceed
     private func chooseCharacterType() {
         setBreadcrumb("chooseCharacterType(idx:\(creatingCharacterIndex),total:\(totalCharacters))")
+        // Every adventurer is made: a stray late call (an old screen's handler
+        // firing afterwards) mustn't start a "Character 3 of 2".
+        guard creatingCharacterIndex < totalCharacters else { return }
         // Skip slots pre-assigned as remote — go to party review when done
         if pendingRemoteSlots.contains(creatingCharacterIndex) {
             creatingCharacterIndex += 1
@@ -16859,6 +16862,9 @@ class GameEngine: ObservableObject {
     func startCharacterCreation() {
         if creatingCharacterIndex == 0 { charCreationFlowStart = Date(); breadcrumbHistory = []; silentCharCreationRecoveryCount = 0 }
         setBreadcrumb("startCharacterCreation(idx:\(creatingCharacterIndex),total:\(totalCharacters),asAI:\(creatingAsAI),offeredHoF:\(hasOfferedHallOfFameReturn))")
+        // Every adventurer is made: a stray late call (an old screen's handler
+        // firing afterwards) mustn't start a "Character 3 of 2".
+        guard creatingCharacterIndex < totalCharacters else { return }
         // Set this unconditionally, before the early-return Hall of Fame
         // path below — gameState gates background work like the Game
         // Center invite-poll timer (checkForPendingInvites/
@@ -18447,6 +18453,10 @@ class GameEngine: ObservableObject {
     private func showTalePages(title: String, lines: [String], page: Int, onBack: @escaping () -> Void,
                                emptyMessage: String = "There's no tale to tell yet.",
                                finishLabel: String? = nil, onFinish: (() -> Void)? = nil, appendOnly: Bool = false, pace: Double = 1.0, skipLabel: String? = nil) {
+        // Tale pages take their own buttons — no leftover handler from before.
+        inputHandler = nil
+        textLongPressHandler = nil
+        menuLongPressHandler = nil
         if !appendOnly || lines.isEmpty {
             clearTerminal()
             printTitle(title)
@@ -25522,6 +25532,10 @@ class GameEngine: ObservableObject {
     /// A new adventure: the tale comes first (no map yet), then the party is
     /// asked whether they'll take the quest on.
     private func beginQuestOffer(backTo: (() -> Void)? = nil) {
+        // Nothing left over from character creation may fire during the tale.
+        inputHandler = nil
+        textLongPressHandler = nil
+        menuLongPressHandler = nil
         let renames = ensureUniqueNames()
         if !renames.isEmpty {
             storyScreenActive = true
