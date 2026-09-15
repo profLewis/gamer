@@ -18617,6 +18617,17 @@ class GameEngine: ObservableObject {
         }
         guard DMEngine.shared.isConfigured, storyWriterEnabled else { play(offlineOpeningTale()); return }
         clearTerminal()
+        // A story screen while it's written: no play-screen buttons, D-pad or
+        // stale handlers from the last screen.
+        storyScreenActive = true
+        menuHandler = nil
+        inputHandler = nil
+        closeHandler = {}
+        runOnMain {
+            self.currentMenuOptions = []
+            self.directionExits = [:]
+            self.awaitingContinue = false
+        }
         for _ in 0..<5 { print("") }
         print("The tale is being written…", color: .dimGreen, centered: true)
         startWritingBar(seconds: 15)
@@ -25578,7 +25589,7 @@ class GameEngine: ObservableObject {
         printWrapped("How it began, how it's going — or the short version.", indent: 2, color: .dimGreen)
         print("")
         let back: () -> Void = { [weak self] in self?.showTaleMenu() }
-        showMenu(["Opening Tale", "Progress Tale", "The Story So Far", "?", "< Back"])
+        showMenu(["Opening Tale", "Progress Tale", "The Story So Far", "Adventure Log", "?", "< Back"])
         closeHandler = { [weak self] in self?.showPartyStatus() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
@@ -25586,7 +25597,8 @@ class GameEngine: ObservableObject {
             case 1: self.showOpeningTale(page: 0, onBack: back)
             case 2: self.showProgressTale(onBack: back)
             case 3: self.showStorySoFar(onDone: back)
-            case 4:
+            case 4: self.showAdventureLog()
+            case 5:
                 self.showInlineHelp {
                     self.printTitle("The Tale — Help")
                     self.print("")
@@ -25595,6 +25607,8 @@ class GameEngine: ObservableObject {
                     self.printWrapped("Progress Tale — the story so far, told the same way (written by the story writer when an AI is set up).", indent: 2, color: .dimGreen)
                     self.print("")
                     self.printWrapped("The Story So Far — a quick summary: the quest and how it's going, level by level, errands, fights and the latest news.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("Adventure Log — a timeline of everything that's happened (export it, or report a bug).", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             default:
@@ -25971,17 +25985,17 @@ class GameEngine: ObservableObject {
         // Build menu
         // "Change Brain" (was "AI") — which mind runs the Dungeon Master.
         // Party Review first (the default); Brain now lives in Settings.
-        var menuOpts = ["Party Review", "Tale", "Save to Roster", "Lore", "Settings", "Adventure Log", "Quests", "Dungeon", "?", "< Back"]
+        var menuOpts = ["Party Review", "Tale", "Save to Roster", "Lore", "Settings", "Quests", "Enter the Dungeon", "?", "< Back"]
         if dungeon?.hasCartography == true {
             menuOpts.insert("Atlas", at: menuOpts.firstIndex(of: "Lore") ?? 0)
         }
         let hasPoisoned = party.contains(where: { $0.isPoisoned })
         // Occasional actions go at the end — never the default.
         if hasPoisoned {
-            menuOpts.insert("Cure Poison", at: menuOpts.firstIndex(of: "Dungeon") ?? menuOpts.count)
+            menuOpts.insert("Cure Poison", at: menuOpts.firstIndex(of: "Enter the Dungeon") ?? menuOpts.count)
         }
         if activeQuest != nil {
-            menuOpts.insert("Give Up Quest", at: menuOpts.firstIndex(of: "Dungeon") ?? menuOpts.count)
+            menuOpts.insert("Give Up Quest", at: menuOpts.firstIndex(of: "Enter the Dungeon") ?? menuOpts.count)
         }
 
         showMenu(menuOpts)
@@ -26033,7 +26047,7 @@ class GameEngine: ObservableObject {
                 self.showAIProviderMenu(onBack: { [weak self] in self?.showPartyStatus() })
             case "Settings":
                 self.showSettings()
-            case "Dungeon":
+            case "Enter the Dungeon":
                 self.showExplorationView()
             case "?":
                 self.showPartyStatusHelp()
@@ -26219,16 +26233,15 @@ class GameEngine: ObservableObject {
             self.print("  BUTTONS", color: .cyan, bold: true)
             for (name, what) in [
                 ("Party Review", "edit adventurers and see their stat cards"),
-                ("Tale", "the Opening Tale (how it began), the Progress Tale (the story so far, told the same way), or a quick summary of the story so far"),
+                ("Tale", "the Opening Tale (how it began), the Progress Tale (the story so far, told the same way), a quick summary, or the Adventure Log"),
                 ("Save to Roster", "keep an adventurer's progress for future adventures"),
                 ("Lore", "the named merchants and folk you've met"),
                 ("Settings", "game settings — Change Brain (which AI runs the DM), Timeouts, Puzzles and more"),
-                ("Adventure Log", "a timeline of everything that's happened"),
                 ("Quests", "by the campfire: hold to your quest, or hear another plea — take it up, turn it down, or try to go back (careful: breaking an oath can throw you back to the start)"),
                 ("Atlas", "the map of everywhere you've been (once you've found cartography)"),
                 ("Cure Poison", "shown when someone is poisoned"),
                 ("Give Up Quest", "abandon a quest (progress lost, some gold in goodwill) to make room for another"),
-                ("Dungeon", "back to exploring, right where you left off"),
+                ("Enter the Dungeon", "back to exploring, right where you left off"),
                 ("? and < Back", "this help, and back to the dungeon (the ✕ does the same)"),
             ] {
                 self.printWrapped("\(name) — \(what)", indent: 2, color: .dimGreen)

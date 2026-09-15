@@ -886,6 +886,7 @@ struct TerminalView: View {
         // slot squeezed the combat text into a sliver.
         gameEngine.dungeon != nil && gameEngine.currentCombat == nil
             && !gameEngine.isLandscapeOrientation && !gameEngine.isJustDMActive
+            && !gameEngine.storyScreenActive   // tales and quest offers: no play-screen controls
     }
 
     private var portraitControlsMinHeight: CGFloat {
