@@ -866,6 +866,14 @@ struct TerminalView: View {
                 fullMapOverlay
             }
         }
+        // The endgame certificate — over everything until it's closed.
+        .overlay {
+            if let cert = gameEngine.certificate {
+                CertificateView(cert: cert, scale: scale,
+                                onClose: { gameEngine.closeCertificate() },
+                                onSave: { gameEngine.saveCertificatePDF() })
+            }
+        }
         #if !os(tvOS)
         .background(
             Color.clear
@@ -3235,3 +3243,130 @@ struct MacMapBoxBottomKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 #endif
+
+/// The certificate at the end of an adventure: the heroes, what they did,
+/// the numbers, and a map of every level they walked — in gold on black,
+/// black on parchment, or blood red on parchment.
+struct CertificateView: View {
+    let cert: GameEngine.EndgameCertificate
+    let scale: CGFloat
+    let onClose: () -> Void
+    let onSave: () -> Void
+    @State private var style = 0
+
+    private var palette: (bg: Color, ink: Color, accent: Color, border: Color) {
+        let gold = Color(red: 0.86, green: 0.69, blue: 0.24)
+        let blood = Color(red: 0.55, green: 0.02, blue: 0.05)
+        let parchment = Color(red: 0.95, green: 0.90, blue: 0.78)
+        switch style {
+        case 1: return (parchment, .black, blood, .black)
+        case 2: return (parchment, blood, .black, blood)
+        default: return (.black, gold, Color(red: 0.8, green: 0.1, blue: 0.1), gold)
+        }
+    }
+
+    var body: some View {
+        let p = palette
+        ZStack(alignment: .topTrailing) {
+            p.bg.ignoresSafeArea()
+            ScrollView {
+                VStack(spacing: 12 * scale) {
+                    Text("✦ \(cert.title) ✦")
+                        .font(.system(size: 26 * scale, weight: .bold, design: .serif))
+                        .foregroundColor(p.ink)
+                        .multilineTextAlignment(.center)
+                    Text("This is to certify that")
+                        .font(.system(size: 14 * scale, design: .serif).italic())
+                        .foregroundColor(p.ink.opacity(0.85))
+                    ForEach(Array(cert.heroes.enumerated()), id: \.offset) { _, hero in
+                        VStack(spacing: 2) {
+                            Text(hero.name)
+                                .font(.system(size: 22 * scale, weight: .heavy, design: .serif))
+                                .foregroundColor(p.accent)
+                            Text(hero.detail)
+                                .font(.system(size: 12 * scale, design: .serif))
+                                .foregroundColor(p.ink.opacity(0.8))
+                        }
+                    }
+                    Text(cert.quest)
+                        .font(.system(size: 15 * scale, design: .serif))
+                        .foregroundColor(p.ink)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 12 * scale)
+                    Rectangle().fill(p.border).frame(height: 2).padding(.horizontal, 40 * scale)
+                    VStack(spacing: 4) {
+                        ForEach(Array(cert.stats.enumerated()), id: \.offset) { _, stat in
+                            HStack {
+                                Text(stat.0).foregroundColor(p.ink.opacity(0.85))
+                                Spacer()
+                                Text(stat.1).foregroundColor(p.accent).bold()
+                            }
+                            .font(.system(size: 14 * scale, design: .serif))
+                        }
+                    }
+                    .frame(maxWidth: 360 * scale)
+                    Text("The Journey")
+                        .font(.system(size: 18 * scale, weight: .bold, design: .serif))
+                        .foregroundColor(p.ink)
+                        .padding(.top, 6 * scale)
+                    ScrollView(.horizontal, showsIndicators: true) {
+                        HStack(alignment: .top, spacing: 18 * scale) {
+                            ForEach(Array(cert.levels.enumerated()), id: \.offset) { _, level in
+                                VStack(spacing: 4) {
+                                    Text("Level \(level.level)")
+                                        .font(.system(size: 13 * scale, weight: .semibold, design: .serif))
+                                        .foregroundColor(p.accent)
+                                    PictureMapView(level: level, fontSize: 8 * scale, showAll: false)
+                                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(p.border.opacity(0.7), lineWidth: 1))
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 8)
+                    }
+                    Text(cert.date)
+                        .font(.system(size: 13 * scale, design: .serif).italic())
+                        .foregroundColor(p.ink.opacity(0.85))
+                    HStack(spacing: 30 * scale) {
+                        signature("The Dungeon Master", p)
+                        signature(cert.village.map { "The Elder of \($0)" } ?? "The Bards of the Realm", p)
+                    }
+                    if cert.preview {
+                        Text("(a preview — not a real adventure)")
+                            .font(.system(size: 11 * scale, design: .serif).italic())
+                            .foregroundColor(p.ink.opacity(0.6))
+                    }
+                }
+                .padding(.vertical, 40 * scale)
+                .padding(.horizontal, 24 * scale)
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(p.border, lineWidth: 4).padding(8))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(p.border.opacity(0.5), lineWidth: 1).padding(16))
+            }
+            HStack(spacing: 10) {
+                button("Style", p) { style = (style + 1) % 3 }
+                button("Save PDF", p, action: onSave)
+                button("✕", p, action: onClose)
+            }
+            .padding(12)
+        }
+    }
+
+    private func signature(_ who: String, _ p: (bg: Color, ink: Color, accent: Color, border: Color)) -> some View {
+        VStack(spacing: 2) {
+            Text("~ signed ~").font(.system(size: 14 * scale, design: .serif).italic()).foregroundColor(p.accent)
+            Rectangle().fill(p.ink.opacity(0.6)).frame(width: 120 * scale, height: 1)
+            Text(who).font(.system(size: 11 * scale, design: .serif)).foregroundColor(p.ink.opacity(0.85))
+        }
+    }
+
+    private func button(_ label: String, _ p: (bg: Color, ink: Color, accent: Color, border: Color), action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 13 * scale, weight: .semibold, design: .serif))
+                .foregroundColor(p.bg)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(p.ink))
+        }
+        .buttonStyle(.plain)
+    }
+}

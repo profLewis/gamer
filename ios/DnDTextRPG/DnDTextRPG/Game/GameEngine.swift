@@ -5572,6 +5572,10 @@ class GameEngine: ObservableObject {
         // and right slots of the cell stay empty; this is still the one
         // small addition that keeps the main menu consistent with every
         // other screen's nav cell rather than a special case.
+        // Endgame preview — the outro and certificate with a sample party.
+        menuOptions.append(MenuOption("Endgame"))
+        actions.append { [weak self] in self?.previewEndgame() }
+
         menuOptions.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showMainMenuHelp() }
 
@@ -26065,6 +26069,183 @@ class GameEngine: ObservableObject {
         return bits.joined(separator: " ")
     }
 
+    // MARK: Endgame
+
+    /// The certificate at the end of an adventure (shown over everything).
+    struct EndgameCertificate {
+        let title: String
+        let heroes: [(name: String, detail: String)]
+        let quest: String
+        let village: String?
+        let stats: [(String, String)]
+        let levels: [AtlasLevel]
+        let date: String
+        let preview: Bool
+    }
+    @Published var certificate: EndgameCertificate?
+
+    /// After the last guardian falls: the story isn't over until the DM, the
+    /// village and anyone who set you an errand have had their say.
+    func showEndgameOutro(preview: Bool) {
+        storyScreenActive = true
+        pinnedMapLines = []
+        currentCombat = nil
+        let finish: () -> Void = { [weak self] in self?.presentCertificate(preview: preview) }
+        showTalePages(title: "The Tale's End", lines: endgameOutroLines(), page: 0, onBack: finish, onFinish: finish)
+    }
+
+    private func endgameOutroLines() -> [String] {
+        let place = dungeon?.name ?? "the dungeon"
+        let names = party.map { shortName(for: $0) }
+        let together = names.count <= 1 ? (names.first ?? "You") : names.dropLast().joined(separator: ", ") + " and " + names.last!
+        var lines: [String] = []
+        lines.append(["Hi — the DM here. Just stepping out from behind my screen to say: you did it. Truly.",
+                      "DM here, briefly out of character: well played. That was a proper ending."].randomElement()!)
+        if let q = mainQuest {
+            let foe = Dungeon.guardianName(q.villain)
+            lines.append("\(foe) is gone, and the deepest dark of \(place) is quiet at last.")
+            if let finale = q.finale { lines.append("Then, just as you were told, you \(finale).") }
+            lines.append("Then the long climb home. By the time \(together) reach \(q.village), word has run on ahead.")
+            lines.append("The elder of \(q.village) is waiting at the gate. \"I'm the one who begged you to \(q.goal) — and you did it. \(q.village) won't forget.\"")
+            lines.append(["The whole village turns out: bunting, bells, and a pie the size of a cartwheel.",
+                          "Children run alongside you shouting your names — mostly wrong, but with enormous enthusiasm.",
+                          "The innkeeper declares free ale for a week — then, seeing the party's appetite, makes it a day."].randomElement()!)
+            lines.append(q.deadlinePassed == true
+                ? "They pay you what they can — half of \(q.reward), since \(q.deadlineName ?? "the deadline") had come and gone. Nobody minds much today."
+                : "And they pay you, just as they promised: \(q.reward).")
+        } else {
+            lines.append("The last guardian of \(place) has fallen. Nobody asked you to do this — you did it anyway, for the sheer adventure of it.")
+            lines.append("Word gets out, as word does. By morning, three villages are claiming you as their own heroes.")
+        }
+        for errand in allQuests.prefix(2) {
+            lines.append("A note arrives from \(errand.giverName), who set you an errand: \"Heard what you did down there. My little job can wait — come and see me when you're rested.\"")
+        }
+        lines.append("That night \(together) sit by the fire and tell it all again — and each time, the monsters get a little bigger.")
+        lines.append("DM again — that's the end of this tale. There's a certificate with your names on it coming up. Frame it.")
+        return lines
+    }
+
+    private func presentCertificate(preview: Bool) {
+        storyScreenActive = true
+        pinnedMapLines = []
+        clearTerminal()
+        printTitle("The End")
+        print("")
+        printWrapped(mainQuestCompleted ? "The quest is done, and the tale is told." : "The bottom of the world is conquered, and the tale is told.", indent: 2, color: .yellow)
+        print("")
+        printWrapped(preview
+            ? "(This was a preview — nothing was saved.)"
+            : "Your last save — from just before the final battle — is kept, so you can play the ending again from Continue Adventure.", indent: 2, color: .dimGreen)
+        print("")
+        showMenu(["See the Certificate", preview ? "Back to the Menu" : "End Adventure"])
+        closeHandler = { [weak self] in self?.finishEndgame() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 { self.certificate = self.makeCertificate(preview: preview) } else { self.finishEndgame() }
+        }
+        certificate = makeCertificate(preview: preview)
+    }
+
+    private func makeCertificate(preview: Bool) -> EndgameCertificate? {
+        guard let dungeon = dungeon else { return nil }
+        let heroes = party.map { (name: $0.name, detail: "\($0.race.rawValue) \($0.characterClass.rawValue), level \($0.level)") }
+        let quest = mainQuest.map { q in
+            "who went down into \(dungeon.name) to \(q.goal) — and did it, defeating \(Dungeon.guardianName(q.villain))\(q.deadlinePassed == true ? " (a little late, but done)" : "")."
+        } ?? "who went down into \(dungeon.name) for the sheer adventure of it — and conquered the bottom of the world."
+        let levels = dungeon.archivedLevels + [dungeon.atlasLevel(hasTrapSense: partyHasTrapSense)]
+        let rooms = levels.reduce(0) { $0 + $1.rooms.filter { $0.visited }.count }
+        let stats: [(String, String)] = [
+            ("Days in the deep", "\(gameTimeMinutes / 1440 + 1)"), ("Levels conquered", "\(levels.count)"),
+            ("Monsters defeated", "\(monstersSlain)"), ("Battles won", "\(combatsWon)"),
+            ("Rooms explored", "\(rooms)"), ("Gold carried home", "\(party.reduce(0) { $0 + $1.gold })"),
+        ]
+        let f = DateFormatter()
+        f.dateStyle = .long
+        return EndgameCertificate(title: "Certificate of Heroism", heroes: heroes, quest: quest, village: mainQuest?.village,
+                                  stats: stats, levels: levels, date: f.string(from: Date()), preview: preview)
+    }
+
+    func closeCertificate() { certificate = nil }
+
+    /// The certificate as a PDF: the words, the numbers, and a map of every level.
+    func saveCertificatePDF() {
+        guard let cert = certificate else { return }
+        var lines = ["* \(cert.title.uppercased()) *", "", "This is to certify that", ""]
+        lines += cert.heroes.map { "  \($0.name) — \($0.detail)" }
+        lines += ["", cert.quest, ""]
+        lines += cert.stats.map { "  " + $0.0.padding(toLength: 20, withPad: ".", startingAt: 0) + " " + $0.1 }
+        lines += ["", cert.date, "", "THE JOURNEY"]
+        for level in cert.levels {
+            lines += ["", "Level \(level.level)"]
+            lines += Dungeon.atlasMapLines(level, showAll: false).lines
+        }
+        pendingAtlasPDF = Self.monospacedPDF(lines: lines)
+        pendingAtlasPDFName = "certificate-\(Self.saveStamp())"
+        certificate = nil
+        showAtlasPDFExporter = true
+        logEvent("Saved the certificate as a PDF", category: "SYSTEM")
+    }
+
+    private func finishEndgame() {
+        certificate = nil
+        storyScreenActive = false
+        resetGame()
+    }
+
+    /// The Endgame button (landing screen): a sample party, quest and seven
+    /// explored levels, through the outro and certificate — nothing is saved.
+    func previewEndgame() {
+        let scores = AbilityScores(strength: 16, dexterity: 14, constitution: 14, intelligence: 12, wisdom: 12, charisma: 12)
+        let heroes = [
+            Character(name: "Ada Stone", race: .human, characterClass: .fighter, abilityScores: scores),
+            Character(name: "Wren Ashby", race: .highElf, characterClass: .wizard, abilityScores: scores),
+            Character(name: "Pip Tallow", race: .lightfootHalfling, characterClass: .bard, abilityScores: scores),
+        ]
+        for h in heroes { h.currentHP = h.maxHP; h.gold = Int.random(in: 120...400) }
+        party = heroes
+        let name = dungeonNames.randomElement() ?? "the Deep"
+        var archived: [AtlasLevel] = []
+        for lvl in 1..<Dungeon.finalLevel {
+            let d = Dungeon(name: name, level: lvl)
+            for room in d.rooms.values { room.visited = true; room.cleared = true }
+            archived.append(d.atlasLevel(hasTrapSense: false, archived: true))
+        }
+        let last = Dungeon(name: name, level: Dungeon.finalLevel)
+        for room in last.rooms.values { room.visited = true; room.cleared = true }
+        last.archivedLevels = archived
+        dungeon = last
+        let q = MainQuest.random()
+        mainQuest = q
+        questHistory = ["Took up the quest: to \(q.goal) (\(Dungeon.guardianName(q.villain)))."]
+        mainQuestCompleted = true
+        monstersSlain = Int.random(in: 60...110)
+        combatsWon = Int.random(in: 30...55)
+        gameTimeMinutes = 1440 * Int.random(in: 8...16) + 600
+        showEndgameOutro(preview: true)
+    }
+
+    /// This adventure's latest save, for Try Again after a defeat.
+    private func latestSaveForThisAdventure() -> SaveGame? {
+        guard let slot = activeSlotId else { return nil }
+        return SaveGameManager.shared.listSlots().first { $0.slotId == slot }?.latest
+    }
+
+    /// After a defeat: the DM, whoever set the quest, and anyone waiting on
+    /// an errand — each saying who they are — tell you to get back up.
+    private func defeatEncouragement(canRetry: Bool) -> [String] {
+        var lines: [String] = []
+        lines.append(canRetry
+            ? "Hi — DM here. Don't be too hard on yourselves: the dungeon wins sometimes. Your last save is waiting — tap Try Again and you'll be back where it was made, usually a room or so before this fight."
+            : "Hi — DM here. The dungeon wins sometimes. There's no save to go back to this time, but a new adventure is only a tap away. (Saves happen as you explore — see Settings > Game Saves.)")
+        if let q = mainQuest {
+            lines.append("And a word from \(q.village) — it's the elder, the one who asked you to \(q.goal): \"Don't give up on us. Get back up and try again.\"")
+        }
+        for errand in allQuests.prefix(2) {
+            lines.append("\(errand.giverName) here — the one who set you that errand: \"It'll keep. Come back when you're ready.\"")
+        }
+        return lines
+    }
+
     /// One line for save lists: the quest and how far along, done (★), or none.
     func questSummaryLine() -> String? {
         if mainQuestCompleted, let mq = mainQuest { return "★ QUEST COMPLETE — \(Dungeon.guardianName(mq.villain)) defeated; \(mq.goal): done" }
@@ -33341,15 +33522,24 @@ class GameEngine: ObservableObject {
         printTitle("DEFEAT")
         print("Your party has fallen...", color: .red)
         print("")
-        print("The dungeon claims another group of adventurers.")
-        print("")
-
-        showMenu(["View Adventure Log", "Return to Main Menu"])
+        // A word from the DM, whoever set the quest, and anyone waiting on an errand.
+        let retry = latestSaveForThisAdventure()
+        for line in defeatEncouragement(canRetry: retry != nil) {
+            printWrapped(line, indent: 2, color: .cyan)
+            print("")
+        }
+        var opts: [String] = []
+        if retry != nil { opts.append("Try Again") }
+        opts += ["View Adventure Log", "Return to Main Menu"]
+        showMenu(opts)
         menuHandler = { [weak self] choice in
-            guard let self = self else { return }
-            if choice == 1 {
+            guard let self = self, choice >= 1, choice <= opts.count else { return }
+            switch opts[choice - 1] {
+            case "Try Again":
+                if let save = retry { self.loadGame(save) }
+            case "View Adventure Log":
                 self.showAdventureLog(onBack: { [weak self] in self?.resetGame() })
-            } else {
+            default:
                 self.resetGame()
             }
         }
@@ -33571,34 +33761,12 @@ class GameEngine: ObservableObject {
 
         // --- The end of the tale: the villain is beaten, nothing lies deeper ---
         if isFinal {
-            print("  ┌─ The Tale Is Told ─────────────┐", color: .yellow, bold: true)
-            if let q = mainQuest {
-                printWrapped("\(Dungeon.guardianName(q.villain)) is no more. You came down here to \(q.goal) — and it is done.", indent: 2, color: .yellow)
-                if let finale = q.finale {
-                    print("")
-                    printWrapped("Then, just as you were told, you \(finale).", indent: 2, color: .yellow)
-                }
-                if q.deadlinePassed == true {
-                    printWrapped("It was later than it should have been — \(q.deadlineName ?? "the deadline") had come and gone — but it's done now, and that's what they'll sing about.", indent: 2, color: .dimGreen)
-                }
-                print("")
-                printWrapped("Word runs ahead of you all the way to \(q.village). They promised you \(q.reward). It's yours, and so is every song they'll sing about this.", indent: 2, color: .brightGreen)
-            } else {
-                printWrapped("The last guardian of \(dungeonName) has fallen. There is nothing deeper — this was the bottom of the world, and you conquered it.", indent: 2, color: .yellow)
-            }
-            print("  └───────────────────────────────┘", color: .yellow)
-            print("")
-            printWrapped("THE END — of this adventure. Your heroes are in the Hall of Fame; a new tale starts whenever you like.", indent: 2, color: .dimGreen)
-            print("")
             mainQuestCompleted = mainQuest != nil
             if let q = mainQuest { questHistory.append("Completed the quest: \(Dungeon.guardianName(q.villain)) defeated, and \(q.goal) done.") }
             logEvent("THE END: the final guardian of \(dungeonName) is defeated", category: "EXPLORE")
-            showMenu(["Save & End Adventure", "End Adventure"])
-            menuHandler = { [weak self] choice in
-                guard let self = self else { return }
-                if choice == 1 { self.performQuickSave() }
-                self.resetGame()
-            }
+            // No save here: the last save (from before the final fight) is kept,
+            // so the ending can be played again. Then the outro and certificate.
+            showEndgameOutro(preview: false)
             return
         }
 
