@@ -432,6 +432,12 @@ class GameEngine: ObservableObject {
         }, pinnedHandler: { _ in onBack() })
     }
 
+    /// The "Continue?" nudges a waiting screen shows — not story, so Read
+    /// Aloud skips them (in a fight it gives a quick cheer instead).
+    static let combatContinueTitles = ["Next blow?", "The fight goes on…", "Ready for the next move?", "Steel yourselves…", "What happens next?"]
+    static let continueTitles = ["Continue?", "Ready to move on?", "Shall we carry on?", "Onward?", "Seen enough?"]
+    static let combatCheers = ["Come on then!", "Jiayou!", "Onward!", "Keep at it!", "Here we go!"]
+
     /// A countdown never runs out before the screen's text could be read —
     /// about 200 words a minute on top of the Info Timeout (capped, so a
     /// huge page can't park the game for minutes). Busy combat reports and
@@ -492,8 +498,8 @@ class GameEngine: ObservableObject {
             self.continueHintCount += 1
             self.print("")
             let title = Self.pickVaried(self.currentCombat != nil
-                ? ["Next blow?", "The fight goes on…", "Ready for the next move?", "Steel yourselves…", "What happens next?"]
-                : ["Continue?", "Ready to move on?", "Shall we carry on?", "Onward?", "Seen enough?"], avoiding: &self.lastContinueTitle)
+                ? Self.combatContinueTitles
+                : Self.continueTitles, avoiding: &self.lastContinueTitle)
             self.print("  \(title)", color: .cyan, bold: true)
             self.print("")
             for line in self.continueHintLines() {
@@ -4652,7 +4658,7 @@ class GameEngine: ObservableObject {
         // keyword/pattern and let straight through, bypassing the colour
         // and letter-ratio checks (not the ASCII-art/table checks below,
         // which these lines pass naturally anyway).
-        let combatKeywords = ["damage!", "critical", " attacks ", "defeated!", "unconscious!", "poisoned!", "appears!", "appear!", "looks fearsome", "looks weakened"]
+        let combatKeywords = ["damage!", "critical", " attacks ", "defeated!", "unconscious!", "poisoned!", "appears!", "appear!", "looks fearsome", "looks weakened", "dead here"]
         // Map legend/key rows (see Dungeon.mapLegendLines) are bar-separated
         // "X=Label" pairs like "@=You  !=Danger  .=Empty" — a visual
         // reference the player can already see, not narration. Detected
@@ -4673,6 +4679,15 @@ class GameEngine: ObservableObject {
         let lines = merged.compactMap { line -> String? in
             let trimmed = line.text.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { return nil }
+            // "Continue?"-style nudges and tap hints aren't story: skip them —
+            // in a fight, a quick cheer instead.
+            if Self.continueTitles.contains(trimmed) || Self.combatContinueTitles.contains(trimmed) {
+                return currentCombat != nil ? Self.combatCheers.randomElement() : nil
+            }
+            let lowerHint = trimmed.lowercased()
+            if trimmed.hasPrefix("•") && (lowerHint.contains("tap") || lowerHint.contains("click") || lowerHint.contains("press")) {
+                return nil
+            }
 
             if let legendPartPattern = legendPartPattern {
                 let core = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "|")).trimmingCharacters(in: .whitespaces)
