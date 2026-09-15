@@ -68,7 +68,12 @@ struct TerminalLine: Identifiable {
         self.color = color
         self.isBold = bold
         self.isUnderlined = underlined
+        #if os(macOS)
+        // Mac: the story reads at the same size as the map (GameEngine.mapFontSize).
+        self.fontSize = size == 14 ? 16 : size
+        #else
         self.fontSize = size
+        #endif
         self.isCentered = centered
     }
 }
