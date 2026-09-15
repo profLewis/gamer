@@ -8111,12 +8111,23 @@ class GameEngine: ObservableObject {
         case small = 0
         case medium = 1
         case large = 2
+        // Finer and bigger steps for a Mac window (see choices).
+        case tiny = 3
+        case smallPlus = 4
+        case mediumPlus = 5
+        case extraLarge = 6
+        case huge = 7
 
         var displayName: String {
             switch self {
             case .small: return "Small"
             case .medium: return "Medium"
             case .large: return "Large"
+            case .tiny: return "Tiny"
+            case .smallPlus: return "Small+"
+            case .mediumPlus: return "Medium+"
+            case .extraLarge: return "Extra Large"
+            case .huge: return "Huge"
             }
         }
 
@@ -8125,7 +8136,21 @@ class GameEngine: ObservableObject {
             case .small: return 1.0
             case .medium: return 1.3
             case .large: return 1.6
+            case .tiny: return 0.85
+            case .smallPlus: return 1.15
+            case .mediumPlus: return 1.45
+            case .extraLarge: return 1.8
+            case .huge: return 2.0
             }
+        }
+
+        /// The sizes offered, smallest first — a Mac window has room for more steps.
+        static var choices: [FontSizeSetting] {
+            #if os(macOS)
+            return allCases.sorted { $0.scale < $1.scale }
+            #else
+            return [.small, .medium, .large]
+            #endif
         }
 
         /// Default: medium on iPad, small on iPhone
@@ -9123,18 +9148,11 @@ class GameEngine: ObservableObject {
             case displaySizeLabel:
                 self.recordSettingChange(screen: "s:access", key: "fontSizeSetting", name: "Size")
                 self.recordSettingChange(screen: "s:access", key: "iconScaleSetting", name: "Icons")
-                // Cycle: Small → Medium → Large → Small
-                switch self.fontSizeSetting {
-                case .small:
-                    self.fontSizeSetting = .medium
-                    self.iconScaleSetting = 0
-                case .medium:
-                    self.fontSizeSetting = .large
-                    self.iconScaleSetting = 1
-                case .large:
-                    self.fontSizeSetting = .small
-                    self.iconScaleSetting = 0
-                }
+                // Cycle through the sizes on offer, smallest to largest, then round again.
+                let sizes = FontSizeSetting.choices
+                let at = sizes.firstIndex(of: self.fontSizeSetting) ?? 0
+                self.fontSizeSetting = sizes[(at + 1) % sizes.count]
+                self.iconScaleSetting = self.fontSizeSetting.scale >= 1.6 ? 1 : 0
                 UserDefaults.standard.set(self.iconScaleSetting, forKey: "iconScaleSetting")
                 self.showAccessibilityMenu()
             case hitsLabel:
@@ -12948,14 +12966,14 @@ class GameEngine: ObservableObject {
         print("")
 
         let current = fontSizeSetting
-        for size in FontSizeSetting.allCases {
+        for size in FontSizeSetting.choices {
             let isCurrent = size == current
             let marker = isCurrent ? " <--" : ""
             print("  \(size.displayName)\(marker)", color: isCurrent ? .brightGreen : .dimGreen, bold: isCurrent)
         }
         print("")
 
-        var options = FontSizeSetting.allCases.map { $0.displayName }
+        var options = FontSizeSetting.choices.map { $0.displayName }
         #if os(iOS)
         print("FOLLOW SYSTEM TEXT SIZE:", color: .cyan, bold: true)
         print("  \(followSystemTextSize ? "On" : "Off")", color: followSystemTextSize ? .brightGreen : .red)
@@ -12967,13 +12985,13 @@ class GameEngine: ObservableObject {
 
         closeHandler = { [weak self] in self?.showFontAndIconsMenu() }
         menuHandler = { [weak self] choice in
-            if choice > FontSizeSetting.allCases.count {
+            if choice > FontSizeSetting.choices.count {
                 self?.recordSettingChange(screen: "s:font", key: "followSystemTextSize", name: "System Size")
                 self?.followSystemTextSize.toggle()
                 self?.showFontSizeMenu()
                 return
             }
-            let selected = FontSizeSetting.allCases[choice - 1]
+            let selected = FontSizeSetting.choices[choice - 1]
             self?.recordSettingChange(screen: "s:font", key: "fontSizeSetting", name: "Font")
             self?.fontSizeSetting = selected
             self?.print("")
@@ -18346,13 +18364,14 @@ class GameEngine: ObservableObject {
             }
         }
         typewrite(lines[i], color: last ? .yellow : .green)
-        var opts: [String] = []
-        if !last { opts.append("Next") } else if let label = finishLabel, onFinish != nil { opts.append(label) } else { opts.append("End Tale") }
-        opts.append("Previous")   // always there — greyed out on the first page
-        if let skip = skipLabel { opts.append(skip) }
-        opts.append("< Back")
+        // The same buttons on every page: Next (End Tale at the very end),
+        // Previous (greyed on the first page), Skip (greyed when there's
+        // nothing left to skip) and Back.
+        let atEnd = last && onFinish == nil
+        let opts = [atEnd ? "End Tale" : "Next", "Previous", "Skip", "< Back"]
         showMenuOptions(opts.map { t in
-            t == "< Back" ? MenuOption(t, tint: .navigation, compact: true) : MenuOption(t, isDisabled: t == "Previous" && i == 0)
+            if t == "< Back" { return MenuOption(t, tint: .navigation, compact: true) }
+            return MenuOption(t, isDisabled: (t == "Previous" && i == 0) || (t == "Skip" && atEnd))
         })
         let next: () -> Void = { [weak self] in
             self?.showTalePages(title: title, lines: lines, page: i + 1, onBack: onBack, emptyMessage: emptyMessage, finishLabel: finishLabel, onFinish: onFinish, appendOnly: true, pace: pace, skipLabel: skipLabel)
@@ -18377,10 +18396,10 @@ class GameEngine: ObservableObject {
         closeHandler = pauseHere
         menuHandler = { choice in
             guard choice >= 1, choice <= opts.count else { return }
-            if opts[choice - 1] == skipLabel { onBack(); return }
             switch opts[choice - 1] {
-            case "Next": next()
+            case "Next": if last { onFinish?() } else { next() }
             case "Previous": if i > 0 { previous() }
+            case "Skip": if !atEnd { onBack() }
             case "End Tale": onBack()
             case "< Back": pauseHere()
             default: onFinish?()
@@ -25780,17 +25799,17 @@ class GameEngine: ObservableObject {
         // Build menu
         // "Change Brain" (was "AI") — which mind runs the Dungeon Master.
         // Party Review first (the default); Brain now lives in Settings.
-        var menuOpts = ["Party Review", "Opening Tale", "Progress Tale", "Save to Roster", "Lore", "Settings", "Adventure Log", "New Main Quest", "?", "< Back"]
+        var menuOpts = ["Party Review", "Opening Tale", "Progress Tale", "Save to Roster", "Lore", "Settings", "Adventure Log", "New Main Quest", "Dungeon", "?", "< Back"]
         if dungeon?.hasCartography == true {
             menuOpts.insert("Atlas", at: menuOpts.firstIndex(of: "Lore") ?? 0)
         }
         let hasPoisoned = party.contains(where: { $0.isPoisoned })
         // Occasional actions go at the end — never the default.
         if hasPoisoned {
-            menuOpts.insert("Cure Poison", at: menuOpts.firstIndex(of: "?") ?? menuOpts.count)
+            menuOpts.insert("Cure Poison", at: menuOpts.firstIndex(of: "Dungeon") ?? menuOpts.count)
         }
         if activeQuest != nil {
-            menuOpts.insert("Give Up Quest", at: menuOpts.firstIndex(of: "?") ?? menuOpts.count)
+            menuOpts.insert("Give Up Quest", at: menuOpts.firstIndex(of: "Dungeon") ?? menuOpts.count)
         }
 
         showMenu(menuOpts)
@@ -25840,6 +25859,8 @@ class GameEngine: ObservableObject {
                 self.showAIProviderMenu(onBack: { [weak self] in self?.showPartyStatus() })
             case "Settings":
                 self.showSettings()
+            case "Dungeon":
+                self.showExplorationView()
             case "?":
                 self.showPartyStatusHelp()
             default:
@@ -26017,19 +26038,25 @@ class GameEngine: ObservableObject {
             self.printTitle("Party Status — Help")
             self.print("")
             self.print("  INFORMATION", color: .cyan, bold: true)
+            self.printWrapped("Your main quest sits at the top: what you've found out so far, who might know more, and any deadline. Tap an adventurer's lines to open their character card.", indent: 2, color: .dimGreen)
+            self.print("")
             self.printWrapped("Map + each adventurer's HP, gold, XP. Green HP = healthy, yellow = wounded, red = critical. The ✦ line under each name is their rank, which rises with their level — a Bard, say, goes Busker, Minstrel, Troubadour, Skald, Master Bard.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  BUTTONS", color: .cyan, bold: true)
             for (name, what) in [
                 ("Party Review", "edit adventurers and see their stat cards"),
-                ("Opening Tale", "the tale that began this adventure, again — swipe for the next page, and on into the Progress Tale"),
-                ("Progress Tale", "the story so far, told the same way"),
+                ("Opening Tale", "the tale that began this adventure — Next, Previous and Skip; on its last page Next carries on into the Progress Tale"),
+                ("Progress Tale", "the story so far, told the same way; End Tale on the last page"),
                 ("Save to Roster", "keep an adventurer's progress for future adventures"),
-                ("Adventure Log", "a timeline of what's happened"),
                 ("Lore", "the named merchants and folk you've met"),
-                ("Settings", "game settings — including Brain, which AI runs the DM"),
+                ("Settings", "game settings — Change Brain (which AI runs the DM), Timeouts, Puzzles and more"),
+                ("Adventure Log", "a timeline of everything that's happened"),
+                ("New Main Quest", "sit by the campfire and think about a different quest — careful: the dungeon may throw you back to the start"),
+                ("Atlas", "the map of everywhere you've been (once you've found cartography)"),
                 ("Cure Poison", "shown when someone is poisoned"),
                 ("Give Up Quest", "abandon a quest (progress lost, some gold in goodwill) to make room for another"),
+                ("Dungeon", "back to exploring, right where you left off"),
+                ("? and < Back", "this help, and back to the dungeon (the ✕ does the same)"),
             ] {
                 self.printWrapped("\(name) — \(what)", indent: 2, color: .dimGreen)
             }
@@ -28372,7 +28399,7 @@ class GameEngine: ObservableObject {
         // Font size
         if lower == "bigger text" || lower == "larger text" || lower == "zoom in"
             || lower == "bigger font" || lower == "increase font" || lower == "text bigger" {
-            let sizes = FontSizeSetting.allCases
+            let sizes = FontSizeSetting.choices
             if let current = sizes.firstIndex(of: fontSizeSetting), current < sizes.count - 1 {
                 fontSizeSetting = sizes[current + 1]
                 fontScale = fontSizeSetting.scale
@@ -28382,7 +28409,7 @@ class GameEngine: ObservableObject {
         }
         if lower == "smaller text" || lower == "smaller font" || lower == "zoom out"
             || lower == "decrease font" || lower == "text smaller" {
-            let sizes = FontSizeSetting.allCases
+            let sizes = FontSizeSetting.choices
             if let current = sizes.firstIndex(of: fontSizeSetting), current > 0 {
                 fontSizeSetting = sizes[current - 1]
                 fontScale = fontSizeSetting.scale

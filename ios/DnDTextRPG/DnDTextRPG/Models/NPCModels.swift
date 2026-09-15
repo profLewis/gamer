@@ -1119,18 +1119,46 @@ enum NameRegistry {
 
     static func isFree(_ name: String) -> Bool { !used.contains(name) }
 
-    /// `base` if it's free, otherwise a suffixed version ("Junior",
-    /// "the Younger", "the Third"...) — then marks it as taken.
+    /// `base` if it's free; otherwise a near-namesake or an epithet that
+    /// tells them apart ("Auntie Fern", "Auntie Fen of the Fens", "Auntie
+    /// Fen the Bald") — never "Auntie Fen 7" — then marks it as taken.
     static func claim(_ base: String) -> String {
-        let suffixes = ["Junior", "the Younger", "the Third", "the Fourth", "the Fifth"]
-        var name = base
-        var i = 0
-        while used.contains(name) {
-            name = i < suffixes.count ? "\(base) \(suffixes[i])" : "\(base) \(i + 2)"
-            i += 1
+        if !used.contains(base) { used.insert(base); return base }
+        let words = base.split(separator: " ").map(String.init)
+        let last = words.last ?? base
+        let head = words.dropLast().joined(separator: " ")
+        func withLast(_ w: String) -> String { head.isEmpty ? w : head + " " + w }
+        var candidates = nameTwists(last).map(withLast)
+        var epithets = ["the Bald", "the Tall", "the Short", "the Quiet", "the Loud", "the Lesser", "the Greater",
+                        "with the Hat", "Who Hums", "of the Low Road", "from Over the Hill", "of Three Wells",
+                        "the Younger", "Senior", "the Unlucky", "the Very Patient", "of the Long Nose", "the Second",
+                        "Who Never Blinks", "of the Crooked Stair"]
+        if !last.hasSuffix("s") { epithets.append("of the \(last)s") }
+        candidates += epithets.map { "\(base) \($0)" }
+        if let pick = candidates.shuffled().first(where: { !used.contains($0) }) {
+            used.insert(pick)
+            return pick
         }
-        used.insert(name)
-        return name
+        var i = 2
+        while used.contains("\(base) \(i)") { i += 1 }
+        used.insert("\(base) \(i)")
+        return "\(base) \(i)"
+    }
+
+    /// Names that sound like the original: Fen -> Fern, Fenn, Fenna, Fenny.
+    static func nameTwists(_ w: String) -> [String] {
+        guard w.count >= 3, let firstVowel = w.firstIndex(where: { "aeiouAEIOU".contains($0) }) else { return [] }
+        var out: [String] = []
+        let afterVowel = w.index(after: firstVowel)
+        if afterVowel < w.endIndex, w[afterVowel] != "r" {
+            out.append(String(w[..<afterVowel]) + "r" + String(w[afterVowel...]))
+        }
+        if let end = w.last, !"aeiouy".contains(end) {
+            out.append(w + String(end))
+            out.append(w + String(end) + "y")
+        }
+        out.append(w + (w.hasSuffix("a") ? "h" : "a"))
+        return out.filter { $0 != w }
     }
 
     /// First names for NPCs (Hermits, Guards...), who used to go by their
