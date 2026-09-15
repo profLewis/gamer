@@ -2041,6 +2041,11 @@ class GameEngine: ObservableObject {
         for i in startIdx..<terminalLines.count {
             titleLineIndices.insert(i)
         }
+        // Help pages open with a word about the quest and what to do next.
+        if text.hasSuffix("Help"), let preamble = helpQuestPreamble() {
+            printWrapped(preamble, indent: 2, color: .cyan)
+            print("")
+        }
     }
 
     /// Flash only the title lines — dim then restore
@@ -19515,9 +19520,8 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        if dungeon.hasVerticalConnections {
-            print("Floor \(dungeon.currentFloor)", color: .dimGreen)
-        }
+        // Where you are: the place, the level, and the floor where there are several.
+        print("\(dungeon.name) · Level \(dungeon.level)\(dungeon.hasVerticalConnections ? " · Floor \(dungeon.currentFloor)" : "")", color: .cyan)
 
         // Room description — dim when the room itself isn't lit
         if roomIsLit {
@@ -25537,6 +25541,45 @@ class GameEngine: ObservableObject {
         parts += levelSummaryLines(includeCurrent: true)
         if !questHistory.isEmpty { parts.append("Quest history: " + questHistory.joined(separator: " ")) }
         return parts.joined(separator: "\n")
+    }
+
+    /// A few words about the quest and what to do next, for the top of help
+    /// pages — worded differently each time, sometimes short, sometimes longer.
+    func helpQuestPreamble() -> String? {
+        guard let dungeon = dungeon, !party.isEmpty, !storyScreenActive else { return nil }
+        let level = dungeon.level
+        let left = max(0, Dungeon.finalLevel - level)
+        var bits: [String] = []
+        if mainQuestCompleted, let mq = mainQuest {
+            bits.append(["Your quest is done — \(Dungeon.guardianName(mq.villain)) is beaten.",
+                         "The quest is won; anything from here is for the fun of it."].randomElement()!)
+        } else if let mq = mainQuest {
+            let foe = mq.kind == "mystery" ? "whoever is behind it" : Dungeon.guardianName(mq.villain)
+            bits.append([
+                "Remember why you're here: to \(mq.goal).",
+                "The quest, in case it's slipped your mind: to \(mq.goal), \(mq.stakes).",
+                "Level \(level) of \(Dungeon.finalLevel) — and \(foe) waits at the very bottom.",
+                "\(mq.village) is counting on you to \(mq.goal).",
+                "Still on the trail: \(mq.goal).",
+            ].randomElement()!)
+            var todo = [
+                left > 0 ? "Find this level's guardian (the B on the map) and beat it to go deeper." : "This is the last level: find \(foe) and finish it.",
+                "Ask the people you meet about the quest — they know more than they let on.",
+                "Keep your torch lit and your packs stocked; it's a long way down.",
+            ]
+            if let who = mq.informant { todo.append(who.prefix(1).uppercased() + who.dropFirst() + " are the ones to ask.") }
+            if let d = questDeadlineLine() { todo.append("Mind the calendar — " + d.replacingOccurrences(of: "☾ ", with: "") + ".") }
+            if dungeon.deepPadRoomId != nil { todo.append("Somewhere on this level a pad glows deep blue — a quick way down, if you dare.") }
+            bits += todo.shuffled().prefix(Int.random(in: 0...2))
+        } else if noMainQuest {
+            bits.append(["No main quest — just the adventure. Ask anyone you meet for one if you'd like a purpose.",
+                         "You're exploring for the fun of it; people down here will happily hand you a quest if you ask."].randomElement()!)
+        } else {
+            return nil
+        }
+        let errands = allQuests.count
+        if errands > 0 && Int.random(in: 1...3) == 1 { bits.append("You've \(errands) errand\(errands == 1 ? "" : "s") on the go, too.") }
+        return bits.joined(separator: " ")
     }
 
     /// One line for save lists: the quest and how far along, done (★), or none.

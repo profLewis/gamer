@@ -1282,11 +1282,10 @@ class Dungeon: ObservableObject, Codable {
         }
     }
 
-    /// "| MAP OF HELHEIM" — the box's title line, cut to fit.
+    /// The box's title line: just "MAP" — the place's name sits on the line
+    /// under the map instead (on a phone the title runs under the camera).
     func mapTitleLine(border: String) -> String {
-        let title = "| MAP OF " + name.uppercased()
-        let fitted = title.count > border.count ? String(title.prefix(border.count - 1)) + "…" : title
-        return fitted.padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|"
+        "| MAP".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|"
     }
 
     /// The bottom of the world: this level's guardian is the villain from
