@@ -197,6 +197,11 @@ struct MainQuest: Codable {
     var deadlineDay: Int? = nil
     var deadlineKnown: Bool? = nil
     var deadlinePassed: Bool? = nil
+    /// A petitioner's village on another world: its name, and how they came
+    /// (and will take the party back) — cleared once the party has travelled.
+    var otherWorld: Bool? = nil
+    var worldName: String? = nil
+    var travelBy: String? = nil
 
     /// A quest whose stakes are time-bound gets a real day for it — generous
     /// enough to reach the bottom, but it does run out.
