@@ -2398,6 +2398,7 @@ class GameEngine: ObservableObject {
 
     func clearTerminal() {
         taleCountdownOn = false
+        speechFromLine = 0
         // Leaving the fight's running account for another screen: keep it, to put back.
         if combatLogShowing {
             combatLogBuffer = terminalLines
@@ -3632,6 +3633,20 @@ class GameEngine: ObservableObject {
     private func scheduleAutoContinue() {
         Self.continueGeneration += 1
         let myGeneration = Self.continueGeneration
+        // Read Aloud: the voice sets the pace — move on a moment after it has
+        // read this screen (a tap still moves on at once, and stops the voice).
+        if speakerModeOn {
+            quickNextContinue = false
+            readingPaceNext = false
+            speechReadCompleteHandler = { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    guard let self = self, Self.continueGeneration == myGeneration, self.awaitingContinue,
+                          self.autoContinueEnabled, !self.autoContinuePaused else { return }
+                    self.handleContinue()
+                }
+            }
+            return
+        }
         let base = countdownDelay(base: infoTimeout * 2)
         // In a fight things move on a little sooner — by a random amount,
         // never slower than usual.
@@ -3639,8 +3654,11 @@ class GameEngine: ObservableObject {
         // (a few seconds at most — the reading-time stretch made them drag).
         let delay: Double
         if currentCombat == nil { delay = base * timeoutScale(.reading) }
-        else if aiTurnInProgress { delay = min(base, 3.5) * Double.random(in: 0.7...1.0) * timeoutScale(.fights) }
+        else if readingPaceNext { delay = base * timeoutScale(.reading) }
+        // A monster's or companion's turn: long enough to read what just happened.
+        else if aiTurnInProgress { delay = max(2.5, min(12, newTextReadingTime())) * timeoutScale(.fights) }
         else { delay = base * Double.random(in: 0.55...0.85) * timeoutScale(.fights) }
+        readingPaceNext = false
         // A "defeated!" report moves on sooner still.
         let finalDelay = quickNextContinue ? min(delay, 3.0 * timeoutScale(.fights)) : delay
         quickNextContinue = false
@@ -3903,6 +3921,7 @@ class GameEngine: ObservableObject {
         // Ignore stale taps from a previous menu (e.g. finger-up after long-press
         // where the old menu had more options than the new one)
         guard choice >= 1 && choice <= currentMenuOptions.count else { return }
+        if speakerModeOn { SpeechEngine.shared.stop() }
         recordAction("pressed \"\(currentMenuOptions[choice - 1].text)\"")
 
         // "Fwd >" is injected generically (see withForwardOption) rather
@@ -4527,15 +4546,17 @@ class GameEngine: ObservableObject {
     /// Auto-read the screen when speaker mode is on (call after screen changes)
     func autoReadIfSpeakerMode() {
         guard speakerModeOn else { return }
-        // Only read once per page — skip if already read
-        guard !speakerHasReadCurrentPage else { return }
+        // Only read once per page — skip if already read (in a fight, each
+        // new turn's lines are read as they come)
+        guard !speakerHasReadCurrentPage || (currentCombat != nil && terminalLines.count > speechFromLine) else { return }
         // Un-pause on screen change (clearTerminal resets both flags)
         speakerPaused = false
         let speech = SpeechEngine.shared
         speech.stop()
         // Small delay so terminal lines are populated
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            guard let self = self, !self.speakerPaused, !self.speakerHasReadCurrentPage else { return }
+            guard let self = self, !self.speakerPaused,
+                  !self.speakerHasReadCurrentPage || (self.currentCombat != nil && self.terminalLines.count > self.speechFromLine) else { return }
             self.startReadingScreen()
         }
     }
@@ -4543,6 +4564,7 @@ class GameEngine: ObservableObject {
     private func startReadingScreen() {
         let speech = SpeechEngine.shared
         let allLines = gatherScreenLines()
+        speechFromLine = terminalLines.count
         // Filter out lines recently spoken (NPC greetings, repeated descriptions)
         let newLines = allLines.filter { line in
             !recentlySpokenTexts.contains(line)
@@ -4616,7 +4638,7 @@ class GameEngine: ObservableObject {
         // keyword/pattern and let straight through, bypassing the colour
         // and letter-ratio checks (not the ASCII-art/table checks below,
         // which these lines pass naturally anyway).
-        let combatKeywords = ["damage!", "critical", " attacks ", "defeated!", "unconscious!", "poisoned!"]
+        let combatKeywords = ["damage!", "critical", " attacks ", "defeated!", "unconscious!", "poisoned!", "appears!", "appear!", "looks fearsome", "looks weakened"]
         // Map legend/key rows (see Dungeon.mapLegendLines) are bar-separated
         // "X=Label" pairs like "@=You  !=Danger  .=Empty" — a visual
         // reference the player can already see, not narration. Detected
@@ -4624,7 +4646,7 @@ class GameEngine: ObservableObject {
         // rather than by keyword, so it doesn't matter which of the fixed
         // legend entries are showing.
         let legendPartPattern = try? NSRegularExpression(pattern: "^\\S{1,2}=[A-Za-z]+$")
-        let lines = terminalLines.compactMap { line -> String? in
+        let lines = terminalLines[min(speechFromLine, terminalLines.count)...].compactMap { line -> String? in
             let trimmed = line.text.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { return nil }
 
@@ -5037,6 +5059,8 @@ class GameEngine: ObservableObject {
         guard awaitingContinue else { return }
         if timeFrozen { showFrozenNotice(); return }
         awaitingContinue = false
+        // Moving on: the voice moves on too.
+        if speakerModeOn { SpeechEngine.shared.stop() }
         continueHintTimer?.invalidate()
         if pausedForTyping {
             // A pause that only happened because you were typing ends here.
@@ -18174,6 +18198,8 @@ class GameEngine: ObservableObject {
         if terminalLines.count > 600 { terminalLines.removeFirst(terminalLines.count - 600) }
         combatLogShowing = true
         suppressAutoScroll = false
+        speechFromLine = terminalLines.count   // Read Aloud: just this turn's lines
+        speakerHasReadCurrentPage = false
     }
 
     private var cutsceneActive = false
@@ -18308,17 +18334,29 @@ class GameEngine: ObservableObject {
         let previous: () -> Void = { [weak self] in
             self?.showTalePages(title: title, lines: lines, page: i - 1, onBack: onBack, emptyMessage: emptyMessage, finishLabel: finishLabel, onFinish: onFinish, pace: pace, skipLabel: skipLabel)
         }
+        // Stepping out part-way: carry on, start again, or leave the tale.
+        let pauseHere: () -> Void = { [weak self] in
+            guard let self = self else { return }
+            guard !last else { onBack(); return }
+            self.talePageToken = UUID()   // stop the page turning itself
+            self.pauseTale(resume: { [weak self] in
+                self?.showTalePages(title: title, lines: lines, page: i, onBack: onBack, emptyMessage: emptyMessage, finishLabel: finishLabel, onFinish: onFinish, pace: pace, skipLabel: skipLabel)
+            }, retell: { [weak self] in
+                self?.showTalePages(title: title, lines: lines, page: 0, onBack: onBack, emptyMessage: emptyMessage, finishLabel: finishLabel, onFinish: onFinish, pace: pace, skipLabel: skipLabel)
+            }, leave: onBack, leaveLabel: "Leave the Tale")
+        }
         cardPositionLabel = "\(i + 1)/\(lines.count)"
         swipeLeftHandler = last ? (onFinish ?? onBack) : next
         swipeRightHandler = i > 0 ? previous : nil
-        closeHandler = onBack
+        closeHandler = pauseHere
         menuHandler = { choice in
             guard choice >= 1, choice <= opts.count else { return }
             if opts[choice - 1] == skipLabel { onBack(); return }
             switch opts[choice - 1] {
             case "Next": next()
             case "Previous": previous()
-            case "< Back", "End Tale": onBack()
+            case "End Tale": onBack()
+            case "< Back": pauseHere()
             default: onFinish?()
             }
         }
@@ -18555,15 +18593,45 @@ class GameEngine: ObservableObject {
         closeHandler = { [weak self] in
             guard let self = self else { return }
             self.cutsceneToken = UUID()   // the pending auto-advance no longer applies
-            self.cutsceneActive = false
-            self.closeHandler = nil
-            done()
+            let leave: () -> Void = { [weak self] in
+                self?.cutsceneActive = false
+                self?.closeHandler = nil
+                done()
+            }
+            guard i < lines.count - 1 else { SpeechEngine.shared.stop(); leave(); return }
+            self.pauseTale(resume: { [weak self] in
+                guard let self = self else { return }
+                self.clearTerminal()
+                self.print("")
+                for k in 0..<i { self.printWrapped(lines[k], color: .brightGreen); self.print("") }
+                self.showCutsceneLine(i, lines: lines, done: done)
+            }, retell: { [weak self] in self?.showCutsceneLine(0, lines: lines, done: done) },
+               leave: leave, leaveLabel: "Skip the Rest")
         }
         // Each paragraph stays until it's been read (see paceTaleParagraph).
         paceTaleParagraph(lines[i], last: i == lines.count - 1, isStillValid: { [weak self] in
             guard let self = self else { return false }
             return self.cutsceneToken == token && self.awaitingContinue
         }, turn: { [weak self] in self?.handleContinue() })
+    }
+
+    /// Stepping out of a tale part-way: carry on, start again, or leave it.
+    private func pauseTale(resume: @escaping () -> Void, retell: @escaping () -> Void, leave: @escaping () -> Void, leaveLabel: String) {
+        SpeechEngine.shared.stop()
+        clearTerminal()
+        printTitle("The Tale, Paused")
+        print("")
+        printWrapped("The storyteller stops mid-sentence and looks up. \"Shall I go on?\"", indent: 2, color: .green)
+        print("")
+        showMenu(["Continue the Tale", "Tell It From the Start", leaveLabel])
+        closeHandler = leave
+        menuHandler = { choice in
+            switch choice {
+            case 1: resume()
+            case 2: retell()
+            default: leave()
+            }
+        }
     }
 
     /// A tale paragraph's pace: with Read Aloud on, the page waits until the
@@ -25114,9 +25182,64 @@ class GameEngine: ObservableObject {
     /// A fresh main quest — a new village in trouble, a new villain at the
     /// bottom, a new Opening Tale. The party, their things, the dungeon and
     /// any side quests stay as they are.
+    /// The DM's remarks about renamed adventurers, shown on the next story screen.
+    private var pendingDMRemarks: [String] = []
+    /// Read Aloud reads from here on (a fight reads each new turn's lines).
+    private var speechFromLine = 0
+    /// The next timed screen gets full reading time (e.g. a fight's opening).
+    private var readingPaceNext = false
+
+    /// How long the lines added since the last turn take to read (~200 wpm).
+    private func newTextReadingTime() -> Double {
+        let from = min(speechFromLine, terminalLines.count)
+        let words = terminalLines[from...].reduce(0) { total, line in
+            total + line.text.split(separator: " ").filter { $0.contains(where: { $0.isLetter }) }.count
+        }
+        return Double(words) / 3.3
+    }
+
+    /// No two adventurers share a name (fights and quests get muddled): a
+    /// second Kevin becomes "Kev" (or another name), and the DM says so.
+    @discardableResult
+    private func ensureUniqueNames() -> [String] {
+        var seen = Set<String>()
+        var remarks: [String] = []
+        for c in party {
+            let key = c.name.lowercased()
+            guard seen.contains(key) else { seen.insert(key); continue }
+            let old = c.name
+            let isRobot = old.hasPrefix("R. ")
+            let bare = isRobot ? String(old.dropFirst(3)) : old
+            let first = bare.split(separator: " ").first.map(String.init) ?? bare
+            var candidates: [String] = []
+            if first.count >= 5 { candidates.append(String(first.prefix(3))) }
+            candidates += ["Lucy", "Pip", "Bram", "Tilly", "Oswin", "Mags", "Fen", "Rook", "Wren", "Dot"].shuffled()
+            let taken = Set(party.map { $0.name.lowercased() }).union(seen)
+            let pick = candidates.first { !taken.contains($0.lowercased()) && !taken.contains(("R. " + $0).lowercased()) } ?? bare + " the Second"
+            c.name = (isRobot ? "R. " : "") + pick
+            seen.insert(c.name.lowercased())
+            let plural = first.hasSuffix("s") ? first + "es" : first + "s"
+            remarks.append("The DM squints at the party. \"Two \(plural)? That'll never do in a fight. I'm going to call one of you \(pick), then.\"")
+            logEvent("Renamed a second \(old) to \(c.name) — no two adventurers share a name", category: "SYSTEM")
+        }
+        return remarks
+    }
+
     /// A new adventure: the tale comes first (no map yet), then the party is
     /// asked whether they'll take the quest on.
     private func beginQuestOffer() {
+        let renames = ensureUniqueNames()
+        if !renames.isEmpty {
+            storyScreenActive = true
+            pinnedMapLines = []
+            clearTerminal()
+            printTitle("A Word from the DM")
+            print("")
+            for remark in renames { printWrapped(remark, indent: 2, color: .cyan); print("") }
+            waitForContinue()
+            inputHandler = { [weak self] _ in self?.beginQuestOffer() }
+            return
+        }
         storyScreenActive = true
         pinnedMapLines = []
         adventureLog = []
@@ -25238,6 +25361,8 @@ class GameEngine: ObservableObject {
         clearTerminal()
         printTitle("The Story So Far")
         print("")
+        for remark in pendingDMRemarks { printWrapped(remark, indent: 2, color: .cyan); print("") }
+        pendingDMRemarks = []
         for (i, line) in adventureRecapLines().enumerated() {
             printWrapped(line, indent: 2, color: i == 1 ? .yellow : .green)
             print("")
@@ -30260,6 +30385,7 @@ class GameEngine: ObservableObject {
 
     func startCombat(encounter: Encounter) {
         gameState = .combat
+        let renames = ensureUniqueNames()   // two of the same name muddle a fight
         combatHesitating = false
         cancelCombatIdleTimer()
 
@@ -30319,6 +30445,8 @@ class GameEngine: ObservableObject {
         printLines(asciiSwords, color: .red)
         print("")
         printTitle("COMBAT!")
+        for remark in renames { printWrapped(remark, indent: 2, color: .cyan) }
+        readingPaceNext = true   // time to read (or hear) what has appeared
 
         // Group monsters by type for cleaner display
         var monsterCounts: [(type: MonsterType, count: Int)] = []
@@ -30336,7 +30464,7 @@ class GameEngine: ObservableObject {
             } else {
                 print("\(group.type.rawValue) appears!", color: .red)
             }
-            print("  \(group.type.description)", color: .dimGreen)
+            print("  \(group.type.description)", color: .green)
             print("")
         }
 
@@ -35391,6 +35519,7 @@ class GameEngine: ObservableObject {
 
         // The Opening Tale again (skippable), then the story so far — and
         // only then the play screen.
+        pendingDMRemarks = ensureUniqueNames()
         showResumeStory()
     }
 
