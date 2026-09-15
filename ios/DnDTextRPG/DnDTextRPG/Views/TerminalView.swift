@@ -209,7 +209,7 @@ struct TerminalView: View {
                     // down slightly so it starts below where the text
                     // column's first (title) line sits, not flush at the top.
                     Group {
-                    if !gameEngine.pinnedMapLines.isEmpty {
+                    if !gameEngine.pinnedMapLines.isEmpty && !gameEngine.storyScreenActive {
                         let mapContent = VStack(alignment: .leading, spacing: 2) {
                             ForEach(Array(gameEngine.pinnedMapLines.enumerated()), id: \.element.id) { index, line in
                                 TerminalLineView(line: line, scale: mapScale)

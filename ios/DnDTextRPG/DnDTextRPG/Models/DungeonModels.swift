@@ -1282,6 +1282,13 @@ class Dungeon: ObservableObject, Codable {
         }
     }
 
+    /// "| MAP OF HELHEIM" — the box's title line, cut to fit.
+    func mapTitleLine(border: String) -> String {
+        let title = "| MAP OF " + name.uppercased()
+        let fitted = title.count > border.count ? String(title.prefix(border.count - 1)) + "…" : title
+        return fitted.padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|"
+    }
+
     /// The bottom of the world: this level's guardian is the villain from
     /// the opening tale, and beating it ends the adventure.
     static let finalLevel = 7
@@ -1606,7 +1613,7 @@ class Dungeon: ObservableObject, Codable {
             var lines: [String] = []
             lines.append("+\(border)+")
             if !compact {
-                lines.append("| MAP".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|")
+                lines.append(mapTitleLine(border: border))
                 lines.append("+\(border)+")
             }
             // See the torch-lit branch below for why this centers @ instead
@@ -1657,7 +1664,7 @@ class Dungeon: ObservableObject, Codable {
         let border = String(repeating: "-", count: max(mapWidth, 26))
         lines.append("+\(border)+")
         if !compact {
-            lines.append("| MAP".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|")
+            lines.append(mapTitleLine(border: border))
             lines.append("+\(border)+")
         }
 

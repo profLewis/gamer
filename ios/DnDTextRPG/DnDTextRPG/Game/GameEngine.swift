@@ -8751,7 +8751,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest
+            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine()
         )
 
         try? SaveGameManager.shared.save(saveGame)
@@ -18137,7 +18137,7 @@ class GameEngine: ObservableObject {
             let diff = self.parseDifficulty(Double(choice))
             self.difficultyScale = diff.scale
             self.dungeon = Dungeon(name: dungeonName, level: diff.level)
-            self.playAdventureCutscene { [weak self] in self?.enterDungeon() }
+            self.beginQuestOffer()
         }
     }
 
@@ -18181,6 +18181,17 @@ class GameEngine: ObservableObject {
     var adventureIntroLines: [String] = []
     /// Why the party is on this adventure at all (side quests are the errands).
     @Published var mainQuest: MainQuest?
+    /// The story of this adventure's quests — taken up, turned down, changed, done.
+    var questHistory: [String] = []
+    /// Chose to adventure with no main quest (people will nag, and offer one).
+    var noMainQuest = false
+    var mainQuestCompleted = false
+    /// The plea just turned down (the next asker riffs on it), and who's asking.
+    private var questPleaPrevious: MainQuest?
+    private var questPleaAsker: String?
+    private var npcQuestOffers: [Int: MainQuest] = [:]
+    /// While a tale, a quest offer or the story so far is on, the map stays hidden.
+    @Published var storyScreenActive = false
     /// The opening tale is written by the AI's most capable model when one's set up.
     var storyWriterEnabled: Bool { UserDefaults.standard.object(forKey: "storyWriter") as? Bool ?? true }
     private var typewriterTimer: Timer?
@@ -18252,7 +18263,7 @@ class GameEngine: ObservableObject {
     /// Tale leads straight on to the Progress Tale.
     private func showTalePages(title: String, lines: [String], page: Int, onBack: @escaping () -> Void,
                                emptyMessage: String = "There's no tale to tell yet.",
-                               finishLabel: String? = nil, onFinish: (() -> Void)? = nil, appendOnly: Bool = false, pace: Double = 1.0) {
+                               finishLabel: String? = nil, onFinish: (() -> Void)? = nil, appendOnly: Bool = false, pace: Double = 1.0, skipLabel: String? = nil) {
         if !appendOnly || lines.isEmpty {
             clearTerminal()
             printTitle(title)
@@ -18288,13 +18299,14 @@ class GameEngine: ObservableObject {
         var opts: [String] = []
         if !last { opts.append("Next") } else if let label = finishLabel, onFinish != nil { opts.append(label) } else { opts.append("End Tale") }
         if i > 0 { opts.append("Previous") }
+        if let skip = skipLabel { opts.append(skip) }
         opts.append("< Back")
         showMenu(opts)
         let next: () -> Void = { [weak self] in
-            self?.showTalePages(title: title, lines: lines, page: i + 1, onBack: onBack, emptyMessage: emptyMessage, finishLabel: finishLabel, onFinish: onFinish, appendOnly: true, pace: pace)
+            self?.showTalePages(title: title, lines: lines, page: i + 1, onBack: onBack, emptyMessage: emptyMessage, finishLabel: finishLabel, onFinish: onFinish, appendOnly: true, pace: pace, skipLabel: skipLabel)
         }
         let previous: () -> Void = { [weak self] in
-            self?.showTalePages(title: title, lines: lines, page: i - 1, onBack: onBack, emptyMessage: emptyMessage, finishLabel: finishLabel, onFinish: onFinish, pace: pace)
+            self?.showTalePages(title: title, lines: lines, page: i - 1, onBack: onBack, emptyMessage: emptyMessage, finishLabel: finishLabel, onFinish: onFinish, pace: pace, skipLabel: skipLabel)
         }
         cardPositionLabel = "\(i + 1)/\(lines.count)"
         swipeLeftHandler = last ? (onFinish ?? onBack) : next
@@ -18302,6 +18314,7 @@ class GameEngine: ObservableObject {
         closeHandler = onBack
         menuHandler = { choice in
             guard choice >= 1, choice <= opts.count else { return }
+            if opts[choice - 1] == skipLabel { onBack(); return }
             switch opts[choice - 1] {
             case "Next": next()
             case "Previous": previous()
@@ -18361,8 +18374,8 @@ class GameEngine: ObservableObject {
         startWritingBar(seconds: 15)
         DMEngine.shared.writeStory(system: storySystemPrompt, prompt: progressPrompt()) { [weak self] text in
             guard let self = self else { return }
-            self.stopWritingBar()
-            open(self.parseStory(text) ?? self.progressTaleOffline())
+            self.stopWritingBar(filled: true, succeeded: text != nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { open(self.parseStory(text) ?? self.progressTaleOffline()) }
         }
     }
 
@@ -18394,6 +18407,7 @@ class GameEngine: ObservableObject {
         Opening tale: \(adventureIntroLines.joined(separator: " "))
         Main quest: \(mq.map { "\($0.goal) — \($0.stakes); reward: \($0.reward); villain: \($0.villain)" } ?? "unknown")
         What they have found out on the way down: \(mq.map { $0.beatsSoFar(level: dungeon?.level ?? 1).joined(separator: " ") } ?? "nothing yet")
+        Their quests so far: \(questHistory.isEmpty ? "(none recorded)" : questHistory.joined(separator: " "))
         The party: \(partyText)
         So far: day \(gameTimeMinutes / 1440 + 1); level \(dungeon?.level ?? 1) of \(dungeon?.name ?? "the dungeon"); \(explored) of \(total) rooms explored; \(monstersSlain) monsters defeated in \(combatsWon) fights; \(gold) gold between them.
         Recent events (oldest first):
@@ -18453,12 +18467,14 @@ class GameEngine: ObservableObject {
         startWritingBar(seconds: 15)
         DMEngine.shared.writeStory(system: storySystemPrompt, prompt: storyPrompt()) { [weak self] text in
             guard let self = self else { return }
-            self.stopWritingBar()
-            if let lines = self.parseStory(text) {
-                self.keepWrittenTale(lines)
-                play(lines)
-            } else {
-                play(self.offlineOpeningTale())
+            self.stopWritingBar(filled: true, succeeded: text != nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                if let lines = self.parseStory(text) {
+                    self.keepWrittenTale(lines)
+                    play(lines)
+                } else {
+                    play(self.offlineOpeningTale())
+                }
             }
         }
     }
@@ -18475,18 +18491,41 @@ class GameEngine: ObservableObject {
         print("⏳ [" + String(repeating: "·", count: 20) + "]", color: .dimGreen, centered: true)
         let generation = screenGeneration
         let start = Date()
+        writingBarStart = start
+        writingBarIndex = index
+        let expected = max(3, storyWriteEstimate)
         writingBarTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] timer in
             guard let self = self, self.screenGeneration == generation, index < self.terminalLines.count else { timer.invalidate(); return }
             let elapsed = Date().timeIntervalSince(start)
-            let filled = Int(min(1, elapsed / seconds) * 20)
+            // Calibrated to how long tales have been taking; past that, it
+            // creeps on slowly rather than stalling or running out.
+            let frac = elapsed < expected ? 0.9 * elapsed / expected : 0.9 + 0.09 * (1 - exp(-(elapsed - expected) / expected))
+            let filled = Int(frac * 20)
             let glass = Int(elapsed * 1.5) % 2 == 0 ? "⏳" : "⌛"
             self.terminalLines[index].text = "\(glass) [" + String(repeating: "■", count: filled) + String(repeating: "·", count: 20 - filled) + "]"
         }
     }
 
-    private func stopWritingBar() {
+    private var writingBarStart: Date?
+    private var writingBarIndex: Int?
+    /// How long the story writer usually takes (a running average).
+    private var storyWriteEstimate: Double {
+        get { let v = UserDefaults.standard.double(forKey: "storyWriteEstimate"); return v > 0 ? v : 8 }
+        set { UserDefaults.standard.set(newValue, forKey: "storyWriteEstimate") }
+    }
+
+    /// Stops the bar; `filled` shows it complete, `succeeded` teaches it the time taken.
+    private func stopWritingBar(filled: Bool = false, succeeded: Bool = false) {
         writingBarTimer?.invalidate()
         writingBarTimer = nil
+        if succeeded, let start = writingBarStart {
+            storyWriteEstimate = storyWriteEstimate * 0.6 + Date().timeIntervalSince(start) * 0.4
+        }
+        if filled, let i = writingBarIndex, i < terminalLines.count {
+            terminalLines[i].text = "⌛ [" + String(repeating: "■", count: 20) + "]"
+        }
+        writingBarStart = nil
+        writingBarIndex = nil
     }
 
     private func showCutsceneLine(_ i: Int, lines: [String], done: @escaping () -> Void) {
@@ -18577,7 +18616,7 @@ class GameEngine: ObservableObject {
         let partyText = party.map { "\(shortName(for: $0)) (\($0.race.rawValue) \($0.characterClass.rawValue))" }.joined(separator: ", ")
         return """
         Write the opening tale for this adventure as 7 to 9 short lines — one sentence each, at most 30 words — one per line, with no numbering, headings or blank lines.
-        The tale must: tell why this party is going into the dungeon; state the main quest clearly (the goal, what is at stake, and the reward); name the villain; mention every adventurer by name and what their class or people bring; and end with them stepping into the dungeon.
+        The tale must: tell why this party is going into the dungeon; state the main quest clearly (the goal, what is at stake, and the reward); name the villain; mention every adventurer by name and what their class or people bring; and end on the plea itself — the party hasn't said yes yet, so don't have them accept or set off.
         It must read as one clear story, in this order: what is going wrong in the village; who is behind it and why; who asks the party for help; the quest (goal, deadline, reward); what each adventurer brings; setting off into the dungeon.
         Every sentence must follow from the one before, with concrete, everyday details. Vary the details (who asks, the weather, the mood) so it doesn't feel like every other tale.
 
@@ -18591,6 +18630,7 @@ class GameEngine: ObservableObject {
         Who down there knows things: \(mq.informant ?? "(invent someone)")
         Mention who might know more, as a hint for the journey; keep the ending itself for later.
         \(storyKindNote(mq))
+        \(storyRiffNote())
         Main quest: \(mq.goal)
         What is at stake: \(mq.stakes)
         Reward: \(mq.reward)
@@ -18631,10 +18671,36 @@ class GameEngine: ObservableObject {
         if let mq = mainQuest, let file = AdventureLibrary.templates().first(where: { $0.villain == mq.villain && $0.goal == mq.goal }) {
             let names = party.map { shortName(for: $0) }
             let together = names.count <= 1 ? (names.first ?? "a lone adventurer") : names.dropLast().joined(separator: ", ") + " and " + names.last!
-            return file.filledTale(party: together, dungeon: dungeon?.name ?? "the dungeon")
+            var tale = file.filledTale(party: together, dungeon: dungeon?.name ?? "the dungeon")
+            if tale.count > 3 { tale.removeLast() }   // it ends with them setting off; here, it ends on the plea
+            tale.append("\"Will you help?\"")
+            return pleaRiffLines() + tale
         }
-        return adventureBackstory()
+        return pleaRiffLines() + adventureBackstory()
     }
+
+    /// Just turned a plea down? The next asker starts by saying so.
+    private func pleaRiffLines() -> [String] {
+        guard let prev = questPleaPrevious else { return [] }
+        let short = Dungeon.guardianName(prev.villain)
+        let asker = questPleaAsker ?? "someone else from the village"
+        return ["Word soon gets round that you won't take on \(short). Before your ale's gone flat, \(asker) pushes through the crowd: \"Never mind \(short) — we've got a far worse problem.\""]
+    }
+
+    private func storyRiffNote() -> String {
+        guard let prev = questPleaPrevious else { return "" }
+        let short = Dungeon.guardianName(prev.villain)
+        let asker = questPleaAsker ?? "someone else from the village"
+        return "The party has just turned down another plea — to \(prev.goal) (villain: \(short)). Open by riffing on that: \(asker) pushes forward and says, in effect, never mind \(short) — their own trouble is far more worrying. Then tell their tale. The one asking is \(asker), not the village elder."
+    }
+
+    static let pleaAskers = ["a knot of worried farmers", "the town rat-catcher, a small man with a very large sack", "the miller's three children",
+                             "old Sergeant Budge, the retired town guard", "the goose girl (and her goose)", "the schoolteacher, still clutching her chalk",
+                             "a travelling tinker with a wagon full of pans", "the innkeeper, wiping her hands on her apron"]
+    static let noQuestNags = ["No quest? What are you lot doing down here — sightseeing?",
+                              "Adventurers without a quest are like a boat without an oar. I've got one for you, if you're brave enough.",
+                              "You're wandering about with no purpose. I can always tell. Want a real job?",
+                              "Still no quest? Tut. Some of us have real troubles."]
 
     /// The story writer's reply as lines, or nil if it isn't usable.
     private func parseStory(_ text: String?) -> [String]? {
@@ -18693,7 +18759,7 @@ class GameEngine: ObservableObject {
         // Story by Beau Lewis (world creation and storytelling) — the
         // village, the beast (this dungeon's own boss, where there is one),
         // the dungeon and the size of the band are filled in; the words are Beau's.
-        if Int.random(in: 1...10) <= 6 {
+        if questPleaPrevious == nil && Int.random(in: 1...10) <= 6 {
             let village = mq.village
             let beast = mq.villain
             var lines = [
@@ -18725,16 +18791,20 @@ class GameEngine: ObservableObject {
             lines.append("Everyone knows who is to blame: \(mq.villain), who \(mq.motive ?? "wants the whole valley for itself").")
             lines.append("\(villainName) has a lair deep in \(place), and the few who went after it came back empty-handed, or not at all.")
         }
+        if let asker = questPleaAsker, questPleaPrevious != nil {
+            lines.append(asker.prefix(1).uppercased() + asker.dropFirst() + " tells the whole story, twisting their hat in their hands.")
+        } else {
         lines.append([
             "That evening \(together) \(solo ? "arrives" : "arrive") at the inn, and the village elder comes straight to their table.",
             "The elder of \(mq.village) has been waiting at the crossroads for anyone with a sword, and \(together) \(solo ? "is" : "are") the first to come along.",
             "A child from \(mq.village) runs up to \(together), out of breath, and begs them to come and see the elder.",
         ].randomElement()!)
+        }
         lines.append("The task: to \(mq.goal), \(mq.stakes).")
         if let who = mq.informant { lines.append("Down there, the elder says, \(who) know more than they let on. Ask them.") }
         lines.append("The reward: \(mq.reward).")
         lines += team
-        lines.append("\(together) \(solo ? "lights a torch and steps" : "light their torches and step") through the door of \(place).")
+        lines.append("\"Will you help us?\"")
         return lines
     }
 
@@ -18788,7 +18858,7 @@ class GameEngine: ObservableObject {
                 let diff = self.parseDifficulty(level)
                 self.difficultyScale = diff.scale
                 self.dungeon = Dungeon(name: dungeonName, level: diff.level)
-                self.playAdventureCutscene { [weak self] in self?.enterDungeon() }
+                self.beginQuestOffer()
             case "Difficulty":
                 self.adventureUndoStack.append((dungeonName, level))
                 self.adventureRedoStack.removeAll()
@@ -18921,12 +18991,13 @@ class GameEngine: ObservableObject {
         clearTerminal()
         gameState = .exploring
         gameTimeMinutes = 360  // 6:00 AM
-        adventureLog = []
         partyChatLog = []
         roomsSinceLastSave = 0
+        storyScreenActive = false
         DMEngine.shared.clearHistory()
         dmChatLog = []
         logEvent("Entered \(dungeon?.name ?? "the dungeon")", category: "EXPLORE")
+        explorationStatusMessage = (welcomeLine(returning: false), .cyan)
         if self.musicEnabled { SoundManager.shared.startMusic(.exploration, preference: self.explorationMelodyChoice) }
 
         // Auto-light torch if the party has one
@@ -21979,6 +22050,12 @@ class GameEngine: ObservableObject {
             }
         }
 
+        // No main quest: people notice (and some have one going spare).
+        if mainQuest == nil, npc.type != .gatekeeper, Int.random(in: 1...10) <= 5 {
+            printWrapped("\"\(Self.noQuestNags.randomElement()!)\"", indent: 2, color: .yellow)
+            print("")
+        }
+
         // Build capability menu
         var options: [MenuOption] = []
         var actions: [() -> Void] = []
@@ -22000,6 +22077,11 @@ class GameEngine: ObservableObject {
             let roomId = room.id
             options.append(MenuOption("Ask About Our Quest", tint: .cyan))
             actions.append { [weak self] in self?.askAboutMainQuest(npc: npc, roomId: roomId) }
+        }
+        if mainQuest == nil, npc.type != .gatekeeper {
+            let roomId = room.id
+            options.append(MenuOption("Hear Their Quest", tint: .cyan))
+            actions.append { [weak self] in self?.hearNPCMainQuest(npc: npc, roomId: roomId) }
         }
 
         // Capability buttons
@@ -25032,6 +25114,202 @@ class GameEngine: ObservableObject {
     /// A fresh main quest — a new village in trouble, a new villain at the
     /// bottom, a new Opening Tale. The party, their things, the dungeon and
     /// any side quests stay as they are.
+    /// A new adventure: the tale comes first (no map yet), then the party is
+    /// asked whether they'll take the quest on.
+    private func beginQuestOffer() {
+        storyScreenActive = true
+        pinnedMapLines = []
+        adventureLog = []
+        questHistory = []
+        noMainQuest = false
+        mainQuestCompleted = false
+        mainQuest = nil
+        questPleaPrevious = nil
+        questPleaAsker = nil
+        npcQuestOffers = [:]
+        adventureIntroLines = []
+        playAdventureCutscene { [weak self] in
+            self?.askToTakeQuest(then: { [weak self] in self?.enterDungeon() })
+        }
+    }
+
+    /// "Will you take it on?" — yes; hear someone else's plea (they riff on
+    /// this one); or no quest at all, just the adventure.
+    private func askToTakeQuest(then proceed: @escaping () -> Void) {
+        guard let mq = mainQuest else { proceed(); return }
+        storyScreenActive = true
+        clearTerminal()
+        printTitle("Will You Take It On?")
+        print("")
+        printWrapped("To \(mq.goal), \(mq.stakes).", indent: 2, color: .yellow)
+        printWrapped("The reward: \(mq.reward).", indent: 2, color: .green)
+        if mq.kind != "mystery" && mq.kind != "twist" {
+            printWrapped("Waiting at the very bottom: \(mq.villain).", indent: 2, color: .green)
+        }
+        print("")
+        printWrapped("Take it on, hear what someone else wants doing, or set off with no quest at all — just the adventure (there are always errands on the way).", indent: 2, color: .dimGreen)
+        print("")
+        showMenu(["Take Up the Quest", "Hear Another Plea", "No Quest, Just Adventure"])
+        closeHandler = { [weak self] in self?.acceptQuest(then: proceed) }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1:
+                self.acceptQuest(then: proceed)
+            case 2:
+                self.questHistory.append("Turned down a plea to \(mq.goal) (\(Dungeon.guardianName(mq.villain))).")
+                self.logEvent("Turned down the quest: \(mq.summary)", category: "QUEST")
+                self.questPleaPrevious = mq
+                self.questPleaAsker = Self.pleaAskers.randomElement()
+                var next = MainQuest.random()
+                for _ in 0..<12 where next.villain == mq.villain || next.kind == mq.kind { next = MainQuest.random() }
+                self.mainQuest = next
+                self.playAdventureCutscene { [weak self] in self?.askToTakeQuest(then: proceed) }
+            default:
+                self.questHistory.append("Turned every plea down and set out with no main quest — just for the adventure.")
+                self.logEvent("Set out with no main quest", category: "QUEST")
+                self.mainQuest = nil
+                self.noMainQuest = true
+                self.questPleaPrevious = nil
+                self.questPleaAsker = nil
+                self.adventureIntroLines.append("In the end the party turned the plea down, and set off for the sheer adventure of it.")
+                proceed()
+            }
+        }
+    }
+
+    private func acceptQuest(then proceed: @escaping () -> Void) {
+        guard let mq = mainQuest else { proceed(); return }
+        questHistory.append("Took up the quest: to \(mq.goal) (\(Dungeon.guardianName(mq.villain))).")
+        logEvent("Took up the quest: \(mq.summary)", category: "QUEST")
+        noMainQuest = false
+        questPleaPrevious = nil
+        questPleaAsker = nil
+        proceed()
+    }
+
+    /// Someone down here with a quest going spare — offered to a party that
+    /// has none.
+    private func hearNPCMainQuest(npc: DungeonNPC, roomId: Int) {
+        let who = npc.type.rawValue.lowercased()
+        let q = npcQuestOffers[roomId] ?? MainQuest.random()
+        npcQuestOffers[roomId] = q
+        clearTerminal()
+        printTitle("A Real Quest")
+        print("")
+        printWrapped("The \(who) leans in. \"Back in \(q.village), \(q.harm ?? "things have gone badly wrong").\"", indent: 2, color: .yellow)
+        if q.kind != "mystery", q.kind != "twist", let motive = q.motive {
+            printWrapped("\"It's \(q.villain), who \(motive).\"", indent: 2, color: .yellow)
+        }
+        printWrapped("\"Someone needs to \(q.goal), \(q.stakes). There's \(q.reward) in it — and a proper story to tell.\"", indent: 2, color: .yellow)
+        print("")
+        showMenu(["Take It On", "Not For Us"])
+        closeHandler = { [weak self] in self?.talkToNPC() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            guard choice == 1 else { self.talkToNPC(); return }
+            self.mainQuest = q
+            self.noMainQuest = false
+            self.progressTaleCache = nil
+            self.npcQuestOffers[roomId] = nil
+            self.questHistory.append("Took up a quest from a \(who) in \(self.dungeon?.name ?? "the dungeon"): to \(q.goal) (\(Dungeon.guardianName(q.villain))).")
+            self.logEvent("Took up a quest from the \(who): \(q.summary)", category: "QUEST")
+            self.adventureIntroLines.append("Deep in the dungeon, a \(who) told them of \(q.village)'s trouble, and they took the quest on: to \(q.goal).")
+            self.print("")
+            self.printWrapped("\"Good. About time,\" says the \(who). (It's your main quest now — see Party Status.)", indent: 2, color: .brightGreen)
+            self.waitForContinue()
+            self.inputHandler = { [weak self] _ in self?.talkToNPC() }
+        }
+    }
+
+    /// Back to a saved game: the Opening Tale again (Skip jumps past it), then
+    /// the story so far — the map only once play starts.
+    private func showResumeStory() {
+        storyScreenActive = true
+        pinnedMapLines = []
+        let lines = adventureIntroLines.isEmpty ? recoveredIntroLines() : adventureIntroLines
+        guard !lines.isEmpty else { showStorySoFar(); return }
+        showTalePages(title: "The Tale Begins", lines: lines, page: 0, onBack: { [weak self] in self?.showStorySoFar() },
+                      finishLabel: "The Story So Far >", onFinish: { [weak self] in self?.showStorySoFar() }, skipLabel: "Skip")
+    }
+
+    private func showStorySoFar() {
+        storyScreenActive = true
+        clearTerminal()
+        printTitle("The Story So Far")
+        print("")
+        for (i, line) in adventureRecapLines().enumerated() {
+            printWrapped(line, indent: 2, color: i == 1 ? .yellow : .green)
+            print("")
+        }
+        let onward: () -> Void = { [weak self] in self?.resumePlay() }
+        showMenu(["Onward!", "Tell the Progress Tale"])
+        closeHandler = onward
+        menuHandler = { [weak self] choice in
+            if choice == 2 { self?.showProgressTale(onBack: onward) } else { onward() }
+        }
+    }
+
+    private func resumePlay() {
+        storyScreenActive = false
+        explorationStatusMessage = (welcomeLine(returning: true), .cyan)
+        showExplorationView()
+    }
+
+    /// The whole adventure in a few lines — the quest and how it's going, any
+    /// change of quest, errands, fights, and what happened last.
+    func adventureRecapLines() -> [String] {
+        guard let dungeon = dungeon else { return [] }
+        let names = party.map { shortName(for: $0) }
+        let together = names.count <= 1 ? (names.first ?? "A lone adventurer") : names.dropLast().joined(separator: ", ") + " and " + names.last!
+        let day = gameTimeMinutes / 1440 + 1
+        var lines: [String] = []
+        lines.append("\(together) \(names.count <= 1 ? "is" : "are") on day \(day) of the adventure, on Level \(dungeon.level) of \(dungeon.name).")
+        if mainQuestCompleted, let mq = mainQuest {
+            lines.append("★ The quest is done: \(Dungeon.guardianName(mq.villain)) is defeated, and \(mq.village) is saved.")
+        } else if let mq = mainQuest {
+            let left = max(0, Dungeon.finalLevel - dungeon.level)
+            let foe = mq.kind == "mystery" ? "whoever is behind it" : Dungeon.guardianName(mq.villain)
+            lines.append("The quest: to \(mq.goal), \(mq.stakes). " + (left == 0 ? "This is the last level — \(foe) is somewhere here." : "\(left) more level\(left == 1 ? "" : "s") to go before the bottom, where \(foe) waits."))
+            let found = mq.beatsSoFar(level: dungeon.level) + (mq.cluesLearned ?? [])
+            if !found.isEmpty { lines.append("So far they've found out: " + found.joined(separator: " ")) }
+            else if let who = mq.informant { lines.append("They haven't learned much yet — \(who) are the ones to ask.") }
+        } else if noMainQuest {
+            lines.append("They're travelling without a main quest — just for the adventure, and whatever errands turn up.")
+        } else {
+            lines.append("No main quest yet.")
+        }
+        if questHistory.count > 1 { lines.append("Along the way: " + questHistory.joined(separator: " ")) }
+        let errands = allQuests
+        if !errands.isEmpty { lines.append("Errands in hand: " + errands.map { $0.description }.joined(separator: "; ") + ".") }
+        let explored = dungeon.rooms.values.filter { $0.visited }.count
+        lines.append("They've beaten \(monstersSlain) monster\(monstersSlain == 1 ? "" : "s") in \(combatsWon) fight\(combatsWon == 1 ? "" : "s"), and explored \(explored) of \(dungeon.rooms.count) rooms on this level.")
+        let recent = progressHighlights(limit: 3)
+        if !recent.isEmpty { lines.append("Most recently: " + recent.joined(separator: " ")) }
+        return lines
+    }
+
+    /// One line for save lists: the quest and how far along, done (★), or none.
+    func questSummaryLine() -> String? {
+        if mainQuestCompleted, let mq = mainQuest { return "★ QUEST COMPLETE — \(Dungeon.guardianName(mq.villain)) defeated; \(mq.goal): done" }
+        if let mq = mainQuest { return "Quest: to \(mq.goal) · Level \(dungeon?.level ?? 1) of \(Dungeon.finalLevel)" }
+        if noMainQuest { return "No main quest — adventuring for the fun of it" }
+        return nil
+    }
+
+    /// "Welcome, adventurers — welcome to Helheim!" and a word about the place.
+    private func welcomeLine(returning: Bool) -> String {
+        guard let dungeon = dungeon else { return "" }
+        var about = nameEntries.first { $0.category == "dungeon" && $0.name == dungeon.name }?.description ?? ""
+        if let dot = about.firstIndex(of: ".") { about = String(about[...dot]) }
+        if about.isEmpty {
+            about = ["Its halls are older than anyone remembers, and few who know them well have come back to say so.",
+                     "They say its stones are warm in winter and cold in summer, which is never a good sign.",
+                     "Somewhere below, something is waiting — and it has heard you arrive."].randomElement()!
+        }
+        return returning ? "Welcome back, adventurers — back to \(dungeon.name). \(about)" : "Welcome, adventurers — welcome to \(dungeon.name)! \(about)"
+    }
+
     private func confirmNewMainQuest() {
         clearTerminal()
         printTitle("By the Campfire")
@@ -25058,6 +25336,9 @@ class GameEngine: ObservableObject {
             for _ in 0..<8 where next.villain == old?.villain { next = MainQuest.random() }
             self.mainQuest = next
             self.progressTaleCache = nil
+            if let old = old { self.questHistory.append("Gave up on the quest to \(old.goal), by a campfire in \(self.dungeon?.name ?? "the dungeon").") }
+            self.questPleaPrevious = old
+            self.questPleaAsker = Self.pleaAskers.randomElement()
             self.logEvent("A new main quest: \(next.summary) (\(next.villain))", category: "QUEST")
             // One time in three the dungeon takes its toll.
             if Int.random(in: 1...3) == 1 {
@@ -25081,7 +25362,10 @@ class GameEngine: ObservableObject {
             self.printWrapped("Before the fire burns down, a bedraggled messenger bird drops out of the dark and lands on \(names.first ?? "your")'s pack, a scrap of parchment tied to its leg. It's from \(next.village).", indent: 2, color: .yellow)
             self.waitForContinue()
             self.inputHandler = { [weak self] _ in
-                self?.playAdventureCutscene { [weak self] in self?.showPartyStatus() }
+                self?.storyScreenActive = true
+                self?.playAdventureCutscene { [weak self] in
+                    self?.askToTakeQuest(then: { [weak self] in self?.storyScreenActive = false; self?.showPartyStatus() })
+                }
             }
         }
     }
@@ -25288,7 +25572,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest
+            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine()
         )
         showAdventureTale(AdventureTaleData(inProgress: snapshot), onBack: onBack)
     }
@@ -26889,7 +27173,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest
+            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine()
         )
     }
 
@@ -32521,6 +32805,8 @@ class GameEngine: ObservableObject {
             print("")
             printWrapped("THE END — of this adventure. Your heroes are in the Hall of Fame; a new tale starts whenever you like.", indent: 2, color: .dimGreen)
             print("")
+            mainQuestCompleted = mainQuest != nil
+            if let q = mainQuest { questHistory.append("Completed the quest: \(Dungeon.guardianName(q.villain)) defeated, and \(q.goal) done.") }
             logEvent("THE END: the final guardian of \(dungeonName) is defeated", category: "EXPLORE")
             showMenu(["Save & End Adventure", "End Adventure"])
             menuHandler = { [weak self] choice in
@@ -32821,7 +33107,7 @@ class GameEngine: ObservableObject {
                 torchTurnsRemaining: torchTurnsRemaining,
                 partyChatLog: partyChatLog.suffix(20).map { $0 },
                 monstersSlain: monstersSlain, combatsWon: combatsWon,
-                activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest
+                activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine()
             )
             try? SaveGameManager.shared.save(hofSave)
             linkedSaveId = saveId
@@ -33457,6 +33743,7 @@ class GameEngine: ObservableObject {
             let dateStr = dateFormatter.string(from: slot.latest.savedAt)
             print(" \(i + 1). \(slot.slotName)", color: .brightGreen)
             print("    \(slot.latest.partyDescription)", color: .dimGreen)
+            if let q = slot.latest.questSummary { print("    \(q)", color: q.hasPrefix("★") ? .yellow : .cyan) }
             print("    Lv\(slot.latest.dungeonLevel) — \(dateStr) (\(slot.breakpointCount) saves)", color: .dimGreen)
         }
         print("")
@@ -33550,7 +33837,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest
+            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine()
         )
 
         do {
@@ -33598,7 +33885,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest
+            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine()
         )
 
         do {
@@ -33819,6 +34106,7 @@ class GameEngine: ObservableObject {
                     let name = String(entry.dungeonName.prefix(20))
                     printWrapped("\(i + 1). \(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts\(bpInfo)", color: outcomeColor, bold: true)
                     printWrapped(entry.partyDescription, indent: 3, color: .dimGreen)
+                    if let q = save.questSummary { printWrapped(q, indent: 3, color: q.hasPrefix("★") ? .yellow : .cyan) }
                     printWrapped("Gold:\(entry.goldCollected) Slain:\(entry.monstersSlain) Rooms:\(entry.roomsExplored)/\(entry.totalRooms) Day \(day)", indent: 3, color: .dimGreen)
                 } else {
                     let gold = save.party.reduce(0) { $0 + $1.gold }
@@ -33826,6 +34114,7 @@ class GameEngine: ObservableObject {
                     let totalRooms = save.dungeon.rooms.count
                     printWrapped("\(i + 1). \(save.dungeonName) Lv.\(save.dungeonLevel) PLAYING\(bpInfo)", color: .cyan, bold: true)
                     printWrapped(save.partyDescription, indent: 3, color: .dimGreen)
+                    if let q = save.questSummary { printWrapped(q, indent: 3, color: .cyan) }
                     printWrapped("Gold:\(gold) Slain:\(save.monstersSlain) Rooms:\(roomsExplored)/\(totalRooms) Day \(day)", indent: 3, color: .dimGreen)
                 }
                 printWrapped(dateFormatter.string(from: save.savedAt), indent: 3, color: .dimGreen)
@@ -34228,7 +34517,7 @@ class GameEngine: ObservableObject {
                 partyChatLog: bp.partyChatLog,
                 monstersSlain: bp.monstersSlain,
                 combatsWon: bp.combatsWon,
-                activeQuest: bp.activeQuest, otherQuests: bp.otherQuests, introLines: bp.introLines, mainQuest: bp.mainQuest
+                activeQuest: bp.activeQuest, otherQuests: bp.otherQuests, introLines: bp.introLines, mainQuest: bp.mainQuest, questHistory: bp.questHistory, noMainQuest: bp.noMainQuest, mainQuestCompleted: bp.mainQuestCompleted, questSummary: bp.questSummary
             )
             try? SaveGameManager.shared.save(copy)
         }
@@ -34806,7 +35095,7 @@ class GameEngine: ObservableObject {
                 gameTimeMinutes: bp.gameTimeMinutes, adventureLog: bp.adventureLog,
                 dmChatLog: bp.dmChatLog, torchLit: bp.torchLit, torchTurnsRemaining: bp.torchTurnsRemaining,
                 partyChatLog: bp.partyChatLog, monstersSlain: bp.monstersSlain, combatsWon: bp.combatsWon,
-                activeQuest: bp.activeQuest, otherQuests: bp.otherQuests, introLines: bp.introLines, mainQuest: bp.mainQuest
+                activeQuest: bp.activeQuest, otherQuests: bp.otherQuests, introLines: bp.introLines, mainQuest: bp.mainQuest, questHistory: bp.questHistory, noMainQuest: bp.noMainQuest, mainQuestCompleted: bp.mainQuestCompleted, questSummary: bp.questSummary
             )
             try? SaveGameManager.shared.save(renamed)
         }
@@ -35051,6 +35340,9 @@ class GameEngine: ObservableObject {
         otherQuests = save.otherQuests ?? []
         adventureIntroLines = save.introLines ?? []
         mainQuest = save.mainQuest
+        questHistory = save.questHistory ?? []
+        noMainQuest = save.noMainQuest ?? false
+        mainQuestCompleted = save.mainQuestCompleted ?? false
         // Restore torch state — if not saved, auto-light if anyone has a torch
         if let savedTorchLit = save.torchLit {
             torchLit = savedTorchLit
@@ -35097,15 +35389,9 @@ class GameEngine: ObservableObject {
         logEvent("Game loaded: \(save.slotName)", category: "SYSTEM")
         if self.musicEnabled { SoundManager.shared.startMusic(.exploration, preference: self.explorationMelodyChoice) }
 
-        clearTerminal()
-        print("Game loaded!", color: .brightGreen, bold: true)
-        print("")
-        print("Welcome back to \(save.dungeonName).", color: .cyan)
-        print("Time: \(formattedGameTime())", color: .dimGreen)
-        print("")
-
-        // Just a "welcome back" — move on promptly, not after a reading-time wait.
-        autoReturn(after: 1.5, stretchForReading: false)
+        // The Opening Tale again (skippable), then the story so far — and
+        // only then the play screen.
+        showResumeStory()
     }
 
     // These three screens (reached from the Save menu's "Quit+Save"/
@@ -35299,6 +35585,10 @@ class GameEngine: ObservableObject {
         otherQuests = []
         adventureIntroLines = []
         mainQuest = nil
+        questHistory = []
+        noMainQuest = false
+        mainQuestCompleted = false
+        storyScreenActive = false
         activeSlotId = nil
         activeSlotName = nil
         torchLit = false
