@@ -194,6 +194,20 @@ struct SpellCatalog {
               description: "5d8 HP of creatures fall unconscious")
     }
 
+    // MARK: Wizard Level 2
+
+    static func scorchingRay() -> Spell {
+        Spell(name: "Scorching Ray", level: .level2, spellType: .attack, target: .singleEnemy,
+              damage: "4d6", damageType: "fire",
+              description: "4d6 fire damage (ranged spell attack)")
+    }
+
+    static func acidArrow() -> Spell {
+        Spell(name: "Acid Arrow", level: .level2, spellType: .attack, target: .singleEnemy,
+              damage: "4d4", damageType: "acid",
+              description: "4d4 acid damage (ranged spell attack)")
+    }
+
     // MARK: Cleric Cantrips
 
     static func sacredFlame() -> Spell {
@@ -235,6 +249,42 @@ struct SpellCatalog {
               description: "Heal 1d4 + WIS mod HP (bonus action)")
     }
 
+    // MARK: Bard
+
+    static func viciousMockery() -> Spell {
+        Spell(name: "Vicious Mockery", level: .cantrip, spellType: .savingThrow, target: .singleEnemy,
+              damage: "1d4", damageType: "psychic",
+              savingThrowAbility: "wisdom", halfDamageOnSave: false,
+              description: "1d4 psychic — an insult so cutting it hurts (WIS save)")
+    }
+
+    static func healingWordBard() -> Spell {
+        Spell(name: "Healing Word", level: .level1, spellType: .healing, target: .singleAlly,
+              healAmount: "1d4", usesCasterMod: true,
+              description: "Heal 1d4 + CHA mod HP — a few kind, sung words")
+    }
+
+    static func shatter() -> Spell {
+        Spell(name: "Shatter", level: .level2, spellType: .savingThrow, target: .allEnemies,
+              damage: "2d8", damageType: "thunder",
+              savingThrowAbility: "constitution", halfDamageOnSave: true,
+              description: "2d8 thunder to all enemies — one ringing note (CON save, half)")
+    }
+
+    // MARK: Cleric Level 2
+
+    static func spiritualWeapon() -> Spell {
+        Spell(name: "Spiritual Weapon", level: .level2, spellType: .attack, target: .singleEnemy,
+              damage: "2d8", damageType: "force",
+              description: "2d8 force damage (bonus action, ranged spell attack)")
+    }
+
+    static func prayerOfHealing() -> Spell {
+        Spell(name: "Prayer of Healing", level: .level2, spellType: .healing, target: .singleAlly,
+              healAmount: "2d8", usesCasterMod: true,
+              description: "Heal 2d8 + WIS mod HP")
+    }
+
     // MARK: Ranger Level 1
 
     static func huntersMark() -> Spell {
@@ -248,6 +298,29 @@ struct SpellCatalog {
               description: "Heal 1d8 + WIS mod HP")
     }
 
+    // MARK: - Special Spells (quest rewards only, not learned via normal level-up)
+
+    static func specialSpellFor(characterClass: CharacterClass) -> Spell? {
+        switch characterClass {
+        case .wizard:
+            return Spell(name: "Fireball", level: .level2, spellType: .savingThrow, target: .allEnemies,
+                         damage: "6d6", damageType: "fire",
+                         savingThrowAbility: "dexterity", halfDamageOnSave: true,
+                         description: "6d6 fire to all enemies (DEX save, half) — a rare technique")
+        case .cleric:
+            return Spell(name: "Greater Heal", level: .level2, spellType: .healing, target: .singleAlly,
+                         healAmount: "3d8", usesCasterMod: true,
+                         description: "Heal 3d8 + WIS mod HP — a rare blessing")
+        case .ranger:
+            return Spell(name: "Conjure Barrage", level: .level2, spellType: .savingThrow, target: .allEnemies,
+                         damage: "3d8", damageType: "force",
+                         savingThrowAbility: "dexterity", halfDamageOnSave: true,
+                         description: "3d8 force to all enemies (DEX save, half) — a rare technique")
+        default:
+            return nil
+        }
+    }
+
     // MARK: - Spell Lists by Class
 
     static func startingSpells(for characterClass: CharacterClass) -> [Spell] {
@@ -258,6 +331,8 @@ struct SpellCatalog {
         case .cleric:
             return [sacredFlame(), tollTheDead(), spareTheDying(),
                     cureWounds(), guidingBolt(), healingWord()]
+        case .bard:
+            return [viciousMockery(), healingWordBard(), sleep()]
         default:
             return []
         }
@@ -266,7 +341,7 @@ struct SpellCatalog {
     static func startingSlots(for characterClass: CharacterClass, level: Int) -> SpellSlots {
         var slots = SpellSlots()
         switch characterClass {
-        case .wizard, .cleric:
+        case .wizard, .cleric, .bard:
             switch level {
             case 1: slots.level1Max = 2
             case 2: slots.level1Max = 3
@@ -292,11 +367,23 @@ struct SpellCatalog {
 
     static func spellsForLevelUp(characterClass: CharacterClass, newLevel: Int) -> [Spell] {
         switch characterClass {
+        case .wizard:
+            if newLevel == 3 {
+                return [scorchingRay(), acidArrow()]
+            }
+            return []
+        case .cleric:
+            if newLevel == 3 {
+                return [spiritualWeapon(), prayerOfHealing()]
+            }
+            return []
         case .ranger:
             if newLevel == 2 {
                 return [huntersMark(), cureWoundsRanger()]
             }
             return []
+        case .bard:
+            return newLevel == 3 ? [shatter()] : []
         default:
             return []
         }

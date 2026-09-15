@@ -146,6 +146,23 @@ class HallOfFameManager {
         try? data.write(to: fileURL)
     }
 
+    func deleteEntry(id: UUID) {
+        let fileURL = hallDirectory.appendingPathComponent("\(id.uuidString).json")
+        try? FileManager.default.removeItem(at: fileURL)
+    }
+
+    /// Deletes every entry linked to a save (there should only ever be one,
+    /// but this is thorough) — used when that save is deleted, so Continue
+    /// Adventure doesn't go on showing a "no save" ghost of an adventure
+    /// the player just removed. See GameEngine's single-list design: this
+    /// list already IS the Hall of Fame (completed tales show their W/L
+    /// result inline), so deleting the save should delete the whole entry.
+    func deleteEntries(forSaveGameId saveGameId: UUID) {
+        for entry in listEntries() where entry.saveGameId == saveGameId {
+            deleteEntry(id: entry.id)
+        }
+    }
+
     // MARK: - Stats
 
     func totalVictories() -> Int {
@@ -186,24 +203,186 @@ class HallOfFameManager {
         let minutes: Int
     }
 
-    /// Re-seed if existing entries lack save game links (migration)
-    func reseedIfNeeded() {
-        let entries = listEntries()
-        // Only reseed the default 10 entries — user-created ones won't have saveGameId
-        guard !entries.isEmpty else { return }
-        // If any seed entry already has a save, we've already migrated
-        guard !entries.contains(where: { $0.saveGameId != nil }) else { return }
-        // Delete old seed entries and re-create with saves
-        for entry in entries {
-            let fileName = "\(entry.id.uuidString).json"
-            let fileURL = hallDirectory.appendingPathComponent(fileName)
-            try? FileManager.default.removeItem(at: fileURL)
+    // MARK: - Repair Orphan Entries (no linked save, or the save no longer exists)
+
+    /// Every entry should be loadable/continuable from Continue Adventure
+    /// (see GameEngine.showLoadGameMenu) — without this, an entry that
+    /// predates the saveGameId link (everything from before 2026-09-08,
+    /// which for most players is most or all of their Hall of Fame) shows
+    /// as an unloadable "(no save)" dead end forever. Runs once per entry
+    /// — one with a valid saveGameId is skipped — so it's cheap to call on
+    /// every launch and heals entries the moment they're next seen. This
+    /// replaces the old reseedIfNeeded(), which only ever fixed the
+    /// pre-seeded demo entries, and only if EVERY entry lacked a save — a
+    /// single real entry from actual play (linked automatically since
+    /// 2026-09-08) permanently blocked it from ever running again.
+    ///
+    /// The original dungeon layout from that run is gone — there was never
+    /// enough data saved to reconstruct it — so this generates a fresh one
+    /// at the same name/level instead. The party is reconstructed member-
+    /// by-member from partyDescription ("Name (Class)", comma-separated):
+    /// an exact Character Roster name match keeps that character's real
+    /// level/gear/gold; anything unmatched (most entries, since the
+    /// Roster is newer than the Hall of Fame) gets a freshly built
+    /// character of the right name/class instead. Either way, the result
+    /// is a real, loadable SaveGame — and since showAdventureTale's
+    /// narrative is generated from an entry's own stats (not read back out
+    /// of the save itself), every repaired entry gets a proper tale the
+    /// same way any other Hall of Fame entry does, regardless of how many
+    /// other saves or breakpoints exist elsewhere.
+    func repairOrphanEntries() {
+        for entry in listEntries() {
+            if let linkedId = entry.saveGameId {
+                // Linked to a real save that no longer exists — the player
+                // deleted it. Rebuilding a fresh save for it here (the old
+                // behaviour) is exactly what made deleted adventures come
+                // back on every relaunch. Drop the entry instead, so the
+                // one Continue Adventure list stays in step with what the
+                // player actually chose to keep.
+                if SaveGameManager.shared.load(id: linkedId) == nil {
+                    deleteEntry(id: entry.id)
+                }
+                continue
+            }
+            // Legacy entry from before Hall of Fame entries were linked to
+            // saves at all — give it a real, loadable save, once.
+            guard let save = buildRepairSave(for: entry) else { continue }
+            try? SaveGameManager.shared.save(save)
+            var updated = entry
+            updated.saveGameId = save.id
+            updateEntry(updated)
         }
-        seedIfEmpty()
     }
 
+    private func buildRepairSave(for entry: HallOfFameEntry) -> SaveGame? {
+        let party = buildRepairParty(for: entry)
+        guard !party.isEmpty else { return nil }
+
+        let dungeon = Dungeon(name: entry.dungeonName, level: entry.dungeonLevel)
+        simulateExploration(dungeon: dungeon, roomsExplored: entry.roomsExplored, isDefeat: entry.outcome == .defeat)
+
+        let partyDesc = party.map { "\($0.name) (\($0.characterClass.rawValue))" }.joined(separator: ", ")
+        // Stamped with the CURRENT date, not entry.date — SaveGameManager
+        // trims the oldest slots once past its 10-slot cap, so a repaired
+        // save backdated to the original (often weeks-old) entry date would
+        // be first in line to be silently re-deleted the very next time
+        // ANY save happens, the moment the player has 10+ real slots. The
+        // whole point of repair is to give a genuinely continuable save
+        // right now, not one immediately vulnerable to the same trim that
+        // likely orphaned it in the first place.
+        return SaveGame(
+            id: UUID(), slotId: UUID(), savedAt: Date(),
+            slotName: "\(party.first?.name ?? "Hero") — \(entry.dungeonName)",
+            partyDescription: partyDesc, dungeonName: entry.dungeonName, dungeonLevel: entry.dungeonLevel,
+            party: party, dungeon: dungeon, gameState: .exploring,
+            gameTimeMinutes: entry.gameTimeMinutes,
+            adventureLog: buildRepairLog(entry),
+            dmChatLog: nil, torchLit: true, torchTurnsRemaining: 30,
+            partyChatLog: nil,
+            monstersSlain: entry.monstersSlain, combatsWon: entry.combatsWon,
+            activeQuest: nil
+        )
+    }
+
+    private func buildRepairParty(for entry: HallOfFameEntry) -> [Character] {
+        var members = entry.partyDescription
+            .components(separatedBy: ", ")
+            .filter { !$0.isEmpty }
+        // partyDescription can be empty or unparseable on a genuinely old
+        // entry (predates it being a reliable, always-populated field) —
+        // without a fallback, that permanently skips repair for this entry
+        // every single launch, since nothing about the failure changes
+        // next time. partyNames is guaranteed non-empty for any real entry,
+        // so fall back to it (class-less, so everyone repairs as a
+        // Fighter) rather than leaving the entry orphaned forever.
+        if members.isEmpty {
+            members = entry.partyNames.map { "\($0) (\(CharacterClass.fighter.rawValue))" }
+        }
+        guard !members.isEmpty else { return [] }
+
+        let roster = CharacterLibraryManager.shared.listCharacters()
+        let goldEach = entry.goldCollected / max(members.count, 1)
+
+        return members.enumerated().map { (i, member) in
+            let name = member.components(separatedBy: " (").first ?? member
+            var className = ""
+            if let openParen = member.lastIndex(of: "("), let closeParen = member.lastIndex(of: ")"), openParen < closeParen {
+                className = String(member[member.index(after: openParen)..<closeParen])
+            }
+            let charClass = CharacterClass.allCases.first(where: { $0.rawValue == className }) ?? .fighter
+
+            if let record = roster.first(where: { $0.character.name == name }) {
+                let character = record.character
+                character.prepareForNewAdventure()
+                return character
+            }
+
+            let race = Race.allCases.randomElement() ?? .human
+            let scores = typicalScores(for: charClass)
+            let character = Character(name: name, race: race, characterClass: charClass,
+                                       abilityScores: scores, isComputerControlled: i > 0)
+            character.gold = goldEach
+
+            let equipOptions = ItemCatalog.startingEquipmentOptions(for: charClass)
+            if let (_, items) = equipOptions.first {
+                for item in items { character.inventory.append(item) }
+                if let weapon = character.inventory.first(where: { $0.type == .weapon }) { character.equipWeapon(weapon) }
+                if let armor = character.inventory.first(where: { $0.type == .armor }) { character.equipArmor(armor) }
+                if let shield = character.inventory.first(where: { $0.type == .shield }) { character.equipShield(shield) }
+            }
+
+            if entry.dungeonLevel > 1 {
+                character.level = entry.dungeonLevel
+                let conMod = scores.modifier(for: .constitution)
+                let hpPerLevel = (charClass.startingHP / 2 + 1) + conMod
+                character.maxHP += hpPerLevel * (entry.dungeonLevel - 1)
+                character.currentHP = character.maxHP
+            }
+
+            return character
+        }
+    }
+
+    /// Same style as buildSeedLog, but reads only this one entry's own
+    /// stats — safe to run for any number of entries/save slots without
+    /// them influencing each other's description.
+    private func buildRepairLog(_ entry: HallOfFameEntry) -> [String] {
+        var log: [String] = []
+        log.append("The party entered \(entry.dungeonName).")
+        if entry.monstersSlain > 0 {
+            log.append("Slew \(entry.monstersSlain) creature\(entry.monstersSlain == 1 ? "" : "s") in \(entry.combatsWon) battle\(entry.combatsWon == 1 ? "" : "s").")
+        }
+        log.append("Explored \(entry.roomsExplored) of \(entry.totalRooms) rooms.")
+        if entry.goldCollected > 0 {
+            log.append("Collected \(entry.goldCollected) gold pieces.")
+        }
+        if entry.outcome == .victory {
+            log.append("The dungeon boss was defeated!")
+        } else {
+            log.append("The party fell to the dungeon's horrors...")
+        }
+        return log
+    }
+
+    private static let seedDoneKey = "hallOfFameSeedDone"
+
+    /// First-run only. This used to fire whenever the Hall of Fame was
+    /// empty — including right after a player deliberately deleted every
+    /// save (each deletion cascades to its Hall of Fame entry), which then
+    /// re-wrote all the "⭐" demo adventures on the very next launch:
+    /// deleted plays "coming back". Now gated on a persisted one-time
+    /// flag, and skipped outright for an install that has used the Hall of
+    /// Fame before (its folder already exists on disk) even if it's empty
+    /// now — so upgrading users who already emptied it aren't re-seeded
+    /// either. Checked before listEntries(), whose own directory getter
+    /// would create that folder and mask the answer.
     func seedIfEmpty() {
-        guard listEntries().isEmpty else { return }
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: Self.seedDoneKey) else { return }
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let usedBefore = FileManager.default.fileExists(atPath: docs.appendingPathComponent("HallOfFame").path)
+        defaults.set(true, forKey: Self.seedDoneKey)
+        guard !usedBefore, listEntries().isEmpty else { return }
 
         let seeds: [SeedDef] = [
             // Robin's Company — folk heroes, the high score to beat
@@ -285,7 +464,8 @@ class HallOfFameManager {
                 adventureLog: buildSeedLog(seed),
                 dmChatLog: nil, torchLit: true, torchTurnsRemaining: 30,
                 partyChatLog: nil,
-                monstersSlain: seed.slain, combatsWon: seed.combats
+                monstersSlain: seed.slain, combatsWon: seed.combats,
+                activeQuest: nil
             )
             try? SaveGameManager.shared.save(save)
 
@@ -355,6 +535,10 @@ class HallOfFameManager {
         case .cleric:     return AbilityScores(strength: 14, dexterity: 10, constitution: 13, intelligence: 8, wisdom: 16, charisma: 12)
         case .ranger:     return AbilityScores(strength: 13, dexterity: 16, constitution: 14, intelligence: 10, wisdom: 12, charisma: 8)
         case .barbarian:  return AbilityScores(strength: 16, dexterity: 14, constitution: 15, intelligence: 8, wisdom: 10, charisma: 12)
+        case .engineer:   return AbilityScores(strength: 8, dexterity: 14, constitution: 12, intelligence: 16, wisdom: 13, charisma: 10)
+        case .scout:      return AbilityScores(strength: 10, dexterity: 16, constitution: 13, intelligence: 10, wisdom: 14, charisma: 8)
+        case .thief:      return AbilityScores(strength: 8, dexterity: 16, constitution: 12, intelligence: 10, wisdom: 10, charisma: 14)
+        case .bard:       return AbilityScores(strength: 8, dexterity: 14, constitution: 12, intelligence: 10, wisdom: 12, charisma: 16)
         }
     }
 

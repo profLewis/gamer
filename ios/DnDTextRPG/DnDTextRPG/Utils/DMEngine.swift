@@ -6,7 +6,9 @@
 //
 
 import Foundation
+#if canImport(FoundationModels)
 import FoundationModels
+#endif
 
 // MARK: - AI Provider
 
@@ -20,6 +22,15 @@ enum AIProvider: Int, CaseIterable {
         case .anthropic: return "Anthropic (Claude)"
         case .openAI: return "OpenAI (GPT)"
         case .google: return "Google (Gemini)"
+        }
+    }
+
+    /// Short enough to fit a "Test X" button label alongside the others.
+    var shortName: String {
+        switch self {
+        case .anthropic: return "Claude"
+        case .openAI: return "GPT"
+        case .google: return "Gemini"
         }
     }
 
@@ -264,20 +275,30 @@ class DMEngine {
 
     /// Whether the Apple on-device Foundation Model is available
     var isAppleModelAvailable: Bool {
+        #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
             return SystemLanguageModel.default.availability == .available
         }
+        #endif
         return false
     }
 
     /// Ask the Apple on-device model
     private func askAppleModel(userMessage: String, context: DMContext, completion: @escaping (String?) -> Void) {
+        #if canImport(FoundationModels)
         guard #available(iOS 26.0, *) else {
             completion(nil)
             return
         }
 
-        let systemPrompt = buildSystemPrompt(context: context)
+        // Deliberately NOT reusing buildSystemPrompt(context:) here — that prompt
+        // (300+ lines of rules plus all 53 FAQ entries) is sized for cloud models
+        // with huge context windows. The on-device FoundationModels session has a
+        // much smaller budget (~4K tokens total); a prompt that size reliably
+        // exceeds it, so session.respond(to:) throws on effectively every call
+        // and silently falls back to the canned Basic DM — which is why the
+        // Apple-tier DM can look "stuck" on generic atmosphere lines.
+        let systemPrompt = buildAppleSystemPrompt(context: context)
 
         // Get or create session
         let session: LanguageModelSession
@@ -298,11 +319,55 @@ class DMEngine {
                     completion(text)
                 }
             } catch {
+                #if DEBUG
+                print("[DMEngine] Apple on-device model error (falling back to Basic DM): \(error)")
+                #endif
                 DispatchQueue.main.async {
                     completion(nil)
                 }
             }
         }
+        #else
+        completion(nil)
+        #endif
+    }
+
+    /// Compact system prompt for the Apple on-device model — see askAppleModel().
+    /// Keeps only what's needed to stay grounded in the live game state; drops the
+    /// ASCII-art rules, the full Just-DM command grammar, and the FAQ dump that the
+    /// cloud-model prompt carries.
+    private func buildAppleSystemPrompt(context: DMContext) -> String {
+        var prompt = """
+        You are a Dungeon Master for a D&D 5e text adventure. Be vivid but brief (1-3 sentences), \
+        second person. Base everything on the facts below — never invent rooms, exits, monsters, \
+        or items not listed here. If cleared, describe aftermath, not active threats.
+
+        LOCATION: \(context.roomName) — \(context.roomDescription)
+        EXITS: \(context.exits)
+        """
+        if let secured = context.securedExits { prompt += "\nBARRICADED: \(secured)" }
+        if let npc = context.npcInfo { prompt += "\n\(npc)" }
+        prompt += "\nSTATUS: \(context.isCleared ? "cleared — threats dealt with" : "not cleared — danger present")"
+        if let treasure = context.treasureInRoom { prompt += "\n\(treasure)" }
+        if let encounter = context.encounterInfo { prompt += "\n\(encounter)" }
+        if let dropped = context.droppedItems { prompt += "\n\(dropped)" }
+        prompt += "\nPARTY: \(context.partyStatus)"
+
+        if context.justDMMode {
+            prompt += """
+
+            MODE: Interpret the player's intent, narrate briefly, then add short command tags on \
+            their own line if the intent maps to an action: [MOVE:direction] [SEARCH] [LISTEN] \
+            [REST] [LONG_REST] [SHOW_MAP] [SHOW_INVENTORY] [SHOW_PARTY] [SAVE] [ATTACK:name] \
+            [USE_ITEM:name] [TALK_NPC] [TRADE_NPC] [BUY:name] [SELL:name]. Only use [MOVE:direction] \
+            for a direction listed in EXITS above that isn't barricaded. If just asking a question, \
+            narrate only — no tags needed.
+            """
+        } else if context.adLibLevel == .moderate || context.adLibLevel == .full {
+            prompt += "\nYou may rarely use tags like [HEAL:n], [GRANT_ITEM:name], [BONUS_GOLD:n] if dramatically fitting, but sparingly."
+        }
+
+        return prompt
     }
 
     // MARK: - Conversation
@@ -703,9 +768,84 @@ class DMEngine {
         if q.contains("draw") || q.contains("picture") || q.contains("show me") || q.contains("what does") || q.contains("look like") || q.contains("map") {
             return simpleDrawResponse(question: question, context: context)
         }
+        if q.contains("merchant") || q.contains("shop") || q.contains("buy") || q.contains("sell") || q.contains("trade") || q.contains("haggle") || q.contains("bargain") || q.contains("price") || q.contains("afford") {
+            return simpleMerchantResponse(context: context)
+        }
+        if q.contains("level up") || q.contains("stronger") || q.contains("get better") || q.contains("improve") || q.contains("stat") || q.contains("ability score") || q.contains("build") || q.contains("xp") || q.contains("experience") {
+            return simpleProgressionResponse()
+        }
+        if q.contains("quest") || q.contains("objective") || q.contains("goal") || q.contains("boss") || q.contains("where do i go") || q.contains("what am i") {
+            return simpleQuestResponse(context: context)
+        }
+        if q.contains("rest") || q.contains("sleep") || q.contains("recover") || q.contains("heal") || q.contains("camp") {
+            return simpleRestResponse(context: context)
+        }
+        if q.contains("fight") || q.contains("tactic") || q.contains("strategy") || q.contains("beat") || q.contains("weak spot") || q.contains("weakness") {
+            return simpleTacticsResponse(context: context)
+        }
+        if q.contains("lore") || q.contains("history") || q.contains("legend") || q.contains("story") || q.contains("who built") || q.contains("who made") {
+            return simpleLoreResponse(context: context)
+        }
+        if q.contains("companion") || q.contains("party member") || q.contains("ally") || q.contains("friend") {
+            return simplePartyResponse(context: context)
+        }
 
         // Default — atmospheric flavour based on room
         return simpleAtmosphereResponse(context: context)
+    }
+
+    private func simpleMerchantResponse(context: DMContext) -> String {
+        if let npc = context.npcInfo, npc.lowercased().contains("merchant") {
+            return ["A merchant is right here, ready to deal. Use the Merchant/Visit Merchant button to browse stock, haggle, or ask about rare goods.",
+                    "Someone's set up shop nearby — step up and use the shop menu to see what they're offering, or try to talk them down on price.",
+                    "There's a merchant in this very room. Open the shop and see what gold can buy — or try your luck haggling."].randomElement()!
+        }
+        return ["No merchant here, but shops and armouries sometimes have one set up — keep an eye out as you explore.",
+                "Not every room has a shopkeeper. Try armouries and dedicated shop rooms — and wandering traders you meet along the way.",
+                "You'll need to find a merchant first — shop rooms always have one, and armouries sometimes do too."].randomElement()!
+    }
+
+    private func simpleProgressionResponse() -> String {
+        ["Defeat monsters for experience — enough of it and your party levels up automatically, gaining hit points and new abilities.",
+         "Keep fighting and exploring. XP adds up, and at the right levels you'll even get to raise an ability score outright.",
+         "Strength comes from experience earned in battle. Clear encounters, survive, and your characters grow more capable over time."].randomElement()!
+    }
+
+    private func simpleQuestResponse(context: DMContext) -> String {
+        if context.roomType == "Boss Chamber" {
+            return "You can feel it — whatever rules this dungeon is close. This is where the real fight happens."
+        }
+        return ["Your goal is simple: survive, grow stronger, and find the one who commands this dungeon.",
+                "Push deeper, room by room. Somewhere below, something powerful is waiting — that's your true objective.",
+                "Explore, fight what you must, gather what you can carry, and work your way toward the heart of the dungeon."].randomElement()!
+    }
+
+    private func simpleRestResponse(context: DMContext) -> String {
+        if context.isCleared {
+            return ["This room is safe enough to rest in. Use the Rest option to recover — a short rest heals some HP, a long rest heals fully and restores spells.",
+                    "You could catch your breath here. Resting mends wounds and, if you rest long enough, refills spell slots too."].randomElement()!
+        }
+        return ["This doesn't feel like a safe place to rest — clear out any threats first.",
+                "Resting here would be risky with danger still nearby. Deal with it, then rest easy."].randomElement()!
+    }
+
+    private func simpleTacticsResponse(context: DMContext) -> String {
+        if let encounter = context.encounterInfo {
+            return "\(encounter). Focus one enemy at a time, use spells and abilities wisely, and don't be afraid to retreat if things turn bad."
+        }
+        return ["Fight smart: focus fire the biggest threat, use terrain to your advantage, and keep an eye on everyone's HP.",
+                "Every party member has a role — melee up front, spellcasters and archers behind. Use that.",
+                "If a fight looks unwinnable, fleeing or playing dead beats a wipe. Live to fight another day."].randomElement()!
+    }
+
+    private func simpleLoreResponse(context: DMContext) -> String {
+        ["This dungeon has clearly stood for a long, long time — you can feel the weight of history in every stone.",
+         "Whoever built this place is long gone, but their work endures — and so, it seems, do the things they left behind.",
+         "Old carvings, worn stone, forgotten names — this dungeon keeps its secrets close. Perhaps a library room holds more answers."].randomElement()!
+    }
+
+    private func simplePartyResponse(context: DMContext) -> String {
+        "\(context.partyStatus)\n\nYour companions stand with you, for better or worse. Keep them healed and equipped, and they'll do the same for you."
     }
 
     private func simpleLookResponse(context: DMContext) -> String {
@@ -872,9 +1012,11 @@ class DMEngine {
 
         PARTY:
         \(context.partyStatus)
+        Each character's "Reputation" reflects their tracked pattern of choices this campaign (Villainous/Selfish/Neutral/Kind/Heroic). Let it colour how NPCs react to them and how you narrate their actions — a Heroic character shouldn't be treated the same as a Villainous one — but don't lecture the player about it directly.
 
         INVENTORY:
         \(context.inventorySummary)
+        \(context.knownLore.map { "\nKNOWN NAMED CHARACTERS (keep these consistent — same name, same personality, same shop/role — never re-invent who they are):\n\($0)" } ?? "")
 
         DUNGEON LEVEL: \(context.dungeonLevel)
         TORCH: \(context.torchLit ? "Lit (\(context.torchTurnsRemaining) rooms remaining)" : "Unlit — the party is in darkness")
@@ -1165,10 +1307,35 @@ class DMEngine {
         }
     }
 
+    // MARK: - Story writer
+
+    /// Longer, one-off writing — the adventure's opening tale — on the most
+    /// capable model for the chosen provider (the everyday DM uses a quicker
+    /// one). nil if there's no key, the call fails, or it takes too long.
+    func writeStory(system: String, prompt: String, timeout: Double = 15, completion: @escaping (String?) -> Void) {
+        guard isConfigured, let key = apiKey, !key.isEmpty else { completion(nil); return }
+        var finished = false
+        let finish: (String?) -> Void = { text in
+            DispatchQueue.main.async {
+                guard !finished else { return }
+                finished = true
+                completion(text)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { finish(nil) }
+        let messages = [(role: "user", content: prompt)]
+        switch provider {
+        case .anthropic: callAnthropic(apiKey: key, system: system, messages: messages, model: "claude-opus-5", maxTokens: 900, completion: finish)
+        case .openAI: callOpenAI(apiKey: key, system: system, messages: messages, model: "gpt-4o", maxTokens: 900, completion: finish)
+        case .google: callGoogle(apiKey: key, system: system, messages: messages, maxTokens: 900, completion: finish)
+        }
+    }
+
     // MARK: - Anthropic (Claude)
 
     private func callAnthropic(apiKey: String, system: String,
                                 messages: [(role: String, content: String)],
+                                model: String? = nil, maxTokens: Int? = nil,
                                 completion: @escaping (String?) -> Void) {
         guard let url = URL(string: "https://api.anthropic.com/v1/messages") else {
             completion(nil)
@@ -1182,8 +1349,8 @@ class DMEngine {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let body: [String: Any] = [
-            "model": "claude-sonnet-4-5-20250929",
-            "max_tokens": effectiveMaxTokens,
+            "model": model ?? "claude-sonnet-4-5-20250929",
+            "max_tokens": maxTokens ?? effectiveMaxTokens,
             "system": system,
             "messages": messages.map { ["role": $0.role, "content": $0.content] }
         ]
@@ -1206,6 +1373,7 @@ class DMEngine {
 
     private func callOpenAI(apiKey: String, system: String,
                              messages: [(role: String, content: String)],
+                             model: String? = nil, maxTokens: Int? = nil,
                              completion: @escaping (String?) -> Void) {
         guard let url = URL(string: "https://api.openai.com/v1/chat/completions") else {
             completion(nil)
@@ -1221,8 +1389,8 @@ class DMEngine {
         oaiMessages += messages.map { ["role": $0.role, "content": $0.content] }
 
         let body: [String: Any] = [
-            "model": "gpt-4o-mini",
-            "max_tokens": effectiveMaxTokens,
+            "model": model ?? "gpt-4o-mini",
+            "max_tokens": maxTokens ?? effectiveMaxTokens,
             "messages": oaiMessages
         ]
 
@@ -1243,19 +1411,120 @@ class DMEngine {
 
     // MARK: - Google (Gemini)
 
-    private func callGoogle(apiKey: String, system: String,
-                             messages: [(role: String, content: String)],
-                             completion: @escaping (String?) -> Void) {
-        let urlString = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=\(apiKey)"
-        guard let url = URL(string: urlString) else {
+    /// Google retires Gemini model names surprisingly often (e.g. gemini-2.0-flash
+    /// returning HTTP 404 "no longer available"). Rather than hardcode one name and
+    /// break every time Google retires it, we try our best-guess default first, and
+    /// only if THAT specifically 404s as an unknown model, ask Google's own model
+    /// list for what's actually live right now and switch to the newest "flash"
+    /// model there — then remember that choice so we don't re-discover on every call.
+    private static let defaultGoogleModel = "gemini-3.6-flash"
+    private var resolvedGoogleModel: String? {
+        get { UserDefaults.standard.string(forKey: "google_resolved_model") }
+        set { UserDefaults.standard.set(newValue, forKey: "google_resolved_model") }
+    }
+    private var googleModelToUse: String { resolvedGoogleModel ?? Self.defaultGoogleModel }
+
+    /// Google's newer "AQ."-prefixed Auth keys (the default AI Studio now issues)
+    /// aren't accepted via the "?key=" query parameter — only the "x-goog-api-key"
+    /// header works for them. The older "AIza"-prefixed Standard keys accept
+    /// either, so sending the key as a header covers both formats.
+    private func googleGenerateContentURL(model: String) -> URL? {
+        URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")
+    }
+
+    /// True only when the response is specifically "this model name doesn't exist"
+    /// (HTTP 404 with a NOT_FOUND status/message) — not just any error — so a real
+    /// outage or a bad API key doesn't send us off discovering models pointlessly.
+    private func isModelNotFoundError(data: Data?, response: URLResponse?) -> Bool {
+        guard (response as? HTTPURLResponse)?.statusCode == 404, let data = data,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let errorObj = json["error"] as? [String: Any] else { return false }
+        let status = errorObj["status"] as? String ?? ""
+        let message = (errorObj["message"] as? String ?? "").lowercased()
+        return status == "NOT_FOUND" || message.contains("not found") || message.contains("not supported")
+    }
+
+    /// Asks Google which models actually exist right now and picks the newest
+    /// "flash" model that supports generateContent (falling back to "pro", then to
+    /// whatever's first) — always preferring the highest version number found.
+    private func discoverBestGoogleModel(apiKey: String, completion: @escaping (String?) -> Void) {
+        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models") else {
             completion(nil)
             return
         }
+        var request = URLRequest(url: url)
+        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            guard let data = data, error == nil,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let models = json["models"] as? [[String: Any]] else {
+                completion(nil)
+                return
+            }
+            let usable = models.compactMap { m -> String? in
+                guard let name = m["name"] as? String,
+                      let methods = m["supportedGenerationMethods"] as? [String],
+                      methods.contains("generateContent") else { return nil }
+                // Names come back as "models/gemini-3.6-flash" — strip the prefix.
+                return name.hasPrefix("models/") ? String(name.dropFirst("models/".count)) : name
+            }
+            func newestVersion(in candidates: [String]) -> String? {
+                candidates.max { a, b in
+                    (Self.extractVersion(a) ?? 0) < (Self.extractVersion(b) ?? 0)
+                }
+            }
+            let flashModels = usable.filter { $0.lowercased().contains("flash") }
+            let proModels = usable.filter { $0.lowercased().contains("pro") }
+            completion(newestVersion(in: flashModels) ?? newestVersion(in: proModels) ?? usable.first)
+        }.resume()
+    }
 
+    /// Pulls the "3.6" out of "gemini-3.6-flash" (or "gemini-3.6-flash-002") so
+    /// candidates can be compared and the newest picked.
+    private static func extractVersion(_ modelName: String) -> Double? {
+        guard let range = modelName.range(of: #"gemini-(\d+(\.\d+)?)"#, options: .regularExpression) else { return nil }
+        let match = modelName[range]
+        let numberString = match.replacingOccurrences(of: "gemini-", with: "")
+        return Double(numberString)
+    }
+
+    /// Shared POST-with-fallback used by both the real DM call and the key-test
+    /// call: tries the current model, and on a confirmed "model not found" 404,
+    /// discovers and switches to whatever Google's newest live flash model is,
+    /// caches that choice, and retries exactly once.
+    private func googlePost(apiKey: String, body: [String: Any], attemptedDiscovery: Bool = false,
+                             completion: @escaping (Data?, URLResponse?, Error?) -> Void) {
+        guard let url = googleGenerateContentURL(model: googleModelToUse) else {
+            completion(nil, nil, nil)
+            return
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { completion(data, response, error); return }
+            if !attemptedDiscovery, self.isModelNotFoundError(data: data, response: response) {
+                self.discoverBestGoogleModel(apiKey: apiKey) { discovered in
+                    guard let discovered = discovered, discovered != self.googleModelToUse else {
+                        completion(data, response, error)
+                        return
+                    }
+                    self.resolvedGoogleModel = discovered
+                    self.googlePost(apiKey: apiKey, body: body, attemptedDiscovery: true, completion: completion)
+                }
+            } else {
+                completion(data, response, error)
+            }
+        }.resume()
+    }
+
+    private func callGoogle(apiKey: String, system: String,
+                             messages: [(role: String, content: String)],
+                             maxTokens: Int? = nil,
+                             completion: @escaping (String?) -> Void) {
         // Gemini uses "contents" array with "parts". System instruction is separate.
         var contents: [[String: Any]] = []
         for msg in messages {
@@ -1266,12 +1535,10 @@ class DMEngine {
         let body: [String: Any] = [
             "system_instruction": ["parts": [["text": system]]],
             "contents": contents,
-            "generationConfig": ["maxOutputTokens": effectiveMaxTokens]
+            "generationConfig": ["maxOutputTokens": maxTokens ?? effectiveMaxTokens]
         ]
 
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-
-        URLSession.shared.dataTask(with: request) { data, _, error in
+        googlePost(apiKey: apiKey, body: body) { data, _, error in
             guard let data = data, error == nil,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let candidates = json["candidates"] as? [[String: Any]],
@@ -1282,7 +1549,7 @@ class DMEngine {
                 return
             }
             completion(text)
-        }.resume()
+        }
     }
 
     // MARK: - API Key Validation
@@ -1304,25 +1571,47 @@ class DMEngine {
         }
     }
 
-    private func testGoogleKey(apiKey: String, completion: @escaping (Bool, String?) -> Void) {
-        let urlString = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=\(apiKey)"
-        guard let url = URL(string: urlString) else {
-            completion(false, "Invalid API key format.")
+    /// Same shape as testAPIKey (success, errorMessage), but for the Apple
+    /// on-device model — there's no key to check, just whether the model is
+    /// available on this hardware/OS and actually responds to a trivial
+    /// prompt, using a throwaway session rather than the real DM one so this
+    /// never disturbs an in-progress conversation's context.
+    func testAppleModel(completion: @escaping (Bool, String?) -> Void) {
+        #if canImport(FoundationModels)
+        guard #available(iOS 26.0, *) else {
+            completion(false, "Requires iOS 26 or later.")
             return
         }
+        guard isAppleModelAvailable else {
+            completion(false, "Not available on this device. Requires iPhone 16 or newer with Apple Intelligence enabled.")
+            return
+        }
+        Task {
+            do {
+                let session = LanguageModelSession(instructions: "Reply with exactly one word.")
+                let response = try await session.respond(to: "Say hello.")
+                let isEmpty = response.content.isEmpty
+                DispatchQueue.main.async {
+                    completion(!isEmpty, nil)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    completion(false, "\(error.localizedDescription)")
+                }
+            }
+        }
+        #else
+        completion(false, "Not supported on this platform.")
+        #endif
+    }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 15
-
+    private func testGoogleKey(apiKey: String, completion: @escaping (Bool, String?) -> Void) {
         let body: [String: Any] = [
             "contents": [["role": "user", "parts": [["text": "Say hello in one word."]]]],
             "generationConfig": ["maxOutputTokens": 10]
         ]
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        URLSession.shared.dataTask(with: request) { data, response, error in
+        googlePost(apiKey: apiKey, body: body) { data, response, error in
             if let error = error {
                 completion(false, "Connection error: \(error.localizedDescription)")
                 return
@@ -1354,7 +1643,7 @@ class DMEngine {
             } else {
                 completion(false, "Unexpected response format.")
             }
-        }.resume()
+        }
     }
 
     private func testAnthropicKey(apiKey: String, completion: @escaping (Bool, String?) -> Void) {
@@ -1480,5 +1769,9 @@ struct DMContext {
     var droppedItems: String? = nil
     var npcInfo: String? = nil
     var justDMMode: Bool = false
+    /// Named merchants/NPCs the party has actually met (see GameEngine.
+    /// loreEntries) — keeps the DM consistent about who a named character
+    /// is instead of re-inventing them differently later in a long campaign.
+    var knownLore: String? = nil
     var inCombat: Bool { combatSummary != nil }
 }

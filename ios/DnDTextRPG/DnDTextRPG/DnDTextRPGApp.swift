@@ -20,6 +20,9 @@ struct DnDTextRPGApp: App {
                 .environmentObject(gameEngine)
                 .preferredColorScheme(.dark)
                 #if os(macOS)
+                // A black border round the terminal.
+                .padding(14)
+                .background(Color.black)
                 .onAppear {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         if let window = NSApplication.shared.windows.first {
@@ -29,5 +32,13 @@ struct DnDTextRPGApp: App {
                 }
                 #endif
         }
+        #if os(macOS)
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") { gameEngine.followLink("settings") }
+                    .keyboardShortcut(",", modifiers: .command)
+            }
+        }
+        #endif
     }
 }

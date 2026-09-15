@@ -64,6 +64,11 @@ struct FAQData {
             keywords: ["move", "walk", "direction", "navigate", "go north", "go south", "go east", "go west", "how to move"]
         ),
         FAQEntry(
+            question: "Is there an end? How deep does it go?",
+            answer: "Seven levels. Beat a level's guardian (the B room) to go down to the next — each guardian stronger than the last, every one serving the villain from your Opening Tale. On Level 7 that villain is waiting: beat them and your quest is done, and so is the adventure. (A rare deep-blue teleport pad can also drop you a level early.)",
+            keywords: ["end", "ending", "how deep", "how many levels", "final boss", "last level", "top", "bottom", "villain", "finish"]
+        ),
+        FAQEntry(
             question: "How do I search a room?",
             answer: "Tap 'Search Room' from the exploration menu. You need a lit torch to search properly. Rooms can be searched multiple times — you might find hidden treasure on a second or third look!",
             keywords: ["search", "find items", "hidden", "treasure", "loot", "search room"]
@@ -82,6 +87,16 @@ struct FAQData {
             question: "What does the map show?",
             answer: "The map shows rooms you've visited. Your current position is marked with @. Rooms are colour-coded: green for explored, yellow for shops, red for boss rooms. You need a lit torch to see the map clearly.",
             keywords: ["map", "where am i", "minimap", "layout", "dungeon map"]
+        ),
+        FAQEntry(
+            question: "How do I get through a locked door?",
+            answer: "Locked doors (KK on the map) need a key, which is always hidden somewhere findable in the dungeon without needing that door — search rooms to turn one up. No key yet? Try Pick the Lock if someone's carrying Thieves' Tools, or Force the Door with a Strength check (better odds with a two-handed weapon equipped). A door's state persists — leave and come back and it's just as you left it. If you're holding the key, long-press the direction again once through to lock it behind you and keep monsters out.",
+            keywords: ["locked door", "key", "lockpick", "pick the lock", "force the door", "thieves tools"]
+        ),
+        FAQEntry(
+            question: "How do I export or import the adventure log?",
+            answer: "From the Adventure Log screen, tap 'Export Log' to save the full history (every day, not just today) as a text file, or 'Import Log' to load one back in — importing adds to the current log rather than replacing it. If saving to your chosen location fails for any reason, the log is automatically saved inside the app instead, so it's never lost. The log view shows everything by default (set a display limit in Settings > Gameplay if you'd rather see a shorter, day-by-day view).",
+            keywords: ["export log", "import log", "adventure log", "save log", "log file", "backup log"]
         ),
         FAQEntry(
             question: "How do I find the boss?",
@@ -225,7 +240,7 @@ struct FAQData {
     static let character = FAQCategory(title: "Characters & Party", contexts: ["exploration", "combat", "rest"], entries: [
         FAQEntry(
             question: "Which class should I pick?",
-            answer: "Fighter: tanky melee. Wizard: powerful spells but fragile. Rogue: sneaky with high damage. Cleric: healer with decent combat. Ranger: ranged attacks. Barbarian: high damage, low defence. A balanced party of 3-4 is recommended.",
+            answer: "Fighter: tanky melee. Wizard: powerful spells but fragile. Rogue: sneaky with high damage. Cleric: healer with decent combat. Ranger: ranged attacks. Barbarian: high damage, low defence. Engineer: gadgets, traps and locks. Scout: sees danger first. Thief: quick fingers, good deals. Bard: music and words — Vicious Mockery, Healing Word, and Play a Tune for tips. Each has a rank title that rises with level (a Bard goes Busker, Minstrel, Troubadour, Skald, Master Bard). A balanced party of 3-4 is recommended.",
             keywords: ["class", "which class", "best class", "fighter", "wizard", "rogue", "cleric", "ranger", "barbarian"]
         ),
         FAQEntry(
@@ -235,8 +250,13 @@ struct FAQData {
         ),
         FAQEntry(
             question: "How do I level up?",
-            answer: "Characters gain XP from defeating monsters and completing objectives. When you earn enough XP, you level up automatically, gaining more HP, better attack bonuses, and new abilities. Check party status to see your current XP and level.",
-            keywords: ["level up", "xp", "experience", "gain level", "levelling"]
+            answer: "Characters gain XP from defeating monsters, completing objectives, and DM/quest rewards. Level up is automatic once you cross the threshold: 300 XP for Level 2, 900 for Level 3, 2,700 for Level 4, 6,500 for Level 5 (the level cap). Party Status shows your current XP and how much you need for the next level.",
+            keywords: ["level up", "xp", "experience", "gain level", "levelling", "threshold", "how much xp"]
+        ),
+        FAQEntry(
+            question: "Does the game get harder as my characters level up?",
+            answer: "Yes — on top of the difficulty you chose at the start, monster HP and accuracy scale up gradually as your party's average level rises, so the challenge keeps pace with your growing power instead of staying flat. Party Status shows a 'Monster strength: +N%' line whenever this is active.",
+            keywords: ["dynamic difficulty", "harder", "scaling", "monster strength", "level up difficulty"]
         ),
         FAQEntry(
             question: "How many party members should I have?",
@@ -250,17 +270,57 @@ struct FAQData {
     static let shops = FAQCategory(title: "Shops & Gold", contexts: ["shop", "exploration"], entries: [
         FAQEntry(
             question: "How do I buy things?",
-            answer: "When you enter a shop room, tap 'Visit Merchant' from the exploration menu. Browse the stock and buy items with gold. Prices are fixed. Higher-level shops stock better gear.",
+            answer: "Whenever a merchant is present — a shop room, some armouries, or a Wandering Trader you've met — tap 'Visit Merchant' from the exploration menu. Browse the stock and buy items with gold. Higher-tier merchants (General Store, Trading Post, Hyperstore) stock more and better gear the deeper you go.",
             keywords: ["buy", "purchase", "merchant", "shopping", "how to buy"]
         ),
         FAQEntry(
             question: "How do I sell items?",
-            answer: "Visit the Merchant in a shop room and choose 'Sell'. You can sell any item from your pack for half its value. This is a good way to clear inventory space and earn gold for better gear.",
+            answer: "Visit a Merchant and choose 'Sell'. You can sell any item from your pack for half its value. This is a good way to clear inventory space and earn gold for better gear.",
             keywords: ["sell", "sell items", "get gold", "sell gear"]
         ),
         FAQEntry(
+            question: "Can I haggle with merchants?",
+            answer: "Yes — choose 'Haggle' at a merchant, pick an item, and roll a Persuasion check against their price. Succeed and you get a 15-30% discount; fail and the price stays put. Tougher merchants (bigger shops) haggle harder.",
+            keywords: ["haggle", "bargain", "discount", "negotiate", "lower price"]
+        ),
+        FAQEntry(
+            question: "What are 'rare goods' at a merchant?",
+            answer: "Choose 'Ask About Rare Goods' to see if the merchant has anything special stashed away — an item outside their normal stock, offered at a premium. Bigger merchants are more likely to have something, but it's never guaranteed.",
+            keywords: ["rare goods", "under the counter", "special item", "secret stock"]
+        ),
+        FAQEntry(
+            question: "Can I skip the \"are you sure?\" questions?",
+            answer: "Yes — long-press the button instead of tapping it. Long-pressing Quit App, Save & Quit App, Quit Without Saving, Delete Adventure, a save in Delete One Save, Clear All Saves or Give Up Quest does it straight away, with no confirmation. A normal tap still asks first.",
+            keywords: ["are you sure", "confirm", "confirmation", "skip confirmation", "long-press", "long press", "quit without saving", "delete"]
+        ),
+        FAQEntry(
+            question: "What do the map symbols mean?",
+            answer: "Inside the brackets: @ you, ! danger (monsters or a trap), B boss, ↑ ↓ a way up or down, * teleport pad, M merchant, G gym, N someone you haven't met, + shrine, $ loot, L library, A armoury, P prison, E entrance, = hall, # room, . empty. {X} (braces instead of brackets) means more than one thing is there. Between rooms: -- or | is a passage, KK / K a locked door, XX / X a barred door. The + at the corners of the map box is just its border.",
+            keywords: ["map symbols", "map key", "legend", "what does + mean", "plus", "shrine", "symbols", "key"]
+        ),
+        FAQEntry(
+            question: "Is there a bigger map?",
+            answer: "Cartographers speak of an atlas for those patient enough to press — and hold — the map they already have. The gyms of the deep teach Map Training too, if you can afford it.",
+            keywords: ["atlas", "world map", "bigger map", "whole map", "full map", "map explorer", "cartography", "map training"]
+        ),
+        FAQEntry(
+            question: "How do I stop screens moving on by themselves?",
+            answer: "Many screens wait for a tap so you can read them; with Auto-Continue on (the default) they also move on after the Info Timeout. To hold them, tap the little hourglass at the right of the input line while a screen is counting down (it turns amber and says paused) — or press Space on a Mac. Tap it again to carry on; long-press it to hurry things along. To turn it off for good, go to Settings > Gameplay > Auto-Continue Off, or change how long screens wait with Info Timeout.",
+            keywords: ["auto-continue", "auto continue", "autocontinue", "pause", "too fast", "timeout", "moves on", "keeps moving"]
+        ),
+        FAQEntry(
+            question: "What does food do?",
+            answer: "Use food and drink from your pack (Use Item), or in combat (Use Potion — it takes your turn). Everything restores a little HP. Hearty food like cheese, salt pork or jerky makes you feel strong: +1 to attack and damage for your next few attacks. Honey, jam and sweets give a sugary lift of 2 temporary HP. Juice is fine in moderation, but drink three glasses and you slosh about — sluggish, with disadvantage on your next 2 attacks. Water, tea or a rest settles it. Ask a merchant what's under the counter for stranger foods.",
+            keywords: ["food", "eat", "eating", "cheese", "juice", "drink", "hungry", "sluggish", "provisions", "honey", "jam"]
+        ),
+        FAQEntry(
+            question: "What does a Whetstone do?",
+            answer: "Use it from your pack on your currently equipped weapon to sharpen it — a +1 bonus to attack and damage rolls for your next 3 attacks. You need a weapon equipped to use it.",
+            keywords: ["whetstone", "sharpen", "sharpen weapon", "sharpening stone"]
+        ),
+        FAQEntry(
             question: "Where do I get gold?",
-            answer: "Gold comes from searching rooms (treasure chests and hidden stashes), defeating monsters (loot drops), selling items at the Merchant, and occasionally from the DM as quest rewards.",
+            answer: "Gold comes from searching rooms (treasure chests and hidden stashes), defeating monsters (loot drops), selling items to a Merchant, and occasionally from the DM as quest rewards.",
             keywords: ["gold", "money", "coins", "earn gold", "get gold", "treasure"]
         ),
     ])
@@ -282,6 +342,11 @@ struct FAQData {
             question: "How many save slots do I have?",
             answer: "You can have up to 5 save slots. If all slots are full, you'll need to overwrite an existing save or delete one from Settings → Save → Manage Saves.",
             keywords: ["save slots", "how many saves", "save limit", "delete save"]
+        ),
+        FAQEntry(
+            question: "Can I keep the same character across adventures?",
+            answer: "Yes — that's the Character Roster, separate from Saved Adventures. Save a character with the 'Save to Roster' button on their card in Party Review (works for every party — hand-built, auto-generated, or quick-start), right after creating them, or anytime from Party Status → Save to Roster (handy after a level-up). To bring one back, start a New Adventure and pick 'Load Character' during party selection — it opens the Character Hall of Fame, where you can pick any inducted hero or tap 'Manage Saves' to browse the full roster. Starting a new adventure also automatically offers your most recently inducted hero for the first party slot. Survivors of a victorious adventure are saved and inducted automatically. Up to 20 characters can be kept, and a starter set (one Level 1 of each class) is there from the start.",
+            keywords: ["character roster", "character saves", "keep character", "same character", "persist character", "load character", "save character", "character hall of fame"]
         ),
     ])
 
@@ -378,25 +443,40 @@ struct FAQData {
     // MARK: - DM Knowledge Lookup
 
     /// Find FAQ entries relevant to a player's message (for DM to reference)
+    /// Filler words that shouldn't count as a match on their own.
+    private static let stopWords: Set<String> = [
+        "the", "and", "what", "how", "who", "why", "when", "where", "which", "does", "can", "you",
+        "your", "for", "with", "this", "that", "are", "was", "get", "got", "into", "out", "off",
+        "but", "not", "all", "any", "has", "have", "use", "now", "then", "there", "here", "let",
+    ]
+
     static func findRelevant(for message: String, limit: Int = 3) -> [FAQEntry] {
         let lower = message.lowercased()
-        let words = Set(lower.components(separatedBy: .alphanumerics.inverted).filter { $0.count > 2 })
+        let allWords = Set(lower.components(separatedBy: .alphanumerics.inverted).filter { !$0.isEmpty })
+        let words = allWords.filter { $0.count > 2 && !stopWords.contains($0) }
 
         var scored: [(entry: FAQEntry, score: Int)] = []
 
         for entry in allEntries {
             var score = 0
-            // Keyword matches (strongest signal)
+            // Keyword matches (strongest signal). Multi-word keywords match
+            // as a phrase; single-word ones must match a WHOLE word — plain
+            // substring matching let "con" fire on "continue", "int" on
+            // "into", "cha" on "chat", etc., so ordinary play input (e.g.
+            // leaving a shop) got answered with the ability-scores FAQ.
             for keyword in entry.keywords {
-                if lower.contains(keyword) {
-                    score += 10
-                }
+                let matched = keyword.contains(" ") ? lower.contains(keyword) : allWords.contains(keyword)
+                if matched { score += 10 }
             }
-            // Word overlap with question
-            let qWords = Set(entry.question.lowercased().components(separatedBy: .alphanumerics.inverted).filter { $0.count > 2 })
+            // Word overlap with the question, ignoring filler words — "the"
+            // or "what" in any sentence used to count as a match on its own.
+            let qWords = Set(entry.question.lowercased().components(separatedBy: .alphanumerics.inverted)
+                .filter { $0.count > 2 && !stopWords.contains($0) })
             score += words.intersection(qWords).count * 3
 
-            if score > 0 {
+            // Needs a real keyword hit, or at least two meaningful words in
+            // common with the question — not one incidental overlap.
+            if score >= 6 {
                 scored.append((entry, score))
             }
         }

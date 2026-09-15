@@ -231,11 +231,23 @@ enum NPCType: String, CaseIterable, Codable {
     func gatekeeperGreeting(trustworthiness: NPCTrustworthiness) -> String {
         switch trustworthiness {
         case .honest:
-            return "Hold, adventurers. I've stood watch here for many seasons. I can tell you what lurks below — ask, and I'll speak plainly."
+            return [
+                "Hold, adventurers. I've stood watch here for many seasons. I can tell you what lurks below — ask, and I'll speak plainly.",
+                "You've reached the gate. I've buried enough friends who went in unprepared — ask what you need to know, and I'll give it to you straight.",
+                "Another party, is it? Good. I'd rather send you in knowing than not. Ask away — I've no reason to lie to you.",
+            ].randomElement()!
         case .evasive:
-            return "Ah... visitors. The shadows speak of your coming. I know things, yes... but not all truths are easily told."
+            return [
+                "Ah... visitors. The shadows speak of your coming. I know things, yes... but not all truths are easily told.",
+                "Hmm. You want in, I take it. I know more than I let on — most gatekeepers do. Whether I share it depends on how you ask.",
+                "So. Another party seeking the depths. I've watched many pass this gate. What I know, I don't give freely — but I might, in time.",
+            ].randomElement()!
         case .liar:
-            return "Welcome, friends! You're in luck — I know everything about this dungeon. Stick with my advice and you'll be fine. Trust me."
+            return [
+                "Welcome, friends! You're in luck — I know everything about this dungeon. Stick with my advice and you'll be fine. Trust me.",
+                "Ah, perfect timing! I happen to be the foremost expert on what's down there. Ask me anything — I never steer a soul wrong.",
+                "You've come to the right gatekeeper! Others exaggerate the dangers below — I'll tell you the honest, comforting truth. Promise.",
+            ].randomElement()!
         }
     }
 
@@ -276,7 +288,7 @@ enum NPCType: String, CaseIterable, Codable {
         case .madAlchemist: return ["Potions", "Ingredients", "Explosions", "Antidotes"]
         case .oldPriestess: return ["Healing arts", "Blessing", "Undead weakness", "Poison cure"]
         case .ratCatcher: return ["Monster nests", "Secret tunnels", "The big one", "Trapping tricks"]
-        case .gatekeeper: return ["The Boss", "Dangers", "Treasure", "Quest"]
+        case .gatekeeper: return ["The Boss", "Dangers", "Treasure", "Quest", "Merchants"]
         }
     }
 
@@ -708,6 +720,32 @@ enum NPCType: String, CaseIterable, Codable {
                 "The boss sleeps sometimes. Not often, but when it does, the whole dungeon goes quiet. That's when smart ones run.",
             ]
 
+        // Dwarven Smith
+        case (.dwarvenSmith, "Weapon quality"):
+            return [
+                "Feel that balance? Forged it myself, three folds of steel. A blade that won't fail you when it counts.",
+                "Cheap steel snaps in a fight. Mine doesn't. I test every blade against an anvil before it leaves this forge.",
+                "A weapon's only as good as the smith who made it — and the fool who neglects to sharpen it. Bring yours by if the edge dulls.",
+            ]
+        case (.dwarvenSmith, "Armour repair"):
+            return [
+                "Dented plate, torn mail — bring it here. A dwarf's hammer can fix what a monster's claws broke.",
+                "I can true a warped breastplate in an hour, given the right coals. Don't wait until it's in pieces.",
+                "Armour repair is half the trade down here. These halls chew through steel faster than any battlefield I've worked.",
+            ]
+        case (.dwarvenSmith, "Forging"):
+            return [
+                "Forging's in dwarven blood. My father taught me, his father taught him, back to the mountain halls themselves.",
+                "The heat down here's poor for forging — not enough draft. I make do, but my kin on the surface would scoff at this anvil.",
+                "Good forging takes patience. Rush the fold and the blade remembers — snaps right when you need it most.",
+            ]
+        case (.dwarvenSmith, "Dwarven lore"):
+            return [
+                "My clan mined these depths generations back, before whatever's down there drove the rest of us out. I stayed. Stubborn, my mother called it.",
+                "Every dwarf knows the old smithing songs — they keep the hammer's rhythm true. I'll spare you my singing voice, though.",
+                "We dwarves don't forget a debt, good or ill. This dungeon owes my kin a great deal. I mean to collect, one ingot at a time.",
+            ]
+
         // Wandering Trader
         case (.wanderingTrader, "Rare goods"):
             return [
@@ -988,10 +1026,24 @@ enum NPCType: String, CaseIterable, Codable {
                 ].randomElement()!
             }
         case "Quest":
+            // Kept generic — the specific task and reward (which vary each
+            // time, not always "slay the boss for gold") are printed as
+            // their own structured lines right after this in
+            // showGatekeeperQuest(), not baked into this flavour text.
             return [
-                "Slay the creature that lurks in the deepest chamber and return to tell the tale. I'll reward you with \(questGold) gold for proof of its defeat.",
-                "I've a bounty for the thing below — \(questGold) gold to whoever brings me proof of its demise. Interested?",
-                "The monster below has plagued travellers for too long. End it, and \(questGold) gold is yours. A fair price for dangerous work.",
+                "I've a task, if you're interested — something that wants doing in these depths.",
+                "There's work to be done down there, for the right sort of adventurer. Interested?",
+                "I could use someone willing to take on a task in the dungeon. Are you in?",
+            ].randomElement()!
+        case "Merchants":
+            // Not gated by trustworthiness — this is practical, verifiable
+            // advice about the dungeon's own layout, not a claim about the
+            // boss or treasure the Gatekeeper could plausibly lie about.
+            let tier = MerchantTier.forDungeonLevel(dungeonLevel)
+            return [
+                "Aye, there's always at least one shop room somewhere in these halls — look for the [M] on your map, or listen for a room where a merchant's set up stall. An armoury sometimes has one too, if you're lucky. This deep in, expect a \(tier.rawValue) — they'll carry weapons, armour, potions, scrolls, and odds and ends. Deeper levels draw richer stock, and sharper prices.",
+                "Merchants? Always at least one shop room in a dungeon this size — marked [M] if you've a torch lit. Sometimes you'll find one's taken over a spare corner of an armoury instead. A \(tier.rawValue) is what you'd expect at this depth — ask about their rare goods if you want something special, and don't be afraid to haggle.",
+                "Every dungeon worth the name has a shopkeeper somewhere — the [M] on your map gives it away. Weapons, armour, potions, scrolls, trinkets — whatever a \(tier.rawValue) carries, and that grows the deeper you go. Haggle if you've the silver tongue for it.",
             ].randomElement()!
         default:
             return [
@@ -1054,6 +1106,43 @@ enum NPCTrustworthiness: String, Codable {
     }
 }
 
+// MARK: - Name registry
+
+/// Names already handed out in the current dungeon — so no two merchants,
+/// trainers or NPCs share one (Lore used to list the same name several
+/// times). Reset when a dungeon is generated; reseeded from the current
+/// dungeon before anyone new is created mid-game (see GameEngine.seedNameRegistry).
+enum NameRegistry {
+    static var used: Set<String> = []
+
+    static func reset(_ names: [String] = []) { used = Set(names) }
+
+    static func isFree(_ name: String) -> Bool { !used.contains(name) }
+
+    /// `base` if it's free, otherwise a suffixed version ("Junior",
+    /// "the Younger", "the Third"...) — then marks it as taken.
+    static func claim(_ base: String) -> String {
+        let suffixes = ["Junior", "the Younger", "the Third", "the Fourth", "the Fifth"]
+        var name = base
+        var i = 0
+        while used.contains(name) {
+            name = i < suffixes.count ? "\(base) \(suffixes[i])" : "\(base) \(i + 2)"
+            i += 1
+        }
+        used.insert(name)
+        return name
+    }
+
+    /// First names for NPCs (Hermits, Guards...), who used to go by their
+    /// type alone.
+    static let npcFirstNames = [
+        "Maud", "Aldric", "Bree", "Corvin", "Dunstan", "Elspeth", "Fenwick", "Greta", "Hollis",
+        "Ingrid", "Jory", "Kestrel", "Lorcan", "Mirabel", "Nesta", "Osric", "Pell", "Quill",
+        "Rowan", "Sable", "Tamsin", "Ulric", "Vesper", "Wren", "Yarrow", "Zinnia", "Brom",
+        "Cressida", "Dagny", "Ewan", "Fern", "Godric", "Hester", "Idris", "Juniper", "Kaspar",
+    ]
+}
+
 // MARK: - NPC Instance (room-specific state)
 
 struct DungeonNPC: Codable {
@@ -1071,16 +1160,46 @@ struct DungeonNPC: Codable {
     var questGold: Int = 0
     var questAccepted: Bool = false
 
+    // Side quest offer (any non-gatekeeper NPC) — decided once on first
+    // meeting and cached, so re-visiting doesn't re-roll a fresh chance.
+    var willOfferSideQuest: Bool? = nil
+    var sideQuestOffered: Bool = false
+
     /// Track how many times the player has asked about each topic
     var timesAsked: [String: Int] = [:]
 
     /// Voice identifier for this NPC (assigned on first talk, persisted)
     var voiceIdentifier: String?
 
+    /// Wandering Traders carry a named Merchant persona so they get the same
+    /// bargaining/rare-goods/advice interactions as shop and armoury merchants.
+    var merchant: Merchant?
+
+    /// Whether the player has already asked this (non-merchant) NPC to trade —
+    /// one-off, unlike the repeatable Merchant flow.
+    var hasOfferedOneOffTrade: Bool = false
+
     var name: String { type.rawValue }
+
+    /// A first name of their own (e.g. "Maud"), unique within the dungeon.
+    /// nil for older saves and for Wandering Traders, who carry a merchant name.
+    var personalName: String? = nil
+
+    /// "Maud the Hermit" — for Lore, clues and anywhere a person is named.
+    var displayName: String {
+        if let personal = personalName { return "\(personal) the \(type.rawValue)" }
+        return merchant?.name ?? type.rawValue
+    }
 
     init(type: NPCType) {
         self.type = type
+        if type != .wanderingTrader {
+            let fresh = NameRegistry.npcFirstNames.filter { NameRegistry.isFree($0) }
+            personalName = NameRegistry.claim((fresh.isEmpty ? NameRegistry.npcFirstNames : fresh).randomElement()!)
+        }
+        if type == .wanderingTrader {
+            self.merchant = Merchant.random(tier: .wanderingPeddler)
+        }
     }
 
     /// Record that a topic was asked and return the new count

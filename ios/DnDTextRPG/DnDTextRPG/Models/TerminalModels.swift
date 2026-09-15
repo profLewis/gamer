@@ -6,6 +6,11 @@
 //
 
 import SwiftUI
+#if os(macOS)
+import AppKit
+#elseif os(iOS)
+import UIKit
+#endif
 
 // MARK: - Terminal Line
 
@@ -17,6 +22,46 @@ struct TerminalLine: Identifiable {
     let isUnderlined: Bool
     let fontSize: CGFloat
     let isCentered: Bool
+    /// Optional character range drawn in `highlightColor` (bold) — e.g.
+    /// the Atlas's "[@]" so you can spot where you are at a glance.
+    var highlightRange: Range<Int>? = nil
+    var highlightColor: TerminalColor = .yellow
+    /// In-text link key (see GameEngine.printLink/followLink) — the whole
+    /// line is a tap target that opens that screen.
+    var link: String? = nil
+    /// More coloured stretches of the line (the big map's visited rooms),
+    /// under highlightRange.
+    var extraHighlights: [(range: Range<Int>, color: TerminalColor)] = []
+
+    /// Mostly symbols — ASCII art, dice faces, borders. VoiceOver skips these
+    /// (they read as a string of punctuation). Lines with numbers, like HP
+    /// bars, still count as content.
+    var isDecorativeArt: Bool {
+        let visible = text.filter { !$0.isWhitespace }
+        guard visible.count >= 6 else { return false }
+        let meaningful = visible.filter { $0.isLetter || $0.isNumber }.count
+        return Double(meaningful) / Double(visible.count) < 0.2
+    }
+
+    /// What VoiceOver says for a line: box-drawing and bar glyphs dropped,
+    /// and stat shorthand spelt out so each name is heard with its value —
+    /// "║STR████░░ 16║" is read "strength 16", "HP:12/20" "hit points 12 of 20".
+    static func spokenText(_ text: String) -> String {
+        let drop: Set<Swift.Character> = ["║", "═", "╔", "╗", "╚", "╝", "╠", "╣", "╦", "╩", "╬", "│", "─", "┌", "┐", "└", "┘",
+                                          "├", "┤", "┬", "┴", "┼", "█", "░", "▒", "▓", "■", "□", "|"]
+        var s = String(text.map { drop.contains($0) ? " " : $0 })
+        s = s.replacingOccurrences(of: "[-=_+*~#]{3,}", with: " ", options: .regularExpression)
+        let words: [(String, String)] = [("STR", "strength"), ("DEX", "dexterity"), ("CON", "constitution"),
+                                         ("INT", "intelligence"), ("WIS", "wisdom"), ("CHA", "charisma"),
+                                         ("HP", "hit points"), ("AC", "armour class"), ("XP", "experience"),
+                                         ("ATK", "attack"), ("DMG", "damage"), ("CR", "challenge rating"), ("DC", "difficulty")]
+        for (short, long) in words {
+            s = s.replacingOccurrences(of: "\\b\(short)\\b:?", with: "\(long) ", options: .regularExpression)
+        }
+        s = s.replacingOccurrences(of: "(\\d+)/(\\d+)", with: "$1 of $2", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        return s.trimmingCharacters(in: .whitespaces)
+    }
 
     init(_ text: String, color: TerminalColor = .green, bold: Bool = false, underlined: Bool = false, size: CGFloat = 14, centered: Bool = false) {
         self.text = text
@@ -29,6 +74,18 @@ struct TerminalLine: Identifiable {
 }
 
 enum TerminalColor {
+    /// The system's Increase Contrast setting: the dim colours step up from
+    /// WCAG AA (at least 4.5:1 on black) to AAA (7:1 or more).
+    static var increasedContrast: Bool {
+        #if os(macOS)
+        return NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        #elseif os(iOS)
+        return UIAccessibility.isDarkerSystemColorsEnabled
+        #else
+        return false
+        #endif
+    }
+
     case green
     case brightGreen
     case dimGreen
@@ -47,7 +104,8 @@ enum TerminalColor {
         case .brightGreen:
             return Color(red: 0.0, green: 1.0, blue: 0.4)
         case .dimGreen:
-            return Color(red: 0.0, green: 0.5, blue: 0.2)
+            // 5:1 on black (AA); 7.9:1 with Increase Contrast (AAA). Was 4.1:1.
+            return Self.increasedContrast ? Color(red: 0.0, green: 0.72, blue: 0.32) : Color(red: 0.0, green: 0.56, blue: 0.24)
         case .red:
             return Color(red: 1.0, green: 0.3, blue: 0.3)
         case .yellow:
@@ -59,7 +117,7 @@ enum TerminalColor {
         case .white:
             return Color.white
         case .gray:
-            return Color(red: 0.5, green: 0.5, blue: 0.5)
+            return Self.increasedContrast ? Color(red: 0.7, green: 0.7, blue: 0.7) : Color(red: 0.55, green: 0.55, blue: 0.55)
         case .orange:
             return Color(red: 1.0, green: 0.6, blue: 0.2)
         }
@@ -84,16 +142,50 @@ struct MenuOption: Identifiable {
     let isAlert: Bool  // Flashing red button for urgent actions (e.g. multiplayer invite)
     let tint: MenuTint
     let isCompactNav: Bool  // Compact navigation symbol (⏮, ⏭, ?) — grouped into one cell
+    /// Explicit 1-based number to display on the button, overriding the
+    /// view's own auto-numbering (which counts only visible regular buttons
+    /// on the current page, restarting each page). Set this when a caller
+    /// prints its own reference list of the full, unpaginated item set (e.g.
+    /// "3. Bram — Fighter") — matching this to the button's displayed
+    /// number keeps the two in sync regardless of which page an item lands
+    /// on. Leave nil for ordinary menus, which don't need this.
+    var displayNumber: Int? = nil
+    /// Where this button was in the list the screen gave, when the default
+    /// has been moved to the front (see GameEngine.prepareMenu) — the
+    /// screen's handler still gets the choice number it expects.
+    var sourceIndex: Int? = nil
 
     static let maxButtonLength = 22
+    /// What the help button shows (Settings > Accessibility > Help Button).
+    /// Menus still use "?" internally; only the label changes.
+    static let helpGlyphChoices = ["?", "ⓘ", "Help"]
 
-    init(_ text: String, isDefault: Bool = false, isDisabled: Bool = false, isAlert: Bool = false, tint: MenuTint = .normal, compact: Bool = false) {
+    /// What VoiceOver says for the terse nav-cell buttons.
+    static func spokenLabel(_ text: String) -> String {
+        switch text {
+        case "?": return "Help"
+        case "< Back": return "Back"
+        case "<<": return "Previous page"
+        case ">>": return "Next page"
+        case "Fwd >": return "Forward"
+        case "< Leave": return "Leave"
+        case "< Leave Game": return "Leave game"
+        default: return text
+        }
+    }
+    static var helpGlyph: String {
+        let g = UserDefaults.standard.string(forKey: "helpGlyph") ?? "?"
+        return helpGlyphChoices.contains(g) ? g : "?"
+    }
+
+    init(_ text: String, isDefault: Bool = false, isDisabled: Bool = false, isAlert: Bool = false, tint: MenuTint = .normal, compact: Bool = false, displayNumber: Int? = nil) {
         self.text = Self.trimToFit(text)
         self.isDefault = isDefault
         self.isDisabled = isDisabled
         self.isAlert = isAlert
         self.tint = tint
         self.isCompactNav = compact
+        self.displayNumber = displayNumber
     }
 
     /// Trim text to fit button width, cutting at a word boundary when possible

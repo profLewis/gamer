@@ -29,6 +29,7 @@ class SoundManager {
         case exploration
         case combat
         case chat
+        case shop
     }
 
     private init() {
@@ -211,6 +212,20 @@ class SoundManager {
         ])
     }
 
+    /// Level up — a brighter, punchier fanfare than victory (distinct so it
+    /// doesn't feel like the exact same cue as clearing the dungeon).
+    func playLevelUp() {
+        guard battleSoundsEnabled else { return }
+        playSequence([
+            (392, 0.08, 0.22, .square),   // G4
+            (523, 0.08, 0.24, .square),   // C5
+            (659, 0.08, 0.26, .square),   // E5
+            (784, 0.08, 0.28, .square),   // G5
+            (1047, 0.1, 0.3, .square),    // C6
+            (1319, 0.22, 0.32, .sine),    // E6
+        ])
+    }
+
     /// Defeat — sad descending tones
     func playDefeat() {
         guard battleSoundsEnabled else { return }
@@ -284,14 +299,45 @@ class SoundManager {
     }
 
     /// Spell cast — magical shimmer
+    /// Spell cast — a whoosh: a burst of air that swells and fades, with a
+    /// faint sparkle as the magic lands.
     func playSpellCast() {
         guard battleSoundsEnabled else { return }
         playSequence([
-            (523, 0.06, 0.15, .sine),
-            (784, 0.06, 0.18, .sine),
-            (1047, 0.06, 0.2, .sine),
-            (1568, 0.08, 0.15, .sine),
-            (1047, 0.06, 0.12, .sine),
+            (0, 0.04, 0.03, .noise),
+            (0, 0.04, 0.07, .noise),
+            (0, 0.05, 0.12, .noise),
+            (0, 0.06, 0.16, .noise),
+            (0, 0.06, 0.13, .noise),
+            (0, 0.06, 0.08, .noise),
+            (0, 0.05, 0.04, .noise),
+            (1568, 0.05, 0.06, .sine),
+            (2093, 0.07, 0.04, .sine),
+        ])
+    }
+
+    /// A soft typewriter key tick (the Opening Tale).
+    func playTypewriterTick() {
+        guard battleSoundsEnabled else { return }
+        playSequence([(0, 0.012, 0.05, .noise)])
+    }
+
+    /// Fight Club: the party's supporters cheer — a rush of voices rising.
+    func playCrowdCheer() {
+        guard battleSoundsEnabled else { return }
+        playSequence([
+            (0, 0.05, 0.05, .noise), (0, 0.06, 0.10, .noise), (0, 0.08, 0.14, .noise),
+            (523, 0.06, 0.05, .triangle), (659, 0.06, 0.05, .triangle), (784, 0.10, 0.06, .triangle),
+            (0, 0.08, 0.10, .noise), (0, 0.06, 0.05, .noise),
+        ])
+    }
+
+    /// Fight Club: the other side jeers — a low, falling "boo".
+    func playCrowdJeer() {
+        guard battleSoundsEnabled else { return }
+        playSequence([
+            (196, 0.12, 0.08, .triangle), (185, 0.12, 0.08, .triangle), (165, 0.18, 0.07, .triangle),
+            (0, 0.06, 0.05, .noise), (147, 0.20, 0.05, .sine),
         ])
     }
 
@@ -484,6 +530,54 @@ class SoundManager {
         ])
     }
 
+    // MARK: - Search Foley Sound
+
+    /// Searching a room — rustling through debris, a knocked-over object,
+    /// a dropped thing thudding to the floor. Chaotic and physical rather
+    /// than musical, unlike most other cues here.
+    func playSearch() {
+        playSequence([
+            (900, 0.04, 0.25, .noise),    // rustle
+            (0, 0.02, 0, .sine),
+            (1300, 0.05, 0.3, .noise),    // rustle, digging in
+            (0, 0.03, 0, .sine),
+            (700, 0.04, 0.22, .noise),    // rustle
+            (160, 0.05, 0.3, .square),    // knock — bumped something
+            (0, 0.04, 0, .sine),
+            (1100, 0.05, 0.28, .noise),   // more rummaging
+            (0, 0.03, 0, .sine),
+            (600, 0.04, 0.2, .noise),     // rustle
+            (110, 0.09, 0.35, .triangle), // thud — something drops/breaks
+            (0, 0.05, 0, .sine),
+            (1500, 0.03, 0.18, .noise),   // final rustle
+            (950, 0.04, 0.15, .noise),
+        ])
+    }
+
+    /// Teleport pad activating — a rising sci-fi warble (fast ascending
+    /// arpeggio with a bit of a shimmer/wobble) followed by a soft
+    /// dissolve down, in the spirit of a classic "beaming out" cue.
+    func playTeleport() {
+        playSequence([
+            (220, 0.03, 0.18, .sine),
+            (277, 0.03, 0.2, .sine),
+            (330, 0.03, 0.22, .sine),
+            (415, 0.03, 0.24, .sine),
+            (523, 0.03, 0.26, .sine),
+            (659, 0.03, 0.28, .sine),
+            (784, 0.03, 0.3, .sine),
+            (1047, 0.05, 0.3, .sine),
+            (880, 0.03, 0.22, .sine),
+            (1047, 0.03, 0.24, .sine),
+            (932, 0.03, 0.2, .sine),
+            (1175, 0.06, 0.22, .sine),
+            (1568, 0.09, 0.18, .sine),
+            (1319, 0.08, 0.14, .sine),
+            (988, 0.1, 0.1, .sine),
+            (660, 0.14, 0.06, .sine),
+        ])
+    }
+
     /// Quit / farewell — gentle descending melody
     func playQuit() {
         playSequence([
@@ -571,8 +665,9 @@ class SoundManager {
         currentMusic = type
         musicPlaying = true
 
-        // Combat music louder, chat music quieter
-        musicNode.volume = type == .combat ? 0.7 : type == .chat ? 0.3 : 0.4
+        // Combat music louder, chat/shop music quieter (shop is meant to be
+        // unobtrusive background musak, not something you'd actually listen to)
+        musicNode.volume = type == .combat ? 0.7 : type == .chat ? 0.3 : type == .shop ? 0.22 : 0.4
 
         musicQueue.async { [weak self] in
             guard let self = self else { return }
@@ -610,6 +705,15 @@ class SoundManager {
     }
 
     private func melodyFor(_ type: MusicType, preference: Int = 0) -> [MusicStep] {
+        // Combat's default (preference 0 / "Random") now plays the new,
+        // faster/more dramatic track every time rather than a 1-in-4
+        // chance of it alongside the three older ones — a straight
+        // addition to the random pool made the requested change nearly
+        // unnoticeable in practice. The three original tracks are still
+        // reachable by name via Settings > Music > Combat Tune.
+        if type == .combat && preference == 0 {
+            return combatMelody4()
+        }
         let melodies: [() -> [MusicStep]]
         switch type {
         case .menu:
@@ -617,9 +721,11 @@ class SoundManager {
         case .exploration:
             melodies = [explorationMelody, explorationMelody2, explorationMelody3, explorationMelody4]
         case .combat:
-            melodies = [combatMelody, combatMelody2, combatMelody3]
+            melodies = [combatMelody, combatMelody2, combatMelody3, combatMelody4]
         case .chat:
             melodies = [chatMelody, chatMelody2, chatMelody3]
+        case .shop:
+            melodies = [shopMelody, shopMelody2]
         }
         if preference >= 1 && preference <= melodies.count {
             return melodies[preference - 1]()
@@ -1240,6 +1346,105 @@ class SoundManager {
         ]
     }
 
+    // MARK: - Combat Music 4 — "Blood and Thunder"
+    // C# minor, the fastest/most frantic of the four — a driving double-time
+    // pulse under a rapid, urgent melody, for players who want combat to
+    // feel more relentless than the other three tracks.
+
+    private func combatMelody4() -> [MusicStep] {
+        let m = { (f: Double) -> (Double, Float, Waveform) in (f, 0.10, .square) }
+        let b = { (f: Double) -> (Double, Float, Waveform) in (f, 0.08, .square) }
+        let h = { (f: Double) -> (Double, Float, Waveform) in (f, 0.05, .triangle) }
+        let p = { (f: Double) -> (Double, Float, Waveform) in (f, 0.03, .noise) }
+        let M = { (f: Double) -> (Double, Float, Waveform) in (f, 0.14, .square) }
+        let H = { (f: Double) -> (Double, Float, Waveform) in (f, 0.08, .triangle) }
+
+        let t: Double = 0.09  // fastest of the four — relentless double-time pulse
+
+        return [
+            // === SECTION A: Relentless charge ===
+
+            // Bar 1 — hammering C#minor bass, driving kick on every beat
+            step(t, drone: b(69.3), melody: m(277), extra: p(80)),         // C#2 + C#4 + kick
+            step(t, drone: b(69.3), extra: p(80)),                          // kick
+            step(t, drone: b(69.3), melody: m(329), extra: p(200)),        // C#2 + E4 + snare
+            step(t, drone: b(69.3), extra: p(80)),                          // kick
+            step(t, drone: b(69.3), melody: m(415), extra: p(80)),         // C#2 + G#4 + kick
+            step(t, drone: b(69.3), extra: p(80)),                          // kick
+            step(t, drone: b(69.3), melody: m(466), extra: p(200)),        // C#2 + A#4 + snare
+            step(t, drone: b(69.3), extra: p(80)),                          // kick
+
+            // Bar 2 — climbing over shifting bass, no let-up
+            step(t, drone: b(61.7), melody: m(466), extra: p(80)),         // B1 + A#4
+            step(t, drone: b(61.7), melody: m(494), extra: h(370)),        // B1 + B4 + F#4
+            step(t, drone: b(61.7), melody: m(554), extra: p(200)),        // B1 + C#5 + snare
+            step(t, drone: b(61.7), extra: p(80)),                          // kick
+            step(t, drone: b(69.3), melody: m(622), extra: p(80)),         // C#2 + D#5
+            step(t, drone: b(69.3), melody: m(554), extra: h(415)),        // C#2 + C#5 + G#4
+            step(t * 2, drone: b(69.3), melody: m(494), extra: p(200)),   // C#2 + B4 held
+
+            // Bar 3 — grinding descent
+            step(t, drone: b(77.8), extra: p(80)),                          // D#2 + kick
+            step(t, drone: b(77.8), melody: m(554), extra: h(466)),        // D#2 + C#5 + A#4
+            step(t, drone: b(77.8), extra: p(200)),                        // snare
+            step(t, drone: b(77.8), melody: m(494)),                       // D#2 + B4
+            step(t, drone: b(87.3), melody: m(466), extra: p(80)),         // F2 + A#4 + kick
+            step(t, drone: b(87.3), melody: m(415), extra: h(329)),        // F2 + G#4 + E4
+            step(t, drone: b(87.3), extra: p(200)),                        // snare
+            step(t, drone: b(87.3), melody: m(370)),                       // F2 + F#4
+
+            // Bar 4 — tension and slam resolve
+            step(t, drone: b(92.5), melody: m(466), extra: p(80)),         // F#2 + A#4 + kick
+            step(t, drone: b(92.5), melody: m(415)),                       // F#2 + G#4
+            step(t, drone: b(92.5), melody: m(370), extra: p(200)),        // F#2 + F#4 + snare
+            step(t, drone: b(92.5), melody: m(329), extra: h(277)),        // F#2 + E4 + C#4
+            step(t * 2, drone: b(69.3), melody: m(277), extra: p(80)),    // C#2 + C#4 resolve
+            rest(t),
+            step(t, extra: p(200)),                                          // snare fill
+
+            // === SECTION B: Full assault ===
+
+            // Bar 5 — screaming lead over pounding fifths
+            step(t, drone: b(69.3), melody: M(554), extra: p(80)),         // C#2 + C#5
+            step(t, drone: b(69.3), melody: M(554), extra: H(415)),       // C#2 + C#5 + G#4
+            step(t, drone: b(69.3), extra: p(200)),                        // snare
+            step(t, drone: b(69.3), melody: M(622), extra: H(415)),       // C#2 + D#5 + G#4
+            step(t, drone: b(77.8), melody: M(659), extra: p(80)),         // D#2 + E5(!)
+            step(t, drone: b(77.8), melody: M(740), extra: H(554)),       // D#2 + F#5 + C#5
+            step(t, drone: b(77.8), extra: p(200)),                        // snare
+            step(t, drone: b(77.8), melody: M(659)),                       // D#2 + E5
+
+            // Bar 6 — peak fury, rapid triplet feel
+            step(t, drone: b(87.3), melody: M(831), extra: p(80)),         // F2 + G#5
+            step(t, drone: b(87.3), melody: M(740)),                       // F2 + F#5
+            step(t, drone: b(87.3), melody: M(659), extra: p(200)),        // F2 + E5
+            step(t, drone: b(87.3), melody: M(622), extra: H(494)),       // F2 + D#5 + B4
+            step(t, drone: b(92.5), extra: p(80)),                         // F#2 + kick
+            step(t, drone: b(92.5), melody: M(622), extra: H(415)),       // F#2 + D#5 + G#4
+            step(t * 2, drone: b(69.3), melody: M(554), extra: p(200)),  // C#2 + C#5 held
+
+            // Bar 7 — hammering call and response
+            step(t, drone: b(69.3), melody: m(277), extra: p(80)),
+            step(t, drone: b(69.3), melody: m(415)),
+            step(t, drone: b(69.3), melody: m(554), extra: p(200)),
+            step(t, drone: b(69.3)),
+            step(t, drone: b(77.8), melody: m(329), extra: p(80)),
+            step(t, drone: b(77.8), melody: m(494)),
+            step(t, drone: b(77.8), melody: m(659), extra: p(200)),
+            step(t, drone: b(77.8)),
+
+            // Bar 8 — final barrage + turnaround
+            step(t, drone: b(87.3), melody: M(622), extra: p(80)),
+            step(t, drone: b(87.3), melody: M(554), extra: H(415)),
+            step(t, drone: b(92.5), melody: M(554), extra: p(200)),
+            step(t, drone: b(92.5), melody: M(466), extra: H(370)),
+            step(t, drone: b(69.3), melody: M(370), extra: p(80)),
+            step(t, drone: b(69.3), melody: M(329), extra: H(277)),
+            step(t, drone: b(69.3), melody: M(277), extra: p(200)),
+            step(t, drone: b(69.3), extra: p(80)),
+        ]
+    }
+
     // MARK: - Chat Melodies
     // Intimate, ambient mood — hushed conversation in a dungeon
 
@@ -1354,6 +1559,59 @@ class SoundManager {
             step(0.7, drone: d, melody: m(311), extra: d2),             // Eb4
             step(1.3, drone: d, melody: m(262)),                          // C4
             rest(1.2),
+        ]
+    }
+
+    // MARK: - Shop Music — "The Bazaar Loop" (musak)
+    // Deliberately bland, cheerful, and repetitive — C major, soft sine,
+    // no drone tension, evenly-spaced quarter notes. Elevator music.
+
+    private func shopMelody() -> [MusicStep] {
+        let m = { (f: Double) -> (Double, Float, Waveform) in (f, 0.07, .sine) }
+        let pad = { (f: Double) -> (Double, Float, Waveform) in (f, 0.03, .sine) }
+
+        return [
+            // C - E - G - E
+            step(0.4, melody: m(262), extra: pad(392)),   // C4 + G4 pad
+            step(0.4, melody: m(330)),                      // E4
+            step(0.4, melody: m(392), extra: pad(262)),   // G4 + C4 pad
+            step(0.4, melody: m(330)),                      // E4
+            // F - A - C - A
+            step(0.4, melody: m(349), extra: pad(440)),   // F4 + A4 pad
+            step(0.4, melody: m(440)),                      // A4
+            step(0.4, melody: m(523), extra: pad(349)),   // C5 + F4 pad
+            step(0.4, melody: m(440)),                      // A4
+            // G - B - D - B
+            step(0.4, melody: m(392), extra: pad(494)),   // G4 + B4 pad
+            step(0.4, melody: m(494)),                      // B4
+            step(0.4, melody: m(587), extra: pad(392)),   // D5 + G4 pad
+            step(0.4, melody: m(494)),                      // B4
+            // Resolve back to C
+            step(0.6, melody: m(523), extra: pad(392)),   // C5 + G4 pad
+            step(0.6, melody: m(392)),                      // G4
+            rest(0.4),
+        ]
+    }
+
+    private func shopMelody2() -> [MusicStep] {
+        let m = { (f: Double) -> (Double, Float, Waveform) in (f, 0.065, .sine) }
+        let pad = { (f: Double) -> (Double, Float, Waveform) in (f, 0.03, .triangle) }
+
+        return [
+            // Gentle waltz-ish saunter, F major
+            step(0.5, melody: m(349), extra: pad(262)),   // F4 + C4 pad
+            step(0.3, melody: m(440)),                      // A4
+            step(0.3, melody: m(523)),                      // C5
+            step(0.5, melody: m(440), extra: pad(349)),   // A4 + F4 pad
+            rest(0.2),
+            step(0.5, melody: m(392), extra: pad(294)),   // G4 + D4 pad
+            step(0.3, melody: m(494)),                      // B4
+            step(0.3, melody: m(587)),                      // D5
+            step(0.5, melody: m(494), extra: pad(392)),   // B4 + G4 pad
+            rest(0.2),
+            step(0.6, melody: m(440), extra: pad(349)),   // A4 + F4 pad
+            step(0.8, melody: m(349)),                      // F4 resolve
+            rest(0.5),
         ]
     }
 }

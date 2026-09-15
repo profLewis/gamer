@@ -120,12 +120,16 @@ enum CharacterClass: String, CaseIterable, Codable {
     case cleric = "Cleric"
     case ranger = "Ranger"
     case barbarian = "Barbarian"
+    case engineer = "Engineer"
+    case scout = "Scout"
+    case thief = "Thief"
+    case bard = "Bard"
 
     var hitDie: Int {
         switch self {
         case .barbarian: return 12
         case .fighter, .ranger: return 10
-        case .cleric, .rogue: return 8
+        case .cleric, .rogue, .engineer, .scout, .thief, .bard: return 8
         case .wizard: return 6
         }
     }
@@ -133,10 +137,32 @@ enum CharacterClass: String, CaseIterable, Codable {
     var primaryAbility: Ability {
         switch self {
         case .fighter, .barbarian: return .strength
-        case .wizard: return .intelligence
-        case .rogue, .ranger: return .dexterity
+        case .wizard, .engineer: return .intelligence
+        case .rogue, .ranger, .scout, .thief: return .dexterity
         case .cleric: return .wisdom
+        case .bard: return .charisma
         }
+    }
+
+    /// A class+level rank title — the visible "you've grown" marker for a
+    /// text-based game (no portrait to put a hat on, so the title does that
+    /// job). Levels 1-5 only, matching the current level cap.
+    func rankTitle(atLevel level: Int) -> String {
+        let titles: [String]
+        switch self {
+        case .fighter:   titles = ["Recruit", "Soldier", "Warrior", "Veteran", "Champion"]
+        case .wizard:    titles = ["Apprentice", "Adept", "Conjurer", "Magus", "Archmage"]
+        case .rogue:     titles = ["Footpad", "Cutpurse", "Infiltrator", "Shadowblade", "Master Thief"]
+        case .cleric:    titles = ["Acolyte", "Curate", "Priest", "High Priest", "Hierophant"]
+        case .ranger:    titles = ["Tracker", "Pathfinder", "Warden", "Ranger-Captain", "Wildkeeper"]
+        case .barbarian: titles = ["Brawler", "Berserker", "Reaver", "Warchief", "Juggernaut"]
+        case .engineer:  titles = ["Tinkerer", "Mechanist", "Artificer", "Machinist", "Grand Engineer"]
+        case .scout:     titles = ["Wayfinder", "Trailblazer", "Outrider", "Vanguard", "Pathlord"]
+        case .thief:     titles = ["Sneak", "Prowler", "Fence", "Cat Burglar", "Shadow Lord"]
+        case .bard:      titles = ["Busker", "Minstrel", "Troubadour", "Skald", "Master Bard"]
+        }
+        let idx = max(0, min(titles.count - 1, level - 1))
+        return titles[idx]
     }
 
     /// Optimal ability score assignment order for auto-assign
@@ -148,6 +174,10 @@ enum CharacterClass: String, CaseIterable, Codable {
         case .rogue:     return [.dexterity, .constitution, .wisdom, .charisma, .intelligence, .strength]
         case .cleric:    return [.wisdom, .constitution, .strength, .charisma, .dexterity, .intelligence]
         case .ranger:    return [.dexterity, .wisdom, .constitution, .strength, .charisma, .intelligence]
+        case .engineer:  return [.intelligence, .dexterity, .constitution, .wisdom, .charisma, .strength]
+        case .scout:     return [.dexterity, .wisdom, .constitution, .strength, .intelligence, .charisma]
+        case .thief:     return [.dexterity, .charisma, .constitution, .wisdom, .intelligence, .strength]
+        case .bard:      return [.charisma, .dexterity, .constitution, .wisdom, .intelligence, .strength]
         }
     }
 
@@ -165,19 +195,71 @@ enum CharacterClass: String, CaseIterable, Codable {
             return [.animalHandling, .athletics, .insight, .investigation, .nature, .perception, .stealth, .survival]
         case .barbarian:
             return [.animalHandling, .athletics, .intimidation, .nature, .perception, .survival]
+        case .engineer:
+            return [.arcana, .history, .investigation, .perception, .sleightOfHand]
+        case .scout:
+            return [.athletics, .insight, .investigation, .nature, .perception, .stealth, .survival]
+        case .thief:
+            return [.deception, .insight, .intimidation, .performance, .persuasion, .sleightOfHand, .stealth]
+        case .bard:
+            return [.acrobatics, .deception, .history, .insight, .performance, .persuasion, .sleightOfHand, .stealth]
         }
     }
 
     var numSkillChoices: Int {
         switch self {
-        case .rogue: return 4
-        case .ranger: return 3
+        case .rogue, .thief: return 4
+        case .ranger, .scout, .engineer, .bard: return 3
         default: return 2
         }
     }
 
     var startingHP: Int {
         return hitDie
+    }
+
+    // MARK: - Reliability (class-flavoured edge at Search / Map / Negotiate)
+
+    /// Willpower Surge: a timed on-screen prompt to resist an enemy's
+    /// mind-control attack the instant it's cast, instead of an automatic
+    /// saving throw — a Cleric's faith or a Wizard's trained mental
+    /// discipline pushing back against it (this roster has no Paladin or
+    /// Sorcerer; these two are the closest existing divine/arcane-willpower
+    /// analogues). Limited like Second Wind/Rage, restored on long rest
+    /// (see Character.willpowerSurgeUsesRemaining).
+    var willpowerSurgeMaxUses: Int {
+        switch self {
+        case .cleric, .wizard: return 1
+        default: return 0
+        }
+    }
+
+    /// Bonus to Search Room's Perception check — mechanically-minded classes
+    /// are better at spotting traps and hidden compartments.
+    var searchReliability: Int {
+        switch self {
+        case .rogue, .engineer: return 2
+        default: return 0
+        }
+    }
+
+    /// Whether this class extends the party's effective map visibility
+    /// radius (see GameEngine.effectiveMapRadius) — reconnaissance,
+    /// pathfinding, or arcane sense of the dungeon's layout.
+    var mapReliability: Int {
+        switch self {
+        case .wizard, .ranger, .scout: return 2
+        default: return 0
+        }
+    }
+
+    /// Bonus applied to haggling (reduces the effective DC) — classes with
+    /// a trusted, persuasive, or street-smart edge negotiate better deals.
+    var negotiateReliability: Int {
+        switch self {
+        case .cleric, .thief, .bard: return 2
+        default: return 0
+        }
     }
 
     var asciiArt: [String] {
@@ -226,6 +308,34 @@ enum CharacterClass: String, CaseIterable, Codable {
                 "=||=",
                 " /  \\",
             ]
+        case .engineer:
+            return [
+                " [o]",
+                " /|\\+",
+                " /|\\",
+                " / \\",
+            ]
+        case .scout:
+            return [
+                "  o",
+                " /|\\",
+                " )|\\\\",
+                " / \\",
+            ]
+        case .thief:
+            return [
+                "  o",
+                " /|\\",
+                " /|>",
+                " / \\",
+            ]
+        case .bard:
+            return [
+                "  o  ♪",
+                " /|\\",
+                " (O)|",
+                " / \\",
+            ]
         }
     }
 
@@ -267,6 +377,30 @@ enum CharacterClass: String, CaseIterable, Codable {
                 ["  o", " /|\\", "=||=", " /  \\"],             // ready
                 ["  o", "  |\\", "  || =>>", " /  \\"],         // swing!
                 ["  o", " /|", "<<= ||", "   /  \\"],           // backswing
+            ]
+        case .engineer:
+            return [
+                [" [o]", " /|\\+", " /|\\", " / \\"],           // tinkering
+                [" [o]", " /|\\*", " /|\\", " / \\"],           // spark!
+                [" [o]", " /|\\+", " /|\\ ✦", " / \\"],         // gadget ready
+            ]
+        case .scout:
+            return [
+                ["  o", " /|\\", " )|\\\\", " / \\"],           // scanning
+                ["  o", " /|\\", " )|  \\\\", " / \\"],         // spotted something
+                ["  o", " /|\\", " )|\\\\", " / \\"],           // steady
+            ]
+        case .thief:
+            return [
+                ["  o", " /|\\", " /|>", " / \\"],              // lurking
+                ["  o", " /|\\  >", " /|", " / \\"],            // snatch!
+                ["  o", " /|\\", " /|>", " / \\"],              // vanished
+            ]
+        case .bard:
+            return [
+                ["  o  ♪", " /|\\", " (O)|", " / \\"],      // strumming
+                ["  o ♫", " /|\\", " (O)/", " / \\"],       // a flourish
+                ["  o   ♪", " \\|/", " (O)|", " / \\"],     // arms up, singing
             ]
         }
     }
@@ -310,6 +444,39 @@ enum Skill: String, CaseIterable, Codable {
     }
 }
 
+// MARK: - Glyphkeeper (Ethical Alignment)
+
+/// A character's tracked moral standing, derived from their running
+/// `ethicalScore` (-100...100). Named bands rather than a raw number so the
+/// DM, character sheet, and NPC reactions can all talk about it consistently.
+enum EthicalAlignment: String, CaseIterable {
+    case villainous = "Villainous"
+    case selfish = "Selfish"
+    case neutral = "Neutral"
+    case kind = "Kind"
+    case heroic = "Heroic"
+
+    static func forScore(_ score: Int) -> EthicalAlignment {
+        switch score {
+        case ..<(-60): return .villainous
+        case -60 ..< -20: return .selfish
+        case -20...20: return .neutral
+        case 21..<60: return .kind
+        default: return .heroic
+        }
+    }
+
+    var summary: String {
+        switch self {
+        case .villainous: return "Known for cruelty and self-interest above all else."
+        case .selfish: return "Looks out for themself first, others second."
+        case .neutral: return "No strong reputation either way."
+        case .kind: return "Known for fairness and looking out for others."
+        case .heroic: return "Known for selfless courage and mercy."
+        }
+    }
+}
+
 // MARK: - Character
 
 class Character: ObservableObject, Identifiable, Codable {
@@ -346,6 +513,13 @@ class Character: ObservableObject, Identifiable, Codable {
     @Published var rageUsesRemaining: Int    // Barbarian: uses per long rest
     @Published var isRaging: Bool            // Barbarian: currently raging
     @Published var huntersMarkActive: Bool   // Ranger: bonus damage active
+    @Published var weaponSharpenedUses: Int  // Whetstone: +1 to hit/damage for this many attacks
+    @Published var wellFedAttacks: Int = 0   // Hearty food: +1 to hit/damage for this many attacks
+    @Published var juiceCount: Int = 0       // Glasses of juice since the last rest/water/tea
+    @Published var sluggishAttacks: Int = 0  // Too much juice: disadvantage on this many attacks
+    /// Spells whose true incantation this character has learned (arcane
+    /// gyms) — spoken right every time, so no incantation choice.
+    @Published var knownIncantations: Set<String> = []
 
     // AI control
     @Published var isComputerControlled: Bool
@@ -357,6 +531,27 @@ class Character: ObservableObject, Identifiable, Codable {
     @Published var isPlayingDead: Bool       // Pretending to be dead in combat
     @Published var hasFledCombat: Bool       // Has fled this combat
     @Published var isDodging: Bool           // Took Dodge action — attackers have disadvantage
+    @Published var isMindControlled: Bool = false      // Lost their turn to an enemy's mind-control attack
+    @Published var mindControlTurnsRemaining: Int = 0
+    @Published var willpowerSurgeImmuneTurns: Int = 0  // Grace window right after a successful Willpower Surge resist
+    // Willpower Surge: Paladin/Sorcerer reactive ability — a timed on-screen
+    // prompt to resist an enemy's mind-control attack the instant it's cast,
+    // rather than an automatic saving throw. Limited like Second Wind/Rage
+    // (see willpowerSurgeMaxUses below), restored on long rest.
+    @Published var willpowerSurgeUsesRemaining: Int = 0
+
+    // Familiar — a small companion, currently cosmetic/flavour only (shown
+    // on the character card and in status), earned as a quest reward
+    @Published var familiarName: String?
+    @Published var familiarType: String?
+
+    // Glyphkeeper — running ethical/alignment tracking. A single -100...100
+    // score (Villainous...Heroic) shifted by tracked in-game choices, with a
+    // short rolling log of what shifted it — the "memory" the AI DM reads to
+    // keep narration and NPC reactions consistent with who this character has
+    // actually been over the campaign, not just this one scene.
+    @Published var ethicalScore: Int = 0
+    @Published var ethicalLog: [String] = []   // most recent first, capped
 
     enum CodingKeys: String, CodingKey {
         case id, name, race, characterClass, level, abilityScores
@@ -364,9 +559,14 @@ class Character: ObservableObject, Identifiable, Codable {
         case isConscious, deathSaveSuccesses, deathSaveFailures
         case inventory, equippedWeapon, equippedArmor, equippedShield
         case knownSpells, spellSlots
-        case secondWindUsed, rageUsesRemaining, isRaging, huntersMarkActive
+        case secondWindUsed, rageUsesRemaining, isRaging, huntersMarkActive, weaponSharpenedUses
         case isComputerControlled
         case isPoisoned, poisonDamagePerTurn, poisonTurnsRemaining
+        case familiarName, familiarType
+        case ethicalScore, ethicalLog
+        case willpowerSurgeUsesRemaining
+        case wellFedAttacks, juiceCount, sluggishAttacks
+        case knownIncantations
     }
 
     init(name: String, race: Race, characterClass: CharacterClass, abilityScores: AbilityScores, isComputerControlled: Bool = false) {
@@ -398,6 +598,7 @@ class Character: ObservableObject, Identifiable, Codable {
         self.rageUsesRemaining = characterClass == .barbarian ? 2 : 0
         self.isRaging = false
         self.huntersMarkActive = false
+        self.weaponSharpenedUses = 0
 
         // Status effects
         self.isPoisoned = false
@@ -406,6 +607,9 @@ class Character: ObservableObject, Identifiable, Codable {
         self.isPlayingDead = false
         self.hasFledCombat = false
         self.isDodging = false
+        self.familiarName = nil
+        self.familiarType = nil
+        self.willpowerSurgeUsesRemaining = characterClass.willpowerSurgeMaxUses
 
         // Calculate starting HP
         let conMod = abilityScores.modifier(for: .constitution)
@@ -431,7 +635,7 @@ class Character: ObservableObject, Identifiable, Codable {
         isConscious = try container.decode(Bool.self, forKey: .isConscious)
         deathSaveSuccesses = try container.decode(Int.self, forKey: .deathSaveSuccesses)
         deathSaveFailures = try container.decode(Int.self, forKey: .deathSaveFailures)
-        inventory = (try? container.decode([Item].self, forKey: .inventory)) ?? []
+        inventory = ((try? container.decode([Item].self, forKey: .inventory)) ?? []).map(ItemCatalog.migrateLegacyFood)
         equippedWeapon = try? container.decodeIfPresent(Item.self, forKey: .equippedWeapon)
         equippedArmor = try? container.decodeIfPresent(Item.self, forKey: .equippedArmor)
         equippedShield = try? container.decodeIfPresent(Item.self, forKey: .equippedShield)
@@ -445,6 +649,7 @@ class Character: ObservableObject, Identifiable, Codable {
         rageUsesRemaining = (try? container.decodeIfPresent(Int.self, forKey: .rageUsesRemaining)) ?? 0
         isRaging = (try? container.decodeIfPresent(Bool.self, forKey: .isRaging)) ?? false
         huntersMarkActive = (try? container.decodeIfPresent(Bool.self, forKey: .huntersMarkActive)) ?? false
+        weaponSharpenedUses = (try? container.decodeIfPresent(Int.self, forKey: .weaponSharpenedUses)) ?? 0
         isComputerControlled = (try? container.decodeIfPresent(Bool.self, forKey: .isComputerControlled)) ?? false
         isPoisoned = (try? container.decodeIfPresent(Bool.self, forKey: .isPoisoned)) ?? false
         poisonDamagePerTurn = (try? container.decodeIfPresent(Int.self, forKey: .poisonDamagePerTurn)) ?? 0
@@ -452,6 +657,15 @@ class Character: ObservableObject, Identifiable, Codable {
         isPlayingDead = false
         hasFledCombat = false
         isDodging = false
+        familiarName = (try? container.decodeIfPresent(String.self, forKey: .familiarName)) ?? nil
+        familiarType = (try? container.decodeIfPresent(String.self, forKey: .familiarType)) ?? nil
+        ethicalScore = (try? container.decodeIfPresent(Int.self, forKey: .ethicalScore)) ?? 0
+        ethicalLog = (try? container.decodeIfPresent([String].self, forKey: .ethicalLog)) ?? []
+        willpowerSurgeUsesRemaining = (try? container.decodeIfPresent(Int.self, forKey: .willpowerSurgeUsesRemaining)) ?? characterClass.willpowerSurgeMaxUses
+        wellFedAttacks = (try? container.decodeIfPresent(Int.self, forKey: .wellFedAttacks)) ?? 0
+        juiceCount = (try? container.decodeIfPresent(Int.self, forKey: .juiceCount)) ?? 0
+        sluggishAttacks = (try? container.decodeIfPresent(Int.self, forKey: .sluggishAttacks)) ?? 0
+        knownIncantations = (try? container.decodeIfPresent(Set<String>.self, forKey: .knownIncantations)) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -481,10 +695,20 @@ class Character: ObservableObject, Identifiable, Codable {
         try container.encode(rageUsesRemaining, forKey: .rageUsesRemaining)
         try container.encode(isRaging, forKey: .isRaging)
         try container.encode(huntersMarkActive, forKey: .huntersMarkActive)
+        try container.encode(weaponSharpenedUses, forKey: .weaponSharpenedUses)
         try container.encode(isComputerControlled, forKey: .isComputerControlled)
         try container.encode(isPoisoned, forKey: .isPoisoned)
         try container.encode(poisonDamagePerTurn, forKey: .poisonDamagePerTurn)
         try container.encode(poisonTurnsRemaining, forKey: .poisonTurnsRemaining)
+        try container.encodeIfPresent(familiarName, forKey: .familiarName)
+        try container.encodeIfPresent(familiarType, forKey: .familiarType)
+        try container.encode(ethicalScore, forKey: .ethicalScore)
+        try container.encode(ethicalLog, forKey: .ethicalLog)
+        try container.encode(willpowerSurgeUsesRemaining, forKey: .willpowerSurgeUsesRemaining)
+        try container.encode(wellFedAttacks, forKey: .wellFedAttacks)
+        try container.encode(juiceCount, forKey: .juiceCount)
+        try container.encode(sluggishAttacks, forKey: .sluggishAttacks)
+        try container.encode(knownIncantations, forKey: .knownIncantations)
     }
 
     var proficiencyBonus: Int {
@@ -526,6 +750,24 @@ class Character: ObservableObject, Identifiable, Codable {
         return abilityMod
     }
 
+    // MARK: - Glyphkeeper (Ethical Alignment)
+
+    var ethicalAlignment: EthicalAlignment { EthicalAlignment.forScore(ethicalScore) }
+
+    /// Shifts this character's tracked ethical score by `delta` (clamped to
+    /// -100...100) and records why, most-recent-first, capped at 20 entries
+    /// so the log stays a useful recent summary rather than growing forever
+    /// across a long campaign.
+    func adjustEthicalScore(_ delta: Int, reason: String) {
+        guard delta != 0 else { return }
+        ethicalScore = max(-100, min(100, ethicalScore + delta))
+        let sign = delta > 0 ? "+" : ""
+        ethicalLog.insert("\(sign)\(delta) — \(reason)", at: 0)
+        if ethicalLog.count > 20 {
+            ethicalLog.removeLast(ethicalLog.count - 20)
+        }
+    }
+
     func takeDamage(_ amount: Int) {
         var remaining = amount
 
@@ -556,6 +798,14 @@ class Character: ObservableObject, Identifiable, Codable {
         }
     }
 
+    /// A failed (or auto-resolved) mind-control attempt — loses their next
+    /// `turns` turn(s) to it. See willpowerSurgeUsesRemaining/
+    /// willpowerSurgeImmuneTurns for the resist side of this.
+    func applyMindControl(turns: Int) {
+        isMindControlled = true
+        mindControlTurnsRemaining = turns
+    }
+
     func applyPoison(damagePerTurn: Int, turns: Int) {
         isPoisoned = true
         poisonDamagePerTurn = damagePerTurn
@@ -566,6 +816,35 @@ class Character: ObservableObject, Identifiable, Codable {
         isPoisoned = false
         poisonDamagePerTurn = 0
         poisonTurnsRemaining = 0
+    }
+
+    /// Reset per-adventure/per-combat state to a fresh start — used when a
+    /// character loaded from the Character Roster joins a new party. Keeps
+    /// everything that makes it "the same character" (level, XP, gear, gold,
+    /// spells known) but clears anything that only made sense mid-adventure.
+    func prepareForNewAdventure() {
+        currentHP = maxHP
+        tempHP = 0
+        isConscious = true
+        deathSaveSuccesses = 0
+        deathSaveFailures = 0
+        curePoison()
+        if !spellSlots.isEmpty { spellSlots.restoreAll() }
+        secondWindUsed = false
+        rageUsesRemaining = rageMaxUses
+        isRaging = false
+        huntersMarkActive = false
+        isPlayingDead = false
+        hasFledCombat = false
+        isDodging = false
+        weaponSharpenedUses = 0
+        wellFedAttacks = 0
+        juiceCount = 0
+        sluggishAttacks = 0
+        isMindControlled = false
+        mindControlTurnsRemaining = 0
+        willpowerSurgeImmuneTurns = 0
+        willpowerSurgeUsesRemaining = characterClass.willpowerSurgeMaxUses
     }
 
     /// Called each combat turn — returns damage taken from poison, or 0 if recovered
@@ -591,30 +870,53 @@ class Character: ObservableObject, Identifiable, Codable {
 
     // MARK: - Carry Capacity
 
-    static let maxInventorySlots = 10
+    /// A hidden safety cap on separate items — weight is the real limit
+    /// (see carryCapacity); play shouldn't normally reach this.
+    static let maxInventorySlots = 40
 
+    /// How much the pack holds: about 40 lb — roughly ten medium things
+    /// like axes (or four greataxes, or forty potions) — a little more for
+    /// the strong (+7% per point of STR modifier) and the hardy (+4% per
+    /// point of CON modifier), less for small folk (halflings, gnomes).
+    /// Worn weapon, armour and shield don't count against it.
     var carryCapacity: Double {
-        Double(abilityScores.strength) * 15.0
+        let str = Double(abilityScores.modifier(for: .strength))
+        let con = Double(abilityScores.modifier(for: .constitution))
+        let isSmall: Bool
+        switch race {
+        case .lightfootHalfling, .stoutHalfling, .gnome: isSmall = true
+        default: isSmall = false
+        }
+        let pounds = 40.0 * (1 + 0.07 * str + 0.04 * con) * (isSmall ? 0.85 : 1.0)
+        return min(60, max(26, pounds.rounded()))
     }
 
+    /// What's in the pack (worn gear isn't).
     var currentWeight: Double {
-        var total = inventory.reduce(0.0) { $0 + $1.weight }
-        if let w = equippedWeapon { total += w.weight }
-        if let a = equippedArmor { total += a.weight }
-        if let s = equippedShield { total += s.weight }
-        return total
+        inventory.reduce(0.0) { $0 + $1.weight }
     }
 
     var isEncumbered: Bool {
         currentWeight > carryCapacity
     }
 
+    /// No room for even a small thing more.
     var isInventoryFull: Bool {
-        inventory.count >= Character.maxInventorySlots
+        currentWeight + 0.5 > carryCapacity || inventory.count >= Character.maxInventorySlots
     }
 
     func canCarry(_ item: Item) -> Bool {
         currentWeight + item.weight <= carryCapacity && inventory.count < Character.maxInventorySlots
+    }
+
+    /// Why canCarry(_:) would refuse this item, in words. nil if it CAN be carried.
+    func carryBlockReason(for item: Item) -> String? {
+        if currentWeight + item.weight > carryCapacity {
+            return "That won't fit — the pack would be too heavy. Drop, use or store something first."
+        } else if inventory.count >= Character.maxInventorySlots {
+            return "The pack is stuffed with too many separate things — drop or store something first."
+        }
+        return nil
     }
 
     /// Recalculate maxHP based on current class and CON (for class/race changes)
@@ -630,15 +932,32 @@ class Character: ObservableObject, Identifiable, Codable {
     /// Mark as computer-controlled and add "R." prefix (Asimov convention)
     func markAsAI() {
         isComputerControlled = true
-        if !name.hasPrefix("R. ") {
-            name = "R. " + name
-        }
+        syncRobotPrefix()
     }
 
     /// Remove computer control and "R." prefix
     func unmarkAsAI() {
         isComputerControlled = false
-        if name.hasPrefix("R. ") {
+        syncRobotPrefix()
+    }
+
+    /// Adds or removes the "R. " robot prefix (Asimov convention) so it
+    /// always matches isComputerControlled and the "Robot Prefix" setting
+    /// (Settings > Gameplay, on by default). Call this after loading a
+    /// character from anywhere — a save, the Character Roster — since
+    /// older data can predate the setting, or the setting can have been
+    /// toggled since that character was last saved; without re-syncing,
+    /// a loaded character's name and its actual control state can drift
+    /// out of sync (an AI character with no "R. ", or a human one with a
+    /// stale "R. " left over from before you took control).
+    func syncRobotPrefix() {
+        let enabled = UserDefaults.standard.object(forKey: "robot_prefix_enabled") == nil
+            ? true : UserDefaults.standard.bool(forKey: "robot_prefix_enabled")
+        let shouldHavePrefix = isComputerControlled && enabled
+        let hasPrefix = name.hasPrefix("R. ")
+        if shouldHavePrefix && !hasPrefix {
+            name = "R. " + name
+        } else if !shouldHavePrefix && hasPrefix {
             name = String(name.dropFirst(3))
         }
     }
@@ -709,6 +1028,7 @@ class Character: ObservableObject, Identifiable, Codable {
         switch characterClass {
         case .wizard: return .intelligence
         case .cleric, .ranger: return .wisdom
+        case .bard: return .charisma
         default: return nil
         }
     }

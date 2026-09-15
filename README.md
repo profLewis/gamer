@@ -10,6 +10,8 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS and macOS, wit
 - **12 Races**: Human, High Elf, Wood Elf, Hill Dwarf, Mountain Dwarf, Lightfoot Halfling, Stout Halfling, Half-Elf, Half-Orc, Rock Gnome, Tiefling, Dragonborn
 - **6 Classes**: Fighter, Wizard, Rogue, Cleric, Ranger, Barbarian
 - **Ability Scores**: Standard array or 4d6 drop lowest
+- **Ability Score Improvement**: raise an ability score by 2 (your choice, capped at 20) at D&D 5e ASI levels as you level up
+- **Experience & Leveling**: standard D&D 5e XP thresholds — Level 2 at 300 XP, Level 3 at 900 XP, Level 4 at 2,700 XP, Level 5 (cap) at 6,500 XP. Earned from combat and awarded by the DM; shown on Party Status alongside how much is needed for the next level
 - **18 Skills** with proficiency system
 - **Parties** of 1-4 characters (human or AI-controlled)
 - **Long-press** any party size to auto-generate an all-AI party
@@ -25,7 +27,10 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS and macOS, wit
 - **Flee** — escape to the previous room
 - Creative actions via the AI DM
 - Monsters grouped by type with numbered targeting
+- **Fight Club** — each fight acted out in animated ASCII: fighters lunge, swoop, shoot, throw, lob gadgets and breathe fire; spells fly in their element's colour; hits spark and shake, crits flash, damage rises off the struck, misses are dodged and the fallen crumple — with everyone's health bars along the bottom. On a Mac it plays below the buttons; on iPhone/iPad tap **@** on the input line during a fight (tap again to hide). Onlookers on both sides cheer and jeer, with crowd sounds. Settings > Gameplay > Fight Club.
+- **Dungeon Quirks** (Settings > Gameplay, off by default) — little oddities, like the dragon's winks wandering into the words ("g- -n" still means go on)
 - **Poison** — venomous creatures can poison party members (CON save to recover)
+- **Dynamic Difficulty** — monster HP and accuracy scale up gradually as your party's average level rises, on top of your chosen difficulty, so the challenge keeps pace with your growing skill (shown on Party Status)
 
 ### Spellcasting
 - **Wizard**: Fire Bolt, Ray of Frost, Magic Missile, Burning Hands, Sleep
@@ -35,10 +40,25 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS and macOS, wit
 
 ### Procedural Dungeons
 - 11 room types: corridors, chambers, treasure rooms, armories, shrines, libraries, prisons, trap rooms, boss chambers, and more
-- ASCII minimap showing only visited rooms with dynamic key (only shows symbols present on the map)
+- ASCII minimap showing only visited rooms with dynamic key (only shows symbols present on the map) — merchant rooms are marked with `[M]`
 - Encounters and traps scaled by dungeon level
-- Treasure, equipment, potions, and a merchant in armory rooms
+- Treasure, equipment, and potions throughout; shop rooms always have a merchant, and armouries sometimes do too
 - Multi-level progression — defeat the boss to descend deeper
+- **Locked doors** — occasionally gate a passage; open them with a matching key (findable elsewhere in the dungeon), by picking the lock (Thieves' Tools), or by forcing it (Strength check). Door state persists — leave and come back and it's exactly as you left it — and holding the key, you can lock it again behind you to keep monsters out
+
+### Merchants
+- **4 tiers**, scaling with dungeon depth: Wandering Peddler, General Store, Trading Post, and Hyperstore
+- Each merchant is a named character with their own shop name and persona, not a generic vendor
+- **Buy, Sell, Haggle** (a Persuasion check for a discount), and **Ask About Rare Goods** (a chance at an under-the-counter item at a premium)
+- Merchants occasionally offer unsolicited advice
+- Bargaining and rare-goods outcomes are always resolved as real game mechanics (dice rolls, item tables) — the DM only narrates on top, so it works with cloud AI, Apple on-device AI, or no AI at all
+- Found in shop rooms (guaranteed once per dungeon level), some armouries, and via Wandering Trader NPCs — a **Visit Merchant** button appears whenever one is present
+
+### Training Gyms
+- Found by chance in chamber rooms, run by a named trainer with a specialty skill
+- Get in by **paying a membership fee** or **sparring** (a skill check against the trainer) for free entry
+- Training teaches a character a new skill proficiency outright, or a small XP bonus if they already have it
+- A **Visit Gym** button appears whenever one is present, marked `[G]` on the minimap
 
 ### 30 Monsters
 
@@ -75,9 +95,19 @@ Features:
 - Load any breakpoint from a slot's history
 - Rename and delete save slots
 
+### Character Roster
+- Save individual characters independent of game saves — a separate system from Saved Adventures, reached inside **New Adventure**'s character selection rather than as its own Play menu button, so the Play menu stays to just "New Adventure" / "Continue Adventure"
+- **Save to Roster** is available wherever it matters: on the Party Review card for every character before an adventure starts (covers new, auto-generated, and quick-start parties alike), during party creation, and from Party Status mid-adventure (handy right after a level-up)
+- Starts pre-seeded with one Level 1 example of each class, so there's always something to load right away
+- **Load Character**, offered while picking party members, opens the Character Hall of Fame — pick any inducted hero, or tap "Manage Saves" there to browse and delete the full roster (not just Hall-of-Famers). Loading brings a character in at their current level, gear, and gold (HP/spell slots/combat state reset for the fresh start)
+- Starting a brand new adventure automatically offers to bring back your most recently inducted hero for the first party slot
+- Up to 20 characters can be kept in the roster
+
 ### Hall of Fame
 - Scoring: victories, gold, monsters slain, exploration, difficulty multiplier
 - Pre-seeded with Stranger Things-themed entries
+- Reached via **Continue Adventure** in the Play menu; each entry is a numbered button (tap to read its tale, matching how the Character Hall of Fame lists its heroes), and a "Manage Saves" button opens actual save-game management (resume, rename, delete) — including adventures still in progress, which never earn a Hall of Fame entry of their own
+- **Character Hall of Fame** — every survivor of a victorious adventure is automatically saved to the Character Roster and inducted here, the character-level counterpart to the game Hall of Fame; reached from New Adventure's character selection, with its own "Manage Saves" for the full roster
 
 ### Game Center
 - Leaderboards: Gold collected, Victories, Monsters slain
@@ -109,13 +139,50 @@ Green-on-black terminal aesthetic with monospaced text, ASCII art for characters
 - Custom on-screen keyboard
 - Undo/redo for character editing and settings
 - macOS keyboard shortcuts (arrow keys, WASD, letter keys for menus)
-- Long-press shortcuts throughout the UI
+- Long-press shortcuts throughout the UI (e.g. long-press Quit Without Saving or Delete to skip "are you sure?")
+- Auto-Continue with a countdown hourglass by the `>` prompt — see below
+- Pages always open at the top; optional **Auto-Scroll** (Settings > Accessibility: Slow / Medium / Fast, with a live demo) glides down long pages, and text added later — results, warnings — is scrolled into view
+- A short breadcrumb at the top of each page says where you came from and what just happened
+- Tappable links in help text (e.g. → Settings > Gameplay) open that setting; Back returns to where you were
+
+## Auto-Continue & the Countdown Hourglass
+
+Many screens — a combat round, a search result, a merchant's reply — are *tap-to-continue*: nothing happens until you tap. With **Auto-Continue** on (the default), those screens also move on by themselves after a short wait: the **Info Timeout** (5 seconds by default; other tap-to-continue screens wait twice that).
+
+While a screen is counting down you'll see a small **hourglass** at the right-hand end of the input line — it turns over, and a thin ring around it shows the time left. You can:
+
+- **Tap anywhere** on the screen to continue straight away.
+- **Wait** — when the hourglass runs out, the game moves on by itself.
+- **Tap the hourglass** to pause — this **freezes time**. It turns **orange** and *paused* pulses gently beside it. While frozen nothing happens: the DM stops nudging you to continue (it just says time is frozen and how to unfreeze), buttons and taps wait, combat hesitation doesn't count against you, and anything you type makes the game ask whether to unfreeze first (say *yes* and what you typed goes through). Tap the orange hourglass again (or press Space on a Mac) to unfreeze; it carries on from where it stopped. A **?** beside *paused* explains all this.
+- **Long-press the hourglass** to hurry the countdown along.
+- **Type** at the prompt: typing pauses the countdown; *go on* continues, and anything else continues and then does what you typed.
+- Wait a while and a dim hint reminds you of these options.
+- On a Mac, press **Space** to pause or resume.
+
+**Why we do it.** Auto-Continue keeps the game flowing if you glance away, play one-handed, or listen with speaker mode — you're never stuck on a screen. But a screen that moves on by itself can also snatch text away before you've finished reading it: a long combat report, a merchant's counter-offer, a trap you want to think about. The hourglass makes the timer *visible*, so a screen never moves on as a surprise, and it puts pause right beside where you read and type — instead of burying it in Settings. That matters most if you read at your own pace, get interrupted, use a screen reader or large text, or simply want to savour the story.
+
+**Settings** (Settings > Gameplay):
+
+- **Auto-Continue** On/Off — Off means every such screen waits for your tap.
+- **Info Timeout** — how long screens wait before moving on.
+- **Countdown Icon** On/Off — hides the hourglass. Auto-Continue itself carries on as set (Space still pauses on a Mac).
+- **Blinking Cursor** — the ordinary cursor by the prompt, on or off.
+
+## Accessibility
+
+Display size, DM narration, VoiceOver labels (D-pad, map summary, navigation), Reduce Animations, Auto-Scroll, a pausable auto-continue countdown, left/right-handed layout, typing or voice instead of tapping, and long-press shortcuts. See [ios/DnDTextRPG/ACCESSIBILITY.md](ios/DnDTextRPG/ACCESSIBILITY.md) for how to use each tool and notes on playing with VoiceOver.
 
 ## Building
 
 Requires Xcode 15.0+. Open `ios/DnDTextRPG/DnDTextRPG.xcodeproj` and build for iOS 16.0+ or macOS.
 
 See [ios/README.md](ios/README.md) for detailed build instructions.
+
+## Testing
+
+- Manual QA checklist covering every system — combat, spells, leveling,
+  merchants, riddles, traps, save/load, DM tiers, and more:
+  [docs/QA_CHECKLIST.md](docs/QA_CHECKLIST.md)
 
 ## iOS/Python Feature Parity
 
@@ -142,6 +209,7 @@ See [ios/README.md](ios/README.md) for detailed build instructions.
 ## Credits
 
 - **Created by** Prof. Lewis
+- **Co-author — world creation and storytelling:** Beau Lewis
 - **AI assistance** by Claude (Anthropic) and Codex (OpenAI)
 - **A Timbaloo app**
 

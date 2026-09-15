@@ -16,7 +16,7 @@ struct Monster: Identifiable, Codable {
     var currentHP: Int
     var maxHP: Int
     var armorClass: Int
-    let attackBonus: Int
+    var attackBonus: Int
     let damage: String
     let challengeRating: Double
     let experiencePoints: Int
@@ -27,11 +27,11 @@ struct Monster: Identifiable, Codable {
         currentHP = max(0, currentHP - amount)
     }
 
-    static func create(_ type: MonsterType) -> Monster {
+    static func create(_ type: MonsterType, customName: String? = nil) -> Monster {
         let stats = type.stats
         return Monster(
             id: UUID(),
-            name: type.rawValue,
+            name: customName ?? type.rawValue,
             type: type,
             currentHP: stats.hp,
             maxHP: stats.hp,
@@ -293,6 +293,38 @@ enum MonsterType: String, CaseIterable, Codable {
         case .basilisk: return 3
         case .youngDragon: return 5
         default: return 0
+        }
+    }
+
+    /// Whether this monster type can attempt to seize a mind instead of a
+    /// physical attack — see Character.isMindControlled / Willpower Surge.
+    /// Scoped to the dungeon's classic psychic/dominating high-tier threats.
+    var canMindControl: Bool {
+        switch self {
+        case .mindFlayer, .beholder, .vecna: return true
+        default: return false
+        }
+    }
+
+    /// Chance (0.0-1.0), rolled instead of a normal attack, that this
+    /// monster attempts mind control this turn.
+    var mindControlChance: Double {
+        switch self {
+        case .mindFlayer: return 0.35
+        case .beholder: return 0.25
+        case .vecna: return 0.30
+        default: return 0.0
+        }
+    }
+
+    /// Save DC for an auto-resolved (non-Willpower-Surge) mind control
+    /// attempt — scales with how fearsome the caster is.
+    var mindControlDC: Int {
+        switch self {
+        case .mindFlayer: return 14
+        case .beholder: return 16
+        case .vecna: return 18
+        default: return 10
         }
     }
 
@@ -995,6 +1027,33 @@ struct AttackReport {
 
     // Status effects
     let poisonApplied: Bool
+
+    /// Set when the defender's equipped weapon broke blocking this hit —
+    /// the weapon's name, for a UI message. nil = nothing broke.
+    let brokenWeaponName: String?
+}
+
+/// A mind-control attempt rolled instead of a normal attack (see
+/// MonsterType.canMindControl) — resolved by GameEngine rather than here,
+/// since a Willpower Surge resist needs an on-screen timed prompt, which
+/// this model layer has no UI to show.
+struct MindControlAttempt {
+    let monsterName: String
+    let attackDescription: String
+    let targetId: UUID
+    let targetName: String
+    /// True when the target can attempt a Willpower Surge resist instead
+    /// of an automatic saving throw (see Character.willpowerSurgeUsesRemaining).
+    let offersWillpowerSurge: Bool
+    let saveDC: Int
+}
+
+/// What happened on a monster's turn — a normal attack, or a mind-control
+/// attempt (see MindControlAttempt) that GameEngine must resolve with its
+/// own UI before combat can continue.
+enum MonsterTurnOutcome {
+    case attack(AttackReport)
+    case mindControl(MindControlAttempt)
 }
 
 // MARK: - Combat State
@@ -1019,6 +1078,25 @@ final class Combat: ObservableObject {
     @Published var currentTurnIndex: Int
     @Published var state: CombatState
     @Published var combatLog: [String]
+    /// Damage each party member has dealt this combat (by character id) —
+    /// used to weight XP by contribution instead of splitting it flat.
+    /// Counts weapon attacks and damaging spells alike; healing/buff/utility
+    /// spells don't add damage but still count toward "took a turn" via
+    /// turnsTaken below.
+    /// Set true whenever "Ask the DM" mid-combat ad-libs a reward (gold or
+    /// items) for this fight — the standard end-of-combat monster loot roll
+    /// in handleCombatVictory() skips itself when this is true, so the same
+    /// fight's spoils aren't granted twice from two independent sources.
+    @Published var adLibLootGranted: Bool = false
+    @Published var damageDealtByCharacter: [UUID: Int] = [:]
+    /// Turns each party member has actually acted on (attacked, cast, used
+    /// an item) — a full-support healer can rack up real contribution with
+    /// zero damage, so damage alone isn't the whole picture.
+    @Published var turnsTakenByCharacter: [UUID: Int] = [:]
+    /// Set once handleCombatVictory() has actually granted this combat's loot —
+    /// guards against awarding it twice when a multiplayer catch-up resyncs
+    /// state for a fight that was already resolved on another device.
+    @Published var lootAwarded: Bool = false
 
     var currentCombatant: TurnOrderEntry? {
         guard currentTurnIndex >= 0 && currentTurnIndex < turnOrder.count else { return nil }
@@ -1102,6 +1180,7 @@ final class Combat: ObservableObject {
             return nil
         }
 
+        turnsTakenByCharacter[characterId, default: 0] += 1
         var monster = encounter.monsters[monsterIndex]
         let strMod = character.abilityScores.modifier(for: .strength)
         let dexMod = character.abilityScores.modifier(for: .dexterity)
@@ -1118,8 +1197,16 @@ final class Combat: ObservableObject {
             attackAbilityMod = strMod
         }
 
-        let attackMod = attackAbilityMod + profBonus
-        let attack = Dice.attackRoll(modifier: attackMod, targetAC: monster.armorClass, disadvantage: disadvantage)
+        let sharpenBonus = character.weaponSharpenedUses > 0 ? 1 : 0
+        // Hearty food (cheese, jerky...) — a small +1, stacks with a whetstone.
+        let wellFedBonus = character.wellFedAttacks > 0 ? 1 : 0
+        // Too much juice — sloshing about gives disadvantage.
+        let sluggish = character.sluggishAttacks > 0
+        let attackMod = attackAbilityMod + profBonus + sharpenBonus + wellFedBonus
+        let attack = Dice.attackRoll(modifier: attackMod, targetAC: monster.armorClass, disadvantage: disadvantage || sluggish)
+        if character.weaponSharpenedUses > 0 { character.weaponSharpenedUses -= 1 }
+        if character.wellFedAttacks > 0 { character.wellFedAttacks -= 1 }
+        if sluggish { character.sluggishAttacks -= 1 }
 
         let abilityLabel = (weaponStats?.isRanged == true) ? "DEX" : (weaponStats?.isFinesse == true && dexMod > strMod) ? "DEX" : "STR"
         let breakdown = "\(abilityLabel) \(attackAbilityMod >= 0 ? "+" : "")\(attackAbilityMod), Prof +\(profBonus)"
@@ -1131,7 +1218,7 @@ final class Combat: ObservableObject {
         var targetDefeated = false
 
         if attack.hits {
-            let damageMod = attackAbilityMod
+            let damageMod = attackAbilityMod + sharpenBonus + wellFedBonus
             let baseDice = weaponStats?.damage ?? "1d4"  // Unarmed fallback
             damageDice = baseDice
             damageModifier = damageMod
@@ -1168,6 +1255,7 @@ final class Combat: ObservableObject {
             monster.takeDamage(damage)
             encounter.monsters[monsterIndex] = monster
             targetDefeated = !monster.isAlive
+            damageDealtByCharacter[characterId, default: 0] += damage
         }
 
         let report = AttackReport(
@@ -1193,7 +1281,8 @@ final class Combat: ObservableObject {
             attackerArt: character.characterClass.asciiArt,
             defenderArt: monster.type.asciiArt,
             weaponName: character.equippedWeapon?.name ?? "Unarmed",
-            poisonApplied: false
+            poisonApplied: false,
+            brokenWeaponName: nil
         )
 
         combatLog.append("\(character.name) attacks \(monster.name)")
@@ -1250,6 +1339,20 @@ final class Combat: ObservableObject {
             targetUnconscious = !character.isConscious
         }
 
+        // Blocking a hit can break the weapon that took the blow. Only
+        // matters for a real weapon (not bare-handed), and one that isn't
+        // already broken.
+        var brokenWeaponName: String? = nil
+        if attack.hits, !targetUnconscious,
+           let weapon = character.equippedWeapon, weapon.weaponStats != nil, !weapon.broken,
+           Double.random(in: 0...1) < 0.08 {
+            brokenWeaponName = weapon.name
+            character.unequipWeapon()
+            if let idx = character.inventory.firstIndex(where: { $0.name == weapon.name && !$0.broken }) {
+                character.inventory[idx].isBroken = true
+            }
+        }
+
         // Check for poison
         var didPoison = false
         if attack.hits && monster.type.canPoison && !character.isPoisoned {
@@ -1284,36 +1387,79 @@ final class Combat: ObservableObject {
             attackerArt: monster.type.asciiArt,
             defenderArt: character.characterClass.asciiArt,
             weaponName: attackDesc,
-            poisonApplied: didPoison
+            poisonApplied: didPoison,
+            brokenWeaponName: brokenWeaponName
         )
 
         combatLog.append("\(monster.name) attacks \(character.name) with \(attackDesc)")
+        if let broken = brokenWeaponName {
+            combatLog.append("\(character.name)'s \(broken) breaks blocking the blow!")
+        }
         return report
     }
 
-    func runMonsterTurn() -> AttackReport? {
+    func runMonsterTurn() -> MonsterTurnOutcome? {
         guard let current = currentCombatant, !current.isPlayer else {
             return nil
         }
 
-        guard encounter.monsters.first(where: { $0.id == current.id && $0.isAlive }) != nil else {
+        guard let monster = encounter.monsters.first(where: { $0.id == current.id && $0.isAlive }) else {
             return nil  // Monster dead, caller handles nextTurn
         }
 
-        // Find a target (random conscious party member)
-        let targets = party.filter { $0.isConscious }
-        guard let target = targets.randomElement() else {
+        // Playing dead / fled party members are normally left alone (that's
+        // the whole point), but there's a chance a monster notices anyway —
+        // which breaks the act.
+        let activeTargets = party.filter { $0.isConscious && !$0.isPlayingDead && !$0.hasFledCombat }
+        let hiddenTargets = party.filter { $0.isConscious && ($0.isPlayingDead || $0.hasFledCombat) }
+
+        var target: Character?
+        if !hiddenTargets.isEmpty && Int.random(in: 1...100) <= 15 {
+            target = hiddenTargets.randomElement()
+        }
+        if target == nil {
+            target = activeTargets.randomElement() ?? hiddenTargets.randomElement()
+        }
+        guard let target = target else {
             state = .defeat
             return nil
         }
 
-        return monsterAttack(monsterId: current.id, targetId: target.id)
+        // Getting attacked ends the ruse, whatever caused the monster to pick them.
+        if target.isPlayingDead {
+            target.isPlayingDead = false
+        }
+
+        // Mind control is rolled INSTEAD OF a normal attack, not alongside
+        // one — a monster that can do it either casts, or attacks, each
+        // turn, never both. Skipped entirely while the target is already
+        // riding out a resist's grace window (willpowerSurgeImmuneTurns) —
+        // that window exists precisely so a fresh Willpower Surge prompt
+        // can't be spammed right back at them next turn.
+        if monster.type.canMindControl, target.willpowerSurgeImmuneTurns <= 0,
+           Double.random(in: 0...1) < monster.type.mindControlChance {
+            let attackDesc = monster.type.attackDescriptions.randomElement() ?? monster.type.rawValue
+            let offersWillpowerSurge = target.willpowerSurgeUsesRemaining > 0
+            combatLog.append("\(monster.name) reaches for \(target.name)'s mind with \(attackDesc)")
+            return .mindControl(MindControlAttempt(
+                monsterName: monster.name,
+                attackDescription: attackDesc,
+                targetId: target.id,
+                targetName: target.name,
+                offersWillpowerSurge: offersWillpowerSurge,
+                saveDC: monster.type.mindControlDC
+            ))
+        }
+
+        guard let report = monsterAttack(monsterId: current.id, targetId: target.id) else { return nil }
+        return .attack(report)
     }
 
     // MARK: - Spell Casting
 
     func castSpell(casterId: UUID, spell: Spell, targetIds: [UUID]) -> SpellReport? {
         guard let caster = party.first(where: { $0.id == casterId }) else { return nil }
+        turnsTakenByCharacter[casterId, default: 0] += 1
 
         // Use spell slot
         if spell.level != .cantrip {
@@ -1483,6 +1629,9 @@ final class Combat: ObservableObject {
         }
 
         combatLog.append("\(caster.name) casts \(spell.name)")
+        if totalDamage > 0 {
+            damageDealtByCharacter[casterId, default: 0] += totalDamage
+        }
 
         return SpellReport(
             casterName: caster.name,
@@ -1542,7 +1691,7 @@ final class Combat: ObservableObject {
                 s = char.isComputerControlled ? "◆" : "●"  // ◆ = AI, ● = human
             }
             let n = String(char.name.prefix(16)).padding(toLength: maxPartyName, withPad: " ", startingAt: 0)
-            let statusTag = char.hasFledCombat ? " [fled]" : (char.isPlayingDead ? " [playing dead]" : "")
+            let statusTag = char.hasFledCombat ? " [fled]" : (char.isPlayingDead ? " [playing dead]" : (char.isMindControlled ? " [mind-controlled]" : "")) + (char.sluggishAttacks > 0 ? " [sluggish]" : "")
             let hp = String("\(char.currentHP)/\(char.maxHP)").padding(toLength: 7, withPad: " ", startingAt: 0)
             let youTag = localCharacterIds.contains(char.id) ? " ◀" : ""
             lines.append(" \(s) \(n)  \(hp)\(statusTag)\(youTag)")
@@ -1568,7 +1717,8 @@ final class Combat: ObservableObject {
 
 extension Combat: Codable {
     enum CodingKeys: String, CodingKey {
-        case encounter, turnOrder, currentTurnIndex, state, combatLog, partyCharacterIds
+        case encounter, turnOrder, currentTurnIndex, state, combatLog, partyCharacterIds, lootAwarded
+        case damageDealtByCharacter, turnsTakenByCharacter, adLibLootGranted
     }
 
     convenience init(from decoder: Decoder) throws {
@@ -1579,6 +1729,10 @@ extension Combat: Codable {
         self.currentTurnIndex = try container.decode(Int.self, forKey: .currentTurnIndex)
         self.state = try container.decode(CombatState.self, forKey: .state)
         self.combatLog = try container.decode([String].self, forKey: .combatLog)
+        self.damageDealtByCharacter = try container.decodeIfPresent([UUID: Int].self, forKey: .damageDealtByCharacter) ?? [:]
+        self.turnsTakenByCharacter = try container.decodeIfPresent([UUID: Int].self, forKey: .turnsTakenByCharacter) ?? [:]
+        self.lootAwarded = try container.decodeIfPresent(Bool.self, forKey: .lootAwarded) ?? false
+        self.adLibLootGranted = try container.decodeIfPresent(Bool.self, forKey: .adLibLootGranted) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1590,10 +1744,459 @@ extension Combat: Codable {
         try container.encode(combatLog, forKey: .combatLog)
         let ids = party.map { $0.id }
         try container.encode(ids, forKey: .partyCharacterIds)
+        try container.encode(lootAwarded, forKey: .lootAwarded)
+        try container.encode(damageDealtByCharacter, forKey: .damageDealtByCharacter)
+        try container.encode(turnsTakenByCharacter, forKey: .turnsTakenByCharacter)
+        try container.encode(adLibLootGranted, forKey: .adLibLootGranted)
     }
 
     /// Re-link party references after decoding from match data
     func relinkParty(_ fullParty: [Character]) {
         self.party = fullParty
+    }
+}
+
+// MARK: - Combat Arena
+//
+// An animated ASCII picture of the fight — Mac only for now, in the space
+// below the buttons (see GameEngine.combatArenaAvailable and
+// CombatArenaView). Every attack and spell becomes an ArenaMove; the
+// renderer draws the two fighters, the move and its outcome at any moment.
+
+/// One move for the arena to act out.
+struct ArenaMove: Equatable {
+    enum Style: Equatable { case melee, swoop, thrown, arrow, bolt, gadget, breath, spell, heal }
+    let id = UUID()
+    let attackerName: String
+    let targetName: String
+    let attackerFrames: [[String]]
+    let targetFrames: [[String]]
+    let attackerIsParty: Bool
+    let style: Style
+    let hits: Bool
+    let critical: Bool
+    let fumble: Bool
+    let defeated: Bool
+    /// Damage dealt, or HP healed.
+    let amount: Int
+    /// What flies across (spells) — and its colour.
+    let glyph: String
+    let color: TerminalColor
+    let started: Date
+    /// Includes a moment holding the final pose.
+    var duration: Double { defeated ? 2.8 : (critical ? 2.3 : 1.9) }
+}
+
+struct ArenaFighter {
+    let name: String
+    let frames: [[String]]
+    let hp: Int
+    let maxHP: Int
+    let isParty: Bool
+    let down: Bool
+    /// Each character's own colour — sprite, name and roster entry.
+    var color: TerminalColor = .brightGreen
+}
+
+struct ArenaScene {
+    var left: ArenaFighter?      // the party's side
+    var right: ArenaFighter?     // the enemy's side
+    var party: [ArenaFighter] = []
+    var enemies: [ArenaFighter] = []
+    var turnName: String?
+    var move: ArenaMove?
+}
+
+enum ArenaRenderer {
+    /// A short name that tells people apart: the "R." robot prefix dropped,
+    /// the surname when there is one ("Ada Stone" -> "Stone"), else the name.
+    static func shortName(_ name: String) -> String {
+        var parts = name.split(separator: " ").map(String.init)
+        if parts.first == "R." { parts.removeFirst() }
+        guard let last = parts.last else { return name }
+        return parts.count >= 2 && last.count > 1 ? last : (parts.first ?? name)
+    }
+
+    struct Cell: Equatable {
+        var ch: Swift.Character = " "
+        var color: TerminalColor = .dimGreen
+    }
+
+    static func render(_ scene: ArenaScene, width W: Int, height H: Int, now: Date, reduced: Bool) -> [[Cell]] {
+        var g = [[Cell]](repeating: [Cell](repeating: Cell(), count: max(1, W)), count: max(1, H))
+        func put(_ s: String, _ x: Int, _ y: Int, _ c: TerminalColor, opaque: Bool = false) {
+            guard y >= 0, y < H else { return }
+            var cx = x
+            for ch in s {
+                if cx >= 0 && cx < W && (opaque || ch != " ") { g[y][cx] = Cell(ch: ch, color: c) }
+                cx += 1
+            }
+        }
+        func center(_ s: String, _ y: Int, _ c: TerminalColor) {
+            let text = s.count > W ? String(s.prefix(W)) : s
+            put(text, (W - text.count) / 2, y, c, opaque: true)
+        }
+        guard W >= 24, H >= 9 else {
+            center("(a bigger panel shows the fight)", H / 2, .dimGreen)
+            return g
+        }
+        let t = now.timeIntervalSinceReferenceDate
+
+        // Rows: caption at the top, fighters standing on the ground, then the
+        // rosters underneath — allies on their own row(s), then the monsters
+        // on theirs — in lined-up columns, over as many rows as it takes to
+        // fit the width without wrapping.
+        let barW = 5
+        func short(_ n: String) -> String { Self.shortName(n) }
+        let everyone = scene.party + scene.enemies
+        let nameW = min(8, max(3, everyone.map { short($0.name).count }.max() ?? 3))
+        let entryW = nameW + barW + 3            // name, [bar], a space
+        let perRow = max(1, (W + 1) / entryW)
+        let allyRows = (scene.party.count + perRow - 1) / perRow
+        let foeRows = (scene.enemies.count + perRow - 1) / perRow
+        let groundY = H - allyRows - foeRows - 1
+        guard groundY >= 7 else {
+            center("(a taller panel shows the fight)", H / 2, .dimGreen)
+            return g
+        }
+        let feetY = groundY - 1
+        let chestOffset = 2
+
+        for x in 0..<W { g[groundY][x] = Cell(ch: (x * 37 + 11) % 13 == 0 ? "." : "_", color: .dimGreen) }
+
+        func drawRoster(_ list: [ArenaFighter], firstRow: Int) {
+            for (i, f) in list.enumerated() {
+                let y = firstRow + i / perRow, x = (i % perRow) * entryW
+                let frac = f.maxHP > 0 ? Double(max(0, f.hp)) / Double(f.maxHP) : 0
+                let filled = f.down ? 0 : min(barW, max(1, Int((frac * Double(barW)).rounded(.up))))
+                let barColor: TerminalColor = f.down ? .gray : (frac > 0.5 ? .green : (frac > 0.25 ? .yellow : .red))
+                let name = String(short(f.name).prefix(nameW)).padding(toLength: nameW, withPad: " ", startingAt: 0)
+                put(name, x, y, f.down ? .gray : f.color, opaque: true)
+                put("[", x + nameW, y, .dimGreen, opaque: true)
+                put(String(repeating: "#", count: filled), x + nameW + 1, y, barColor, opaque: true)
+                put(String(repeating: "-", count: barW - filled), x + nameW + 1 + filled, y, .dimGreen, opaque: true)
+                put("]", x + nameW + 1 + barW, y, .dimGreen, opaque: true)
+            }
+        }
+        drawRoster(scene.party, firstRow: groundY + 1)
+        drawRoster(scene.enemies, firstRow: groundY + 1 + allyRows)
+
+        // Who stands where: the move's two fighters while it plays, else
+        // whoever's turn it is against the nearest foe.
+        let move = scene.move
+        let elapsed = move.map { now.timeIntervalSince($0.started) } ?? .infinity
+        let playing = move != nil && elapsed < move!.duration
+        let e: Double = reduced ? 1.05 : elapsed   // Reduced Animations: just the result
+
+        var leftF: (name: String, frames: [[String]], down: Bool)? = scene.left.map { ($0.name, $0.frames, $0.down) }
+        var rightF: (name: String, frames: [[String]], down: Bool)? = scene.right.map { ($0.name, $0.frames, $0.down) }
+        if playing, let m = move {
+            if m.style == .heal {
+                leftF = (m.attackerName, m.attackerFrames, false)
+            } else if m.attackerIsParty {
+                leftF = (m.attackerName, m.attackerFrames, false)
+                rightF = (m.targetName, m.targetFrames, false)
+            } else {
+                leftF = (m.targetName, m.targetFrames, false)
+                rightF = (m.attackerName, m.attackerFrames, false)
+            }
+        }
+        func width(_ frames: [[String]]) -> Int { frames.flatMap { $0 }.map { $0.count }.max() ?? 1 }
+        let lw = leftF.map { width($0.frames) } ?? 0
+        let rw = rightF.map { width($0.frames) } ?? 0
+        var leftHome = max(1, W / 5 - lw / 2)
+        var rightHome = min(W - rw - 1, W - W / 5 - rw / 2)
+        if leftHome + lw + 6 > rightHome { leftHome = 1; rightHome = max(leftHome + lw + 2, W - rw - 1) }
+        let gap = max(0, rightHome - (leftHome + lw))
+        let chestY = feetY - chestOffset
+
+        // Idle breathing: each side cycles its frames at its own pace.
+        func idleFrame(_ frames: [[String]], seed: Double) -> [String] {
+            guard !frames.isEmpty else { return ["?"] }
+            if reduced { return frames[0] }
+            return frames[Int(t * 1.4 + seed) % frames.count]
+        }
+        func frame(_ frames: [[String]], _ i: Int) -> [String] {
+            frames.isEmpty ? ["?"] : frames[min(i, frames.count - 1)]
+        }
+        func deadEyes(_ line: String) -> String {
+            String(line.map { ["o", "O", "@", "."].contains($0) ? "x" : $0 })
+        }
+        func drawSprite(_ lines: [String], x: Int, bottom: Int, color: TerminalColor) {
+            for (i, line) in lines.enumerated() { put(line, x, bottom - lines.count + 1 + i, color) }
+        }
+        func label(_ name: String, x: Int, w: Int, top: Int, color: TerminalColor) {
+            let n = String(Self.shortName(name).prefix(10))
+            put(String(n), x + (w - n.count) / 2, top - 1, color)
+        }
+
+        let ease: (Double) -> Double = { p in let c = min(1, max(0, p)); return c * c * (3 - 2 * c) }
+        let windEnd = 0.3, strikeEnd = 0.8, impactEnd = 1.35, backEnd = 1.8
+
+        var leftX = leftHome, rightX = rightHome
+        var leftY = feetY, rightY = feetY
+        var leftLines = leftF.map { idleFrame($0.frames, seed: 0) } ?? []
+        var rightLines = rightF.map { idleFrame($0.frames, seed: 0.5) } ?? []
+        func colorOf(_ name: String?, party: Bool) -> TerminalColor {
+            (party ? scene.party : scene.enemies).first { $0.name == name }?.color ?? (party ? .brightGreen : .red)
+        }
+        var leftColor: TerminalColor = (leftF?.down ?? false) ? .gray : colorOf(leftF?.name, party: true)
+        var rightColor: TerminalColor = (rightF?.down ?? false) ? .gray : colorOf(rightF?.name, party: false)
+        let leftNameColor = leftColor, rightNameColor = rightColor
+
+        // Everyone not in this exchange mills about above the fight, on their
+        // own side, cheering their friends on (clean words only).
+        let maxSpriteHeight = max(leftLines.count, rightLines.count, 1)
+        let bandBottom = feetY - maxSpriteHeight - 1   // just above the fighters' name labels
+        let partyOthers = scene.party.filter { !$0.down && $0.name != leftF?.name }
+        let enemyOthers = scene.enemies.filter { !$0.down && $0.name != rightF?.name }
+        func firstName(_ n: String) -> String { Self.shortName(n) }
+        func pick(_ lines: [String], _ seed: Int) -> String { lines[abs(seed) % lines.count] }
+        func bubble(isParty: Bool, index i: Int, count: Int) -> String? {
+            if let m = move, playing {
+                // Two onlookers a side react to every blow.
+                guard e >= 0.8, e < m.duration, (i + abs(m.id.hashValue)) % count < min(2, count) else { return nil }
+                let seed = m.id.hashValue / 7 + i * 3
+                let partyName = firstName(m.attackerIsParty ? m.attackerName : m.targetName)
+                if m.style == .heal { return isParty ? pick(["Thanks!", "Better?", "Much better!", "Good as new!"], seed) : pick(["Bah!", "No fair!"], seed) }
+                if isParty {
+                    if m.attackerIsParty {
+                        if m.defeated { return pick(["Hooray!", "Got it!", "Well fought!", "Huzzah!", "Next!"], seed) }
+                        if m.critical { return pick(["What a blow!", "Brilliant!", "WOW!", "Legend!"], seed) }
+                        return m.hits ? pick(["Nice hit, \(partyName)!", "Go on!", "That's it!", "Again!", "Woo!", "Get stuck in!", "For the party!"], seed)
+                                      : pick(["So close!", "Next time!", "Steady!", "Unlucky!", "Keep at it!"], seed)
+                    }
+                    if m.defeated { return pick(["Get up, \(partyName)!", "Hold on, \(partyName)!", "Nooo!"], seed) }
+                    return m.hits ? pick(["Ouch!", "I'll cover you!", "Hang in there!", "Shake it off!"], seed)
+                                  : pick(["Good dodge!", "Missed you!", "Ha, too slow!", "Is that all?"], seed)
+                }
+                if m.attackerIsParty {
+                    if m.defeated { return pick(["Nooo!", "Grr... retreat?", "Boo!"], seed) }
+                    return m.hits ? pick(["Grr!", "Hss!", "Rargh!", "Boo!", "Cheat!"], seed) : pick(["Ha!", "Missed!", "Ha ha!", "Clumsy!"], seed)
+                }
+                return m.hits ? pick(["Ha!", "More!", "Heh heh!", "Squish 'em!", "Weaklings!"], seed) : pick(["Bah!", "Grr...", "Boo!", "Hit it!"], seed)
+            }
+            // Between moves: someone on each side pipes up every few seconds.
+            let window = Int(t / 3.0)
+            guard !reduced, t - Double(window) * 3.0 < 2.2, (window + (isParty ? 0 : 1)) % count == i else { return nil }
+            return isParty ? pick(["Stay together!", "Watch its claws!", "I've got your back!", "Keep going!", "Careful now!", "Anyone got a potion?", "Nearly there!", "Huzzah!", "You can do it!", "Mind the teeth!", "On three!"], window + i)
+                           : pick(["Grr...", "Hss...", "*snarl*", "*growl*", "*hiss*", "Boo!", "Grrraah!", "*cackle*", "Get them!"], window + i)
+        }
+        func drawBystanders(_ list: [ArenaFighter], isParty: Bool) {
+            guard !list.isEmpty, bandBottom - 2 >= 2 else { return }
+            let half = W / 2
+            let x0 = isParty ? 1 : half + 1
+            let slot = max(5, (half - 2) / list.count)
+            for (i, f) in list.enumerated() {
+                let seed = Double(i) * 1.7 + (isParty ? 0 : 0.9)
+                let wander = reduced ? 0 : Int((sin(t * 0.6 + seed) * Double(slot) / 3).rounded())
+                let cx = min(x0 + half - 3, max(x0 + 1, x0 + slot * i + slot / 2 + wander))
+                let step = reduced ? 0 : Int(t * 2 + seed) % 2
+                let said = bubble(isParty: isParty, index: i, count: list.count)
+                let initial = String(f.name.prefix(1)).lowercased()
+                let head = isParty ? " o " : "{\(initial)}"
+                let body = isParty ? (said != nil ? "\\|/" : (step == 0 ? "/|\\" : "/|)")) : (step == 0 ? "/^\\" : "/^|")
+                put(head, cx - 1, bandBottom - 1, f.color)
+                put(body, cx - 1, bandBottom, f.color)
+                let text = said.map { "\"\($0)\"" } ?? String(firstName(f.name).prefix(8))
+                let lo = isParty ? 0 : half, hi = isParty ? half - 1 : W - 1
+                let tx = min(max(lo, cx - text.count / 2), max(lo, hi - text.count))
+                put(text, tx, bandBottom - 2, said != nil ? .white : f.color)
+            }
+        }
+        drawBystanders(partyOthers, isParty: true)
+        drawBystanders(enemyOthers, isParty: false)
+
+        guard playing, let m = move else {
+            if let l = leftF { drawSprite(leftLines, x: leftX, bottom: leftY, color: leftColor); label(l.name, x: leftX, w: lw, top: leftY - leftLines.count + 1, color: leftNameColor) }
+            if let r = rightF { drawSprite(rightLines, x: rightX, bottom: rightY, color: rightColor); label(r.name, x: rightX, w: rw, top: rightY - rightLines.count + 1, color: rightNameColor) }
+            // Just after a move: say whose turn that was, then whose is next.
+            if let m = move, elapsed < m.duration + 1.6 {
+                center("End of \(m.attackerName)'s turn", 0, .dimGreen)
+            } else if let turn = scene.turnName {
+                center("\(turn)'s turn", 0, .cyan)
+            }
+            return g
+        }
+
+        let dir = m.attackerIsParty ? 1 : -1
+        let melee = m.style == .melee || m.style == .swoop
+        // Attacker movement: lean back, lunge (melee) or hold (ranged), return.
+        var attackerDX = 0, attackerDY = 0
+        if m.style != .heal {
+            if e < windEnd {
+                attackerDX = -dir
+            } else if melee && e < strikeEnd {
+                let p = ease((e - windEnd) / (strikeEnd - windEnd))
+                attackerDX = dir * Int(Double(max(0, gap - 1)) * p)
+                if m.style == .swoop { attackerDY = -Int((sin(p * .pi) * 2).rounded()) }
+            } else if melee && e < impactEnd {
+                attackerDX = dir * max(0, gap - 1)
+            } else if melee && e < backEnd {
+                let p = ease((e - impactEnd) / (backEnd - impactEnd))
+                attackerDX = dir * Int(Double(max(0, gap - 1)) * (1 - p))
+            }
+        }
+        let attackerPose = (e >= windEnd && e < impactEnd) ? 1 : 0
+        let impacting = e >= strikeEnd && e < impactEnd + 0.4
+
+        // The target: shaken by a hit, hopping aside from a miss, crumpling if beaten.
+        var targetDX = 0, targetDY = 0
+        if m.style != .heal && e >= strikeEnd {
+            if m.hits && e < impactEnd && !reduced {
+                targetDX = (Int(e * 28) % 2 == 0 ? 1 : -1) * (m.critical ? 2 : 1)
+            } else if !m.hits && !m.fumble && e < impactEnd + 0.2 {
+                targetDX = dir * 2
+                targetDY = -1
+            }
+        }
+        if m.style == .heal {
+            leftLines = frame(m.attackerFrames, e < backEnd ? 2 : 0)
+        } else if m.attackerIsParty {
+            leftLines = frame(m.attackerFrames, attackerPose)
+            leftX += attackerDX; leftY += attackerDY
+            rightX += targetDX; rightY += targetDY
+            rightLines = idleFrame(m.targetFrames, seed: 0.5)
+        } else {
+            rightLines = frame(m.attackerFrames, attackerPose)
+            rightX += attackerDX; rightY += attackerDY
+            leftX += targetDX; leftY += targetDY
+            leftLines = idleFrame(m.targetFrames, seed: 0)
+        }
+        if m.hits && e >= strikeEnd && e < strikeEnd + 0.12 && !reduced {
+            if m.attackerIsParty { rightColor = .white } else { leftColor = .white }
+        }
+        if m.defeated && e >= 1.1 {
+            let collapse = reduced ? 99 : Int((e - 1.1) / 0.18)
+            func crumple(_ lines: [String]) -> [String] {
+                let dead = lines.map(deadEyes)
+                let keep = max(1, dead.count - collapse)
+                return Array(dead.suffix(keep).enumerated().map { i, l in i == 0 && keep < dead.count ? String(repeating: " ", count: 1) + l : l })
+            }
+            if m.attackerIsParty { rightLines = crumple(rightLines); rightColor = .gray } else { leftLines = crumple(leftLines); leftColor = .gray }
+        }
+
+        if let l = leftF {
+            drawSprite(leftLines, x: leftX, bottom: leftY, color: leftColor)
+            label(l.name, x: leftX, w: lw, top: leftY - leftLines.count + 1, color: leftNameColor)
+        }
+        if let r = rightF {
+            drawSprite(rightLines, x: rightX, bottom: rightY, color: rightColor)
+            label(r.name, x: rightX, w: rw, top: rightY - rightLines.count + 1, color: rightNameColor)
+        }
+        if m.defeated && e >= 1.1 + 0.18 * 4 {
+            let (x, w) = m.attackerIsParty ? (rightX, rw) : (leftX, lw)
+            put("x_x", x + w / 2 - 1, feetY - 1, .gray)
+        }
+
+        // Where things fly from and to.
+        let fromX = m.attackerIsParty ? leftHome + lw : rightHome - 1
+        let toX = m.attackerIsParty ? rightHome - 1 : leftHome + lw
+        let span = toX - fromX
+        let targetFrontX = toX
+
+        // The move itself.
+        if !reduced && e >= windEnd && e < impactEnd + 0.3 {
+            let p = min(1.2, (e - windEnd) / (strikeEnd - windEnd))
+            let flightX = fromX + Int(Double(span) * min(p, 1))
+            let pastX = !m.hits && p > 1 ? flightX + dir * Int((p - 1) * 20) : flightX
+            let pastY = !m.hits && p > 1 ? chestY - Int((p - 1) * 10) : chestY
+            switch m.style {
+            case .melee, .swoop:
+                // A blade flash just in front of the attacker at the moment of the blow.
+                if e >= strikeEnd - 0.15 && e < impactEnd {
+                    let bladeX = m.attackerIsParty ? leftX + lw : rightX - 3
+                    let slash = m.attackerIsParty ? ["  /", " / ", "/  "] : ["\\  ", " \\ ", "  \\"]
+                    for (i, s) in slash.enumerated() { put(s, bladeX, chestY - 1 + i, .yellow) }
+                }
+            case .arrow, .bolt:
+                if p <= 1.2 { put(m.style == .arrow ? (dir > 0 ? "-->" : "<--") : (dir > 0 ? "=>" : "<="), pastX, pastY, .yellow) }
+            case .thrown:
+                let spin = ["-", "\\", "|", "/"][Int(e * 20) % 4]
+                if p <= 1.2 { put(spin, pastX, pastY, .yellow) }
+            case .gadget:
+                if p <= 1 { put("o", flightX, chestY - Int(sin(min(p, 1) * .pi) * 3), .orange) }
+                else if m.hits && e < impactEnd { put("(*)", targetFrontX - 1, chestY, .orange); put("\\|/", targetFrontX - 1, chestY - 1, .yellow) }
+            case .breath:
+                if p > 0 {
+                    let reach = Int(Double(span) * min(p, 1))
+                    for k in 0...max(0, abs(reach)) {
+                        let ch: Swift.Character = (k + Int(e * 12)) % 3 == 0 ? "*" : "~"
+                        put(String(ch), fromX + dir * k, chestY + ((k + Int(e * 10)) % 5 == 0 ? -1 : 0), k % 2 == 0 ? .orange : .red)
+                    }
+                }
+            case .spell:
+                if p <= 1.2 {
+                    put(m.glyph, pastX, pastY, m.color)
+                    put("·", pastX - dir, pastY, m.color)
+                    put(".", pastX - 2 * dir, pastY, .dimGreen)
+                }
+            case .heal:
+                break
+            }
+        }
+
+        // Outcome effects.
+        if m.style == .heal {
+            if e >= windEnd {
+                for i in 0..<6 {
+                    let rise = reduced ? i % 3 : Int((e - windEnd - Double(i) * 0.12) * 5)
+                    guard rise >= 0 else { continue }
+                    let px = leftHome - 1 + (i * 3) % (lw + 3)
+                    put(i % 2 == 0 ? "+" : "*", px, feetY - rise, m.amount > 0 ? .brightGreen : .cyan)
+                }
+                if m.amount > 0 { put("+\(m.amount)", leftHome + lw / 2 - 1, max(1, feetY - 5 - Int(min(e, 1.8) * 1.5)), .brightGreen) }
+            }
+        } else if e >= strikeEnd {
+            let topY = (m.attackerIsParty ? rightY - rightLines.count : leftY - leftLines.count)
+            if m.hits {
+                if impacting {
+                    let sparks = m.critical
+                        ? ["\\  |  /", " \\ | / ", "--*#*--", " / | \\ ", "/  |  \\"]
+                        : (Int(e * 10) % 2 == 0 ? ["\\ | /", "- * -", "/ | \\"] : [" \\|/ ", "--*--", " /|\\ "])
+                    let sx = targetFrontX - sparks[0].count / 2
+                    for (i, s) in sparks.enumerated() { put(s, sx, chestY - sparks.count / 2 + i, m.critical ? .yellow : .orange) }
+                }
+                if m.amount > 0 {
+                    let rise = reduced ? 1 : min(4, Int((e - strikeEnd) * 4))
+                    let fx = m.attackerIsParty ? rightX + rw / 2 - 1 : leftX + lw / 2 - 1
+                    put("-\(m.amount)", fx, max(1, topY - 1 - rise), m.attackerIsParty ? .yellow : .red)
+                }
+                if m.critical && (reduced || Int(e * 7) % 2 == 0) {
+                    center("*  CRITICAL HIT!  *", 1, .yellow)
+                }
+            } else if m.fumble {
+                let ax = m.attackerIsParty ? leftX + lw / 2 - 3 : rightX + rw / 2 - 3
+                put("fumble!", ax, max(1, (m.attackerIsParty ? leftY - leftLines.count : rightY - rightLines.count) - 1), .red)
+            } else {
+                let mx = m.attackerIsParty ? rightX + rw / 2 - 2 : leftX + lw / 2 - 2
+                put("miss!", mx, max(1, topY - 1), .dimGreen)
+            }
+        }
+
+        // Caption: the matchup, then what happened.
+        let caption: String
+        let captionColor: TerminalColor
+        if m.style == .heal {
+            caption = m.amount > 0 ? "\(m.attackerName) heals \(m.targetName) +\(m.amount)" : "\(m.attackerName) casts a blessing"
+            captionColor = .brightGreen
+        } else if e < strikeEnd {
+            caption = "\(m.attackerName) -> \(m.targetName)"
+            captionColor = .cyan
+        } else if m.defeated {
+            caption = m.attackerIsParty ? "\(m.targetName) is defeated!" : "\(m.targetName) falls!"
+            captionColor = .yellow
+        } else if m.hits {
+            caption = "\(m.critical ? "CRIT" : "HIT") \(m.targetName) -\(m.amount)"
+            captionColor = m.attackerIsParty ? .brightGreen : .red
+        } else if m.fumble {
+            caption = "\(m.attackerName) fumbles!"
+            captionColor = .red
+        } else {
+            caption = "\(m.attackerName) misses"
+            captionColor = .dimGreen
+        }
+        center(caption, 0, captionColor)
+        return g
     }
 }

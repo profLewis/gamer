@@ -24,6 +24,10 @@ struct ContentView: View {
             if showingSplash {
                 SplashView(onDismiss: dismissSplash)
                     .opacity(splashOpacity)
+                    // Stop catching touches the moment it starts fading —
+                    // during the 0.5s fade it used to swallow the player's
+                    // first tap on the game underneath.
+                    .allowsHitTesting(splashOpacity == 1.0)
                     .transition(.opacity)
             }
         }
@@ -46,11 +50,18 @@ struct ContentView: View {
 struct SplashView: View {
     let onDismiss: () -> Void
     @State private var animationPhase = 0
+    #if os(macOS)
+    @FocusState private var isFocused: Bool
+    #endif
 
     let terminalGreen = Color(red: 0.0, green: 0.9, blue: 0.3)
     let terminalBackground = Color.black
 
     var body: some View {
+        GeometryReader { geo in
+        // Dragon sized to the window — its natural 280pt, but never more
+        // than ~30% of the height (landscape phones) or 80% of the width.
+        let dragonWidth = max(120, min(280, geo.size.width * 0.8, geo.size.height * 0.3 * 280 / 186))
         ZStack {
             terminalBackground.ignoresSafeArea()
 
@@ -60,7 +71,8 @@ struct SplashView: View {
                 // Animated dragon
                 VStack(spacing: 4) {
                     AnimatedGIFView(gifName: "dragon_animation")
-                        .frame(width: 280, height: 186)
+                        .frame(width: dragonWidth, height: dragonWidth * 186 / 280)
+                        .clipped()
 
                     Text("\u{00A9} Timbaloo Ltd. 2026")
                         .font(.system(size: 8, design: .monospaced))
@@ -98,7 +110,7 @@ struct SplashView: View {
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundColor(terminalGreen.opacity(0.5))
 
-                    Text("Version 2.4 — 2026")
+                    Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.5") — 2026")
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(terminalGreen.opacity(0.4))
                 }
@@ -113,14 +125,27 @@ struct SplashView: View {
             }
             .padding()
         }
+        }
         .contentShape(Rectangle())
         .onTapGesture {
             if animationPhase >= 1 {
                 onDismiss()
             }
         }
+        #if os(macOS)
+        // Mac: any key begins, too.
+        .focusable()
+        .focused($isFocused)
+        .onKeyPress(phases: .down) { _ in
+            onDismiss()
+            return .handled
+        }
+        #endif
         .onAppear {
             runAnimation()
+            #if os(macOS)
+            isFocused = true
+            #endif
         }
     }
 
