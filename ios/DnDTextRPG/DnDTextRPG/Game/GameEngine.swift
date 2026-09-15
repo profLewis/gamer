@@ -25585,8 +25585,8 @@ class GameEngine: ObservableObject {
             printWrapped("Take it on, hear what someone else wants doing, or set off with no quest at all — just the adventure (there are always errands on the way).", indent: 2, color: .dimGreen)
         }
         print("")
-        showMenu(old != nil ? ["Take Up the New Quest", "Hear Another Plea", "Back to Our Old Quest"]
-                            : ["Take Up the Quest", "Hear Another Plea", "No Quest"])
+        showMenu(old != nil ? ["Take Up the New Quest", "Hear Another Plea", "Back to Our Old Quest", "Hear It Again"]
+                            : ["Take Up the Quest", "Hear Another Plea", "No Quest", "Hear It Again"])
         closeHandler = { [weak self] in self?.acceptQuest(then: proceed) }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
@@ -25613,6 +25613,11 @@ class GameEngine: ObservableObject {
                     if !self.questHistory.isEmpty { self.questHistory.removeLast() }
                     self.askToTakeQuest(then: proceed)
                 })
+            case 4:
+                // The tale again, then back to this decision.
+                let again: () -> Void = { [weak self] in self?.askToTakeQuest(then: proceed) }
+                let isPlea = self.questPleaPrevious != nil || self.questChangeBackup != nil
+                self.showTalePages(title: isPlea ? "A Plea for Help" : "The Tale Begins", lines: self.adventureIntroLines, page: 0, onBack: again, onFinish: again)
             default:
                 if let backup = self.questChangeBackup {
                     self.tryReturningToOldQuest(backup, then: proceed)
