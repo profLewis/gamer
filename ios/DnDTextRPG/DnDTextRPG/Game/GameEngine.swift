@@ -25429,6 +25429,40 @@ class GameEngine: ObservableObject {
 
     /// Back to a saved game: the Opening Tale again (Skip jumps past it), then
     /// the story so far — the map only once play starts.
+    /// Party Status > Tale: how it began, how it's going, or the short version.
+    private func showTaleMenu() {
+        storyScreenActive = false
+        clearTerminal()
+        printTitle("The Tale")
+        print("")
+        printWrapped("How it began, how it's going — or the short version.", indent: 2, color: .dimGreen)
+        print("")
+        let back: () -> Void = { [weak self] in self?.showTaleMenu() }
+        showMenu(["Opening Tale", "Progress Tale", "The Story So Far", "?", "< Back"])
+        closeHandler = { [weak self] in self?.showPartyStatus() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1: self.showOpeningTale(page: 0, onBack: back)
+            case 2: self.showProgressTale(onBack: back)
+            case 3: self.showStorySoFar(onDone: back)
+            case 4:
+                self.showInlineHelp {
+                    self.printTitle("The Tale — Help")
+                    self.print("")
+                    self.printWrapped("Opening Tale — how this adventure began, page by page (Next, Previous, Skip); its last page leads on into the Progress Tale.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("Progress Tale — the story so far, told the same way (written by the story writer when an AI is set up).", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("The Story So Far — a quick summary: the quest and how it's going, level by level, errands, fights and the latest news.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default:
+                self.showPartyStatus()
+            }
+        }
+    }
+
     private func showResumeStory() {
         storyScreenActive = true
         pinnedMapLines = []
@@ -25438,7 +25472,7 @@ class GameEngine: ObservableObject {
                       finishLabel: "The Story So Far >", onFinish: { [weak self] in self?.showStorySoFar() }, skipLabel: "Skip")
     }
 
-    private func showStorySoFar() {
+    private func showStorySoFar(onDone: (() -> Void)? = nil) {
         storyScreenActive = true
         clearTerminal()
         printTitle("The Story So Far")
@@ -25449,7 +25483,7 @@ class GameEngine: ObservableObject {
             printWrapped(line, indent: 2, color: i == 1 ? .yellow : .green)
             print("")
         }
-        let onward: () -> Void = { [weak self] in self?.resumePlay() }
+        let onward: () -> Void = onDone ?? { [weak self] in self?.resumePlay() }
         showMenu(["Onward!", "Tell the Progress Tale"])
         closeHandler = onward
         menuHandler = { [weak self] choice in
@@ -25814,7 +25848,7 @@ class GameEngine: ObservableObject {
         // Build menu
         // "Change Brain" (was "AI") — which mind runs the Dungeon Master.
         // Party Review first (the default); Brain now lives in Settings.
-        var menuOpts = ["Party Review", "Opening Tale", "Progress Tale", "Save to Roster", "Lore", "Settings", "Adventure Log", "New Main Quest", "Dungeon", "?", "< Back"]
+        var menuOpts = ["Party Review", "Tale", "Save to Roster", "Lore", "Settings", "Adventure Log", "New Main Quest", "Dungeon", "?", "< Back"]
         if dungeon?.hasCartography == true {
             menuOpts.insert("Atlas", at: menuOpts.firstIndex(of: "Lore") ?? 0)
         }
@@ -25862,6 +25896,8 @@ class GameEngine: ObservableObject {
                 self.showAdventureLog()
             case "Progress Tale":
                 self.showProgressTale(onBack: { [weak self] in self?.showPartyStatus() })
+            case "Tale":
+                self.showTaleMenu()
             case "Opening Tale":
                 self.showOpeningTale(page: 0, onBack: { [weak self] in self?.showPartyStatus() })
             case "New Main Quest":
@@ -26060,8 +26096,7 @@ class GameEngine: ObservableObject {
             self.print("  BUTTONS", color: .cyan, bold: true)
             for (name, what) in [
                 ("Party Review", "edit adventurers and see their stat cards"),
-                ("Opening Tale", "the tale that began this adventure — Next, Previous and Skip; on its last page Next carries on into the Progress Tale"),
-                ("Progress Tale", "the story so far, told the same way; End Tale on the last page"),
+                ("Tale", "the Opening Tale (how it began), the Progress Tale (the story so far, told the same way), or a quick summary of the story so far"),
                 ("Save to Roster", "keep an adventurer's progress for future adventures"),
                 ("Lore", "the named merchants and folk you've met"),
                 ("Settings", "game settings — Change Brain (which AI runs the DM), Timeouts, Puzzles and more"),
