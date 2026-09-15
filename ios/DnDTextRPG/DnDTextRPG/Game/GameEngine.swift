@@ -2349,6 +2349,7 @@ class GameEngine: ObservableObject {
         case "autoContinue": return { [weak self] in self?.showAutoContinueSettingsPage() }
         case "accessibility": return { [weak self] in self?.showAccessibilityMenu() }
         case "infoTimeout": return { [weak self] in self?.showInfoTimeoutMenu() }
+        case "about": return { [weak self] in self?.showAbout(onBack: { [weak self] in self?.returnFromLink() }) }
         case "timeouts": return { [weak self] in self?.showTimeoutsSettings(onBack: { [weak self] in self?.returnFromLink() }) }
         case "saves": return { [weak self] in self?.showSaveSettings() }
         case "dm": return { [weak self] in self?.showDMSettingsSubMenu() }
@@ -5045,7 +5046,7 @@ class GameEngine: ObservableObject {
                 showSettings()
                 return
             }
-            if lower == "about" {
+            if (lower == "about" || lower == "credits" || lower == "credit") {
                 showAbout()
                 return
             }
@@ -8979,7 +8980,7 @@ class GameEngine: ObservableObject {
         print("  Autosave: \(autosaveInterval.displayName)", color: .dimGreen)
         print("")
 
-        var menuOpts = ["DM Settings", "Change Brain", "Accessibility", "Mood", "Gameplay", "Puzzles", "Game Saves"].map { MenuOption($0) }
+        var menuOpts = ["DM Settings", "Change Brain", "Accessibility", "Mood", "Gameplay", "Puzzles", "Game Saves", "About"].map { MenuOption($0) }
         menuOpts.append(MenuOption("Save Settings"))
         menuOpts.append(MenuOption("Reset", tint: .danger))
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -9001,6 +9002,7 @@ class GameEngine: ObservableObject {
             case "DM Settings": self.showDMSettingsSubMenu()
             case "Change Brain": self.showAIProviderMenu(onBack: { [weak self] in self?.showSettings() })
             case "Puzzles": self.showPuzzleSettings(onBack: { [weak self] in self?.showSettings() })
+            case "About": self.showAbout(onBack: { [weak self] in self?.showSettings() })
             case "Accessibility": self.showAccessibilityMenu()
             case "Mood": self.showMusicSettings()
             case "Gameplay": self.showGameplaySettings()
@@ -9034,6 +9036,8 @@ class GameEngine: ObservableObject {
 
     private func showAbout(onBack: (() -> Void)? = nil) {
         clearTerminal()
+        // With battle animations on, the three authors wave hello.
+        let dance = hitAnimationsEnabled && !reduceAnimations
         printTitle("About")
         print("")
         print("  D&D 5e ASCII Adventure", color: .brightGreen, bold: true)
@@ -9057,15 +9061,14 @@ class GameEngine: ObservableObject {
             "  | ~~~~~~~~ |",
             "   \\________/",
         ]
-        printLines(philipArt, color: .cyan)
-        print("")
+        if dance { printAuthorsDance() } else { printLines(philipArt, color: .cyan); print("") }
         print("  CREATED BY", color: .cyan, bold: true)
         print("  Philip Lewis", color: .brightGreen)
         printWrapped("Game design, creative direction, and relentless testing.", indent: 2, color: .dimGreen)
         print("")
         print("  CO-AUTHOR", color: .cyan, bold: true)
         print("  Beau Lewis", color: .brightGreen)
-        printWrapped("World creation and storytelling.", indent: 2, color: .dimGreen)
+        printWrapped("World creation, storytelling and game testing.", indent: 2, color: .dimGreen)
         print("")
         print("")
 
@@ -9084,8 +9087,7 @@ class GameEngine: ObservableObject {
             "        )) ) )",
             "       `-------'",
         ]
-        printLines(claudeArt, color: .yellow)
-        print("")
+        if !dance { printLines(claudeArt, color: .yellow); print("") }
         print("  BUILT WITH", color: .yellow, bold: true)
         print("  Claude (Anthropic)", color: .brightGreen)
         printWrapped("Code, monsters, lore, and dungeon mastering by Claude AI.", indent: 2, color: .dimGreen)
@@ -9111,7 +9113,61 @@ class GameEngine: ObservableObject {
         print("")
         print("  about:dndRPG", color: .dimGreen)
 
-        closeHandler = onBack ?? { [weak self] in self?.showHowToPlay() }
+        let back: () -> Void = onBack ?? { [weak self] in self?.showHowToPlay() }
+        showMenu([dance ? "Wave Again" : "How to Play", "< Back"])
+        closeHandler = back
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                if dance { self.showAbout(onBack: onBack) } else { self.showHowToPlay() }
+            } else {
+                back()
+            }
+        }
+    }
+
+    private var aboutDanceTimer: Timer?
+
+    /// The three authors in ASCII — Professor Lewis waving, Beau (13)
+    /// bouncing with a controller, Claude twinkling — for about 18 seconds.
+    private func printAuthorsDance() {
+        let prof: [[String]] = [
+            ["  _____", " [_____]", "  (o-o)", "  /|_|\\", "   / \\"],
+            ["  _____", " [_____]", "  (o-o)/", "  /|_|", "   / \\"],
+            ["  _____", " [_____]", "  (o-o)", " [=]|_|\\", "   / \\"],
+        ]
+        let beau: [[String]] = [
+            ["", "   ,,,", "  (^_^)", "  <|#|>", "   / \\"],
+            ["   ,,,", "  (^o^)", " \\ |#| /", "   / \\", ""],
+            ["", "   ,,,", "  (^_~)", "  <|#|>", "   | |"],
+        ]
+        let claude: [[String]] = [
+            ["    *", "  \\ | /", " -- * --", "  / | \\", "    *"],
+            ["  .   .", "   \\ /", " -- + --", "   / \\", "  '   '"],
+            ["", "    .", "  - * -", "    '", ""],
+        ]
+        let figures = [prof, beau, claude]
+        func row(_ tick: Int, _ line: Int) -> String {
+            "  " + figures.enumerated().map { i, f in
+                f[(tick + i) % f.count][line].padding(toLength: 11, withPad: " ", startingAt: 0)
+            }.joined(separator: "  ")
+        }
+        let start = terminalLines.count
+        for line in 0..<5 { print(row(0, line), color: .cyan) }
+        let labels = ["Prof Lewis", "Beau, 13", "Claude"].map { label -> String in
+            (String(repeating: " ", count: max(0, (11 - label.count) / 2)) + label).padding(toLength: 11, withPad: " ", startingAt: 0)
+        }
+        print("  " + labels.joined(separator: "  "), color: .brightGreen)
+        print("")
+        aboutDanceTimer?.invalidate()
+        let generation = screenGeneration
+        var tick = 0
+        aboutDanceTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: true) { [weak self] timer in
+            guard let self = self, self.screenGeneration == generation, start + 4 < self.terminalLines.count else { timer.invalidate(); return }
+            tick += 1
+            for line in 0..<5 { self.terminalLines[start + line].text = row(tick, line) }
+            if tick >= 40 { timer.invalidate() }
+        }
     }
 
     /// Accessibility > Try Auto-Scroll — a deliberately long page that
@@ -30010,7 +30066,7 @@ class GameEngine: ObservableObject {
             }
 
             // About screen shortcut
-            if lower == "about" {
+            if (lower == "about" || lower == "credits" || lower == "credit") {
                 self.showAbout(onBack: { [weak self] in self?.askTheDM() })
                 return
             }

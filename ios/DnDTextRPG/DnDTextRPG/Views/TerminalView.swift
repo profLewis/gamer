@@ -428,6 +428,10 @@ struct TerminalView: View {
                                                    height: landingDragonWidth(geometry.size, isLandscape: isLandscape) * 186 / 280)
                                             .clipped()
                                             .offset(x: -6 * scale) // Centre the dragon's head, not the image
+                                            // Tap the picture: About & credits.
+                                            .contentShape(Rectangle())
+                                            .onTapGesture { gameEngine.followLink("about") }
+                                            .accessibilityHint("Tap for About and credits")
                                         Spacer()
                                     }
                                     if let caption = gameEngine.currentPoseCaption {
@@ -449,6 +453,9 @@ struct TerminalView: View {
                                             .frame(maxWidth: 340 * scale, maxHeight: 220 * scale)
                                             .cornerRadius(8)
                                             .opacity(0.85)
+                                            .contentShape(Rectangle())
+                                            .onTapGesture { gameEngine.followLink("about") }
+                                            .accessibilityHint("Tap for About and credits")
                                         Spacer()
                                     }
                                     if let caption = gameEngine.currentPoseCaption {
