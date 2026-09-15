@@ -8593,7 +8593,7 @@ class GameEngine: ObservableObject {
         switch type {
         case "menu": names = ["Random", "The Dungeon Awaits", "Forgotten Throne", "Cathedral of Bones"]
         case "exploration": names = ["Random", "Into the Depths", "Whispering Corridors", "The Descent", "Forgotten Halls"]
-        case "combat": names = ["Random", "Blades of Fury", "Shields and Steel", "Dragon's Wrath", "Blood and Thunder"]
+        case "combat": names = ["Random", "Blades of Fury", "Shields and Steel", "Dragon's Wrath", "Blood and Thunder", "Frenzy"]
         case "chat": names = ["Random", "Whispered Council", "Flickering Shadows", "Candlelit Murmurs"]
         default: names = ["Random"]
         }
@@ -11636,7 +11636,7 @@ class GameEngine: ObservableObject {
                 self.showMusicSettings()
             case "Combat Tune":
                 self.recordSettingChange(screen: "s:mood", key: "combat_melody", name: "Combat")
-                self.combatMelodyChoice = (self.combatMelodyChoice + 1) % 5
+                self.combatMelodyChoice = (self.combatMelodyChoice + 1) % 6
                 SoundManager.shared.stopMusic()
                 SoundManager.shared.startMusic(.combat, preference: self.combatMelodyChoice)
                 self.showMusicSettings()
@@ -19900,6 +19900,9 @@ class GameEngine: ObservableObject {
             let names = room.droppedItems.map { $0.name }.joined(separator: ", ")
             print("Items on the floor: \(names)", color: .yellow)
         }
+        if roomIsLit, let feature = roomFeatures(room).first {
+            printWrapped("\(feature.hint) (Actions > Look Around)", color: .cyan)
+        }
 
         if roomIsLit {
             let exitList = room.exits.keys.map { room.isLockedShut($0) ? "\($0.rawValue) (locked)" : $0.rawValue }.joined(separator: ", ")
@@ -21407,7 +21410,7 @@ class GameEngine: ObservableObject {
         guard let dungeon = dungeon else { return }
         // Only wander into a room that's actually safe right now.
         guard room.cleared, room.encounter == nil else { return }
-        guard Int.random(in: 1...100) <= 10 else { return }
+        guard Int.random(in: 1...100) <= 7 else { return }   // was 10: play-testers found the fights repetitive
 
         let neighborRooms = room.exits.values.compactMap { dungeon.rooms[$0] }
         let candidates = neighborRooms.filter { $0.roomType != .boss && ($0.encounter?.aliveMonsters.count ?? 0) > 0 }   // the boss stays put
@@ -21506,6 +21509,12 @@ class GameEngine: ObservableObject {
         // Listen
         menuOpts.append(MenuOption("Listen"))
         actions.append { [weak self] in returnToActions(); self?.listenAtDoors() }
+
+        // Look Around — the room's own things to do: a forge, books, holy water, plants...
+        if !roomFeatures(room).isEmpty {
+            menuOpts.append(MenuOption("Look Around", tint: .cyan))
+            actions.append { [weak self] in self?.showRoomFeatures(room, onBack: { [weak self] in self?.showActionsMenu() }) }
+        }
 
         // Pick Up Items (dropped loot)
         if !room.droppedItems.isEmpty {
@@ -22457,6 +22466,10 @@ class GameEngine: ObservableObject {
             printWrapped("The \(who) looks around, then lowers their voice. \"\(clue)\"", indent: 2, color: .yellow)
             print("")
             printWrapped("(Noted under your main quest in Party Status.)", indent: 2, color: .dimGreen)
+            if mq.runesRead < mq.runeVerses.count && Int.random(in: 1...2) == 1 {
+                print("")
+                printWrapped("\"The ones who came down before you cut it all into the walls, you know. Runes. Look around — and read them, if you find them.\"", indent: 2, color: .yellow)
+            }
             if Int.random(in: 1...3) == 1 {
                 print("")
                 printWrapped("\"And if you ever lose your way,\" they add, \"hold your map a little longer than usual. Old maps down here have a magic in them.\"", indent: 2, color: .yellow)
@@ -26182,6 +26195,13 @@ class GameEngine: ObservableObject {
         for errand in allQuests.prefix(2) {
             lines.append("A note arrived from \(errand.giverName), who had set you an errand: \"Heard what you did down there. My little job can wait — come and see me when you're rested.\"")
         }
+        // The runes read on the way down — what they meant all along.
+        if let mq = mainQuest, mq.runesRead >= 2 {
+            let g = Dungeon.guardianName(mq.villain)
+            lines.append(mq.runesRead >= mq.runeVerses.count
+                ? "And the runes you had copied from the walls on the way down? Read together at last, they told the whole of it — \(g), what it wanted, what it cost, and how it had to end. The old ones had written your ending long before you set out. You had only to be the ones to read it."
+                : "And the \(mq.runesRead) runes you had copied from the walls on the way down finally made sense: they had been warning of \(g) all along. The rest are still down there, waiting to be read.")
+        }
         lines.append("That night \(together) sat by the fire and told it all again — and each time, the monsters grew a little bigger.")
         lines.append("DM again — that's the end of this tale. There's a certificate with your names on it coming up. Frame it.")
         return lines
@@ -26235,11 +26255,12 @@ class GameEngine: ObservableObject {
         } ?? "who went down into \(dungeon.name) for the sheer adventure of it — and conquered the bottom of the world."
         let levels = dungeon.archivedLevels + [dungeon.atlasLevel(hasTrapSense: partyHasTrapSense)]
         let rooms = levels.reduce(0) { $0 + $1.rooms.filter { $0.visited }.count }
-        let stats: [(String, String)] = [
+        var stats: [(String, String)] = [
             ("Days in the deep", "\(gameTimeMinutes / 1440 + 1)"), ("Levels conquered", "\(levels.count)"),
             ("Monsters defeated", "\(monstersSlain)"), ("Battles won", "\(combatsWon)"),
             ("Rooms explored", "\(rooms)"), ("Gold carried home", "\(party.reduce(0) { $0 + $1.gold })"),
         ]
+        if let mq = mainQuest, mq.runesRead > 0 { stats.append(("Runes read", "\(mq.runesRead) of \(mq.runeVerses.count)")) }
         let f = DateFormatter()
         f.dateStyle = .long
         return EndgameCertificate(title: "Certificate of Heroism", heroes: heroes, quest: quest, village: mainQuest?.village,
@@ -26597,6 +26618,7 @@ class GameEngine: ObservableObject {
             printWrapped("MAIN QUEST: \(mq.summary)", indent: 2, color: .yellow, bold: true)
             for found in mq.beatsSoFar(level: dungeon?.level ?? 1) { printWrapped("· \(found)", indent: 4, color: .dimGreen) }
             for clue in mq.cluesLearned ?? [] { printWrapped("· \(clue)", indent: 4, color: .cyan) }
+            for verse in mq.runeVerses.prefix(mq.runesRead) { printWrapped("ᚱ \(verse)", indent: 4, color: .yellow) }
             if let who = mq.informant { printWrapped("Who might know more: \(who).", indent: 4, color: .dimGreen) }
             if let line = questDeadlineLine() { printWrapped(line, indent: 4, color: .cyan) }
             printWrapped("The one behind it all: \(mq.villain), waiting at the very bottom. Reward: \(mq.reward).", indent: 4, color: .dimGreen)

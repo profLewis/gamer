@@ -16,6 +16,7 @@
 		006 /* DungeonModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 106 /* DungeonModels.swift */; };
 		007 /* CombatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 107 /* CombatModels.swift */; };
 		008 /* GameEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 108 /* GameEngine.swift */; };
+		FA28EA7ADAB942C2AB9BC02C /* RoomFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A8A4C29910F49B7B650ECE8 /* RoomFeatures.swift */; };
 		009 /* Dice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 109 /* Dice.swift */; };
 		010 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 110 /* Assets.xcassets */; };
 		011 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 111 /* PrivacyInfo.xcprivacy */; };
@@ -89,6 +90,7 @@
 		106 /* DungeonModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DungeonModels.swift; sourceTree = "<group>"; };
 		107 /* CombatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CombatModels.swift; sourceTree = "<group>"; };
 		108 /* GameEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameEngine.swift; sourceTree = "<group>"; };
+		3A8A4C29910F49B7B650ECE8 /* RoomFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomFeatures.swift; sourceTree = "<group>"; };
 		109 /* Dice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Dice.swift; sourceTree = "<group>"; };
 		110 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		110E8F0D682F9BAD52C2A377 /* DnDTextRPGWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DnDTextRPGWatchApp.swift; sourceTree = "<group>"; };
@@ -228,6 +230,7 @@
 			isa = PBXGroup;
 			children = (
 				108 /* GameEngine.swift */,
+				3A8A4C29910F49B7B650ECE8 /* RoomFeatures.swift */,
 				118 /* ShopEngine.swift */,
 			);
 			path = Game;
@@ -376,6 +379,7 @@
 				006 /* DungeonModels.swift in Sources */,
 				007 /* CombatModels.swift in Sources */,
 				008 /* GameEngine.swift in Sources */,
+				FA28EA7ADAB942C2AB9BC02C /* RoomFeatures.swift in Sources */,
 				009 /* Dice.swift in Sources */,
 				012 /* SaveGameModels.swift in Sources */,
 				013 /* SoundManager.swift in Sources */,

@@ -714,7 +714,8 @@ class SoundManager {
         // unnoticeable in practice. The three original tracks are still
         // reachable by name via Settings > Music > Combat Tune.
         if type == .combat && preference == 0 {
-            return combatMelody4()
+            // Mostly the newest and most frantic ("Frenzy"), now and then the one before.
+            return Int.random(in: 1...3) == 1 ? combatMelody4() : combatMelody5()
         }
         let melodies: [() -> [MusicStep]]
         switch type {
@@ -723,7 +724,7 @@ class SoundManager {
         case .exploration:
             melodies = [explorationMelody, explorationMelody2, explorationMelody3, explorationMelody4]
         case .combat:
-            melodies = [combatMelody, combatMelody2, combatMelody3, combatMelody4]
+            melodies = [combatMelody, combatMelody2, combatMelody3, combatMelody4, combatMelody5]
         case .chat:
             melodies = [chatMelody, chatMelody2, chatMelody3]
         case .shop:
@@ -1352,6 +1353,61 @@ class SoundManager {
     // C# minor, the fastest/most frantic of the four — a driving double-time
     // pulse under a rapid, urgent melody, for players who want combat to
     // feel more relentless than the other three tracks.
+
+    /// "Frenzy" — the most frantic of them: a galloping tritone bass, a lead
+    /// that won't sit still, and snare rolls everywhere.
+    private func combatMelody5() -> [MusicStep] {
+        let m = { (f: Double) -> (Double, Float, Waveform) in (f, 0.11, .square) }
+        let b = { (f: Double) -> (Double, Float, Waveform) in (f, 0.09, .square) }
+        let h = { (f: Double) -> (Double, Float, Waveform) in (f, 0.05, .triangle) }
+        let p = { (f: Double) -> (Double, Float, Waveform) in (f, 0.035, .noise) }
+        let M = { (f: Double) -> (Double, Float, Waveform) in (f, 0.15, .square) }
+
+        let t: Double = 0.075   // faster still than Blood and Thunder
+        let E = 82.4, Bb = 58.3, F = 87.3, B = 61.7, C = 65.4, D = 73.4
+        let roll = [step(t / 2, extra: p(200)), step(t / 2, extra: p(200)), step(t / 2, extra: p(200)), step(t / 2, extra: p(200))]
+
+        var steps: [MusicStep] = []
+        // Bar 1 — up the chromatic stairs, the tritone bass underfoot
+        steps += [step(t, drone: b(E), melody: m(330), extra: p(80)), step(t, drone: b(E), melody: m(392)),
+                  step(t, drone: b(E), melody: m(466), extra: p(200)), step(t, drone: b(E), melody: m(494)),
+                  step(t, drone: b(Bb), melody: m(466), extra: p(80)), step(t, drone: b(Bb), melody: m(392)),
+                  step(t, drone: b(Bb), melody: m(330), extra: p(200)), step(t, drone: b(Bb), melody: m(311))]
+        // Bar 2 — the same a semitone higher, and angrier
+        steps += [step(t, drone: b(F), melody: m(349), extra: p(80)), step(t, drone: b(F), melody: m(415)),
+                  step(t, drone: b(F), melody: m(494), extra: p(200)), step(t, drone: b(F), melody: m(523)),
+                  step(t, drone: b(B), melody: m(494), extra: p(80)), step(t, drone: b(B), melody: m(415)),
+                  step(t, drone: b(B), melody: m(349), extra: p(200)), step(t, drone: b(B), melody: m(330), extra: p(200))]
+        // Bar 3 — a whirling run
+        steps += [step(t, drone: b(E), melody: m(659), extra: p(80)), step(t, drone: b(E), melody: m(622)),
+                  step(t, drone: b(E), melody: m(659), extra: p(200)), step(t, drone: b(E), melody: m(494)),
+                  step(t, drone: b(E), melody: m(523), extra: p(80)), step(t, drone: b(E), melody: m(494)),
+                  step(t, drone: b(E), melody: m(466), extra: p(200)), step(t, drone: b(E), melody: m(494))]
+        // Bar 4 — stabs, a tritone scream, a snare roll
+        steps += [step(t, drone: b(E), melody: M(659), extra: p(80)), step(t, extra: p(200)),
+                  step(t, drone: b(E), melody: M(659), extra: h(494)), step(t, extra: p(80)),
+                  step(t, drone: b(F), melody: M(698), extra: p(200)), step(t, drone: b(F), melody: M(698), extra: h(523)),
+                  step(t * 2, drone: b(Bb), melody: M(932), extra: h(466))] + roll
+        // Bar 5 — the chase, an octave up
+        steps += [step(t, drone: b(E), melody: M(494), extra: p(80)), step(t, drone: b(E), melody: M(659)),
+                  step(t, drone: b(E), melody: M(784), extra: p(200)), step(t, drone: b(E), melody: M(659)),
+                  step(t, drone: b(C), melody: M(523), extra: p(80)), step(t, drone: b(C), melody: M(659)),
+                  step(t, drone: b(C), melody: M(784), extra: p(200)), step(t, drone: b(C), melody: M(659))]
+        // Bar 6 — climbing
+        steps += [step(t, drone: b(D), melody: M(587), extra: p(80)), step(t, drone: b(D), melody: M(740)),
+                  step(t, drone: b(D), melody: M(880), extra: p(200)), step(t, drone: b(D), melody: M(740)),
+                  step(t, drone: b(B), melody: M(622), extra: p(80)), step(t, drone: b(B), melody: M(740)),
+                  step(t, drone: b(B), melody: M(932), extra: p(200)), step(t, drone: b(B), melody: M(988), extra: p(200))]
+        // Bar 7 — hammering one note while the bass gallops
+        steps += [step(t, drone: b(E), melody: M(988), extra: p(80)), step(t, drone: b(E * 2), melody: M(988)),
+                  step(t, drone: b(E), melody: M(988), extra: p(200)), step(t, drone: b(E * 2), melody: M(932)),
+                  step(t, drone: b(Bb), melody: M(880), extra: p(80)), step(t, drone: b(Bb * 2), melody: M(784)),
+                  step(t, drone: b(Bb), melody: M(740), extra: p(200)), step(t, drone: b(Bb * 2), melody: M(659))]
+        // Bar 8 — slam back to the top
+        steps += [step(t, drone: b(E), melody: M(659), extra: p(80)), step(t, drone: b(E), melody: m(494), extra: h(330)),
+                  step(t, drone: b(E), extra: p(200)), step(t, drone: b(E), melody: m(330), extra: p(80))] + roll + [rest(t)]
+        return steps
+    }
 
     private func combatMelody4() -> [MusicStep] {
         let m = { (f: Double) -> (Double, Float, Waveform) in (f, 0.10, .square) }

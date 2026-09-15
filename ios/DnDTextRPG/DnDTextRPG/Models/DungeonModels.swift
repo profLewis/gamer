@@ -241,6 +241,8 @@ class Room: Identifiable, ObservableObject, Codable {
     @Published var merchant: Merchant?      // Shopkeeper present in this room (shop/armoury rooms)
     @Published var riddleIndex: Int?        // Index into RiddleData.all, nil = no riddle challenge here
     @Published var riddleResolved: Bool = false  // Solved OR given up on (button hidden either way)
+    /// Look Around features already done here (a forge lit, a book taken...).
+    @Published var interactionsDone: Set<String> = []
     /// A puzzle from PuzzleBank (levels 3+: logic, word, cryptic) — shares
     /// riddleResolved, since a room poses one or the other.
     @Published var puzzleId: String? = nil
@@ -303,7 +305,7 @@ class Room: Identifiable, ObservableObject, Codable {
         case riddleIndex, riddleResolved, puzzleId, doorLockIds, openedLocks
         case teleportDestinationRoomId
         case verticalDestinationRoomId, verticalMethod, verticalDirection, verticalRopeHintRoomName
-        case isTorchlit, expansionConsidered
+        case isTorchlit, expansionConsidered, interactionsDone
     }
 
     init(id: Int, x: Int, y: Int, type: RoomType) {
@@ -372,6 +374,7 @@ class Room: Identifiable, ObservableObject, Codable {
         merchant = try container.decodeIfPresent(Merchant.self, forKey: .merchant)
         riddleIndex = try container.decodeIfPresent(Int.self, forKey: .riddleIndex)
         riddleResolved = try container.decodeIfPresent(Bool.self, forKey: .riddleResolved) ?? false
+        interactionsDone = try container.decodeIfPresent(Set<String>.self, forKey: .interactionsDone) ?? []
         puzzleId = try container.decodeIfPresent(String.self, forKey: .puzzleId)
         trainer = try container.decodeIfPresent(Trainer.self, forKey: .trainer)
         doorLockIds = try container.decodeIfPresent([Direction: UUID].self, forKey: .doorLockIds) ?? [:]
@@ -411,6 +414,7 @@ class Room: Identifiable, ObservableObject, Codable {
         try container.encodeIfPresent(merchant, forKey: .merchant)
         try container.encodeIfPresent(riddleIndex, forKey: .riddleIndex)
         try container.encode(riddleResolved, forKey: .riddleResolved)
+        try container.encode(interactionsDone, forKey: .interactionsDone)
         try container.encodeIfPresent(puzzleId, forKey: .puzzleId)
         try container.encodeIfPresent(trainer, forKey: .trainer)
         try container.encode(doorLockIds, forKey: .doorLockIds)
@@ -741,7 +745,9 @@ class Dungeon: ObservableObject, Codable {
     /// stayed rare (one guaranteed shop room, occasional armoury). Ramping
     /// gradually keeps Medium noticeably lighter than Hard/Brutal.
     private var encounterChance: Double {
-        level <= 1 ? 0.28 : min(0.42, 0.28 + Double(level - 2) * 0.05)
+        // Fewer fights than at first (play-testers found it repetitive) — more
+        // room for exploring, and for the things rooms have to do.
+        level <= 1 ? 0.22 : min(0.34, 0.22 + Double(level - 2) * 0.04)
     }
 
     private func generateDungeon() {

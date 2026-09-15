@@ -191,6 +191,8 @@ struct MainQuest: Codable {
     var finale: String? = nil
     var informant: String? = nil
     var cluesLearned: [String]? = nil
+    /// How many of the quest's old runes (runeVerses) have been read so far.
+    var runesFound: Int? = nil
     /// A time-bound quest's deadline ("the new moon", on day N): whether
     /// anyone has told the party when it is, and whether it has passed.
     var deadlineName: String? = nil
