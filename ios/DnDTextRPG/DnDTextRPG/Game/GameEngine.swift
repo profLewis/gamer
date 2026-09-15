@@ -5908,6 +5908,10 @@ class GameEngine: ObservableObject {
         // Hall of Fame is still reachable via the "hall of fame" chat
         // command. (Continue Adventure itself is added above, ahead of
         // New Adventure.)
+        // About & credits — fills the space beside the 3-bar row.
+        menuOpts.append(MenuOption("About"))
+        actions.append { [weak self] in self?.showAbout(onBack: { [weak self] in self?.showPlayMenu() }) }
+
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showPlayHelp() }
 
