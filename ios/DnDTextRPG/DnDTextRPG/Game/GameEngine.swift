@@ -497,16 +497,71 @@ class GameEngine: ObservableObject {
                let end = self.autoCountdownEnd, end.timeIntervalSinceNow < 4 { return }
             self.continueHintCount += 1
             self.print("")
-            let title = Self.pickVaried(self.currentCombat != nil
-                ? Self.combatContinueTitles
-                : Self.continueTitles, avoiding: &self.lastContinueTitle)
-            self.print("  \(title)", color: .cyan, bold: true)
-            self.print("")
-            for line in self.continueHintLines() {
-                self.printWrapped(line, indent: 4, color: .dimGreen)
+            if self.currentCombat != nil {
+                // In a fight: who's next and how it stands — not just "Continue?".
+                let waiting = self.combatWaitingLines()
+                self.print("  \(waiting.title)", color: .cyan, bold: true)
+                for line in waiting.info { self.printWrapped(line, indent: 4, color: .green) }
+                self.printWrapped(self.combatTapLine(), indent: 4, color: .dimGreen)
+            } else {
+                let title = Self.pickVaried(Self.continueTitles, avoiding: &self.lastContinueTitle)
+                self.print("  \(title)", color: .cyan, bold: true)
+                self.print("")
+                for line in self.continueHintLines() {
+                    self.printWrapped(line, indent: 4, color: .dimGreen)
+                }
             }
             self.scheduleContinueHint()
         }
+    }
+
+    /// While a fight waits: who acts next (and what that means), and how the
+    /// fight stands — worded differently each time.
+    private func combatWaitingLines() -> (title: String, info: [String]) {
+        guard let combat = currentCombat else { return ("", []) }
+        var title = Self.combatContinueTitles.randomElement()!
+        let order = combat.turnOrder
+        if !order.isEmpty {
+            var idx = combat.currentTurnIndex
+            for _ in 0..<order.count {
+                idx = (idx + 1) % order.count
+                let entry = order[idx]
+                if entry.isPlayer {
+                    guard let c = party.first(where: { $0.id == entry.id }), c.isConscious else { continue }
+                    let n = shortName(for: c)
+                    title = c.isComputerControlled
+                        ? ["Next: \(n) takes a turn.", "\(n) is up next.", "Coming up: \(n)'s move.", "\(n) is sizing up the next swing."].randomElement()!
+                        : ["Next: your move, \(n).", "\(n), get ready — you're next.", "Your turn is coming, \(n).", "\(n): think about what you'll do next."].randomElement()!
+                    break
+                } else {
+                    guard combat.encounter.monsters.contains(where: { $0.name == entry.name && $0.isAlive }) else { continue }
+                    title = ["Next: the \(entry.name) — brace yourselves.", "The \(entry.name) is winding up for its turn.",
+                             "Watch out — the \(entry.name) moves next.", "The \(entry.name) is looking for an opening."].randomElement()!
+                    break
+                }
+            }
+        }
+        var info: [String] = []
+        let standing = party.filter { $0.isConscious }.count
+        let foes = combat.encounter.monsters.filter { $0.isAlive }
+        let foeText = foes.prefix(3).map { "\($0.name) \($0.currentHP)/\($0.maxHP)" }.joined(separator: ", ") + (foes.count > 3 ? "…" : "")
+        info.append("Standing: \(standing) of \(party.count) · Foes left: \(foes.count)\(foes.isEmpty ? "" : " (\(foeText))")")
+        if let hurt = party.filter({ $0.isConscious && $0.maxHP > 0 && Double($0.currentHP) / Double($0.maxHP) < 0.3 }).first {
+            info.append(["\(shortName(for: hurt)) is badly hurt (\(hurt.currentHP)/\(hurt.maxHP) HP).",
+                         "Keep an eye on \(shortName(for: hurt)) — only \(hurt.currentHP) HP left."].randomElement()!)
+        }
+        return (title, info)
+    }
+
+    /// "Wait, or tap" — varied; marked as a hint so Read Aloud skips it.
+    private func combatTapLine() -> String {
+        let counting = autoContinueCountdownAvailable && !autoContinuePaused
+        return "• " + (counting
+            ? ["Wait a moment, or tap the screen to go on.", "Give it a second — or tap to hurry things along.",
+               "It carries on by itself; a tap moves it sooner.", "Hold tight, or tap the screen to press on.",
+               "Take a breath — or tap to keep the fight moving."]
+            : ["Tap the screen when you're ready.", "Tap to go on — the fight waits for you.",
+               "Tap the screen (or type \"go on\") to carry on."]).randomElement()!
     }
 
     private func continueHintLines() -> [String] {
@@ -18814,19 +18869,28 @@ class GameEngine: ObservableObject {
         return pleaRiffLines() + adventureBackstory()
     }
 
-    /// Just turned a plea down? The next asker starts by saying so.
+    /// Just turned a plea down? The next asker answers that very quest.
     private func pleaRiffLines() -> [String] {
         guard let prev = questPleaPrevious else { return [] }
         let short = Dungeon.guardianName(prev.villain)
         let asker = questPleaAsker ?? "someone else from the village"
-        return ["Word soon gets round that you won't take on \(short). Before your ale's gone flat, \(asker) pushes through the crowd: \"Never mind \(short) — we've got a far worse problem.\""]
+        let who = asker.prefix(1).uppercased() + asker.dropFirst()
+        var lines = [
+            "\"So you won't \(prev.goal)?\" \(who) snorts. \"Can't say I blame you — \(short) gives me nightmares. But hear us out first.\"",
+            "\"Turned \(prev.village) down, did you? Then you've time for us,\" says \(asker). \"\(short) is bad. Ours is worse.\"",
+            "\(who) catches you by the sleeve. \"Forget \(short) and \(prev.village)'s troubles. We've got our own, and nobody else will help.\"",
+        ]
+        if let harm = prev.harm {
+            lines.append("\"Aye, \(harm) — we all heard, and it's awful,\" says \(asker). \"But what's happening to us is worse.\"")
+        }
+        return [lines.randomElement()!]
     }
 
     private func storyRiffNote() -> String {
         guard let prev = questPleaPrevious else { return "" }
         let short = Dungeon.guardianName(prev.villain)
         let asker = questPleaAsker ?? "someone else from the village"
-        return "The party has just turned down another plea — to \(prev.goal) (villain: \(short)). Open by riffing on that: \(asker) pushes forward and says, in effect, never mind \(short) — their own trouble is far more worrying. Then tell their tale. The one asking is \(asker), not the village elder."
+        return "The party has just turned down another plea — to \(prev.goal) (villain: \(short)). Open by riffing on that: \(asker) pushes forward and says, in effect, never mind \(short) — their own trouble is far more worrying. Refer to that plea specifically — its villain and what it was about — and draw a clear contrast with the new trouble; no generic remarks. Then tell their tale. The one asking is \(asker), not the village elder."
     }
 
     static let pleaAskers = ["a knot of worried farmers", "the town rat-catcher, a small man with a very large sack", "the miller's three children",
@@ -25363,7 +25427,7 @@ class GameEngine: ObservableObject {
         }
         print("")
         showMenu(old != nil ? ["Take Up the New Quest", "Hear Another Plea", "Back to Our Old Quest"]
-                            : ["Take Up the Quest", "Hear Another Plea", "No Quest, Just Adventure"])
+                            : ["Take Up the Quest", "Hear Another Plea", "No Quest"])
         closeHandler = { [weak self] in self?.acceptQuest(then: proceed) }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
@@ -25907,7 +25971,7 @@ class GameEngine: ObservableObject {
         // Build menu
         // "Change Brain" (was "AI") — which mind runs the Dungeon Master.
         // Party Review first (the default); Brain now lives in Settings.
-        var menuOpts = ["Party Review", "Tale", "Save to Roster", "Lore", "Settings", "Adventure Log", "New Main Quest", "Dungeon", "?", "< Back"]
+        var menuOpts = ["Party Review", "Tale", "Save to Roster", "Lore", "Settings", "Adventure Log", "Quests", "Dungeon", "?", "< Back"]
         if dungeon?.hasCartography == true {
             menuOpts.insert("Atlas", at: menuOpts.firstIndex(of: "Lore") ?? 0)
         }
@@ -25959,7 +26023,7 @@ class GameEngine: ObservableObject {
                 self.showTaleMenu()
             case "Opening Tale":
                 self.showOpeningTale(page: 0, onBack: { [weak self] in self?.showPartyStatus() })
-            case "New Main Quest":
+            case "Quests":
                 self.confirmNewMainQuest()
             case "Atlas":
                 self.showAtlas(onBack: { [weak self] in self?.showPartyStatus() })
@@ -26160,7 +26224,7 @@ class GameEngine: ObservableObject {
                 ("Lore", "the named merchants and folk you've met"),
                 ("Settings", "game settings — Change Brain (which AI runs the DM), Timeouts, Puzzles and more"),
                 ("Adventure Log", "a timeline of everything that's happened"),
-                ("New Main Quest", "sit by the campfire and think about a different quest — careful: the dungeon may throw you back to the start"),
+                ("Quests", "by the campfire: hold to your quest, or hear another plea — take it up, turn it down, or try to go back (careful: breaking an oath can throw you back to the start)"),
                 ("Atlas", "the map of everywhere you've been (once you've found cartography)"),
                 ("Cure Poison", "shown when someone is poisoned"),
                 ("Give Up Quest", "abandon a quest (progress lost, some gold in goodwill) to make room for another"),
