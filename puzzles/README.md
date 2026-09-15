@@ -53,7 +53,7 @@ The game only installs `pack.json` if:
 - it's under 256 KB and every puzzle passes the same checks as the signing tool.
 
 1. Edit `source.json` and bump `version`.
-2. Run `swift tools/sign-puzzle-pack.swift puzzles/source.json puzzles/pack.json`. The private key lives at `~/.config/gamer/puzzle-signing-key`, **never in the repo**.
+2. Run `swift tools/sign-puzzle-pack.swift puzzles/source.json puzzles/pack.json`. The private key lives at `~/.config/gamer/puzzle-signing-key`, **never in the repo**. A backup copy is in the login Keychain (service `https://github.com/profLewis/gamer`, account `puzzle-signing-key`). The tool falls back to it when the file is missing, or uses it on request with `--keychain`.
 3. Commit both files to `main`.
 
 Players pick the pack up within a day, or straight away with **Settings > Puzzles > Check for New Puzzles**. Both files are small text files, well within normal Git limits (no LFS needed).

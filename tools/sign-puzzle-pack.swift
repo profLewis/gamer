@@ -48,6 +48,8 @@ if args.first == "--generate-key" {
 }
 
 var keyPath = defaultKeyPath
+let useKeychainOnly = args.contains("--keychain")
+args.removeAll { $0 == "--keychain" }
 if let i = args.firstIndex(of: "--key"), i + 1 < args.count {
     keyPath = args[i + 1]
     args.removeSubrange(i...(i + 1))
@@ -56,10 +58,26 @@ guard args.count == 2 else {
     fail("usage: swift tools/sign-puzzle-pack.swift [--key KEYFILE] SOURCE.json PACK.json\n       swift tools/sign-puzzle-pack.swift --generate-key [KEYFILE]")
 }
 
-guard let keyText = try? String(contentsOfFile: keyPath, encoding: .utf8),
+/// The key's backup in the login Keychain (service = the repo's URL).
+func keyFromKeychain() -> String? {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+    p.arguments = ["find-generic-password", "-s", "https://github.com/profLewis/gamer", "-a", "puzzle-signing-key", "-w"]
+    let out = Pipe()
+    p.standardOutput = out
+    p.standardError = Pipe()
+    guard (try? p.run()) != nil else { return nil }
+    p.waitUntilExit()
+    guard p.terminationStatus == 0 else { return nil }
+    return String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)
+}
+
+// The key file if there is one (or --keychain to skip it), else the Keychain copy.
+let keyText = (useKeychainOnly ? nil : try? String(contentsOfFile: keyPath, encoding: .utf8)) ?? keyFromKeychain()
+guard let keyText = keyText,
       let raw = Data(base64Encoded: keyText.trimmingCharacters(in: .whitespacesAndNewlines)),
       let key = try? Curve25519.Signing.PrivateKey(rawRepresentation: raw) else {
-    fail("Can't read a signing key at \(keyPath) (make one with --generate-key).")
+    fail("Can't find the signing key at \(keyPath) or in the Keychain (make one with --generate-key).")
 }
 
 guard let source = try? Data(contentsOf: URL(fileURLWithPath: args[0])),
