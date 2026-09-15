@@ -871,9 +871,21 @@ struct TerminalView: View {
             if let cert = gameEngine.certificate {
                 CertificateView(cert: cert, scale: scale,
                                 onClose: { gameEngine.closeCertificate() },
-                                onSave: { gameEngine.saveCertificatePDF() })
+                                onPDF: { kind, style in gameEngine.showCertificatePDF(kind, style: style) })
             }
         }
+        // The End: fireworks over everything, never in the way of a tap.
+        .overlay {
+            if let until = gameEngine.fireworksUntil {
+                FireworksView(start: until.addingTimeInterval(-GameEngine.fireworksLength), until: until)
+            }
+        }
+        #if canImport(PDFKit) && !os(tvOS)
+        .sheet(item: $gameEngine.pdfPreview) { item in
+            PDFPreviewSheet(item: item, onSave: { gameEngine.savePreviewedPDF() },
+                            onPrint: { gameEngine.printPreviewedPDF() }, onClose: { gameEngine.pdfPreview = nil })
+        }
+        #endif
         #if !os(tvOS)
         .background(
             Color.clear
@@ -3253,10 +3265,15 @@ struct CertificateView: View {
     let cert: GameEngine.EndgameCertificate
     let scale: CGFloat
     let onClose: () -> Void
-    let onSave: () -> Void
+    let onPDF: (GameEngine.CertificatePDFKind, Int) -> Void
     @State private var style = 0
+    @State private var pdfOptions = false
 
-    private var palette: (bg: Color, ink: Color, accent: Color, border: Color) {
+    typealias Palette = (bg: Color, ink: Color, accent: Color, border: Color)
+    private var palette: Palette { Self.palette(style) }
+
+    /// Gold on black, black on parchment, or blood red on parchment.
+    static func palette(_ style: Int) -> Palette {
         let gold = Color(red: 0.86, green: 0.69, blue: 0.24)
         let blood = Color(red: 0.55, green: 0.02, blue: 0.05)
         let parchment = Color(red: 0.95, green: 0.90, blue: 0.78)
@@ -3343,10 +3360,18 @@ struct CertificateView: View {
                 .overlay(RoundedRectangle(cornerRadius: 14).stroke(p.border, lineWidth: 4).padding(8))
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(p.border.opacity(0.5), lineWidth: 1).padding(16))
             }
-            HStack(spacing: 10) {
-                button("Style", p) { style = (style + 1) % 3 }
-                button("Save PDF", p, action: onSave)
-                button("✕", p, action: onClose)
+            VStack(alignment: .trailing, spacing: 8) {
+                HStack(spacing: 10) {
+                    button("Style", p) { style = (style + 1) % 3 }
+                    button(pdfOptions ? "Cancel" : "Save PDF", p) { pdfOptions.toggle() }
+                    button("✕", p, action: onClose)
+                }
+                // The PDF three ways — each opens a preview before it's kept.
+                if pdfOptions {
+                    button("Illustrated — as shown", p) { pdfOptions = false; onPDF(.illustrated, style) }
+                    button("Text — maps kept whole", p) { pdfOptions = false; onPDF(.text, style) }
+                    button("Text — compact", p) { pdfOptions = false; onPDF(.textCompact, style) }
+                }
             }
             .padding(12)
         }

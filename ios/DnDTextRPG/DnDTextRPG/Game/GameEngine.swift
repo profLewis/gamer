@@ -1907,23 +1907,28 @@ class GameEngine: ObservableObject {
 
     private func atlasPDFData(level: AtlasLevel) -> Data {
         let showAll = atlasShowAllRooms
-        var lines = ["\(level.dungeonName) — Level \(level.level)", ""]
-        lines += atlasStatsLines(level, showAll: showAll)
-        lines.append("")
-        lines += Dungeon.atlasMapLines(level, showAll: showAll).lines
-        lines.append("")
-        lines += Dungeon.atlasKeyLines()
-        lines.append("")
-        lines.append("ROOMS")
-        lines += atlasSortedRooms(level, showAll: showAll).map { String(atlasRoomLabel($0, level: level).prefix(90)) }
-        lines.append("")
-        lines.append("(Not really in the spirit of the game — but it's your map.)")
-        return Self.monospacedPDF(lines: lines)
+        var head = ["\(level.dungeonName) — Level \(level.level)", ""]
+        head += atlasStatsLines(level, showAll: showAll)
+        head.append("")
+        var blocks: [[String]] = head.map { [$0] }
+        blocks.append(Dungeon.atlasMapLines(level, showAll: showAll).lines)   // the map, never split
+        blocks.append([""])
+        blocks.append(Dungeon.atlasKeyLines())
+        var rest = ["", "ROOMS"]
+        rest += atlasSortedRooms(level, showAll: showAll).map { String(atlasRoomLabel($0, level: level).prefix(90)) }
+        rest += ["", "(Not really in the spirit of the game — but it's your map.)"]
+        blocks += rest.map { [$0] }
+        return Self.monospacedPDF(blocks: blocks)
     }
 
     /// Plain monospaced text laid out onto US-Letter PDF pages — the font
     /// shrinks (within reason) so the widest line, usually the map, fits.
-    static func monospacedPDF(lines: [String]) -> Data {
+    static func monospacedPDF(lines: [String]) -> Data { monospacedPDF(blocks: lines.map { [$0] }) }
+
+    /// As above, but a block (a map, say) that fits on a page is never split:
+    /// it starts a fresh page instead of breaking in the middle.
+    static func monospacedPDF(blocks: [[String]]) -> Data {
+        let lines = blocks.flatMap { $0 }
         let page = CGRect(x: 0, y: 0, width: 612, height: 792)
         let margin: CGFloat = 36
         let data = NSMutableData()
@@ -1935,25 +1940,33 @@ class GameEngine: ObservableObject {
         let font = CTFontCreateWithName("Menlo" as CFString, fontSize, nil)
         let lineHeight = fontSize * 1.3
         let linesPerPage = max(1, Int((page.height - 2 * margin) / lineHeight))
-        var start = 0
-        repeat {
+        var pages: [[String]] = [[]]
+        for block in blocks {
+            if !pages[pages.count - 1].isEmpty, pages[pages.count - 1].count + block.count > linesPerPage, block.count <= linesPerPage {
+                pages.append([])
+            }
+            for line in block {
+                if pages[pages.count - 1].count >= linesPerPage { pages.append([]) }
+                pages[pages.count - 1].append(line)
+            }
+        }
+        for pageLines in pages {
             context.beginPDFPage(nil)
             context.textMatrix = .identity
             var y = page.height - margin - fontSize
-            for text in lines[start..<min(lines.count, start + linesPerPage)] {
+            for text in pageLines {
                 let attributed = NSAttributedString(string: text, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font])
                 context.textPosition = CGPoint(x: margin, y: y)
                 CTLineDraw(CTLineCreateWithAttributedString(attributed), context)
                 y -= lineHeight
             }
             context.endPDFPage()
-            start += linesPerPage
-        } while start < lines.count
+        }
         context.closePDF()
         return data as Data
     }
 
-    private func printAtlasPDF(_ data: Data) {
+    func printAtlasPDF(_ data: Data) {
         #if os(iOS)
         let controller = UIPrintInteractionController.shared
         let info = UIPrintInfo(dictionary: nil)
@@ -2747,7 +2760,7 @@ class GameEngine: ObservableObject {
                          .replacingOccurrences(of: "Redo:", with: "")
 
         if screen == "s:main" {
-            // Settings buttons: 1=DM Settings, 2=Accessibility, 3=Mood, 4=Gameplay, 5=Saving
+            // Settings buttons: 1=Brain, 2=Accessibility, 3=Mood, 4=Gameplay, 5=Puzzles, 6=Game Saves
             let dmKeys = ["DM Provider", "DM Creativity", "DM Log Context"]
             let accessKeys = ["Display Size", "DM Voice", "Companion Voices", "Voice Menus", "Hit Animations"]
             let moodKeys = ["Music", "Sound FX", "Menu Tune", "Explore Tune", "Combat Tune", "Chat Tune"]
@@ -2761,7 +2774,7 @@ class GameEngine: ObservableObject {
             if accessKeys.contains(short) { return 1 }
             if moodKeys.contains(short) { return 2 }
             if gameKeys.contains(short) { return 3 }
-            if saveKeys.contains(short) { return 4 }
+            if saveKeys.contains(short) { return 5 }
             return nil
         }
 
@@ -4295,7 +4308,7 @@ class GameEngine: ObservableObject {
                 }
                 return
             } else {
-                print("  Requires an AI provider. Set up an API key in DM Settings.", color: .yellow)
+                print("  Requires an AI provider. Set up an API key in \(BrainLabels.title).", color: .yellow)
                 return
             }
         }
@@ -4988,7 +5001,7 @@ class GameEngine: ObservableObject {
                 }
                 return
             } else if !dm.hasAnyAI {
-                print("  Requires an AI provider. Set up an API key in DM Settings.", color: .yellow)
+                print("  Requires an AI provider. Set up an API key in \(BrainLabels.title).", color: .yellow)
                 return
             }
         }
@@ -5577,7 +5590,7 @@ class GameEngine: ObservableObject {
         // other screen's nav cell rather than a special case.
         // Endgame preview — the outro and certificate with a sample party.
         menuOptions.append(MenuOption("Endgame"))
-        actions.append { [weak self] in self?.previewEndgame() }
+        actions.append { [weak self] in self?.showEndgamePreviews() }
 
         menuOptions.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showMainMenuHelp() }
@@ -6308,7 +6321,7 @@ class GameEngine: ObservableObject {
         print("  Red — destructive (delete, drop)", color: .red)
         print("")
 
-        showMenu(["DM Settings", "Accessibility", "Gameplay", "?", "< Back"])
+        showMenu([BrainLabels.button, "Accessibility", "Gameplay", "?", "< Back"])
         closeHandler = { [weak self] in self?.showHowToPlay() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
@@ -6386,7 +6399,7 @@ class GameEngine: ObservableObject {
             self.print("")
 
             self.print("  SHORTCUTS", color: .cyan, bold: true)
-            self.printWrapped("DM Settings, Accessibility, and Gameplay buttons below take you straight to those settings pages. You can also reach settings during a game from Party Status.", indent: 2, color: .dimGreen)
+            self.printWrapped("\(BrainLabels.title), Accessibility, and Gameplay buttons below take you straight to those settings pages. You can also reach settings during a game from Party Status.", indent: 2, color: .dimGreen)
             self.print("")
         }
     }
@@ -6855,7 +6868,7 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped("Set up in Settings > Change Brain. Adjust narration level in Settings > DM Ad-lib.", indent: 4, color: .dimGreen)
         printLink("Settings > Change Brain", to: "ai", indent: 4)
-        printLink("Settings > DM Settings", to: "dm", indent: 4)
+        printLink("\(BrainLabels.path)", to: "dm", indent: 4)
         print("")
         print("CHAT", color: .cyan, bold: true)
         printWrapped("Tap Chat during exploration to open the chat prompt. Just type naturally — ask questions, request actions, or roleplay.", indent: 2)
@@ -6872,8 +6885,8 @@ class GameEngine: ObservableObject {
         print("    Enter (empty) = close chat", color: .dimGreen)
         print("")
         print("TEXT MODE", color: .cyan, bold: true)
-        printWrapped("Removes all buttons and menus. Type naturally to play — the DM interprets everything. Toggle in Settings > DM Settings, or type 'buttons off' / 'buttons on'.", indent: 2)
-        printLink("Settings > DM Settings", to: "dm", indent: 4)
+        printWrapped("Removes all buttons and menus. Type naturally to play — the DM interprets everything. Toggle in \(BrainLabels.path), or type 'buttons off' / 'buttons on'.", indent: 2)
+        printLink("\(BrainLabels.path)", to: "dm", indent: 4)
         print("")
         print("DM VOICE", color: .cyan, bold: true)
         printWrapped("Enable text-to-speech in Settings > Accessibility > DM Voice to hear the DM's responses read aloud.", indent: 2)
@@ -6884,7 +6897,7 @@ class GameEngine: ObservableObject {
         print("")
 
         closeHandler = { [weak self] in self?.showHowToPlay() }
-        showMenu(["Go to Settings", "Change Brain", "< Back"])
+        showMenu(["Go to Settings", BrainLabels.change, "< Back"])
         menuHandler = { [weak self] choice in
             if choice == 1 {
                 self?.showSettings()
@@ -8994,7 +9007,7 @@ class GameEngine: ObservableObject {
         print("  Autosave: \(autosaveInterval.displayName)", color: .dimGreen)
         print("")
 
-        var menuOpts = ["DM Settings", "Change Brain", "Accessibility", "Mood", "Gameplay", "Puzzles", "Game Saves", "About"].map { MenuOption($0) }
+        var menuOpts = [BrainLabels.button, "Accessibility", "Mood", "Gameplay", "Puzzles", "Game Saves", "Certificates", "About"].map { MenuOption($0) }
         menuOpts.append(MenuOption("Save Settings"))
         menuOpts.append(MenuOption("Reset", tint: .danger))
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -9013,8 +9026,8 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             let text = menuOpts[choice - 1].text
             switch text {
-            case "DM Settings": self.showDMSettingsSubMenu()
-            case "Change Brain": self.showAIProviderMenu(onBack: { [weak self] in self?.showSettings() })
+            case BrainLabels.button: self.showDMSettingsSubMenu()
+            case "Certificates": self.showCertificates(onBack: { [weak self] in self?.showSettings() })
             case "Puzzles": self.showPuzzleSettings(onBack: { [weak self] in self?.showSettings() })
             case "About": self.showAbout(onBack: { [weak self] in self?.showSettings() })
             case "Accessibility": self.showAccessibilityMenu()
@@ -10530,7 +10543,7 @@ class GameEngine: ObservableObject {
             print("  Keys are encrypted and persist across reinstalls.", color: .dimGreen)
         } else {
             print("  No API keys configured to back up.", color: .yellow)
-            print("  Set up a provider key in DM Settings first.", color: .dimGreen)
+            print("  Set up a provider key in \(BrainLabels.title) first.", color: .dimGreen)
         }
         print("")
         waitForContinue()
@@ -10755,10 +10768,10 @@ class GameEngine: ObservableObject {
 
     private func showDMSettingsSubMenu() {
         clearTerminal()
-        printTitle("R. Dungeon Master (DM)")
+        printTitle(BrainLabels.title)
 
         let dm = DMEngine.shared
-        print("PROVIDER:", color: .cyan, bold: true)
+        print("BRAIN:", color: .cyan, bold: true)
         print("  \(dm.provider.displayName)", color: .brightGreen)
         print("")
         print("AD-LIB:", color: .cyan, bold: true)
@@ -10784,7 +10797,7 @@ class GameEngine: ObservableObject {
         print("")
 
         let justDMLabel = justDMMode ? "Text Mode: On" : "Text Mode: Off"
-        let options = ["API Key", "Ad-lib Level", "Log Context", "DM Voice", justDMLabel, "Content Safety"]
+        let options = [BrainLabels.change, "API Key", "Ad-lib Level", "Log Context", "DM Voice", justDMLabel, "Content Safety"]
 
         var menuOpts = options.map { MenuOption($0) }
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -10803,6 +10816,8 @@ class GameEngine: ObservableObject {
             }
             let selected = options[choice - 1]
             switch selected {
+            case BrainLabels.change:
+                self.showAIProviderMenu(onBack: { [weak self] in self?.showDMSettingsSubMenu() })
             case "API Key":
                 self.promptAPIKey()
             case "Ad-lib Level":
@@ -10837,7 +10852,7 @@ class GameEngine: ObservableObject {
 
     private func showDMSettingsHelp() {
         showInlineHelp {
-            self.printTitle("DM Settings Help")
+            self.printTitle("\(BrainLabels.title) Help")
             self.print("")
 
             self.print("  API KEY", color: .cyan, bold: true)
@@ -11003,7 +11018,7 @@ class GameEngine: ObservableObject {
             self.printWrapped("The small three-part button at the bottom right [< Back | ? | >>]: back (while exploring, leave with ✕ by the input line instead), help for this screen, and more buttons when they don't all fit (<< / >> page through; long-press to skip 3 pages).", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  BUTTONS", color: .cyan, bold: true)
-            self.printWrapped("DM Settings — configure the AI Dungeon Master provider, API key, creativity level, and log context.", indent: 2, color: .dimGreen)
+            self.printWrapped("\(BrainLabels.title) — configure the AI Dungeon Master provider, API key, creativity level, and log context.", indent: 2, color: .dimGreen)
             self.printWrapped("Accessibility — display size, hit animations, DM voice, companion voices, and voice menus.", indent: 2, color: .dimGreen)
             self.printWrapped("Mood — background music tunes for each game phase, plus music and sound effect switches.", indent: 2, color: .dimGreen)
             self.printWrapped("Gameplay — map radius, card navigation, info timeout, button limit, NPCs, multiplayer, timers, and keyboard.", indent: 2, color: .dimGreen)
@@ -11736,7 +11751,7 @@ class GameEngine: ObservableObject {
     func showAIProviderMenu(onBack: (() -> Void)? = nil) {
         let back = onBack ?? { [weak self] in self?.showDMSettingsSubMenu() }
         clearTerminal()
-        printTitle("Brain")
+        printTitle(BrainLabels.button)
 
         let dm = DMEngine.shared
 
@@ -18528,6 +18543,7 @@ class GameEngine: ObservableObject {
     private func showTalePages(title: String, lines: [String], page: Int, onBack: @escaping () -> Void,
                                emptyMessage: String = "There's no tale to tell yet.",
                                finishLabel: String? = nil, onFinish: (() -> Void)? = nil, appendOnly: Bool = false, pace: Double = 1.0, skipLabel: String? = nil) {
+        let lines = lines.map(Self.copyEdit)   // a light copy-edit on every tale
         // Tale pages take their own buttons — no leftover handler from before.
         inputHandler = nil
         textLongPressHandler = nil
@@ -18711,7 +18727,7 @@ class GameEngine: ObservableObject {
         let gold = party.reduce(0) { $0 + $1.gold }
         let events = progressHighlights(limit: 40).map { "- \($0)" }.joined(separator: "\n")
         return """
-        Tell the story of this adventure so far, carrying on from its opening tale (below) in exactly the same style, as \(["", "3 to 5", "6 to 9", "9 to 12"][questVerbosity]) short lines — one sentence each, at most 30 words — one per line, with no title, introduction, numbering, headings or blank lines — start straight in with the story.
+        Tell the story of this adventure so far, carrying on from its opening tale (below) in exactly the same style — the past tense for what they have done, the past perfect for anything before that, the present only for where they stand now — as \(["", "3 to 5", "6 to 9", "9 to 12"][questVerbosity]) short lines — one sentence each, at most 30 words — one per line, with no title, introduction, numbering, headings or blank lines — start straight in with the story.
         Say what the party has done towards the main quest, their notable fights, finds and side quests, and end with where they stand now and what still lies ahead.
         Keep it plain and concrete: the real events, in order, each following from the last. No prophecies, omens or vague mystical phrases.
 
@@ -26120,6 +26136,12 @@ class GameEngine: ObservableObject {
         let preview: Bool
     }
     @Published var certificate: EndgameCertificate?
+    /// A PDF waiting to be looked over before it's saved or printed.
+    @Published var pdfPreview: PDFPreviewItem?
+    /// When the fireworks stop (nil: none going).
+    @Published var fireworksUntil: Date?
+    static let fireworksLength: TimeInterval = 7
+    enum CertificatePDFKind { case illustrated, text, textCompact }
 
     /// After the last guardian falls: the story isn't over until the DM, the
     /// village and anyone who set you an errand have had their say.
@@ -26131,6 +26153,9 @@ class GameEngine: ObservableObject {
         showTalePages(title: "The Tale's End", lines: endgameOutroLines(), page: 0, onBack: finish, onFinish: finish)
     }
 
+    /// Told once it's all over: the past tense, the past perfect for what had
+    /// happened before — with the DM's asides and what people say kept as
+    /// spoken, in the present.
     private func endgameOutroLines() -> [String] {
         let place = dungeon?.name ?? "the dungeon"
         let names = party.map { shortName(for: $0) }
@@ -26140,24 +26165,24 @@ class GameEngine: ObservableObject {
                       "DM here, briefly out of character: well played. That was a proper ending."].randomElement()!)
         if let q = mainQuest {
             let foe = Dungeon.guardianName(q.villain)
-            lines.append("\(foe) is gone, and the deepest dark of \(place) is quiet at last.")
-            if let finale = q.finale { lines.append("Then, just as you were told, you \(finale).") }
-            lines.append("Then the long climb home. By the time \(together) reach \(q.village), word has run on ahead.")
-            lines.append("The elder of \(q.village) is waiting at the gate. \"I'm the one who begged you to \(q.goal) — and you did it. \(q.village) won't forget.\"")
-            lines.append(["The whole village turns out: bunting, bells, and a pie the size of a cartwheel.",
-                          "Children run alongside you shouting your names — mostly wrong, but with enormous enthusiasm.",
-                          "The innkeeper declares free ale for a week — then, seeing the party's appetite, makes it a day."].randomElement()!)
+            lines.append("\(foe) was gone, and the deepest dark of \(place) was quiet at last.")
+            if let finale = q.finale { lines.append("One thing was left to do, just as you had been told: to \(finale). And so it was done.") }
+            lines.append("Then came the long climb home. By the time \(together) reached \(q.village), word had run on ahead of them.")
+            lines.append("The elder of \(q.village) was waiting at the gate. \"I'm the one who begged you to \(q.goal) — and you did it. \(q.village) won't forget.\"")
+            lines.append(["The whole village had turned out: bunting, bells, and a pie the size of a cartwheel.",
+                          "Children ran alongside, shouting your names — mostly wrong, but with enormous enthusiasm.",
+                          "The innkeeper declared free ale for a week — then, having seen the party's appetite, made it a day."].randomElement()!)
             lines.append(q.deadlinePassed == true
-                ? "They pay you what they can — half of \(q.reward), since \(q.deadlineName ?? "the deadline") had come and gone. Nobody minds much today."
-                : "And they pay you, just as they promised: \(q.reward).")
+                ? "They paid what they could — half of \(q.reward), since \(q.deadlineName ?? "the deadline") had come and gone. Nobody minded much that day."
+                : "And they paid you, just as they had promised: \(q.reward).")
         } else {
-            lines.append("The last guardian of \(place) has fallen. Nobody asked you to do this — you did it anyway, for the sheer adventure of it.")
-            lines.append("Word gets out, as word does. By morning, three villages are claiming you as their own heroes.")
+            lines.append("The last guardian of \(place) had fallen. Nobody had asked you to do it — you did it anyway, for the sheer adventure of it.")
+            lines.append("Word got out, as word does. By morning, three villages were claiming you as their own heroes.")
         }
         for errand in allQuests.prefix(2) {
-            lines.append("A note arrives from \(errand.giverName), who set you an errand: \"Heard what you did down there. My little job can wait — come and see me when you're rested.\"")
+            lines.append("A note arrived from \(errand.giverName), who had set you an errand: \"Heard what you did down there. My little job can wait — come and see me when you're rested.\"")
         }
-        lines.append("That night \(together) sit by the fire and tell it all again — and each time, the monsters get a little bigger.")
+        lines.append("That night \(together) sat by the fire and told it all again — and each time, the monsters grew a little bigger.")
         lines.append("DM again — that's the end of this tale. There's a certificate with your names on it coming up. Frame it.")
         return lines
     }
@@ -26172,15 +26197,34 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped(preview
             ? "(This was a preview — nothing was saved.)"
-            : "Your last save — from just before the final battle — is kept, so you can play the ending again from Continue Adventure.", indent: 2, color: .dimGreen)
+            : "Your last save — from just before the final battle — is kept, so you can play the ending again from Continue Adventure. The certificate is kept too, in Settings > Certificates.", indent: 2, color: .dimGreen)
         print("")
-        showMenu(["See the Certificate", preview ? "Back to the Menu" : "End Adventure"])
+        showMenu(["See the Certificate", "Fireworks!", preview ? "Back to the Menu" : "End Adventure"])
         closeHandler = { [weak self] in self?.finishEndgame() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
-            if choice == 1 { self.certificate = self.makeCertificate(preview: preview) } else { self.finishEndgame() }
+            switch choice {
+            case 1: self.certificate = self.makeCertificate(preview: preview)
+            case 2: self.launchFireworks()
+            default: self.finishEndgame()
+            }
         }
         certificate = makeCertificate(preview: preview)
+        if !preview, let c = certificate { CertificateStore.save(c) }
+        launchFireworks()
+    }
+
+    /// Fireworks over everything for a few seconds, and a cheer.
+    func launchFireworks() {
+        let until = Date().addingTimeInterval(Self.fireworksLength)
+        fireworksUntil = until
+        SoundManager.shared.playCrowdCheer()
+        for i in 0..<5 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6 + Double(i) * 1.1) { SoundManager.shared.playArrowShot() }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.fireworksLength + 0.3) { [weak self] in
+            if self?.fireworksUntil == until { self?.fireworksUntil = nil }
+        }
     }
 
     private func makeCertificate(preview: Bool) -> EndgameCertificate? {
@@ -26204,27 +26248,125 @@ class GameEngine: ObservableObject {
 
     func closeCertificate() { certificate = nil }
 
-    /// The certificate as a PDF: the words, the numbers, and a map of every level.
-    func saveCertificatePDF() {
+    /// The certificate as a PDF — illustrated (as on screen, in its style) or
+    /// typewriter text — shown in a preview first, then saved or printed.
+    func showCertificatePDF(_ kind: CertificatePDFKind, style: Int) {
         guard let cert = certificate else { return }
-        var lines = ["* \(cert.title.uppercased()) *", "", "This is to certify that", ""]
-        lines += cert.heroes.map { "  \($0.name) — \($0.detail)" }
-        lines += ["", cert.quest, ""]
-        lines += cert.stats.map { "  " + $0.0.padding(toLength: 20, withPad: ".", startingAt: 0) + " " + $0.1 }
-        lines += ["", cert.date, "", "THE JOURNEY"]
-        for level in cert.levels {
-            lines += ["", "Level \(level.level)"]
-            lines += Dungeon.atlasMapLines(level, showAll: false).lines
+        let name = "certificate-\(Self.saveStamp())"
+        switch kind {
+        case .illustrated:
+            Task { @MainActor [weak self] in
+                guard #available(iOS 16, macOS 13, tvOS 16, *), let data = CertificatePDF.illustrated(cert, style: style) else { return }
+                self?.pdfPreview = PDFPreviewItem(data: data, name: name, title: "Certificate")
+            }
+        case .text, .textCompact:
+            pdfPreview = PDFPreviewItem(data: certificateTextPDF(cert, keepMapsWhole: kind == .text), name: name + "-text", title: "Certificate (text)")
         }
-        pendingAtlasPDF = Self.monospacedPDF(lines: lines)
-        pendingAtlasPDFName = "certificate-\(Self.saveStamp())"
-        certificate = nil
-        showAtlasPDFExporter = true
-        logEvent("Saved the certificate as a PDF", category: "SYSTEM")
+        logEvent("Made the certificate as a PDF", category: "SYSTEM")
+    }
+
+    /// The words, the numbers, and a map of every level — each map kept on
+    /// one page unless compact was asked for.
+    private func certificateTextPDF(_ cert: EndgameCertificate, keepMapsWhole: Bool) -> Data {
+        var head = ["* \(cert.title.uppercased()) *", "", "This is to certify that", ""]
+        head += cert.heroes.map { "  \($0.name) — \($0.detail)" }
+        head += [""] + Self.wrapPlain(cert.quest, width: 64) + [""]
+        head += cert.stats.map { "  " + $0.0.padding(toLength: 20, withPad: ".", startingAt: 0) + " " + $0.1 }
+        head += ["", cert.date, "", "THE JOURNEY"]
+        var blocks: [[String]] = [head]
+        for level in cert.levels {
+            let map = ["", "Level \(level.level)"] + Dungeon.atlasMapLines(level, showAll: false).lines
+            blocks += keepMapsWhole ? [map] : map.map { [$0] }
+        }
+        return Self.monospacedPDF(blocks: blocks)
+    }
+
+    /// Plain word-wrap, for the text PDF.
+    static func wrapPlain(_ text: String, width: Int) -> [String] {
+        var out: [String] = []
+        var line = ""
+        for word in text.split(separator: " ") {
+            if !line.isEmpty && line.count + 1 + word.count > width { out.append(line); line = "" }
+            line += (line.isEmpty ? "" : " ") + word
+        }
+        if !line.isEmpty { out.append(line) }
+        return out
+    }
+
+    /// The preview's Save…: the usual file dialog, once the sheet has gone.
+    func savePreviewedPDF() {
+        guard let item = pdfPreview else { return }
+        pendingAtlasPDF = item.data
+        pendingAtlasPDFName = item.name
+        pdfPreview = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.showAtlasPDFExporter = true }
+    }
+
+    func printPreviewedPDF() {
+        guard let item = pdfPreview else { return }
+        pdfPreview = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.printAtlasPDF(item.data) }
+    }
+
+    /// Settings > Certificates: every finished adventure's certificate.
+    func showCertificates(onBack: @escaping () -> Void) {
+        clearTerminal()
+        printTitle("Certificates")
+        print("")
+        let saved = CertificateStore.list()
+        closeHandler = onBack
+        if saved.isEmpty {
+            printWrapped("None yet. Finish an adventure — beat the last guardian at the bottom of the world — and its certificate is kept here, to look at, save or print whenever you like.", indent: 2, color: .dimGreen)
+            print("")
+            showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+            menuHandler = { _ in onBack() }
+            return
+        }
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        for (i, c) in saved.enumerated() {
+            print("  \(i + 1). \(f.string(from: c.savedAt))", color: .cyan, bold: true)
+            printWrapped(c.heroes.map { $0.first ?? "" }.joined(separator: ", "), indent: 5, color: .brightGreen)
+            printWrapped(c.quest, indent: 5, color: .dimGreen)
+            print("")
+        }
+        let labels = saved.map { String($0.heroNames.prefix(MenuOption.maxButtonLength)) }
+        showPaginatedMenuOptions(labels, pinned: ["< Back"], handler: { [weak self] idx in
+            guard let self = self, idx >= 0, idx < saved.count else { return }
+            self.showCertificateEntry(saved[idx], onBack: onBack)
+        }, pinnedHandler: { _ in onBack() })
+    }
+
+    private func showCertificateEntry(_ saved: SavedCertificate, onBack: @escaping () -> Void) {
+        clearTerminal()
+        printTitle("Certificate")
+        print("")
+        for hero in saved.heroes {
+            print("  \(hero.first ?? "")", color: .brightGreen, bold: true)
+            if hero.count > 1 { print("    \(hero[1])", color: .dimGreen) }
+        }
+        print("")
+        printWrapped(saved.quest, indent: 2, color: .cyan)
+        print("")
+        print("  \(saved.date)", color: .dimGreen)
+        print("")
+        let back: () -> Void = { [weak self] in self?.showCertificates(onBack: onBack) }
+        showMenuOptions([MenuOption("View Certificate", isDefault: true), MenuOption("Delete", tint: .danger),
+                         MenuOption("< Back", tint: .navigation, compact: true)])
+        closeHandler = back
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1: self.certificate = saved.certificate
+            case 2: CertificateStore.delete(saved.id); back()
+            default: back()
+            }
+        }
     }
 
     private func finishEndgame() {
         certificate = nil
+        fireworksUntil = nil
         storyScreenActive = false
         resetGame()
     }
@@ -26232,6 +26374,41 @@ class GameEngine: ObservableObject {
     /// The Endgame button (landing screen): a sample party, quest and seven
     /// explored levels, through the outro and certificate — nothing is saved.
     func previewEndgame() {
+        setUpSampleEnding()
+        showEndgameOutro(preview: true)
+    }
+
+    /// The (hidden) Endgame button: either ending, with a sample party.
+    func showEndgamePreviews() {
+        clearTerminal()
+        printTitle("Endgame Previews")
+        print("")
+        printWrapped("How an adventure ends — with a sample party and quest. Nothing is saved.", indent: 2, color: .dimGreen)
+        print("")
+        showMenu(["Victory", "Game Over", "< Back"])
+        closeHandler = { [weak self] in self?.showMainMenu() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1: self.previewEndgame()
+            case 2: self.previewGameOver()
+            default: self.showMainMenu()
+            }
+        }
+    }
+
+    private func previewGameOver() {
+        setUpSampleEnding()
+        SoundManager.shared.stopMusic()
+        SoundManager.shared.playDefeat()
+        clearTerminal()
+        gameState = .gameOver
+        closeHandler = { [weak self] in self?.resetGame() }
+        showDefeatScreen(retry: nil, preview: true)
+    }
+
+    /// A sample party, quest and seven explored levels, for the previews.
+    private func setUpSampleEnding() {
         let scores = AbilityScores(strength: 16, dexterity: 14, constitution: 14, intelligence: 12, wisdom: 12, charisma: 12)
         let heroes = [
             Character(name: "Ada Stone", race: .human, characterClass: .fighter, abilityScores: scores),
@@ -26258,7 +26435,35 @@ class GameEngine: ObservableObject {
         monstersSlain = Int.random(in: 60...110)
         combatsWon = Int.random(in: 30...55)
         gameTimeMinutes = 1440 * Int.random(in: 8...16) + 600
-        showEndgameOutro(preview: true)
+    }
+
+    /// A light copy-edit for tale text, ours or the story writer's: spacing,
+    /// stray punctuation, doubled little words, "a"/"an", and a capital to
+    /// start each sentence.
+    static func copyEdit(_ text: String) -> String {
+        var s = text.replacingOccurrences(of: "[ \\t]+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        s = s.replacingOccurrences(of: " +([,.;:!?])", with: "$1", options: .regularExpression)
+        s = s.replacingOccurrences(of: "(?<![.])\\.\\.(?![.])", with: ".", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\b(the|a|an|to|of|and|in|was|is) \\1\\b", with: "$1", options: [.regularExpression, .caseInsensitive])
+        s = s.replacingOccurrences(of: "\\b([Aa]) (?=[aeioAEIO])(?!(?:one|once|One|Once)\\b)", with: "$1n ", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\b([Aa])n (?=[bcdfgjklmnpqrstvwxyzBCDFGJKLMNPQRSTVWXYZ])", with: "$1 ", options: .regularExpression)
+        var out = ""
+        var capNext = true
+        var prev: Swift.Character = " ", prev2: Swift.Character = " "   // Swift's, not the game's Character
+        for ch in s {
+            if capNext && ch.isLetter {
+                out += ch.uppercased()
+                capNext = false
+            } else {
+                out.append(ch)
+                if ch.isLetter || ch.isNumber { capNext = false }
+            }
+            if ch == " " && "!?.".contains(prev) && prev2 != "." { capNext = true }
+            prev2 = prev
+            prev = ch
+        }
+        return out
     }
 
     /// This adventure's latest save, for Try Again after a defeat.
@@ -26532,7 +26737,7 @@ class GameEngine: ObservableObject {
                 self.showAtlas(onBack: { [weak self] in self?.showPartyStatus() })
             case "Lore":
                 self.showLoreBook()
-            case "Change Brain":
+            case BrainLabels.change:
                 self.showAIProviderMenu(onBack: { [weak self] in self?.showPartyStatus() })
             case "Settings":
                 self.showSettings()
@@ -29781,7 +29986,7 @@ class GameEngine: ObservableObject {
         print("")
         print("  HOW TO GET BACK", color: .yellow, bold: true)
         print("")
-        printWrapped("Type 'buttons on' to restore normal menus, or toggle it off in Settings → DM Settings.", indent: 2, color: .dimGreen)
+        printWrapped("Type 'buttons on' to restore normal menus, or toggle it off in \(BrainLabels.path).", indent: 2, color: .dimGreen)
         print("")
 
         showMenu(["Enable Text Mode", "< Cancel"])
@@ -33561,20 +33766,35 @@ class GameEngine: ObservableObject {
             self?.resetGame()
         }
 
-        printLines(asciiSkull, color: .red)
+        showDefeatScreen(retry: latestSaveForThisAdventure(), preview: false)
+    }
+
+    /// Defeat — and sometimes a full GAME OVER: always with no save to go
+    /// back to, or at the final guardian, and now and then anyway. Then a
+    /// word from the DM, whoever set the quest, and anyone waiting on an errand.
+    private func showDefeatScreen(retry: SaveGame?, preview: Bool) {
+        let gameOver = preview || retry == nil || dungeon?.isFinalLevel == true || Int.random(in: 1...100) <= 35
+        if gameOver {
+            printLines(asciiGameOver, color: .red)
+            print("")
+            printTitle("GAME OVER")
+            print("The tale ends here — this time.", color: .red)
+        } else {
+            printLines(asciiSkull, color: .red)
+            print("")
+            printTitle("DEFEAT")
+            print("Your party has fallen...", color: .red)
+        }
         print("")
-        printTitle("DEFEAT")
-        print("Your party has fallen...", color: .red)
-        print("")
-        // A word from the DM, whoever set the quest, and anyone waiting on an errand.
-        let retry = latestSaveForThisAdventure()
         for line in defeatEncouragement(canRetry: retry != nil) {
             printWrapped(line, indent: 2, color: .cyan)
             print("")
         }
+        if preview { print("  (A preview — nothing was saved.)", color: .dimGreen); print("") }
         var opts: [String] = []
         if retry != nil { opts.append("Try Again") }
-        opts += ["View Adventure Log", "Return to Main Menu"]
+        if !preview { opts.append("View Adventure Log") }
+        opts.append(preview ? "Back to the Menu" : "Return to Main Menu")
         showMenu(opts)
         menuHandler = { [weak self] choice in
             guard let self = self, choice >= 1, choice <= opts.count else { return }
@@ -36803,6 +37023,19 @@ class GameEngine: ObservableObject {
             "   \\\\\\>",
             "    \\\\>",
             "     \\>",
+        ]
+    }
+
+    private var asciiGameOver: [String] {
+        [
+            "  ___   _   __  __ ___ ",
+            " / __| /_\\ |  \\/  | __|",
+            "| (_ |/ _ \\| |\\/| | _| ",
+            " \\___/_/ \\_\\_|  |_|___|",
+            "  _____   _____ ___ ",
+            " / _ \\ \\ / / __| _ \\",
+            "| (_) \\ V /| _||   /",
+            " \\___/ \\_/ |___|_|_\\",
         ]
     }
 

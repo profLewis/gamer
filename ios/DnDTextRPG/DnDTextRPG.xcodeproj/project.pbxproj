@@ -10,6 +10,7 @@
 		001 /* DnDTextRPGApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 101 /* DnDTextRPGApp.swift */; };
 		002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 102 /* ContentView.swift */; };
 		003 /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 103 /* TerminalView.swift */; };
+		4BD98AF299024F1883DBD2FF /* EndgameViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D9D6FAF211F4171934D4CB1 /* EndgameViews.swift */; };
 		004 /* TerminalModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 104 /* TerminalModels.swift */; };
 		005 /* CharacterModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 105 /* CharacterModels.swift */; };
 		006 /* DungeonModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 106 /* DungeonModels.swift */; };
@@ -82,6 +83,7 @@
 		101 /* DnDTextRPGApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DnDTextRPGApp.swift; sourceTree = "<group>"; };
 		102 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		103 /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalView.swift; sourceTree = "<group>"; };
+		6D9D6FAF211F4171934D4CB1 /* EndgameViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EndgameViews.swift; sourceTree = "<group>"; };
 		104 /* TerminalModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalModels.swift; sourceTree = "<group>"; };
 		105 /* CharacterModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CharacterModels.swift; sourceTree = "<group>"; };
 		106 /* DungeonModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DungeonModels.swift; sourceTree = "<group>"; };
@@ -192,6 +194,7 @@
 			children = (
 				102 /* ContentView.swift */,
 				103 /* TerminalView.swift */,
+				6D9D6FAF211F4171934D4CB1 /* EndgameViews.swift */,
 				BB00000000000000000001 /* GameKeyboardView.swift */,
 			);
 			path = Views;
@@ -367,6 +370,7 @@
 				001 /* DnDTextRPGApp.swift in Sources */,
 				002 /* ContentView.swift in Sources */,
 				003 /* TerminalView.swift in Sources */,
+				4BD98AF299024F1883DBD2FF /* EndgameViews.swift in Sources */,
 				004 /* TerminalModels.swift in Sources */,
 				005 /* CharacterModels.swift in Sources */,
 				006 /* DungeonModels.swift in Sources */,
