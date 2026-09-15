@@ -21,6 +21,8 @@ struct TerminalLine: Identifiable {
     let isBold: Bool
     let isUnderlined: Bool
     let fontSize: CGFloat
+    /// A wrapped paragraph's later lines — read aloud together with the first.
+    var continuesPrevious = false
     let isCentered: Bool
     /// Optional character range drawn in `highlightColor` (bold) — e.g.
     /// the Atlas's "[@]" so you can spot where you are at a glance.

@@ -191,6 +191,33 @@ struct MainQuest: Codable {
     var finale: String? = nil
     var informant: String? = nil
     var cluesLearned: [String]? = nil
+    /// A time-bound quest's deadline ("the new moon", on day N): whether
+    /// anyone has told the party when it is, and whether it has passed.
+    var deadlineName: String? = nil
+    var deadlineDay: Int? = nil
+    var deadlineKnown: Bool? = nil
+    var deadlinePassed: Bool? = nil
+
+    /// A quest whose stakes are time-bound gets a real day for it — generous
+    /// enough to reach the bottom, but it does run out.
+    func withDeadline(today: Int, level: Int) -> MainQuest {
+        guard deadlineDay == nil else { return self }
+        let s = stakes.lowercased()
+        let table: [(String, String, Int)] = [
+            ("new moon", "the new moon", 8), ("full moon", "the full moon", 10), ("eclipse", "the eclipse", 7),
+            ("end of the week", "the end of the week", 7), ("eggs hatch", "the eggs hatching", 9), ("still air", "the air running out", 8),
+            ("barrel", "the last of the water", 10), ("midwinter", "midwinter", 18), ("midsummer", "midsummer", 18),
+            ("first snow", "the first snow", 16), ("winter", "winter", 16), ("coronation", "the coronation", 12),
+            ("end of the month", "the end of the month", 20), ("harvest", "the harvest", 14), ("spring", "spring", 24),
+            ("tunnels are finished", "the tunnels being finished", 12), ("warband", "the warband marching", 12),
+            ("sleepers", "the sleepers being lost", 12), ("spores", "the spores reaching the fields", 12),
+        ]
+        guard let hit = table.first(where: { s.contains($0.0) }) else { return self }
+        var q = self
+        q.deadlineName = hit.1
+        q.deadlineDay = today + max(hit.2, (Dungeon.finalLevel - level + 1) * 2)
+        return q
+    }
 
     /// The next thing someone could tell you, or nil once you know it all.
     var nextClue: String? {

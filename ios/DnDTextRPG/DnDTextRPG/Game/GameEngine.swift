@@ -2094,6 +2094,15 @@ class GameEngine: ObservableObject {
             return
         }
 
+        // Later lines of the paragraph are marked, so Read Aloud reads it as one.
+        var printedAny = false
+        let emit: (String) -> Void = { line in
+            self.print("\(prefix)\(line)", color: color, bold: bold)
+            if printedAny {
+                self.runOnMain { if !self.terminalLines.isEmpty { self.terminalLines[self.terminalLines.count - 1].continuesPrevious = true } }
+            }
+            printedAny = true
+        }
         let words = trimmed.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
         var currentLine = ""
 
@@ -2103,12 +2112,12 @@ class GameEngine: ObservableObject {
             } else if currentLine.count + 1 + word.count <= lineWidth {
                 currentLine += " " + word
             } else {
-                print("\(prefix)\(currentLine)", color: color, bold: bold)
+                emit(currentLine)
                 currentLine = word
             }
         }
         if !currentLine.isEmpty {
-            print("\(prefix)\(currentLine)", color: color, bold: bold)
+            emit(currentLine)
         }
     }
 
@@ -4646,7 +4655,17 @@ class GameEngine: ObservableObject {
         // rather than by keyword, so it doesn't matter which of the fixed
         // legend entries are showing.
         let legendPartPattern = try? NSRegularExpression(pattern: "^\\S{1,2}=[A-Za-z]+$")
-        let lines = terminalLines[min(speechFromLine, terminalLines.count)...].compactMap { line -> String? in
+        // A wrapped paragraph is read as one sentence, not a line at a time.
+        var merged: [TerminalLine] = []
+        for line in terminalLines[min(speechFromLine, terminalLines.count)...] {
+            if line.continuesPrevious, var last = merged.popLast() {
+                last.text = last.text.trimmingCharacters(in: .whitespaces) + " " + line.text.trimmingCharacters(in: .whitespaces)
+                merged.append(last)
+            } else {
+                merged.append(line)
+            }
+        }
+        let lines = merged.compactMap { line -> String? in
             let trimmed = line.text.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { return nil }
 
@@ -13631,7 +13650,7 @@ class GameEngine: ObservableObject {
 
                 let day = entry.gameTimeMinutes / 1440 + 1
                 printWrapped(entry.partyDescription, indent: 3, color: .dimGreen)
-                printWrapped("Gold:\(entry.goldCollected) Slain:\(entry.monstersSlain) Rooms:\(entry.roomsExplored)/\(entry.totalRooms) Day \(day)", indent: 3, color: .dimGreen)
+                printWrapped("Gold:\(entry.goldCollected) Slain:\(entry.monstersSlain) Lv\(entry.dungeonLevel) rooms:\(entry.roomsExplored)/\(entry.totalRooms) Day \(day)", indent: 3, color: .dimGreen)
                 printWrapped(dateFormatter.string(from: entry.date), indent: 3, color: .dimGreen)
                 print("")
                 entryLineRanges.append(lineStart..<terminalLines.count)
@@ -13789,7 +13808,7 @@ class GameEngine: ObservableObject {
         let entry = entries[selectedIndex]
         printWrapped(entry.partyDescription, indent: 4, color: .cyan)
         let day = entry.gameTimeMinutes / 1440 + 1
-        printWrapped("Gold:\(entry.goldCollected)  Slain:\(entry.monstersSlain)  Rooms:\(entry.roomsExplored)/\(entry.totalRooms)  Day \(day)", indent: 4, color: .dimGreen)
+        printWrapped("Gold:\(entry.goldCollected)  Slain:\(entry.monstersSlain)  Lv\(entry.dungeonLevel) rooms:\(entry.roomsExplored)/\(entry.totalRooms)  Day \(day)", indent: 4, color: .dimGreen)
         print("")
 
         // "Read Tale" alone meant loading/reliving a specific adventure
@@ -18324,10 +18343,12 @@ class GameEngine: ObservableObject {
         typewrite(lines[i], color: last ? .yellow : .green)
         var opts: [String] = []
         if !last { opts.append("Next") } else if let label = finishLabel, onFinish != nil { opts.append(label) } else { opts.append("End Tale") }
-        if i > 0 { opts.append("Previous") }
+        opts.append("Previous")   // always there — greyed out on the first page
         if let skip = skipLabel { opts.append(skip) }
         opts.append("< Back")
-        showMenu(opts)
+        showMenuOptions(opts.map { t in
+            t == "< Back" ? MenuOption(t, tint: .navigation, compact: true) : MenuOption(t, isDisabled: t == "Previous" && i == 0)
+        })
         let next: () -> Void = { [weak self] in
             self?.showTalePages(title: title, lines: lines, page: i + 1, onBack: onBack, emptyMessage: emptyMessage, finishLabel: finishLabel, onFinish: onFinish, appendOnly: true, pace: pace, skipLabel: skipLabel)
         }
@@ -18354,7 +18375,7 @@ class GameEngine: ObservableObject {
             if opts[choice - 1] == skipLabel { onBack(); return }
             switch opts[choice - 1] {
             case "Next": next()
-            case "Previous": previous()
+            case "Previous": if i > 0 { previous() }
             case "End Tale": onBack()
             case "< Back": pauseHere()
             default: onFinish?()
@@ -18447,7 +18468,7 @@ class GameEngine: ObservableObject {
         What they have found out on the way down: \(mq.map { $0.beatsSoFar(level: dungeon?.level ?? 1).joined(separator: " ") } ?? "nothing yet")
         Their quests so far: \(questHistory.isEmpty ? "(none recorded)" : questHistory.joined(separator: " "))
         The party: \(partyText)
-        So far: day \(gameTimeMinutes / 1440 + 1); level \(dungeon?.level ?? 1) of \(dungeon?.name ?? "the dungeon"); \(explored) of \(total) rooms explored; \(monstersSlain) monsters defeated in \(combatsWon) fights; \(gold) gold between them.
+        So far: day \(gameTimeMinutes / 1440 + 1); level \(dungeon?.level ?? 1) of \(dungeon?.name ?? "the dungeon"); \(explored) of \(total) rooms explored on this level; earlier levels: \(levelSummaryLines(includeCurrent: false).joined(separator: " ")); \(monstersSlain) monsters defeated in \(combatsWon) fights; \(gold) gold between them.
         Recent events (oldest first):
         \(events.isEmpty ? "- (nothing much yet)" : events)
         """
@@ -18660,6 +18681,11 @@ class GameEngine: ObservableObject {
                 finished = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + max(0, typing - spoken) + pause) { go() }
             }
+            // The hourglass shows about how long the voice will take.
+            taleCountdownOn = autoContinueEnabled
+            scheduleAutoAdvance(after: max(typing, spoken) + pause, isStillValid: { [weak self] in
+                isStillValid() && self?.speakerModeOn == true && !finished
+            }, fire: {})
             // If the voice gets cut off rather than finishing, don't stall.
             DispatchQueue.main.asyncAfter(deadline: .now() + max(typing, spoken) * 1.6 + pause + 3) {
                 guard !finished, !speech.isSpeaking else { return }
@@ -19473,7 +19499,11 @@ class GameEngine: ObservableObject {
 
         // Dynamically size the map to fill screen without scrolling
         _ = dungeon
+        checkQuestDeadline()
         printExplorationMap()   // same map everywhere (fills the Mac pane's width)
+        // The date and time, and — once someone's said when — the quest's deadline.
+        print("  ☼ \(formattedGameTime())", color: .cyan, bold: true)
+        if let line = questDeadlineLine() { print("  \(line)", color: .dimGreen) }
         if !torchLit {
             if partyHasTorch() {
                 print("  Torch unlit — illuminate it to see further!", color: .yellow)
@@ -22044,6 +22074,16 @@ class GameEngine: ObservableObject {
         print("")
         if questAskedRooms.contains(roomId) {
             printWrapped("\"I've told you all I know,\" says the \(who).", indent: 2, color: .yellow)
+        } else if let name = mq.deadlineName, let day = mq.deadlineDay, mq.deadlineKnown != true, mq.deadlinePassed != true {
+            questAskedRooms.insert(roomId)
+            mq.deadlineKnown = true
+            mainQuest = mq
+            let left = max(0, day - (gameTimeMinutes / 1440 + 1))
+            let cap = name.prefix(1).uppercased() + name.dropFirst()
+            printWrapped("The \(who) counts on their fingers. \"\(cap)? That's \(left == 0 ? "today" : "\(left) day\(left == 1 ? "" : "s") off"). After that, it'll be too late to stop what's coming — though you might still put it right, after.\"", indent: 2, color: .yellow)
+            print("")
+            printWrapped("(The countdown now shows under the date on the play screen.)", indent: 2, color: .dimGreen)
+            logEvent("Learned the quest's deadline: \(name), day \(day)", category: "QUEST")
         } else if Int.random(in: 1...10) <= 6, let clue = mq.nextClue {
             questAskedRooms.insert(roomId)
             mq.cluesLearned = (mq.cluesLearned ?? []) + [clue]
@@ -22051,6 +22091,10 @@ class GameEngine: ObservableObject {
             printWrapped("The \(who) looks around, then lowers their voice. \"\(clue)\"", indent: 2, color: .yellow)
             print("")
             printWrapped("(Noted under your main quest in Party Status.)", indent: 2, color: .dimGreen)
+            if Int.random(in: 1...3) == 1 {
+                print("")
+                printWrapped("\"And if you ever lose your way,\" they add, \"hold your map a little longer than usual. Old maps down here have a magic in them.\"", indent: 2, color: .yellow)
+            }
             logEvent("Quest clue from the \(who): \(clue)", category: "QUEST")
         } else {
             questAskedRooms.insert(roomId)
@@ -22148,7 +22192,7 @@ class GameEngine: ObservableObject {
         }
         if mainQuest == nil, npc.type != .gatekeeper {
             let roomId = room.id
-            options.append(MenuOption("Hear Their Quest", tint: .cyan))
+            options.append(MenuOption("Ask for a Quest", tint: .cyan))
             actions.append { [weak self] in self?.hearNPCMainQuest(npc: npc, roomId: roomId) }
         }
 
@@ -22194,7 +22238,7 @@ class GameEngine: ObservableObject {
                 room.npc = npc
             }
             if npc.willOfferSideQuest == true, canTakeAnotherQuest, !allQuests.contains(where: { $0.giverName == npc.type.rawValue }) {
-                options.append(MenuOption("Ask for a Quest", tint: .cyan))
+                options.append(MenuOption("Side Quest", tint: .cyan))
                 actions.append { [weak self] in self?.offerSideQuest() }
             }
         }
@@ -25396,6 +25440,7 @@ class GameEngine: ObservableObject {
             let left = max(0, Dungeon.finalLevel - dungeon.level)
             let foe = mq.kind == "mystery" ? "whoever is behind it" : Dungeon.guardianName(mq.villain)
             lines.append("The quest: to \(mq.goal), \(mq.stakes). " + (left == 0 ? "This is the last level — \(foe) is somewhere here." : "\(left) more level\(left == 1 ? "" : "s") to go before the bottom, where \(foe) waits."))
+            if let line = questDeadlineLine() { lines.append(line) }
             let found = mq.beatsSoFar(level: dungeon.level) + (mq.cluesLearned ?? [])
             if !found.isEmpty { lines.append("So far they've found out: " + found.joined(separator: " ")) }
             else if let who = mq.informant { lines.append("They haven't learned much yet — \(who) are the ones to ask.") }
@@ -25407,11 +25452,91 @@ class GameEngine: ObservableObject {
         if questHistory.count > 1 { lines.append("Along the way: " + questHistory.joined(separator: " ")) }
         let errands = allQuests
         if !errands.isEmpty { lines.append("Errands in hand: " + errands.map { $0.description }.joined(separator: "; ") + ".") }
-        let explored = dungeon.rooms.values.filter { $0.visited }.count
-        lines.append("They've beaten \(monstersSlain) monster\(monstersSlain == 1 ? "" : "s") in \(combatsWon) fight\(combatsWon == 1 ? "" : "s"), and explored \(explored) of \(dungeon.rooms.count) rooms on this level.")
+        lines.append("They've beaten \(monstersSlain) monster\(monstersSlain == 1 ? "" : "s") in \(combatsWon) fight\(combatsWon == 1 ? "" : "s").")
+        lines += levelSummaryLines(includeCurrent: true)
         let recent = progressHighlights(limit: 3)
         if !recent.isEmpty { lines.append("Most recently: " + recent.joined(separator: " ")) }
         return lines
+    }
+
+    /// Level by level: rooms explored, the guardian, and anything big found —
+    /// earlier levels from the Atlas record, then (optionally) this one.
+    func levelSummaryLines(includeCurrent: Bool) -> [String] {
+        guard let dungeon = dungeon else { return [] }
+        func notable(_ types: [String]) -> String {
+            var bits: [String] = []
+            for (key, one, many) in [("treasure", "a treasure room", "treasure rooms"), ("shrine", "a shrine", "shrines"),
+                                     ("library", "a library", "libraries"), ("shop", "a shop", "shops")] {
+                let n = types.filter { $0.lowercased().contains(key) }.count
+                if n == 1 { bits.append(one) } else if n > 1 { bits.append("\(n) \(many)") }
+            }
+            return bits.isEmpty ? "" : "; found " + bits.joined(separator: ", ")
+        }
+        var lines: [String] = []
+        for level in dungeon.archivedLevels {
+            let visited = level.rooms.filter { $0.visited }
+            let boss = level.rooms.first { $0.typeName.lowercased().contains("boss") }
+            let guardian = boss.map { $0.cleared ? "; guardian beaten" : "; slipped past its guardian" } ?? ""
+            lines.append("Level \(level.level): explored \(visited.count) of \(level.rooms.count) rooms\(guardian)\(notable(visited.map { $0.typeName })).")
+        }
+        if includeCurrent {
+            let visited = dungeon.rooms.values.filter { $0.visited }
+            let bossBeaten = dungeon.rooms.values.contains { $0.roomType == .boss && $0.cleared }
+            let prefix = lines.isEmpty ? "On this level (Level \(dungeon.level))" : "Now on Level \(dungeon.level)"
+            lines.append("\(prefix): explored \(visited.count) of \(dungeon.rooms.count) rooms so far\(bossBeaten ? "; guardian beaten" : "; its guardian still waits")\(notable(visited.map { $0.roomType.rawValue })).")
+        }
+        return lines
+    }
+
+    /// "☾ The new moon in 4 days" — once someone has told you when it is.
+    func questDeadlineLine() -> String? {
+        guard let mq = mainQuest, !mainQuestCompleted, mq.deadlineKnown == true,
+              let name = mq.deadlineName, let day = mq.deadlineDay else { return nil }
+        let cap = name.prefix(1).uppercased() + name.dropFirst()
+        if mq.deadlinePassed == true { return "☾ \(cap) has passed — late, but not lost" }
+        let left = day - (gameTimeMinutes / 1440 + 1)
+        return left <= 0 ? "☾ \(cap) is today!" : "☾ \(cap) in \(left) day\(left == 1 ? "" : "s")"
+    }
+
+    /// Time-bound quests get their day; and when it passes, it passes.
+    private func checkQuestDeadline() {
+        guard var mq = mainQuest, !mainQuestCompleted else { return }
+        let today = gameTimeMinutes / 1440 + 1
+        if mq.deadlineDay == nil {
+            let dated = mq.withDeadline(today: today, level: dungeon?.level ?? 1)
+            if dated.deadlineDay != nil { mainQuest = dated; mq = dated }
+        }
+        guard let day = mq.deadlineDay, today > day, mq.deadlinePassed != true, let name = mq.deadlineName else { return }
+        mq.deadlinePassed = true
+        mainQuest = mq
+        questHistory.append("Too late: \(name) came and went before the quest was done.")
+        logEvent("The quest's deadline passed: \(name)", category: "QUEST")
+        explorationStatusMessage = ("☾ \(name.prefix(1).uppercased() + name.dropFirst()) has come and gone. What \(mq.village) feared has happened — but it isn't too late to put it right (for half the reward).", .red)
+    }
+
+    /// What the DM should know about the quest and the calendar.
+    private func dmQuestInfo() -> String? {
+        var parts: [String] = ["Today is \(formattedGameTime())."]
+        if let mq = mainQuest {
+            parts.append("Main quest: to \(mq.goal), \(mq.stakes). Villain: \(mq.villain). Reward: \(mq.reward). Home village: \(mq.village).")
+            if let name = mq.deadlineName, let day = mq.deadlineDay {
+                let left = day - (gameTimeMinutes / 1440 + 1)
+                parts.append(left >= 0
+                    ? "Deadline: \(name) falls on day \(day) — \(left) day\(left == 1 ? "" : "s") from now. If the quest isn't done by then, what the village feared happens and the reward is halved, but the quest can still be finished."
+                    : "Deadline: \(name) was on day \(day) and has passed. What the village feared has happened; the quest can still be finished, for half the reward.")
+            }
+            if let place = mq.place { parts.append("The prize is kept in \(place).") }
+            if let finale = mq.finale { parts.append("At the end they must \(finale).") }
+            if let who = mq.informant { parts.append("Who knows things: \(who).") }
+            let found = mq.beatsSoFar(level: dungeon?.level ?? 1) + (mq.cluesLearned ?? [])
+            if !found.isEmpty { parts.append("Found out so far: " + found.joined(separator: " ")) }
+            if mainQuestCompleted { parts.append("The quest is COMPLETE.") }
+        } else if noMainQuest {
+            parts.append("The party chose to adventure with no main quest.")
+        }
+        parts += levelSummaryLines(includeCurrent: true)
+        if !questHistory.isEmpty { parts.append("Quest history: " + questHistory.joined(separator: " ")) }
+        return parts.joined(separator: "\n")
     }
 
     /// One line for save lists: the quest and how far along, done (★), or none.
@@ -25531,6 +25656,7 @@ class GameEngine: ObservableObject {
             for found in mq.beatsSoFar(level: dungeon?.level ?? 1) { printWrapped("· \(found)", indent: 4, color: .dimGreen) }
             for clue in mq.cluesLearned ?? [] { printWrapped("· \(clue)", indent: 4, color: .cyan) }
             if let who = mq.informant { printWrapped("Who might know more: \(who).", indent: 4, color: .dimGreen) }
+            if let line = questDeadlineLine() { printWrapped(line, indent: 4, color: .cyan) }
             printWrapped("The one behind it all: \(mq.villain), waiting at the very bottom. Reward: \(mq.reward).", indent: 4, color: .dimGreen)
         }
         for quest in allQuests {
@@ -25611,7 +25737,7 @@ class GameEngine: ObservableObject {
         // Build menu
         // "Change Brain" (was "AI") — which mind runs the Dungeon Master.
         // Party Review first (the default); Brain now lives in Settings.
-        var menuOpts = ["Party Review", "Opening Tale", "Progress Tale", "Save to Roster", "Adventure Log", "Lore", "Settings", "New Main Quest", "?", "< Back"]
+        var menuOpts = ["Party Review", "Opening Tale", "Progress Tale", "Save to Roster", "Lore", "Settings", "Adventure Log", "New Main Quest", "?", "< Back"]
         if dungeon?.hasCartography == true {
             menuOpts.insert("Atlas", at: menuOpts.firstIndex(of: "Lore") ?? 0)
         }
@@ -29991,6 +30117,7 @@ class GameEngine: ObservableObject {
             droppedItems: droppedInfo,
             npcInfo: npcInfo,
             justDMMode: isJustDMActive,
+            questInfo: dmQuestInfo(),
             knownLore: {
                 let entries = loreEntries()
                 guard !entries.isEmpty else { return nil }
@@ -32895,7 +33022,7 @@ class GameEngine: ObservableObject {
         print("  │  Monsters slain:  \(String(monstersSlain).padding(toLength: 14, withPad: " ", startingAt: 0)) │", color: .yellow)
         print("  │  Combats won:     \(String(combatsWon).padding(toLength: 14, withPad: " ", startingAt: 0)) │", color: .yellow)
         print("  │  Experience:      \(String(totalXP).padding(toLength: 14, withPad: " ", startingAt: 0)) │", color: .yellow)
-        print("  │  Rooms explored:  \(String("\(roomsExplored)/\(totalRooms)").padding(toLength: 14, withPad: " ", startingAt: 0)) │", color: .yellow)
+        print("  │  Level rooms:     \(String("\(roomsExplored)/\(totalRooms)").padding(toLength: 14, withPad: " ", startingAt: 0)) │", color: .yellow)
         if day > 1 {
             print("  │  Days survived:   \(String(day).padding(toLength: 14, withPad: " ", startingAt: 0)) │", color: .yellow)
         }
@@ -32923,6 +33050,9 @@ class GameEngine: ObservableObject {
                 if let finale = q.finale {
                     print("")
                     printWrapped("Then, just as you were told, you \(finale).", indent: 2, color: .yellow)
+                }
+                if q.deadlinePassed == true {
+                    printWrapped("It was later than it should have been — \(q.deadlineName ?? "the deadline") had come and gone — but it's done now, and that's what they'll sing about.", indent: 2, color: .dimGreen)
                 }
                 print("")
                 printWrapped("Word runs ahead of you all the way to \(q.village). They promised you \(q.reward). It's yours, and so is every song they'll sing about this.", indent: 2, color: .brightGreen)
@@ -33706,7 +33836,7 @@ class GameEngine: ObservableObject {
         printWrapped("Party gold: \(totalGold)", indent: 4, color: .dimGreen)
         if let dungeon = dungeon {
             let explored = dungeon.rooms.values.filter { $0.visited }.count
-            printWrapped("Rooms explored: \(explored)/\(dungeon.rooms.count)", indent: 4, color: .dimGreen)
+            printWrapped("Rooms explored on Level \(dungeon.level): \(explored)/\(dungeon.rooms.count)", indent: 4, color: .dimGreen)
             printWrapped("Dungeon level: \(dungeon.level)", indent: 4, color: .dimGreen)
         }
         print("")
@@ -34235,7 +34365,7 @@ class GameEngine: ObservableObject {
                     printWrapped("\(i + 1). \(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts\(bpInfo)", color: outcomeColor, bold: true)
                     printWrapped(entry.partyDescription, indent: 3, color: .dimGreen)
                     if let q = save.questSummary { printWrapped(q, indent: 3, color: q.hasPrefix("★") ? .yellow : .cyan) }
-                    printWrapped("Gold:\(entry.goldCollected) Slain:\(entry.monstersSlain) Rooms:\(entry.roomsExplored)/\(entry.totalRooms) Day \(day)", indent: 3, color: .dimGreen)
+                    printWrapped("Gold:\(entry.goldCollected) Slain:\(entry.monstersSlain) Lv\(entry.dungeonLevel) rooms:\(entry.roomsExplored)/\(entry.totalRooms) Day \(day)", indent: 3, color: .dimGreen)
                 } else {
                     let gold = save.party.reduce(0) { $0 + $1.gold }
                     let roomsExplored = save.dungeon.rooms.values.filter { $0.visited }.count
@@ -34243,7 +34373,7 @@ class GameEngine: ObservableObject {
                     printWrapped("\(i + 1). \(save.dungeonName) Lv.\(save.dungeonLevel) PLAYING\(bpInfo)", color: .cyan, bold: true)
                     printWrapped(save.partyDescription, indent: 3, color: .dimGreen)
                     if let q = save.questSummary { printWrapped(q, indent: 3, color: .cyan) }
-                    printWrapped("Gold:\(gold) Slain:\(save.monstersSlain) Rooms:\(roomsExplored)/\(totalRooms) Day \(day)", indent: 3, color: .dimGreen)
+                    printWrapped("Gold:\(gold) Slain:\(save.monstersSlain) Lv\(save.dungeonLevel) rooms:\(roomsExplored)/\(totalRooms) Day \(day)", indent: 3, color: .dimGreen)
                 }
                 printWrapped(dateFormatter.string(from: save.savedAt), indent: 3, color: .dimGreen)
                 print("")
@@ -34270,7 +34400,7 @@ class GameEngine: ObservableObject {
                 let name = String(entry.dungeonName.prefix(20))
                 printWrapped("\(i + 1). \(name) Lv.\(entry.dungeonLevel) \(outcomeTag) \(entry.score)pts (no save)", color: outcomeColor, bold: true)
                 printWrapped(entry.partyDescription, indent: 3, color: .dimGreen)
-                printWrapped("Gold:\(entry.goldCollected) Slain:\(entry.monstersSlain) Rooms:\(entry.roomsExplored)/\(entry.totalRooms) Day \(day)", indent: 3, color: .dimGreen)
+                printWrapped("Gold:\(entry.goldCollected) Slain:\(entry.monstersSlain) Lv\(entry.dungeonLevel) rooms:\(entry.roomsExplored)/\(entry.totalRooms) Day \(day)", indent: 3, color: .dimGreen)
                 printWrapped(dateFormatter.string(from: entry.date), indent: 3, color: .dimGreen)
                 print("")
 

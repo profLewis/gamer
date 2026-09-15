@@ -1016,6 +1016,7 @@ class DMEngine {
 
         INVENTORY:
         \(context.inventorySummary)
+        \(context.questInfo.map { "\nTHE PARTY'S QUEST AND THE CALENDAR (answer questions about dates, deadlines and what's at stake consistently with this):\n\($0)" } ?? "")
         \(context.knownLore.map { "\nKNOWN NAMED CHARACTERS (keep these consistent — same name, same personality, same shop/role — never re-invent who they are):\n\($0)" } ?? "")
 
         DUNGEON LEVEL: \(context.dungeonLevel)
@@ -1769,6 +1770,9 @@ struct DMContext {
     var droppedItems: String? = nil
     var npcInfo: String? = nil
     var justDMMode: Bool = false
+    /// The quest, the calendar and the deadline — so the DM answers "when is
+    /// the new moon?" the same way the game counts it.
+    var questInfo: String? = nil
     /// Named merchants/NPCs the party has actually met (see GameEngine.
     /// loreEntries) — keeps the DM consistent about who a named character
     /// is instead of re-inventing them differently later in a long campaign.
