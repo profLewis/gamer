@@ -18273,6 +18273,8 @@ class GameEngine: ObservableObject {
     private var questPleaPrevious: MainQuest?
     private var questPleaAsker: String?
     private var npcQuestOffers: [Int: MainQuest] = [:]
+    /// Changing quest: the old one (and its tale), kept until the party decides.
+    private var questChangeBackup: (quest: MainQuest, intro: [String])?
     /// While a tale, a quest offer or the story so far is on, the map stays hidden.
     @Published var storyScreenActive = false
     /// The opening tale is written by the AI's most capable model when one's set up.
@@ -25339,7 +25341,8 @@ class GameEngine: ObservableObject {
     }
 
     /// "Will you take it on?" — yes; hear someone else's plea (they riff on
-    /// this one); or no quest at all, just the adventure.
+    /// this one); or no quest at all. When changing quest: take up the new
+    /// one, hear another, or try to go back to the old one.
     private func askToTakeQuest(then proceed: @escaping () -> Void) {
         guard let mq = mainQuest else { proceed(); return }
         storyScreenActive = true
@@ -25352,9 +25355,15 @@ class GameEngine: ObservableObject {
             printWrapped("Waiting at the very bottom: \(mq.villain).", indent: 2, color: .green)
         }
         print("")
-        printWrapped("Take it on, hear what someone else wants doing, or set off with no quest at all — just the adventure (there are always errands on the way).", indent: 2, color: .dimGreen)
+        let old = questChangeBackup?.quest
+        if let old = old {
+            printWrapped("Take it on and the quest to \(old.goal) is left behind. Or hear someone else — or try to go back to \(old.village), if they'll still have you.", indent: 2, color: .dimGreen)
+        } else {
+            printWrapped("Take it on, hear what someone else wants doing, or set off with no quest at all — just the adventure (there are always errands on the way).", indent: 2, color: .dimGreen)
+        }
         print("")
-        showMenu(["Take Up the Quest", "Hear Another Plea", "No Quest, Just Adventure"])
+        showMenu(old != nil ? ["Take Up the New Quest", "Hear Another Plea", "Back to Our Old Quest"]
+                            : ["Take Up the Quest", "Hear Another Plea", "No Quest, Just Adventure"])
         closeHandler = { [weak self] in self?.acceptQuest(then: proceed) }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
@@ -25366,11 +25375,16 @@ class GameEngine: ObservableObject {
                 self.logEvent("Turned down the quest: \(mq.summary)", category: "QUEST")
                 self.questPleaPrevious = mq
                 self.questPleaAsker = Self.pleaAskers.randomElement()
+                let avoid = [mq.villain, self.questChangeBackup?.quest.villain].compactMap { $0 }
                 var next = MainQuest.random()
-                for _ in 0..<12 where next.villain == mq.villain || next.kind == mq.kind { next = MainQuest.random() }
+                for _ in 0..<12 where avoid.contains(next.villain) || next.kind == mq.kind { next = MainQuest.random() }
                 self.mainQuest = next
                 self.playAdventureCutscene { [weak self] in self?.askToTakeQuest(then: proceed) }
             default:
+                if let backup = self.questChangeBackup {
+                    self.tryReturningToOldQuest(backup, then: proceed)
+                    return
+                }
                 self.questHistory.append("Turned every plea down and set out with no main quest — just for the adventure.")
                 self.logEvent("Set out with no main quest", category: "QUEST")
                 self.mainQuest = nil
@@ -25383,6 +25397,57 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Going back to the quest you walked away from — they might have you
+    /// back, or they might not (only an older save remembers it then).
+    private func tryReturningToOldQuest(_ backup: (quest: MainQuest, intro: [String]), then proceed: @escaping () -> Void) {
+        let old = backup.quest
+        clearTerminal()
+        printTitle("Back to \(old.village)?")
+        print("")
+        if Bool.random() {
+            mainQuest = old
+            adventureIntroLines = backup.intro
+            questChangeBackup = nil
+            questPleaPrevious = nil
+            questPleaAsker = nil
+            questHistory.append("Thought better of it, and went back to the quest to \(old.goal).")
+            logEvent("Went back to the old quest: \(old.summary)", category: "QUEST")
+            printWrapped("You send the bird back with an apology. By morning an answer comes from \(old.village): \"Fine. But don't make a habit of it.\" The quest is yours again.", indent: 2, color: .green)
+            waitForContinue()
+            inputHandler = { _ in proceed() }
+        } else {
+            questChangeBackup = nil
+            questHistory.append("Tried to go back to the quest to \(old.goal), but \(old.village) had already found other heroes.")
+            logEvent("Couldn't go back to the old quest", category: "QUEST")
+            printWrapped("You send word back to \(old.village). The answer comes quickly, and it isn't kind: they've found other heroes, and they've no use for oath-breakers. There's no going back.", indent: 2, color: .yellow)
+            print("")
+            printWrapped("(Only an older save remembers that quest now.)", indent: 2, color: .dimGreen)
+            applyOathBreakingCost()
+            waitForContinue()
+            inputHandler = { [weak self] _ in self?.askToTakeQuest(then: proceed) }
+        }
+    }
+
+    /// The dungeon doesn't like oath-breakers: one time in three it throws
+    /// the party back to the entrance, and a thing or two falls out of packs.
+    private func applyOathBreakingCost() {
+        guard Int.random(in: 1...3) == 1 else { return }
+        print("")
+        printWrapped("The ground lurches. The fire gutters out, the walls spin — and you're lying in a heap by the entrance.", indent: 2, color: .red)
+        applyTeleportToEntrance()
+        var dropped: [String] = []
+        for _ in 0..<Int.random(in: 1...2) {
+            let loose: (Character) -> [Item] = { c in
+                c.inventory.filter { i in i.id != c.equippedWeapon?.id && i.id != c.equippedArmor?.id && i.id != c.equippedShield?.id }
+            }
+            guard let c = party.filter({ !loose($0).isEmpty }).randomElement(), let item = loose(c).randomElement() else { break }
+            c.removeItem(item)
+            dropped.append("\(item.name) (\(shortName(for: c)))")
+        }
+        if !dropped.isEmpty { printWrapped("Lost on the way: \(dropped.joined(separator: ", ")).", indent: 2, color: .red) }
+        logEvent("Breaking the oath cost the party: back to the entrance\(dropped.isEmpty ? "" : ", lost " + dropped.joined(separator: ", "))", category: "QUEST")
+    }
+
     private func acceptQuest(then proceed: @escaping () -> Void) {
         guard let mq = mainQuest else { proceed(); return }
         questHistory.append("Took up the quest: to \(mq.goal) (\(Dungeon.guardianName(mq.villain))).")
@@ -25390,7 +25455,18 @@ class GameEngine: ObservableObject {
         noMainQuest = false
         questPleaPrevious = nil
         questPleaAsker = nil
-        proceed()
+        progressTaleCache = nil
+        guard let backup = questChangeBackup else { proceed(); return }
+        // A new oath means breaking the old one.
+        questChangeBackup = nil
+        questHistory.append("Left the quest to \(backup.quest.goal) behind.")
+        clearTerminal()
+        printTitle("A New Oath")
+        print("")
+        printWrapped("You take up the quest to \(mq.goal). Somewhere far behind, \(backup.quest.village) will have to find other heroes.", indent: 2, color: .green)
+        applyOathBreakingCost()
+        waitForContinue()
+        inputHandler = { _ in proceed() }
     }
 
     /// Someone down here with a quest going spare — offered to a party that
@@ -25484,7 +25560,7 @@ class GameEngine: ObservableObject {
             print("")
         }
         let onward: () -> Void = onDone ?? { [weak self] in self?.resumePlay() }
-        showMenu(["Onward!", "Tell the Progress Tale"])
+        showMenu(["Onward!", "Tell the Progress Tale", "< Back"])
         closeHandler = onward
         menuHandler = { [weak self] choice in
             if choice == 2 { self?.showProgressTale(onBack: onward) } else { onward() }
@@ -25680,51 +25756,34 @@ class GameEngine: ObservableObject {
         if let mq = mainQuest {
             printWrapped("\(together) sit around a small fire in the dark, a long way from \(mq.village). You swore to \(mq.goal), \(mq.stakes).", indent: 2, color: .green)
             print("")
+            printWrapped("Someone asks what nobody wants to: is this still the quest worth risking everything for? Other villages need heroes too.", indent: 2, color: .green)
+            print("")
+            printWrapped("Hear another plea and you can take it up, turn it down, or try to come back to this one — though a village you walked away from may not want you back.", indent: 2, color: .dimGreen)
+            print("")
+            printWrapped("Be warned: the dungeon doesn't like oath-breakers. Take up a new quest and its magic may fling you back to the entrance — and things fall out of packs on the way.", indent: 2, color: .yellow)
+        } else {
+            printWrapped("\(together) sit around a small fire in the dark. No quest of your own — yet. Somebody, somewhere, must need you.", indent: 2, color: .green)
         }
-        printWrapped("Someone asks what nobody wants to: is this still the quest worth risking everything for? Other villages need heroes too.", indent: 2, color: .green)
         print("")
-        printWrapped("Seek a new quest and word of someone else's trouble will find you. Errands you've taken on stay as they are.", indent: 2, color: .dimGreen)
-        print("")
-        printWrapped("But be warned: the dungeon doesn't like oath-breakers. Turn your back on a quest and its magic may fling you all the way back to the entrance — and things have a way of falling out of packs on the way.", indent: 2, color: .yellow)
-        print("")
-        showMenu(["Hold to Our Oath", "Seek a New Quest"])
+        showMenu(mainQuest != nil ? ["Hold to Our Oath", "Hear Another Plea"] : ["Stay As We Are", "Hear a Plea"])
         closeHandler = { [weak self] in self?.showPartyStatus() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             guard choice == 2 else { self.showPartyStatus(); return }
             let old = self.mainQuest
+            if let old = old { self.questChangeBackup = (old, self.adventureIntroLines) }
             var next = MainQuest.random()
-            for _ in 0..<8 where next.villain == old?.villain { next = MainQuest.random() }
-            self.mainQuest = next
-            self.progressTaleCache = nil
-            if let old = old { self.questHistory.append("Gave up on the quest to \(old.goal), by a campfire in \(self.dungeon?.name ?? "the dungeon").") }
+            for _ in 0..<8 where next.villain == old?.villain || next.kind == old?.kind { next = MainQuest.random() }
             self.questPleaPrevious = old
             self.questPleaAsker = Self.pleaAskers.randomElement()
-            self.logEvent("A new main quest: \(next.summary) (\(next.villain))", category: "QUEST")
-            // One time in three the dungeon takes its toll.
-            if Int.random(in: 1...3) == 1 {
-                self.print("")
-                self.printWrapped("The ground lurches. The fire gutters out, the walls spin — and you're lying in a heap by the entrance.", indent: 2, color: .red)
-                self.applyTeleportToEntrance()
-                var dropped: [String] = []
-                for _ in 0..<Int.random(in: 1...2) {
-                    let carriers = self.party.filter { c in c.inventory.contains { i in i.id != c.equippedWeapon?.id && i.id != c.equippedArmor?.id && i.id != c.equippedShield?.id } }
-                    guard let c = carriers.randomElement(),
-                          let item = c.inventory.filter({ i in i.id != c.equippedWeapon?.id && i.id != c.equippedArmor?.id && i.id != c.equippedShield?.id }).randomElement() else { break }
-                    c.removeItem(item)
-                    dropped.append("\(item.name) (\(self.shortName(for: c)))")
-                }
-                if !dropped.isEmpty {
-                    self.printWrapped("Lost on the way: \(dropped.joined(separator: ", ")).", indent: 2, color: .red)
-                }
-                self.logEvent("Changing quest cost the party: back to the entrance\(dropped.isEmpty ? "" : ", lost " + dropped.joined(separator: ", "))", category: "QUEST")
-            }
+            self.mainQuest = next
             self.print("")
             self.printWrapped("Before the fire burns down, a bedraggled messenger bird drops out of the dark and lands on \(names.first ?? "your")'s pack, a scrap of parchment tied to its leg. It's from \(next.village).", indent: 2, color: .yellow)
             self.waitForContinue()
             self.inputHandler = { [weak self] _ in
-                self?.storyScreenActive = true
-                self?.playAdventureCutscene { [weak self] in
+                guard let self = self else { return }
+                self.storyScreenActive = true
+                self.playAdventureCutscene { [weak self] in
                     self?.askToTakeQuest(then: { [weak self] in self?.storyScreenActive = false; self?.showPartyStatus() })
                 }
             }
