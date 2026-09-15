@@ -176,43 +176,75 @@ struct MainQuest: Codable {
     let stakes: String
     let reward: String
     let village: String
+    /// What the villain is doing to the village, and why — so the tale
+    /// can tell one story that makes sense. (Older saves don't have them.)
+    var harm: String? = nil
+    var motive: String? = nil
 
     var summary: String { goal.prefix(1).uppercased() + goal.dropFirst() + " — " + stakes + "." }
 
+    /// A quest where everything fits together: who the villain is, what
+    /// they're doing to the village and why — and so what must be done, by
+    /// when, and for what reward.
     static func random() -> MainQuest {
         let village = Int.random(in: 1...3) == 1 ? "Lithlind"
             : ["Brackenford", "Thistledown", "Emberholt", "Wyrmsby", "Millbrook", "Greywater", "Owlcombe"].randomElement()!
-        let villain = ["Gorrak the Bugbear King", "Mother Sable, the Hag of the Deep", "Vorkath the Ember Drake",
-                       "the Hollow King", "Skarn the Goblin Warlord", "Nightshade, the Lich's Apprentice",
-                       "Old Grimtooth the Cave Troll", "the Weaver in the Dark, a spider as big as a cart",
-                       "Baron Rot, the Mushroom Tyrant", "Caldra the Frost Wyrm"].randomElement()!
-        let goals: [(String) -> String] = [
-            { "rescue the children taken from \($0)" },
-            { "recover the Heartstone stolen from \($0)'s shrine" },
-            { "break the curse that has turned \($0)'s wells to salt" },
-            { "end the night raids on \($0) for good" },
-            { "bring back the Bell of \($0), whose ringing keeps the restless dead asleep" },
-            { "free the miners trapped beneath \($0)" },
-            { "find the cure for the sleeping sickness spreading through \($0)" },
-            { "return the crown stolen from \($0)'s young queen" },
-        ]
-        let stakes: [(String) -> String] = [
-            { _ in "before the first snows close the passes" },
-            { _ in "before the next full moon, when it will be too late" },
-            { "or \($0) will be abandoned by spring" },
-            { _ in "before the sickness reaches the castle" },
-            { _ in "or the whole valley falls under its shadow" },
-        ]
-        let rewards: [(String) -> String] = [
-            { _ in "a chest of the realm's gold and a title from the Lord of the Marches" },
-            { "the thanks of every family in \($0) — and the old hero's sword that hangs in the inn" },
-            { _ in "free lodging for life, and five hundred gold pieces" },
-            { _ in "a place in the King's own songbook" },
-            { _ in "the pick of any treasure found below" },
-        ]
-        return MainQuest(villain: villain, goal: goals.randomElement()!(village), stakes: stakes.randomElement()!(village),
-                         reward: rewards.randomElement()!(village), village: village)
+        let s = scenarios.randomElement()!
+        return MainQuest(villain: s.villain, goal: s.goal(village), stakes: s.stakes, reward: s.reward,
+                         village: village, harm: s.harm, motive: s.motive)
     }
+
+    private struct Scenario {
+        let villain: String
+        let harm: String        // "In <village>, <harm>."
+        let motive: String      // "<villain>, who <motive>."
+        let goal: (String) -> String
+        let stakes: String
+        let reward: String
+    }
+
+    private static let scenarios: [Scenario] = [
+        Scenario(villain: "Gorrak the Bugbear King", harm: "children have been vanishing from their beds at night",
+                 motive: "is digging himself an underground kingdom and wants the children as his servants",
+                 goal: { "rescue the children taken from \($0)" }, stakes: "before Gorrak's tunnels are finished and he carries them deeper still",
+                 reward: "the village's savings, and a feast in the heroes' honour"),
+        Scenario(villain: "Mother Sable, the Hag of the Deep", harm: "the Heartstone that warms every hearth has been stolen from the shrine",
+                 motive: "wants its warmth for her own cold, drowned halls",
+                 goal: { "recover the Heartstone stolen from \($0)'s shrine" }, stakes: "before winter comes and the village freezes",
+                 reward: "the smith's finest blade and three hundred gold"),
+        Scenario(villain: "Vorkath the Ember Drake", harm: "the outlying farms are being burned and the cattle carried off",
+                 motive: "is fattening itself up before its hundred-year sleep",
+                 goal: { "end the drake's raids on \($0) for good" }, stakes: "before every farm in the valley is ash",
+                 reward: "a share of the drake's hoard"),
+        Scenario(villain: "the Hollow King", harm: "the dead walk out of the churchyard every night, because the old bell that kept them asleep has been stolen",
+                 motive: "stole the bell to wake the dead and raise an army",
+                 goal: { "bring back the Bell of \($0), whose ringing keeps the dead asleep" }, stakes: "before the new moon, when every grave will open at once",
+                 reward: "the pick of the old king's armoury"),
+        Scenario(villain: "Skarn the Goblin Warlord", harm: "goblins raid the farms every night, taking food and tools",
+                 motive: "is gathering supplies for a war on the whole valley",
+                 goal: { "stop Skarn's raids on \($0) for good" }, stakes: "before his warband is big enough to march",
+                 reward: "five hundred gold from the Lord of the Marches"),
+        Scenario(villain: "Nightshade, the Lich's Apprentice", harm: "half the village has fallen into a sleep that nobody can wake them from",
+                 motive: "is stealing the sleepers' dreams to make herself into a lich",
+                 goal: { "find the cure for the sleeping sickness in \($0)" }, stakes: "before the sleepers are lost for good",
+                 reward: "the herbalists' gold, and free healing for life"),
+        Scenario(villain: "Old Grimtooth the Cave Troll", harm: "the deep tunnels of the mine have collapsed, trapping twelve miners",
+                 motive: "brought the tunnels down to keep the silver seam for itself",
+                 goal: { "free the miners trapped beneath \($0)" }, stakes: "while there is still air in the tunnels",
+                 reward: "a share in the silver seam"),
+        Scenario(villain: "the Weaver in the Dark, a spider as big as a cart", harm: "travellers on the road keep disappearing, and only strands of silk are left behind",
+                 motive: "is gathering food for a nest of hatching young",
+                 goal: { "free the travellers taken on the road to \($0)" }, stakes: "before the eggs hatch",
+                 reward: "the merchants' guild reward of four hundred gold"),
+        Scenario(villain: "Baron Rot, the Mushroom Tyrant", harm: "the wells have turned grey, and anyone who drinks from them falls sick",
+                 motive: "is spreading his spores to turn the whole valley into one great fungus garden",
+                 goal: { "cleanse the wells of \($0)" }, stakes: "before the spores reach the fields and spoil the harvest",
+                 reward: "a year of free supplies from every shop in the village"),
+        Scenario(villain: "Caldra the Frost Wyrm", harm: "the river has frozen solid in midsummer, and the mill has stopped",
+                 motive: "has made her nest at the river's source and freezes it to keep her eggs cold",
+                 goal: { "drive Caldra from the river's source and thaw \($0)'s river" }, stakes: "before the harvest rots for want of flour",
+                 reward: "the miller's savings, and the thanks of the whole valley"),
+    ]
 }
 
 // MARK: - Adventure files

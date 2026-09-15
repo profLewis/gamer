@@ -167,6 +167,16 @@ struct TerminalView: View {
         }
     }
 
+    /// The red "you're in a fight" frame and tag — Mac only. On the phone
+    /// the combat screen already says so, and a frame just crowds it.
+    private var combatFrameOn: Bool {
+        #if os(macOS)
+        return gameEngine.currentCombat != nil
+        #else
+        return false
+        #endif
+    }
+
     var body: some View {
         GeometryReader { geometry in
             let isLandscape = geometry.size.width > geometry.size.height
@@ -729,7 +739,7 @@ struct TerminalView: View {
             // In a fight: unmistakable — a red frame round the whole window
             // and a COMBAT tag in the corner (decoration only; taps pass through).
             .overlay(alignment: .topTrailing) {
-                if gameEngine.currentCombat != nil {
+                if combatFrameOn {
                     ZStack(alignment: .topTrailing) {
                         RoundedRectangle(cornerRadius: 4)
                             .stroke(Color.red.opacity(0.85), lineWidth: 3)
@@ -1106,7 +1116,8 @@ struct TerminalView: View {
                                 autoCountdownBar
                             }
                             // Combat help, among the other symbols on this line.
-                            if gameEngine.combatHelpAvailable {
+                            // (Not when the buttons' 3-bar row has its own ? already.)
+                            if gameEngine.combatHelpAvailable && !gameEngine.currentMenuOptions.contains(where: { $0.text == "?" }) {
                                 Button(action: { gameEngine.showCombatHelpFromBar() }) {
                                     Text(MenuOption.helpGlyph == "Help" ? "?" : MenuOption.helpGlyph)
                                         .font(.system(size: 17 * scale, weight: .semibold, design: .monospaced))

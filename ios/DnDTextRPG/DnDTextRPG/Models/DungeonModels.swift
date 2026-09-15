@@ -1301,11 +1301,14 @@ class Dungeon: ObservableObject, Codable {
         let name = Dungeon.guardianName(villain)
         for room in rooms.values where room.roomType == .boss && !room.cleared {
             guard var enc = room.encounter, let boss = enc.monsters.first, boss.name != name else { continue }
-            let hp = Int(Double(boss.maxHP) * 1.3)
-            enc.monsters[0] = Monster(id: boss.id, name: name, type: boss.type, currentHP: hp, maxHP: hp,
-                                      armorClass: boss.armorClass + 1, attackBonus: boss.attackBonus + 1,
+            // Still the plain boss: crown it (tougher). Already a villain (the
+            // quest changed): just the new name, never tougher twice.
+            let generic = boss.name.hasSuffix(boss.type.rawValue)
+            let hp = generic ? Int(Double(boss.maxHP) * 1.3) : boss.maxHP
+            enc.monsters[0] = Monster(id: boss.id, name: name, type: boss.type, currentHP: generic ? hp : boss.currentHP, maxHP: hp,
+                                      armorClass: boss.armorClass + (generic ? 1 : 0), attackBonus: boss.attackBonus + (generic ? 1 : 0),
                                       damage: boss.damage, challengeRating: boss.challengeRating,
-                                      experiencePoints: boss.experiencePoints * 2)
+                                      experiencePoints: boss.experiencePoints * (generic ? 2 : 1))
             room.encounter = enc
         }
     }

@@ -18275,6 +18275,7 @@ class GameEngine: ObservableObject {
         return """
         Tell the story of this adventure so far, carrying on from its opening tale (below) in exactly the same style, as 6 to 9 short lines — one sentence each, at most 30 words — one per line, with no numbering, headings or blank lines.
         Say what the party has done towards the main quest, their notable fights, finds and side quests, and end with where they stand now and what still lies ahead.
+        Keep it plain and concrete: the real events, in order, each following from the last. No prophecies, omens or vague mystical phrases.
 
         Opening tale: \(adventureIntroLines.joined(separator: " "))
         Main quest: \(mq.map { "\($0.goal) — \($0.stakes); reward: \($0.reward); villain: \($0.villain)" } ?? "unknown")
@@ -18431,7 +18432,9 @@ class GameEngine: ObservableObject {
 
     private var storySystemPrompt: String {
         "You write the opening narration for a family-friendly (age 9+) fantasy text adventure. British English. " +
-        "No gore, no swearing, nothing frightening beyond a good fairy tale. Warm, vivid, a little funny where it fits."
+        "No gore, no swearing, nothing frightening beyond a good fairy tale. Warm, vivid, a little funny where it fits. " +
+        "Tell it plainly, the way a good storyteller talks to a child: real people, places and events, each sentence following from the one before. " +
+        "Never use prophecies, omens, riddles or vague mystical phrases."
     }
 
     /// The brief for the story writer: this party, this dungeon, this main quest.
@@ -18441,11 +18444,14 @@ class GameEngine: ObservableObject {
         return """
         Write the opening tale for this adventure as 7 to 9 short lines — one sentence each, at most 30 words — one per line, with no numbering, headings or blank lines.
         The tale must: tell why this party is going into the dungeon; state the main quest clearly (the goal, what is at stake, and the reward); name the villain; mention every adventurer by name and what their class or people bring; and end with them stepping into the dungeon.
-        Make it feel different from any other tale: vary who asks for help, the setting and the tone.
+        It must read as one clear story, in this order: what is going wrong in the village; who is behind it and why; who asks the party for help; the quest (goal, deadline, reward); what each adventurer brings; setting off into the dungeon.
+        Every sentence must follow from the one before, with concrete, everyday details. Vary the details (who asks, the weather, the mood) so it doesn't feel like every other tale.
 
         Dungeon: \(dungeon?.name ?? "the dungeon")
         Home village: \(mq.village)
         Villain (the guardian waiting at the very bottom): \(mq.villain)
+        What the villain is doing to the village: \(mq.harm ?? "(invent something that fits the goal)")
+        Why the villain is doing it: \(mq.motive ?? "(invent a reason that fits)")
         Main quest: \(mq.goal)
         What is at stake: \(mq.stakes)
         Reward: \(mq.reward)
@@ -18556,23 +18562,22 @@ class GameEngine: ObservableObject {
             return lines
         }
 
+        // One plain story, in order: what's wrong, who's behind it and why,
+        // who asks, the quest, the team — and in they go.
+        let villainName = Dungeon.guardianName(mq.villain)
         var lines: [String] = []
+        lines.append("In the village of \(mq.village), \(mq.harm ?? "something has gone badly wrong, and nobody can put it right").")
+        lines.append("Everyone knows who is to blame: \(mq.villain), who \(mq.motive ?? "wants the whole valley for itself").")
+        lines.append("\(villainName) has a lair deep in \(place), and the few who went after it came back empty-handed, or not at all.")
         lines.append([
-            "Word reached \(mq.village): the old seal on \(place) has cracked, and something below is stirring.",
-            "The elder of \(mq.village) came to the inn in the dead of night, lantern shaking, and asked for heroes.",
-            "A child from \(mq.village) ran twelve miles to find anyone brave enough to help.",
-            "A merchant stumbled out of \(place) at dawn, clutching a torn map and babbling about a treasure lost for a hundred years.",
-            "The wells of Millbrook have run dry — and the water, folk say, is being drawn down into \(place).",
-            "Three nights ago the watchtower lanterns went out, one by one. The tracks led to \(place).",
-            "A half-burned letter arrived from an old friend: \"Meet me in \(place). Bring help. Tell no one.\"",
-            "The Guild of Cartographers will pay handsomely for the first true map of \(place). No map-maker has ever come back.",
+            "That evening \(together) \(solo ? "arrives" : "arrive") at the inn, and the village elder comes straight to their table.",
+            "The elder of \(mq.village) has been waiting at the crossroads for anyone with a sword, and \(together) \(solo ? "is" : "are") the first to come along.",
+            "A child from \(mq.village) runs up to \(together), out of breath, and begs them to come and see the elder.",
         ].randomElement()!)
-        lines.append("\(together) \(solo ? "answers" : "answer") the call.")
-        lines += team
-        lines.append("Their quest: to \(mq.goal) — \(mq.stakes).")
-        lines.append("Behind it all, somewhere in the deepest dark, waits \(mq.villain).")
+        lines.append("The task: to \(mq.goal), \(mq.stakes).")
         lines.append("The reward: \(mq.reward).")
-        lines.append("The door groans open. \(place) awaits.")
+        lines += team
+        lines.append("\(together) \(solo ? "lights a torch and steps" : "light their torches and step") through the door of \(place).")
         return lines
     }
 
@@ -24832,6 +24837,34 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// A fresh main quest — a new village in trouble, a new villain at the
+    /// bottom, a new Opening Tale. The party, their things, the dungeon and
+    /// any side quests stay as they are.
+    private func confirmNewMainQuest() {
+        clearTerminal()
+        printTitle("A New Main Quest?")
+        print("")
+        if let mq = mainQuest {
+            printWrapped("Your quest now: to \(mq.goal), \(mq.stakes). The villain: \(mq.villain).", indent: 2, color: .green)
+            print("")
+        }
+        printWrapped("A new main quest gives this adventure a new story: a different village in trouble, a different villain waiting at the bottom, and a new Opening Tale. Your party, everything they carry, the dungeon and any side quests stay just as they are.", indent: 2, color: .dimGreen)
+        print("")
+        showMenu(["Yes, a New Quest", "No, Keep This One"])
+        closeHandler = { [weak self] in self?.showPartyStatus() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            guard choice == 1 else { self.showPartyStatus(); return }
+            let old = self.mainQuest
+            var next = MainQuest.random()
+            for _ in 0..<6 where next.villain == old?.villain { next = MainQuest.random() }
+            self.mainQuest = next
+            self.progressTaleCache = nil
+            self.logEvent("A new main quest: \(next.summary) (\(next.villain))", category: "QUEST")
+            self.playAdventureCutscene { [weak self] in self?.showPartyStatus() }
+        }
+    }
+
     func showPartyStatus() {
         clearTerminal()
 
@@ -24945,7 +24978,7 @@ class GameEngine: ObservableObject {
         // Build menu
         // "Change Brain" (was "AI") — which mind runs the Dungeon Master.
         // Party Review first (the default); Brain now lives in Settings.
-        var menuOpts = ["Party Review", "Opening Tale", "Progress Tale", "Save to Roster", "Adventure Log", "Lore", "Settings", "?", "< Back"]
+        var menuOpts = ["Party Review", "Opening Tale", "Progress Tale", "Save to Roster", "Adventure Log", "Lore", "Settings", "New Main Quest", "?", "< Back"]
         if dungeon?.hasCartography == true {
             menuOpts.insert("Atlas", at: menuOpts.firstIndex(of: "Lore") ?? 0)
         }
@@ -24995,6 +25028,8 @@ class GameEngine: ObservableObject {
                 self.showProgressTale(onBack: { [weak self] in self?.showPartyStatus() })
             case "Opening Tale":
                 self.showOpeningTale(page: 0, onBack: { [weak self] in self?.showPartyStatus() })
+            case "New Main Quest":
+                self.confirmNewMainQuest()
             case "Atlas":
                 self.showAtlas(onBack: { [weak self] in self?.showPartyStatus() })
             case "Lore":
