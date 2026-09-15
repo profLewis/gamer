@@ -169,6 +169,14 @@ struct TerminalView: View {
         }
     }
 
+    /// The Mac map box's closing +---+ line — the first border after "@ here"
+    /// (found by content, so a map clipped at the dungeon's edge still fits).
+    private var macMapBoxLastIndex: Int {
+        let lines = gameEngine.pinnedMapLines
+        guard let here = lines.firstIndex(where: { $0.text.contains("@ here") }) else { return gameEngine.mapOnlyLineCount + 2 }
+        return lines[(here + 1)...].firstIndex(where: { $0.text.trimmingCharacters(in: .whitespaces).hasPrefix("+") }) ?? here
+    }
+
     /// The red "you're in a fight" frame and tag — Mac only. On the phone
     /// the combat screen already says so, and a frame just crowds it.
     private var combatFrameOn: Bool {
@@ -210,7 +218,7 @@ struct TerminalView: View {
                                     // the pane can fit the box exactly (top edge to bottom edge).
                                     .background(GeometryReader { g in
                                         Color.clear.preference(key: MacMapBoxBottomKey.self,
-                                                               value: index == gameEngine.mapOnlyLineCount + 2 ? g.frame(in: .named("macMapBox")).maxY : 0)
+                                                               value: index == macMapBoxLastIndex ? g.frame(in: .named("macMapBox")).maxY : 0)
                                     })
                                     #endif
                             }

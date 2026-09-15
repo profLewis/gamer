@@ -1408,7 +1408,22 @@ class GameEngine: ObservableObject {
 
     // MARK: - Terminal Output
 
+    /// On the Mac the buttons sit to the right of the story, not below it —
+    /// so "the buttons below" reads "the buttons to the right" there.
+    static func platformWording(_ text: String) -> String {
+        #if os(macOS)
+        guard text.contains("below") else { return text }
+        var t = text.replacingOccurrences(of: #"\b(buttons?|options|choices)\s+below\b"#, with: "$1 to the right", options: .regularExpression)
+        t = t.replacingOccurrences(of: "Tap an item below", with: "Tap an item to the right")
+        t = t.replacingOccurrences(of: "Load Character below", with: "Load Character to the right")
+        return t
+        #else
+        return text
+        #endif
+    }
+
     func print(_ text: String, color: TerminalColor = .green, bold: Bool = false, underlined: Bool = false, size: CGFloat = 14, centered: Bool = false) {
+        let text = Self.platformWording(text)
         // runOnMain, not unconditional .async — see its own comment.
         // print() and clearTerminal() used to disagree here: clearTerminal()
         // became synchronous (see runOnMain()) but print() stayed .async, so
@@ -2068,6 +2083,7 @@ class GameEngine: ObservableObject {
 
     /// Word-wrap text to fit within maxWidth characters, with optional indent
     func printWrapped(_ text: String, indent: Int = 0, color: TerminalColor = .green, bold: Bool = false, maxWidth: Int = 38) {
+        let text = Self.platformWording(text)
         // Detect any extra leading whitespace in the text and fold it into indent
         let trimmed = text.replacingOccurrences(of: "^\\s+", with: "", options: .regularExpression)
         let effectiveIndent = indent + (text.count - trimmed.count)
@@ -22259,7 +22275,7 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped("Quest: \(quest.description) — \(sideQuestProgressDescription(quest))", indent: 2, color: .dimGreen)
         print("")
-        showMenu(["We're On It", "Make It Worth Our While?", "Give It Up"])
+        showMenu(["We're On It", "Make It Worthwhile?", "Give It Up"])
         closeHandler = { [weak self] in self?.showExplorationView() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
