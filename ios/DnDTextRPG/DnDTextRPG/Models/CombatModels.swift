@@ -82,6 +82,14 @@ enum MonsterType: String, CaseIterable, Codable {
     case youngDragon = "Young Dragon"
     case vecna = "The Undying King"
 
+    // Deeper floors of their own, now that a dungeon can run to twelve
+    case boneMoth = "Bone Moth"
+    case cinderHound = "Cinder Hound"
+    case ironWeaver = "Iron Weaver"
+    case drownedChoir = "Drowned Choir"
+    case hollowMonk = "Hollow Monk"
+    case gloamTitan = "Gloam Titan"
+
     struct Stats {
         let hp: Int
         let ac: Int
@@ -93,6 +101,18 @@ enum MonsterType: String, CaseIterable, Codable {
 
     var stats: Stats {
         switch self {
+        case .boneMoth:
+            return Stats(hp: 7, ac: 12, attackBonus: 3, damage: "1d4+1", cr: 0.25, xp: 50)
+        case .cinderHound:
+            return Stats(hp: 32, ac: 13, attackBonus: 5, damage: "2d6+2", cr: 1, xp: 200)
+        case .ironWeaver:
+            return Stats(hp: 66, ac: 16, attackBonus: 6, damage: "2d8+3", cr: 3, xp: 700)
+        case .drownedChoir:
+            return Stats(hp: 95, ac: 15, attackBonus: 8, damage: "3d6+4", cr: 6, xp: 2300)
+        case .hollowMonk:
+            return Stats(hp: 110, ac: 17, attackBonus: 9, damage: "2d10+5", cr: 8, xp: 3900)
+        case .gloamTitan:
+            return Stats(hp: 210, ac: 18, attackBonus: 11, damage: "3d10+6", cr: 15, xp: 13000)
         // Starter monsters — very weak, manageable for a solo level 1
         case .giantRat:
             return Stats(hp: 4, ac: 10, attackBonus: 2, damage: "1d4", cr: 0.125, xp: 25)
@@ -163,6 +183,12 @@ enum MonsterType: String, CaseIterable, Codable {
 
     var description: String {
         switch self {
+        case .boneMoth: return "A pale moth the size of a dinner plate, wings powdered with something that is not quite dust. It is drawn to lamplight and lands on faces. Harmless-looking until the powder gets in your eyes and the room swims."
+        case .cinderHound: return "A lean hound with coals where its ribs should be, leaving scorch marks on the flagstones. It hunts by heat rather than scent, so hiding in the dark does you no good at all, and it never seems to tire."
+        case .ironWeaver: return "A many-legged smith-thing that spins wire instead of silk, stringing corridors with humming cables. It repairs itself mid-fight from whatever metal is to hand — including your weapons, if you let it get close."
+        case .drownedChoir: return "Several drowned figures moving as one, mouths open, singing a note just below hearing. The song is the weapon: it makes the floor feel further away than it is, and armour feel heavier than it was."
+        case .hollowMonk: return "A robed figure with nothing inside the hood but a slow blue light. It fights with terrible patience, blocking three times for every blow it strikes, and it has clearly been waiting down here a very long while."
+        case .gloamTitan: return "A shape so large the dark bends around it, hauling itself along on knuckles the size of doors. It is old enough to have been walled in deliberately, and the walls have not held."
         case .giantRat: return "An oversized dungeon rat with diseased fangs, twitching whiskers, and eyes that shine red in torchlight. It lives in filth, feeds on scraps, and attacks in hungry packs. In close tunnels, giant rats overwhelm isolated adventurers by sheer relentless numbers."
         case .kobold: return "A wiry reptilian tunnel-fighter clutching crude weapons and a bag of traps. Kobolds avoid fair fights, preferring ambushes, falling rubble, and narrow kill corridors. Individually weak but collectively dangerous, they excel at turning terrain into a weapon."
         case .stirge: return "A bat-sized blood-feeder with a needle beak and frantic membrane wings. It darts unpredictably, latches onto exposed flesh, and drinks until forced away. A stirge attack creates panic because every second attached drains life and action economy."
@@ -199,6 +225,18 @@ enum MonsterType: String, CaseIterable, Codable {
     /// Flavorful attack descriptions — randomly selected each attack
     var attackDescriptions: [String] {
         switch self {
+        case .boneMoth:
+            return ["a faceful of choking powder", "its blundering wings", "a papery scrape"]
+        case .cinderHound:
+            return ["a searing bite", "a scorching lunge", "its ember-hot flank", "a mouthful of coals"]
+        case .ironWeaver:
+            return ["a whipping wire", "its shearing mandibles", "a snare of hot cable", "a barbed foreleg"]
+        case .drownedChoir:
+            return ["a note that buckles the knees", "many cold hands", "a swell of black water", "the low singing"]
+        case .hollowMonk:
+            return ["an open palm like a hammer", "a patient, perfect strike", "the blue light in its hood", "a sweeping sleeve"]
+        case .gloamTitan:
+            return ["a fist the size of a door", "a shoulder that shakes the floor", "a grinding backhand", "the dark itself"]
         case .giantRat:
             return ["its filthy teeth", "a savage bite", "its diseased claws", "a lunging gnaw"]
         case .kobold:
@@ -330,6 +368,18 @@ enum MonsterType: String, CaseIterable, Codable {
 
     var asciiArt: [String] {
         switch self {
+        case .boneMoth:
+            return ["   /\\ .. /\\", "  /  (oo)  \\", "  \\  /||\\  /", "   \\/ || \\/", "      ''"]
+        case .cinderHound:
+            return ["    /\\__/\\", "   ( >..< )", "   /  ##  \\", "  (  ####  )", "   ^^    ^^"]
+        case .ironWeaver:
+            return ["   __/\\__", "  <( oo )>", " /\\ |||| /\\", "/  \\____/  \\", "  ~  ~~  ~"]
+        case .drownedChoir:
+            return ["  o   o   o", " /|\\ /|\\ /|\\", "  ~~~~~~~~~", " ~~~~~~~~~~~", "  ~~~~~~~~~"]
+        case .hollowMonk:
+            return ["     ____", "    / -- \\", "   |  ..  |", "    \\____/", "    /|  |\\"]
+        case .gloamTitan:
+            return ["   ######", "  # O  O #", "  #  ##  #", " ##########", " ##      ##"]
         case .giantRat:
             return [
                 "      /\\  /\\",
@@ -574,6 +624,42 @@ enum MonsterType: String, CaseIterable, Codable {
     /// Animation frames for bestiary idle animations (eyes, tails, limbs)
     var asciiArtFrames: [[String]] {
         switch self {
+        case .boneMoth:
+            return [
+                ["   /\\ .. /\\", "  /  (oo)  \\", "  \\  /||\\  /", "   \\/ || \\/", "      ''"],
+                ["  _/\\ .. /\\_", " /   (oo)   \\", " \\   /||\\   /", "   \\/ || \\/", "      ''"],
+                ["   /\\ .. /\\", "  /  (--)  \\", "  \\  /||\\  /", "   \\/ || \\/", "      ''"],
+            ]
+        case .cinderHound:
+            return [
+                ["    /\\__/\\", "   ( >..< )", "   /  ##  \\", "  (  ####  )", "   ^^    ^^"],
+                ["    /\\__/\\", "   ( >oo< )", "   /  **  \\", "  (  ####  )", "   ^^    ^^"],
+                ["    /\\__/\\", "   ( >..< )", "   /  ##  \\", "  (  **##  )", "   ^^    ^^"],
+            ]
+        case .ironWeaver:
+            return [
+                ["   __/\\__", "  <( oo )>", " /\\ |||| /\\", "/  \\____/  \\", "  ~  ~~  ~"],
+                ["   __/\\__", "  <( -- )>", " /\\ |||| /\\", "/  \\____/  \\", "   ~ ~~ ~ "],
+                ["   __/\\__", "  <( oo )>", " /\\ ++++ /\\", "/  \\____/  \\", "  ~  ~~  ~"],
+            ]
+        case .drownedChoir:
+            return [
+                ["  o   o   o", " /|\\ /|\\ /|\\", "  ~~~~~~~~~", " ~~~~~~~~~~~", "  ~~~~~~~~~"],
+                ["  O   o   O", " /|\\ /|\\ /|\\", " ~~~~~~~~~~", "  ~~~~~~~~~", " ~~~~~~~~~~~"],
+                ["  o   O   o", " /|\\ /|\\ /|\\", "  ~~~~~~~~~", " ~~~~~~~~~~~", "  ~~~~~~~~~"],
+            ]
+        case .hollowMonk:
+            return [
+                ["     ____", "    / -- \\", "   |  ..  |", "    \\____/", "    /|  |\\"],
+                ["     ____", "    / -- \\", "   |  oo  |", "    \\____/", "   / |  | \\"],
+                ["     ____", "    / == \\", "   |  ..  |", "    \\____/", "    /|  |\\"],
+            ]
+        case .gloamTitan:
+            return [
+                ["   ######", "  # O  O #", "  #  ##  #", " ##########", " ##      ##"],
+                ["   ######", "  # @  @ #", "  #  ##  #", "###########", "###      ##"],
+                ["   ######", "  # O  O #", "  #  **  #", " ##########", " ##      ##"],
+            ]
         case .giantRat:
             return [
                 ["      /\\  /\\", "     (  ..  )", "      )    (", "     /||||||\\", "    ~ ~~~~~  ~"],
@@ -760,19 +846,27 @@ enum MonsterType: String, CaseIterable, Codable {
     static func forLevel(_ level: Int) -> [MonsterType] {
         switch level {
         case 1:
-            return [.giantRat, .kobold, .stirge, .giantBat, .crawlingClaw]
+            return [.giantRat, .kobold, .stirge, .giantBat, .crawlingClaw, .boneMoth]
         case 2:
             return [.goblin, .skeleton, .zombie, .wolf, .kobold]
         case 3:
-            return [.goblin, .skeleton, .orc, .hobgoblin, .gnoll, .rustMonster]
+            return [.goblin, .skeleton, .orc, .hobgoblin, .gnoll, .rustMonster, .cinderHound]
         case 4:
             return [.orc, .hobgoblin, .bugbear, .giantSpider, .gnoll, .gargoyle, .mimic]
         case 5:
             return [.bugbear, .giantSpider, .ogre, .gelatinousCube, .minotaur, .basilisk]
         case 6:
-            return [.ogre, .owlbear, .troll, .displacerBeast, .wraith, .demogorgon, .mindFlayer]
+            return [.ogre, .owlbear, .troll, .displacerBeast, .wraith, .demogorgon, .mindFlayer, .ironWeaver]
+        case 7:
+            return [.troll, .demogorgon, .mindFlayer, .wraith, .hollowMonk, .drownedChoir]
+        case 8:
+            return [.demogorgon, .mindFlayer, .beholder, .hollowMonk, .drownedChoir, .youngDragon]
+        case 9:
+            return [.beholder, .youngDragon, .drownedChoir, .gloamTitan, .hollowMonk]
+        case 10:
+            return [.beholder, .youngDragon, .gloamTitan, .drownedChoir, .vecna]
         default:
-            return [.troll, .demogorgon, .mindFlayer, .beholder, .youngDragon, .wraith]
+            return [.youngDragon, .gloamTitan, .vecna, .beholder, .hollowMonk]
         }
     }
 
@@ -785,6 +879,10 @@ enum MonsterType: String, CaseIterable, Codable {
         case 5: return .demogorgon
         case 6: return .mindFlayer
         case 7: return .beholder
+        case 8: return .hollowMonk
+        case 9: return .drownedChoir
+        case 10: return .gloamTitan
+        case 11: return .youngDragon
         default: return .vecna
         }
     }
@@ -794,7 +892,7 @@ enum MonsterType: String, CaseIterable, Codable {
         let roll = Dice.d20()
         switch self {
         // Starter monsters — rare small drops
-        case .giantRat, .stirge, .giantBat, .crawlingClaw:
+        case .giantRat, .stirge, .giantBat, .crawlingClaw, .boneMoth:
             if roll >= 18 { return TreasureItem(name: "Dagger", value: 2, type: .item) }
             if roll >= 15 { return TreasureItem(name: "\(Dice.d6() * 2) Gold Pieces", value: Dice.d6() * 2, type: .gold) }
             // Poisonous creatures sometimes drop antidotes (from their own resistance)
@@ -812,20 +910,20 @@ enum MonsterType: String, CaseIterable, Codable {
             if roll >= 10 { return TreasureItem(name: "\(Dice.rollSum(2, d: 6) * 5) Gold Pieces", value: Dice.rollSum(2, d: 6) * 5, type: .gold) }
             return nil
         // Mid — better drops
-        case .orc, .hobgoblin, .gnoll, .rustMonster:
+        case .orc, .hobgoblin, .gnoll, .rustMonster, .cinderHound:
             if roll >= 16 { return TreasureItem(name: "Potion of Healing", value: 50, type: .potion) }
             if roll >= 13 { return TreasureItem(name: "Longsword", value: 15, type: .item) }
             if roll >= 8 { return TreasureItem(name: "\(Dice.rollSum(3, d: 6) * 5) Gold Pieces", value: Dice.rollSum(3, d: 6) * 5, type: .gold) }
             return nil
         // High — good drops
-        case .bugbear, .giantSpider, .ogre, .gargoyle, .mimic, .gelatinousCube:
+        case .bugbear, .giantSpider, .ogre, .gargoyle, .mimic, .gelatinousCube, .ironWeaver:
             if roll >= 15 { return TreasureItem(name: "Potion of Greater Healing", value: 150, type: .potion) }
             if canPoison && roll >= 13 { return TreasureItem(name: "Antidote", value: 30, type: .potion) }
             if roll >= 12 { return TreasureItem(name: "Scale Mail", value: 50, type: .item) }
             if roll >= 7 { return TreasureItem(name: "\(Dice.rollSum(4, d: 6) * 10) Gold Pieces", value: Dice.rollSum(4, d: 6) * 10, type: .gold) }
             return nil
         // Boss — guaranteed drops
-        case .owlbear, .troll, .minotaur, .basilisk, .displacerBeast, .wraith, .demogorgon, .mindFlayer, .beholder, .youngDragon, .vecna:
+        case .owlbear, .troll, .minotaur, .basilisk, .displacerBeast, .wraith, .demogorgon, .mindFlayer, .beholder, .youngDragon, .vecna, .drownedChoir, .hollowMonk, .gloamTitan:
             if roll >= 10 { return TreasureItem(name: "Potion of Greater Healing", value: 150, type: .potion) }
             return TreasureItem(name: "\(Dice.rollSum(5, d: 6) * 10) Gold Pieces", value: Dice.rollSum(5, d: 6) * 10, type: .gold)
         }

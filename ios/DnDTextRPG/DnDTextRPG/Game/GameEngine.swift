@@ -7201,12 +7201,12 @@ class GameEngine: ObservableObject {
 
         // Group monsters by tier
         let tiers: [(String, [MonsterType])] = [
-            ("STARTER", [.giantRat, .kobold, .stirge, .giantBat, .crawlingClaw]),
+            ("STARTER", [.giantRat, .kobold, .stirge, .giantBat, .crawlingClaw, .boneMoth]),
             ("LOW", [.goblin, .skeleton, .zombie, .wolf]),
-            ("MID-LOW", [.orc, .hobgoblin, .gnoll, .rustMonster]),
-            ("MID", [.bugbear, .giantSpider, .ogre, .gargoyle, .mimic, .gelatinousCube]),
-            ("HIGH", [.owlbear, .troll, .minotaur, .basilisk, .displacerBeast, .wraith, .demogorgon, .mindFlayer]),
-            ("BOSS", [.beholder, .youngDragon, .vecna]),
+            ("MID-LOW", [.orc, .hobgoblin, .gnoll, .rustMonster, .cinderHound]),
+            ("MID", [.bugbear, .giantSpider, .ogre, .gargoyle, .mimic, .gelatinousCube, .ironWeaver]),
+            ("HIGH", [.owlbear, .troll, .minotaur, .basilisk, .displacerBeast, .wraith, .demogorgon, .mindFlayer, .drownedChoir, .hollowMonk]),
+            ("BOSS", [.beholder, .youngDragon, .gloamTitan, .vecna]),
         ]
 
         // Map line index → monster for tap detection
@@ -7389,6 +7389,12 @@ class GameEngine: ObservableObject {
         // Combat tips
         let tips: [String]
         switch monster {
+        case .boneMoth: tips = ["The powder blinds before it harms.", "Frail — a single solid hit ends it."]
+        case .cinderHound: tips = ["It hunts by heat, so dousing the torch won't hide you.", "Fire resistance helps more than armour."]
+        case .ironWeaver: tips = ["It mends itself from loose metal — clear the floor.", "Keep your distance; the wires reach further than it looks."]
+        case .drownedChoir: tips = ["Several bodies, one will. Scattering them does little.", "The singing saps the legs — expect to act slowly."]
+        case .hollowMonk: tips = ["It blocks far more than it strikes. Patience beats fury.", "Its guard opens only after it attacks."]
+        case .gloamTitan: tips = ["Too big to flank and too heavy to stagger.", "Bring everything: this is not a fight to win cheaply."]
         case .giantRat: tips = ["Weak but often found in groups.", "Can inflict mild poison — carry antidotes."]
         case .kobold: tips = ["Cunning trapmakers. Check the floor.", "Cowardly alone but dangerous in packs."]
         case .stirge: tips = ["Attaches and drains blood. Venomous bite.", "Fragile — one good hit will do."]
