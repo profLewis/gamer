@@ -6230,7 +6230,7 @@ class GameEngine: ObservableObject {
         }
     }
 
-    func showHowToPlay() {
+    func showHowToPlay(onBack: (() -> Void)? = nil) {
         clearTerminal()
         undoHandler = nil; redoHandler = nil
         inHelpContext = true
@@ -6317,7 +6317,9 @@ class GameEngine: ObservableObject {
             self?.closeHandler = nil
             self?.currentHelpTopic = -1
             self?.inHelpContext = false
-            self?.showMainMenu()
+            // Back to wherever this was opened from when that's known — from
+            // About, back to About — and only to the main menu when it isn't.
+            if let onBack = onBack { onBack() } else { self?.showMainMenu() }
         }
     }
 
@@ -9312,7 +9314,7 @@ class GameEngine: ObservableObject {
         print("DnDEX — CARD BROWSER", color: .cyan, bold: true)
         printWrapped("Browse character, monster, and location cards at the DnDex. See the stories behind the default character names and dungeon locations.", indent: 2, color: .dimGreen)
         printLink("https://proflewis.github.io/gamer/ios_card_images/card-dex/", to: "dndex", indent: 2)
-        print("  ios_card_images/card-dex/", color: .dimGreen)
+        printWrapped("(the same cards are in the repository, under ios_card_images/card-dex/)", indent: 2, color: .dimGreen)
         print("")
 
         print("THE DUNGEON MASTER", color: .cyan, bold: true)
@@ -9375,7 +9377,7 @@ class GameEngine: ObservableObject {
             case "Dance!":
                 self.aboutDanceStyle = 1
                 self.showAbout(onBack: onBack)
-            case "How to Play": self.showHowToPlay()
+            case "How to Play": self.showHowToPlay(onBack: { [weak self] in self?.showAbout(onBack: onBack) })
             case "The DnDex": self.showDnDexInfo(onBack: { [weak self] in self?.showAbout(onBack: onBack) })
             case "Licence": self.showLicenceInfo(onBack: { [weak self] in self?.showAbout(onBack: onBack) })
             case "?":
