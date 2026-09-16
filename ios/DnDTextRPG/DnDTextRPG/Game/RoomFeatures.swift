@@ -202,13 +202,36 @@ extension GameEngine {
         if let rune = revealRune(chance: room.roomType == .shrine ? 100 : 45, how: "Under the grime, a line of old runes. You copy them down:") {
             return rune
         }
+        // A mural is worth reading, not merely noticing.
+        if Int.random(in: 1...100) <= 40 {
+            let m = Self.murals.randomElement()!
+            return [("A mural, faded and flaking, but most of it still legible.", .dimGreen),
+                    (m.scene, .green),
+                    (m.writing, .yellow)]
+        }
         return [([
             "Claw marks, deep and parallel. Something big came through here, in a hurry.",
             "Old graffiti: 'BRAM WUZ ERE'. Bram, it seems, was everywhere.",
-            "A mural of a feast, mostly flaked away. Only the pies are left.",
             "Water stains in the shape of a face. Probably.",
         ].randomElement()!, .dimGreen)]
     }
+
+    /// What the murals show, and what is written under them — sometimes in
+    /// a hand nobody here can read any more.
+    private static let murals: [(scene: String, writing: String)] = [
+        ("A line of figures carry something long and wrapped between them, down a stair with no bottom drawn in.",
+         "Underneath, in a careful hand: \"WE TOOK IT DOWN. WE DID NOT COME BACK UP.\""),
+        ("A feast. Every diner faces away from the table, and the table is laid for one more than there are chairs.",
+         "Underneath, runes nobody has read in an age: \u{16A0}\u{16B1}\u{16C1} \u{16D2}\u{16A6}\u{16B7} \u{16DE}\u{16A2}\u{16B1}"),
+        ("A great door, painted shut with a red seal, and a small figure standing with its palm flat against it.",
+         "Underneath: \"IT KNOCKS POLITELY. THAT IS THE WORST OF IT.\""),
+        ("Seven rings, one inside the next, with something small and bright kept at the centre.",
+         "Underneath, scratched over the paint much later: \"COUNT THEM AGAIN.\""),
+        ("Two armies, one facing the other, and between them a single figure with both arms raised.",
+         "Underneath, runes worn almost flat: \u{16BE}\u{16A2}\u{16D6} \u{16C1}\u{16A0}\u{16DA}\u{16B1}"),
+        ("A cook, a crown and a hound sharing one long bench, all three of them laughing.",
+         "Underneath, in a rounder hand than the rest: \"THE KITCHEN KEPT US ALIVE, NOT THE THRONE.\""),
+    ]
 
     /// The quest's next rune, if one can be found at this depth (a chance in
     /// 100) — kept under the main quest in Party Status, and told at the end.

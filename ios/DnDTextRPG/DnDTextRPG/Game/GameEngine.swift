@@ -33159,6 +33159,36 @@ class GameEngine: ObservableObject {
         print("  Switching weapons costs your turn, and there's a small chance you fumble the draw.", color: .yellow)
         print("")
 
+        // What each one would actually do, measured against what's in hand —
+        // "Change Weapon" used to be a list of bare names.
+        func averageDamage(_ item: Item) -> Double {
+            guard let d = item.weaponStats?.damage else { return 0 }
+            let halves = d.split(separator: "+")
+            let dice = halves[0].split(separator: "d")
+            guard dice.count == 2, let n = Double(dice[0]), let faces = Double(dice[1]) else { return 0 }
+            let bonus = halves.count > 1 ? (Double(halves[1]) ?? 0) : 0
+            return n * (faces + 1) / 2 + bonus
+        }
+        let held = character.equippedWeapon
+        let heldAvg = held.map(averageDamage) ?? 1.5   // bare hands
+        for w in weapons {
+            var notes: [String] = []
+            if let s = w.weaponStats {
+                notes.append(s.damage)
+                if s.isFinesse { notes.append("finesse — uses DEX if that's better") }
+                if s.isRanged { notes.append("ranged — uses DEX") }
+                if s.isTwoHanded { notes.append("two-handed") }
+            }
+            let mine = averageDamage(w)
+            let verdict: (String, TerminalColor)
+            if mine > heldAvg + 0.75 { verdict = ("hits harder than \(held?.name ?? "bare hands")", .brightGreen) }
+            else if mine < heldAvg - 0.75 { verdict = ("hits softer than \(held?.name ?? "bare hands")", .yellow) }
+            else { verdict = ("about the same", .dimGreen) }
+            printWrapped("\(w.name) — \(notes.joined(separator: ", "))", indent: 4, color: .green)
+            printWrapped("   \(verdict.0)", indent: 4, color: verdict.1)
+        }
+        print("")
+
         showMenu(weapons.map { $0.name } + ["< Back"])
         closeHandler = { [weak self] in self?.showPlayerCombatMenu(characterId: characterId) }
         menuHandler = { [weak self] choice in
