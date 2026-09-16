@@ -59,6 +59,14 @@ struct SaveGame: Codable, Identifiable {
 
     // The adventure's main quest (nil in older saves)
     var mainQuest: MainQuest? = nil
+
+    // The story of its quests (taken up, turned down, changed, done), whether
+    // it's a no-quest adventure, whether the quest is done, and a one-line
+    // summary for save lists (all nil in older saves)
+    var questHistory: [String]? = nil
+    var noMainQuest: Bool? = nil
+    var mainQuestCompleted: Bool? = nil
+    var questSummary: String? = nil
 }
 
 // MARK: - Save Slot (grouped view)

@@ -241,6 +241,11 @@ class Room: Identifiable, ObservableObject, Codable {
     @Published var merchant: Merchant?      // Shopkeeper present in this room (shop/armoury rooms)
     @Published var riddleIndex: Int?        // Index into RiddleData.all, nil = no riddle challenge here
     @Published var riddleResolved: Bool = false  // Solved OR given up on (button hidden either way)
+    /// Look Around features already done here (a forge lit, a book taken...).
+    @Published var interactionsDone: Set<String> = []
+    /// Which floor of this level the room is on — 1, unless the level has a
+    /// second floor reached by the stairs or rope (see generateDungeon).
+    @Published var floor: Int = 1
     /// A puzzle from PuzzleBank (levels 3+: logic, word, cryptic) — shares
     /// riddleResolved, since a room poses one or the other.
     @Published var puzzleId: String? = nil
@@ -303,7 +308,7 @@ class Room: Identifiable, ObservableObject, Codable {
         case riddleIndex, riddleResolved, puzzleId, doorLockIds, openedLocks
         case teleportDestinationRoomId
         case verticalDestinationRoomId, verticalMethod, verticalDirection, verticalRopeHintRoomName
-        case isTorchlit, expansionConsidered
+        case isTorchlit, expansionConsidered, interactionsDone, floor
     }
 
     init(id: Int, x: Int, y: Int, type: RoomType) {
@@ -372,6 +377,8 @@ class Room: Identifiable, ObservableObject, Codable {
         merchant = try container.decodeIfPresent(Merchant.self, forKey: .merchant)
         riddleIndex = try container.decodeIfPresent(Int.self, forKey: .riddleIndex)
         riddleResolved = try container.decodeIfPresent(Bool.self, forKey: .riddleResolved) ?? false
+        interactionsDone = try container.decodeIfPresent(Set<String>.self, forKey: .interactionsDone) ?? []
+        floor = try container.decodeIfPresent(Int.self, forKey: .floor) ?? 1
         puzzleId = try container.decodeIfPresent(String.self, forKey: .puzzleId)
         trainer = try container.decodeIfPresent(Trainer.self, forKey: .trainer)
         doorLockIds = try container.decodeIfPresent([Direction: UUID].self, forKey: .doorLockIds) ?? [:]
@@ -411,6 +418,8 @@ class Room: Identifiable, ObservableObject, Codable {
         try container.encodeIfPresent(merchant, forKey: .merchant)
         try container.encodeIfPresent(riddleIndex, forKey: .riddleIndex)
         try container.encode(riddleResolved, forKey: .riddleResolved)
+        try container.encode(interactionsDone, forKey: .interactionsDone)
+        try container.encode(floor, forKey: .floor)
         try container.encodeIfPresent(puzzleId, forKey: .puzzleId)
         try container.encodeIfPresent(trainer, forKey: .trainer)
         try container.encode(doorLockIds, forKey: .doorLockIds)
@@ -658,6 +667,25 @@ class Dungeon: ObservableObject, Codable {
     /// Status. Carried forward to deeper levels along with archivedLevels.
     @Published var hasCartography: Bool = false
 
+    /// The dungeon runs downward: Level 1 is the ground floor (0) and each
+    /// level below is one floor further down, to floor -6 (Level 7). "Floor"
+    /// always means depth — a level's own second storey is a gallery.
+    static func depthLabel(_ level: Int) -> String {
+        level <= 1 ? "0 (ground)" : "-\(level - 1)"
+    }
+
+    /// The same, in words: "the ground floor", "two floors down".
+    static func depthWords(_ level: Int) -> String {
+        switch level {
+        case ...1: return "the ground floor (floor 0)"
+        case 2: return "one floor down (floor -1)"
+        default: return "\(level - 1) floors down (floor \(depthLabel(level)))"
+        }
+    }
+
+    /// Where the stairs and ropes lead: the same floor's other gallery.
+    var galleryName: String { currentFloor <= 1 ? "upper gallery" : "lower gallery" }
+
     /// True if this dungeon has at least one stairs/rope/levitation link.
     var hasVerticalConnections: Bool {
         rooms.values.contains { $0.verticalDestinationRoomId != nil }
@@ -741,7 +769,9 @@ class Dungeon: ObservableObject, Codable {
     /// stayed rare (one guaranteed shop room, occasional armoury). Ramping
     /// gradually keeps Medium noticeably lighter than Hard/Brutal.
     private var encounterChance: Double {
-        level <= 1 ? 0.28 : min(0.42, 0.28 + Double(level - 2) * 0.05)
+        // Fewer fights than at first (play-testers found it repetitive) — more
+        // room for exploring, and for the things rooms have to do.
+        level <= 1 ? 0.22 : min(0.34, 0.22 + Double(level - 2) * 0.04)
     }
 
     private func generateDungeon() {
@@ -947,65 +977,77 @@ class Dungeon: ObservableObject, Codable {
         // Scaled by dungeon size rather than a single fixed pair, since one
         // shortcut in a large dungeon barely registered. Skipped in small
         // dungeons.
+        // A real second floor: its own rooms, its own map. The way down is
+        // a stairwell (free) or a rope through a hole (needs a Rope to climb
+        // back up), and it lands at the SAME x,y one floor below — so going
+        // down puts you where the stairs are, not on a copy of the floor you
+        // just left (which is exactly what a shared grid used to look like).
         if numRooms >= 15 {
-            let numVertical = max(1, numRooms / 12)
-            var usedForVertical: Set<Int> = []
-            for i in 0..<numVertical {
-                let vCandidates = rooms.values.filter {
-                    $0.roomType != .entrance && $0.roomType != .boss
-                        && $0.teleportDestinationRoomId == nil
-                        && $0.verticalDestinationRoomId == nil
-                        && !usedForVertical.contains($0.id)
+            let upperRooms = max(5, numRooms / 3)
+            let lastFloorTwoId = roomId + upperRooms
+            let stairCandidates = rooms.values.filter {
+                $0.roomType != .entrance && $0.roomType != .boss && $0.verticalDestinationRoomId == nil
+            }
+            // Stairs from the gym, if there is one — it gives an easily
+            // missed room a reason to visit.
+            if let gate = stairCandidates.first(where: { $0.trainer != nil }) ?? stairCandidates.randomElement() {
+                let landing = Room(id: roomId, x: gate.x, y: gate.y, type: .chamber)
+                landing.floor = 2
+                rooms[roomId] = landing
+                roomId += 1
+                var occupiedUp: Set<String> = ["\(gate.x),\(gate.y)"]
+                var frontierUp: [Room] = [landing]
+                while roomId <= lastFloorTwoId, !frontierUp.isEmpty {
+                    guard let from = frontierUp.randomElement() else { break }
+                    var grew = false
+                    for direction in Direction.allCases.shuffled() {
+                        guard roomId <= lastFloorTwoId else { break }
+                        guard from.exits[direction] == nil else { continue }
+                        let newX = from.x + direction.offset.x
+                        let newY = from.y + direction.offset.y
+                        let key = "\(newX),\(newY)"
+                        guard !occupiedUp.contains(key) else { continue }
+                        occupiedUp.insert(key)
+                        let picked = randomRoomType()
+                        let room = Room(id: roomId, x: newX, y: newY, type: picked == .entrance ? .chamber : picked)
+                        room.floor = 2
+                        from.exits[direction] = roomId
+                        room.exits[direction.opposite] = from.id
+                        if room.roomType != .shrine && room.roomType != .shop && room.roomType != .empty,
+                           Double.random(in: 0...1) < encounterChance {
+                            room.encounter = Encounter.generate(level: level, difficulty: level == 1 ? .easy : .medium)
+                        }
+                        if room.roomType == .treasure { room.treasure = TreasureItem.generateTreasure(level: level) }
+                        let hiddenLoot = Room.generateHiddenLoot(roomType: room.roomType, level: level)
+                        room.hiddenItems = hiddenLoot.items
+                        room.hiddenGold = hiddenLoot.gold
+                        room.isTorchlit = Room.rollIsTorchlit(roomType: room.roomType)
+                        if room.isTorchlit { room.hiddenItems.append(contentsOf: Room.torchlitBonusItems()) }
+                        rooms[roomId] = room
+                        frontierUp.append(room)
+                        roomId += 1
+                        grew = true
+                    }
+                    if !grew { frontierUp.removeAll { $0.id == from.id } }
                 }
-                // First connection preferentially starts from a training
-                // room (gym), if one exists — "stairs down/up from the gym"
-                // gives an otherwise-easy-to-miss room a reason to visit.
-                let roomA: Room?
-                if i == 0, let gymRoom = vCandidates.first(where: { $0.trainer != nil }) {
-                    roomA = gymRoom
-                } else {
-                    roomA = vCandidates.randomElement()
-                }
-                guard let roomA = roomA else { break }
-
-                let farEnough = vCandidates.filter {
-                    $0.id != roomA.id
-                        && (abs($0.x - roomA.x) + abs($0.y - roomA.y)) >= 4
-                        && !roomA.exits.values.contains($0.id)
-                }
-                guard let roomB = farEnough.randomElement() else { continue }
-
-                // Just two methods, never mixed on the same connection —
-                // stairs are free and always usable both ways; rope needs
-                // an actual Rope item to climb UP (going down, you can
-                // always just jump and risk a landing injury instead).
                 let method = ["stairs", "rope"].randomElement()!
-                let aGoesDown = Bool.random()
-                roomA.verticalDestinationRoomId = roomB.id
-                roomA.verticalMethod = method
-                roomA.verticalDirection = aGoesDown ? "down" : "up"
-                roomB.verticalDestinationRoomId = roomA.id
-                roomB.verticalMethod = method
-                roomB.verticalDirection = aGoesDown ? "up" : "down"
-
-                // A rope connection needs an actual findable rope somewhere
-                // in the dungeon, or climbing up would be a dead end with
-                // no way to know where to look — guarantee one and remember
-                // the room's name so both ends can point the player at it.
+                gate.verticalDestinationRoomId = landing.id
+                gate.verticalMethod = method
+                gate.verticalDirection = "down"
+                landing.verticalDestinationRoomId = gate.id
+                landing.verticalMethod = method
+                landing.verticalDirection = "up"
+                // A rope needs a findable rope, or climbing back up is a dead end.
                 if method == "rope" {
                     let ropeCandidates = rooms.values.filter {
-                        $0.id != roomA.id && $0.id != roomB.id
-                            && $0.roomType != .entrance && $0.roomType != .boss
+                        $0.floor == 1 && $0.id != gate.id && $0.roomType != .entrance && $0.roomType != .boss
                     }
-                    if let ropeRoom = ropeCandidates.randomElement() ?? rooms.values.first(where: { $0.roomType != .entrance }) {
+                    if let ropeRoom = ropeCandidates.randomElement() {
                         ropeRoom.hiddenItems.append(ItemCatalog.rope())
-                        roomA.verticalRopeHintRoomName = ropeRoom.name
-                        roomB.verticalRopeHintRoomName = ropeRoom.name
+                        gate.verticalRopeHintRoomName = ropeRoom.name
+                        landing.verticalRopeHintRoomName = ropeRoom.name
                     }
                 }
-
-                usedForVertical.insert(roomA.id)
-                usedForVertical.insert(roomB.id)
             }
         }
 
@@ -1082,7 +1124,7 @@ class Dungeon: ObservableObject, Codable {
         defer { room.expansionConsidered = true }
 
         // Only expand from rooms that have open adjacent cells
-        let occupied = Set(rooms.values.map { "\($0.x),\($0.y)" })
+        let occupied = Set(rooms.values.filter { $0.floor == room.floor }.map { "\($0.x),\($0.y)" })
 
         for direction in Direction.allCases.shuffled() {
             // Skip directions that already have exits
@@ -1100,6 +1142,7 @@ class Dungeon: ObservableObject, Codable {
 
             let roomType = randomRoomType()
             let newRoom = Room(id: nextRoomId, x: newX, y: newY, type: roomType)
+            newRoom.floor = room.floor
 
             // Connect
             room.exits[direction] = nextRoomId
@@ -1242,6 +1285,7 @@ class Dungeon: ObservableObject, Codable {
             guard let roomA = available.randomElement() else { break }
             let farEnough = available.filter {
                 $0.id != roomA.id
+                    && $0.floor == roomA.floor          // a pad never crosses floors
                     && (abs($0.x - roomA.x) + abs($0.y - roomA.y)) >= 3
                     && !roomA.exits.values.contains($0.id)
             }
@@ -1282,6 +1326,12 @@ class Dungeon: ObservableObject, Codable {
         }
     }
 
+    /// The box's title line: just "MAP" — the place's name sits on the line
+    /// under the map instead (on a phone the title runs under the camera).
+    func mapTitleLine(border: String) -> String {
+        "| MAP".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|"
+    }
+
     /// The bottom of the world: this level's guardian is the villain from
     /// the opening tale, and beating it ends the adventure.
     static let finalLevel = 7
@@ -1301,11 +1351,14 @@ class Dungeon: ObservableObject, Codable {
         let name = Dungeon.guardianName(villain)
         for room in rooms.values where room.roomType == .boss && !room.cleared {
             guard var enc = room.encounter, let boss = enc.monsters.first, boss.name != name else { continue }
-            let hp = Int(Double(boss.maxHP) * 1.3)
-            enc.monsters[0] = Monster(id: boss.id, name: name, type: boss.type, currentHP: hp, maxHP: hp,
-                                      armorClass: boss.armorClass + 1, attackBonus: boss.attackBonus + 1,
+            // Still the plain boss: crown it (tougher). Already a villain (the
+            // quest changed): just the new name, never tougher twice.
+            let generic = boss.name.hasSuffix(boss.type.rawValue)
+            let hp = generic ? Int(Double(boss.maxHP) * 1.3) : boss.maxHP
+            enc.monsters[0] = Monster(id: boss.id, name: name, type: boss.type, currentHP: generic ? hp : boss.currentHP, maxHP: hp,
+                                      armorClass: boss.armorClass + (generic ? 1 : 0), attackBonus: boss.attackBonus + (generic ? 1 : 0),
                                       damage: boss.damage, challengeRating: boss.challengeRating,
-                                      experiencePoints: boss.experiencePoints * 2)
+                                      experiencePoints: boss.experiencePoints * (generic ? 2 : 1))
             room.encounter = enc
         }
     }
@@ -1429,7 +1482,7 @@ class Dungeon: ObservableObject, Codable {
     /// the whole map" overlay.
     var exploredRadius: Int {
         guard let current = rooms[currentRoomId] else { return 0 }
-        let visited = rooms.values.filter { $0.visited }
+        let visited = rooms.values.filter { $0.visited && $0.floor == currentFloor }
         guard !visited.isEmpty else { return 0 }
         let dx = visited.map { abs($0.x - current.x) }.max() ?? 0
         let dy = visited.map { abs($0.y - current.y) }.max() ?? 0
@@ -1441,7 +1494,7 @@ class Dungeon: ObservableObject, Codable {
     /// This level as the Atlas sees it. `archived` marks a level being left
     /// behind: no "you are here", but remembers where you left from.
     func atlasLevel(hasTrapSense: Bool, archived: Bool = false) -> AtlasLevel {
-        let atlasRooms = rooms.values.sorted { $0.id < $1.id }.map { room -> AtlasRoom in
+        let atlasRooms = rooms.values.filter { $0.floor == currentFloor }.sorted { $0.id < $1.id }.map { room -> AtlasRoom in
             let danger = !room.cleared && room.encounter != nil
             let symbol: String
             // Most important first: danger, the boss, a way up/down, a
@@ -1603,7 +1656,7 @@ class Dungeon: ObservableObject, Codable {
             var lines: [String] = []
             lines.append("+\(border)+")
             if !compact {
-                lines.append("| MAP".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|")
+                lines.append(mapTitleLine(border: border))
                 lines.append("+\(border)+")
             }
             // See the torch-lit branch below for why this centers @ instead
@@ -1641,7 +1694,7 @@ class Dungeon: ObservableObject, Codable {
 
         // Only show visited rooms within the viewport
         let visibleRooms = rooms.values.filter {
-            $0.visited && $0.x >= viewMinX && $0.x <= viewMaxX && $0.y >= viewMinY && $0.y <= viewMaxY
+            $0.floor == currentFloor && $0.visited && $0.x >= viewMinX && $0.x <= viewMaxX && $0.y >= viewMinY && $0.y <= viewMaxY
         }
         guard !visibleRooms.isEmpty else { return ["No map available."] }
 
@@ -1654,7 +1707,7 @@ class Dungeon: ObservableObject, Codable {
         let border = String(repeating: "-", count: max(mapWidth, 26))
         lines.append("+\(border)+")
         if !compact {
-            lines.append("| MAP".padding(toLength: border.count + 1, withPad: " ", startingAt: 0) + "|")
+            lines.append(mapTitleLine(border: border))
             lines.append("+\(border)+")
         }
 

@@ -28,3 +28,6 @@ saves/
 
 # Local game data backups (saves, settings, keys)
 .dnd_data/
+
+# Hidden-buttons phrase (kept local and in the Keychain, never in git)
+.dev-access

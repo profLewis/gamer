@@ -21,6 +21,8 @@ struct TerminalLine: Identifiable {
     let isBold: Bool
     let isUnderlined: Bool
     let fontSize: CGFloat
+    /// A wrapped paragraph's later lines — read aloud together with the first.
+    var continuesPrevious = false
     let isCentered: Bool
     /// Optional character range drawn in `highlightColor` (bold) — e.g.
     /// the Atlas's "[@]" so you can spot where you are at a glance.
@@ -68,7 +70,12 @@ struct TerminalLine: Identifiable {
         self.color = color
         self.isBold = bold
         self.isUnderlined = underlined
+        #if os(macOS)
+        // Mac: the story reads at the same size as the map (GameEngine.mapFontSize).
+        self.fontSize = size == 14 ? 16 : size
+        #else
         self.fontSize = size
+        #endif
         self.isCentered = centered
     }
 }
@@ -224,4 +231,17 @@ enum InputState {
     case awaitingMenu
     case awaitingText(prompt: String)
     case awaitingContinue
+}
+
+/// What the game calls the AI that runs the Dungeon Master — in one place,
+/// so a label changed here changes on every button, title and help line.
+enum BrainLabels {
+    /// The Settings button that opens the Brain's settings.
+    static let button = "Brain"
+    /// That screen's title.
+    static let title = "Brain Settings"
+    /// Choosing which mind runs the Dungeon Master (inside Brain Settings).
+    static let change = "Change Brain"
+    /// How help text points there.
+    static let path = "Settings > \(button)"
 }

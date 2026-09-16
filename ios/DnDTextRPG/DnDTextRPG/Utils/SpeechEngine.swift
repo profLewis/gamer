@@ -54,6 +54,21 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
     /// Completion callback — called on main queue when an utterance finishes
     var onFinish: (() -> Void)?
 
+    /// One particular utterance's completion (see speakAloud(_:whenDone:)):
+    /// only that utterance genuinely finishing calls it — not being stopped,
+    /// and not some other speech finishing.
+    private var trackedUtterance: AVSpeechUtterance?
+    private var trackedCompletion: (() -> Void)?
+
+    /// Roughly how long the voice takes to say this, at the current rate —
+    /// so text can be paced the same whether or not it's read aloud.
+    func estimatedDuration(of text: String) -> Double {
+        let words = Double(text.split(separator: " ").count)
+        let wpm = max(90, min(320, 360 * Double(rate)))   // the 0.45 default is about 160 words a minute
+        let pauses = Double(text.filter { ".!?;:,—".contains($0) }.count) * 0.18
+        return words / wpm * 60 + pauses + 0.3
+    }
+
     private override init() {
         super.init()
         synthesizer.delegate = self
@@ -90,6 +105,11 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         SoundManager.shared.unduckMusic()
         restoreAudioSession()
+        if utterance === trackedUtterance, let done = trackedCompletion {
+            trackedUtterance = nil
+            trackedCompletion = nil
+            DispatchQueue.main.async { done() }
+        }
         if let handler = onFinish {
             onFinish = nil
             DispatchQueue.main.async { handler() }
@@ -99,6 +119,7 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         SoundManager.shared.unduckMusic()
         restoreAudioSession()
+        if utterance === trackedUtterance { trackedUtterance = nil; trackedCompletion = nil }
     }
 
     // MARK: - Speak
@@ -113,9 +134,18 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
         speakDirect(text)
     }
 
+    /// Speak, then call `whenDone` once this text has been read to the end
+    /// (never if it's cut off).
+    func speakAloud(_ text: String, whenDone: @escaping () -> Void) {
+        guard let utterance = speakDirect(text) else { return }
+        trackedUtterance = utterance
+        trackedCompletion = whenDone
+    }
+
     /// Speak without checking isEnabled — used for previews
-    private func speakDirect(_ text: String) {
-        guard !text.isEmpty else { return }
+    @discardableResult
+    private func speakDirect(_ text: String) -> AVSpeechUtterance? {
+        guard !text.isEmpty else { return nil }
 
         // Stop any current speech
         if synthesizer.isSpeaking {
@@ -146,6 +176,7 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
         }
 
         synthesizer.speak(utterance)
+        return utterance
     }
 
     func stop() {

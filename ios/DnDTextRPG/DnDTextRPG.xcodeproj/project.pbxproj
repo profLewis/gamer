@@ -10,16 +10,19 @@
 		001 /* DnDTextRPGApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 101 /* DnDTextRPGApp.swift */; };
 		002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 102 /* ContentView.swift */; };
 		003 /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 103 /* TerminalView.swift */; };
+		4BD98AF299024F1883DBD2FF /* EndgameViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D9D6FAF211F4171934D4CB1 /* EndgameViews.swift */; };
 		004 /* TerminalModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 104 /* TerminalModels.swift */; };
 		005 /* CharacterModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 105 /* CharacterModels.swift */; };
 		006 /* DungeonModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 106 /* DungeonModels.swift */; };
 		007 /* CombatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 107 /* CombatModels.swift */; };
 		008 /* GameEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 108 /* GameEngine.swift */; };
+		FA28EA7ADAB942C2AB9BC02C /* RoomFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A8A4C29910F49B7B650ECE8 /* RoomFeatures.swift */; };
 		009 /* Dice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 109 /* Dice.swift */; };
 		010 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 110 /* Assets.xcassets */; };
 		011 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 111 /* PrivacyInfo.xcprivacy */; };
 		012 /* SaveGameModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 112 /* SaveGameModels.swift */; };
 		013 /* SoundManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 113 /* SoundManager.swift */; };
+		97E29516739B4A9F81D64FF2 /* DevAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0230D8888F2F4E22A31C02B8 /* DevAccess.swift */; };
 		014 /* HallOfFame.swift in Sources */ = {isa = PBXBuildFile; fileRef = 114 /* HallOfFame.swift */; };
 		015 /* GameCenterManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 115 /* GameCenterManager.swift */; };
 		016 /* DMEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 116 /* DMEngine.swift */; };
@@ -30,6 +33,7 @@
 		0AC4F9C5695C427481E81514 /* MerchantModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B0C527A53D24F0394605EEB /* MerchantModels.swift */; };
 		1C04E22DA34B43666F5775A6 /* DnDTextRPGWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110E8F0D682F9BAD52C2A377 /* DnDTextRPGWatchApp.swift */; };
 		1CA4F6973F3B4A66A93CB2BB /* RiddleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 541BA8B56DAA46E2A3777688 /* RiddleData.swift */; };
+		8212409E43F34E918A36B6D8 /* Contributors.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4C053FFED914CEBA44EBA1B /* Contributors.swift */; };
 		2BDCC0373C714C3CBFE4DDA9 /* CharacterLibraryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 007C1A2621AF46D19020E969 /* CharacterLibraryModels.swift */; };
 		51BE9453556E4524AD580E78 /* QuestModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A93BA868281843B09A57821C /* QuestModels.swift */; };
 		5290AC73A279C70731B29DE4 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0060E8428D7BAA48D7F6F41A /* Foundation.framework */; };
@@ -81,17 +85,20 @@
 		101 /* DnDTextRPGApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DnDTextRPGApp.swift; sourceTree = "<group>"; };
 		102 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		103 /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalView.swift; sourceTree = "<group>"; };
+		6D9D6FAF211F4171934D4CB1 /* EndgameViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EndgameViews.swift; sourceTree = "<group>"; };
 		104 /* TerminalModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalModels.swift; sourceTree = "<group>"; };
 		105 /* CharacterModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CharacterModels.swift; sourceTree = "<group>"; };
 		106 /* DungeonModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DungeonModels.swift; sourceTree = "<group>"; };
 		107 /* CombatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CombatModels.swift; sourceTree = "<group>"; };
 		108 /* GameEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameEngine.swift; sourceTree = "<group>"; };
+		3A8A4C29910F49B7B650ECE8 /* RoomFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomFeatures.swift; sourceTree = "<group>"; };
 		109 /* Dice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Dice.swift; sourceTree = "<group>"; };
 		110 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		110E8F0D682F9BAD52C2A377 /* DnDTextRPGWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DnDTextRPGWatchApp.swift; sourceTree = "<group>"; };
 		111 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		112 /* SaveGameModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaveGameModels.swift; sourceTree = "<group>"; };
 		113 /* SoundManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundManager.swift; sourceTree = "<group>"; };
+		0230D8888F2F4E22A31C02B8 /* DevAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevAccess.swift; sourceTree = "<group>"; };
 		114 /* HallOfFame.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HallOfFame.swift; sourceTree = "<group>"; };
 		115 /* GameCenterManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameCenterManager.swift; sourceTree = "<group>"; };
 		116 /* DMEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMEngine.swift; sourceTree = "<group>"; };
@@ -102,6 +109,7 @@
 		20E1A434CF3CA0747B93E5E2 /* ContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		4B0C527A53D24F0394605EEB /* MerchantModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MerchantModels.swift; sourceTree = "<group>"; };
 		541BA8B56DAA46E2A3777688 /* RiddleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RiddleData.swift; sourceTree = "<group>"; };
+		E4C053FFED914CEBA44EBA1B /* Contributors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Contributors.swift; sourceTree = "<group>"; };
 		59942E297723A646362ADF21 /* DnDTextRPGWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DnDTextRPGWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1B2C3D4E5F6A7B800112233 /* StateSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateSnapshot.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B800112235 /* StateDiff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateDiff.swift; sourceTree = "<group>"; };
@@ -190,6 +198,7 @@
 			children = (
 				102 /* ContentView.swift */,
 				103 /* TerminalView.swift */,
+				6D9D6FAF211F4171934D4CB1 /* EndgameViews.swift */,
 				BB00000000000000000001 /* GameKeyboardView.swift */,
 			);
 			path = Views;
@@ -212,6 +221,7 @@
 				E6F7A8B9C0D1E2F300667789 /* NPCModels.swift */,
 				4B0C527A53D24F0394605EEB /* MerchantModels.swift */,
 				541BA8B56DAA46E2A3777688 /* RiddleData.swift */,
+				E4C053FFED914CEBA44EBA1B /* Contributors.swift */,
 				A93BA868281843B09A57821C /* QuestModels.swift */,
 				FE80F5BBC8094E138B838B35 /* TrainerModels.swift */,
 				007C1A2621AF46D19020E969 /* CharacterLibraryModels.swift */,
@@ -223,6 +233,7 @@
 			isa = PBXGroup;
 			children = (
 				108 /* GameEngine.swift */,
+				3A8A4C29910F49B7B650ECE8 /* RoomFeatures.swift */,
 				118 /* ShopEngine.swift */,
 			);
 			path = Game;
@@ -233,6 +244,7 @@
 			children = (
 				109 /* Dice.swift */,
 				113 /* SoundManager.swift */,
+				0230D8888F2F4E22A31C02B8 /* DevAccess.swift */,
 				115 /* GameCenterManager.swift */,
 				116 /* DMEngine.swift */,
 				120 /* SpeechEngine.swift */,
@@ -364,14 +376,17 @@
 				001 /* DnDTextRPGApp.swift in Sources */,
 				002 /* ContentView.swift in Sources */,
 				003 /* TerminalView.swift in Sources */,
+				4BD98AF299024F1883DBD2FF /* EndgameViews.swift in Sources */,
 				004 /* TerminalModels.swift in Sources */,
 				005 /* CharacterModels.swift in Sources */,
 				006 /* DungeonModels.swift in Sources */,
 				007 /* CombatModels.swift in Sources */,
 				008 /* GameEngine.swift in Sources */,
+				FA28EA7ADAB942C2AB9BC02C /* RoomFeatures.swift in Sources */,
 				009 /* Dice.swift in Sources */,
 				012 /* SaveGameModels.swift in Sources */,
 				013 /* SoundManager.swift in Sources */,
+				97E29516739B4A9F81D64FF2 /* DevAccess.swift in Sources */,
 				014 /* HallOfFame.swift in Sources */,
 				015 /* GameCenterManager.swift in Sources */,
 				016 /* DMEngine.swift in Sources */,
@@ -388,6 +403,7 @@
 				E6F7A8B9C0D1E2F300667790 /* NPCModels.swift in Sources */,
 				0AC4F9C5695C427481E81514 /* MerchantModels.swift in Sources */,
 				1CA4F6973F3B4A66A93CB2BB /* RiddleData.swift in Sources */,
+				8212409E43F34E918A36B6D8 /* Contributors.swift in Sources */,
 				51BE9453556E4524AD580E78 /* QuestModels.swift in Sources */,
 				D5391060BEFC4EB7BD601FD7 /* TrainerModels.swift in Sources */,
 				2BDCC0373C714C3CBFE4DDA9 /* CharacterLibraryModels.swift in Sources */,

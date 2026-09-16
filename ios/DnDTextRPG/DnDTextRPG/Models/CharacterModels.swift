@@ -1044,8 +1044,7 @@ class Character: ObservableObject, Identifiable, Codable {
     }
 
     func canCastSpell(_ spell: Spell) -> Bool {
-        if spell.level == .cantrip { return true }
-        return spellSlots.hasSlot(level: spell.level)
+        spellSlots.slotToSpend(for: spell) != nil
     }
 
     // MARK: - Level Up
