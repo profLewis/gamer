@@ -25,10 +25,10 @@ Hyperlinked index of all monster cards exported from iOS Bestiary definitions.
 21. [Troll](monsters/troll.png) - Bestiary
 22. [Minotaur](monsters/minotaur.png) - Bestiary
 23. [Basilisk](monsters/basilisk.png) - Bestiary
-24. [Displacer Beast](monsters/displacer-beast.png) - Bestiary
+24. [Phase Stalker](monsters/phase-stalker.png) - Bestiary
 25. [Wraith](monsters/wraith.png) - Bestiary
-26. [Demogorgon](monsters/demogorgon.png) - Bestiary
-27. [Mind Flayer](monsters/mind-flayer.png) - Bestiary
-28. [Beholder](monsters/beholder.png) - Bestiary
+26. [The Maw](monsters/the-maw.png) - Bestiary
+27. [Brain Eater](monsters/brain-eater.png) - Bestiary
+28. [Eye Tyrant](monsters/eye-tyrant.png) - Bestiary
 29. [Young Dragon](monsters/young-dragon.png) - Bestiary
-30. [Vecna](monsters/vecna.png) - Bestiary
+30. [The Undying King](monsters/the-undying-king.png) - Bestiary

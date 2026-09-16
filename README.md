@@ -62,7 +62,7 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS and macOS, wit
 
 ### 30 Monsters
 
-The dungeon is home to 30 different creature types, from lowly rats and kobolds to terrifying beholders and dragons.
+The dungeon is home to 36 different creature types, from lowly rats and kobolds to terrifying eye tyrants and dragons.
 
 ![Bestiary](images/all_monsters.png)
 

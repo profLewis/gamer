@@ -57,13 +57,13 @@ Interactive viewer with voice showcase and clickable NPC greetings:
 | [Troll](monsters/troll.md) | 84 | 15 | 5 | Regeneration |
 | [Minotaur](monsters/minotaur.md) | 76 | 14 | 3 | — |
 | [Basilisk](monsters/basilisk.md) | 52 | 15 | 3 | Poison |
-| [Displacer Beast](monsters/displacer-beast.md) | 85 | 13 | 3 | — |
+| [Phase Stalker](monsters/phase-stalker.md) | 85 | 13 | 3 | — |
 | [Wraith](monsters/wraith.md) | 67 | 13 | 5 | Life drain |
-| [Demogorgon](monsters/demogorgon.md) | 68 | 14 | 3 | — |
-| [Mind Flayer](monsters/mind-flayer.md) | 71 | 15 | 7 | — |
-| [Beholder](monsters/beholder.md) | 180 | 18 | 13 | Eye rays |
+| [The Maw](monsters/the-maw.md) | 68 | 14 | 4 | — |
+| [Brain Eater](monsters/brain-eater.md) | 71 | 15 | 7 | — |
+| [Eye Tyrant](monsters/eye-tyrant.md) | 180 | 18 | 13 | Eye rays |
 | [Young Dragon](monsters/young-dragon.md) | 142 | 18 | 10 | Poison, breath |
-| [Vecna](monsters/vecna.md) | 120 | 18 | 10 | The Undying King |
+| [The Undying King](monsters/the-undying-king.md) | 120 | 18 | 10 | The Undying King |
 
 ## NPCs (13)
 | NPC | Role | Services |

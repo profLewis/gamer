@@ -1535,7 +1535,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Gosseyn",
       "source": "Ace Double D-031 (1953)",
-      "description": "Gilbert Gosseyn from A. E. van Vogt's The World of Null-A. He discovers his memories are false, his identity manufactured, and his mind operates on non-Aristotelian logic - General Semantics made flesh. He can teleport by memorising locations, dies and wakes in cloned bodies, and slowly uncovers a galactic conspiracy. A wizard who fights with pure reason.",
+      "description": "Gilbert Gosseyn from A. E. van Vogt's The World of Null-A. He discovers his memories are false, his identity manufactured, and his brain eater operates on non-Aristotelian logic - General Semantics made flesh. He can teleport by memorising locations, dies and wakes in cloned bodies, and slowly uncovers a galactic conspiracy. A wizard who fights with pure reason.",
       "stats": {
         "Power": 6,
         "Cunning": 10,
@@ -3345,9 +3345,9 @@ window.CARD_DATA = {
     {
       "id": "monster-displacerBeast",
       "type": "monster",
-      "name": "Displacer Beast",
+      "name": "Phase Stalker",
       "source": "Bestiary",
-      "description": "A sleek six-legged hunter with barbed tentacles and a magically distorted outline. Its true body never seems to be where it appears, causing attacks to miss by inches. The displacer beast thrives on confusion and overconfidence.",
+      "description": "A sleek six-legged hunter with barbed tentacles and a magically distorted outline. Its true body never seems to be where it appears, causing attacks to miss by inches. The phase stalker beast thrives on confusion and overconfidence.",
       "stats": {
         "HP": 85,
         "AC": 13,
@@ -3356,7 +3356,7 @@ window.CARD_DATA = {
         "CR": "3",
         "XP": 700
       },
-      "image": "monsters/displacer-beast.png"
+      "image": "monsters/phase-stalker.png"
     },
     {
       "id": "monster-wraith",
@@ -3375,11 +3375,11 @@ window.CARD_DATA = {
       "image": "monsters/wraith.png"
     },
     {
-      "id": "monster-demogorgon",
+      "id": "monster-the-maw",
       "type": "monster",
-      "name": "Demogorgon",
+      "name": "The Maw",
       "source": "Bestiary",
-      "description": "A nightmare predator from the Upside Down with a flower-like maw and relentless hunting drive. It closes distance fast, tears through isolated targets, and pressures the backline without hesitation. Demogorgon fights feel like survival horror, not standard skirmishes.",
+      "description": "A nightmare predator from the Upside Down with a flower-like maw and relentless hunting drive. It closes distance fast, tears through isolated targets, and pressures the backline without hesitation. The Maw fights feel like survival horror, not standard skirmishes.",
       "stats": {
         "HP": 68,
         "AC": 14,
@@ -3388,12 +3388,12 @@ window.CARD_DATA = {
         "CR": "4",
         "XP": 1100
       },
-      "image": "monsters/demogorgon.png"
+      "image": "monsters/the-maw.png"
     },
     {
       "id": "monster-mindFlayer",
       "type": "monster",
-      "name": "Mind Flayer",
+      "name": "Brain Eater",
       "source": "Bestiary",
       "description": "A psionic aberration with facial tentacles, alien calm, and frightening mental precision. Mind flayers attack cognition first, disrupting choices before physical damage arrives. In close range, they become executioners with terrifying brain-harvest methods.",
       "stats": {
@@ -3404,14 +3404,14 @@ window.CARD_DATA = {
         "CR": "7",
         "XP": 2900
       },
-      "image": "monsters/mind-flayer.png"
+      "image": "monsters/brain-eater.png"
     },
     {
-      "id": "monster-beholder",
+      "id": "monster-eye-tyrant",
       "type": "monster",
-      "name": "Beholder",
+      "name": "Eye Tyrant",
       "source": "Bestiary",
-      "description": "A floating tyrant of paranoid intellect, ringed with eyestalks that project distinct killing rays. It controls vertical space, line-of-sight, and battlefield tempo all at once. A beholder encounter punishes predictable movement and poor positioning.",
+      "description": "A floating tyrant of paranoid intellect, ringed with eyestalks that project distinct killing rays. It controls vertical space, line-of-sight, and battlefield tempo all at once. A eye tyrant encounter punishes predictable movement and poor positioning.",
       "stats": {
         "HP": 180,
         "AC": 18,
@@ -3420,7 +3420,7 @@ window.CARD_DATA = {
         "CR": "13",
         "XP": 10000
       },
-      "image": "monsters/beholder.png"
+      "image": "monsters/eye-tyrant.png"
     },
     {
       "id": "monster-youngDragon",
@@ -3439,11 +3439,11 @@ window.CARD_DATA = {
       "image": "monsters/young-dragon.png"
     },
     {
-      "id": "monster-vecna",
+      "id": "monster-the-undying-king",
       "type": "monster",
-      "name": "Vecna",
+      "name": "The Undying King",
       "source": "Bestiary",
-      "description": "The Undying King, a lich of vast cunning, forbidden scholarship, and godlike ambition. Vecna bends death, memory, and fate into tools for domination across worlds. Facing him is not just a battle - it is a contest against ancient strategy itself.",
+      "description": "The Undying King, a lich of vast cunning, forbidden scholarship, and godlike ambition. The Undying King bends death, memory, and fate into tools for domination across worlds. Facing him is not just a battle - it is a contest against ancient strategy itself.",
       "stats": {
         "HP": 120,
         "AC": 18,
@@ -3452,7 +3452,7 @@ window.CARD_DATA = {
         "CR": "10",
         "XP": 5900
       },
-      "image": "monsters/vecna.png"
+      "image": "monsters/the-undying-king.png"
     }
   ]
 };

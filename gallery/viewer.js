@@ -12,12 +12,12 @@ const GALLERY = {
     'library', 'prison', 'shop', 'shrine', 'trap-room', 'treasure-room',
   ],
   monsters: [
-    'basilisk', 'beholder', 'bone-moth', 'bugbear', 'cinder-hound',
-    'crawling-claw', 'demogorgon', 'displacer-beast', 'drowned-choir',
+    'basilisk', 'eye-tyrant', 'bone-moth', 'bugbear', 'cinder-hound',
+    'crawling-claw', 'the-maw', 'phase-stalker', 'drowned-choir',
     'gargoyle', 'gelatinous-cube', 'giant-bat', 'giant-rat', 'giant-spider',
     'gloam-titan', 'gnoll', 'goblin', 'hobgoblin', 'hollow-monk',
-    'iron-weaver', 'kobold', 'mimic', 'mind-flayer', 'minotaur', 'ogre',
-    'orc', 'owlbear', 'rust-monster', 'skeleton', 'stirge', 'troll', 'vecna',
+    'iron-weaver', 'kobold', 'mimic', 'brain-eater', 'minotaur', 'ogre',
+    'orc', 'owlbear', 'rust-monster', 'skeleton', 'stirge', 'troll', 'the-undying-king',
     'wolf', 'wraith', 'young-dragon', 'zombie',
   ],
   npcs: [
