@@ -157,6 +157,7 @@ While a screen is counting down you'll see a small **hourglass** at the right-ha
 - **Long-press the hourglass** to hurry the countdown along.
 - **Type** at the prompt: typing pauses the countdown; *go on* continues, and anything else continues and then does what you typed.
 - Wait a while and a dim hint reminds you of these options.
+- **The dots are the wait.** While a screen is waiting for you it counts quietly to itself — a single `.`, then `..`, then `…`. That is all the dots mean: the game is holding the screen for you, and nothing is wrong. Tap anywhere (or press Return) to carry on. If you leave it much longer, the dots give way to a line with a bit more character to it — the dungeon wondering whether you are still there.
 - On a Mac, press **Space** to pause or resume.
 
 **Why we do it.** Auto-Continue keeps the game flowing if you glance away, play one-handed, or listen with speaker mode — you're never stuck on a screen. But a screen that moves on by itself can also snatch text away before you've finished reading it: a long combat report, a merchant's counter-offer, a trap you want to think about. The hourglass makes the timer *visible*, so a screen never moves on as a surprise, and it puts pause right beside where you read and type — instead of burying it in Settings. That matters most if you read at your own pace, get interrupted, use a screen reader or large text, or simply want to savour the story.

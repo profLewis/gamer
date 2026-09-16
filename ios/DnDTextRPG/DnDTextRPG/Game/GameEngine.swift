@@ -435,7 +435,17 @@ class GameEngine: ObservableObject {
     /// The "Continue?" nudges a waiting screen shows — not story, so Read
     /// Aloud skips them (in a fight it gives a quick cheer instead).
     static let combatContinueTitles = ["Next blow?", "The fight goes on…", "Ready for the next move?", "Steel yourselves…", "What happens next?"]
-    static let continueTitles = ["ok?", "Continue?", "Ready?", "Onward?", "Go on?", "…"]
+    static let continueTitles = ["ok?", "Continue?", "Onward?", "…"]
+    /// How a waiting screen counts: one dot, then two, then three.
+    static let continueDots = [".", "..", "…"]
+    /// Only after a long silence — a nudge with a bit more in it.
+    static let continueProds = [
+        "Still there? The dungeon holds its breath…",
+        "The torchlight gutters while you think…",
+        "Something down the passage is getting impatient…",
+        "Take your time — but the dark is listening…",
+        "The party glances at you, waiting on your word…",
+    ]
     /// Shown while the opening tale is being written: the party is on its
     /// way to meet up, and the world is being made ready around them.
     static let travelLines = [
@@ -500,7 +510,7 @@ class GameEngine: ObservableObject {
             continueHintGeneration = screenGeneration
             continueHintCount = 0
         }
-        guard continueHintCount < 2 else { return }
+        guard continueHintCount < 5 else { return }
         let counting = autoContinueCountdownAvailable && !autoContinuePaused
         let delay: Double = continueHintCount == 0 ? 1.5 : (counting ? max(3, autoCountdownTotal * 0.35) : 5)
         // Only worth saying if there'll still be time to read it before the
@@ -581,11 +591,18 @@ class GameEngine: ObservableObject {
                "Tap the screen (or type \"go on\") to carry on."]).randomElement()!
     }
 
-    /// All a waiting screen asks for: a short, underlined "ok?" — tap it (or
-    /// anywhere, or press Return), or let the hourglass run out by itself.
+    /// All a waiting screen asks for: a quiet count — . then .. then … —
+    /// tap it (or anywhere, or press Return), or let the hourglass run out.
     private func printAcknowledgePrompt() {
-        let prompt = Self.pickVaried(Self.continueTitles, avoiding: &lastContinueTitle)
-        print("  \(prompt)", color: .dimGreen, underlined: true)
+        // Count quietly — . then .. then … — so the screen reads as waiting
+        // rather than asking "Ready?" over and over. Only after a long
+        // silence does it say something with more character to it.
+        let step = max(1, continueHintCount)
+        if step <= Self.continueDots.count {
+            print("  \(Self.continueDots[step - 1])", color: .dimGreen, underlined: true)
+        } else {
+            printWrapped(Self.pickVaried(Self.continueProds, avoiding: &lastContinueTitle), indent: 2, color: .dimGreen)
+        }
     }
 
     /// The first, quiet nudge: one dim line saying how to move on.
@@ -2494,7 +2511,7 @@ class GameEngine: ObservableObject {
                 self.showInlineHelp {
                     self.printTitle("Auto-Continue — Help")
                     self.print("")
-                    self.printWrapped("Many screens wait for a tap so you can read them. With Auto-Continue on they also move on by themselves after the wait — never before you've had time to read them. The hourglass at the right of the input line shows the time left: tap it to pause (orange = paused), tap again to carry on, long-press to hurry. Typing pauses it too; type 'go on' to continue.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Many screens wait for a tap so you can read them. With Auto-Continue on they also move on by themselves after the wait — never before you've had time to read them. The hourglass at the right of the input line shows the time left: tap it to pause (orange = paused), tap again to carry on, long-press to hurry. Typing pauses it too; type 'go on' to continue. While a screen waits it counts to itself — . then .. then … — so you can see it is holding for you.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             } else if !self.returnFromLink() {
@@ -4825,7 +4842,8 @@ class GameEngine: ObservableObject {
             guard !trimmed.isEmpty else { return nil }
             // "Continue?"-style nudges and tap hints aren't story: skip them —
             // in a fight, a quick cheer instead.
-            if Self.continueTitles.contains(trimmed) || Self.combatContinueTitles.contains(trimmed) {
+            if Self.continueTitles.contains(trimmed) || Self.combatContinueTitles.contains(trimmed)
+                || Self.continueDots.contains(trimmed) || Self.continueProds.contains(trimmed) {
                 return currentCombat != nil ? Self.combatCheers.randomElement() : nil
             }
             let lowerHint = trimmed.lowercased()
@@ -5309,6 +5327,7 @@ class GameEngine: ObservableObject {
     // a varied general one (quests, gyms, merchants, food, torches).
     private var explorationTipTimer: Timer?
     private var explorationTipGeneration = -1
+    private var lastPartyBanter: String? = nil
 
     private func scheduleExplorationTip() {
         explorationTipTimer?.invalidate()
@@ -5318,7 +5337,11 @@ class GameEngine: ObservableObject {
                   self.explorationTipGeneration != self.screenGeneration else { return }
             self.explorationTipGeneration = self.screenGeneration
             self.print("")
-            self.printWrapped("Tip: \(self.explorationTip())", indent: 2, color: .dimGreen)
+            if let chatter = self.partyBanter() {
+                self.printWrapped(chatter, indent: 2, color: .dimGreen)
+            } else {
+                self.printWrapped("Tip: \(self.explorationTip())", indent: 2, color: .dimGreen)
+            }
         }
     }
 
@@ -5375,6 +5398,26 @@ class GameEngine: ObservableObject {
         return nil
     }
 
+    /// Sometimes the party fills a long pause themselves — chatting, joshing,
+    /// encouraging each other, or suggesting what to do next — instead of the
+    /// DM offering another tip.
+    private func partyBanter() -> String? {
+        guard party.count > 1, Int.random(in: 1...10) <= 4 else { return nil }
+        let who = party.shuffled()
+        let a = shortName(for: who[0]), b = shortName(for: who[1])
+        return Self.pickVaried([
+            "\(a) shifts from foot to foot. \"We've been stood here a while.\"",
+            "\(a) nudges \(b). \"How about we try a door and see what's behind it?\"",
+            "\"Eyes open,\" says \(a). \"I don't like how quiet it's gone.\"",
+            "\(a) grins at \(b). \"Bet you a copper there's something worth having through there.\"",
+            "\"You're doing fine,\" \(a) tells \(b). \"Better than the last lot I came down here with.\"",
+            "\(a) hums something tuneless until \(b) tells them to pack it in.",
+            "\"We could search this room properly,\" \(a) suggests. \"Things get missed in the dark.\"",
+            "\(a) stretches. \"My legs have gone all fizzy, standing about like this.\"",
+            "\(b) checks their pack for the third time, just to be doing something.",
+        ], avoiding: &lastPartyBanter)
+    }
+
     private func explorationTip() -> String {
         let room = dungeon?.currentRoom
         // Mostly, adventurers should be on a quest — point the way.
@@ -5394,6 +5437,7 @@ class GameEngine: ObservableObject {
             "Rest when you're hurt — and eat something: hearty food makes you feel strong.",
             "A lit torch lets you see further on the map.",
             "Stuck? Long-press a button to see what shortcut it has.",
+            "Legs gone fizzy from standing about? Pick a direction — anywhere is better than here.",
         ], avoiding: &lastExplorationTip)
     }
 
@@ -6225,7 +6269,7 @@ class GameEngine: ObservableObject {
         printWrapped("    a button for its shortcut — e.g. long-press Quit Without Saving, Delete or Give Up Quest to skip the \"are you sure?\" step, Long Rest to rest fast, or Continue Adventure to jump straight into your latest save.", color: .green)
         print("")
         print("  • Auto-Continue", color: .brightGreen, bold: true)
-        printWrapped("    A screen that's waiting for you shows a small underlined \"ok?\". Tap it — or anywhere, or press Return — when you've read it. Do nothing and it moves on by itself after a reading pause: the little hourglass at the right of the input line shows how long is left. Tap the hourglass to freeze time (it turns orange and nothing moves until you tap it again), long-press to hurry it along.", color: .green)
+        printWrapped("    A screen that's waiting for you counts quietly to itself: a single \".\", then \"..\", then \"…\". That is all the dots mean — the screen is holding for you and nothing is wrong. Tap them — or anywhere, or press Return — when you've read it. Leave it a good while longer and the dots give way to a line with a bit more character to it. Do nothing at all and it moves on by itself after a reading pause: the little hourglass at the right of the input line shows how long is left. Tap the hourglass to freeze time (it turns orange and nothing moves until you tap it again), long-press to hurry it along.", color: .green)
         printLink("Auto-Continue — turn the waiting on or off", to: "autoContinue", indent: 4)
         printLink("Timeouts — how long each kind of screen waits", to: "timeouts", indent: 4)
         printLink("Settings > Gameplay", to: "gameplay", indent: 4)
@@ -26599,6 +26643,24 @@ class GameEngine: ObservableObject {
         return left <= 0 ? "☾ \(cap) is today!" : "☾ \(cap) in \(left) day\(left == 1 ? "" : "s")"
     }
 
+    /// A rough guess at what's left of this floor: about twenty minutes a
+    /// room — a walk there (5) and a proper search (15) — in game-hours.
+    func questTimeEstimateLine() -> String? {
+        guard let dungeon = dungeon else { return nil }
+        let floor = dungeon.currentRoom?.floor ?? dungeon.level
+        let onFloor = dungeon.rooms.values.filter { $0.floor == floor }
+        guard !onFloor.isEmpty else { return nil }
+        let unseen = onFloor.filter { !$0.visited }.count
+        guard unseen > 0 else { return "⌛ This floor is walked out — the way on is down." }
+        let minutes = unseen * 20
+        let hours = Double(minutes) / 60.0
+        let howLong: String
+        if minutes < 60 { howLong = "about \(minutes) minutes" }
+        else if hours < 1.75 { howLong = "an hour or so" }
+        else { howLong = "about \(Int(hours.rounded())) hours" }
+        return "⌛ \(unseen) room\(unseen == 1 ? "" : "s") still unwalked here — \(howLong) to see it all."
+    }
+
     /// Time-bound quests get their day; and when it passes, it passes.
     private func checkQuestDeadline() {
         guard var mq = mainQuest, !mainQuestCompleted else { return }
@@ -27359,6 +27421,7 @@ class GameEngine: ObservableObject {
             for verse in mq.runeVerses.prefix(mq.runesRead) { printWrapped("ᚱ \(verse)", indent: 4, color: .yellow) }
             if let who = mq.informant { printWrapped("Who might know more: \(who).", indent: 4, color: .dimGreen) }
             if let line = questDeadlineLine() { printWrapped(line, indent: 4, color: .cyan) }
+            if let est = questTimeEstimateLine() { printWrapped(est, indent: 4, color: .dimGreen) }
             printWrapped("The one behind it all: \(mq.villain), waiting at the very bottom. Reward: \(mq.reward).", indent: 4, color: .dimGreen)
         }
         for quest in allQuests {
