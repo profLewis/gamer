@@ -2452,6 +2452,7 @@ class GameEngine: ObservableObject {
         case "puzzleFolder": return { [weak self] in self?.openWeb("https://github.com/profLewis/gamer/tree/main/puzzles") }
         case "contributors": return { [weak self] in self?.openWeb(ContributorsManager.webURL) }
         case "puzzles": return { [weak self] in self?.showPuzzleSettings(onBack: { [weak self] in self?.returnFromLink() }) }
+        case "questNotes": return { [weak self] in self?.showPartyStatus() }
         default: return nil
         }
     }
@@ -22841,6 +22842,8 @@ class GameEngine: ObservableObject {
 
     /// Rooms whose NPC has already been asked about the main quest.
     private var questAskedRooms = Set<Int>()
+    /// How many times running the party has been brushed off over the quest.
+    private var questRepeatAsks = 0
 
     /// Someone down here may know where the prize is kept, or what to do
     /// with it — or at least who to ask. Each person answers once.
@@ -22849,7 +22852,31 @@ class GameEngine: ObservableObject {
         let who = npc.type.rawValue.lowercased()
         print("")
         if questAskedRooms.contains(roomId) {
-            printWrapped("\"I've told you all I know,\" says the \(who).", indent: 2, color: .yellow)
+            // Being told "I've told you already" for ever is no use to anyone.
+            // Brush the party off once or twice, then give in and go over it
+            // again — everything this quest has turned up so far.
+            questRepeatAsks += 1
+            if questRepeatAsks < 3 {
+                printWrapped(["\"I've told you all I know,\" says the \(who).",
+                              "\"Same answer as last time,\" says the \(who), not unkindly.",
+                              "The \(who) raises an eyebrow. \"Again?\""].randomElement()!, indent: 2, color: .yellow)
+            } else {
+                questRepeatAsks = 0
+                printWrapped("The \(who) sighs. \"Once more, then — and pay attention this time.\"", indent: 2, color: .yellow)
+                print("")
+                printWrapped("To \(mq.goal), \(mq.stakes).", indent: 2, color: .dimGreen)
+                for clue in mq.cluesLearned ?? [] { printWrapped("· \(clue)", indent: 4, color: .cyan) }
+                for verse in mq.runeVerses.prefix(mq.runesRead) { printWrapped("\u{16B1} \(verse)", indent: 4, color: .yellow) }
+                if let name = mq.deadlineName, let day = mq.deadlineDay, mq.deadlineKnown == true {
+                    let left = max(0, day - (gameTimeMinutes / 1440 + 1))
+                    printWrapped("And \(name) is \(left == 0 ? "today" : "\(left) day\(left == 1 ? "" : "s") off").", indent: 4, color: .yellow)
+                }
+                if (mq.cluesLearned ?? []).isEmpty, mq.runesRead == 0 {
+                    printWrapped("\"Which is to say: not much yet. Ask around, and read the walls.\"", indent: 2, color: .yellow)
+                }
+                print("")
+                printLink("See your quest notes", to: "questNotes", indent: 2)
+            }
         } else if let name = mq.deadlineName, let day = mq.deadlineDay, mq.deadlineKnown != true, mq.deadlinePassed != true {
             questAskedRooms.insert(roomId)
             mq.deadlineKnown = true
@@ -22866,7 +22893,8 @@ class GameEngine: ObservableObject {
             mainQuest = mq
             printWrapped("The \(who) looks around, then lowers their voice. \"\(clue)\"", indent: 2, color: .yellow)
             print("")
-            printWrapped("(Noted under your main quest in Party Status.)", indent: 2, color: .dimGreen)
+            printWrapped("Written down with your quest notes, along with everything else you've been told and every rune you've read.", indent: 2, color: .dimGreen)
+            printLink("See your quest notes", to: "questNotes", indent: 2)
             if mq.runesRead < mq.runeVerses.count && Int.random(in: 1...2) == 1 {
                 print("")
                 printWrapped("\"The ones who came down before you cut it all into the walls, you know. Runes. Look around — and read them, if you find them.\"", indent: 2, color: .yellow)
@@ -32809,6 +32837,9 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// The turn this menu last announced, so re-opening it doesn't say so again.
+    private var lastAnnouncedTurnKey: String?
+
     func showPlayerCombatMenu(characterId: UUID) {
         guard let combat = currentCombat,
               let character = party.first(where: { $0.id == characterId }) else { return }
@@ -32819,8 +32850,17 @@ class GameEngine: ObservableObject {
             return
         }
 
-        print(">> \(character.name)'s turn! <<", color: .brightGreen, bold: true)
-        print("")
+        // This menu is re-opened several times inside one turn — backing out
+        // of the potion list, cancelling a weapon change, checking the party.
+        // Each re-entry used to announce the turn again, so the screen read
+        // "X's turn ... X's turn" with the turn never having moved. Say it
+        // once, when the turn actually begins.
+        let turnKey = "\(characterId)-\(combat.currentTurnIndex)"
+        if turnKey != lastAnnouncedTurnKey {
+            lastAnnouncedTurnKey = turnKey
+            print(">> \(character.name)'s turn! <<", color: .brightGreen, bold: true)
+            print("")
+        }
 
         let aliveMonsters = combat.encounter.aliveMonsters
         var options: [String] = []
