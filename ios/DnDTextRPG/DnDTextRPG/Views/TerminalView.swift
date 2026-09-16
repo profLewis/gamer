@@ -312,7 +312,7 @@ struct TerminalView: View {
                         #elseif os(tvOS)
                         .frame(height: CGFloat(gameEngine.pinnedMapLines.count) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 8)
                         #else
-                        .frame(height: (CGFloat(gameEngine.mapOnlyLineCount) - (isLandscape ? 0.0 : 0.5)) * (gameEngine.mapFontSize * mapScale * 1.3 + 2))
+                        .frame(height: CGFloat(gameEngine.mapOnlyLineCount) * (gameEngine.mapFontSize * mapScale * 1.3 + 2))
                         #endif
                         .background(terminalBackground)
                         .contentShape(Rectangle())
