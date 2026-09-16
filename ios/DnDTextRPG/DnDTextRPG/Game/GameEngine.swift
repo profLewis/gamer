@@ -9203,6 +9203,10 @@ class GameEngine: ObservableObject {
         print("")
 
         var menuOpts = [BrainLabels.button, "Accessibility", "Mood", "Gameplay", "Puzzles", "Game Saves", "Certificates", "About"].map { MenuOption($0) }
+        // Acting As lived only in the Actions menu mid-dungeon, which is a
+        // odd place to look for a setting. It belongs here too, while there
+        // is a party to set it on.
+        if party.count > 1 { menuOpts.insert(MenuOption("Acting As"), at: 3) }
         menuOpts.append(MenuOption("Save Settings"))
         menuOpts.append(MenuOption("Reset", tint: .danger))
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -9228,6 +9232,7 @@ class GameEngine: ObservableObject {
             case "Accessibility": self.showAccessibilityMenu()
             case "Mood": self.showMusicSettings()
             case "Gameplay": self.showGameplaySettings()
+            case "Acting As": self.showActingAsPicker()
             case "Game Saves": self.showSaveSettings()
             case "Save Settings": self.showSettingsBackupMenu()
             case "Reset": self.confirmResetToDefaults()

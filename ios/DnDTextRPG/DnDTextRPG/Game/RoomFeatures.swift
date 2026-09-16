@@ -61,6 +61,14 @@ extension GameEngine {
         default:
             break
         }
+        // Somewhere with a barrel and company invites a contest. Once only,
+        // and only where somebody would actually be drinking.
+        if [RoomType.shop, .chamber, .armory].contains(room.roomType), room.merchant != nil || room.npc != nil,
+           (room.id * 5 + dungeon.level) % 3 == 0 {
+            all.append(RoomFeature(key: "contest", button: "Drinking Contest",
+                                   hint: "There is a barrel, a bench, and somebody with time on their hands."))
+        }
+
         let plants: [RoomType] = [.chamber, .corridor, .empty, .entrance, .prison]
         if plants.contains(room.roomType) && (room.id * 7 + dungeon.level) % 4 == 0 {
             let hints = ["Pale mushrooms crowd the damp at the foot of one wall.",
@@ -117,6 +125,7 @@ extension GameEngine {
         case "sign": lines = [(signText(), .cyan)]
         case "walls": lines = wallsOutcome(room)
         case "forage": lines = forageOutcome(room)
+        case "contest": lines = drinkingContestOutcome(room, name: name, actor: actor)
         default: lines = []
         }
         for (text, color) in lines {
@@ -176,6 +185,33 @@ extension GameEngine {
             if choice == 1 { self.readTheBook(page: page + 1, room: room, onBack: onBack) }
             else { self.afterFeature(room, onBack: onBack) }
         }
+    }
+
+    /// A contest of constitution rather than wits. Win it and the room
+    /// warms to you; lose it and the floor does something unhelpful.
+    private func drinkingContestOutcome(_ room: Room, name: String, actor: Character?) -> [(String, TerminalColor)] {
+        let opponent = room.merchant?.name ?? room.npc?.displayName ?? "a local"
+        let con = actor?.abilityScores.modifier(for: .constitution) ?? 0
+        let mine = Dice.d20() + con
+        let theirs = Dice.d20() + Int.random(in: 0...3)
+        var out: [(String, TerminalColor)] = [
+            ("\(name) and \(opponent) sit down either side of the barrel. Somebody counts them in.", .cyan)
+        ]
+        if mine > theirs {
+            out.append(("\(name) is still upright, and talking, and \(opponent) is doing neither. The bench applauds.", .brightGreen))
+            out.append(("Word of it gets about. People are friendlier down here for a while.", .dimGreen))
+            actor.map { $0.gold += 5 + Dice.d6() }
+            out.append(("Somebody settles a bet and presses the winnings into \(name)'s hand.", .yellow))
+        } else if mine == theirs {
+            out.append(("Both of them stop at the same moment, look at each other, and agree — with some effort — to call it even.", .yellow))
+        } else {
+            out.append(("\(opponent) sets their cup down first and quite gently. \(name) does not so much sit as arrive.", .yellow))
+            if let a = actor {
+                a.sluggishAttacks = max(a.sluggishAttacks, 3)
+                out.append(("The room tilts pleasantly. \(name) will be swinging wide for a bit — the juice sloshes.", .dimGreen))
+            }
+        }
+        return out
     }
 
     private func forgeOutcome(_ name: String) -> [(String, TerminalColor)] {
