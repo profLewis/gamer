@@ -26506,7 +26506,7 @@ class GameEngine: ObservableObject {
         printWrapped("To \(mq.goal), \(mq.stakes). The reward: \(mq.reward).", indent: 2, color: .dimGreen)
         print("")
         if mq.kind != "mystery", mq.kind != "twist" {
-            printWrapped("\(Dungeon.guardianName(mq.villain)) waits at the bottom of the world — Level \(Dungeon.finalLevel). Every guardian between here and there serves it.", indent: 2, color: .dimGreen)
+            printWrapped("\(Dungeon.guardianName(mq.villain)) waits at the bottom of the world — Level \(dungeon?.levelCount ?? Dungeon.finalLevel). Every guardian between here and there serves it.", indent: 2, color: .dimGreen)
         }
         if let place = mq.place {
             printWrapped("You're told it's kept in \(place).", indent: 2, color: .dimGreen)
@@ -26697,7 +26697,7 @@ class GameEngine: ObservableObject {
         if mainQuestCompleted, let mq = mainQuest {
             lines.append("★ The quest is done: \(Dungeon.guardianName(mq.villain)) is defeated, and \(mq.village) is saved.")
         } else if let mq = mainQuest {
-            let left = max(0, Dungeon.finalLevel - dungeon.level)
+            let left = max(0, dungeon.levelCount - dungeon.level)
             let foe = mq.kind == "mystery" ? "whoever is behind it" : Dungeon.guardianName(mq.villain)
             lines.append("The quest: to \(mq.goal), \(mq.stakes). " + (left == 0 ? "This is the last level — \(foe) is somewhere here." : "\(left) more level\(left == 1 ? "" : "s") to go before the bottom, where \(foe) waits."))
             if let line = questDeadlineLine() { lines.append(line) }
@@ -26789,7 +26789,7 @@ class GameEngine: ObservableObject {
         guard var mq = mainQuest, !mainQuestCompleted else { return }
         let today = gameTimeMinutes / 1440 + 1
         if mq.deadlineDay == nil {
-            let dated = mq.withDeadline(today: today, level: dungeon?.level ?? 1)
+            let dated = mq.withDeadline(today: today, level: dungeon?.level ?? 1, of: dungeon?.levelCount ?? Dungeon.defaultFinalLevel)
             if dated.deadlineDay != nil { mainQuest = dated; mq = dated }
         }
         guard let day = mq.deadlineDay, today > day, mq.deadlinePassed != true, let name = mq.deadlineName else { return }
@@ -26830,7 +26830,7 @@ class GameEngine: ObservableObject {
     func helpQuestPreamble() -> String? {
         guard let dungeon = dungeon, !party.isEmpty, !storyScreenActive else { return nil }
         let level = dungeon.level
-        let left = max(0, Dungeon.finalLevel - level)
+        let left = max(0, dungeon.levelCount - level)
         var bits: [String] = []
         if mainQuestCompleted, let mq = mainQuest {
             bits.append(["Your quest is done — \(Dungeon.guardianName(mq.villain)) is beaten.",
@@ -26840,7 +26840,7 @@ class GameEngine: ObservableObject {
             bits.append([
                 "Remember why you're here: to \(mq.goal).",
                 "The quest, in case it's slipped your mind: to \(mq.goal), \(mq.stakes).",
-                "Level \(level) of \(Dungeon.finalLevel) — and \(foe) waits at the very bottom.",
+                "Level \(level) of \(dungeon.levelCount) — and \(foe) waits at the very bottom.",
                 "\(mq.village) is counting on you to \(mq.goal).",
                 "Still on the trail: \(mq.goal).",
             ].randomElement()!)
@@ -27285,7 +27285,7 @@ class GameEngine: ObservableObject {
     /// One line for save lists: the quest and how far along, done (★), or none.
     func questSummaryLine() -> String? {
         if mainQuestCompleted, let mq = mainQuest { return "★ QUEST COMPLETE — \(Dungeon.guardianName(mq.villain)) defeated; \(mq.goal): done" }
-        if let mq = mainQuest { return "Quest: to \(mq.goal) · Level \(dungeon?.level ?? 1) of \(Dungeon.finalLevel)" }
+        if let mq = mainQuest { return "Quest: to \(mq.goal) · Level \(dungeon?.level ?? 1) of \(dungeon?.levelCount ?? Dungeon.finalLevel)" }
         if noMainQuest { return "No main quest — adventuring for the fun of it" }
         return nil
     }
@@ -27518,7 +27518,7 @@ class GameEngine: ObservableObject {
 
         // Game time & level
         if let level = dungeon?.level {
-            print("  Dungeon Level: \(level) of \(Dungeon.finalLevel)", color: .cyan)
+            print("  Dungeon Level: \(level) of \(dungeon?.levelCount ?? Dungeon.finalLevel)", color: .cyan)
             print("  Depth: \(Dungeon.depthWords(level)) — the way is down", color: .dimGreen)
         }
         print("  Time: \(formattedGameTime())", color: .cyan)
@@ -35080,7 +35080,7 @@ class GameEngine: ObservableObject {
         print("  ┌─ The Depths Beckon ────────────┐", color: .cyan, bold: true)
         printWrapped("Level \(nextLevel) of \(dungeonName) awaits. Darker corridors, deadlier foes, and greater treasures lie below. Your party is stronger now — but so are the monsters.", indent: 2, color: .cyan)
         if let g = guardian {
-            let left = Dungeon.finalLevel - currentLevel
+            let left = (dungeon?.levelCount ?? Dungeon.finalLevel) - currentLevel
             printWrapped(left <= 1 ? "Level \(nextLevel) is the last. \(g) waits at the bottom."
                                    : "\(g) waits at the bottom, \(left) levels down. Every guardian between here and there is stronger than the last.", indent: 2, color: .yellow)
         }

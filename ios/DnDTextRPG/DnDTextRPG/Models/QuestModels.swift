@@ -231,7 +231,7 @@ struct MainQuest: Codable {
 
     /// A quest whose stakes are time-bound gets a real day for it — generous
     /// enough to reach the bottom, but it does run out.
-    func withDeadline(today: Int, level: Int) -> MainQuest {
+    func withDeadline(today: Int, level: Int, of levelCount: Int = Dungeon.defaultFinalLevel) -> MainQuest {
         guard deadlineDay == nil else { return self }
         let s = stakes.lowercased()
         let table: [(String, String, Int)] = [
@@ -246,7 +246,7 @@ struct MainQuest: Codable {
         guard let hit = table.first(where: { s.contains($0.0) }) else { return self }
         var q = self
         q.deadlineName = hit.1
-        q.deadlineDay = today + max(hit.2, (Dungeon.finalLevel - level + 1) * 2)
+        q.deadlineDay = today + max(hit.2, (levelCount - level + 1) * 2)
         return q
     }
 
