@@ -1535,7 +1535,7 @@ window.CARD_DATA = {
       "type": "player",
       "name": "Gosseyn",
       "source": "Ace Double D-031 (1953)",
-      "description": "Gilbert Gosseyn from A. E. van Vogt's The World of Null-A. He discovers his memories are false, his identity manufactured, and his brain eater operates on non-Aristotelian logic - General Semantics made flesh. He can teleport by memorising locations, dies and wakes in cloned bodies, and slowly uncovers a galactic conspiracy. A wizard who fights with pure reason.",
+      "description": "Gilbert Gosseyn from A. E. van Vogt's The World of Null-A. He discovers his memories are false, his identity manufactured, and his mind operates on non-Aristotelian logic - General Semantics made flesh. He can teleport by memorising locations, dies and wakes in cloned bodies, and slowly uncovers a galactic conspiracy. A wizard who fights with pure reason.",
       "stats": {
         "Power": 6,
         "Cunning": 10,
@@ -3375,7 +3375,7 @@ window.CARD_DATA = {
       "image": "monsters/wraith.png"
     },
     {
-      "id": "monster-the-maw",
+      "id": "monster-demogorgon",
       "type": "monster",
       "name": "The Maw",
       "source": "Bestiary",
@@ -3407,7 +3407,7 @@ window.CARD_DATA = {
       "image": "monsters/brain-eater.png"
     },
     {
-      "id": "monster-eye-tyrant",
+      "id": "monster-beholder",
       "type": "monster",
       "name": "Eye Tyrant",
       "source": "Bestiary",
@@ -3439,7 +3439,7 @@ window.CARD_DATA = {
       "image": "monsters/young-dragon.png"
     },
     {
-      "id": "monster-the-undying-king",
+      "id": "monster-vecna",
       "type": "monster",
       "name": "The Undying King",
       "source": "Bestiary",
