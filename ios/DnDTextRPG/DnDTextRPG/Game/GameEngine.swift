@@ -9468,9 +9468,22 @@ class GameEngine: ObservableObject {
         print("  THE WORDS AND PICTURES", color: .cyan, bold: true)
         printWrapped("The story, the maps, the ASCII art and the music are the game's own — written for it, not borrowed.", indent: 2, color: .dimGreen)
         print("")
-        showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+        pendingTimeoutKind = .reading
+        showMenuOptions([MenuOption("?", tint: .navigation, compact: true),
+                         MenuOption("< Back", tint: .navigation, compact: true)])
         closeHandler = onBack
-        menuHandler = { _ in onBack() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            guard choice == 1 else { onBack(); return }
+            self.showInlineHelp {
+                self.printTitle("Licence — Help")
+                self.print("")
+                self.printWrapped("What the game is built on, and who owns what. The rules it follows are the freely published ones; the words, maps, art and music were written for this game rather than borrowed.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.printWrapped("The green links open the page they name in your browser.", indent: 2, color: .dimGreen)
+                self.print("")
+            }
+        }
     }
 
     private var aboutDanceTimer: Timer?
@@ -27193,7 +27206,9 @@ class GameEngine: ObservableObject {
         if saved.isEmpty {
             printWrapped("None yet. Finish an adventure — beat the last guardian at the bottom of the world — and its certificate is kept here, to look at, save or print whenever you like.", indent: 2, color: .dimGreen)
             print("")
+            pendingTimeoutKind = .reading
             showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+            closeHandler = onBack
             menuHandler = { _ in onBack() }
             return
         }
@@ -28491,6 +28506,7 @@ class GameEngine: ObservableObject {
         guard !party.isEmpty else {
             printWrapped("Nobody to meet yet.", indent: 2, color: .dimGreen)
             print("")
+            pendingTimeoutKind = .reading
             showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
             closeHandler = onBack
             menuHandler = { _ in onBack() }
@@ -28509,9 +28525,22 @@ class GameEngine: ObservableObject {
             printWrapped(doubt, indent: 4, color: .dimGreen)
             print("")
         }
-        showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+        pendingTimeoutKind = .reading
+        showMenuOptions([MenuOption("?", tint: .navigation, compact: true),
+                         MenuOption("< Back", tint: .navigation, compact: true)])
         closeHandler = onBack
-        menuHandler = { _ in onBack() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            guard choice == 1 else { onBack(); return }
+            self.showInlineHelp {
+                self.printTitle("Meet the Team — Help")
+                self.print("")
+                self.printWrapped("Each companion gives an account of themselves before you go down. Some of it is true; the rest tells you something anyway.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.printWrapped("What each one says is settled by who they are, so it reads the same if you come back to it.", indent: 2, color: .dimGreen)
+                self.print("")
+            }
+        }
     }
 
     /// What they say about themselves, by trade.
