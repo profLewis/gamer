@@ -27735,6 +27735,9 @@ class GameEngine: ObservableObject {
         let beenIn = roomsSeen > 1 || monstersSlain > 0 || gameTimeMinutes > 360 || (dungeon?.currentRoomId ?? 0) != 0
         let enterLabel = beenIn ? "Return to the Dungeon" : "Enter the Dungeon"
         var menuOpts = ["Party Review", "Tale", "Save to Roster", "Lore", "Settings", "Quests", enterLabel, "?", "< Back"]
+        if party.count > 1 {
+            menuOpts.insert("Meet the Team", at: menuOpts.firstIndex(of: "Tale") ?? 1)
+        }
         if dungeon?.hasCartography == true {
             menuOpts.insert("Atlas", at: menuOpts.firstIndex(of: "Lore") ?? 0)
         }
@@ -27764,6 +27767,8 @@ class GameEngine: ObservableObject {
                 self.showPoisonInfo(onBack: { self.showPartyStatus() })
             case "Party Review":
                 self.showInGamePartyReview()
+            case "Meet the Team":
+                self.showMeetTheTeam(onBack: { [weak self] in self?.showPartyStatus() })
             case "Save to Roster":
                 self.showSavePartyToRosterMenu()
             case "Adventure Log":
@@ -28472,6 +28477,72 @@ class GameEngine: ObservableObject {
     }
 
     /// In-game party review — edit names, types, race, class — returns to Party Status
+    /// Each companion gives an account of themselves — some of it true.
+    /// Reachable from Party Review and Party Status, not forced on anyone.
+    func showMeetTheTeam(onBack: @escaping () -> Void) {
+        clearTerminal()
+        printTitle("Meet the Team")
+        print("")
+        guard !party.isEmpty else {
+            printWrapped("Nobody to meet yet.", indent: 2, color: .dimGreen)
+            print("")
+            showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+            closeHandler = onBack
+            menuHandler = { _ in onBack() }
+            return
+        }
+        printWrapped("Round the fire before you go down, each of them says a little about themselves. Some of it is even true.", indent: 2, color: .dimGreen)
+        print("")
+        for char in party {
+            let n = shortName(for: char)
+            print("  \(n) — \(char.race.rawValue) \(char.characterClass.rawValue)", color: .brightGreen, bold: true)
+            let seed = abs(n.unicodeScalars.reduce(0) { $0 &+ Int($1.value) } &+ char.level &* 31)
+            let boasts = Self.teamBoasts[char.characterClass] ?? Self.teamBoastsGeneric
+            printWrapped("\"\(boasts[seed % boasts.count])\"", indent: 4, color: .yellow)
+            // Whether anyone believes it is another matter.
+            let doubt = Self.teamDoubts[(seed / 7) % Self.teamDoubts.count]
+            printWrapped(doubt, indent: 4, color: .dimGreen)
+            print("")
+        }
+        showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+        closeHandler = onBack
+        menuHandler = { _ in onBack() }
+    }
+
+    /// What they say about themselves, by trade.
+    static let teamBoasts: [CharacterClass: [String]] = [
+        .fighter: ["I held a bridge once. Not a big bridge. But I held it.",
+                   "Twelve of them, there were. Eleven, if you ask my sister.",
+                   "I've been paid to stop trouble and paid to start it. Same coin."],
+        .wizard: ["I read every book in my master's house. He noticed on the Tuesday.",
+                  "Fire is simple. It's the stopping that takes study.",
+                  "I have been struck by lightning twice, and only once on purpose."],
+        .rogue: ["I have never stolen anything. Things have followed me home.",
+                 "Locks and I have an understanding. They open.",
+                 "I was thrown out of a very good guild for being too good at it."],
+        .cleric: ["I was called. Loudly, and at an inconvenient hour.",
+                  "I have buried more people than I have healed. I intend to reverse that.",
+                  "My god and I disagree about most things, but we are civil."],
+        .ranger: ["I can follow anything that walks. Some things that don't.",
+                  "Three winters in the high wood. I came out talking to myself, and still am.",
+                  "I have never been lost. Occasionally the map has."],
+        .barbarian: ["I do not lose my temper. I put it somewhere useful.",
+                     "My people sing about a thing I did. They exaggerate. Slightly.",
+                     "I was told I could not lift it. I lifted it. It broke."],
+        .bard: ["I have played for a king and for a goat. The goat listened.",
+                "Every song I sing is true by the third verse.",
+                "I talked us out of a hanging once. Mostly out."],
+    ]
+    static let teamBoastsGeneric = ["I get by. I've got this far.",
+                                    "There's not much to tell that's fit for telling.",
+                                    "Ask me again when we're out the other side."]
+    static let teamDoubts = ["Nobody says anything.",
+                             "Somebody coughs.",
+                             "That one gets a look, but no argument.",
+                             "There is a pause you could park a cart in.",
+                             "Two of the others exchange a glance.",
+                             "It is allowed to stand."]
+
     private func showInGamePartyReview() {
         clearTerminal()
         printTitle("Party Review")
@@ -28496,6 +28567,14 @@ class GameEngine: ObservableObject {
             menuOpts.append(MenuOption(shortN, isDefault: i == 0))
             actions.append { [weak self] in
                 self?.showInGameEditCharacter(index: i)
+            }
+        }
+
+        // Who they say they are, before you take them down a hole.
+        if party.count > 1 {
+            menuOpts.append(MenuOption("Meet the Team", tint: .cyan))
+            actions.append { [weak self] in
+                self?.showMeetTheTeam(onBack: { [weak self] in self?.showInGamePartyReview() })
             }
         }
 
