@@ -14,7 +14,7 @@
 | AC | 14 |
 | Attack | +7 |
 | Damage | 2d8+4 |
-| CR | 3 |
+| CR | 4 |
 | Special | — |
 
 ## Description
