@@ -26726,6 +26726,14 @@ class GameEngine: ObservableObject {
         return "⌛ \(unseen) room\(unseen == 1 ? "" : "s") still unwalked here — \(howLong) to see it all."
     }
 
+    /// This level's part of the quest, and how far along it is.
+    func questChapterLine() -> String? {
+        guard let mq = mainQuest, !mainQuestCompleted,
+              let item = mq.chapterItem, let need = mq.chapterNeeded else { return nil }
+        let got = mq.chapterFound ?? 0
+        return got >= need ? "✦ \(need) \(item) — gathered" : "✦ \(got) of \(need) \(item) gathered"
+    }
+
     /// Time-bound quests get their day; and when it passes, it passes.
     private func checkQuestDeadline() {
         guard var mq = mainQuest, !mainQuestCompleted else { return }
@@ -27487,6 +27495,7 @@ class GameEngine: ObservableObject {
             if let who = mq.informant { printWrapped("Who might know more: \(who).", indent: 4, color: .dimGreen) }
             if let line = questDeadlineLine() { printWrapped(line, indent: 4, color: .cyan) }
             if let est = questTimeEstimateLine() { printWrapped(est, indent: 4, color: .dimGreen) }
+            if let ch = questChapterLine() { printWrapped(ch, indent: 4, color: .cyan) }
             printWrapped("The one behind it all: \(mq.villain), waiting at the very bottom. Reward: \(mq.reward).", indent: 4, color: .dimGreen)
         }
         for quest in allQuests {
@@ -34976,6 +34985,17 @@ class GameEngine: ObservableObject {
 
         // --- The end of the tale: the villain is beaten, nothing lies deeper ---
         if isFinal {
+            // You needn't have seen every level through — but most of them.
+            if let q = mainQuest, let depth = dungeon?.levelCount, depth > 1 {
+                let done = (q.levelsDone ?? []).count
+                let enough = depth / 2 + 1
+                if done >= enough {
+                    printWrapped("\(done) of \(depth) levels seen through to the end — enough, and more than most manage.", indent: 2, color: .brightGreen)
+                } else {
+                    printWrapped("You did \(done) of \(depth) levels' work on the way down, where \(enough) would have been enough to do this properly. It is finished — but not as well as it might have been.", indent: 2, color: .yellow)
+                }
+                print("")
+            }
             mainQuestCompleted = mainQuest != nil
             if let q = mainQuest { questHistory.append("Completed the quest: \(Dungeon.guardianName(q.villain)) defeated, and \(q.goal) done.") }
             logEvent("THE END: the final guardian of \(dungeonName) is defeated", category: "EXPLORE")
@@ -34999,6 +35019,10 @@ class GameEngine: ObservableObject {
             printWrapped("Before it goes still it tells you something it plainly didn't mean to: \(task.needed) \(task.item), gathered on levels like this one, and \(foe) can be undone. Go down without them and the ending is a poorer one.", indent: 2, color: .yellow)
             print("")
             logEvent("Level \(currentLevel) guardian gave up a clue: \(task.needed) \(task.item)", category: "QUEST")
+            let earned = 50 * currentLevel
+            for char in party where char.isConscious { char.experiencePoints += earned }
+            printWrapped("Seeing this level through is worth \(earned) experience to each of you.", indent: 2, color: .brightGreen)
+            print("")
         }
 
         // --- What lies ahead ---
