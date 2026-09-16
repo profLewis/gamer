@@ -22752,6 +22752,27 @@ class GameEngine: ObservableObject {
         printWrapped("You scavenge the \(room.name.lowercased()) for useful supplies...", indent: 2, color: .cyan)
         print("")
 
+        // What the level's guardian named can turn up while scavenging. Only
+        // once per room (this room is marked foraged above), so it's found by
+        // exploring rather than by standing still and asking again.
+        if var mq = mainQuest, let want = mq.chapterItem, let need = mq.chapterNeeded,
+           (mq.chapterFound ?? 0) < need, Int.random(in: 1...100) <= 45 {
+            let got = (mq.chapterFound ?? 0) + 1
+            mq.chapterFound = got
+            mainQuest = mq
+            let item = Item(id: UUID(), name: want, description: "Part of what the quest asks of this level.",
+                            type: .misc, weight: 0.5, value: 5, weaponStats: nil, armorStats: nil, potionStats: nil)
+            printWrapped(got >= need
+                ? "And there, among the rubbish: \(want) — enough of them at last, \(got) of \(need)."
+                : "And there, among the rubbish: \(want), just as the guardian said. That's \(got) of \(need).",
+                         indent: 2, color: .brightGreen)
+            logEvent("Gathered \(want) — \(got) of \(need) — in \(room.name)", category: "QUEST")
+            showItemPickupMenu(item: item, source: "Foraged in \(room.name)") { [weak self] in
+                self?.showExplorationView()
+            }
+            return
+        }
+
         // Room-type-specific foraging
         var foundItem: Item? = nil
         var foundGold = 0
