@@ -1316,10 +1316,68 @@ class GameEngine: ObservableObject {
     /// over the screen (so showMainMenu shouldn't also render normally).
     private var hasCheckedForCrashThisLaunch = false
     @discardableResult
+    /// Shown once, ever: what this is, the two settings worth knowing about
+    /// before you start, and whether bug reports may be sent. Answered here
+    /// rather than buried in Settings, since it is the one moment somebody
+    /// is definitely paying attention.
+    private func showFirstRunWelcomeIfNeeded() -> Bool {
+        let key = "hasSeenFirstRunWelcome"
+        guard !UserDefaults.standard.bool(forKey: key) else { return false }
+
+        clearTerminal()
+        printTitle("Before You Go Down")
+        print("")
+        printWrapped("A voice out of the dark, friendly enough: \"First time? Then two things, quickly, and you can be on your way.\"", indent: 2, color: .yellow)
+        print("")
+        print("  THE SCREEN WAITS FOR YOU", color: .cyan, bold: true)
+        printWrapped("When a screen is holding, it counts to itself — a dot, then two, then three. Tap anywhere, or press Return, to carry on. Leave it and it moves on by itself; Settings > Gameplay changes how long it waits, or turns the waiting off.", indent: 4, color: .dimGreen)
+        print("")
+        print("  HOW DEEP YOU GO", color: .cyan, bold: true)
+        printWrapped("Seven floors by default, down to the last guardian. Settings > Gameplay > Levels sets how deep a new dungeon runs — one to twelve — and a dungeon keeps the depth it was made with.", indent: 4, color: .dimGreen)
+        print("")
+        print("  IF IT BREAKS", color: .cyan, bold: true)
+        printWrapped("If the game crashes, it can offer to put together a report — what happened, the recent log, and the moment itself so it can be reloaded. Nothing is sent anywhere without you saying so, each time.", indent: 4, color: .dimGreen)
+        print("")
+        printWrapped("\"May I offer, when that happens?\"", indent: 2, color: .yellow)
+        print("")
+        showMenu(["Yes, offer to report crashes", "No, never ask", "?"])
+        closeHandler = { [weak self] in
+            guard let self = self else { return }
+            UserDefaults.standard.set(true, forKey: key)
+            self.showMainMenu()
+        }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1, 2:
+                UserDefaults.standard.set(choice == 1, forKey: "offerCrashReports")
+                UserDefaults.standard.set(true, forKey: key)
+                self.logEvent("First run: crash reports \(choice == 1 ? "allowed" : "declined")", category: "SETTINGS")
+                self.showMainMenu()
+            default:
+                self.showInlineHelp {
+                    self.printTitle("Before You Go Down — Help")
+                    self.print("")
+                    self.printWrapped("This is shown once. Everything on it can be changed later in Settings, including whether crashes may be reported.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("Saying no means the game never mentions it again. Saying yes means it asks — it never sends anything on its own.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            }
+        }
+        return true
+    }
+
     private func checkForPendingCrashReport() -> Bool {
         guard !hasCheckedForCrashThisLaunch else { return false }
         hasCheckedForCrashThisLaunch = true
         guard Self.pendingCrashInfo() != nil else { return false }
+        // Asked once at first run. If they said no, clear it and say nothing.
+        if UserDefaults.standard.object(forKey: "offerCrashReports") != nil,
+           !UserDefaults.standard.bool(forKey: "offerCrashReports") {
+            clearPendingCrashReport()
+            return false
+        }
 
         clearTerminal()
         printTitle("A Glitch in the Weave")
@@ -1328,13 +1386,15 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped("Exporting a bug report shares what happened (device info, recent log, the crash itself) so it can be fixed — and saves this exact moment so it can be reloaded from Continue Adventure.", indent: 2, color: .dimGreen)
         print("")
-        showMenu(["Export Bug Report", "Not Now"])
+        printWrapped("Before assuming the worst: a full disk or a dropped connection can look like a crash. Worth a glance at both.", indent: 2, color: .dimGreen)
+        print("")
+        showMenu(["Export Bug Report", "Report on GitHub", "Not Now"])
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
-            if choice == 1 {
-                self.prepareBugReportExport()
-            } else {
-                self.clearPendingCrashReport()
+            switch choice {
+            case 1: self.prepareBugReportExport()
+            case 2: self.openCrashIssue()
+            default: self.clearPendingCrashReport()
             }
             self.showMainMenu()
         }
@@ -5636,6 +5696,7 @@ class GameEngine: ObservableObject {
         if self.musicEnabled { SoundManager.shared.startMusic(.menu, preference: self.menuMelodyChoice) }
 
         if checkForPendingCrashReport() { return }
+        if showFirstRunWelcomeIfNeeded() { return }
 
         renderMainMenu()
 
@@ -26281,6 +26342,42 @@ class GameEngine: ObservableObject {
                 return
             }
             onBack()
+        }
+    }
+
+    /// A pre-filled GitHub issue for a crash. The detail goes in the body so
+    /// nothing has to be retyped; nothing leaves the device until the issue is
+    /// actually submitted, in the browser, by the person reading it.
+    func openCrashIssue() {
+        var c = URLComponents(string: "https://github.com/profLewis/gamer/issues/new")
+        var body = """
+        **What happened just before it went wrong?**
+
+
+        **Anything on screen at the time?**
+
+
+        ---
+        """
+        if let crash = Self.pendingCrashInfo() { body += "\n\nLast launch ended in a crash:\n```\n\(crash)\n```" }
+        if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+           let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String {
+            body += "\n\nApp version: \(version) (\(build))"
+        }
+        if let dungeon = dungeon {
+            body += "\nDungeon: \(dungeon.name), Level \(dungeon.level) of \(dungeon.levelCount)"
+        }
+        c?.queryItems = [URLQueryItem(name: "title", value: "Glitch in the Weave: "),
+                         URLQueryItem(name: "labels", value: "bug"),
+                         URLQueryItem(name: "body", value: body)]
+        guard let url = c?.url else { return }
+        clearPendingCrashReport()
+        DispatchQueue.main.async {
+            #if canImport(UIKit)
+            UIApplication.shared.open(url)
+            #elseif os(macOS)
+            NSWorkspace.shared.open(url)
+            #endif
         }
     }
 

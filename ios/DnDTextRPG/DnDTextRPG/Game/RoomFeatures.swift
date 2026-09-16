@@ -132,6 +132,12 @@ extension GameEngine {
             printWrapped(text, indent: 2, color: color)
             print("")
         }
+        // A rune was among those lines — offer the notes it went into, after
+        // it has been read rather than before.
+        if lines.contains(where: { $0.0.hasPrefix("ᚱ ") }) {
+            printLink("See your quest notes", to: "questNotes", indent: 2)
+            print("")
+        }
         if let after = aftermath(of: feature, room: room, actor: name) {
             printWrapped(after, indent: 2, color: .dimGreen)
             print("")
@@ -387,8 +393,8 @@ extension GameEngine {
         logEvent("Read a rune (\(next + 1) of \(verses.count)): \(verses[next])", category: "QUEST")
         return [(how, .cyan), ("ᚱ " + verses[next], .yellow),
                 (next + 1 < verses.count
-                    ? "(Rune \(next + 1) of \(verses.count) — noted under your main quest. There are more, deeper down.)"
-                    : "(The last of the runes. Read together, they tell the whole of it — and how it has to end.)", .dimGreen)]
+                    ? "(Rune \(next + 1) of \(verses.count). Copied into your quest notes — Party Status, under the quest — where you can read the ones you have whenever you like. There are more, deeper down.)"
+                    : "(The last of the runes. All \(verses.count) are in your quest notes; read together they tell the whole of it, and how it has to end.)", .dimGreen)]
     }
 
     /// Survival or Nature, whoever's best: something to eat — or a stomach ache.
