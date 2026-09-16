@@ -23021,6 +23021,12 @@ class GameEngine: ObservableObject {
             options.append(MenuOption("Ask About Our Quest", tint: .cyan))
             actions.append { [weak self] in self?.askAboutMainQuest(npc: npc, roomId: roomId) }
         }
+
+        // This level's errand, once a guardian has named it — asked of anyone.
+        if let mq = mainQuest, !mainQuestCompleted, mq.chapterItem != nil, npc.type != .gatekeeper {
+            options.append(MenuOption("Ask: What We Need", tint: .amber))
+            actions.append { [weak self] in self?.askNPCAbout(topic: "Ingredients") }
+        }
         if mainQuest == nil, npc.type != .gatekeeper {
             let roomId = room.id
             options.append(MenuOption("Ask for a Quest", tint: .cyan))
@@ -23574,8 +23580,31 @@ class GameEngine: ObservableObject {
             }
         }
 
+        // If the topic touches on the level's errand, answer THAT — what was
+        // named, how many are still wanted, and where they turn up — rather
+        // than a general remark about herbs.
+        var questAnswer: String? = nil
+        if let mq = mainQuest, !mainQuestCompleted, let want = mq.chapterItem, let need = mq.chapterNeeded {
+            let errandTopics: Set<String> = ["Herbs", "Potions", "Ingredients", "Antidotes", "Healing arts",
+                                             "Poison cure", "Rare goods", "Dungeon lore", "Grandfather's tales"]
+            if errandTopics.contains(topic) {
+                let got = mq.chapterFound ?? 0
+                if got >= need {
+                    questAnswer = "\(want)? You've the \(need) you were told to find. Carry them down — that's what they're for."
+                } else {
+                    let short = need - got
+                    let where_ = mq.informant.map { "And \($0) would know more than I do." } ?? "Try the rooms nobody's picked over yet."
+                    questAnswer = got == 0
+                        ? "\(want), is it? You'll want \(need). Scavenge the rooms as you go — they turn up where nobody's been through already. \(where_)"
+                        : "\(want)? You've \(got). \(short) more and you'll have what was asked. \(where_)"
+                }
+            }
+        }
+
         let response: String
-        if npc.type == .gatekeeper {
+        if let answer = questAnswer {
+            response = answer
+        } else if npc.type == .gatekeeper {
             // "Quest" always returns early above via showGatekeeperQuest().
             response = npc.type.gatekeeperResponse(for: topic, trustworthiness: npc.trustworthiness, dungeonLevel: dungeon?.level ?? 1, bossType: bossType, questGold: npc.questGold, askCount: askCount)
         } else {
