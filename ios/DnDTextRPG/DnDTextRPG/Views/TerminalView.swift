@@ -408,6 +408,15 @@ struct TerminalView: View {
                                         // ordinary scroll drags.
                                         TerminalLineView(line: line, scale: scale)
                                             .id(line.id)
+                                    } else if gameEngine.defaultMenuChoice != nil {
+                                        // A menu is waiting: a tap on the story presses the
+                                        // default button, just like tapping the button itself.
+                                        TerminalLineView(line: line, scale: scale)
+                                            .id(line.id)
+                                            .contentShape(Rectangle())
+                                            .onTapGesture {
+                                                if let choice = gameEngine.defaultMenuChoice { gameEngine.handleMenuChoice(choice) }
+                                            }
                                     } else {
                                         TerminalLineView(line: line, scale: scale)
                                             .id(line.id)
@@ -430,8 +439,8 @@ struct TerminalView: View {
                                             .offset(x: -6 * scale) // Centre the dragon's head, not the image
                                             // Tap the picture: About & credits.
                                             .contentShape(Rectangle())
-                                            .onTapGesture { gameEngine.followLink("about") }
-                                            .accessibilityHint("Tap for About and credits")
+                                            .onLongPressGesture(minimumDuration: 0.6) { gameEngine.followLink("about") }
+                                            .accessibilityHint("Long-press for About and credits")
                                         Spacer()
                                     }
                                     if let caption = gameEngine.currentPoseCaption {
@@ -454,8 +463,8 @@ struct TerminalView: View {
                                             .cornerRadius(8)
                                             .opacity(0.85)
                                             .contentShape(Rectangle())
-                                            .onTapGesture { gameEngine.followLink("about") }
-                                            .accessibilityHint("Tap for About and credits")
+                                            .onLongPressGesture(minimumDuration: 0.6) { gameEngine.followLink("about") }
+                                            .accessibilityHint("Long-press for About and credits")
                                         Spacer()
                                     }
                                     if let caption = gameEngine.currentPoseCaption {
@@ -738,7 +747,7 @@ struct TerminalView: View {
                     // tap-to-continue too (buttons and the input line keep their own taps).
                     .frame(maxHeight: isLandscape ? .infinity : nil, alignment: .top)
                     .background {
-                        if gameEngine.awaitingContinue || gameEngine.swipeLeftHandler != nil {
+                        if gameEngine.awaitingContinue || gameEngine.swipeLeftHandler != nil || gameEngine.defaultMenuChoice != nil {
                             Color.black.opacity(0.001)
                                 .contentShape(Rectangle())
                                 .onTapGesture { advanceFromStrip() }
@@ -1520,8 +1529,11 @@ struct TerminalView: View {
     private func advanceFromStrip() {
         if gameEngine.swipeLeftHandler != nil {
             gameEngine.swipeLeftHandler?()
-        } else {
+        } else if gameEngine.awaitingContinue {
             gameEngine.handleContinue()
+        } else if let choice = gameEngine.defaultMenuChoice {
+            // Nothing to advance, but a menu is waiting: press its default.
+            gameEngine.handleMenuChoice(choice)
         }
     }
 
@@ -1532,13 +1544,9 @@ struct TerminalView: View {
             terminalBackground.opacity(0.98).ignoresSafeArea()
             ScrollView([.horizontal, .vertical], showsIndicators: true) {
                 Group {
-                    if gameEngine.pictureMapOn, let level = gameEngine.overlayAtlasLevel {
-                        PictureMapView(level: level, fontSize: gameEngine.mapFontSize * scale * mapZoom, showAll: gameEngine.atlasShowAllRooms, frame: gameEngine.overlayAtlasFrame)
-                    } else {
-                        VStack(alignment: .leading, spacing: 2) {
-                            ForEach(gameEngine.mapOverlayLines) { line in
-                                TerminalLineView(line: line, scale: scale * mapZoom)
-                            }
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(gameEngine.mapOverlayLines) { line in
+                            TerminalLineView(line: line, scale: scale * mapZoom)
                         }
                     }
                 }
@@ -1553,9 +1561,9 @@ struct TerminalView: View {
             // under your fingers, then settles at that size when you let go —
             // resizing the layout every frame made it jump about.
             .simultaneousGesture(MagnificationGesture()
-                .onChanged { value in pinchScale = min(4 / mapZoom, max(0.4 / mapZoom, value)) }
+                .onChanged { value in pinchScale = min(Self.mapZoomMax / mapZoom, max(Self.mapZoomMin / mapZoom, value)) }
                 .onEnded { value in
-                    mapZoom = min(4, max(0.4, mapZoom * value))
+                    mapZoom = min(Self.mapZoomMax, max(Self.mapZoomMin, mapZoom * value))
                     pinchScale = 1
                 })
             #endif
@@ -1579,11 +1587,17 @@ struct TerminalView: View {
                                    systemImage: gameEngine.atlasShowAllRooms ? "map" : "globe") {
                         gameEngine.setAtlasShowAll(!gameEngine.atlasShowAllRooms)
                     }
-                    overlayCapsule(gameEngine.pictureMapOn ? "Show as text" : "Show as a picture", systemImage: gameEngine.pictureMapOn ? "text.alignleft" : "photo") {
-                        gameEngine.pictureMapOn.toggle()
+                    // On iOS a pinch does this (and a double-tap resets), so the
+                    // buttons are just in the way; everywhere else they're the
+                    // main way to zoom — bigger steps, and far further in.
+                    #if !os(iOS)
+                    overlayCapsule("Zoom out", systemImage: "minus.magnifyingglass", enabled: mapZoom > Self.mapZoomMin * 1.02) {
+                        mapZoom = max(Self.mapZoomMin, mapZoom / 1.4)
                     }
-                    overlayCapsule("Zoom out", systemImage: "minus.magnifyingglass", enabled: mapZoom > 0.45) { mapZoom = max(0.4, mapZoom / 1.25) }
-                    overlayCapsule("Zoom in", systemImage: "plus.magnifyingglass", enabled: mapZoom < 3.9) { mapZoom = min(4, mapZoom * 1.25) }
+                    overlayCapsule("Zoom in", systemImage: "plus.magnifyingglass", enabled: mapZoom < Self.mapZoomMax * 0.98) {
+                        mapZoom = min(Self.mapZoomMax, mapZoom * 1.4)
+                    }
+                    #endif
                     overlayCapsule("Save or print this map", systemImage: "printer") {
                         showMapButtonHelp = false
                         gameEngine.saveOrPrintOverlayMap()
@@ -1596,11 +1610,11 @@ struct TerminalView: View {
                 }
                 if showMapButtonHelp {
                     VStack(alignment: .leading, spacing: 5) {
-                        ForEach(Self.mapButtonKey.indices, id: \.self) { i in
+                        ForEach(mapButtonKeyShown.indices, id: \.self) { i in
                             HStack(spacing: 8) {
-                                Image(systemName: Self.mapButtonKey[i].symbol)
+                                Image(systemName: mapButtonKeyShown[i].symbol)
                                     .frame(width: 22 * scale)
-                                Text(Self.mapButtonKey[i].meaning)
+                                Text(mapButtonKeyShown[i].meaning)
                                     .font(.system(size: 12 * scale, design: .monospaced))
                             }
                             .foregroundColor(terminalGreen)
@@ -1639,6 +1653,20 @@ struct TerminalView: View {
     }
     #endif
 
+    /// How far the big map will zoom: right out to see a whole level at a
+    /// glance, and far enough in to read one room across the screen.
+    static let mapZoomMin: CGFloat = 0.25
+    static let mapZoomMax: CGFloat = 8
+
+    /// The key, without the buttons this platform doesn't show.
+    private var mapButtonKeyShown: [(symbol: String, meaning: String)] {
+        #if os(iOS)
+        return Self.mapButtonKey.filter { !$0.symbol.hasSuffix("magnifyingglass") }
+        #else
+        return Self.mapButtonKey
+        #endif
+    }
+
     /// What each of the big map's symbols means — the ? button's key.
     private static let mapButtonKey: [(symbol: String, meaning: String)] = [
         ("chevron.left", "Previous level (once you've been deeper; they line up)"),
@@ -1646,8 +1674,6 @@ struct TerminalView: View {
         ("book.closed", "Explore the rooms, one by one"),
         ("globe", "The Whole Deep — every room"),
         ("map", "The Charted Reaches — where you've been"),
-        ("photo", "Show the map as a picture"),
-        ("text.alignleft", "Show the map as text"),
         ("minus.magnifyingglass", "Zoom out"),
         ("plus.magnifyingglass", "Zoom in"),
         ("printer", "Save or print (not quite in the spirit of the game!)"),
@@ -2630,11 +2656,11 @@ struct MenuButtonsView: View {
                     // 2-column layout) — contiguous with the lone button's
                     // row rather than leaving a blank row above it.
                     ForEach(0..<max(0, 3 - regular.count), id: \.self) { _ in
-                        Color.clear.frame(height: buttonMinHeight)
+                        blankSlot
                     }
                 } else if regular.count % 2 == 0 {
                     // Push to right column if regular count is even
-                    Color.clear.frame(height: buttonMinHeight)
+                    blankSlot
                 }
                 compactNavCell(indices: compact)
             }
@@ -2646,6 +2672,15 @@ struct MenuButtonsView: View {
                 }
             }
         }
+    }
+
+    /// An empty slot in the grid — a faint, dead button, so a screen with
+    /// one action and a nav cell looks laid out instead of lopsided.
+    private var blankSlot: some View {
+        RoundedRectangle(cornerRadius: 6)
+            .stroke(Color.gray.opacity(0.18), lineWidth: 1)
+            .frame(height: buttonMinHeight)
+            .allowsHitTesting(false)
     }
 
     /// A standard full-width button. `index` is the real position in the

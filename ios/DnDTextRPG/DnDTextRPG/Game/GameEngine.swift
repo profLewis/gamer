@@ -435,7 +435,27 @@ class GameEngine: ObservableObject {
     /// The "Continue?" nudges a waiting screen shows — not story, so Read
     /// Aloud skips them (in a fight it gives a quick cheer instead).
     static let combatContinueTitles = ["Next blow?", "The fight goes on…", "Ready for the next move?", "Steel yourselves…", "What happens next?"]
-    static let continueTitles = ["Continue?", "Ready to move on?", "Shall we carry on?", "Onward?", "Seen enough?"]
+    static let continueTitles = ["ok?", "Continue?", "Ready?", "Onward?", "Go on?", "…"]
+    /// Shown while the opening tale is being written: the party is on its
+    /// way to meet up, and the world is being made ready around them.
+    static let travelLines = [
+        "Making your way to the meeting place…",
+        "The road to the meeting place winds on…",
+        "Travelling to where the others are waiting…",
+        "Boots on the road — the meeting place isn't far now…",
+        "Following the old track to the meeting place…",
+        "Somewhere ahead, the others are already waiting…",
+    ]
+
+    /// Shown while the tale so far is being written: a pause, mid-adventure.
+    static let takingStockLines = [
+        "Taking stock by torchlight…",
+        "Casting your mind back over it all…",
+        "Counting up how far you've come…",
+        "Working out how best to tell it…",
+        "Getting your breath back, and the story straight…",
+    ]
+
     static let combatCheers = ["Come on then!", "Jiayou!", "Onward!", "Keep at it!", "Here we go!"]
 
     /// A countdown never runs out before the screen's text could be read —
@@ -480,7 +500,7 @@ class GameEngine: ObservableObject {
             continueHintGeneration = screenGeneration
             continueHintCount = 0
         }
-        guard continueHintCount < 3 else { return }
+        guard continueHintCount < 2 else { return }
         let counting = autoContinueCountdownAvailable && !autoContinuePaused
         let delay: Double = continueHintCount == 0 ? 1.5 : (counting ? max(3, autoCountdownTotal * 0.35) : 5)
         // Only worth saying if there'll still be time to read it before the
@@ -498,22 +518,12 @@ class GameEngine: ObservableObject {
             self.continueHintCount += 1
             self.print("")
             if self.currentCombat != nil {
-                // In a fight: who's next and how it stands — not just "Continue?".
+                // In a fight, who's up next is worth saying — then the same nudge.
                 let waiting = self.combatWaitingLines()
                 self.print("  \(waiting.title)", color: .cyan, bold: true)
                 for line in waiting.info { self.printWrapped(line, indent: 4, color: .green) }
-                self.printWrapped(self.combatTapLine(), indent: 4, color: .dimGreen)
-            } else if self.continueHintCount == 1 {
-                // The first nudge stays quiet — one dim line, no heading.
-                self.printWrapped(self.quietContinueHint(), indent: 2, color: .dimGreen)
-            } else {
-                let title = Self.pickVaried(Self.continueTitles, avoiding: &self.lastContinueTitle)
-                self.print("  \(title)", color: .cyan, bold: true)
-                self.print("")
-                for line in self.continueHintLines() {
-                    self.printWrapped(line, indent: 4, color: .dimGreen)
-                }
             }
+            self.printAcknowledgePrompt()
             self.scheduleContinueHint()
         }
     }
@@ -565,6 +575,13 @@ class GameEngine: ObservableObject {
                "Take a breath — or tap to keep the fight moving."]
             : ["Tap the screen when you're ready.", "Tap to go on — the fight waits for you.",
                "Tap the screen (or type \"go on\") to carry on."]).randomElement()!
+    }
+
+    /// All a waiting screen asks for: a short, underlined "ok?" — tap it (or
+    /// anywhere, or press Return), or let the hourglass run out by itself.
+    private func printAcknowledgePrompt() {
+        let prompt = Self.pickVaried(Self.continueTitles, avoiding: &lastContinueTitle)
+        print("  \(prompt)", color: .dimGreen, underlined: true)
     }
 
     /// The first, quiet nudge: one dim line saying how to move on.
@@ -1195,25 +1212,29 @@ class GameEngine: ObservableObject {
     var menuLongPressHandler: ((Int) -> Void)?
     var directionHandler: ((Direction) -> Void)?
     var directionLongPressHandler: ((Direction) -> Void)?
+    // These handlers are @Published: the corner icons appear only when their
+    // handler is set, and a plain var changed nothing in the view — so on the
+    // very first play screen (set after the last published change of that
+    // pass) the corners rendered empty until something else forced a redraw.
     @Published var dpadCenterLabel: String? = nil
-    var dpadCenterHandler: (() -> Void)?
+    @Published var dpadCenterHandler: (() -> Void)?
     var dpadCenterLongPressHandler: (() -> Void)?
     @Published var dpadNPCLabel: String? = nil
-    var dpadNPCHandler: (() -> Void)?
+    @Published var dpadNPCHandler: (() -> Void)?
     /// Roundel-target icon in the same SE corner slot as the NPC scroll
     /// icon — shown instead of it when the room has an active teleport
     /// pad and no NPC to talk to (NPC takes priority on the rare room
     /// that somehow has both). Not a numbered menu button (see
     /// showExplorationView, where "Use Teleport Pad" used to be listed).
-    var dpadTeleportHandler: (() -> Void)?
+    @Published var dpadTeleportHandler: (() -> Void)?
     /// "Douse" or "Illuminate" — quick torch toggle shown as a blue icon in
     /// the D-pad's NW corner, mirroring the NPC icon's SE corner.
     @Published var dpadTorchLabel: String? = nil
-    var dpadTorchHandler: (() -> Void)?
+    @Published var dpadTorchHandler: (() -> Void)?
     /// Search Room / Listen quick-access icons — top corners of the D-pad,
     /// mirroring the torch/NPC icons on the bottom corners.
-    var dpadSearchHandler: (() -> Void)?
-    var dpadListenHandler: (() -> Void)?
+    @Published var dpadSearchHandler: (() -> Void)?
+    @Published var dpadListenHandler: (() -> Void)?
 
     // Shop
     private lazy var shopEngine = ShopEngine(game: self)
@@ -2378,6 +2399,18 @@ class GameEngine: ObservableObject {
     /// redrawn with the current settings on the way back.
     private var pauseHelpRangeAtLink: Range<Int>?
 
+    /// Opens a page in the browser — the card browser, the thank-you list.
+    func openWeb(_ urlString: String) {
+        guard let url = URL(string: urlString) else { return }
+        DispatchQueue.main.async {
+            #if canImport(UIKit)
+            UIApplication.shared.open(url)
+            #elseif os(macOS)
+            NSWorkspace.shared.open(url)
+            #endif
+        }
+    }
+
     private func linkTarget(_ key: String) -> (() -> Void)? {
         switch key {
         case "settings": return { [weak self] in self?.showSettings() }
@@ -2392,6 +2425,9 @@ class GameEngine: ObservableObject {
         case "dm": return { [weak self] in self?.showDMSettingsSubMenu() }
         case "ai": return { [weak self] in self?.showAIProviderMenu(onBack: { [weak self] in self?.returnFromLink() }) }
         case "howToPlay": return { [weak self] in self?.showHowToPlay() }
+        case "dndex": return { [weak self] in self?.openWeb("https://proflewis.github.io/gamer/") }
+        case "contributors": return { [weak self] in self?.openWeb(ContributorsManager.webURL) }
+        case "puzzles": return { [weak self] in self?.showPuzzleSettings(onBack: { [weak self] in self?.returnFromLink() }) }
         default: return nil
         }
     }
@@ -4016,6 +4052,14 @@ class GameEngine: ObservableObject {
         let totalStr = "\(total)"
         let currentStr = "\(current)".padding(toLength: totalStr.count, withPad: " ", startingAt: 0)
         return "\(currentStr)/\(totalStr)"
+    }
+
+    /// The default button's number, when a menu is waiting — so a tap on the
+    /// story text presses it, the same as tapping the button (see TerminalView).
+    var defaultMenuChoice: Int? {
+        guard !awaitingContinue, !awaitingTextInput, !currentMenuOptions.isEmpty else { return nil }
+        guard let i = currentMenuOptions.firstIndex(where: { $0.isDefault && !$0.isDisabled }) else { return nil }
+        return i + 1
     }
 
     func handleMenuChoice(_ choice: Int) {
@@ -6174,7 +6218,7 @@ class GameEngine: ObservableObject {
         printWrapped("    a button for its shortcut — e.g. long-press Quit Without Saving, Delete or Give Up Quest to skip the \"are you sure?\" step, Long Rest to rest fast, or Continue Adventure to jump straight into your latest save.", color: .green)
         print("")
         print("  • Auto-Continue", color: .brightGreen, bold: true)
-        printWrapped("    Many screens move on by themselves after a few seconds. Tap anywhere to continue at once, or wait for the little hourglass at the right of the input line to run out. Tap the hourglass to pause it (orange means paused, and a ? explains how to carry on), tap again to let it run, long-press it to hurry. Settings > Gameplay turns Auto-Continue off, changes how long screens wait, or hides the hourglass.", color: .green)
+        printWrapped("    A screen that's waiting for you shows a small underlined \"ok?\". Tap it — or anywhere, or press Return — when you've read it. Do nothing and it moves on by itself after a reading pause: the little hourglass at the right of the input line shows how long is left. Tap the hourglass to freeze time (it turns orange and nothing moves until you tap it again), long-press to hurry it along. Settings > Gameplay changes how long screens wait, or turns the waiting off.", color: .green)
         printLink("Settings > Gameplay", to: "gameplay", indent: 4)
         print("")
 
@@ -9086,6 +9130,7 @@ class GameEngine: ObservableObject {
         clearTerminal()
         // With battle animations on, the three authors wave hello.
         let dance = hitAnimationsEnabled && !reduceAnimations
+        ContributorsManager.shared.checkIfDue()   // the thank-you list, at most once a day
         printTitle("About")
         print("")
         print("  D&D 5e ASCII Adventure", color: .brightGreen, bold: true)
@@ -9109,14 +9154,14 @@ class GameEngine: ObservableObject {
             "  | ~~~~~~~~ |",
             "   \\________/",
         ]
-        if dance { printAuthorsDance() } else { printLines(philipArt, color: .cyan); print("") }
+        if dance { printAuthorsDance(style: aboutDanceStyle) } else { printLines(philipArt, color: .cyan); print("") }
         print("  CREATED BY", color: .cyan, bold: true)
         print("  Philip Lewis", color: .brightGreen)
         printWrapped("Game design, creative direction, and relentless testing.", indent: 2, color: .dimGreen)
         print("")
         print("  CO-AUTHOR", color: .cyan, bold: true)
         print("  Beau Lewis", color: .brightGreen)
-        printWrapped("World creation, storytelling and game testing.", indent: 2, color: .dimGreen)
+        printWrapped("World creation, storytelling, gameplay structure and style, and game testing.", indent: 2, color: .dimGreen)
         print("")
         print("")
 
@@ -9149,8 +9194,36 @@ class GameEngine: ObservableObject {
         print("")
         print("DnDEX — CARD BROWSER", color: .cyan, bold: true)
         printWrapped("Browse character, monster, and location cards at the DnDex. See the stories behind the default character names and dungeon locations.", indent: 2, color: .dimGreen)
-        print("  proflewis.github.io/gamer/", color: .brightGreen)
-        print("  ios_card_images/card-dex/", color: .brightGreen)
+        printLink("proflewis.github.io/gamer", to: "dndex", indent: 2)
+        print("  ios_card_images/card-dex/", color: .dimGreen)
+        print("")
+
+        print("THE DUNGEON MASTER", color: .cyan, bold: true)
+        printWrapped("The DM — the voice that describes the rooms, plays everyone you meet and writes the tales — can be run by an AI, with your own key. Without one the game uses its own built-in DM, and everything still works.", indent: 2, color: .dimGreen)
+        let dmNow = DMEngine.shared
+        for provider in AIProvider.allCases {
+            let key = dmNow.apiKey(for: provider)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let inUse = provider == dmNow.provider && !key.isEmpty
+            let state = inUse ? "switched on" : (key.isEmpty ? "not set up" : "set up, not in use")
+            print("  \(provider.displayName) — \(state)", color: inUse ? .brightGreen : .dimGreen)
+        }
+        printWrapped("The same brain writes the opening and progress tales when the story writer is on.", indent: 2, color: .dimGreen)
+        printLink("\(BrainLabels.change)", to: "ai", indent: 2)
+        print("")
+
+        print("PUZZLES", color: .cyan, bold: true)
+        printWrapped("Libraries and shrines pose riddles, logic puzzles, word puzzles and cryptic clues — harder the deeper you go. New ones arrive as a small signed pack, which the game looks for once a day.", indent: 2, color: .dimGreen)
+        printWrapped("Written a good one? Suggest it — if it goes into the next pack, your name goes on the list below.", indent: 2, color: .dimGreen)
+        printLink("Settings > Puzzles", to: "puzzles", indent: 2)
+        print("")
+
+        print("WITH THANKS TO", color: .cyan, bold: true)
+        for who in ContributorsManager.shared.contributors.prefix(12) {
+            print("  \(who.name)", color: .brightGreen)
+            printWrapped(who.reason, indent: 4, color: .dimGreen)
+        }
+        printWrapped("Suggest a puzzle, report a bug, or send a fix, and you'll be thanked here too.", indent: 2, color: .dimGreen)
+        printLink("The list on GitHub", to: "contributors", indent: 2)
         print("")
 
         print("LICENSE", color: .cyan, bold: true)
@@ -9162,59 +9235,151 @@ class GameEngine: ObservableObject {
         print("  about:dndRPG", color: .dimGreen)
 
         let back: () -> Void = onBack ?? { [weak self] in self?.showHowToPlay() }
-        showMenu([dance ? "Wave Again" : "How to Play", "< Back"])
+        // Enough buttons to fill the grid: one lonely button top-left with
+        // the nav cell bottom-right looked like a mistake.
+        var opts: [String] = []
+        if dance {
+            // First, so it's the default — and a tap on the story starts it.
+            opts.append(aboutDanceStyle == 0 ? "Dance!" : "Wave Again")
+            opts.append(aboutDanceStyle == 0 ? "Wave Again" : "Dance!")
+        }
+        opts.append("How to Play")
+        opts.append("The DnDex")
+        opts.append("Licence")
+        let all = opts + ["?", "< Back"]
+        showMenu(all)
         closeHandler = back
         menuHandler = { [weak self] choice in
-            guard let self = self else { return }
-            if choice == 1 {
-                if dance { self.showAbout(onBack: onBack) } else { self.showHowToPlay() }
-            } else {
-                back()
+            guard let self = self, choice >= 1, choice <= all.count else { return }
+            switch all[choice - 1] {
+            case "Wave Again":
+                self.aboutDanceStyle = 0
+                self.showAbout(onBack: onBack)
+            case "Dance!":
+                self.aboutDanceStyle = 1
+                self.showAbout(onBack: onBack)
+            case "How to Play": self.showHowToPlay()
+            case "The DnDex": self.showDnDexInfo(onBack: { [weak self] in self?.showAbout(onBack: onBack) })
+            case "Licence": self.showLicenceInfo(onBack: { [weak self] in self?.showAbout(onBack: onBack) })
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("About — Help")
+                    self.print("")
+                    self.printWrapped("Who made the game, what it's built on, where to find the card browser, and everyone thanked for helping. The green links open the page they name.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("Wave Again replays the authors' hello; Dance! sets them off properly. A tap on the story does whichever is the first button.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("This page is hidden behind a long press on the picture, so it's never opened by accident.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default: back()
             }
         }
     }
 
+    /// The card browser — every character, monster and place, with the
+    /// stories behind their names.
+    private func showDnDexInfo(onBack: @escaping () -> Void) {
+        clearTerminal()
+        printTitle("The DnDex")
+        print("")
+        printWrapped("A card browser for everything in the game: the adventurers, the monsters and the places — with the story behind each default name, and the art that goes with it.", indent: 2, color: .dimGreen)
+        print("")
+        print("  On the web:", color: .cyan, bold: true)
+        print("  proflewis.github.io/gamer/", color: .brightGreen)
+        print("")
+        print("  In this repository:", color: .cyan, bold: true)
+        print("  ios_card_images/card-dex/", color: .brightGreen)
+        print("")
+        printWrapped("Names you meet down here — Auntie Fen, the Iron Forge — are drawn from those cards, so the same character stays the same character from one adventure to the next.", indent: 2, color: .dimGreen)
+        print("")
+        showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+        closeHandler = onBack
+        menuHandler = { _ in onBack() }
+    }
+
+    /// What the game is built on, and who owns what.
+    private func showLicenceInfo(onBack: @escaping () -> Void) {
+        clearTerminal()
+        printTitle("Licence")
+        print("")
+        print("  THE GAME", color: .cyan, bold: true)
+        printWrapped("\u{00A9} 2024-2026 Philip Lewis. All rights reserved. A Timbaloo app.", indent: 2, color: .dimGreen)
+        print("")
+        print("  THE RULES", color: .cyan, bold: true)
+        printWrapped("Game mechanics come from the D&D 5e System Reference Document, used under the Open Gaming License (OGL) v1.0a.", indent: 2, color: .dimGreen)
+        printWrapped("Dungeons & Dragons is a trademark of Wizards of the Coast LLC, who have nothing to do with this game.", indent: 2, color: .dimGreen)
+        print("")
+        print("  THE WORDS AND PICTURES", color: .cyan, bold: true)
+        printWrapped("The story, the maps, the ASCII art and the music are the game's own — written for it, not borrowed.", indent: 2, color: .dimGreen)
+        print("")
+        showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+        closeHandler = onBack
+        menuHandler = { _ in onBack() }
+    }
+
     private var aboutDanceTimer: Timer?
 
-    /// The three authors in ASCII — Professor Lewis waving, Beau (13)
+    /// Which animation the About page is showing: 0 a hello, 1 a dance.
+    private var aboutDanceStyle = 0
+
+    /// The three authors in ASCII — Professor Lewis waving, Beau
     /// bouncing with a controller, Claude twinkling — for about 18 seconds.
-    private func printAuthorsDance() {
-        let prof: [[String]] = [
+    /// Style 1 is the same three, dancing, with the music to go with it.
+    private func printAuthorsDance(style: Int = 0) {
+        let profWave: [[String]] = [
             ["  _____", " [_____]", "  (o-o)", "  /|_|\\", "   / \\"],
             ["  _____", " [_____]", "  (o-o)/", "  /|_|", "   / \\"],
             ["  _____", " [_____]", "  (o-o)", " [=]|_|\\", "   / \\"],
         ]
-        let beau: [[String]] = [
+        let beauWave: [[String]] = [
             ["", "   ,,,", "  (^_^)", "  <|#|>", "   / \\"],
             ["   ,,,", "  (^o^)", " \\ |#| /", "   / \\", ""],
             ["", "   ,,,", "  (^_~)", "  <|#|>", "   | |"],
         ]
-        let claude: [[String]] = [
+        let claudeWave: [[String]] = [
             ["    *", "  \\ | /", " -- * --", "  / | \\", "    *"],
             ["  .   .", "   \\ /", " -- + --", "   / \\", "  '   '"],
             ["", "    .", "  - * -", "    '", ""],
         ]
-        let figures = [prof, beau, claude]
+        // Style 1: arms up, arms out, a kick — and notes over their heads.
+        let profDance: [[String]] = [
+            ["  _____ ♪", " [_____]", "  (^-^)", " \\ |_| /", "   / \\"],
+            ["  _____", " [_____] ♫", "  (o-o)", " --|_|--", "   /\\"],
+            ["  _____ ♪", " [_____]", "  (^o^)", " / |_| \\", "  <   >"],
+        ]
+        let beauDance: [[String]] = [
+            ["   ,,, ♫", "  (^o^)", " \\ |#| /", "   / \\", ""],
+            ["   ,,,", "  (o_o) ♪", " --|#|--", "   |_|", "  /   \\"],
+            ["   ,,, ♫", "  (^_^)", " / |#| \\", "   <\\", "    \\"],
+        ]
+        let claudeDance: [[String]] = [
+            ["   ♪  *", "  \\ | /", " == * ==", "  / | \\", "   *  ♫"],
+            ["  *  .  *", "   \\ | /", " -- @ --", "   / | \\", "  '  .  '"],
+            ["   ♫", "    \\*/", " -=- + -=-", "    /*\\", "   ♪"],
+        ]
+        let figures = style == 1 ? [profDance, beauDance, claudeDance] : [profWave, beauWave, claudeWave]
         func row(_ tick: Int, _ line: Int) -> String {
             "  " + figures.enumerated().map { i, f in
                 f[(tick + i) % f.count][line].padding(toLength: 11, withPad: " ", startingAt: 0)
             }.joined(separator: "  ")
         }
         let start = terminalLines.count
-        for line in 0..<5 { print(row(0, line), color: .cyan) }
-        let labels = ["Prof Lewis", "Beau, 13", "Claude"].map { label -> String in
+        for line in 0..<5 { print(row(0, line), color: style == 1 ? .magenta : .cyan) }
+        let labels = ["Prof Lewis", "Beau Lewis", "Claude"].map { label -> String in
             (String(repeating: " ", count: max(0, (11 - label.count) / 2)) + label).padding(toLength: 11, withPad: " ", startingAt: 0)
         }
         print("  " + labels.joined(separator: "  "), color: .brightGreen)
+        if style == 1 { print("        ♪   ♫   ♪   ♫   ♪", color: .yellow) }
         print("")
         aboutDanceTimer?.invalidate()
         let generation = screenGeneration
         var tick = 0
-        aboutDanceTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: true) { [weak self] timer in
+        aboutDanceTimer = Timer.scheduledTimer(withTimeInterval: style == 1 ? 0.3 : 0.45, repeats: true) { [weak self] timer in
             guard let self = self, self.screenGeneration == generation, start + 4 < self.terminalLines.count else { timer.invalidate(); return }
             tick += 1
             for line in 0..<5 { self.terminalLines[start + line].text = row(tick, line) }
-            if tick >= 40 { timer.invalidate() }
+            if tick >= (style == 1 ? 60 : 40) { timer.invalidate() }
         }
     }
 
@@ -18154,6 +18319,7 @@ class GameEngine: ObservableObject {
 
         var opts = suggestions.map { String($0.prefix(MenuOption.maxButtonLength)) }
         opts.append("?")
+        opts.append("< Back")
         promptTextWithMenu("Name your dungeon, or choose a default:", options: opts)
 
         let dungeonLoreNames = nameEntries.filter { $0.category == "dungeon" }.map { $0.name }
@@ -18166,11 +18332,11 @@ class GameEngine: ObservableObject {
         }
         swipeLeftHandler = { [weak self] in
             self?.clearTerminal()
-            self?.startNewGame()
+            self?.showPartyReview()
         }
         closeHandler = { [weak self] in
             self?.clearTerminal()
-            self?.startNewGame()
+            self?.showPartyReview()
         }
         textLongPressHandler = { [weak self] _ in
             self?.showDungeonHelp()
@@ -18180,6 +18346,12 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             if choice == suggestions.count + 1 {
                 self.showDungeonHelp()
+                return
+            }
+            if choice == suggestions.count + 2 {
+                // Back to the party — nothing is lost, and the adventurers
+                // can still be changed before setting off.
+                self.showPartyReview()
                 return
             }
             if choice >= 1 && choice <= suggestions.count {
@@ -18406,7 +18578,7 @@ class GameEngine: ObservableObject {
         print("   4+    Brutal", color: .dimGreen)
         print("")
 
-        promptTextWithMenu("", options: ["Easy (1)", "Medium (2)", "Hard (3)", "?"])
+        promptTextWithMenu("", options: ["Easy (1)", "Medium (2)", "Hard (3)", "?", "< Back"])
 
         closeHandler = { [weak self] in
             self?.clearTerminal()
@@ -18416,6 +18588,13 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             if choice == 4 {
                 self.showDifficultyHelp(dungeonName: dungeonName)
+                return
+            }
+            if choice == 5 {
+                // Back to naming (and from there, back to the party) — not a
+                // difficulty of 5, which is what the number used to mean here.
+                self.clearTerminal()
+                self.startAdventure()
                 return
             }
             self.confirmAdventure(dungeonName: dungeonName, level: Double(choice))
@@ -18732,7 +18911,7 @@ class GameEngine: ObservableObject {
         guard DMEngine.shared.isConfigured, storyWriterEnabled else { open(progressTaleOffline()); return }
         clearTerminal()
         for _ in 0..<5 { print("") }
-        print("The tale is being written…", color: .dimGreen, centered: true)
+        print(Self.takingStockLines.randomElement()!, color: .dimGreen, centered: true)
         startWritingBar(seconds: 15)
         DMEngine.shared.writeStory(system: storySystemPrompt, prompt: progressPrompt()) { [weak self] text in
             guard let self = self else { return }
@@ -18848,7 +19027,7 @@ class GameEngine: ObservableObject {
             self.awaitingContinue = false
         }
         for _ in 0..<5 { print("") }
-        print("The tale is being written…", color: .dimGreen, centered: true)
+        print(Self.travelLines.randomElement()!, color: .dimGreen, centered: true)
         startWritingBar(seconds: 15)
         DMEngine.shared.writeStory(system: storySystemPrompt, prompt: storyPrompt()) { [weak self] text in
             guard let self = self, self.taleWriteToken == writeToken else { return }
@@ -22758,10 +22937,42 @@ class GameEngine: ObservableObject {
         printWrapped("\"I have a task for you, if you're willing: \(quest.description). Do this and I'll see you rewarded with \(quest.reward.description).\"", indent: 2, color: .yellow)
         print("")
 
-        showMenu(["Accept", "Decline"])
+        if !allQuests.isEmpty {
+            print("  ALREADY ON:", color: .cyan, bold: true)
+            for q in allQuests {
+                printWrapped("· \(q.description) — for \(q.giverName)", indent: 4, color: .green)
+                printWrapped(sideQuestProgressDescription(q), indent: 6, color: .dimGreen)
+            }
+            printWrapped("Room for \(questCapacity) at once; \(allQuests.count) in hand\(canTakeAnotherQuest ? "" : " — give one up to take this on").", indent: 4, color: .dimGreen)
+            print("")
+        }
+        var opts = ["Accept", "Decline"]
+        if !allQuests.isEmpty { opts.append("Our Quests") }
+        let all = opts + ["?", "< Back"]
+        showMenu(all)
         closeHandler = { [weak self] in self?.talkToNPC() }
         menuHandler = { [weak self] choice in
-            guard let self = self else { return }
+            guard let self = self, choice >= 1, choice <= all.count else { return }
+            switch all[choice - 1] {
+            case "Our Quests":
+                self.showQuestsOnHand(onBack: { [weak self] in self?.offerSideQuest() })
+                return
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("A Quest? — Help")
+                    self.print("")
+                    self.printWrapped("An errand: a small job with its own reward, alongside whatever main quest you're on. Progress is tracked for you, and you're paid when you come back to whoever asked.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("You can carry one errand per adventurer, plus one for the party. Our Quests lists what you've already promised, with how far along each is, and can give one up to make room.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+                return
+            case "< Back":
+                self.talkToNPC()
+                return
+            default:
+                break
+            }
             npc.sideQuestOffered = true
             room.npc = npc
             if choice == 1 {
@@ -25787,11 +25998,27 @@ class GameEngine: ObservableObject {
         var labels = old != nil ? ["Take Up the New Quest", "Hear Another Plea", "Back to Our Old Quest", "Hear It Again"]
                                 : ["Take Up the Quest", "Hear Another Plea", "No Quest", "Hear It Again"]
         if !allQuests.isEmpty { labels.append("Our Errands") }
-        showMenu(labels)
-        closeHandler = { [weak self] in self?.acceptQuest(then: proceed) }
+        let all = labels + ["?", "< Back"]
+        showMenu(all)
+        // ✕ and < Back: the same as turning it down, but nobody writes it
+        // down as a refusal.
+        closeHandler = { [weak self] in self?.declineQuietly(then: proceed) }
         menuHandler = { [weak self] choice in
-            guard let self = self, choice >= 1, choice <= labels.count else { return }
-            switch labels[choice - 1] {
+            guard let self = self, choice >= 1, choice <= all.count else { return }
+            switch all[choice - 1] {
+            case "< Back":
+                self.declineQuietly(then: proceed)
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("Will You Take It On? — Help")
+                    self.print("")
+                    self.printWrapped("Take it up and it becomes your main quest: the whole adventure leads to it, and the reward is paid when it's done.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("Hear Another Plea brings someone else's trouble instead. Hear It Again retells this one. Our Errands shows the smaller jobs you've promised, and can give one up.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("Back (and the ✕) simply leaves it — you set off with no main quest, and nobody records it as a refusal.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
             case "Take Up the New Quest", "Take Up the Quest":
                 self.acceptQuest(then: proceed)
             case "Our Errands":
@@ -25836,6 +26063,23 @@ class GameEngine: ObservableObject {
                 proceed()
             }
         }
+    }
+
+    /// Backing out of a quest offer: the same as turning it down, but not
+    /// written into the quest history as a refusal.
+    private func declineQuietly(then proceed: @escaping () -> Void) {
+        if let backup = questChangeBackup {
+            mainQuest = backup.quest
+            adventureIntroLines = backup.intro
+            questChangeBackup = nil
+        } else {
+            mainQuest = nil
+            noMainQuest = true
+        }
+        questPleaPrevious = nil
+        questPleaAsker = nil
+        progressTaleCache = nil
+        proceed()
     }
 
     /// Going back to the quest you walked away from — they might have you
@@ -27001,17 +27245,22 @@ class GameEngine: ObservableObject {
         // Build menu
         // "Change Brain" (was "AI") — which mind runs the Dungeon Master.
         // Party Review first (the default); Brain now lives in Settings.
-        var menuOpts = ["Party Review", "Tale", "Save to Roster", "Lore", "Settings", "Quests", "Enter the Dungeon", "?", "< Back"]
+        // Once they've actually been down there it's a return, not an
+        // invitation — but a party fresh from setup hasn't been in yet.
+        let roomsSeen = dungeon?.rooms.values.filter { $0.visited }.count ?? 0
+        let beenIn = roomsSeen > 1 || monstersSlain > 0 || gameTimeMinutes > 360 || (dungeon?.currentRoomId ?? 0) != 0
+        let enterLabel = beenIn ? "Return to the Dungeon" : "Enter the Dungeon"
+        var menuOpts = ["Party Review", "Tale", "Save to Roster", "Lore", "Settings", "Quests", enterLabel, "?", "< Back"]
         if dungeon?.hasCartography == true {
             menuOpts.insert("Atlas", at: menuOpts.firstIndex(of: "Lore") ?? 0)
         }
         let hasPoisoned = party.contains(where: { $0.isPoisoned })
         // Occasional actions go at the end — never the default.
         if hasPoisoned {
-            menuOpts.insert("Cure Poison", at: menuOpts.firstIndex(of: "Enter the Dungeon") ?? menuOpts.count)
+            menuOpts.insert("Cure Poison", at: menuOpts.firstIndex(of: enterLabel) ?? menuOpts.count)
         }
         if activeQuest != nil {
-            menuOpts.insert("Give Up Quest", at: menuOpts.firstIndex(of: "Enter the Dungeon") ?? menuOpts.count)
+            menuOpts.insert("Give Up Quest", at: menuOpts.firstIndex(of: enterLabel) ?? menuOpts.count)
         }
 
         showMenu(menuOpts)
@@ -27063,7 +27312,7 @@ class GameEngine: ObservableObject {
                 self.showAIProviderMenu(onBack: { [weak self] in self?.showPartyStatus() })
             case "Settings":
                 self.showSettings()
-            case "Enter the Dungeon":
+            case "Enter the Dungeon", "Return to the Dungeon":
                 self.showExplorationView()
             case "?":
                 self.showPartyStatusHelp()
@@ -27269,7 +27518,7 @@ class GameEngine: ObservableObject {
                 ("Atlas", "the map of everywhere you've been (once you've found cartography)"),
                 ("Cure Poison", "shown when someone is poisoned"),
                 ("Give Up Quest", "abandon a quest (progress lost, some gold in goodwill) to make room for another"),
-                ("Enter the Dungeon", "back to exploring, right where you left off"),
+                ("Return to the Dungeon", "back to exploring, right where you left off (it says Enter the Dungeon until you've been in)"),
                 ("? and < Back", "this help, and back to the dungeon (the ✕ does the same)"),
             ] {
                 self.printWrapped("\(name) — \(what)", indent: 2, color: .dimGreen)
