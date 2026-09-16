@@ -43,7 +43,7 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS and macOS, wit
 - ASCII minimap showing only visited rooms with dynamic key (only shows symbols present on the map) — merchant rooms are marked with `[M]`
 - Encounters and traps scaled by dungeon level
 - Treasure, equipment, and potions throughout; shop rooms always have a merchant, and armouries sometimes do too
-- **Seven floors, always downward** — you start on the ground floor (floor 0, Level 1) and descend to floor -6 (Level 7), where the villain waits. Each floor's guardian (the `B` room) must fall before the way down opens; a rare deep-blue teleport pad can carry you down a floor early. Stairs and ropes within a floor link its two galleries — shortcuts across the same depth, not a way down
+- **Always downward** — you start on the ground floor (floor 0, Level 1) and descend to the lowest level, where the villain waits. Seven floors by default; **Settings > Gameplay > Levels** sets how deep a *new* dungeon goes (1 to 12), and a dungeon keeps the depth it was made with, so changing the setting never reshapes a game in progress. Each floor's guardian (the `B` room) must fall before the way down opens; a rare deep-blue teleport pad can carry you down a floor early. Stairs and ropes within a floor link its two galleries — shortcuts across the same depth, not a way down
 - **Locked doors** — occasionally gate a passage; open them with a matching key (findable elsewhere in the dungeon), by picking the lock (Thieves' Tools), or by forcing it (Strength check). Door state persists — leave and come back and it's exactly as you left it — and holding the key, you can lock it again behind you to keep monsters out
 
 ### Merchants
@@ -60,7 +60,7 @@ A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS and macOS, wit
 - Training teaches a character a new skill proficiency outright, or a small XP bonus if they already have it
 - A **Visit Gym** button appears whenever one is present, marked `[G]` on the minimap
 
-### 30 Monsters
+### 36 Monsters
 
 The dungeon is home to 36 different creature types, from lowly rats and kobolds to terrifying eye tyrants and dragons.
 

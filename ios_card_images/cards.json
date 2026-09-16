@@ -3356,7 +3356,7 @@
         "CR": "3",
         "XP": 700
       },
-      "image": "monsters/displacer-beast.png"
+      "image": "monsters/phase-stalker.png"
     },
     {
       "id": "monster-wraith",
@@ -3388,7 +3388,7 @@
         "CR": "4",
         "XP": 1100
       },
-      "image": "monsters/demogorgon.png"
+      "image": "monsters/the-maw.png"
     },
     {
       "id": "monster-mindFlayer",
@@ -3404,7 +3404,7 @@
         "CR": "7",
         "XP": 2900
       },
-      "image": "monsters/mind-flayer.png"
+      "image": "monsters/brain-eater.png"
     },
     {
       "id": "monster-beholder",
@@ -3420,7 +3420,7 @@
         "CR": "13",
         "XP": 10000
       },
-      "image": "monsters/beholder.png"
+      "image": "monsters/eye-tyrant.png"
     },
     {
       "id": "monster-youngDragon",
@@ -3452,7 +3452,7 @@
         "CR": "10",
         "XP": 5900
       },
-      "image": "monsters/vecna.png"
+      "image": "monsters/the-undying-king.png"
     }
   ]
 }
