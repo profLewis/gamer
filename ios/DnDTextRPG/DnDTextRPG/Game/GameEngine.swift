@@ -7278,7 +7278,7 @@ class GameEngine: ObservableObject {
         let s = monster.stats
         let crText = s.cr < 1 ? "1/\(Int(1.0 / s.cr))" : "\(Int(s.cr))"
         let name = monster.rawValue
-        let cardW = 27
+        let cardW = Self.cardColumns
         let border = String(repeating: "─", count: cardW)
 
         // Card top border with sparkle corners
@@ -7295,7 +7295,7 @@ class GameEngine: ObservableObject {
         // ASCII art (animated)
         let art = monster.asciiArt
         let maxWidth = art.map { $0.count }.max() ?? 0
-        let padded = art.map { $0.padding(toLength: min(maxWidth, 25), withPad: " ", startingAt: 0) }
+        let padded = art.map { $0.padding(toLength: min(maxWidth, cardW - 2), withPad: " ", startingAt: 0) }
 
         let artStart = terminalLines.count
         for line in padded {
@@ -7401,6 +7401,27 @@ class GameEngine: ObservableObject {
             swipeRandomHandler = { [weak self] in
                 let r = Int.random(in: 0..<allMonsters.count)
                 self?.showMonsterDetail(allMonsters[r])
+            }
+        }
+
+        // Buttons, not just swipes: this page had no visible way back.
+        showMenuOptions([MenuOption("<<", tint: .navigation, compact: true),
+                         MenuOption(">>", tint: .navigation, compact: true),
+                         MenuOption("?", tint: .navigation, compact: true),
+                         MenuOption("< Back", tint: .navigation, compact: true)])
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1: self.swipeRightHandler?()
+            case 2: self.swipeLeftHandler?()
+            case 3:
+                self.showInlineHelp {
+                    self.printTitle("Bestiary — Help")
+                    self.print("")
+                    self.printWrapped("Every monster the dungeon can throw at you: what it hits for, how tough it is, and what it drops. << and >> turn the pages (swiping does too), and the dice picks one at random.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default: self.closeHandler?()
             }
         }
 
@@ -7547,7 +7568,7 @@ class GameEngine: ObservableObject {
 
         // Card layout — compact single-page
         let name = npc.rawValue
-        let cardW = 27
+        let cardW = Self.cardColumns
         let border = String(repeating: "─", count: cardW)
 
         // Top border with sparkle corners
@@ -7566,7 +7587,7 @@ class GameEngine: ObservableObject {
         // ASCII art inside card (animated)
         let art = npc.asciiArt
         let maxWidth = art.map { $0.count }.max() ?? 0
-        let padded = art.map { $0.padding(toLength: min(maxWidth, 25), withPad: " ", startingAt: 0) }
+        let padded = art.map { $0.padding(toLength: min(maxWidth, cardW - 2), withPad: " ", startingAt: 0) }
 
         let artStart = terminalLines.count
         for line in padded {
@@ -7651,6 +7672,27 @@ class GameEngine: ObservableObject {
             swipeRandomHandler = { [weak self] in
                 let r = Int.random(in: 0..<allNPCs.count)
                 self?.showNPCDetail(allNPCs[r])
+            }
+        }
+
+        // Buttons, not just swipes: this page had no visible way back.
+        showMenuOptions([MenuOption("<<", tint: .navigation, compact: true),
+                         MenuOption(">>", tint: .navigation, compact: true),
+                         MenuOption("?", tint: .navigation, compact: true),
+                         MenuOption("< Back", tint: .navigation, compact: true)])
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1: self.swipeRightHandler?()
+            case 2: self.swipeLeftHandler?()
+            case 3:
+                self.showInlineHelp {
+                    self.printTitle("Rogues Gallery — Help")
+                    self.print("")
+                    self.printWrapped("Everyone you might meet down there: what they do, what they say, and a tip for each. A tick means you have met them. << and >> turn the pages (swiping does too), and the dice picks one at random.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default: self.closeHandler?()
             }
         }
 
@@ -8155,7 +8197,7 @@ class GameEngine: ObservableObject {
         scrollLocked = true
 
         let entry = entries[index]
-        let cardW = 27
+        let cardW = Self.cardColumns
         let border = String(repeating: "─", count: cardW)
 
         // Compute line indices arithmetically (since clearTerminal + print are async)
@@ -8187,7 +8229,7 @@ class GameEngine: ObservableObject {
 
         // Individual ASCII art
         for line in entry.art {
-            let trimmed = line.count > 25 ? String(line.prefix(25)) : line
+            let trimmed = String(line.prefix(cardW - 2))
             let artPad = max(0, cardW - trimmed.count)
             let aLeft = artPad / 2
             let aRight = artPad - aLeft
@@ -8252,6 +8294,27 @@ class GameEngine: ObservableObject {
             }
         }
 
+        // Buttons, not just swipes: this page had no visible way back.
+        showMenuOptions([MenuOption("<<", tint: .navigation, compact: true),
+                         MenuOption(">>", tint: .navigation, compact: true),
+                         MenuOption("?", tint: .navigation, compact: true),
+                         MenuOption("< Back", tint: .navigation, compact: true)])
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1: self.swipeRightHandler?()
+            case 2: self.swipeLeftHandler?()
+            case 3:
+                self.showInlineHelp {
+                    self.printTitle("Name Lore — Help")
+                    self.print("")
+                    self.printWrapped("A card for every name the game can give: where it comes from, and what it is known for. << and >> turn the pages (swiping does too), and the dice picks one at random.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default: self.closeHandler?()
+            }
+        }
+
         // Animate: sparkle corners + art sway + stat bar pulse
         let sparkles = ["✦", "✧", "★", "☆"]
         let artLines = entry.art
@@ -8275,7 +8338,7 @@ class GameEngine: ObservableObject {
                 for (j, rawLine) in artLines.enumerated() {
                     let lineIdx = artStart + j
                     guard lineIdx < self.terminalLines.count else { continue }
-                    let trimmed = rawLine.count > 25 ? String(rawLine.prefix(25)) : rawLine
+                    let trimmed = String(rawLine.prefix(cardW - 2))
                     let artPad = max(0, cardW - trimmed.count)
                     let aLeft = artPad / 2 + shift
                     let aRight = max(0, artPad - artPad / 2 - shift)
@@ -15042,6 +15105,16 @@ class GameEngine: ObservableObject {
 
     /// Show character card with edit options — dulled if game in progress
     /// Print a card row: "  ║ Label     Value         ║"
+    /// Cards are drawn in text, so "bigger" means wider — a Mac window has
+    /// the room for it, a phone hasn't.
+    static var cardColumns: Int {
+        #if os(macOS)
+        return 44
+        #else
+        return 27
+        #endif
+    }
+
     private func printCardRow(_ label: String, _ value: String, width: Int, color: TerminalColor) {
         let inner = " \(label)  \(value)"
         let padCount = max(0, width - inner.count)
@@ -15056,7 +15129,7 @@ class GameEngine: ObservableObject {
         clearTerminal()
 
         // ── Card border top ──
-        let cardWidth = 33
+        let cardWidth = Self.cardColumns + 6
         let border = String(repeating: "═", count: cardWidth)
         print("  ╔\(border)╗", color: .cyan)
 
@@ -27794,7 +27867,7 @@ class GameEngine: ObservableObject {
 
         clearTerminal()
 
-        let cardW = 27
+        let cardW = Self.cardColumns
         let border = String(repeating: "─", count: cardW)
 
         // Card position indicator
@@ -27825,7 +27898,7 @@ class GameEngine: ObservableObject {
 
         // ASCII art
         for line in char.characterClass.asciiArt {
-            let trimmed = line.count > 25 ? String(line.prefix(25)) : line
+            let trimmed = String(line.prefix(cardW - 2))
             let artPad = max(0, cardW - trimmed.count)
             let aL = artPad / 2; let aR = artPad - aL
             print("  ║\(String(repeating: " ", count: aL))\(trimmed)\(String(repeating: " ", count: aR))║", color: .green)
@@ -27935,7 +28008,7 @@ class GameEngine: ObservableObject {
 
         clearTerminal()
 
-        let cardW = 27
+        let cardW = Self.cardColumns
         let border = String(repeating: "─", count: cardW)
 
         if party.count > 1 {
@@ -27964,7 +28037,7 @@ class GameEngine: ObservableObject {
 
         // ASCII art
         for line in char.characterClass.asciiArt {
-            let trimmed = line.count > 25 ? String(line.prefix(25)) : line
+            let trimmed = String(line.prefix(cardW - 2))
             let artPad = max(0, cardW - trimmed.count)
             let aL = artPad / 2; let aR = artPad - aL
             print("  ║\(String(repeating: " ", count: aL))\(trimmed)\(String(repeating: " ", count: aR))║", color: .green)
@@ -28020,6 +28093,20 @@ class GameEngine: ObservableObject {
             let next = (idx + 1) % self.party.count
             self.showCharacterCardFromEdit(index: next, inGame: inGame)
         } : nil
+        defer {
+            // A visible way off the card, not just a swipe.
+            showMenuOptions([MenuOption("<<", tint: .navigation, compact: true),
+                             MenuOption(">>", tint: .navigation, compact: true),
+                             MenuOption("< Back", tint: .navigation, compact: true)])
+            menuHandler = { [weak self] choice in
+                guard let self = self else { return }
+                switch choice {
+                case 1: self.swipeRightHandler?()
+                case 2: self.swipeLeftHandler?()
+                default: self.closeHandler?()
+                }
+            }
+        }
         swipeRightHandler = party.count > 1 ? { [weak self] in
             guard let self = self else { return }
             let prev = (idx - 1 + self.party.count) % self.party.count

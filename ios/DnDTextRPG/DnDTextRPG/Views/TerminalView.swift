@@ -1138,6 +1138,10 @@ struct TerminalView: View {
                                     textModeAutoSubmitTimer = nil
                                     submitInput()
                                 }
+                                // A click on the input line means "type here",
+                                // never "next".
+                                .contentShape(Rectangle())
+                                .onTapGesture { isInputFocused = true }
 
                             Spacer()
 
@@ -1702,6 +1706,19 @@ struct TerminalView: View {
     private func handleMacKeyPress(_ press: KeyPress) -> KeyPress.Result {
         // Don't intercept when text input is active
         if gameEngine.awaitingTextInput {
+            return .ignored
+        }
+
+        // Nor while you're actually typing. The input line is always there,
+        // so a waiting screen used to swallow every key — Return included —
+        // as "continue", leaving what you'd typed sitting in the box. With
+        // the field focused or holding anything, the keys are its own, and
+        // Return sends it.
+        if isInputFocused || !inputText.trimmingCharacters(in: .whitespaces).isEmpty {
+            if press.key == .return {
+                submitInput()
+                return .handled
+            }
             return .ignored
         }
 
