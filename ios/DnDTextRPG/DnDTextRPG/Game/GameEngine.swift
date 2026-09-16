@@ -2426,6 +2426,8 @@ class GameEngine: ObservableObject {
         case "ai": return { [weak self] in self?.showAIProviderMenu(onBack: { [weak self] in self?.returnFromLink() }) }
         case "howToPlay": return { [weak self] in self?.showHowToPlay() }
         case "dndex": return { [weak self] in self?.openWeb("https://proflewis.github.io/gamer/") }
+        case "puzzlePack": return { [weak self] in self?.openWeb("https://github.com/profLewis/gamer/blob/main/puzzles/pack.json") }
+        case "puzzleFolder": return { [weak self] in self?.openWeb("https://github.com/profLewis/gamer/tree/main/puzzles") }
         case "contributors": return { [weak self] in self?.openWeb(ContributorsManager.webURL) }
         case "puzzles": return { [weak self] in self?.showPuzzleSettings(onBack: { [weak self] in self?.returnFromLink() }) }
         default: return nil
@@ -19874,6 +19876,11 @@ class GameEngine: ObservableObject {
             self.print("")
             self.printLink("Leave this adventure (you'll be asked about saving)", to: "leaveGame", indent: 2)
             self.print("")
+            self.print("  THE WAY IS DOWN", color: .cyan, bold: true)
+            self.printWrapped("There are seven floors. You start on the ground floor (floor 0, Level 1) and work your way down to floor -6 (Level 7), where the villain of your Origins tale is waiting.", indent: 2, color: .green)
+            self.printWrapped("Each floor has a guardian in its boss chamber (B on the map). Beat it and the way down opens. A rare deep-blue teleport pad can drop you a floor early, past that guardian.", indent: 2, color: .dimGreen)
+            self.printWrapped("Stairs and ropes inside a floor lead to its other gallery — a shortcut across the same depth, not a way down. The header line shows the floor you're on, and which gallery.", indent: 2, color: .dimGreen)
+            self.print("")
             self.print("  THE MAP", color: .cyan, bold: true)
             self.printWrapped("@ is your party. XX = secured door, KK = locked door. Full symbol key:", indent: 2, color: .green)
             self.printFullMapLegend()
@@ -20077,7 +20084,7 @@ class GameEngine: ObservableObject {
         print("")
 
         // Where you are: the place, the level, and the floor where there are several.
-        print("\(dungeon.name) · Level \(dungeon.level)\(dungeon.hasVerticalConnections ? " · Floor \(dungeon.currentFloor)" : "")", color: .cyan)
+        print("\(dungeon.name) · Level \(dungeon.level) · floor \(Dungeon.depthLabel(dungeon.level))\(dungeon.hasVerticalConnections ? " · \(dungeon.galleryName)" : "")", color: .cyan)
 
         // Room description — dim when the room itself isn't lit
         if roomIsLit {
@@ -20984,12 +20991,12 @@ class GameEngine: ObservableObject {
                 if Int.random(in: 1...100) <= 40, let unlucky = party.filter({ $0.isConscious }).randomElement() {
                     let injury = Dice.roll(6)
                     unlucky.currentHP = max(1, unlucky.currentHP - injury)
-                    explorationStatusMessage = ("You jump down to Floor \(dungeon.currentFloor) — \(unlucky.name) lands wrong! (-\(injury) HP)", .red)
+                    explorationStatusMessage = ("You jump down to the \(dungeon.galleryName) — \(unlucky.name) lands wrong! (-\(injury) HP)", .red)
                     logEvent("\(unlucky.name) was hurt jumping down without a rope (-\(injury) HP)", category: "EXPLORE")
                 } else {
-                    explorationStatusMessage = ("You jump down to Floor \(dungeon.currentFloor), landing hard but unhurt.", .yellow)
+                    explorationStatusMessage = ("You jump down to the \(dungeon.galleryName), landing hard but unhurt.", .yellow)
                 }
-                logEvent("Jumped down without a rope from \(room.name) to \(destination.name) (Floor \(dungeon.currentFloor))", category: "EXPLORE")
+                logEvent("Jumped down without a rope from \(room.name) to \(destination.name) (the \(dungeon.galleryName))", category: "EXPLORE")
             } else {
                 // A rope actually bears the party's weight here (unlike the
                 // no-rope jump-down above) — the heavier the party is loaded,
@@ -21009,11 +21016,11 @@ class GameEngine: ObservableObject {
                     let unlucky = party.filter({ $0.isConscious }).randomElement()
                     unlucky?.currentHP = max(1, (unlucky?.currentHP ?? injury) - injury)
                     let who = unlucky?.name ?? "Someone"
-                    explorationStatusMessage = ("The rope snaps under the party's load! \(who) tumbles the last few feet to Floor \(dungeon.currentFloor). (-\(injury) HP) The rope is ruined.", .red)
+                    explorationStatusMessage = ("The rope snaps under the party's load! \(who) tumbles the last few feet to the \(dungeon.galleryName). (-\(injury) HP) The rope is ruined.", .red)
                     logEvent("Rope broke under the party's weight while climbing \(dirWord) (-\(injury) HP to \(who))", category: "EXPLORE")
                 } else {
-                    explorationStatusMessage = ("You climb \(dirWord) the rope through the hole to Floor \(dungeon.currentFloor)...", .cyan)
-                    logEvent("Climbed via rope \(dirWord) from \(room.name) to \(destination.name) (Floor \(dungeon.currentFloor))", category: "EXPLORE")
+                    explorationStatusMessage = ("You climb \(dirWord) the rope through the hole to the \(dungeon.galleryName)...", .cyan)
+                    logEvent("Climbed via rope \(dirWord) from \(room.name) to \(destination.name) (the \(dungeon.galleryName))", category: "EXPLORE")
                 }
             }
         case "levitation":
@@ -21029,17 +21036,17 @@ class GameEngine: ObservableObject {
             if Int.random(in: 1...100) <= 10, let unlucky = party.filter({ $0.isConscious }).randomElement() {
                 let bump = Dice.roll(4)
                 unlucky.currentHP = max(1, unlucky.currentHP - bump)
-                explorationStatusMessage = ("You levitate \(dirWord) — until \(unlucky.name) bumps the ceiling! (-\(bump) HP) Now on Floor \(dungeon.currentFloor).", .yellow)
+                explorationStatusMessage = ("You levitate \(dirWord) — until \(unlucky.name) bumps the ceiling! (-\(bump) HP) Now in the \(dungeon.galleryName).", .yellow)
                 logEvent("\(unlucky.name) bumped the ceiling while levitating (-\(bump) HP)", category: "EXPLORE")
             } else {
-                explorationStatusMessage = ("You levitate \(dirWord) to Floor \(dungeon.currentFloor), minding the ceiling...", .cyan)
+                explorationStatusMessage = ("You levitate \(dirWord) to the \(dungeon.galleryName), minding the ceiling...", .cyan)
             }
-            logEvent("Levitated \(dirWord) from \(room.name) to \(destination.name) (Floor \(dungeon.currentFloor))", category: "EXPLORE")
+            logEvent("Levitated \(dirWord) from \(room.name) to \(destination.name) (the \(dungeon.galleryName))", category: "EXPLORE")
         default: // "stairs"
-            explorationStatusMessage = ("You take the stairs \(dirWord) to Floor \(dungeon.currentFloor)...", .cyan)
-            logEvent("Took the stairs \(dirWord) from \(room.name) to \(destination.name) (Floor \(dungeon.currentFloor))", category: "EXPLORE")
+            explorationStatusMessage = ("You take the stairs \(dirWord) to the \(dungeon.galleryName)...", .cyan)
+            logEvent("Took the stairs \(dirWord) from \(room.name) to \(destination.name) (the \(dungeon.galleryName))", category: "EXPLORE")
         }
-        logMultiplayerAction("The party moved \(dirWord) to Floor \(dungeon.currentFloor) via \(method)")
+        logMultiplayerAction("The party moved \(dirWord) to the \(dungeon.galleryName) via \(method)")
         autosaveIfNeeded()
         showExplorationView()
     }
@@ -25817,7 +25824,7 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped("New puzzles arrive now and then as a small signed pack. The game checks for one once a day, and only accepts a pack that carries the author's signature.", indent: 2, color: .dimGreen)
         print("")
-        let opts = ["Check for New Puzzles", "Suggest a Puzzle", "< Back"]
+        let opts = ["Check for New Puzzles", "Suggest a Puzzle", "Puzzle List", "< Back"]
         showMenu(opts)
         closeHandler = onBack
         menuHandler = { [weak self] choice in
@@ -25831,9 +25838,60 @@ class GameEngine: ObservableObject {
             case 2:
                 self.openPuzzleSuggestion()
                 self.print("  Opening a suggestion form on GitHub in your browser…", color: .cyan)
+            case 3:
+                self.showPuzzleList(onBack: { [weak self] in self?.showPuzzleSettings(onBack: onBack) })
             default:
                 onBack()
             }
+        }
+    }
+
+    /// Every puzzle the game has, as the download area publishes them —
+    /// behind the hidden buttons (see DevAccess), since it gives answers away
+    /// by listing what's in play.
+    private func showPuzzleList(onBack: @escaping () -> Void) {
+        clearTerminal()
+        printTitle("Puzzle List")
+        print("")
+        let pack = PuzzlePackManager.shared
+        printWrapped(pack.version > 0
+            ? "Pack v\(pack.version), downloaded and signature-checked: \(pack.puzzles.count) puzzles. Built in as well: \(RiddleData.all.count) riddles and \(PuzzleBank.all.count) others."
+            : "No pack downloaded — built-in puzzles only: \(RiddleData.all.count) riddles and \(PuzzleBank.all.count) others.", indent: 2, color: .dimGreen)
+        print("")
+        if pack.puzzles.isEmpty {
+            printWrapped("Check for New Puzzles fetches the pack; it's only installed if its signature checks out and its version is newer than any seen before.", indent: 2, color: .dimGreen)
+        } else {
+            for puzzle in pack.puzzles.sorted(by: { ($0.tier, $0.id) < ($1.tier, $1.id) }) {
+                print("  \(puzzle.id) — \(Puzzle.kindName(puzzle.tier)) (tier \(puzzle.tier))", color: .cyan, bold: true)
+                printWrapped(String(puzzle.question.prefix(70)) + (puzzle.question.count > 70 ? "…" : ""), indent: 4, color: .green)
+                let form = puzzle.isTyped ? "typed answer" : "\(puzzle.options?.count ?? 0) choices"
+                let hints = puzzle.hintList.isEmpty ? "no hints" : "\(puzzle.hintList.count) hint\(puzzle.hintList.count == 1 ? "" : "s")"
+                printWrapped("\(form) · \(hints)\(puzzle.source.map { " · \($0)" } ?? "")", indent: 4, color: .dimGreen)
+            }
+        }
+        print("")
+        printLink("The signed pack (puzzles/pack.json)", to: "puzzlePack", indent: 2)
+        printLink("Every puzzle in the repository", to: "puzzleFolder", indent: 2)
+        print("")
+        showMenuOptions([MenuOption("?", tint: .navigation, compact: true),
+                         MenuOption("< Back", tint: .navigation, compact: true)])
+        closeHandler = onBack
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                self.showInlineHelp {
+                    self.printTitle("Puzzle List — Help")
+                    self.print("")
+                    self.printWrapped("What's in the downloaded pack: each puzzle's id, its tier (1 riddle, 2 logic, 3 word, 4 cryptic), the start of the question, whether the answer is typed or chosen, and how many hints it carries.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("The links open the same puzzles as published on GitHub — the signed pack the game downloads, and the folder it's built from.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("This page is one of the hidden buttons: ordinary players never see it, since a list of the puzzles in play gives rather a lot away.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+                return
+            }
+            onBack()
         }
     }
 
@@ -27140,7 +27198,8 @@ class GameEngine: ObservableObject {
 
         // Game time & level
         if let level = dungeon?.level {
-            print("  Dungeon Level: \(level)", color: .cyan)
+            print("  Dungeon Level: \(level) of \(Dungeon.finalLevel)", color: .cyan)
+            print("  Depth: \(Dungeon.depthWords(level)) — the way is down", color: .dimGreen)
         }
         print("  Time: \(formattedGameTime())", color: .cyan)
         let roomsVisited = dungeon?.rooms.values.filter { $0.visited }.count ?? 0

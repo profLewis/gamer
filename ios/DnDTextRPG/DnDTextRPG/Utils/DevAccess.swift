@@ -20,7 +20,7 @@ import CryptoKit
 
 enum DevAccess {
     /// Buttons hidden from players.
-    static let hiddenLabels: Set<String> = ["Endgame", "Report a Bug"]
+    static let hiddenLabels: Set<String> = ["Endgame", "Report a Bug", "Puzzle List"]
 
     /// SHA-256 (hex) of the phrase, lower-cased, single-spaced.
     static let phraseHash = "b4fcbae25daafd4efd457e99132efb316fd06d7621978039a6ca33188d30125a"

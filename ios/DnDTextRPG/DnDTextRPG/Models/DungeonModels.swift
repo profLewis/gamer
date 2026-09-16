@@ -667,6 +667,25 @@ class Dungeon: ObservableObject, Codable {
     /// Status. Carried forward to deeper levels along with archivedLevels.
     @Published var hasCartography: Bool = false
 
+    /// The dungeon runs downward: Level 1 is the ground floor (0) and each
+    /// level below is one floor further down, to floor -6 (Level 7). "Floor"
+    /// always means depth — a level's own second storey is a gallery.
+    static func depthLabel(_ level: Int) -> String {
+        level <= 1 ? "0 (ground)" : "-\(level - 1)"
+    }
+
+    /// The same, in words: "the ground floor", "two floors down".
+    static func depthWords(_ level: Int) -> String {
+        switch level {
+        case ...1: return "the ground floor (floor 0)"
+        case 2: return "one floor down (floor -1)"
+        default: return "\(level - 1) floors down (floor \(depthLabel(level)))"
+        }
+    }
+
+    /// Where the stairs and ropes lead: the same floor's other gallery.
+    var galleryName: String { currentFloor <= 1 ? "upper gallery" : "lower gallery" }
+
     /// True if this dungeon has at least one stairs/rope/levitation link.
     var hasVerticalConnections: Bool {
         rooms.values.contains { $0.verticalDestinationRoomId != nil }
