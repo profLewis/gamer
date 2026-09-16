@@ -34985,6 +34985,22 @@ class GameEngine: ObservableObject {
             return
         }
 
+        // The guardian gives up one part of the quest as it goes: what this
+        // level was hiding, and how much of it, before the party goes deeper.
+        if var mq = mainQuest {
+            let task = mq.chapterTask(forLevel: currentLevel)
+            if !mq.levelDone(currentLevel) { mq.levelsDone = (mq.levelsDone ?? []) + [currentLevel] }
+            mq.chapterItem = task.item
+            mq.chapterNeeded = task.needed
+            mq.chapterFound = mq.chapterFound ?? 0
+            mainQuest = mq
+            let foe = guardian ?? "the one below"
+            print("  \u{2726} THE GUARDIAN'S LAST WORD", color: .cyan, bold: true)
+            printWrapped("Before it goes still it tells you something it plainly didn't mean to: \(task.needed) \(task.item), gathered on levels like this one, and \(foe) can be undone. Go down without them and the ending is a poorer one.", indent: 2, color: .yellow)
+            print("")
+            logEvent("Level \(currentLevel) guardian gave up a clue: \(task.needed) \(task.item)", category: "QUEST")
+        }
+
         // --- What lies ahead ---
         let nextLevel = currentLevel + 1
         print("  ┌─ The Depths Beckon ────────────┐", color: .cyan, bold: true)

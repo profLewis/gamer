@@ -204,6 +204,30 @@ struct MainQuest: Codable {
     var otherWorld: Bool? = nil
     var worldName: String? = nil
     var travelBy: String? = nil
+    /// One part of the quest per level: something to gather on this level and
+    /// carry down. Set when that level's guardian falls.
+    var chapterItem: String? = nil
+    var chapterNeeded: Int? = nil
+    var chapterFound: Int? = nil
+    /// Levels whose key task has been done.
+    var levelsDone: [Int]? = nil
+
+    /// Things a quest might send you looking for, one level at a time.
+    static let chapterItems = [
+        "mooncap mushrooms", "shards of black glass", "vials of still water",
+        "lengths of rootbound ironwort", "handfuls of ash from a cold forge",
+        "teeth of the deep", "grave-lily petals", "measures of old sea salt",
+    ]
+
+    /// What this level asks of the party. Fixed for a given quest and level,
+    /// so it reads the same every time the screen is drawn or reloaded.
+    func chapterTask(forLevel level: Int) -> (item: String, needed: Int) {
+        let seed = villain.unicodeScalars.reduce(0) { $0 + Int($1.value) } + level * 13
+        return (MainQuest.chapterItems[seed % MainQuest.chapterItems.count], 2 + seed % 3)
+    }
+
+    /// True once this level's key task has been done.
+    func levelDone(_ level: Int) -> Bool { (levelsDone ?? []).contains(level) }
 
     /// A quest whose stakes are time-bound gets a real day for it — generous
     /// enough to reach the bottom, but it does run out.
