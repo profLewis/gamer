@@ -236,17 +236,26 @@ struct MainQuest: Codable {
     }
 
     /// The discovery waiting on arriving at this level, if any.
-    func beat(forLevel level: Int) -> String? {
-        guard level >= 2, level % 2 == 0, level <= 6 else { return nil }
+    func beat(forLevel level: Int, of levelCount: Int = Dungeon.defaultFinalLevel) -> String? {
+        guard level >= 2, level <= levelCount else { return nil }
         let all = beats ?? MainQuest.genericBeats(villain: villain)
-        let i = level / 2 - 1
-        return i < all.count ? all[i] : nil
+        guard !all.isEmpty else { return nil }
+        // Spread what the quest has to tell across every level below the
+        // first, so a shallow dungeon still tells the whole story and a deep
+        // one doesn't run dry half way down. A level only gets a beat when
+        // it is the first to reach that part of the tale.
+        let steps = max(1, levelCount - 1)
+        let index = { (l: Int) -> Int in min(all.count - 1, ((l - 2) * all.count) / steps) }
+        let i = index(level)
+        if level > 2, index(level - 1) == i { return nil }
+        return all[i]
     }
 
     /// Everything found out by this level, in order.
-    func beatsSoFar(level: Int) -> [String] {
-        guard level >= 2 else { return [] }
-        return stride(from: 2, through: min(level, 6), by: 2).compactMap { beat(forLevel: $0) }
+    func beatsSoFar(level: Int, of levelCount: Int = Dungeon.defaultFinalLevel) -> [String] {
+        let top = min(level, levelCount)
+        guard top >= 2 else { return [] }
+        return (2...top).compactMap { beat(forLevel: $0, of: levelCount) }
     }
 
     static func genericBeats(villain: String) -> [String] {

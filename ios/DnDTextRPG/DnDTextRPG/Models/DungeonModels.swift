@@ -708,12 +708,13 @@ class Dungeon: ObservableObject, Codable {
 
     enum CodingKeys: String, CodingKey {
         case name, level, rooms, currentRoomId, previousRoomId, nextRoomId, currentFloor, emergencyDropUsed, hasMultiGymPass
-        case archivedLevels, hasCartography
+        case archivedLevels, hasCartography, levelCount
     }
 
-    init(name: String, level: Int) {
+    init(name: String, level: Int, levelCount: Int? = nil) {
         self.name = name
         self.level = level
+        self.levelCount = levelCount ?? Dungeon.finalLevel
         self.rooms = [:]
         self.currentRoomId = 0
         self.previousRoomId = nil
@@ -741,6 +742,8 @@ class Dungeon: ObservableObject, Codable {
         hasMultiGymPass = (try? container.decodeIfPresent(Bool.self, forKey: .hasMultiGymPass)) ?? false
         archivedLevels = (try? container.decodeIfPresent([AtlasLevel].self, forKey: .archivedLevels)) ?? []
         hasCartography = (try? container.decodeIfPresent(Bool.self, forKey: .hasCartography)) ?? false
+        // Saves made before the depth was configurable were all seven deep.
+        levelCount = (try? container.decodeIfPresent(Int.self, forKey: .levelCount)) ?? Dungeon.defaultFinalLevel
     }
 
     func encode(to encoder: Encoder) throws {
@@ -757,6 +760,7 @@ class Dungeon: ObservableObject, Codable {
         try container.encode(hasMultiGymPass, forKey: .hasMultiGymPass)
         try container.encode(archivedLevels, forKey: .archivedLevels)
         try container.encode(hasCartography, forKey: .hasCartography)
+        try container.encode(levelCount, forKey: .levelCount)
     }
 
     /// Next room ID for dynamic expansion
@@ -1336,8 +1340,18 @@ class Dungeon: ObservableObject, Codable {
 
     /// The bottom of the world: this level's guardian is the villain from
     /// the opening tale, and beating it ends the adventure.
-    static let finalLevel = 7
-    var isFinalLevel: Bool { level >= Dungeon.finalLevel }
+    static let defaultFinalLevel = 7
+    static let minFinalLevel = 1
+    static let maxFinalLevel = 12
+    /// How deep a NEW dungeon goes — the player's setting, clamped.
+    static var finalLevel: Int {
+        let v = UserDefaults.standard.integer(forKey: "dungeonLevelCount")
+        return (minFinalLevel...maxFinalLevel).contains(v) ? v : defaultFinalLevel
+    }
+    /// How deep THIS dungeon goes. Fixed when it was made and stored with
+    /// it, so changing the setting never reshapes a game already under way.
+    var levelCount: Int = Dungeon.defaultFinalLevel
+    var isFinalLevel: Bool { level >= levelCount }
 
     /// What the villain is called in a fight: "Mother Sable, the Hag of the
     /// Deep" -> "Mother Sable"; "the Hollow King" -> "The Hollow King".
@@ -1370,7 +1384,7 @@ class Dungeon: ObservableObject, Codable {
     /// can also carry the party down to the next level. Never on a map
     /// too small to have pads to spare.
     var deepPadRoomId: Int? {
-        guard rooms.count >= 8, level < Dungeon.finalLevel else { return nil }
+        guard rooms.count >= 8, level < levelCount else { return nil }
         let seed = name.unicodeScalars.reduce(0) { $0 + Int($1.value) } + level * 7
         guard seed % 10 < 4 else { return nil }
         return rooms.values.filter { $0.teleportDestinationRoomId != nil && $0.roomType != .entrance && $0.roomType != .boss }

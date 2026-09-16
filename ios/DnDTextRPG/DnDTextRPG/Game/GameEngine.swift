@@ -9783,6 +9783,11 @@ class GameEngine: ObservableObject {
         printWrapped("Make fights, loot, search results, tales and the rest quicker or slower, each on its own — see Timeouts.", indent: 2, color: .dimGreen)
         print("")
 
+        print("LEVELS:", color: .cyan, bold: true)
+        print("  \(Dungeon.finalLevel) levels deep", color: .brightGreen)
+        printWrapped("How deep a NEW dungeon goes: the ground floor and the levels below it, down to the last guardian. The quest tells a part of its story on each one, so a shallow dungeon is a shorter tale, not a poorer one. Adventures already under way keep the depth they were made with.", indent: 2, color: .dimGreen)
+        print("")
+
         print("QUEST TEXT:", color: .cyan, bold: true)
         print("  \(questVerbosityLabel)", color: .brightGreen)
         printWrapped("How much the quests say: Brief (short tales, few reminders), Normal, or Rich (longer tales, more hints).", indent: 2, color: .dimGreen)
@@ -9902,7 +9907,7 @@ class GameEngine: ObservableObject {
             "Map Length", useArrowNavigation ? "Use Swipe" : "Use Buttons",
             "Info Timeout", "Timeouts", "Quest Text: \(questVerbosityLabel)", autoContinueEnabled ? "Auto-Continue Off" : "Auto-Continue On",
             showCountdownControl ? "Countdown Icon Off" : "Countdown Icon On",
-            "Button Limit", "Long Press",
+            "Button Limit", "Long Press", "Levels",
             // Page 2 — Features
             npcsEnabled ? "NPCs Off" : "NPCs On", poisonEnabled ? "Poison Off" : "Poison On",
             multiplayerEnabled ? "Multi Off" : "Multi On",
@@ -9961,6 +9966,8 @@ class GameEngine: ObservableObject {
                 UserDefaults.standard.set(self.autoContinueEnabled, forKey: "autoContinueEnabled")
                 if self.autoContinueEnabled { self.autoContinuePaused = false }
                 self.showGameplaySettings(page: currentPage)
+            } else if selected == "Levels" {
+                self.showDungeonLevelsMenu()
             } else if selected == "Button Limit" {
                 self.showButtonLimitMenu()
             } else if selected == "Long Press" {
@@ -10347,6 +10354,34 @@ class GameEngine: ObservableObject {
                 self.showGameplaySettings()
             } else {
                 self.print("  Invalid value. Enter seconds (e.g. 1.5s or 4.0)", color: .red)
+            }
+        }
+    }
+
+    /// How deep a new dungeon goes. Never changes a game already under way.
+    private func showDungeonLevelsMenu() {
+        clearTerminal()
+        printTitle("Levels")
+        printWrapped("How deep a new dungeon goes — the ground floor and everything below it, down to where the last guardian waits. The quest spreads its story over the levels, so fewer levels means a shorter tale rather than a thinner one.", indent: 2, color: .dimGreen)
+        print("")
+        print("  Current: \(Dungeon.finalLevel)", color: .brightGreen)
+        printWrapped("An adventure already under way keeps the depth it was made with.", indent: 2, color: .dimGreen)
+        print("")
+
+        let values = [1, 3, 5, 7, 9, 12]
+        var options = values.map { "\($0)" }
+        options.append("< Back")
+        showMenu(options)
+        let backToGameplay: () -> Void = { [weak self] in self?.showGameplaySettings() }
+        closeHandler = backToGameplay
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice > 0 && choice <= values.count {
+                UserDefaults.standard.set(values[choice - 1], forKey: "dungeonLevelCount")
+                self.logEvent("New dungeons are now \(values[choice - 1]) levels deep", category: "SETTINGS")
+                self.showGameplaySettings()
+            } else {
+                backToGameplay()
             }
         }
     }
@@ -34983,12 +35018,12 @@ class GameEngine: ObservableObject {
             }
             self.print("")
 
-            if let beat = self.mainQuest?.beat(forLevel: nextLevel) {
+            if let beat = self.mainQuest?.beat(forLevel: nextLevel, of: self.dungeon?.levelCount ?? Dungeon.defaultFinalLevel) {
                 self.print("")
                 self.printWrapped(beat, indent: 0, color: .yellow)
                 self.logEvent("Quest: \(beat)", category: "QUEST")
             }
-            if nextLevel >= Dungeon.finalLevel {
+            if nextLevel >= (self.dungeon?.levelCount ?? Dungeon.defaultFinalLevel) {
                 self.print("")
                 let g = self.mainQuest.map { Dungeon.guardianName($0.villain) } ?? "its last guardian"
                 self.printWrapped("This is the last level — the bottom of the world. Somewhere down here, \(g) is waiting.", indent: 0, color: .yellow)
