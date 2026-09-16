@@ -535,7 +535,11 @@ class GameEngine: ObservableObject {
         var title = Self.combatContinueTitles.randomElement()!
         let order = combat.turnOrder
         if !order.isEmpty {
-            var idx = combat.currentTurnIndex
+            // Start AT the current turn, not past it: by the time this
+            // prompt shows, nextTurn() has already moved on, so stepping
+            // forward again named the wrong combatant (the one after next,
+            // or the one whose turn had just finished).
+            var idx = (combat.currentTurnIndex - 1 + order.count) % order.count
             for _ in 0..<order.count {
                 idx = (idx + 1) % order.count
                 let entry = order[idx]
@@ -2425,7 +2429,8 @@ class GameEngine: ObservableObject {
         case "dm": return { [weak self] in self?.showDMSettingsSubMenu() }
         case "ai": return { [weak self] in self?.showAIProviderMenu(onBack: { [weak self] in self?.returnFromLink() }) }
         case "howToPlay": return { [weak self] in self?.showHowToPlay() }
-        case "dndex": return { [weak self] in self?.openWeb("https://proflewis.github.io/gamer/") }
+        case "dndex": return { [weak self] in self?.openWeb("https://proflewis.github.io/gamer/ios_card_images/card-dex/") }
+        case "dndexGallery": return { [weak self] in self?.openWeb("https://proflewis.github.io/gamer/gallery/") }
         case "puzzlePack": return { [weak self] in self?.openWeb("https://github.com/profLewis/gamer/blob/main/puzzles/pack.json") }
         case "puzzleFolder": return { [weak self] in self?.openWeb("https://github.com/profLewis/gamer/tree/main/puzzles") }
         case "contributors": return { [weak self] in self?.openWeb(ContributorsManager.webURL) }
@@ -6220,7 +6225,9 @@ class GameEngine: ObservableObject {
         printWrapped("    a button for its shortcut — e.g. long-press Quit Without Saving, Delete or Give Up Quest to skip the \"are you sure?\" step, Long Rest to rest fast, or Continue Adventure to jump straight into your latest save.", color: .green)
         print("")
         print("  • Auto-Continue", color: .brightGreen, bold: true)
-        printWrapped("    A screen that's waiting for you shows a small underlined \"ok?\". Tap it — or anywhere, or press Return — when you've read it. Do nothing and it moves on by itself after a reading pause: the little hourglass at the right of the input line shows how long is left. Tap the hourglass to freeze time (it turns orange and nothing moves until you tap it again), long-press to hurry it along. Settings > Gameplay changes how long screens wait, or turns the waiting off.", color: .green)
+        printWrapped("    A screen that's waiting for you shows a small underlined \"ok?\". Tap it — or anywhere, or press Return — when you've read it. Do nothing and it moves on by itself after a reading pause: the little hourglass at the right of the input line shows how long is left. Tap the hourglass to freeze time (it turns orange and nothing moves until you tap it again), long-press to hurry it along.", color: .green)
+        printLink("Auto-Continue — turn the waiting on or off", to: "autoContinue", indent: 4)
+        printLink("Timeouts — how long each kind of screen waits", to: "timeouts", indent: 4)
         printLink("Settings > Gameplay", to: "gameplay", indent: 4)
         print("")
 
@@ -9259,7 +9266,7 @@ class GameEngine: ObservableObject {
         print("")
         print("DnDEX — CARD BROWSER", color: .cyan, bold: true)
         printWrapped("Browse character, monster, and location cards at the DnDex. See the stories behind the default character names and dungeon locations.", indent: 2, color: .dimGreen)
-        printLink("proflewis.github.io/gamer", to: "dndex", indent: 2)
+        printLink("https://proflewis.github.io/gamer/ios_card_images/card-dex/", to: "dndex", indent: 2)
         print("  ios_card_images/card-dex/", color: .dimGreen)
         print("")
 
@@ -9351,16 +9358,34 @@ class GameEngine: ObservableObject {
         printWrapped("A card browser for everything in the game: the adventurers, the monsters and the places — with the story behind each default name, and the art that goes with it.", indent: 2, color: .dimGreen)
         print("")
         print("  On the web:", color: .cyan, bold: true)
-        print("  proflewis.github.io/gamer/", color: .brightGreen)
+        printLink("https://proflewis.github.io/gamer/ios_card_images/card-dex/", to: "dndex", indent: 2)
+        print("")
+        print("  The gallery of every card:", color: .cyan, bold: true)
+        printLink("https://proflewis.github.io/gamer/gallery/", to: "dndexGallery", indent: 2)
         print("")
         print("  In this repository:", color: .cyan, bold: true)
-        print("  ios_card_images/card-dex/", color: .brightGreen)
+        print("  ios_card_images/card-dex/", color: .dimGreen)
         print("")
         printWrapped("Names you meet down here — Auntie Fen, the Iron Forge — are drawn from those cards, so the same character stays the same character from one adventure to the next.", indent: 2, color: .dimGreen)
         print("")
-        showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+        showMenuOptions([MenuOption("?", tint: .navigation, compact: true),
+                         MenuOption("< Back", tint: .navigation, compact: true)])
         closeHandler = onBack
-        menuHandler = { _ in onBack() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                self.showInlineHelp {
+                    self.printTitle("The DnDex — Help")
+                    self.print("")
+                    self.printWrapped("A card for every adventurer, monster and place in the game, with the story behind its name and the art that goes with it. The green links open it in your browser.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("The names you meet in play come from these cards, so Auntie Fen is the same Auntie Fen every time.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+                return
+            }
+            onBack()
+        }
     }
 
     /// What the game is built on, and who owns what.
@@ -18380,8 +18405,10 @@ class GameEngine: ObservableObject {
         clearTerminal()
         printTitle("Adventure Awaits!")
 
-        print("Your party is ready to enter a", color: .dimGreen)
-        print("dungeon. Name it, or pick one:", color: .dimGreen)
+        print("Your party is ready. Every dungeon needs a name —", color: .dimGreen)
+        print("give this one yours.", color: .dimGreen)
+        print("")
+        printWrapped("› Type a name on the line at the bottom and press Return — or tap one of the three below.", indent: 2, color: .brightGreen)
         print("")
 
         // Pick 3 unique random dungeon names
@@ -18396,6 +18423,7 @@ class GameEngine: ObservableObject {
         opts.append("?")
         opts.append("< Back")
         promptTextWithMenu("Name your dungeon, or choose a default:", options: opts)
+        flashTitle()   // a nudge towards the prompt
 
         let dungeonLoreNames = nameEntries.filter { $0.category == "dungeon" }.map { $0.name }
         rerollHandler = { [weak self] in
@@ -25602,7 +25630,14 @@ class GameEngine: ObservableObject {
         let sellables = character.inventory.filter { $0.value > 0 }
         clearTerminal()
         printTitle(trainer.gymName)
-        print("  Lesson fee: \(trainer.lessonFee)gp — \(character.name) has \(character.gold)gp.", color: .dimGreen)
+        let short = max(0, trainer.lessonFee - character.gold)
+        print("  Lesson fee ........ \(trainer.lessonFee)gp", color: .cyan)
+        let purseLabel = "  \(shortName(for: character))'s purse "
+        let purseDots = String(repeating: ".", count: max(1, 20 - purseLabel.count))
+        print(purseLabel + purseDots + " \(character.gold)gp", color: .dimGreen)
+        print("  Still to find ..... \(short)gp", color: short > 0 ? .yellow : .brightGreen)
+        print("")
+        printWrapped("\(trainer.name) will take something out of a pack instead — at half what it's worth.", indent: 2, color: .dimGreen)
         print("")
         guard !sellables.isEmpty else {
             print("  \"Nothing on you worth trading in. Come back when you've got coin.\"", color: .red)
@@ -25611,10 +25646,29 @@ class GameEngine: ObservableObject {
             return
         }
 
-        let options = sellables.map { "\($0.name) (worth \(max(1, $0.value / 2))gp)" } + ["< Back"]
+        // What each would fetch, and whether it covers the fee.
+        for item in sellables {
+            let credit = max(1, item.value / 2)
+            let left = max(0, trainer.lessonFee - character.gold - credit)
+            let note = left > 0 ? "still \(left)gp short" : "covers it"
+            printWrapped("\(item.name) — \(credit)gp (\(note))", indent: 4, color: left > 0 ? .dimGreen : .brightGreen)
+        }
+        print("")
+        let options = sellables.map { "\($0.name) — \(max(1, $0.value / 2))gp" } + ["?", "< Back"]
         showMenu(options)
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
+            if choice == sellables.count + 1 {
+                self.showInlineHelp {
+                    self.printTitle("Barter — Help")
+                    self.print("")
+                    self.printWrapped("Short of coin for the lesson? Trainers take goods instead, at half what the item is worth. Pick something and they'll knock its value off the fee; you pay the rest in gold.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("The list shows what each thing would fetch, and whether it covers the fee on its own.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+                return
+            }
             guard choice >= 1 && choice <= sellables.count else {
                 self.showGymTraining(trainer: trainer, room: room)
                 return
@@ -26291,14 +26345,22 @@ class GameEngine: ObservableObject {
         print("")
         print("  WHAT YOU'VE SWORN TO", color: .cyan, bold: true)
         printWrapped("To \(mq.goal), \(mq.stakes). The reward: \(mq.reward).", indent: 2, color: .dimGreen)
+        print("")
         if mq.kind != "mystery", mq.kind != "twist" {
             printWrapped("\(Dungeon.guardianName(mq.villain)) waits at the bottom of the world — Level \(Dungeon.finalLevel). Every guardian between here and there serves it.", indent: 2, color: .dimGreen)
         }
-        if let place = mq.place { printWrapped("You're told it's kept in \(place).", indent: 2, color: .dimGreen) }
-        if let who = mq.informant { printWrapped("Worth asking down there: \(who).", indent: 2, color: .dimGreen) }
+        if let place = mq.place {
+            printWrapped("You're told it's kept in \(place).", indent: 2, color: .dimGreen)
+            print("")
+        }
+        if let who = mq.informant {
+            printWrapped("Worth asking down there: \(who).", indent: 2, color: .dimGreen)
+            print("")
+        }
         if let name = mq.deadlineName, mq.deadlineKnown == true {
             printWrapped("And it must be done before \(name) — the countdown shows under the date.", indent: 2, color: .yellow)
         }
+        print("")
         printWrapped("Watch the walls as you go: the ones who came before cut what they learned into them.", indent: 2, color: .dimGreen)
         print("")
         pendingTimeoutKind = .reading
@@ -27604,12 +27666,18 @@ class GameEngine: ObservableObject {
         let entries = loreEntries()
         if entries.isEmpty {
             printWrapped("No named individuals encountered yet — merchants and NPCs you've met will show up here.", indent: 2, color: .dimGreen)
-        } else {
-            for entry in entries {
-                print("  \(entry.name)", color: .brightGreen, bold: true)
-                printWrapped(entry.description, indent: 4, color: .dimGreen)
-                print("")
-            }
+            print("")
+            printWrapped("(Nothing to read yet — tap anywhere to go back.)", indent: 2, color: .dimGreen)
+            // Nothing to look at, so don't make them find a button.
+            waitForContinue()
+            closeHandler = { [weak self] in self?.showPartyStatus() }
+            inputHandler = { [weak self] _ in self?.showPartyStatus() }
+            return
+        }
+        for entry in entries {
+            print("  \(entry.name)", color: .brightGreen, bold: true)
+            printWrapped(entry.description, indent: 4, color: .dimGreen)
+            print("")
         }
         showMenu(["?", "< Back"])
         closeHandler = { [weak self] in self?.showPartyStatus() }

@@ -1302,7 +1302,9 @@ class Dungeon: ObservableObject, Codable {
     /// Teleport pads at a roughly constant density: about one pair for every
     /// 7-8 rooms — fewer on a small map, more on a big one.
     static func teleportPairsWanted(roomCount: Int) -> Int {
-        max(1, Int((Double(roomCount) / 7.5).rounded()))
+        // One pair per fourteen rooms: enough to be worth finding, few
+        // enough that the big map isn't peppered with them.
+        max(1, Int((Double(roomCount) / 14.0).rounded()))
     }
 
     /// Keeps a map near that density: tops up older maps that had one pad or
