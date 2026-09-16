@@ -37851,7 +37851,34 @@ class GameEngine: ObservableObject {
             return
         }
 
-        performQuit()
+        // No adventure to lose — but X should still never close the app on a
+        // single tap. Ask first, the same as everywhere else.
+        clearTerminal()
+        printTitle("Quit")
+        print("Close the game?", color: .yellow)
+        print("")
+        printWrapped("There's no adventure under way, so nothing is waiting to be saved.", indent: 2, color: .dimGreen)
+        print("")
+        showMenu(["Quit", "?", "< Back"])
+        closeHandler = { [weak self] in self?.showMainMenu() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1:
+                self.performQuit()
+            case 2:
+                self.showInlineHelp {
+                    self.printTitle("Quit — Help")
+                    self.print("")
+                    self.printWrapped("Closes the app. There's no adventure in progress, so there's nothing to save and nothing to lose.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("< Back leaves the app open and returns to the Main Menu.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default:
+                self.showMainMenu()
+            }
+        }
     }
 
     /// Timer for twinkling farewell stars
