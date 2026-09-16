@@ -23169,6 +23169,8 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped("Any progress is lost, and \(quest.giverName) won't offer it again. Word gets around — reneging costs the party's standing, about \(penalty) gold's worth of goodwill. You'll be free to accept a different quest from someone else.", indent: 2, color: .dimGreen)
         print("")
+        printWrapped("\(quest.giverName) asked for this and has nobody else down here to ask. Walking away won't be the end of them — but they'll still be waiting when you've gone.", indent: 2, color: .yellow)
+        print("")
         showMenu(["Yes, Give It Up", "No, Keep It"])
         closeHandler = returnTo
         menuHandler = { [weak self] choice in
@@ -24424,6 +24426,40 @@ class GameEngine: ObservableObject {
                 } else if let char = equipEligible.first {
                     doEquip(char)
                 }
+            }
+        }
+
+        // Anything with an edge on it invites a go — throwing it up and
+        // catching it, mostly. Bludgeoning weapons don't tempt anyone.
+        if item.type == .weapon, let t = item.weaponStats?.damageType, t == "slashing" || t == "piercing" {
+            options.append("Try It Out")
+            actions.append { [weak self] in
+                guard let self = self else { return }
+                let who = (self.combatLootEligible ?? self.party).filter { $0.isConscious }.randomElement() ?? self.party[0]
+                let n = self.shortName(for: who)
+                let dex = who.abilityScores.modifier(for: .dexterity)
+                let roll = Dice.d20() + dex
+                self.clearTerminal()
+                self.printTitle("Try It Out")
+                self.print("")
+                let stunt = ["throws the \(item.name) up, spinning, and puts a hand out for it",
+                             "flips the \(item.name) point-over-hilt and reaches for the handle",
+                             "lobs the \(item.name) at the wall to hear how it lands, then goes to fetch it",
+                             "juggles the \(item.name) with two stones, briefly"].randomElement()!
+                self.printWrapped("\(n) \(stunt).", indent: 2, color: .cyan)
+                self.print("")
+                if roll >= 12 {
+                    self.printWrapped("It comes down exactly where a well-caught blade should. \(n) looks around to check that somebody saw.", indent: 2, color: .brightGreen)
+                    self.logEvent("\(n) showed off with \(item.name)", category: "EXPLORE")
+                } else {
+                    let hurt = max(1, Dice.d4() - 1)
+                    if hurt > 0 { who.takeDamage(hurt) }
+                    self.printWrapped("It does not. \(n) takes \(hurt) damage and says something the DM will not repeat — and will need seeing to if it keeps bleeding.", indent: 2, color: .yellow)
+                    self.printWrapped("(\(who.currentHP)/\(who.maxHP) HP — a rest or a potion will settle it.)", indent: 2, color: .dimGreen)
+                    self.logEvent("\(n) cut themselves trying out \(item.name) (\(hurt) damage)", category: "EXPLORE")
+                }
+                self.print("")
+                self.waitForContinueWithTimeout { onDone() }
             }
         }
 

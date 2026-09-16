@@ -116,10 +116,58 @@ extension GameEngine {
             printWrapped(text, indent: 2, color: color)
             print("")
         }
+        if let after = aftermath(of: feature, room: room, actor: name) {
+            printWrapped(after, indent: 2, color: .dimGreen)
+            print("")
+        }
         logEvent("\(feature.button) in \(room.name)", category: "EXPLORE")
+        // A book is worth opening, not just identifying.
+        if feature.key == "book" {
+            showMenu(["Read It", "Put It Back"])
+            closeHandler = { [weak self] in self?.afterFeature(room, onBack: onBack) }
+            menuHandler = { [weak self] choice in
+                guard let self = self else { return }
+                if choice == 1 { self.readTheBook(page: 0, room: room, onBack: onBack) }
+                else { self.afterFeature(room, onBack: onBack) }
+            }
+            return
+        }
         waitForContinueWithTimeout { [weak self] in
             guard let self = self else { return }
-            if self.roomFeatures(room).isEmpty { onBack() } else { self.showRoomFeatures(room, onBack: onBack) }
+            self.afterFeature(room, onBack: onBack)
+        }
+    }
+
+    /// Back to the other things in this room, or out if there are none left.
+    private func afterFeature(_ room: Room, onBack: @escaping () -> Void) {
+        if roomFeatures(room).isEmpty { onBack() } else { showRoomFeatures(room, onBack: onBack) }
+    }
+
+    /// One short tale from the shelf, a page at a time, with a picture and a
+    /// moral — the sort of thing somebody down here wrote to pass the dark.
+    private func readTheBook(page: Int, room: Room, onBack: @escaping () -> Void) {
+        let tale = Self.shelfTales[abs(room.id &+ (dungeon?.level ?? 1) &* 7) % Self.shelfTales.count]
+        guard page < tale.pages.count else {
+            clearTerminal(); printTitle(tale.title); print("")
+            printWrapped(tale.moral, indent: 2, color: .yellow); print("")
+            waitForContinueWithTimeout { [weak self] in self?.afterFeature(room, onBack: onBack) }
+            return
+        }
+        clearTerminal()
+        printTitle(tale.title)
+        print("")
+        let p = tale.pages[page]
+        for line in p.art { print("    " + line, color: .cyan) }
+        print("")
+        printWrapped(p.text, indent: 2, color: .green)
+        print("")
+        print("  Page \(page + 1) of \(tale.pages.count)", color: .dimGreen)
+        showMenu([page + 1 < tale.pages.count ? "Turn the Page" : "The End", "Close the Book"])
+        closeHandler = { [weak self] in self?.afterFeature(room, onBack: onBack) }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 { self.readTheBook(page: page + 1, room: room, onBack: onBack) }
+            else { self.afterFeature(room, onBack: onBack) }
         }
     }
 
@@ -142,6 +190,57 @@ extension GameEngine {
         }
         return out
     }
+
+    /// A consequence, so looking around carries the story on a little
+    /// instead of stopping dead at the description.
+    private func aftermath(of feature: RoomFeature, room: Room, actor: String) -> String? {
+        guard Int.random(in: 1...100) <= 55 else { return nil }
+        switch feature.key {
+        case "forge":
+            return ["The forge ticks as it cools, and goes on ticking after you have stopped listening.",
+                    "\(actor) pockets a nail. No reason. It just seemed a shame to leave it."].randomElement()
+        case "book":
+            return ["\(actor) keeps a finger in the page for a while, then gives up and lets it close.",
+                    "Dust from the shelf hangs in the torchlight long after the book is shut."].randomElement()
+        case "water", "walls", "scratch", "sign":
+            return ["Somebody, a long time ago, stood exactly where \(actor) is standing and did exactly this.",
+                    "The party goes quiet for a moment, then pretends it didn't.",
+                    "\(actor) looks back at it twice on the way out."].randomElement()
+        case "forage":
+            return ["\(actor) wipes their hands on their coat and looks pleased with themselves.",
+                    "Whatever was growing here will grow back. Probably."].randomElement()
+        default:
+            return nil
+        }
+    }
+
+    /// Tales somebody wrote down here, to pass the dark.
+    private static let shelfTales: [(title: String, pages: [(art: [String], text: String)], moral: String)] = [
+        ("The Lamp That Would Not Be Carried",
+         [(["   _n_", "  |   |", "  | * |", "  |___|"],
+           "A lamp was made for a miner who went very deep. It burned well, and he loved it, and he would not put it down even to eat."),
+          (["   _n_", "  |   |", "  |   |", "  |___|"],
+           "So he did not eat. And the lamp, which had no opinion on the matter, burned exactly as long as lamps do, and then stopped."),
+          (["    .", "   . .", "  .   ."],
+           "They found him by the cold lamp, a hand's reach from a shaft where daylight came in.")],
+         "The moral: a light you will not set down is a light you cannot see past."),
+        ("Three Knocks",
+         [(["  +------+", "  |      |", "  |  []  |", "  +------+"],
+           "There was a door in a wall in a room nobody used, and once a year something on the other side knocked three times."),
+          (["  +------+", "  |  ??  |", "  |  []  |", "  +------+"],
+           "For ninety years the household answered the knock politely and did not open the door, and nothing bad happened at all."),
+          (["  +------+", "  |      |", "  |      |", "  +------+"],
+           "In the ninety-first year a clever young man opened it, to settle the question. The question is still settled.")],
+         "The moral: some questions are load-bearing."),
+        ("The Cook and the Crown",
+         [(["   ___", "  (   )", "   | |", "  _|_|_"],
+           "A king asked his cook what the kingdom most needed. The cook said: onions, and a bigger pot."),
+          (["   ___", "  ( ! )", "   | |", "  _|_|_"],
+           "The king had the cook thrown out, and took advice instead from people who spoke of destiny and of war."),
+          (["   ...", "  (   )", "   | |", "  _|_|_"],
+           "The war came. The kingdom was hungry. Somebody, in the end, went and found the cook.")],
+         "The moral: the kitchen keeps you alive rather longer than the throne does."),
+    ]
 
     private func bookOutcome(_ name: String) -> [(String, TerminalColor)] {
         let books = [
