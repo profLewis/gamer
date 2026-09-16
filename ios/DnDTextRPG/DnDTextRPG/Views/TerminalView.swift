@@ -177,16 +177,6 @@ struct TerminalView: View {
         return lines[(here + 1)...].firstIndex(where: { $0.text.trimmingCharacters(in: .whitespaces).hasPrefix("+") }) ?? here
     }
 
-    /// The red "you're in a fight" frame and tag — Mac only. On the phone
-    /// the combat screen already says so, and a frame just crowds it.
-    private var combatFrameOn: Bool {
-        #if os(macOS)
-        return gameEngine.currentCombat != nil
-        #else
-        return false
-        #endif
-    }
-
     var body: some View {
         GeometryReader { geometry in
             let isLandscape = geometry.size.width > geometry.size.height
@@ -777,26 +767,6 @@ struct TerminalView: View {
                 // text ScrollView's overlay) is the sole tap-to-continue
                 // affordance now — a visible, discoverable right-edge strip
                 // instead of an invisible full-screen trap.
-            }
-            // In a fight: unmistakable — a red frame round the whole window
-            // and a COMBAT tag in the corner (decoration only; taps pass through).
-            .overlay(alignment: .topTrailing) {
-                if combatFrameOn {
-                    ZStack(alignment: .topTrailing) {
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(Color.red.opacity(0.85), lineWidth: 3)
-                        Text("⚔ COMBAT")
-                            .font(.system(size: 11 * scale, weight: .heavy, design: .monospaced))
-                            .foregroundColor(.black)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.red))
-                            .padding(.top, 3)
-                            .padding(.trailing, 10)
-                    }
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                }
             }
             .onAppear { gameEngine.isLandscapeOrientation = isLandscape }
             .onChange(of: isLandscape) { newValue in gameEngine.isLandscapeOrientation = newValue }
@@ -1526,6 +1496,18 @@ struct TerminalView: View {
         }
     }
 
+    /// The access phrase, wiped the moment it's used: out of the box, out of
+    /// any pending prefill, and away from the keyboard — and wiped again on
+    /// the next tick, in case an auto-submit puts it back.
+    private func clearTypedPhrase() {
+        inputText = ""
+        gameEngine.prefillInputText = nil
+        #if os(iOS)
+        showCustomKeyboard = false
+        #endif
+        DispatchQueue.main.async { inputText = "" }
+    }
+
     private func advanceFromStrip() {
         if gameEngine.swipeLeftHandler != nil {
             gameEngine.swipeLeftHandler?()
@@ -1935,7 +1917,18 @@ struct TerminalView: View {
     private func submitInput() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         // DevAccess: the hidden-buttons phrase — acted on here, never echoed or logged.
-        if let command = DevAccess.command(for: text) { inputText = ""; gameEngine.recordAction("typed [hidden]"); gameEngine.applyDevAccess(command, typed: text); return }
+        if let command = DevAccess.command(for: text) {
+            clearTypedPhrase()
+            gameEngine.recordAction("typed [hidden]")
+            gameEngine.applyDevAccess(command, typed: text)
+            return
+        }
+        if DevAccess.looksLikeAttempt(text) {
+            clearTypedPhrase()
+            gameEngine.recordAction("typed [hidden]")
+            gameEngine.refuseDevAccess()
+            return
+        }
         // For bug reports: what was typed (anything key-like kept out).
         if !text.isEmpty {
             let keyLike = text.hasPrefix("sk-") || text.hasPrefix("AIza") || (text.count >= 24 && !text.contains(" "))

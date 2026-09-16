@@ -22,13 +22,15 @@ enum DevAccess {
     /// Buttons hidden from players.
     static let hiddenLabels: Set<String> = ["Endgame", "Report a Bug", "Puzzle List"]
 
+    /// SHA-256 (hex) of the phrase's FIRST word — enough to recognise a
+    /// half-remembered attempt and say so, without knowing the rest.
+    static let firstWordHash = "a0561fd649cdb6baa784055f051bad796ea0afef17fca38219549deeba4e8c1a"
+
     /// SHA-256 (hex) of the phrase, lower-cased, single-spaced.
     static let phraseHash = "b4fcbae25daafd4efd457e99132efb316fd06d7621978039a6ca33188d30125a"
 
     /// Off at every launch — never saved.
     private(set) static var isOn = false
-    /// What was typed (memory only), so help pages can remind the maker.
-    private(set) static var phrase: String?
     /// The last menu before filtering, so a toggle can redraw it at once.
     private static var lastMenu: [MenuOption] = []
 
@@ -55,10 +57,19 @@ enum DevAccess {
         return nil
     }
 
+    /// Someone reaching for the phrase and not quite getting it: the right
+    /// first word, but the rest wrong. Worth answering, rather than letting
+    /// it fall through to the game as if nothing was typed.
+    static func looksLikeAttempt(_ text: String) -> Bool {
+        let t = normalize(text)
+        guard command(for: text) == nil, let first = t.split(separator: " ").first else { return false }
+        return hash(String(first)) == firstWordHash
+    }
+
+    /// Applied and forgotten: the words themselves are never stored, so
+    /// nothing can print them back or leave them lying about on screen.
     static func apply(_ command: Command, typed: String) {
-        let t = normalize(typed)
         isOn = command == .on
-        phrase = command == .on ? t : String(t.dropLast(4))
     }
 
     /// The menu filter. Hidden buttons are taken out, leaving no gap. When
@@ -92,14 +103,28 @@ enum DevAccess {
     /// The current screen's buttons, re-filtered after a toggle.
     static func redrawn() -> [MenuOption] { filter(lastMenu) }
 
-    /// For help pages while on: how it was done, and how to undo it.
+    /// For help pages while on: how to undo it, without repeating the words.
     static var helpReminder: String? {
-        guard isOn, let p = phrase else { return nil }
-        return "⚙ Hidden buttons are showing — you typed “\(p)” to reveal them. Type “\(p) off” to hide them again."
+        guard isOn else { return nil }
+        return "⚙ Hidden buttons are showing. To hide them, type the access phrase again with “ off” on the end — and they hide themselves anyway whenever the app is restarted."
     }
 }
 
 extension GameEngine {
+    /// Nearly right: say so, and where to look — without saying the words.
+    func refuseDevAccess() {
+        SoundManager.shared.playMiss()
+        print("")
+        print("  ⚙  clunk.  Nothing moves.", color: .yellow, bold: true)
+        print("")
+        printWrapped("I'm afraid I can't do that, Dave.", indent: 2, color: .red, bold: true)
+        print("")
+        printWrapped("That's the right idea, but not the right words — so nothing has changed, and the hidden buttons stay hidden.", indent: 2, color: .cyan)
+        printWrapped("The words are in your Keychain: open Keychain Access, choose the login keychain and search “dnd” — the entry's own name tells you what to type, and its password is the phrase itself.", indent: 2, color: .dimGreen)
+        printWrapped("Mind the spelling; capitals and extra spaces don't matter.", indent: 2, color: .dimGreen)
+        print("")
+    }
+
     /// The typed phrase: a whirr, the gears creak, and the buttons change.
     func applyDevAccess(_ command: DevAccess.Command, typed: String) {
         DevAccess.apply(command, typed: typed)
@@ -109,11 +134,25 @@ extension GameEngine {
         print("")
         if command == .on {
             print("  ⚙  whirrrr...  clank  ⚙  creeeak...  ⚙", color: .yellow, bold: true)
-            printWrapped("Something turns behind the walls. Hidden buttons now show wherever a screen has them (\(DevAccess.hiddenLabels.sorted().joined(separator: ", "))).", indent: 2, color: .cyan)
-            printWrapped("Now try hiding them again: type “\(DevAccess.phrase ?? "") off”.", indent: 2, color: .dimGreen)
+            print("")
+            print("  HIDDEN BUTTONS: ON", color: .brightGreen, bold: true)
+            printWrapped("Something turns behind the walls, and what was hidden is there.", indent: 2, color: .cyan)
+            print("")
+            printWrapped("What's showing now: \(DevAccess.hiddenLabels.sorted().joined(separator: ", ")) — each on the screen it belongs to (Endgame on the title screen, Report a Bug in the Adventure Log, Puzzle List in Settings > Puzzles).", indent: 2, color: .green)
+            if !currentMenuOptions.contains(where: { DevAccess.hiddenLabels.contains($0.text) }) {
+                printWrapped("Nothing on THIS screen has one — go and look at one of those.", indent: 2, color: .dimGreen)
+            }
+            print("")
+            printWrapped("To hide them again: type the same words, with “ off” on the end. Go on, try it.", indent: 2, color: .yellow)
+            printWrapped("They hide themselves anyway: this resets every time the app starts, so a player never stumbles on them.", indent: 2, color: .dimGreen)
         } else {
             print("  ⚙  creeeak...  clunk.  ⚙", color: .yellow, bold: true)
-            printWrapped("The gears settle. Hidden buttons are hidden again — the same words bring them back.", indent: 2, color: .cyan)
+            print("")
+            print("  HIDDEN BUTTONS: OFF", color: .yellow, bold: true)
+            printWrapped("The gears settle and the buttons are gone again — Endgame, Report a Bug and Puzzle List are back out of sight.", indent: 2, color: .cyan)
+            print("")
+            printWrapped("To bring them back: type the phrase again.", indent: 2, color: .dimGreen)
+            printWrapped("Either way this resets when the app starts: hidden again, every time.", indent: 2, color: .dimGreen)
         }
         print("")
         if !currentMenuOptions.isEmpty { currentMenuOptions = withForwardOption(DevAccess.redrawn()) }
