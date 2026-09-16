@@ -3270,7 +3270,6 @@ struct CertificateView: View {
     @State private var pdfOptions = false
 
     typealias Palette = (bg: Color, ink: Color, accent: Color, border: Color)
-    private var palette: Palette { Self.palette(style) }
 
     /// Gold on black, black on parchment, or blood red on parchment.
     static func palette(_ style: Int) -> Palette {
@@ -3284,81 +3283,36 @@ struct CertificateView: View {
         }
     }
 
+    private var palette: Palette { Self.palette(style) }
+
+    /// The card, then a map of every level — the very same lines that go
+    /// into the PDF, so paper and screen always match.
+    private var lines: [(text: String, accent: Bool)] {
+        var all = GameEngine.certificateLines(cert, width: 46).map { (text: $0, accent: false) }
+        if all.count > 1 { all[1].accent = true }   // the title
+        for level in cert.levels {
+            all.append((text: "", accent: false))
+            all.append((text: "  Level \(level.level)", accent: true))
+            all += Dungeon.atlasMapLines(level, showAll: false).lines.map { (text: $0, accent: false) }
+        }
+        return all
+    }
+
     var body: some View {
         let p = palette
         ZStack(alignment: .topTrailing) {
             p.bg.ignoresSafeArea()
-            ScrollView {
-                VStack(spacing: 12 * scale) {
-                    Text("✦ \(cert.title) ✦")
-                        .font(.system(size: 26 * scale, weight: .bold, design: .serif))
-                        .foregroundColor(p.ink)
-                        .multilineTextAlignment(.center)
-                    Text("This is to certify that")
-                        .font(.system(size: 14 * scale, design: .serif).italic())
-                        .foregroundColor(p.ink.opacity(0.85))
-                    ForEach(Array(cert.heroes.enumerated()), id: \.offset) { _, hero in
-                        VStack(spacing: 2) {
-                            Text(hero.name)
-                                .font(.system(size: 22 * scale, weight: .heavy, design: .serif))
-                                .foregroundColor(p.accent)
-                            Text(hero.detail)
-                                .font(.system(size: 12 * scale, design: .serif))
-                                .foregroundColor(p.ink.opacity(0.8))
-                        }
-                    }
-                    Text(cert.quest)
-                        .font(.system(size: 15 * scale, design: .serif))
-                        .foregroundColor(p.ink)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 12 * scale)
-                    Rectangle().fill(p.border).frame(height: 2).padding(.horizontal, 40 * scale)
-                    VStack(spacing: 4) {
-                        ForEach(Array(cert.stats.enumerated()), id: \.offset) { _, stat in
-                            HStack {
-                                Text(stat.0).foregroundColor(p.ink.opacity(0.85))
-                                Spacer()
-                                Text(stat.1).foregroundColor(p.accent).bold()
-                            }
-                            .font(.system(size: 14 * scale, design: .serif))
-                        }
-                    }
-                    .frame(maxWidth: 360 * scale)
-                    Text("The Journey")
-                        .font(.system(size: 18 * scale, weight: .bold, design: .serif))
-                        .foregroundColor(p.ink)
-                        .padding(.top, 6 * scale)
-                    ScrollView(.horizontal, showsIndicators: true) {
-                        HStack(alignment: .top, spacing: 18 * scale) {
-                            ForEach(Array(cert.levels.enumerated()), id: \.offset) { _, level in
-                                VStack(spacing: 4) {
-                                    Text("Level \(level.level)")
-                                        .font(.system(size: 13 * scale, weight: .semibold, design: .serif))
-                                        .foregroundColor(p.accent)
-                                    PictureMapView(level: level, fontSize: 8 * scale, showAll: false)
-                                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(p.border.opacity(0.7), lineWidth: 1))
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 8)
-                    }
-                    Text(cert.date)
-                        .font(.system(size: 13 * scale, design: .serif).italic())
-                        .foregroundColor(p.ink.opacity(0.85))
-                    HStack(spacing: 30 * scale) {
-                        signature("The Dungeon Master", p)
-                        signature(cert.village.map { "The Elder of \($0)" } ?? "The Bards of the Realm", p)
-                    }
-                    if cert.preview {
-                        Text("(a preview — not a real adventure)")
-                            .font(.system(size: 11 * scale, design: .serif).italic())
-                            .foregroundColor(p.ink.opacity(0.6))
+            ScrollView([.vertical, .horizontal]) {
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                        Text(line.text)
+                            .font(.system(size: 12 * scale, weight: line.accent ? .bold : .regular, design: .monospaced))
+                            .foregroundColor(line.accent ? p.accent : p.ink)
+                            .fixedSize(horizontal: true, vertical: false)
                     }
                 }
-                .padding(.vertical, 40 * scale)
-                .padding(.horizontal, 24 * scale)
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(p.border, lineWidth: 4).padding(8))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(p.border.opacity(0.5), lineWidth: 1).padding(16))
+                .padding(.vertical, 26 * scale)
+                .padding(.horizontal, 16 * scale)
             }
             VStack(alignment: .trailing, spacing: 8) {
                 HStack(spacing: 10) {
@@ -3366,29 +3320,20 @@ struct CertificateView: View {
                     button(pdfOptions ? "Cancel" : "Save PDF", p) { pdfOptions.toggle() }
                     button("✕", p, action: onClose)
                 }
-                // The PDF three ways — each opens a preview before it's kept.
+                // Each opens a preview before anything is kept.
                 if pdfOptions {
-                    button("Illustrated — as shown", p) { pdfOptions = false; onPDF(.illustrated, style) }
-                    button("Text — maps kept whole", p) { pdfOptions = false; onPDF(.text, style) }
-                    button("Text — compact", p) { pdfOptions = false; onPDF(.textCompact, style) }
+                    button("PDF — maps kept whole", p) { pdfOptions = false; onPDF(.text, style) }
+                    button("PDF — compact", p) { pdfOptions = false; onPDF(.textCompact, style) }
                 }
             }
             .padding(12)
         }
     }
 
-    private func signature(_ who: String, _ p: (bg: Color, ink: Color, accent: Color, border: Color)) -> some View {
-        VStack(spacing: 2) {
-            Text("~ signed ~").font(.system(size: 14 * scale, design: .serif).italic()).foregroundColor(p.accent)
-            Rectangle().fill(p.ink.opacity(0.6)).frame(width: 120 * scale, height: 1)
-            Text(who).font(.system(size: 11 * scale, design: .serif)).foregroundColor(p.ink.opacity(0.85))
-        }
-    }
-
-    private func button(_ label: String, _ p: (bg: Color, ink: Color, accent: Color, border: Color), action: @escaping () -> Void) -> some View {
+    private func button(_ label: String, _ p: Palette, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 13 * scale, weight: .semibold, design: .serif))
+                .font(.system(size: 13 * scale, weight: .semibold, design: .monospaced))
                 .foregroundColor(p.bg)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)

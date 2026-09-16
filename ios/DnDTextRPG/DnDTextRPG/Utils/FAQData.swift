@@ -65,7 +65,7 @@ struct FAQData {
         ),
         FAQEntry(
             question: "Is there an end? How deep does it go?",
-            answer: "Seven levels. Beat a level's guardian (the B room) to go down to the next — each guardian stronger than the last, every one serving the villain from your Opening Tale. On Level 7 that villain is waiting: beat them and your quest is done, and so is the adventure. (A rare deep-blue teleport pad can also drop you a level early.)",
+            answer: "Seven levels. Beat a level's guardian (the B room) to go down to the next — each guardian stronger than the last, every one serving the villain from your Origins tale. On Level 7 that villain is waiting: beat them and your quest is done, and so is the adventure. (A rare deep-blue teleport pad can also drop you a level early.)",
             keywords: ["end", "ending", "how deep", "how many levels", "final boss", "last level", "top", "bottom", "villain", "finish"]
         ),
         FAQEntry(

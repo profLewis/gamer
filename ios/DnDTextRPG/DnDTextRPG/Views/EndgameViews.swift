@@ -1,7 +1,10 @@
 //
-//  EndgameViews.swift — the end of an adventure: fireworks, the printable
-//  certificate (and a look at any PDF before it's kept), and the shelf
-//  where finished adventures' certificates are kept (Settings > Certificates).
+//  EndgameViews.swift — the end of an adventure: fireworks, a look at any
+//  PDF before it's kept, and the shelf where finished adventures'
+//  certificates are stored (Settings > Certificates).
+//
+//  The certificate itself is drawn in ASCII (GameEngine.certificateLines),
+//  the same words on screen and on paper — see CertificateView.
 //
 
 import SwiftUI
@@ -159,140 +162,6 @@ struct PDFPreviewItem: Identifiable {
     let data: Data
     let name: String
     let title: String
-}
-
-/// The illustrated certificate as US-Letter PDF pages: the certificate
-/// itself, in the chosen style, then the maps of the journey, two a page.
-enum CertificatePDF {
-    static let page = CGSize(width: 612, height: 792)
-
-    @available(iOS 16, macOS 13, tvOS 16, *)
-    @MainActor
-    static func illustrated(_ cert: GameEngine.EndgameCertificate, style: Int) -> Data? {
-        let data = NSMutableData()
-        guard let consumer = CGDataConsumer(data: data as CFMutableData) else { return nil }
-        var box = CGRect(origin: .zero, size: page)
-        guard let pdf = CGContext(consumer: consumer, mediaBox: &box, nil) else { return nil }
-        func addPage<V: View>(_ view: V) {
-            let renderer = ImageRenderer(content: view.frame(width: page.width, height: page.height))
-            renderer.render { _, draw in
-                pdf.beginPDFPage(nil)
-                draw(pdf)
-                pdf.endPDFPage()
-            }
-        }
-        addPage(CertificateFrontPage(cert: cert, style: style))
-        // Each map as big as half a page allows: measured once at a known size
-        // (the picture scales with its font size).
-        let maps: [(AtlasLevel, CGFloat)] = cert.levels.map { level in
-            var natural = CGSize(width: 1, height: 1)
-            ImageRenderer(content: PictureMapView(level: level, fontSize: 10, showAll: false)).render { size, _ in natural = size }
-            let fit = min((page.width - 110) / max(1, natural.width), (page.height / 2 - 100) / max(1, natural.height), 2.2)
-            return (level, 10 * fit)
-        }
-        var i = 0
-        while i < maps.count {
-            addPage(CertificateMapsPage(style: style, maps: Array(maps[i..<min(i + 2, maps.count)])))
-            i += 2
-        }
-        pdf.closePDF()
-        return data as Data
-    }
-}
-
-private struct CertificateFrontPage: View {
-    let cert: GameEngine.EndgameCertificate
-    let style: Int
-
-    var body: some View {
-        let p = CertificateView.palette(style)
-        let heroSize: CGFloat = cert.heroes.count > 4 ? 18 : 24
-        ZStack {
-            p.bg
-            RoundedRectangle(cornerRadius: 16).stroke(p.border, lineWidth: 5).padding(14)
-            RoundedRectangle(cornerRadius: 12).stroke(p.border.opacity(0.5), lineWidth: 1.2).padding(24)
-            VStack(spacing: 13) {
-                Text("✦  ✦  ✦").font(.system(size: 16, design: .serif)).foregroundColor(p.accent)
-                Text(cert.title).font(.system(size: 34, weight: .bold, design: .serif)).foregroundColor(p.ink)
-                Text("This is to certify that").font(.system(size: 15, design: .serif).italic()).foregroundColor(p.ink.opacity(0.85))
-                VStack(spacing: 7) {
-                    ForEach(Array(cert.heroes.enumerated()), id: \.offset) { _, hero in
-                        VStack(spacing: 1) {
-                            Text(hero.name).font(.system(size: heroSize, weight: .heavy, design: .serif)).foregroundColor(p.accent)
-                            Text(hero.detail).font(.system(size: 12, design: .serif)).foregroundColor(p.ink.opacity(0.8))
-                        }
-                    }
-                }
-                Text(cert.quest).font(.system(size: 15, design: .serif)).foregroundColor(p.ink)
-                    .multilineTextAlignment(.center).padding(.horizontal, 30)
-                Rectangle().fill(p.border).frame(width: 260, height: 2)
-                VStack(spacing: 5) {
-                    ForEach(Array(cert.stats.enumerated()), id: \.offset) { _, stat in
-                        HStack {
-                            Text(stat.0).foregroundColor(p.ink.opacity(0.85))
-                            Spacer()
-                            Text(stat.1).foregroundColor(p.accent).bold()
-                        }
-                        .font(.system(size: 14, design: .serif))
-                    }
-                }
-                .frame(width: 320)
-                if !cert.levels.isEmpty {
-                    Text("The maps of the journey follow.").font(.system(size: 12, design: .serif).italic()).foregroundColor(p.ink.opacity(0.7))
-                }
-                Spacer(minLength: 0)
-                Text(cert.date).font(.system(size: 13, design: .serif).italic()).foregroundColor(p.ink.opacity(0.85))
-                HStack(spacing: 50) {
-                    CertificateSignature(who: "The Dungeon Master", p: p)
-                    CertificateSignature(who: cert.village.map { "The Elder of \($0)" } ?? "The Bards of the Realm", p: p)
-                }
-                if cert.preview {
-                    Text("(a preview — not a real adventure)").font(.system(size: 11, design: .serif).italic()).foregroundColor(p.ink.opacity(0.6))
-                }
-            }
-            .padding(.vertical, 50)
-            .padding(.horizontal, 44)
-        }
-    }
-}
-
-private struct CertificateSignature: View {
-    let who: String
-    let p: CertificateView.Palette
-
-    var body: some View {
-        VStack(spacing: 3) {
-            Text("~ signed ~").font(.system(size: 15, design: .serif).italic()).foregroundColor(p.accent)
-            Rectangle().fill(p.ink.opacity(0.6)).frame(width: 150, height: 1)
-            Text(who).font(.system(size: 11, design: .serif)).foregroundColor(p.ink.opacity(0.85))
-        }
-    }
-}
-
-private struct CertificateMapsPage: View {
-    let style: Int
-    let maps: [(AtlasLevel, CGFloat)]
-
-    var body: some View {
-        let p = CertificateView.palette(style)
-        ZStack {
-            p.bg
-            RoundedRectangle(cornerRadius: 16).stroke(p.border, lineWidth: 5).padding(14)
-            VStack(spacing: 16) {
-                Text("The Journey").font(.system(size: 22, weight: .bold, design: .serif)).foregroundColor(p.ink)
-                ForEach(Array(maps.enumerated()), id: \.offset) { _, map in
-                    VStack(spacing: 6) {
-                        Text("Level \(map.0.level)").font(.system(size: 15, weight: .semibold, design: .serif)).foregroundColor(p.accent)
-                        PictureMapView(level: map.0, fontSize: map.1, showAll: false)
-                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(p.border.opacity(0.7), lineWidth: 1))
-                    }
-                    .frame(maxHeight: .infinity)
-                }
-            }
-            .padding(.vertical, 40)
-            .padding(.horizontal, 36)
-        }
-    }
 }
 
 #if canImport(PDFKit) && !os(tvOS)
