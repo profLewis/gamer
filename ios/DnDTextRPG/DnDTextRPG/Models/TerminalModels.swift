@@ -236,10 +236,11 @@ enum InputState {
 /// What the game calls the AI that runs the Dungeon Master — in one place,
 /// so a label changed here changes on every button, title and help line.
 enum BrainLabels {
-    /// The Settings button that opens the Brain's settings.
-    static let button = "Brain"
+    /// The Settings button that opens the Brain's settings. Called the
+    /// Dungeon Master Brain in full, so it's clear whose mind it is.
+    static let button = "Dungeon Master Brain"
     /// That screen's title.
-    static let title = "Brain Settings"
+    static let title = "Dungeon Master Brain"
     /// Choosing which mind runs the Dungeon Master (inside Brain Settings).
     static let change = "Change Brain"
     /// How help text points there.

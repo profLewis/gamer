@@ -6278,7 +6278,7 @@ class GameEngine: ObservableObject {
 
         let helpTopics = ["Getting Started", "Exploration", "Combat",
                           "Character & Party", "Recovery",
-                          "Dungeon Master", "Multiplayer", "Tips & Tricks",
+                          "Dungeon Master Brain", "Multiplayer", "Tips & Tricks",
                           "Bestiary", "Gallery & Lore"]
         let helpActions: [(GameEngine) -> Void] = [
             { $0.showHelpGettingStarted() }, { $0.showHelpExploration() },
@@ -6970,7 +6970,7 @@ class GameEngine: ObservableObject {
         clearTerminal()
         undoHandler = nil; redoHandler = nil
         suppressAutoScroll = true
-        printTitle("Dungeon Master (Robot)")
+        printTitle("Dungeon Master Brain")
 
         printWrapped("The DM narrates your adventure. There are three intelligence tiers:", indent: 2)
         print("")
