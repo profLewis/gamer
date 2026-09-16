@@ -20475,9 +20475,17 @@ class GameEngine: ObservableObject {
                 seedNameRegistry()
                 room.merchant = Merchant.random(tier: MerchantTier.forDungeonLevel(dungeon.level))
             }
-            // Where the smith stays, they and the shopkeeper are one person.
-            if let npc = room.npc, npc.type == .dwarvenSmith, room.merchant != nil, room.merchant?.name != npc.displayName {
-                room.merchant?.name = npc.displayName
+            // Where the smith stays, they and the shopkeeper are one person —
+            // and they must be one person BEFORE the room text names them.
+            // This used to rename the merchant after the description had
+            // already announced it, so "Grub, wandering pedlar" became
+            // "Hetty the Dwarven Smith" the moment you tapped Visit Merchant,
+            // keeping Grub's shop name and greeting. Now the shop takes the
+            // smith's name and a forge-ish sign, once, and stays that way.
+            if let npc = room.npc, npc.type == .dwarvenSmith, var m = room.merchant, m.name != npc.displayName {
+                m.name = npc.displayName
+                if let personal = npc.personalName { m.shopName = "\(personal)'s Forge" }
+                room.merchant = m
             }
         }
 
@@ -24372,6 +24380,7 @@ class GameEngine: ObservableObject {
             actions.append { [weak self] in
                 guard let self = self else { return }
                 let doEquip = { (char: Character) in
+                    let acBefore = char.armorClass
                     switch item.type {
                     case .weapon: char.equipWeapon(item)
                     case .armor: char.equipArmor(item)
@@ -24379,6 +24388,33 @@ class GameEngine: ObservableObject {
                     default: break
                     }
                     self.print("  \(char.name) equips themselves with the \(item.name)!", color: .brightGreen)
+                    // Say what actually changed — "equips themselves with the
+                    // Scale Mail" on its own tells you nothing about whether
+                    // it was worth doing.
+                    switch item.type {
+                    case .armor, .shield:
+                        let now = char.armorClass
+                        if now > acBefore {
+                            self.printWrapped("Armour Class \(acBefore) → \(now). Harder to hit, and it shows.", indent: 2, color: .brightGreen)
+                        } else if now < acBefore {
+                            self.printWrapped("Armour Class \(acBefore) → \(now) — worse than what they had on.", indent: 2, color: .yellow)
+                        } else {
+                            self.printWrapped("Armour Class stays at \(now) — no better than what they had on.", indent: 2, color: .dimGreen)
+                        }
+                        if let st = item.armorStats, st.stealthDisadvantage {
+                            self.printWrapped("It clanks. Sneaking will be harder while they wear it.", indent: 2, color: .yellow)
+                        }
+                    case .weapon:
+                        if let st = item.weaponStats {
+                            var how = [st.damage]
+                            if st.isFinesse { how.append("finesse — DEX if that's the better arm") }
+                            if st.isRanged { how.append("ranged — DEX") }
+                            if st.isTwoHanded { how.append("needs both hands") }
+                            self.printWrapped("Now swinging for \(how.joined(separator: ", ")).", indent: 2, color: .brightGreen)
+                        }
+                    default:
+                        break
+                    }
                     self.logEvent("\(char.name) equipped \(item.name)", category: "LOOT")
                     self.waitForContinueWithTimeout { onDone() }
                 }
