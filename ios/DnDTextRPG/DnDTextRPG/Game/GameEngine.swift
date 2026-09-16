@@ -27416,6 +27416,15 @@ class GameEngine: ObservableObject {
         let hearAPlea: () -> Void = { [weak self] in
             guard let self = self else { return }
             let old = self.mainQuest
+            // Breaking the oath leaves somebody worse off, and they have a
+            // name and a trouble of their own — say so before it happens,
+            // without spelling out what becomes of them.
+            if let leaving = old {
+                self.print("")
+                self.printWrapped("Take up another and \(leaving.village) is on its own again. \(leaving.harm ?? "What they feared is still coming") — and \(leaving.stakes).", indent: 2, color: .yellow)
+                self.printWrapped("Nobody else is coming for them. That is simply how it will be.", indent: 2, color: .dimGreen)
+                self.print("")
+            }
             if let old = old { self.questChangeBackup = (old, self.adventureIntroLines) }
             var next = MainQuest.random()
             for _ in 0..<8 where next.villain == old?.villain || next.kind == old?.kind { next = MainQuest.random() }
