@@ -26766,14 +26766,14 @@ class GameEngine: ObservableObject {
         let onFloor = dungeon.rooms.values.filter { $0.floor == floor }
         guard !onFloor.isEmpty else { return nil }
         let unseen = onFloor.filter { !$0.visited }.count
-        guard unseen > 0 else { return "⌛ This floor is walked out — the way on is down." }
+        guard unseen > 0 else { return "▸ This floor is walked out — the way on is down." }
         let minutes = unseen * 20
         let hours = Double(minutes) / 60.0
         let howLong: String
         if minutes < 60 { howLong = "about \(minutes) minutes" }
         else if hours < 1.75 { howLong = "an hour or so" }
         else { howLong = "about \(Int(hours.rounded())) hours" }
-        return "⌛ \(unseen) room\(unseen == 1 ? "" : "s") still unwalked here — \(howLong) to see it all."
+        return "▸ \(unseen) room\(unseen == 1 ? "" : "s") still unwalked here — \(howLong) to see it all."
     }
 
     /// This level's part of the quest, and how far along it is.
@@ -27324,10 +27324,17 @@ class GameEngine: ObservableObject {
         var opts = mainQuest != nil ? ["Hold to Our Oath", "Hear Another Plea"] : ["Stay As We Are", "Hear a Plea"]
         if mainQuest != nil { opts.append("Tell It Again") }
         if !allQuests.isEmpty { opts.append("Our Errands") }
+        if activeQuest != nil { opts.append("Give Up Quest") }
         let all = opts + ["?", "< Back"]
         showMenuOptions(opts.map { MenuOption($0) }
                         + [MenuOption("?", tint: .navigation, compact: true), MenuOption("< Back", tint: .navigation, compact: true)])
         closeHandler = { [weak self] in self?.showPartyStatus() }
+        // Long-press Give Up Quest still skips the "are you sure?" step.
+        menuLongPressHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= all.count, all[choice - 1] == "Give Up Quest" else { return }
+            self.print("")
+            self.abandonActiveQuest(returnTo: { [weak self] in self?.confirmNewMainQuest() })
+        }
         let hearAPlea: () -> Void = { [weak self] in
             guard let self = self else { return }
             let old = self.mainQuest
@@ -27367,6 +27374,8 @@ class GameEngine: ObservableObject {
                 self.showQuestRetell(onBack: { [weak self] in self?.confirmNewMainQuest() })
             case "Our Errands":
                 self.showQuestsOnHand(onBack: { [weak self] in self?.confirmNewMainQuest() })
+            case "Give Up Quest":
+                self.confirmAbandonQuest(returnTo: { [weak self] in self?.confirmNewMainQuest() })
             case "?":
                 self.showInlineHelp {
                     self.printTitle("By the Campfire — Help")
@@ -27640,9 +27649,6 @@ class GameEngine: ObservableObject {
         if hasPoisoned {
             menuOpts.insert("Cure Poison", at: menuOpts.firstIndex(of: enterLabel) ?? menuOpts.count)
         }
-        if activeQuest != nil {
-            menuOpts.insert("Give Up Quest", at: menuOpts.firstIndex(of: enterLabel) ?? menuOpts.count)
-        }
 
         showMenu(menuOpts)
 
@@ -27656,19 +27662,10 @@ class GameEngine: ObservableObject {
             self?.showCharacterCard(index: idx)
         }
 
-        // Long-press Give Up Quest skips the "are you sure?" step.
-        menuLongPressHandler = { [weak self] choice in
-            guard let self = self, choice >= 1, choice <= menuOpts.count, menuOpts[choice - 1] == "Give Up Quest" else { return }
-            self.print("")
-            self.abandonActiveQuest(returnTo: { [weak self] in self?.showPartyStatus() })
-        }
-
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             let selected = menuOpts[choice - 1]
             switch selected {
-            case "Give Up Quest":
-                self.confirmAbandonQuest(returnTo: { self.showPartyStatus() })
             case "Cure Poison":
                 self.showPoisonInfo(onBack: { self.showPartyStatus() })
             case "Party Review":
