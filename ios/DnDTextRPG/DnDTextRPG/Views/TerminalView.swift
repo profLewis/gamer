@@ -1921,6 +1921,13 @@ struct TerminalView: View {
         // reread what happened — instead of snapping back down. Once the
         // reader isn't at the bottom any more, stay out of their way until
         // they scroll back down themselves (see isNearBottom).
+        // Something the reader must see (a DM reply) overrides the courtesy
+        // of staying put — once, then the flag is cleared.
+        if gameEngine.forceScrollToNewest {
+            gameEngine.forceScrollToNewest = false
+            withAnimation { proxy.scrollTo("bottomSentinel", anchor: .bottom) }
+            return
+        }
         guard isNearBottom else { return }
         // Scroll to the sentinel itself (not the last content line) — anchoring
         // the last line at .bottom would leave the 1pt sentinel just past the

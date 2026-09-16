@@ -99,7 +99,14 @@ extension GameEngine {
         clearTerminal()
         printTitle(feature.button)
         print("")
-        let actor = party.filter { $0.isConscious }.randomElement() ?? party.first
+        if let who = actingOverrideCharacter {
+            printWrapped("\(shortName(for: who)) steps up — you set them to act.", indent: 2, color: .dimGreen)
+            print("")
+        }
+        // Acting As decides who, when it's set — otherwise whoever is up for
+        // it. Either way the telling names them, so "someone searched" is
+        // never left hanging.
+        let actor = actingOverrideCharacter ?? party.filter { $0.isConscious }.randomElement() ?? party.first
         let name = actor.map { shortName(for: $0) } ?? "You"
         let lines: [(String, TerminalColor)]
         switch feature.key {

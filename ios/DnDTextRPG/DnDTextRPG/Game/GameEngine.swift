@@ -236,6 +236,11 @@ class GameEngine: ObservableObject {
 
     /// Suppress auto-scroll-to-bottom (for help/card views where top content matters)
     @Published var suppressAutoScroll: Bool = true
+    /// Set for one screen update when something arrives that the reader must
+    /// see — a DM reply, chiefly. TerminalView's scrollToBottom normally
+    /// stays out of the way once you've scrolled up to reread; this overrides
+    /// that once, rather than removing the courtesy altogether.
+    @Published var forceScrollToNewest: Bool = false
     /// Lock scrolling entirely (for card views with swipe navigation)
     @Published var scrollLocked: Bool = false
     /// Bumped by every clearTerminal() call — i.e. every genuine navigation
@@ -9364,9 +9369,11 @@ class GameEngine: ObservableObject {
         // the nav cell bottom-right looked like a mistake.
         var opts: [String] = []
         if dance {
-            // First, so it's the default — and a tap on the story starts it.
-            opts.append(aboutDanceStyle == 0 ? "Dance!" : "Wave Again")
-            opts.append(aboutDanceStyle == 0 ? "Wave Again" : "Dance!")
+            // Fixed places. These used to be emitted in whichever order put
+            // the last-pressed one first, so the pair changed position under
+            // your finger every time you tapped one.
+            opts.append("Dance!")
+            opts.append("Wave Again")
         }
         opts.append("How to Play")
         opts.append("The DnDex")
@@ -30790,6 +30797,7 @@ class GameEngine: ObservableObject {
                 let displayText = result.cleanText
 
                 self.dmChatLog.append((isUser: false, text: displayText))
+                self.forceScrollToNewest = true
 
                 // Display DM response
                 self.print("")
@@ -31699,6 +31707,8 @@ class GameEngine: ObservableObject {
                     let displayText = adLibLevel.rawValue >= DMAdLibLevel.moderate.rawValue ? result.cleanText : response
 
                     self.dmChatLog.append((isUser: false, text: displayText))
+                    self.forceScrollToNewest = true
+                self.forceScrollToNewest = true
 
                     self.print("")
                     self.print("DM:", color: .yellow, bold: true)
@@ -40853,6 +40863,7 @@ class GameEngine: ObservableObject {
 
                 // Track in dmChatLog
                 self.dmChatLog.append((isUser: false, text: displayText))
+                self.forceScrollToNewest = true
 
                 // Add to party chat display
                 self.addChatMessage(senderName: "Dungeon Master", message: displayText, isAI: true)
