@@ -10053,6 +10053,11 @@ class GameEngine: ObservableObject {
         #endif
         print("")
 
+        print("MAIN QUESTS:", color: .cyan, bold: true)
+        print("  \(mainQuestsEnabled ? "On" : "Off")", color: mainQuestsEnabled ? .brightGreen : .red)
+        printWrapped("Whether a new adventure opens with somebody's plea and a villain to swear against. Off, you just go down for the adventure of it, and anything to do with a main quest is greyed out. Errands from the people you meet are unaffected either way.", indent: 2, color: .dimGreen)
+        print("")
+
         print("DUNGEON QUIRKS:", color: .cyan, bold: true)
         print("  \(dungeonQuirksEnabled ? "On" : "Off")", color: dungeonQuirksEnabled ? .brightGreen : .red)
         printWrapped("Little oddities, off by default: the dragon's winks wander out of the pictures and into the words (\"g- -n\" — the DM still understands). Best left off with VoiceOver.", indent: 2, color: .dimGreen)
@@ -10082,6 +10087,7 @@ class GameEngine: ObservableObject {
             teleportPadsEnabled ? "Teleport Off" : "Teleport On",
             combatArenaEnabled ? "Fight Club Off" : "Fight Club On",
             dungeonQuirksEnabled ? "Quirks Off" : "Quirks On",
+            mainQuestsEnabled ? "Main Quests Off" : "Main Quests On",
             // Page 3 — System
             "Log Limit", "List Order",
             atlasShowAllRooms ? "World Map: Visited" : "World Map: All Rooms",
@@ -10129,6 +10135,11 @@ class GameEngine: ObservableObject {
                 self.showButtonLimitMenu()
             } else if selected == "Long Press" {
                 self.showLongPressMenu()
+            } else if selected.hasPrefix("Main Quests") {
+                self.recordSettingChange(screen: "s:gameplay", key: "mainQuestsEnabled", name: "Main Quests")
+                self.mainQuestsEnabled.toggle()
+                UserDefaults.standard.set(self.mainQuestsEnabled, forKey: "mainQuestsEnabled")
+                self.showGameplaySettings(page: currentPage)
             } else if selected.hasPrefix("Quirks") {
                 self.recordSettingChange(screen: "s:gameplay", key: "dungeonQuirks", name: "Quirks")
                 self.dungeonQuirksEnabled.toggle()
@@ -19013,6 +19024,13 @@ class GameEngine: ObservableObject {
     var questHistory: [String] = []
     /// Chose to adventure with no main quest (people will nag, and offer one).
     var noMainQuest = false
+    /// Settings > Gameplay: whether main quests happen at all. Off means no
+    /// plea, no oath, and no villain waiting at the bottom of the world — but
+    /// the errands people set you on the way carry on exactly as before. This
+    /// is deliberately main-quest only, which is why the errand options stay
+    /// live everywhere below.
+    @Published var mainQuestsEnabled: Bool = UserDefaults.standard.object(forKey: "mainQuestsEnabled") == nil
+        ? true : UserDefaults.standard.bool(forKey: "mainQuestsEnabled")
     var mainQuestCompleted = false
     /// The plea just turned down (the next asker riffs on it), and who's asking.
     private var questPleaPrevious: MainQuest?
@@ -26652,6 +26670,15 @@ class GameEngine: ObservableObject {
         questPleaAsker = nil
         npcQuestOffers = [:]
         adventureIntroLines = []
+        // Main quests switched off: no plea, and no tale about one — straight
+        // down into the dark. noMainQuest is set so everything that already
+        // knows how to play without a main quest behaves as it always has.
+        guard mainQuestsEnabled else {
+            noMainQuest = true
+            logEvent("Main quests are switched off — setting out with none", category: "QUEST")
+            enterDungeon()
+            return
+        }
         playAdventureCutscene(then: { [weak self] in
             self?.askToTakeQuest(then: { [weak self] in self?.enterDungeon() })
         }, onCancel: { [weak self] in
@@ -27689,7 +27716,11 @@ class GameEngine: ObservableObject {
         if !allQuests.isEmpty { opts.append("Our Errands") }
         if activeQuest != nil { opts.append("Give Up Quest") }
         let all = opts + ["?", "< Back"]
-        showMenuOptions(opts.map { MenuOption($0) }
+        // With main quests off the pleas are still listed, so the screen reads
+        // the same, but greyed: nothing here can start one. "Our Errands" and
+        // "Give Up Quest" stay live — the switch is main-quest only.
+        let pleaOptions: Set<String> = ["Hear Another Plea", "Hear a Plea", "Tell It Again"]
+        showMenuOptions(opts.map { MenuOption($0, isDisabled: !mainQuestsEnabled && pleaOptions.contains($0)) }
                         + [MenuOption("?", tint: .navigation, compact: true), MenuOption("< Back", tint: .navigation, compact: true)])
         closeHandler = { [weak self] in self?.showPartyStatus() }
         // Long-press Give Up Quest still skips the "are you sure?" step.
