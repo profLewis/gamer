@@ -31872,8 +31872,12 @@ class GameEngine: ObservableObject {
         // Item commands
         for itemName in result.grantedItems {
             if let item = resolveItemByName(itemName) {
-                party.first?.addItem(item)
-                print("  [Found: \(item.name)!]", color: .brightGreen, bold: true)
+                giveToParty(item, announce: "[Found: \(item.name)!]")
+            } else {
+                // The DM named something the catalogue has never heard of. Say
+                // so — it used to be skipped silently, so the reply mentioned a
+                // thing that was never going to arrive.
+                print("  (The DM reaches for \(itemName) and comes up empty-handed.)", color: .yellow)
             }
             changed = true
         }
@@ -31996,16 +32000,68 @@ class GameEngine: ObservableObject {
         logEvent("Party took a long rest", category: "Rest")
     }
 
+    /// Hand something the DM has conjured to somebody who can actually carry
+    /// it, and say so honestly if nobody can.
+    ///
+    /// Every one of these paths used to do `party.first?.addItem(item)` and
+    /// throw the result away, then print "[Found: X!]" regardless. addItem
+    /// returns false when the pack is full (see Character.canCarry), so a
+    /// heavy item announced itself and then quietly did not exist. It also
+    /// always went to whoever happened to be first in the party.
+    ///
+    /// Offered to the Actor first if one is named, then to anyone with room.
+    /// Returns the character who took it, or nil if it is still on the floor.
+    @discardableResult
+    func giveToParty(_ item: Item, announce: String? = nil) -> Character? {
+        let candidates: [Character] = {
+            var order: [Character] = []
+            var seen = Set<UUID>()
+            func consider(_ who: Character) {
+                guard !seen.contains(who.id) else { return }
+                seen.insert(who.id)
+                order.append(who)
+            }
+            // The Actor first if one is named, then everyone still standing,
+            // then the rest — somebody unconscious can still be carried for.
+            if let actor = actingOverrideCharacter, actor.isConscious { consider(actor) }
+            for who in party where who.isConscious { consider(who) }
+            for who in party { consider(who) }
+            return order
+        }()
+        for who in candidates where who.addItem(item) {
+            if let note = announce {
+                print("  \(note) — \(shortName(for: who)) takes it.", color: .brightGreen, bold: true)
+            }
+            return who
+        }
+        // Nobody could carry it: it stays where it is, and the room keeps it
+        // rather than the item vanishing into a message.
+        dungeon?.currentRoom?.droppedItems.append(item)
+        print("  \(item.name) is here, but nobody has room for it — it stays on the floor.", color: .yellow)
+        printWrapped("Drop something, or send someone back for it.", indent: 2, color: .dimGreen)
+        return nil
+    }
+
     private func justDMCollectTreasure() {
         guard let room = dungeon?.currentRoom else { return }
         if !room.treasure.isEmpty {
-            for item in room.treasure {
-                if let resolved = resolveItemByName(item.name) {
-                    party.first?.addItem(resolved)
-                    print("  [Collected: \(item.name)]", color: .brightGreen, bold: true)
+            // TreasureItem is a { name, value, type } record, not an Item, so
+            // it cannot go into a pack as it stands — collectTreasure turns it
+            // into one first. Anything the catalogue knows is handed over
+            // properly; the rest is what it always was, a note of what was here.
+            var left: [TreasureItem] = []
+            for entry in room.treasure {
+                if let item = resolveItemByName(entry.name) {
+                    if giveToParty(item, announce: "[Collected: \(entry.name)]") == nil {
+                        left.append(entry)
+                    }
+                } else {
+                    print("  [Collected: \(entry.name)]", color: .brightGreen, bold: true)
                 }
             }
-            dungeon?.currentRoom?.treasure = []
+            // What nobody could carry stays in the room, rather than being
+            // wiped along with what was taken.
+            dungeon?.currentRoom?.treasure = left
         } else {
             print("  No treasure to collect.", color: .dimGreen)
         }

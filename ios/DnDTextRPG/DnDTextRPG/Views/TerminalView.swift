@@ -69,6 +69,13 @@ private struct LinkFramesKey: PreferenceKey {
     }
 }
 
+/// The height the layout is giving the story text. Measured on the box itself,
+/// which keeps its flexible size — this only reads it, and never sets it.
+private struct StoryBoxHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
 struct TerminalView: View {
     @EnvironmentObject var gameEngine: GameEngine
     @ObservedObject private var voiceInput = VoiceInputManager.shared
@@ -105,6 +112,8 @@ struct TerminalView: View {
     @State private var focusScheduled: Bool = false
     @State private var glideToken = UUID()
     @State private var linkFrames: [LinkFrame] = []
+    /// Measured height of the story box (see StoryBoxHeightKey).
+    @State private var storyBoxHeight: CGFloat = 0
     #if os(macOS)
     /// Mac pane sizes, set by dragging the small handles (remembered).
     /// 0 = map pane tall enough for the whole map box, key included.
@@ -159,6 +168,38 @@ struct TerminalView: View {
     /// The screen's two main regions — (A) map+text, (B) D-pad/buttons/
     /// input — side by side as an even 50/50 split in landscape, or stacked
     /// full-width as portrait always has.
+    /// One line of story text at its natural height, before any spacing.
+    /// TerminalLine renders size 14 as 16 on the Mac, so the pitch is taken at
+    /// the size actually drawn rather than the size asked for.
+    private var storyLineHeight: CGFloat {
+        #if os(macOS)
+        let font = NSFont.monospacedSystemFont(ofSize: 16 * scale, weight: .regular)
+        return ceil(font.ascender - font.descender + font.leading)
+        #else
+        let font = UIFont.monospacedSystemFont(ofSize: 14 * scale, weight: .regular)
+        return ceil(font.lineHeight)
+        #endif
+    }
+
+    /// The gap between lines, chosen so a whole number of them fills the box
+    /// exactly — the remainder that used to show as a sliced half-line is
+    /// shared out between the lines instead.
+    ///
+    /// The box is NOT resized: it keeps its flexible height and can still give
+    /// space back to the buttons and the input line. Falls back to the plain
+    /// value of 2 before the first measurement, or whenever the sum would look
+    /// wrong, so the worst case is today's behaviour rather than a broken one.
+    private var storyLineSpacing: CGFloat {
+        let base: CGFloat = 2
+        let usable = storyBoxHeight - 8          // the block's own .padding(.vertical, 4)
+        let line = storyLineHeight
+        guard usable > line * 3, line > 1 else { return base }
+        let rows = floor(usable / (line + base))
+        guard rows >= 3 else { return base }
+        let fitted = (usable / rows) - line
+        return (fitted >= 1 && fitted <= 6) ? fitted : base
+    }
+
     private func topLevelStack<Content: View>(isLandscape: Bool, @ViewBuilder content: () -> Content) -> some View {
         Group {
             if isLandscape {
@@ -356,7 +397,7 @@ struct TerminalView: View {
                     // Terminal output area
                     ScrollViewReader { scrollProxy in
                         ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 2) {
+                            LazyVStack(alignment: .leading, spacing: storyLineSpacing) {
                                 ForEach(Array(gameEngine.terminalLines.enumerated()), id: \.element.id) { index, line in
                                     Group {
                                     if let link = line.link {
@@ -613,12 +654,20 @@ struct TerminalView: View {
                         }
                     }
                     .frame(maxWidth: .infinity)
+                    // Measure the box so the line spacing can be chosen to fit
+                    // a whole number of rows (see storyLineSpacing). Reading
+                    // only: the box keeps its flexible height, so it still
+                    // gives way to the buttons and the input line — unlike
+                    // build 51, where a fixed height pushed the input line off
+                    // the screen entirely. This replaces the flat 7pt trim of
+                    // build 59, which was a guess at the remainder.
+                    .background(GeometryReader { g in
+                        Color.clear.preference(key: StoryBoxHeightKey.self, value: g.size.height)
+                    })
+                    .onPreferenceChange(StoryBoxHeightKey.self) { h in
+                        if abs(h - storyBoxHeight) > 0.5 { storyBoxHeight = h }
+                    }
                     .background(terminalBackground)
-                    // A touch shorter, so the row above doesn't peep in at the
-                    // top edge. Padding, not a frame: the view keeps shrinking
-                    // when the controls need the room (see build 51, where a
-                    // fixed height pushed the input line off the screen).
-                    .padding(.bottom, 7)
                     .onPreferenceChange(LinkFramesKey.self) { linkFrames = $0 }
                     .overlay(alignment: .leading) { tapToAdvanceStrip }
                     #if !os(tvOS)
