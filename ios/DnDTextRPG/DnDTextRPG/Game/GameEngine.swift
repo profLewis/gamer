@@ -548,29 +548,22 @@ class GameEngine: ObservableObject {
     private func combatWaitingLines() -> (title: String, info: [String]) {
         guard let combat = currentCombat else { return ("", []) }
         var title = Self.combatContinueTitles.randomElement()!
-        let order = combat.turnOrder
-        if !order.isEmpty {
-            // Start AT the current turn, not past it: by the time this
-            // prompt shows, nextTurn() has already moved on, so stepping
-            // forward again named the wrong combatant (the one after next,
-            // or the one whose turn had just finished).
-            var idx = (combat.currentTurnIndex - 1 + order.count) % order.count
-            for _ in 0..<order.count {
-                idx = (idx + 1) % order.count
-                let entry = order[idx]
-                if entry.isPlayer {
-                    guard let c = party.first(where: { $0.id == entry.id }), c.isConscious else { continue }
+        // Name whoever the fight will ACTUALLY hand the turn to: the very
+        // combatant showPlayerCombatMenu opens for. This used to scan forward
+        // past anyone unconscious, while the menu side does no such skipping —
+        // so the screen announced one fighter and then gave you another's
+        // buttons.
+        if let entry = combat.currentCombatant {
+            if entry.isPlayer {
+                if let c = party.first(where: { $0.id == entry.id }), c.isConscious {
                     let n = shortName(for: c)
                     title = c.isComputerControlled
                         ? ["Next: \(n) takes a turn.", "\(n) is up next.", "Coming up: \(n)'s move.", "\(n) is sizing up the next swing."].randomElement()!
                         : ["Next: your move, \(n).", "\(n), get ready — you're next.", "Your turn is coming, \(n).", "\(n): think about what you'll do next."].randomElement()!
-                    break
-                } else {
-                    guard combat.encounter.monsters.contains(where: { $0.name == entry.name && $0.isAlive }) else { continue }
-                    title = ["Next: the \(entry.name) — brace yourselves.", "The \(entry.name) is winding up for its turn.",
-                             "Watch out — the \(entry.name) moves next.", "The \(entry.name) is looking for an opening."].randomElement()!
-                    break
                 }
+            } else if combat.encounter.monsters.contains(where: { $0.name == entry.name && $0.isAlive }) {
+                title = ["Next: the \(entry.name) — brace yourselves.", "The \(entry.name) is winding up for its turn.",
+                         "Watch out — the \(entry.name) moves next.", "The \(entry.name) is looking for an opening."].randomElement()!
             }
         }
         var info: [String] = []
@@ -604,7 +597,12 @@ class GameEngine: ObservableObject {
         // silence does it say something with more character to it.
         let step = max(1, continueHintCount)
         if step <= Self.continueDots.count {
-            print("  \(Self.continueDots[step - 1])", color: .dimGreen, underlined: true)
+            let dots = Self.continueDots[step - 1]
+            if step == 1 {
+                print("  \(dots)", color: .dimGreen, underlined: true)
+            } else {
+                replaceLastLine("  \(dots)", ifLastIsOneOf: Self.continueDots, color: .dimGreen, underlined: true)
+            }
         } else {
             printWrapped(Self.pickVaried(Self.continueProds, avoiding: &lastContinueTitle), indent: 2, color: .dimGreen)
         }
@@ -1613,6 +1611,26 @@ class GameEngine: ObservableObject {
             let line = TerminalLine(text, color: color, bold: bold, underlined: underlined, size: size, centered: centered)
             self.terminalLines.append(line)
             self.queueAnnouncement(line)
+        }
+    }
+
+    /// Rewrite the line already at the bottom of the screen, so the waiting
+    /// count grows in place — . then .. then … — instead of stacking three
+    /// lines of dots down the page. Only overwrites a line we recognise as
+    /// ours: if anything else has printed since, that text is story and gets
+    /// to stay, so this falls back to a normal print. No announcement either —
+    /// VoiceOver has no use for "dot, dot dot".
+    private func replaceLastLine(_ text: String, ifLastIsOneOf expected: [String],
+                                 color: TerminalColor = .green, underlined: Bool = false) {
+        let text = Self.platformWording(text)
+        runOnMain {
+            guard let last = self.terminalLines.indices.last,
+                  expected.contains(self.terminalLines[last].text.trimmingCharacters(in: .whitespaces)) else {
+                self.print(text, color: color, underlined: underlined)
+                return
+            }
+            self.terminalLines[last] = TerminalLine(text, color: color, bold: false,
+                                                    underlined: underlined, size: 14, centered: false)
         }
     }
 
@@ -7301,9 +7319,19 @@ class GameEngine: ObservableObject {
         print("")
         print("")
 
+        // Its own buttons. Without these the screen kept whatever the last one
+        // had — reached from How to Play, that meant the help topics' << and >>,
+        // which then drove the help list's handler against this screen.
+        showMenuOptions([MenuOption("?", tint: .navigation, compact: true),
+                         MenuOption("< Back", tint: .navigation, compact: true)])
         closeHandler = { [weak self] in
             self?.cancelBestiaryAnim()
             self?.showHowToPlay()
+        }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            self.cancelBestiaryAnim()
+            if choice == 1 { self.showBestiaryHelp() } else { self.showHowToPlay() }
         }
 
         // Build art ranges and block ranges on main queue after all prints are queued
@@ -7342,6 +7370,17 @@ class GameEngine: ObservableObject {
 
             // Start animation with correct art ranges
             self.startBestiaryAnim(artRanges: artRanges)
+        }
+    }
+
+    private func showBestiaryHelp() {
+        showInlineHelp {
+            self.printTitle("Bestiary — Help")
+            self.print("")
+            self.printWrapped("Every creature in the game, grouped by how dangerous it is. Tap any of them to see its full card — stats, what it does, and how to handle it.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("The pictures move on their own. That is just them breathing.", indent: 2, color: .dimGreen)
+            self.print("")
         }
     }
 
@@ -8322,6 +8361,11 @@ class GameEngine: ObservableObject {
         suppressAutoScroll = true
         scrollLocked = true
 
+        // Callers find an index in one list and pass another (see the name-lore
+        // cluster list, which searches allEntries for a filtered entry). Clamp
+        // rather than trust it — an out-of-range index here took the app down.
+        guard !entries.isEmpty else { onBack?(); return }
+        let index = max(0, min(index, entries.count - 1))
         let entry = entries[index]
         let cardW = Self.cardColumns
         let border = String(repeating: "─", count: cardW)
@@ -32603,7 +32647,7 @@ class GameEngine: ObservableObject {
         print("")
 
         // Phase 2: Dice roll (after delay)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
             guard let self = self else { return }
 
             self.printLines(self.diceArt(report.d20Roll), color: .yellow)
@@ -32643,7 +32687,7 @@ class GameEngine: ObservableObject {
 
             // Phase 3: Damage (if hit)
             if report.hits, let rolls = report.damageRolls, let totalDmg = report.totalDamage {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                     guard let self = self else { return }
 
                     let diceStr = report.damageDice ?? "?"
