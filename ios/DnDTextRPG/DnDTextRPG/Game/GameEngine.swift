@@ -10686,12 +10686,15 @@ class GameEngine: ObservableObject {
         printTitle("Levels")
         printWrapped("How deep a new dungeon goes — the ground floor and everything below it, down to where the last guardian waits. The quest spreads its story over the levels, so fewer levels means a shorter tale rather than a thinner one.", indent: 2, color: .dimGreen)
         print("")
-        print("  Current: \(Dungeon.finalLevel)", color: .brightGreen)
+        print("  Current: \(Dungeon.isAutoDepth ? "Auto (by difficulty)" : "\(Dungeon.finalLevel)")", color: .brightGreen)
+        printWrapped("On Auto, an easy adventure is a floor or two, medium about five and hard about seven — with a little variation, so two games are never quite the same shape. Harder than hard does not go deeper: the fighting gets harder instead.", indent: 2, color: .dimGreen)
         printWrapped("An adventure already under way keeps the depth it was made with.", indent: 2, color: .dimGreen)
         print("")
 
-        let values = [1, 3, 5, 7, 9, 12]
-        var options = values.map { "\($0)" }
+        // 0 is Auto, and 0 is also what UserDefaults returns when nothing was
+        // ever stored — so this is the default without needing a migration.
+        let values = [0, 1, 3, 5, 7, 9, 12]
+        var options = values.map { $0 == 0 ? "Auto (by difficulty)" : "\($0)" }
         options.append("< Back")
         showMenu(options)
         let backToGameplay: () -> Void = { [weak self] in self?.showGameplaySettings() }
@@ -10700,7 +10703,9 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             if choice > 0 && choice <= values.count {
                 UserDefaults.standard.set(values[choice - 1], forKey: "dungeonLevelCount")
-                self.logEvent("New dungeons are now \(values[choice - 1]) levels deep", category: "SETTINGS")
+                let picked = values[choice - 1]
+                self.logEvent(picked == 0 ? "New dungeons take their depth from the difficulty"
+                                          : "New dungeons are now \(picked) levels deep", category: "SETTINGS")
                 self.showGameplaySettings()
             } else {
                 backToGameplay()
@@ -19162,7 +19167,7 @@ class GameEngine: ObservableObject {
             }
             let diff = self.parseDifficulty(Double(choice))
             self.difficultyScale = diff.scale
-            self.dungeon = Dungeon(name: dungeonName, level: diff.level)
+            self.dungeon = Dungeon.newAdventure(name: dungeonName, difficulty: diff.level)
             self.beginQuestOffer(backTo: { [weak self] in self?.confirmAdventure(dungeonName: dungeonName, level: Double(choice)) })
         }
     }
@@ -20066,7 +20071,7 @@ class GameEngine: ObservableObject {
                 self.adventureRedoStack.removeAll()
                 let diff = self.parseDifficulty(level)
                 self.difficultyScale = diff.scale
-                self.dungeon = Dungeon(name: dungeonName, level: diff.level)
+                self.dungeon = Dungeon.newAdventure(name: dungeonName, difficulty: diff.level)
                 self.beginQuestOffer(backTo: { [weak self] in self?.confirmAdventure(dungeonName: dungeonName, level: level) })
             case "Difficulty":
                 self.adventureUndoStack.append((dungeonName, level))
@@ -27375,7 +27380,9 @@ class GameEngine: ObservableObject {
             self.mainQuest = q
             let level = self.dungeon?.level ?? 1
             let cartography = self.dungeon?.hasCartography ?? false
-            self.dungeon = Dungeon(name: world, level: level)
+            let depth = self.dungeon?.levelCount
+            let startedAt = self.dungeon?.startDifficulty
+            self.dungeon = Dungeon(name: world, level: level, levelCount: depth, startDifficulty: startedAt)
             self.dungeon?.hasCartography = cartography
             self.currentCombat = nil
             self.questHistory.append("Travelled with the petitioners from \(q.village) to another world: \(world).")
@@ -36363,7 +36370,14 @@ class GameEngine: ObservableObject {
             // Generate new dungeon at next level, keeping the party — and
             // the Atlas: the level being left is archived onto the new one.
             let previousDungeon = self.dungeon
-            self.dungeon = Dungeon(name: dungeonName, level: nextLevel)
+            // Carry the adventure's shape down with the party. Without this the
+            // new floor took startDifficulty from `level` — the floor number —
+            // so an easy game was back at hard fight density by floor three, and
+            // levelCount was re-read from the live setting, which moved the
+            // bottom of the world if it was changed mid-adventure.
+            self.dungeon = Dungeon(name: dungeonName, level: nextLevel,
+                                   levelCount: previousDungeon?.levelCount,
+                                   startDifficulty: previousDungeon?.startDifficulty)
             if let previous = previousDungeon, let next = self.dungeon {
                 next.archivedLevels = previous.archivedLevels + [previous.atlasLevel(hasTrapSense: self.partyHasTrapSense, archived: true)]
                 next.hasCartography = previous.hasCartography

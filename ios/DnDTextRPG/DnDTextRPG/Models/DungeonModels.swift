@@ -756,6 +756,10 @@ class Dungeon: ObservableObject, Codable {
         hasCartography = (try? container.decodeIfPresent(Bool.self, forKey: .hasCartography)) ?? false
         // Saves made before the depth was configurable were all seven deep.
         levelCount = (try? container.decodeIfPresent(Int.self, forKey: .levelCount)) ?? Dungeon.defaultFinalLevel
+        // This was in CodingKeys but in neither coder, and Dungeon writes its
+        // own — so it silently went back to medium every time a game was saved
+        // and continued, taking the easy-difficulty fight density with it.
+        startDifficulty = (try? container.decodeIfPresent(Int.self, forKey: .startDifficulty)) ?? 2
     }
 
     func encode(to encoder: Encoder) throws {
@@ -773,6 +777,7 @@ class Dungeon: ObservableObject, Codable {
         try container.encode(archivedLevels, forKey: .archivedLevels)
         try container.encode(hasCartography, forKey: .hasCartography)
         try container.encode(levelCount, forKey: .levelCount)
+        try container.encode(startDifficulty, forKey: .startDifficulty)
     }
 
     /// Next room ID for dynamic expansion
@@ -1356,10 +1361,47 @@ class Dungeon: ObservableObject, Codable {
     static let defaultFinalLevel = 7
     static let minFinalLevel = 1
     static let maxFinalLevel = 12
-    /// How deep a NEW dungeon goes — the player's setting, clamped.
+    /// How deep a NEW dungeon goes — the player's setting, clamped. Stays
+    /// deterministic: it is read all over as a display fallback for when there
+    /// is no dungeon yet, so it must never be the random one. When the setting
+    /// is Auto this is only the stand-in; the real depth comes from
+    /// autoLevelCount by way of newAdventure.
     static var finalLevel: Int {
         let v = UserDefaults.standard.integer(forKey: "dungeonLevelCount")
         return (minFinalLevel...maxFinalLevel).contains(v) ? v : defaultFinalLevel
+    }
+
+    /// Whether depth is left to the difficulty. Anything outside the valid
+    /// range means Auto — including 0, which is what UserDefaults hands back
+    /// when nothing was ever stored, so Auto is the default for everybody who
+    /// has not chosen a depth, and no migration is needed for those who have.
+    static var isAutoDepth: Bool {
+        !(minFinalLevel...maxFinalLevel).contains(UserDefaults.standard.integer(forKey: "dungeonLevelCount"))
+    }
+
+    /// How deep an adventure at this difficulty should go, with a bit of
+    /// randomness so two easy games are not the same shape.
+    ///
+    /// Brutal deliberately gets the SAME range as hard. Past hard the request
+    /// was for harder bosses and harder fighting, not a longer climb — that
+    /// part is already carried by difficultyScale, which parseDifficulty raises
+    /// above 3, and by encounterDensity below.
+    static func autoLevelCount(for difficulty: Int) -> Int {
+        let range: ClosedRange<Int>
+        switch difficulty {
+        case ...1: range = 1...2      // easy: a single floor, sometimes two
+        case 2:    range = 4...6      // medium: about five
+        default:   range = 6...8      // hard and beyond: about seven
+        }
+        return min(maxFinalLevel, max(minFinalLevel, Int.random(in: range)))
+    }
+
+    /// A dungeon for a brand-new adventure: depth from the difficulty when the
+    /// setting is Auto, from the setting when it is not, and the difficulty
+    /// itself recorded so that descending cannot mistake the floor number for it.
+    static func newAdventure(name: String, difficulty: Int) -> Dungeon {
+        let depth = isAutoDepth ? autoLevelCount(for: difficulty) : finalLevel
+        return Dungeon(name: name, level: difficulty, levelCount: depth, startDifficulty: difficulty)
     }
     /// How deep THIS dungeon goes. Fixed when it was made and stored with
     /// it, so changing the setting never reshapes a game already under way.
