@@ -69,14 +69,6 @@ private struct LinkFramesKey: PreferenceKey {
     }
 }
 
-/// How tall a slot the layout is offering the story text — measured before the
-/// whole-rows frame is applied, so it reports the space available rather than
-/// the space taken.
-private struct TextAreaHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
-}
-
 struct TerminalView: View {
     @EnvironmentObject var gameEngine: GameEngine
     @ObservedObject private var voiceInput = VoiceInputManager.shared
@@ -113,8 +105,6 @@ struct TerminalView: View {
     @State private var focusScheduled: Bool = false
     @State private var glideToken = UUID()
     @State private var linkFrames: [LinkFrame] = []
-    /// The height the layout offers the story text (see TextAreaHeightKey).
-    @State private var textAreaSlotHeight: CGFloat = 0
     #if os(macOS)
     /// Mac pane sizes, set by dragging the small handles (remembered).
     /// 0 = map pane tall enough for the whole map box, key included.
@@ -169,33 +159,6 @@ struct TerminalView: View {
     /// The screen's two main regions — (A) map+text, (B) D-pad/buttons/
     /// input — side by side as an even 50/50 split in landscape, or stacked
     /// full-width as portrait always has.
-    /// One row of story text: the monospaced line height at the story's own
-    /// size, plus the row spacing the LazyVStack puts between lines. TerminalLine
-    /// renders size 14 as 16 on the Mac, so the pitch is measured at the size
-    /// actually drawn.
-    private var storyRowPitch: CGFloat {
-        #if os(macOS)
-        let font = NSFont.monospacedSystemFont(ofSize: 16 * scale, weight: .regular)
-        let lh = font.ascender - font.descender + font.leading
-        #else
-        let font = UIFont.monospacedSystemFont(ofSize: 14 * scale, weight: .regular)
-        let lh = font.lineHeight
-        #endif
-        return ceil(lh) + 2
-    }
-
-    /// The story slot rounded DOWN to whole rows — nil until it has been
-    /// measured, or when the slot is too small for the rounding to mean
-    /// anything, in which case the text keeps its old fill-the-space behaviour.
-    private var wholeRowsTextHeight: CGFloat? {
-        let padding: CGFloat = 8          // the block's own .padding(.vertical, 4)
-        let usable = textAreaSlotHeight - padding
-        guard storyRowPitch > 1, usable > storyRowPitch * 3 else { return nil }
-        let rows = floor(usable / storyRowPitch)
-        guard rows >= 3 else { return nil }
-        return rows * storyRowPitch + padding
-    }
-
     private func topLevelStack<Content: View>(isLandscape: Bool, @ViewBuilder content: () -> Content) -> some View {
         Group {
             if isLandscape {
@@ -650,17 +613,6 @@ struct TerminalView: View {
                         }
                     }
                     .frame(maxWidth: .infinity)
-                    // Whole rows only. Measured BEFORE the height below is
-                    // applied, so this reports the slot the layout is offering
-                    // rather than the one we just took — measuring after it
-                    // would feed its own result back in and oscillate.
-                    .background(GeometryReader { g in
-                        Color.clear.preference(key: TextAreaHeightKey.self, value: g.size.height)
-                    })
-                    .onPreferenceChange(TextAreaHeightKey.self) { h in
-                        if abs(h - textAreaSlotHeight) > 0.5 { textAreaSlotHeight = h }
-                    }
-                    .frame(height: wholeRowsTextHeight, alignment: .top)
                     .background(terminalBackground)
                     .onPreferenceChange(LinkFramesKey.self) { linkFrames = $0 }
                     .overlay(alignment: .leading) { tapToAdvanceStrip }
