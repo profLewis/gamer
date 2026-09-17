@@ -23635,12 +23635,36 @@ class GameEngine: ObservableObject {
                 let item = Item(id: UUID(), name: name, description: "A framed certificate — mostly for bragging rights.",
                                  type: .misc, weight: 0.1, value: 1, weaponStats: nil, armorStats: nil, potionStats: nil)
                 _ = recipient.addItem(item)
+                saveMeritCertificate(name, recipient: recipient,
+                                     deed: "For a quest asked, accepted, and carried out in full.")
                 return "\(recipient.name) receives a \(name)"
             }
             return reward.description
         case .newSkill, .specialSpell, .instantLevelUp, .familiar:
             return reward.description
         }
+    }
+
+    /// A certificate won along the way — "Certificate of Merit" and its
+    /// cousins — kept on the same shelf as the one for finishing an adventure.
+    /// The endgame certificate carries level maps and a page of statistics; a
+    /// merit has neither, and both are only ever iterated when drawn, so an
+    /// empty set renders as nothing rather than as a gap.
+    private func saveMeritCertificate(_ name: String, recipient: Character, deed: String) {
+        let f = DateFormatter()
+        f.dateStyle = .long
+        let cert = EndgameCertificate(
+            title: name,
+            heroes: [(name: recipient.name,
+                      detail: "\(recipient.race.rawValue) \(recipient.characterClass.rawValue), level \(recipient.level)")],
+            quest: deed,
+            village: mainQuest?.village,
+            stats: [("Awarded on day", "\(gameTimeMinutes / 1440 + 1)")],
+            levels: [],
+            date: f.string(from: Date()),
+            preview: false)
+        CertificateStore.save(cert)
+        logEvent("\(recipient.name) was awarded a \(name)", category: "QUEST")
     }
 
     private func showSideQuestComplete(_ quest: SideQuest) {
@@ -23741,6 +23765,8 @@ class GameEngine: ObservableObject {
                 let item = Item(id: UUID(), name: name, description: "A framed certificate — mostly for bragging rights.",
                                  type: .misc, weight: 0.1, value: 1, weaponStats: nil, armorStats: nil, potionStats: nil)
                 _ = recipient.addItem(item)
+                saveMeritCertificate(name, recipient: recipient,
+                                     deed: "For \(quest.description) — an errand set by \(quest.giverName), and seen through to the end.")
                 print("  \(recipient.name) receives a \(name).", color: .yellow)
             }
         }
@@ -27421,7 +27447,7 @@ class GameEngine: ObservableObject {
         let saved = CertificateStore.list()
         closeHandler = onBack
         if saved.isEmpty {
-            printWrapped("None yet. Finish an adventure — beat the last guardian at the bottom of the world — and its certificate is kept here, to look at, save or print whenever you like.", indent: 2, color: .dimGreen)
+            printWrapped("None yet. Finish an adventure — beat the last guardian at the bottom of the world — and its certificate is kept here, to look at, save or print whenever you like. Smaller honours won on the way, like a Certificate of Merit for finishing someone's errand, are kept here too.", indent: 2, color: .dimGreen)
             print("")
             pendingTimeoutKind = .reading
             showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
