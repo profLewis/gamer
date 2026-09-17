@@ -88,8 +88,18 @@ class GameCenterManager: NSObject {
 
     // MARK: - Achievements
 
+    /// Completed achievements already sent this session. Reporting one again
+    /// is harmless to Game Center, but it is a network call every time, and
+    /// these are now checked after every won fight and every pile of gold
+    /// rather than once at the end of a run.
+    private var reportedThisSession = Set<String>()
+
     func reportAchievement(_ achievementID: String, percentComplete: Double = 100.0) {
         guard isAuthenticated else { return }
+        if percentComplete >= 100.0 {
+            guard !reportedThisSession.contains(achievementID) else { return }
+            reportedThisSession.insert(achievementID)
+        }
 
         let achievement = GKAchievement(identifier: achievementID)
         achievement.percentComplete = percentComplete

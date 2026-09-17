@@ -25213,6 +25213,16 @@ class GameEngine: ObservableObject {
             self.print("  ✦ Quest progress: \(done)/\(quest.target) gold gathered", color: .cyan, bold: true)
         }
 
+        // Every path that hands gold over goes through here. The quest nudge
+        // above is NOT a usable hook on its own: it returns at once unless a
+        // collectGold quest happens to be running, which in most games it is
+        // not — so the achievement check is wrapped around it rather than
+        // added inside it.
+        let announceGoldProgress: () -> Void = { [weak self] in
+            announceGoldQuestProgress()
+            self?.reportProgressAchievements()
+        }
+
         var options: [String] = []
         var actions: [() -> Void] = []
 
@@ -25247,7 +25257,7 @@ class GameEngine: ObservableObject {
                 }
                 self.logEvent("Split \(gold) gold equally from \(source.lowercased())", category: "LOOT")
                 self.logMultiplayerAction("Found \(gold) gold (\(source.lowercased()))")
-                announceGoldQuestProgress()
+                announceGoldProgress()
                 self.waitForContinueWithTimeout { onDone() }
             }
 
@@ -25258,7 +25268,7 @@ class GameEngine: ObservableObject {
                     char.gold += gold
                     self?.print("  \(char.name) takes all \(gold) gold.", color: .yellow)
                     self?.logEvent("\(char.name) took \(gold) gold from \(source.lowercased())", category: "LOOT")
-                    announceGoldQuestProgress()
+                    announceGoldProgress()
                     self?.waitForContinueWithTimeout { onDone() }
                 }
             }
@@ -25270,7 +25280,7 @@ class GameEngine: ObservableObject {
                 char?.gold += gold
                 self?.print("  \(char?.name ?? "You") pocket\(char == nil ? "" : "s") \(gold) gold pieces.", color: .yellow)
                 self?.logEvent("Picked up \(gold) gold from \(source.lowercased())", category: "LOOT")
-                announceGoldQuestProgress()
+                announceGoldProgress()
                 self?.waitForContinueWithTimeout { onDone() }
             }
         }
@@ -35808,6 +35818,9 @@ class GameEngine: ObservableObject {
         // Track stats
         monstersSlain += combat.encounter.monsters.count
         combatsWon += 1
+        // First Blood and Slayer are earned here, not at the end of the
+        // adventure — which is the only place they used to be reported.
+        reportProgressAchievements()
 
         // Identify who actually fought — exclude those who fled or played dead
         let fighters = party.filter { !$0.hasFledCombat && !$0.isPlayingDead }
@@ -36726,6 +36739,27 @@ class GameEngine: ObservableObject {
                 backToList()
             }
         }
+    }
+
+    /// Achievements earned DURING an adventure. checkAchievements was called
+    /// from recordHallOfFame alone — at the end of a run — so first_blood,
+    /// slayer and hoarder, all three of which are earned while playing, only
+    /// ever surfaced once the adventure was over.
+    ///
+    /// isVictory is false on purpose: dungeon_master, veteran and legend are
+    /// for finishing, and stay where they are.
+    ///
+    /// These IDs must be declared in App Store Connect to show a banner —
+    /// reporting an undeclared one fails silently — which is why this reports
+    /// only the six that already exist rather than inventing new ones.
+    func reportProgressAchievements() {
+        GameCenterManager.shared.checkAchievements(
+            combatsWon: combatsWon,
+            monstersSlain: monstersSlain,
+            goldCollected: party.reduce(0) { $0 + $1.gold },
+            dungeonLevel: dungeon?.level ?? 1,
+            isVictory: false
+        )
     }
 
     private func recordHallOfFame(outcome: RunOutcome) {
