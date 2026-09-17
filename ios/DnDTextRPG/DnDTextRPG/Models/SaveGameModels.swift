@@ -67,6 +67,15 @@ struct SaveGame: Codable, Identifiable {
     var noMainQuest: Bool? = nil
     var mainQuestCompleted: Bool? = nil
     var questSummary: String? = nil
+
+    // How hard this adventure is being played: the multiplier on monster hit
+    // points and damage. It was never saved — a plain var on the engine, set
+    // when the adventure began and silently back to 1.0 on every reload, so a
+    // Brutal game became a standard one and a Trivial one got harder. nil in
+    // older saves, which is why the reader falls back to 1.0 and not to
+    // anything cleverer: 1.0 is what those saves were actually played at after
+    // the first reload.
+    var difficultyScale: Double? = nil
 }
 
 // MARK: - Save Slot (grouped view)

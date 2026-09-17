@@ -9417,7 +9417,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine()
+            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine(), difficultyScale: difficultyScale
         )
 
         try? SaveGameManager.shared.save(saveGame)
@@ -28468,6 +28468,9 @@ class GameEngine: ObservableObject {
         let dm = DMEngine.shared
         let aiLabel = dm.isConfigured ? dm.provider.displayName : (dm.isAppleModelAvailable ? "Apple On-Device AI" : "Basic DM (no AI)")
         print("  DM's brain: \(aiLabel)", color: .cyan)
+        if let started = dungeon?.startDifficulty {
+            print("  Difficulty: \(difficultyName(for: Double(started)))", color: .cyan)
+        }
         if partySkillMultiplier > 1.0 {
             let pct = Int(((partySkillMultiplier - 1.0) * 100).rounded())
             print("  Monster strength: +\(pct)% (your party has grown stronger)", color: .yellow)
@@ -28583,6 +28586,13 @@ class GameEngine: ObservableObject {
         if hasPoisoned {
             menuOpts.insert("Cure Poison", at: menuOpts.firstIndex(of: enterLabel) ?? menuOpts.count)
         }
+        // Harder, never easier. Also at the end, so it can never be the button
+        // someone taps on their way past. Hidden once there is nowhere left to
+        // go: a new adventure is clamped to 1-3, so Brutal is only reachable
+        // from here, and only once.
+        if let d = dungeon, d.startDifficulty < 4 {
+            menuOpts.insert("Raise Difficulty", at: menuOpts.firstIndex(of: enterLabel) ?? menuOpts.count)
+        }
 
         showMenu(menuOpts)
 
@@ -28602,6 +28612,8 @@ class GameEngine: ObservableObject {
             switch selected {
             case "Cure Poison":
                 self.showPoisonInfo(onBack: { self.showPartyStatus() })
+            case "Raise Difficulty":
+                self.confirmRaiseDifficulty()
             case "Party Review":
                 self.showInGamePartyReview()
             case "Meet the Team":
@@ -28654,7 +28666,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine()
+            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine(), difficultyScale: difficultyScale
         )
         showAdventureTale(AdventureTaleData(inProgress: snapshot), onBack: onBack)
     }
@@ -28813,6 +28825,65 @@ class GameEngine: ObservableObject {
                     self.print("")
                 }
             } else {
+                self.showPartyStatus()
+            }
+        }
+    }
+
+    /// Make the rest of the adventure harder. There is deliberately no way
+    /// back down — which is the whole reason this asks first.
+    private func confirmRaiseDifficulty() {
+        guard let dungeon = dungeon else { showPartyStatus(); return }
+        let now = dungeon.startDifficulty
+        let next = min(4, now + 1)
+        guard next > now else { showPartyStatus(); return }
+
+        clearTerminal()
+        printTitle("Raise the Difficulty")
+        print("")
+        printWrapped("Now: \(difficultyName(for: Double(now))).  After: \(difficultyName(for: Double(next))).", indent: 2, color: .cyan)
+        print("")
+        printWrapped("From here on the dark holds more, and what it holds hits harder — more encounters as you go deeper, and tougher monsters when you meet them.", indent: 2, color: .dimGreen)
+        printWrapped("Nothing already behind you changes: rooms you have cleared stay cleared, and the floors you have walked stay walked.", indent: 2, color: .dimGreen)
+        print("")
+        printWrapped("This only goes one way. There is no button to make it easier again.", indent: 2, color: .yellow)
+        print("")
+
+        let opts = ["Make it Harder", "?", "< Back"]
+        showMenu(opts)
+        closeHandler = { [weak self] in self?.showPartyStatus() }
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= opts.count else { return }
+            switch opts[choice - 1] {
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("Raising the Difficulty — Help")
+                    self.print("")
+                    self.printWrapped("Difficulty does two things: how many fights there are, and how much hit points and damage the monsters get. Raising it turns both up for the rest of this adventure.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("It is one-way on purpose. An adventure that could be turned down whenever it got hard would not be much of an adventure — and the certificate at the end says what you finished it on.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("Your party keeps growing stronger as well, which is counted separately — see 'Monster strength' on Party Status.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            case "Make it Harder":
+                dungeon.startDifficulty = next
+                // Mirror what picking this difficulty at the start would have
+                // given, and never let it fall: max, not assignment.
+                let raised = self.parseDifficulty(Double(next)).scale
+                self.difficultyScale = max(self.difficultyScale, raised)
+                self.logEvent("Difficulty raised to \(self.difficultyName(for: Double(next)))", category: "SETTINGS")
+                self.questHistory.append("Chose to make the rest of the adventure harder: \(self.difficultyName(for: Double(next))).")
+                self.clearTerminal()
+                self.printTitle("So Be It")
+                self.print("")
+                self.printWrapped("The dungeon seems to settle around you, and something further down takes an interest.", indent: 2, color: .yellow)
+                self.print("")
+                self.printWrapped("\(self.difficultyName(for: Double(next))) from here on.", indent: 2, color: .cyan)
+                self.print("")
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in self?.showPartyStatus() }
+            default:
                 self.showPartyStatus()
             }
         }
@@ -30448,7 +30519,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine()
+            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine(), difficultyScale: difficultyScale
         )
     }
 
@@ -36617,7 +36688,7 @@ class GameEngine: ObservableObject {
                 torchTurnsRemaining: torchTurnsRemaining,
                 partyChatLog: partyChatLog.suffix(20).map { $0 },
                 monstersSlain: monstersSlain, combatsWon: combatsWon,
-                activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine()
+                activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine(), difficultyScale: difficultyScale
             )
             try? SaveGameManager.shared.save(hofSave)
             linkedSaveId = saveId
@@ -37347,7 +37418,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine()
+            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine(), difficultyScale: difficultyScale
         )
 
         do {
@@ -37396,7 +37467,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine()
+            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine(), difficultyScale: difficultyScale
         )
 
         do {
@@ -38029,7 +38100,7 @@ class GameEngine: ObservableObject {
                 partyChatLog: bp.partyChatLog,
                 monstersSlain: bp.monstersSlain,
                 combatsWon: bp.combatsWon,
-                activeQuest: bp.activeQuest, otherQuests: bp.otherQuests, introLines: bp.introLines, mainQuest: bp.mainQuest, questHistory: bp.questHistory, noMainQuest: bp.noMainQuest, mainQuestCompleted: bp.mainQuestCompleted, questSummary: bp.questSummary
+                activeQuest: bp.activeQuest, otherQuests: bp.otherQuests, introLines: bp.introLines, mainQuest: bp.mainQuest, questHistory: bp.questHistory, noMainQuest: bp.noMainQuest, mainQuestCompleted: bp.mainQuestCompleted, questSummary: bp.questSummary, difficultyScale: bp.difficultyScale
             )
             try? SaveGameManager.shared.save(copy)
         }
@@ -38607,7 +38678,7 @@ class GameEngine: ObservableObject {
                 gameTimeMinutes: bp.gameTimeMinutes, adventureLog: bp.adventureLog,
                 dmChatLog: bp.dmChatLog, torchLit: bp.torchLit, torchTurnsRemaining: bp.torchTurnsRemaining,
                 partyChatLog: bp.partyChatLog, monstersSlain: bp.monstersSlain, combatsWon: bp.combatsWon,
-                activeQuest: bp.activeQuest, otherQuests: bp.otherQuests, introLines: bp.introLines, mainQuest: bp.mainQuest, questHistory: bp.questHistory, noMainQuest: bp.noMainQuest, mainQuestCompleted: bp.mainQuestCompleted, questSummary: bp.questSummary
+                activeQuest: bp.activeQuest, otherQuests: bp.otherQuests, introLines: bp.introLines, mainQuest: bp.mainQuest, questHistory: bp.questHistory, noMainQuest: bp.noMainQuest, mainQuestCompleted: bp.mainQuestCompleted, questSummary: bp.questSummary, difficultyScale: bp.difficultyScale
             )
             try? SaveGameManager.shared.save(renamed)
         }
@@ -38857,6 +38928,9 @@ class GameEngine: ObservableObject {
         questHistory = save.questHistory ?? []
         noMainQuest = save.noMainQuest ?? false
         mainQuestCompleted = save.mainQuestCompleted ?? false
+        // Saves made before this was stored were, in fact, played at 1.0 from
+        // their first reload onwards — so that is the honest fallback.
+        difficultyScale = save.difficultyScale ?? 1.0
         // Restore torch state — if not saved, auto-light if anyone has a torch
         if let savedTorchLit = save.torchLit {
             torchLit = savedTorchLit
