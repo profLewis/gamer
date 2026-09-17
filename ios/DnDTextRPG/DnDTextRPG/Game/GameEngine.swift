@@ -655,6 +655,9 @@ class GameEngine: ObservableObject {
     private var lastCombatNudge: String?
     private var lastIdleOpener: String?
     private var lastExplorationTip: String?
+    private var lastTeamBoast: String?
+    private var lastTeamDoubt: String?
+    private var lastTeamOpener: String?
 
     private var autoContinueHelpShownGeneration = -1
 
@@ -9394,7 +9397,10 @@ class GameEngine: ObservableObject {
             "  | ~~~~~~~~ |",
             "   \\________/",
         ]
-        if dance { printAuthorsDance(style: aboutDanceStyle) } else { printLines(philipArt, color: .cyan); print("") }
+        // Still on arrival: they only move when you ask, with the buttons below.
+        let animate = aboutDanceRequested
+        aboutDanceRequested = false
+        if dance { printAuthorsDance(style: aboutDanceStyle, animate: animate) } else { printLines(philipArt, color: .cyan); print("") }
         print("  CREATED BY", color: .cyan, bold: true)
         print("  Philip Lewis", color: .brightGreen)
         printWrapped("Game design, creative direction, and relentless testing.", indent: 2, color: .dimGreen)
@@ -9496,9 +9502,11 @@ class GameEngine: ObservableObject {
             switch all[choice - 1] {
             case "Wave Again":
                 self.aboutDanceStyle = 0
+                self.aboutDanceRequested = true
                 self.showAbout(onBack: onBack)
             case "Dance!":
                 self.aboutDanceStyle = 1
+                self.aboutDanceRequested = true
                 self.showAbout(onBack: onBack)
             case "How to Play": self.showHowToPlay(onBack: { [weak self] in self?.showAbout(onBack: onBack) })
             case "The DnDex": self.showDnDexInfo(onBack: { [weak self] in self?.showAbout(onBack: onBack) })
@@ -9595,11 +9603,15 @@ class GameEngine: ObservableObject {
 
     /// Which animation the About page is showing: 0 a hello, 1 a dance.
     private var aboutDanceStyle = 0
+    /// Set only by Wave Again / Dance!. Reading it in showAbout clears it, so
+    /// arriving at About — or coming back from How to Play, the DnDex or the
+    /// Licence — always finds the three of them at rest.
+    private var aboutDanceRequested = false
 
     /// The three authors in ASCII — Professor Lewis waving, Beau
     /// bouncing with a controller, Claude twinkling — for about 18 seconds.
     /// Style 1 is the same three, dancing, with the music to go with it.
-    private func printAuthorsDance(style: Int = 0) {
+    private func printAuthorsDance(style: Int = 0, animate: Bool = true) {
         let profWave: [[String]] = [
             ["  _____", " [_____]", "  (o-o)", "  /|_|\\", "   / \\"],
             ["  _____", " [_____]", "  (o-o)/", "  /|_|", "   / \\"],
@@ -9646,6 +9658,8 @@ class GameEngine: ObservableObject {
         if style == 1 { print("        ♪   ♫   ♪   ♫   ♪", color: .yellow) }
         print("")
         aboutDanceTimer?.invalidate()
+        // Frame 0 is already on screen; without a request, that is where it stays.
+        guard animate else { return }
         let generation = screenGeneration
         var tick = 0
         aboutDanceTimer = Timer.scheduledTimer(withTimeInterval: style == 1 ? 0.3 : 0.45, repeats: true) { [weak self] timer in
@@ -28715,17 +28729,18 @@ class GameEngine: ObservableObject {
             menuHandler = { _ in onBack() }
             return
         }
-        printWrapped("Round the fire before you go down, each of them says a little about themselves. Some of it is even true.", indent: 2, color: .dimGreen)
+        printWrapped(Self.pickVaried(Self.teamOpeners, avoiding: &lastTeamOpener), indent: 2, color: .dimGreen)
         print("")
         for char in party {
             let n = shortName(for: char)
             print("  \(n) — \(char.race.rawValue) \(char.characterClass.rawValue)", color: .brightGreen, bold: true)
-            let seed = abs(n.unicodeScalars.reduce(0) { $0 &+ Int($1.value) } &+ char.level &* 31)
+            // Picked fresh each visit, and never the same line twice running —
+            // this used to be seeded from the name and level, so every companion
+            // said the one thing for ever.
             let boasts = Self.teamBoasts[char.characterClass] ?? Self.teamBoastsGeneric
-            printWrapped("\"\(boasts[seed % boasts.count])\"", indent: 4, color: .yellow)
+            printWrapped("\"\(Self.pickVaried(boasts, avoiding: &lastTeamBoast))\"", indent: 4, color: .yellow)
             // Whether anyone believes it is another matter.
-            let doubt = Self.teamDoubts[(seed / 7) % Self.teamDoubts.count]
-            printWrapped(doubt, indent: 4, color: .dimGreen)
+            printWrapped(Self.pickVaried(Self.teamDoubts, avoiding: &lastTeamDoubt), indent: 4, color: .dimGreen)
             print("")
         }
         pendingTimeoutKind = .reading
@@ -28740,7 +28755,7 @@ class GameEngine: ObservableObject {
                 self.print("")
                 self.printWrapped("Each companion gives an account of themselves before you go down. Some of it is true; the rest tells you something anyway.", indent: 2, color: .dimGreen)
                 self.print("")
-                self.printWrapped("What each one says is settled by who they are, so it reads the same if you come back to it.", indent: 2, color: .dimGreen)
+                self.printWrapped("They pick something different to say each time you look in, so it is worth coming back.", indent: 2, color: .dimGreen)
                 self.print("")
             }
         }
@@ -28750,35 +28765,92 @@ class GameEngine: ObservableObject {
     static let teamBoasts: [CharacterClass: [String]] = [
         .fighter: ["I held a bridge once. Not a big bridge. But I held it.",
                    "Twelve of them, there were. Eleven, if you ask my sister.",
-                   "I've been paid to stop trouble and paid to start it. Same coin."],
+                   "I've been paid to stop trouble and paid to start it. Same coin.",
+                   "I have been hit by most things. I am still the one standing here.",
+                   "My first sword I bought. My second I was given. My third I took.",
+                   "Shields are undervalued. Ask anyone who lived."],
         .wizard: ["I read every book in my master's house. He noticed on the Tuesday.",
                   "Fire is simple. It's the stopping that takes study.",
-                  "I have been struck by lightning twice, and only once on purpose."],
+                  "I have been struck by lightning twice, and only once on purpose.",
+                  "I have a spell for nearly everything, and nearly is doing a lot of work.",
+                  "My tower is small. My library is not.",
+                  "I do not do card tricks. I could. I do not."],
         .rogue: ["I have never stolen anything. Things have followed me home.",
                  "Locks and I have an understanding. They open.",
-                 "I was thrown out of a very good guild for being too good at it."],
+                 "I was thrown out of a very good guild for being too good at it.",
+                 "I have been in this room longer than you think.",
+                 "Pockets are a promise nobody keeps.",
+                 "I only take what is badly looked after."],
         .cleric: ["I was called. Loudly, and at an inconvenient hour.",
                   "I have buried more people than I have healed. I intend to reverse that.",
-                  "My god and I disagree about most things, but we are civil."],
+                  "My god and I disagree about most things, but we are civil.",
+                  "Faith is the easy part. Getting up at dawn is not.",
+                  "I have argued a plague down to a cough.",
+                  "I keep a list of everyone I could not save. It is shorter than it was."],
         .ranger: ["I can follow anything that walks. Some things that don't.",
                   "Three winters in the high wood. I came out talking to myself, and still am.",
-                  "I have never been lost. Occasionally the map has."],
+                  "I have never been lost. Occasionally the map has.",
+                  "Give me an hour and a hedge and I will feed the lot of you.",
+                  "The wolves and I have an arrangement. I stay out of their valley.",
+                  "I can tell you what passed this way, and how long since."],
         .barbarian: ["I do not lose my temper. I put it somewhere useful.",
                      "My people sing about a thing I did. They exaggerate. Slightly.",
-                     "I was told I could not lift it. I lifted it. It broke."],
+                     "I was told I could not lift it. I lifted it. It broke.",
+                     "Armour slows a man. I have not needed it yet.",
+                     "Winter is a place I am from, not a thing that happens to me.",
+                     "I have wrestled a bear. We are not on speaking terms."],
         .bard: ["I have played for a king and for a goat. The goat listened.",
                 "Every song I sing is true by the third verse.",
-                "I talked us out of a hanging once. Mostly out."],
+                "I talked us out of a hanging once. Mostly out.",
+                "I know four hundred songs and the words to nearly nine.",
+                "A good lie needs a tune. That is all a ballad is.",
+                "I have been thrown out of better places than this, musically."],
+        .engineer: ["Everything is a machine if you are rude enough to it.",
+                    "I built a bridge that is still standing. That was not the clever part.",
+                    "Give me a lever and somewhere to put it and stand well back.",
+                    "I have taken apart three things I could not put back. I learned from two.",
+                    "Traps are just doors with opinions.",
+                    "It is not an explosion if it was meant to do that."],
+        .scout: ["I have seen you three times today. You have seen me once.",
+                 "I go ahead. It is quieter, and I like the view.",
+                 "I can be there and back before you have finished arguing.",
+                 "I read a valley the way you read a page.",
+                 "I have never been caught. Twice I was nearly asked about.",
+                 "The trick is to be somewhere else by the time it matters."],
+        .thief: ["I prefer the word borrower. Nobody else does.",
+                 "A lock is a question. I am very good at questions.",
+                 "I have never been arrested. Detained, yes. Briefly.",
+                 "The window was open. That is practically an invitation.",
+                 "I know what everything in this room is worth, including you.",
+                 "I left a note. It was a very polite note."],
     ]
     static let teamBoastsGeneric = ["I get by. I've got this far.",
                                     "There's not much to tell that's fit for telling.",
-                                    "Ask me again when we're out the other side."]
+                                    "Ask me again when we're out the other side.",
+                                    "I am better than I look, which is not a high bar.",
+                                    "I came for the money. I stayed for the company.",
+                                    "I have no story yet. That is what this is for."]
     static let teamDoubts = ["Nobody says anything.",
                              "Somebody coughs.",
                              "That one gets a look, but no argument.",
                              "There is a pause you could park a cart in.",
                              "Two of the others exchange a glance.",
-                             "It is allowed to stand."]
+                             "It is allowed to stand.",
+                             "Someone stirs the fire, very deliberately.",
+                             "A long silence, and then somebody changes the subject.",
+                             "Nobody asks the obvious question.",
+                             "There is a snort from the far side of the fire.",
+                             "The story is not challenged. It is not believed either.",
+                             "Somebody makes a note to ask about that later."]
+    /// The scene-setting line, which also changes on you.
+    static let teamOpeners = [
+        "Round the fire before you go down, each of them says a little about themselves. Some of it is even true.",
+        "There is time before the descent, and the fire is warm, so the talk turns to who everyone claims to be.",
+        "Packs are checked twice, then a third time, and in between each of them offers a piece of their history.",
+        "Nobody says it aloud, but this is the part where you find out who you are going down there with.",
+        "The fire burns low. One by one, they account for themselves — generously.",
+        "Introductions, of a sort. Take them at whatever discount seems fair.",
+    ]
 
     private func showInGamePartyReview() {
         clearTerminal()
