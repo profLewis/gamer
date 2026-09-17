@@ -1350,13 +1350,18 @@ class ShopEngine {
         game.print("  \(merchant.catchphrase)", color: .cyan)
         game.print("")
 
+        // Every topic stays on the menu. Asking about something once is no
+        // reason to be barred from raising it again — people go back to a
+        // subject, and each answer is drawn fresh from several, so the same
+        // question rarely gets the same reply twice. An earlier version struck
+        // a topic off once asked and left the menu emptying as you talked,
+        // which is not how a conversation works.
         let asked = chatTopicsAsked
-        let available = Self.chatTopics.filter { !asked.contains($0.topic) }
-        if available.isEmpty {
-            game.printWrapped("\(merchant.name) has said their piece for now — there's trading to be getting on with.", indent: 2, color: .dimGreen)
-            game.print("")
+        var opts = Self.chatTopics.map { entry -> String in
+            // A quiet mark for what has already come up this visit — a nudge
+            // towards something new, never a closed door.
+            asked.contains(entry.topic) ? "Ask again: \(entry.topic)" : "Ask: \(entry.topic)"
         }
-        var opts = available.map { "Ask: \($0.topic)" }
         opts += ["?", "< Back"]
         game.showMenu(opts)
         game.closeHandler = { [weak self] in self?.showShopMain(completion: completion) }
@@ -1369,13 +1374,18 @@ class ShopEngine {
                     game.print("")
                     game.printWrapped("Ask whoever is behind the counter about something. They answer in their own voice — a goblin who left his tribe to go into trade does not sound like a wandering monk.", indent: 2, color: .dimGreen)
                     game.print("")
-                    game.printWrapped("Each topic can be asked once a visit. Come back another time and there will be more to say.", indent: 2, color: .dimGreen)
+                    game.printWrapped("Ask about anything as often as you like — a topic already raised this visit says 'Ask again'. There are several answers to each, so going back to a subject rarely gets the same reply twice.", indent: 2, color: .dimGreen)
                     game.print("")
                 }
                 return
             }
             guard picked != "< Back" else { self.showShopMain(completion: completion); return }
-            guard let entry = Self.chatTopics.first(where: { "Ask: \($0.topic)" == picked }) else { return }
+            // Both labels lead to the same topic — matching only "Ask: " would
+            // leave every "Ask again: " button doing nothing at all.
+            let topic = picked
+                .replacingOccurrences(of: "Ask again: ", with: "")
+                .replacingOccurrences(of: "Ask: ", with: "")
+            guard let entry = Self.chatTopics.first(where: { $0.topic == topic }) else { return }
             self.chatTopicsAsked.insert(entry.topic)
             game.print("")
             // narrate prints the plain answer at once and never waits on the

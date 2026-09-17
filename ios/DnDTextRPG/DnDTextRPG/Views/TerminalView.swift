@@ -194,9 +194,14 @@ struct TerminalView: View {
         let usable = storyBoxHeight - 8          // the block's own .padding(.vertical, 4)
         let line = storyLineHeight
         guard usable > line * 3, line > 1 else { return base }
-        let rows = floor(usable / (line + base))
+
+        // Spacing goes BETWEEN rows, so N rows take N*line + (N-1)*spacing.
+        // The first version of this solved N*(line+spacing) instead, which
+        // over-counts by one whole spacing and left about a quarter of a line
+        // showing at the edge — exactly what was reported from play-testing.
+        let rows = floor((usable + base) / (line + base))
         guard rows >= 3 else { return base }
-        let fitted = (usable / rows) - line
+        let fitted = (usable - rows * line) / (rows - 1)
         return (fitted >= 1 && fitted <= 6) ? fitted : base
     }
 

@@ -9206,7 +9206,9 @@ class GameEngine: ObservableObject {
         let turn = combat.currentCombatant
         let left = (turn?.isPlayer == true ? partyF.first { $0.name == turn?.name && !$0.down } : nil) ?? partyF.first { !$0.down } ?? partyF.first
         let right = (turn?.isPlayer == false ? enemies.first { $0.name == turn?.name && !$0.down } : nil) ?? enemies.first { !$0.down }
-        return ArenaScene(left: left, right: right, party: partyF, enemies: enemies, turnName: turn?.name, move: arenaMove)
+        return ArenaScene(left: left, right: right, party: partyF, enemies: enemies,
+                          turnName: turn?.name, nextName: combat.upNextName,
+                          actedNames: combat.actedNames, move: arenaMove)
     }
 
     private func arenaFrames(for name: String, fallback: [String]) -> [[String]] {

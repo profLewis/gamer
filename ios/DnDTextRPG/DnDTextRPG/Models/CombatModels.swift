@@ -40,6 +40,44 @@ struct Monster: Identifiable, Codable {
         return "\(epithets[(occurrence - 1) % epithets.count]) \(type.rawValue)"
     }
 
+    /// No two things in one fight share a name. Encounter.generate numbers its
+    /// own, but every other way an encounter is assembled did not, and two of
+    /// them collided every single time: the boss encounter appends the same
+    /// minion type twice from level 3 down, and a rest ambush rolls one type
+    /// and makes up to two of it. Both arrived plain-named and identical.
+    ///
+    /// Applied in Encounter's initialiser so every path is covered, including
+    /// any added later — fixing the call sites one at a time is how a previous
+    /// fix of this shape ended up applied to two paths out of four.
+    ///
+    /// A name already unique is left exactly as it is, so a boss ("The Ogre"),
+    /// a remembered zombie, or a monster that wandered in keeps what it had.
+    /// Monster.name is a `let`, so a renamed one is rebuilt, keeping its id —
+    /// combat tracks monsters by id.
+    static func disambiguate(_ monsters: [Monster]) -> [Monster] {
+        var used = Set<String>()
+        var perType: [MonsterType: Int] = [:]
+        return monsters.map { m in
+            guard used.contains(m.name) else {
+                used.insert(m.name)
+                return m
+            }
+            var n = (perType[m.type] ?? 0) + 1
+            var candidate = distinctName(m.type, occurrence: n) ?? m.name
+            while used.contains(candidate) {
+                n += 1
+                candidate = distinctName(m.type, occurrence: n) ?? "\(m.name) \(n + 1)"
+            }
+            perType[m.type] = n
+            used.insert(candidate)
+            return Monster(id: m.id, name: candidate, type: m.type,
+                           currentHP: m.currentHP, maxHP: m.maxHP,
+                           armorClass: m.armorClass, attackBonus: m.attackBonus,
+                           damage: m.damage, challengeRating: m.challengeRating,
+                           experiencePoints: m.experiencePoints)
+        }
+    }
+
     static func create(_ type: MonsterType, customName: String? = nil) -> Monster {
         let stats = type.stats
         return Monster(
@@ -965,6 +1003,15 @@ struct Encounter: Codable {
     var monsters: [Monster]
     let difficulty: EncounterDifficulty
 
+    /// Every encounter is built through here, whoever assembled the monsters,
+    /// so this is the one place that can promise no two of them share a name.
+    /// See Monster.disambiguate.
+    init(monsters: [Monster], difficulty: EncounterDifficulty, bossDifficulty: BossDifficulty? = nil) {
+        self.monsters = Monster.disambiguate(monsters)
+        self.difficulty = difficulty
+        self.bossDifficulty = bossDifficulty
+    }
+
     /// Adjust monster ACs so the party hits roughly 65% of the time (medium).
     /// Easy = 75%, Medium = 65%, Hard = 55%, Deadly = 50%.
     mutating func balanceAC(partyAvgAttackBonus: Int) {
@@ -1215,6 +1262,29 @@ final class Combat: ObservableObject {
     /// guards against awarding it twice when a multiplayer catch-up resyncs
     /// state for a fight that was already resolved on another device.
     @Published var lootAwarded: Bool = false
+
+    /// Whoever acts after the one acting now: the next still standing,
+    /// wrapping round the order. Read by BOTH the text status block and the
+    /// arena animation, so the two can never disagree about who is up next —
+    /// this rule used to live inline in displayStatus alone.
+    var upNextName: String? {
+        guard turnOrder.count > 1, currentTurnIndex >= 0, currentTurnIndex < turnOrder.count else { return nil }
+        var i = (currentTurnIndex + 1) % turnOrder.count
+        var looked = 0
+        while looked < turnOrder.count {
+            let entry = turnOrder[i]
+            if isCombatantAlive(entry) { return entry.name }
+            i = (i + 1) % turnOrder.count
+            looked += 1
+        }
+        return nil
+    }
+
+    /// Everyone who has already had their go this round.
+    var actedNames: Set<String> {
+        guard currentTurnIndex > 0, currentTurnIndex <= turnOrder.count else { return [] }
+        return Set(turnOrder[0..<currentTurnIndex].map { $0.name })
+    }
 
     var currentCombatant: TurnOrderEntry? {
         guard currentTurnIndex >= 0 && currentTurnIndex < turnOrder.count else { return nil }
@@ -1848,17 +1918,7 @@ final class Combat: ObservableObject {
         // Said plainly as well as marked, because a row of symbols is only
         // obvious once you already know what it means.
         if let now = nowName {
-            var upNext: String? = nil
-            if turnOrder.count > 1 {
-                var i = (currentTurnIndex + 1) % turnOrder.count
-                var looked = 0
-                while looked < turnOrder.count {
-                    let entry = turnOrder[i]
-                    if isCombatantAlive(entry) { upNext = entry.name; break }
-                    i = (i + 1) % turnOrder.count
-                    looked += 1
-                }
-            }
+            let upNext = upNextName
             lines.append(" ▶ now: \(now)" + (upNext.map { "   · next: \($0)" } ?? ""))
             lines.append(" ✓ = had their turn   · = still to come")
         }
@@ -1961,6 +2021,11 @@ struct ArenaScene {
     var party: [ArenaFighter] = []
     var enemies: [ArenaFighter] = []
     var turnName: String?
+    /// Who goes after the one acting now, and who has already been. The
+    /// renderer marks the roster with these — the same ▶ / ✓ / · the text
+    /// status block uses, so the panel and the text never contradict.
+    var nextName: String? = nil
+    var actedNames: Set<String> = []
     var move: ArenaMove?
 }
 
@@ -2007,7 +2072,7 @@ enum ArenaRenderer {
         func short(_ n: String) -> String { Self.shortName(n) }
         let everyone = scene.party + scene.enemies
         let nameW = min(8, max(3, everyone.map { short($0.name).count }.max() ?? 3))
-        let entryW = nameW + barW + 3            // name, [bar], a space
+        let entryW = nameW + barW + 4            // mark, name, [bar], a space
         let perRow = max(1, (W + 1) / entryW)
         let allyRows = (scene.party.count + perRow - 1) / perRow
         let foeRows = (scene.enemies.count + perRow - 1) / perRow
@@ -2027,12 +2092,21 @@ enum ArenaRenderer {
                 let frac = f.maxHP > 0 ? Double(max(0, f.hp)) / Double(f.maxHP) : 0
                 let filled = f.down ? 0 : min(barW, max(1, Int((frac * Double(barW)).rounded(.up))))
                 let barColor: TerminalColor = f.down ? .gray : (frac > 0.5 ? .green : (frac > 0.25 ? .yellow : .red))
+                // The same marks as the written status: acting now, already
+                // been, still to come. Somebody down is left unmarked — their
+                // turn is not the question any more.
+                let mark: (String, TerminalColor)
+                if f.down { mark = (" ", .gray) }
+                else if f.name == scene.turnName { mark = ("▶", .cyan) }
+                else if scene.actedNames.contains(f.name) { mark = ("✓", .dimGreen) }
+                else { mark = ("·", .dimGreen) }
+                put(mark.0, x, y, mark.1, opaque: true)
                 let name = String(short(f.name).prefix(nameW)).padding(toLength: nameW, withPad: " ", startingAt: 0)
-                put(name, x, y, f.down ? .gray : f.color, opaque: true)
-                put("[", x + nameW, y, .dimGreen, opaque: true)
-                put(String(repeating: "#", count: filled), x + nameW + 1, y, barColor, opaque: true)
-                put(String(repeating: "-", count: barW - filled), x + nameW + 1 + filled, y, .dimGreen, opaque: true)
-                put("]", x + nameW + 1 + barW, y, .dimGreen, opaque: true)
+                put(name, x + 1, y, f.down ? .gray : f.color, opaque: true)
+                put("[", x + 1 + nameW, y, .dimGreen, opaque: true)
+                put(String(repeating: "#", count: filled), x + 2 + nameW, y, barColor, opaque: true)
+                put(String(repeating: "-", count: barW - filled), x + 2 + nameW + filled, y, .dimGreen, opaque: true)
+                put("]", x + 2 + nameW + barW, y, .dimGreen, opaque: true)
             }
         }
         drawRoster(scene.party, firstRow: groundY + 1)
@@ -2171,11 +2245,18 @@ enum ArenaRenderer {
             if let m = move, elapsed < m.duration + 1.6 {
                 center("End of \(m.attackerName)'s turn", 0, .dimGreen)
             } else if let turn = scene.turnName {
-                center("\(turn)'s turn", 0, .cyan)
+                let next = scene.nextName.map { " · next: \(Self.shortName($0))" } ?? ""
+                center("▶ \(Self.shortName(turn))'s turn\(next)", 0, .cyan)
             }
             return g
         }
 
+        // NOTE: the blow is already captioned further down ("the matchup, then
+        // what happened" — matchup, HIT/CRIT with damage, fumble, miss,
+        // defeated). An attempt to add a second caption here was removed: it
+        // said the same thing twice and collided with that one. What the
+        // animation genuinely lacked was turn order, which the roster now
+        // marks, and "who is next", which the between-blows caption now names.
         let dir = m.attackerIsParty ? 1 : -1
         let melee = m.style == .melee || m.style == .swoop
         // Attacker movement: lean back, lunge (melee) or hold (ranged), return.
