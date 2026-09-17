@@ -17552,6 +17552,21 @@ class GameEngine: ObservableObject {
         "Sigurd", "Brynhild", "Volund",
     ]
 
+    /// A dungeon is a place. Where a lore name is a vessel or a contraption
+    /// rather than somewhere you can go down into, it becomes a place named
+    /// after it — which is how such places get their names anyway.
+    static func asPlaceName(_ name: String) -> String {
+        let notPlaces: [String: String] = [
+            "Nostromo": "Nostromo Deep",
+            "Games Machine": "The Games Machine Vaults",
+            "Krell Laboratory": "The Krell Undercroft",
+            "Gateway": "Gateway Hollow",
+            "Change War Station": "The Change War Deeps",
+            "Patrol Crash Site": "The Patrol Wreck",
+        ]
+        return notPlaces[name] ?? name
+    }
+
     private let dungeonNames = [
         // Moorcock
         "Tanelorn", "The Pulsing Cavern", "Melnibone",
@@ -17567,16 +17582,16 @@ class GameEngine: ObservableObject {
         // Classic sci-fi settings
         "Trantor", "Terminus", "Foundation",    // Asimov
         "Arrakeen", "Sietch Tabr",              // Herbert
-        "Solaris Station", "Rama",              // Lem / Clarke
-        "Nostromo", "Acheron",                  // Alien
+        "Solaris Deep", "Rama Hollow",          // Lem / Clarke — named after the craft
+        "Nostromo Deep", "Acheron",             // Alien — after the ship, not the ship
         "Tyrell Pyramid", "Sector 6",           // Blade Runner
         // Samuel Butler
         "Erewhon",
         // Jules Verne
-        "The Nautilus", "Centre of the Earth",
-        "Doct Ox's Experiment", "The Mysterious Island",
+        "The Nautilus Vaults", "Centre of the Earth",
+        "Doctor Ox's Experiment", "The Mysterious Island",
         // H.G. Wells
-        "The Island of Dr. Moreau", "The Time Machine",
+        "The Island of Dr. Moreau", "The Time Machine Works",
         // Jonathan Swift
         "Laputa", "Brobdingnag", "Lilliput",
         // Dante
@@ -18763,7 +18778,11 @@ class GameEngine: ObservableObject {
         promptTextWithMenu("Name your dungeon, or choose a default:", options: opts)
         flashTitle()   // a nudge towards the prompt
 
-        let dungeonLoreNames = nameEntries.filter { $0.category == "dungeon" }.map { $0.name }
+        // Some of the lore names are places (Lankhmar, Gormenghast) and read
+        // straight off as a dungeon. Others are a ship, a machine or a single
+        // room — a dungeon can be named AFTER one of those, but it cannot BE
+        // one, so those are given somewhere to be.
+        let dungeonLoreNames = nameEntries.filter { $0.category == "dungeon" }.map { Self.asPlaceName($0.name) }
         rerollHandler = { [weak self] in
             guard let self = self else { return }
             let loreName = dungeonLoreNames.randomElement() ?? self.dungeonNames.randomElement() ?? "The Dark Depths"
@@ -28067,7 +28086,13 @@ class GameEngine: ObservableObject {
     /// "Welcome, adventurers — welcome to Helheim!" and a word about the place.
     private func welcomeLine(returning: Bool) -> String {
         guard let dungeon = dungeon else { return "" }
-        var about = nameEntries.first { $0.category == "dungeon" && $0.name == dungeon.name }?.description ?? ""
+        // Match the lore entry by its own name OR by the place-name it becomes
+        // (see asPlaceName) — otherwise renaming the Nostromo to Nostromo Deep
+        // silently loses the description that made the name worth using.
+        var about = nameEntries.first {
+            $0.category == "dungeon"
+                && ($0.name == dungeon.name || Self.asPlaceName($0.name) == dungeon.name)
+        }?.description ?? ""
         if let dot = about.firstIndex(of: ".") { about = String(about[...dot]) }
         if about.isEmpty {
             about = ["Its halls are older than anyone remembers, and few who know them well have come back to say so.",

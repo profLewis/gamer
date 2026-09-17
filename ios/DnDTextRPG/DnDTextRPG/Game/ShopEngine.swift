@@ -87,7 +87,8 @@ class ShopEngine {
         // merchant who's shown you an item shouldn't have a different (or
         // no) selection if you leave and come back later.
         if merchant.stock.isEmpty {
-            self.stock = ItemCatalog.shopStock(forLevel: dungeonLevel)
+            self.stock = Self.mentionedFirst(ItemCatalog.shopStock(forLevel: dungeonLevel),
+                                             mentions: merchant.mentions)
             self.merchant?.stock = self.stock
             syncMerchantToRoom()
         } else {
@@ -207,6 +208,38 @@ class ShopEngine {
     }
 
     // MARK: - Buy
+
+    /// Whatever the greeting named comes first, so the thing they have just
+    /// offered you is the thing under your thumb.
+    static func mentionedFirst(_ stock: [Item], mentions: [String]) -> [Item] {
+        guard !mentions.isEmpty else { return stock }
+        var rest = stock
+        var front: [Item] = []
+        for wanted in mentions {
+            if let i = rest.firstIndex(where: { $0.name.caseInsensitiveCompare(wanted) == .orderedSame }) {
+                front.append(rest.remove(at: i))
+            }
+        }
+        // They named something they haven't got: put one on the counter, so a
+        // merchant who offers you a torch actually has a torch.
+        if front.isEmpty, let first = mentions.first, let made = makeMentioned(first) {
+            front.append(made)
+        }
+        return front + rest
+    }
+
+    /// Only the handful of goods a greeting can name, and only via makers that
+    /// exist — there is no general "item by name" on ItemCatalog.
+    private static func makeMentioned(_ name: String) -> Item? {
+        switch name {
+        case "Torch": return ItemCatalog.torch()
+        case "Rope": return ItemCatalog.rope()
+        case "Antidote": return ItemCatalog.antidote()
+        default:
+            return (ItemCatalog.everydayProvisions() + ItemCatalog.curios())
+                .first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+        }
+    }
 
     private func showBuyMenu(completion: @escaping () -> Void) {
         guard let game = game, let character = character else { return }
