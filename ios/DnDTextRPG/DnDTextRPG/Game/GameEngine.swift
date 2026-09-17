@@ -32149,9 +32149,17 @@ class GameEngine: ObservableObject {
         guard let room = dungeon?.currentRoom else { return }
         let lower = name.lowercased()
         if let idx = room.droppedItems.firstIndex(where: { $0.name.lowercased().contains(lower) }) {
-            let item = room.droppedItems.remove(at: idx)
-            party.first?.addItem(item)
-            print("  [Picked up: \(item.name)]", color: .brightGreen, bold: true)
+            // The worst of this family of bugs: the item was taken OFF the
+            // floor, handed to `party.first` with the result thrown away, and
+            // announced as picked up. A full pack meant it was gone from the
+            // room and in nobody's hands — destroyed, with the screen saying
+            // otherwise. Placed first, and only removed once somebody has it;
+            // giveToParty's own fallback puts a homeless item back on the floor,
+            // so taking it out first would fight that.
+            let item = room.droppedItems[idx]
+            if giveToParty(item, announce: "[Picked up: \(item.name)]") != nil {
+                room.droppedItems.remove(at: idx)
+            }
         } else {
             print("  No item matching '\(name)' on the floor.", color: .dimGreen)
         }
@@ -32903,6 +32911,9 @@ class GameEngine: ObservableObject {
                             if let item = self.resolveItemByName(itemName) {
                                 pendingPickupItems.append(item)
                                 self.print("  [Found: \(item.name)!]", color: .brightGreen, bold: true)
+                                self.chargeForDMGift(item) { [weak self] line in
+                                    self?.printWrapped(line, indent: 2, color: .yellow)
+                                }
                             }
                             worldChanged = true
                         }
@@ -33112,14 +33123,19 @@ class GameEngine: ObservableObject {
                         }
                         for itemName in result.grantedItems {
                             if let item = self.resolveItemByName(itemName) {
-                                if let c = self.party.first, c.canCarry(item) {
-                                    _ = c.addItem(item)
-                                    self.print("  [Received: \(item.name)!]", color: .brightGreen, bold: true)
-                                    self.logEvent("DM gave \(c.name) \(item.name)", category: "DM")
-                                    combat.adLibLootGranted = true
-                                } else {
-                                    self.print("  [Too heavy to carry: \(item.name)]", color: .yellow)
+                                // Was `party.first` alone: a gift went to whoever
+                                // happened to be first and to nobody else, and said
+                                // "[Too heavy to carry]" with three other packs
+                                // standing open. giveToParty tries the Actor, then
+                                // anyone with room, and leaves it on the floor —
+                                // saying so — only when nobody can take it.
+                                if let who = self.giveToParty(item, announce: "[Received: \(item.name)!]") {
+                                    self.logEvent("DM gave \(who.name) \(item.name)", category: "DM")
                                 }
+                                self.chargeForDMGift(item) { [weak self] line in
+                                    self?.printWrapped(line, indent: 2, color: .yellow)
+                                }
+                                combat.adLibLootGranted = true
                             }
                             tookAction = true
                         }
@@ -33307,6 +33323,55 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Given to an item the catalogue has never heard of, so a gift is never
+    /// lost to a name nobody recognises. It is also how a real, priced piece of
+    /// kit is told apart from something the DM invented on the spot — which is
+    /// why it is a constant and not a loose string in two places. Such an item
+    /// carries a flat placeholder value, so it must never be charged for.
+    static let dmInventedItemDescription = "A mysterious item from the DM."
+
+    /// What the DM asks for a piece of kit, when there is a merchant in the
+    /// room whose stock it plainly came off. Three ways it can go, about
+    /// evenly: a favour, the going rate, or extra for the trouble of fetching.
+    ///
+    /// nil means no charge — and that covers every case with no merchant
+    /// present (the DM conjured it from nowhere; there is nobody to pay) and
+    /// everything the catalogue could not name.
+    private func dmGiftCharge(for item: Item) -> (amount: Int, line: String)? {
+        guard let merchant = dungeon?.currentRoom?.merchant else { return nil }
+        guard item.description != GameEngine.dmInventedItemDescription else { return nil }
+        let value = max(1, item.value)
+        switch Int.random(in: 1...3) {
+        case 1:
+            return nil
+        case 2:
+            return (value, "\(merchant.name) looks up sharply — but the DM settles it at the going rate.")
+        default:
+            let premium = value * 2 + 1
+            return (premium, "\(merchant.name) wasn't going to part with that. The DM made it worth their while — you're paying for the fetching as much as the goods.")
+        }
+    }
+
+    /// Takes what the DM asks, from whoever is carrying the most: gold is held
+    /// per character, so somebody has to actually pay it.
+    ///
+    /// If nobody can cover it, the gift goes through anyway. Announcing an item
+    /// and then not handing it over is the exact fault giveToParty was written
+    /// to end, and a charge is no reason to bring it back.
+    private func chargeForDMGift(_ item: Item, report: (String) -> Void) {
+        guard let charge = dmGiftCharge(for: item) else { return }
+        let payer = party.filter({ $0.isConscious }).max(by: { $0.gold < $1.gold })
+            ?? party.max(by: { $0.gold < $1.gold })
+        guard let who = payer, who.gold >= charge.amount else {
+            report("The DM sees the state of your purse and waves it away. Call it a favour — this once.")
+            return
+        }
+        who.gold -= charge.amount
+        report(charge.line)
+        report("\(shortName(for: who)) pays \(charge.amount)gp for the \(item.name).")
+        logEvent("DM charged \(charge.amount)gp for \(item.name)", category: "DM")
+    }
+
     private func resolveItemByName(_ name: String) -> Item? {
         let lower = name.lowercased()
 
@@ -33359,7 +33424,7 @@ class GameEngine: ObservableObject {
         // Fallback — create a generic misc item so the DM's gift isn't lost
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanName.isEmpty else { return nil }
-        return Item(id: UUID(), name: cleanName, description: "A mysterious item from the DM.",
+        return Item(id: UUID(), name: cleanName, description: GameEngine.dmInventedItemDescription,
                     type: .misc, weight: 1.0, value: 5,
                     weaponStats: nil, armorStats: nil, potionStats: nil)
     }
@@ -42139,6 +42204,9 @@ class GameEngine: ObservableObject {
                         if let item = self.resolveItemByName(itemName) {
                             pendingPickupItems.append(item)
                             self.addChatMessage(senderName: "Dungeon Master", message: "[Found: \(item.name)!]", isAI: true)
+                            self.chargeForDMGift(item) { [weak self] line in
+                                self?.addChatMessage(senderName: "Dungeon Master", message: line, isAI: true)
+                            }
                         }
                         worldChanged = true
                     }
