@@ -5235,6 +5235,21 @@ class GameEngine: ObservableObject {
                 return
             }
 
+            // "endgame" — one of the hidden buttons (see DevAccess). The rule
+            // just above, where typing a button's name presses it, can never
+            // reach this one: DevAccess.filter has already taken it out of
+            // currentMenuOptions. Gated on the same access the buttons are, and
+            // refused the same way a wrong phrase is when it's off, so the word
+            // gives nothing away either way.
+            if lower == "endgame" || lower == "superuser" || lower == "super user" {
+                if DevAccess.isOn {
+                    showSuperUserMenu()
+                } else {
+                    refuseDevAccess()
+                }
+                return
+            }
+
             if lower == "settings" || lower == "options" || lower == "config" {
                 showSettings()
                 return
@@ -7283,10 +7298,10 @@ class GameEngine: ObservableObject {
 
     // MARK: - FAQ (data used by DM knowledge system; menu removed from How to Play)
 
-    func showBestiary() {
+    func showBestiary(tier tierIndex: Int = 0) {
         clearTerminal()
         printTitle("Bestiary")
-        printWrapped("Tap any monster to see details.", indent: 2, color: .dimGreen)
+        printWrapped("Tap any monster to see its card. Next and Previous move between the tiers.", indent: 2, color: .dimGreen)
         print("")
         print("")
 
@@ -7304,7 +7319,13 @@ class GameEngine: ObservableObject {
         // We schedule this on main queue after all prints have been queued
         var monsterLineRanges: [(monster: MonsterType, lineCount: Int)] = []
 
-        for (tier, monsters) in tiers {
+        // One tier a page. The whole bestiary at once was a very long scroll,
+        // and the buttons below page through it. The loop body is unchanged —
+        // it just gets one tier instead of all of them — so the tap handler and
+        // the breathing animation, both built afterwards from what was actually
+        // printed, carry on working a page at a time.
+        let page = max(0, min(tierIndex, tiers.count - 1))
+        for (tier, monsters) in [tiers[page]] {
             print("  \(tier):", color: .cyan, bold: true)
             for monster in monsters {
                 let art = monster.asciiArt
@@ -7329,16 +7350,28 @@ class GameEngine: ObservableObject {
         // Its own buttons. Without these the screen kept whatever the last one
         // had — reached from How to Play, that meant the help topics' << and >>,
         // which then drove the help list's handler against this screen.
-        showMenuOptions([MenuOption("?", tint: .navigation, compact: true),
-                         MenuOption("< Back", tint: .navigation, compact: true)])
+        var opts: [MenuOption] = []
+        if page > 0 { opts.append(MenuOption("< Previous", tint: .navigation)) }
+        if page < tiers.count - 1 { opts.append(MenuOption("Next >", isDefault: true, tint: .navigation)) }
+        opts.append(MenuOption("?", tint: .navigation, compact: true))
+        opts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        showMenuOptions(opts)
         closeHandler = { [weak self] in
             self?.cancelBestiaryAnim()
             self?.showHowToPlay()
         }
+        // Dispatched by title, not by position: which buttons are present
+        // changes with the page (no Previous on the first, no Next on the last),
+        // so a positional handler would send the wrong one at either end.
         menuHandler = { [weak self] choice in
-            guard let self = self else { return }
+            guard let self = self, choice >= 1, choice <= opts.count else { return }
             self.cancelBestiaryAnim()
-            if choice == 1 { self.showBestiaryHelp() } else { self.showHowToPlay() }
+            switch opts[choice - 1].text {
+            case "< Previous": self.showBestiary(tier: page - 1)
+            case "Next >": self.showBestiary(tier: page + 1)
+            case "?": self.showBestiaryHelp()
+            default: self.showHowToPlay()
+            }
         }
 
         // Build art ranges and block ranges on main queue after all prints are queued
@@ -7384,7 +7417,7 @@ class GameEngine: ObservableObject {
         showInlineHelp {
             self.printTitle("Bestiary — Help")
             self.print("")
-            self.printWrapped("Every creature in the game, grouped by how dangerous it is. Tap any of them to see its full card — stats, what it does, and how to handle it.", indent: 2, color: .dimGreen)
+            self.printWrapped("Every creature in the game, grouped by how dangerous it is — one group a page, with Next and Previous to move between them. Tap any of them to see its full card: stats, what it does, and how to handle it.", indent: 2, color: .dimGreen)
             self.print("")
             self.printWrapped("The pictures move on their own. That is just them breathing.", indent: 2, color: .dimGreen)
             self.print("")
@@ -27129,9 +27162,23 @@ class GameEngine: ObservableObject {
     private func showResumeStory() {
         storyScreenActive = true
         pinnedMapLines = []
-        let lines = adventureIntroLines.isEmpty ? recoveredIntroLines() : adventureIntroLines
+        var lines = adventureIntroLines.isEmpty ? recoveredIntroLines() : adventureIntroLines
         guard !lines.isEmpty else { showStorySoFar(); return }
-        showTalePages(title: "The Tale Begins", lines: lines, page: 0, onBack: { [weak self] in self?.showStorySoFar() },
+        // The opening tale is written to end on the plea — storyPrompt() tells
+        // the story writer the party hasn't said yes yet. Replayed word for
+        // word on resuming, that asks you to take on a quest you took on long
+        // ago. With the quest already in hand the asking is dropped and the
+        // tale closes on the answer instead; the quest itself is still retold,
+        // which is the part worth hearing again.
+        let questInHand = mainQuest != nil && !noMainQuest
+        if questInHand, lines.count > 1 {
+            lines.removeLast()
+            if let mq = mainQuest {
+                lines.append("You said yes. The oath was to \(mq.goal), \(mq.stakes) — and it stands yet.")
+            }
+        }
+        showTalePages(title: questInHand ? "How It Began" : "The Tale Begins", lines: lines, page: 0,
+                      onBack: { [weak self] in self?.showStorySoFar() },
                       finishLabel: "The Story So Far >", onFinish: { [weak self] in self?.showStorySoFar() }, skipLabel: "Skip")
     }
 
@@ -27658,6 +27705,55 @@ class GameEngine: ObservableObject {
     }
 
     /// The (hidden) Endgame button: either ending, with a sample party.
+    /// Everything developer access opens, in one place — reached by typing
+    /// "endgame" while it is on. Deliberately built from DevAccess.hiddenLabels
+    /// rather than a second hard-coded list, so a button added to the hidden
+    /// set turns up here without anyone remembering to add it twice.
+    private func showSuperUserMenu() {
+        clearTerminal()
+        printTitle("Super User")
+        print("")
+        printWrapped("Developer access is on. These are the things it opens. They are hidden from players, and they go away again when access is turned off.", indent: 2, color: .dimGreen)
+        print("")
+        for label in DevAccess.hiddenLabels.sorted() {
+            print("  \(label)", color: .brightGreen)
+        }
+        print("")
+        printWrapped("Endgame plays the ending from here, certificate and all, without finishing the dungeon. Report a Bug packages up the save and what led to it. Puzzle List shows every puzzle, answers included.", indent: 2, color: .dimGreen)
+        print("")
+        let back: () -> Void = { [weak self] in
+            guard let self = self else { return }
+            if self.dungeon != nil && self.gameState == .exploring {
+                self.showExplorationView()
+            } else {
+                self.showMainMenu()
+            }
+        }
+        // "Endgame" survives the menu filter here only because access is on —
+        // the same filter that hides it everywhere else.
+        let opts = [MenuOption("Endgame", isDefault: true),
+                    MenuOption("?", tint: .navigation, compact: true),
+                    MenuOption("< Back", tint: .navigation, compact: true)]
+        showMenuOptions(opts)
+        closeHandler = back
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= opts.count else { return }
+            switch opts[choice - 1].text {
+            case "Endgame": self.showEndgamePreviews()
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("Super User — Help")
+                    self.print("")
+                    self.printWrapped("This page only exists while developer access is on. Turning access off hides these buttons again everywhere, including here.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("Access is never saved: it is off again every time the app starts.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default: back()
+            }
+        }
+    }
+
     func showEndgamePreviews() {
         clearTerminal()
         printTitle("Endgame Previews")
