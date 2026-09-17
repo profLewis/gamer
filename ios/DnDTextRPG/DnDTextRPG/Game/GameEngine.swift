@@ -2145,9 +2145,73 @@ class GameEngine: ObservableObject {
         print("↩ " + parts.joined(separator: " · "), color: .dimGreen)
     }
 
+    /// The menu path to the screen on show — "Settings \u{203A} Accessibility"
+    /// above a title box reading "Companion Voices" — so it is always clear
+    /// where in the menus you are and what backing out lands on.
+    ///
+    /// There is no formal navigation stack in this app: screens call each
+    /// other directly and hand back through closeHandler, so there is
+    /// nothing to push and pop. The path is inferred from the titles
+    /// instead — arriving at a title already on the path means we came
+    /// back to it, so everything below it is dropped. That self-corrects
+    /// on every route back out (including the X button and help screens,
+    /// which return to the screen that opened them) without every caller
+    /// having to say where it came from.
+    private var screenPath: [String] = []
+
+    /// Reached one of these and the path starts afresh — they are the
+    /// places you get back to rather than pass through.
+    private static let screenPathRoots: Set<String> = ["Settings", "Play"]
+
+    /// Clears the trail — the main menu draws no title of its own, so it
+    /// resets the path explicitly.
+    func resetScreenPath() {
+        screenPath = []
+    }
+
+    private func updateScreenPath(with title: String) {
+        if Self.screenPathRoots.contains(title) {
+            screenPath = [title]
+            return
+        }
+        if let seen = screenPath.firstIndex(of: title) {
+            screenPath = Array(screenPath[...seen])
+            return
+        }
+        screenPath.append(title)
+        // A path this deep has stopped being a landmark and started being a
+        // list; keep the recent end, which is the part that locates you.
+        if screenPath.count > 8 { screenPath.removeFirst(screenPath.count - 8) }
+    }
+
+    /// Prints the trail above the title box. The screen you are on is in
+    /// that box already, so only what leads to it is shown, trimmed from
+    /// the front to fit the terminal's 38 columns — the tail is the half
+    /// that says where you are.
+    private func printScreenPath() {
+        var parts = Array(screenPath.dropLast())
+        guard !parts.isEmpty else { return }
+        let sep = "\u{203A} "
+        let maxWidth = 36
+        var line = parts.joined(separator: " " + sep)
+        if line.count > maxWidth {
+            while parts.count > 1,
+                  ("\u{2026} " + sep + parts.joined(separator: " " + sep)).count > maxWidth {
+                parts.removeFirst()
+            }
+            line = "\u{2026} " + sep + parts.joined(separator: " " + sep)
+            if line.count > maxWidth {
+                line = String(line.prefix(maxWidth - 1)) + "\u{2026}"
+            }
+        }
+        print("  " + line, color: .dimGreen)
+    }
+
     func printTitle(_ text: String, color: TerminalColor = .brightGreen) {
         let t = String(text.prefix(30))
         printBreadcrumb(for: t)
+        updateScreenPath(with: t)
+        printScreenPath()
         currentScreenTitle = t
         let border = String(repeating: "═", count: t.count + 4)
         titleLineIndices.removeAll()
@@ -3305,7 +3369,11 @@ class GameEngine: ObservableObject {
         }
     }
 
-    func showMenuOptions(_ options: [MenuOption]) {
+    /// - allowTextInput: leave the text field live alongside the buttons, so
+    ///   the player can type or speak an action (or "chat") instead of hunting
+    ///   for a button. promptTextWithMenu does this for plain-string menus;
+    ///   this keeps each MenuOption's disabled state and tint intact.
+    func showMenuOptions(_ options: [MenuOption], allowTextInput: Bool = false) {
         menuLongPressHandler = nil
         runOnMain {
             self.directionExits = [:]
@@ -3327,7 +3395,7 @@ class GameEngine: ObservableObject {
                 return opt
             }
             self.currentMenuOptions = self.withForwardOption(self.prepareMenu(mapped))
-            self.awaitingTextInput = false
+            self.awaitingTextInput = allowTextInput
             self.awaitingContinue = false
             self.fullScreenTapToContinue = false
             self.autoReadIfSpeakerMode()
@@ -5603,6 +5671,7 @@ class GameEngine: ObservableObject {
 
     private func renderMainMenu() {
         clearTerminal()
+        resetScreenPath()
         stopMenuAnimation()
         print("")
         print("")
@@ -12357,87 +12426,117 @@ class GameEngine: ObservableObject {
             print("")
         }
 
-        print("  VOICE POOL (\(currentPool.count)/\(allVoices.count) enabled):", color: .cyan, bold: true)
-        printWrapped("Toggle voices on/off. More voices gives the DM a wider range to match characters. Tap a voice to toggle and hear it.", indent: 2, color: .dimGreen)
+        print("  VOICE POOL: \(currentPool.count) of \(allVoices.count) enabled", color: .cyan, bold: true)
+        printWrapped("Tap a companion to give them a specific voice, or open the voice pool to choose which voices the DM may draw on.", indent: 2, color: .dimGreen)
         print("")
 
-        var menuOpts: [String] = []
-        if !party.isEmpty { menuOpts.append("Preview Party") }
-
-        // Add per-character voice change buttons
+        // Buttons here are party actions only. The voice list lives on its own
+        // paginated screen — it used to be appended to this menu, which pushed
+        // one button per installed voice (40+ on most devices) through
+        // showMenu against a maxButtonsPerScreen of 6.
+        var options: [String] = []
+        if !party.isEmpty { options.append("Preview Party") }
         var charButtonNames: [String] = []
         for char in party {
-            let shortN = String(char.name.prefix(14))
-            let label = "♪ \(shortN)"
-            menuOpts.append(label)
+            let label = "♪ \(String(char.name.prefix(14)))"
+            options.append(label)
             charButtonNames.append(label)
         }
-
-        for voice in allVoices {
-            let isOn = currentPool.contains(voice.identifier)
-            let icon = isOn ? "+" : "-"
-            let shortName = String(voice.name.prefix(14))
-            menuOpts.append("\(icon) \(shortName)")
-        }
-
-        // Toggle: show All Off when all are on, All On otherwise
-        let allOn = currentPool.count >= allVoices.count
-        menuOpts.append(allOn ? "All Off" : "All On")
-
-        menuOpts.append("?")
-        menuOpts.append("< Back")
+        options.append("Voice Pool (\(currentPool.count)/\(allVoices.count))")
 
         closeHandler = { [weak self] in self?.showAccessibilityMenu() }
-        showMenu(menuOpts)
-
-        menuHandler = { [weak self] choice in
-            guard let self = self else { return }
-            let selected = menuOpts[choice - 1]
+        showPaginatedMenuOptions(options, pinned: ["?", "< Back"], handler: { [weak self] idx in
+            guard let self = self, idx >= 0, idx < options.count else { return }
+            let selected = options[idx]
             if selected == "Preview Party" {
                 self.previewPartyVoices()
-            } else if selected == "?" {
-                self.showCompanionVoiceHelp()
-            } else if selected == "< Back" {
-                self.showAccessibilityMenu()
-            } else if selected == "All On" {
-                speech.adventurerVoicePool = speech.defaultAdventurerPool()
-                self.showAdventurerVoiceSettings()
-            } else if selected == "All Off" {
-                // Keep just one random voice — pool must have at least one
-                if let random = allVoices.randomElement() {
-                    speech.adventurerVoicePool = [random.identifier]
-                }
-                self.showAdventurerVoiceSettings()
             } else if let charIdx = charButtonNames.firstIndex(of: selected) {
-                // Per-character voice change
                 self.showCompanionVoiceChoice(charIndex: charIdx)
             } else {
-                // Voice toggle
-                let fixedCount = (self.party.isEmpty ? 0 : 1) + charButtonNames.count
-                let voiceIdx = choice - fixedCount - 1
-                if voiceIdx >= 0 && voiceIdx < allVoices.count {
-                    let voice = allVoices[voiceIdx]
-                    var pool = speech.adventurerVoicePool
-                    if let idx = pool.firstIndex(of: voice.identifier) {
-                        if pool.count > 1 { pool.remove(at: idx) }
-                    } else {
-                        pool.append(voice.identifier)
+                self.showVoicePoolSettings()
+            }
+        }, pinnedHandler: { [weak self] choice in
+            if choice == 0 { self?.showCompanionVoiceHelp() } else { self?.showAccessibilityMenu() }
+        })
+    }
+
+    /// Choose which voices the DM may draw on when assigning companion
+    /// voices. Paginated: a device typically has 40-plus English voices
+    /// installed, far more than fit on one screen of buttons.
+    private func showVoicePoolSettings(page: Int = 0) {
+        clearTerminal()
+        printTitle("Voice Pool")
+
+        let speech = SpeechEngine.shared
+        let allVoices = speech.availableVoices()
+        let currentPool = speech.adventurerVoicePool
+
+        guard !allVoices.isEmpty else {
+            print("  No English voices available.", color: .red)
+            print("")
+            print("  Install voices in iOS Settings:", color: .dimGreen)
+            print("  Settings > Accessibility >", color: .dimGreen)
+            print("  Spoken Content > Voices > English", color: .dimGreen)
+            print("")
+            showMenu(["< Back"])
+            closeHandler = { [weak self] in self?.showAdventurerVoiceSettings() }
+            menuHandler = { [weak self] _ in self?.showAdventurerVoiceSettings() }
+            return
+        }
+
+        print("  \(currentPool.count) of \(allVoices.count) voices enabled", color: .cyan, bold: true)
+        print("")
+        printWrapped("Tap a voice to switch it on or off and hear it. A wider pool gives the DM more range when matching voices to companions.", indent: 2, color: .dimGreen)
+        print("")
+
+        // Listed here as well as on the buttons: button labels are truncated
+        // to fit, so the full names need somewhere to live.
+        for voice in allVoices {
+            let isOn = currentPool.contains(voice.identifier)
+            print("  \(isOn ? "+" : "-") \(voice.label)",
+                  color: isOn ? .brightGreen : .dimGreen, bold: isOn)
+        }
+        print("")
+
+        let allOn = currentPool.count >= allVoices.count
+        var options = allVoices.map { voice -> String in
+            let isOn = currentPool.contains(voice.identifier)
+            return "\(isOn ? "+" : "-") \(String(voice.name.prefix(14)))"
+        }
+        options.append(allOn ? "All Off" : "All On")
+
+        closeHandler = { [weak self] in self?.showAdventurerVoiceSettings() }
+        showPaginatedMenuOptions(options, page: page, pinned: ["?", "< Back"], handler: { [weak self] idx in
+            guard let self = self, idx >= 0, idx < options.count else { return }
+            // Re-render on whichever page the player actually navigated to,
+            // not the one this closure was built on.
+            let shownPage = self.paginatedPage
+            if idx == allVoices.count {
+                if allOn {
+                    // The pool must never empty — the DM still needs a voice
+                    // to hand out, so keep one at random.
+                    if let random = allVoices.randomElement() {
+                        speech.adventurerVoicePool = [random.identifier]
                     }
-                    speech.adventurerVoicePool = pool
-                    speech.previewVoice(voice.identifier)
+                } else {
+                    speech.adventurerVoicePool = speech.defaultAdventurerPool()
                 }
-                self.showAdventurerVoiceSettings()
+                self.showVoicePoolSettings(page: shownPage)
+                return
             }
-        }
-        // Long-press a voice → preview it with longer sample
-        menuLongPressHandler = { [weak self] choice in
-            guard let self = self else { return }
-            let fixedCount = (self.party.isEmpty ? 0 : 1) + charButtonNames.count
-            let voiceIdx = choice - fixedCount - 1
-            if voiceIdx >= 0 && voiceIdx < allVoices.count {
-                speech.previewVoice(allVoices[voiceIdx].identifier)
+            let voice = allVoices[idx]
+            var pool = speech.adventurerVoicePool
+            if let existing = pool.firstIndex(of: voice.identifier) {
+                if pool.count > 1 { pool.remove(at: existing) }
+            } else {
+                pool.append(voice.identifier)
             }
-        }
+            speech.adventurerVoicePool = pool
+            speech.previewVoice(voice.identifier)
+            self.showVoicePoolSettings(page: shownPage)
+        }, pinnedHandler: { [weak self] choice in
+            if choice == 0 { self?.showCompanionVoiceHelp() } else { self?.showAdventurerVoiceSettings() }
+        })
     }
 
     /// Pick a specific voice for a party companion
@@ -20046,6 +20145,13 @@ class GameEngine: ObservableObject {
 
     func showExplorationView() {
         linkReturnSnapshot = nil
+        // The game views draw no title of their own, so nothing would ever
+        // pop the menu path once play resumes — and the screens reached from
+        // here (Use Potion, Change Weapon, ...) are siblings, not a
+        // hierarchy. Landing back on the game clears the trail, so those
+        // read as the top of their own short path rather than as nested
+        // inside whichever one was opened last.
+        resetScreenPath()
         guard let dungeon = dungeon, let room = dungeon.currentRoom else { return }
         // A fight that ended without saying so (no currentCombat any more)
         // mustn't leave the game — and its music — stuck in combat.
@@ -25001,7 +25107,12 @@ class GameEngine: ObservableObject {
             self?.showInventoryFor(character, onBack: onBack, fromDM: fromDM)
         }
 
-        showMenuOptions(menuOpts)
+        // Text input stays live here: the pack is a natural place to say
+        // "drink the healing potion" or "chat" rather than tap through the
+        // Use/Drop/Give menus. Unmatched text falls through to the DM the
+        // same way it does on the exploration screen.
+        printWrapped("Or type what you want to do — say \"chat\" to talk to the DM.", indent: 2, color: .dimGreen)
+        showMenuOptions(menuOpts, allowTextInput: true)
         closeHandler = { [weak self] in
             self?.closeHandler = nil
             self?.showInventoryFor(character, onBack: onBack, fromDM: fromDM)
@@ -32559,6 +32670,8 @@ class GameEngine: ObservableObject {
     func showPlayerCombatMenu(characterId: UUID) {
         guard let combat = currentCombat,
               let character = party.first(where: { $0.id == characterId }) else { return }
+
+        resetScreenPath()   // see showExplorationView
 
         // Just DM mode — DM-driven combat
         if isJustDMActive {
