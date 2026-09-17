@@ -1818,7 +1818,7 @@ class GameEngine: ObservableObject {
 
         clearTerminal()
         printTitle("Atlas")
-        printWrapped("Level \(level.level): \(level.dungeonName)\(isCurrent ? " — you are here" : "")", indent: 2, color: .cyan, bold: true)
+        printWrapped("\(Dungeon.floorName(level.level)): \(level.dungeonName)\(isCurrent ? " — you are here" : "")", indent: 2, color: .cyan, bold: true)
         if levels.count > 1 {
             print("  (\(atlasLevelIndex + 1) of \(levels.count) levels mapped)", color: .dimGreen)
         }
@@ -1933,7 +1933,7 @@ class GameEngine: ObservableObject {
 
         clearTerminal()
         printTitle(String(room.name.prefix(26)))
-        print("  Level \(level.level) · \(room.typeName)", color: .dimGreen)
+        print("  \(Dungeon.floorName(level.level)) · \(room.typeName)", color: .dimGreen)
         print("")
         if room.id == level.currentRoomId { print("  You are here.", color: .yellow, bold: true) }
         if room.id == level.exitRoomId { print("  You left this level from here.", color: .yellow) }
@@ -2038,7 +2038,7 @@ class GameEngine: ObservableObject {
             case "Preview":
                 // A look at the page before it's saved or printed.
                 self.pdfPreview = PDFPreviewItem(data: self.atlasPDFData(level: level),
-                                                 name: "atlas-level\(level.level)-\(Self.saveStamp())", title: "Map — Level \(level.level)")
+                                                 name: "atlas-level\(level.level)-\(Self.saveStamp())", title: "Map — \(Dungeon.floorName(level.level))")
             case "?":
                 self.showInlineHelp {
                     self.printTitle("Save Map — Help")
@@ -2056,7 +2056,7 @@ class GameEngine: ObservableObject {
 
     private func atlasPDFData(level: AtlasLevel) -> Data {
         let showAll = atlasShowAllRooms
-        var head = ["\(level.dungeonName) — Level \(level.level)", ""]
+        var head = ["\(level.dungeonName) — \(Dungeon.floorName(level.level))", ""]
         head += atlasStatsLines(level, showAll: showAll)
         head.append("")
         var blocks: [[String]] = head.map { [$0] }
@@ -20446,7 +20446,7 @@ class GameEngine: ObservableObject {
         print("")
 
         // Where you are: the place, the level, and the floor where there are several.
-        print("\(dungeon.name) · Level \(dungeon.level) · floor \(Dungeon.depthLabel(dungeon.level))\(dungeon.hasVerticalConnections ? " · \(dungeon.galleryName)" : "")", color: .cyan)
+        print("\(dungeon.name) · \(Dungeon.floorName(dungeon.level))\(dungeon.level <= 1 ? " (ground)" : "")\(dungeon.hasVerticalConnections ? " · \(dungeon.galleryName)" : "")", color: .cyan)
 
         // Room description — dim when the room itself isn't lit
         if roomIsLit {
@@ -20505,7 +20505,7 @@ class GameEngine: ObservableObject {
         }
 
         // Party status
-        let levelStr = dungeon.level > 0 ? "Level \(dungeon.level) | " : ""
+        let levelStr = dungeon.level > 0 ? "\(Dungeon.floorName(dungeon.level)) | " : ""
         if gameTimeLimit > 0 {
             let remaining = max(0, gameTimeLimit - gameTimeMinutes)
             let remainStr = formatTimeRemaining(remaining)
@@ -22053,7 +22053,7 @@ class GameEngine: ObservableObject {
         print("")
 
         // Party status
-        let levelStr = dungeon.level > 0 ? "Level \(dungeon.level) | " : ""
+        let levelStr = dungeon.level > 0 ? "\(Dungeon.floorName(dungeon.level)) | " : ""
         if gameTimeLimit > 0 {
             let remaining = max(0, gameTimeLimit - gameTimeMinutes)
             let remainStr = formatTimeRemaining(remaining)
@@ -27181,7 +27181,7 @@ class GameEngine: ObservableObject {
         let together = names.count <= 1 ? (names.first ?? "A lone adventurer") : names.dropLast().joined(separator: ", ") + " and " + names.last!
         let day = gameTimeMinutes / 1440 + 1
         var lines: [String] = []
-        lines.append("\(together) \(names.count <= 1 ? "is" : "are") on day \(day) of the adventure, on Level \(dungeon.level) of \(dungeon.name).")
+        lines.append("\(together) \(names.count <= 1 ? "is" : "are") on day \(day) of the adventure, on \(Dungeon.floorName(dungeon.level)) of \(dungeon.name).")
         if mainQuestCompleted, let mq = mainQuest {
             lines.append("★ The quest is done: \(Dungeon.guardianName(mq.villain)) is defeated, and \(mq.village) is saved.")
         } else if let mq = mainQuest {
@@ -27225,12 +27225,12 @@ class GameEngine: ObservableObject {
             let visited = level.rooms.filter { $0.visited }
             let boss = level.rooms.first { $0.typeName.lowercased().contains("boss") }
             let guardian = boss.map { $0.cleared ? "; guardian beaten" : "; slipped past its guardian" } ?? ""
-            lines.append("Level \(level.level): explored \(visited.count) of \(level.rooms.count) rooms\(guardian)\(notable(visited.map { $0.typeName })).")
+            lines.append("\(Dungeon.floorName(level.level)): explored \(visited.count) of \(level.rooms.count) rooms\(guardian)\(notable(visited.map { $0.typeName })).")
         }
         if includeCurrent {
             let visited = dungeon.rooms.values.filter { $0.visited }
             let bossBeaten = dungeon.rooms.values.contains { $0.roomType == .boss && $0.cleared }
-            let prefix = lines.isEmpty ? "On this level (Level \(dungeon.level))" : "Now on Level \(dungeon.level)"
+            let prefix = lines.isEmpty ? "On this floor (\(Dungeon.floorName(dungeon.level)))" : "Now on \(Dungeon.floorName(dungeon.level))"
             // Same again for the level summary the DM and the NPCs read from.
             let progress = visited.count <= 1
                 ? "\(prefix): only just arrived, with the level still ahead of them"
@@ -27504,7 +27504,7 @@ class GameEngine: ObservableObject {
     private func certificateTextPDF(_ cert: EndgameCertificate, keepMapsWhole: Bool) -> Data {
         var blocks: [[String]] = [Self.certificateLines(cert, width: 60)]
         for level in cert.levels {
-            let map = ["", "Level \(level.level)"] + Dungeon.atlasMapLines(level, showAll: false).lines
+            let map = ["", Dungeon.floorName(level.level)] + Dungeon.atlasMapLines(level, showAll: false).lines
             blocks += keepMapsWhole ? [map] : map.map { [$0] }
         }
         return Self.monospacedPDF(blocks: blocks)
@@ -35799,10 +35799,10 @@ class GameEngine: ObservableObject {
         // --- What lies ahead ---
         let nextLevel = currentLevel + 1
         print("  ┌─ The Depths Beckon ────────────┐", color: .cyan, bold: true)
-        printWrapped("Level \(nextLevel) of \(dungeonName) awaits. Darker corridors, deadlier foes, and greater treasures lie below. Your party is stronger now — but so are the monsters.", indent: 2, color: .cyan)
+        printWrapped("\(Dungeon.floorName(nextLevel)) of \(dungeonName) awaits. Darker corridors, deadlier foes, and greater treasures lie below. Your party is stronger now — but so are the monsters.", indent: 2, color: .cyan)
         if let g = guardian {
             let left = (dungeon?.levelCount ?? Dungeon.finalLevel) - currentLevel
-            printWrapped(left <= 1 ? "Level \(nextLevel) is the last. \(g) waits at the bottom."
+            printWrapped(left <= 1 ? "\(Dungeon.floorName(nextLevel)) is the last. \(g) waits at the bottom."
                                    : "\(g) waits at the bottom, \(left) levels down. Every guardian between here and there is stronger than the last.", indent: 2, color: .yellow)
         }
         print("  └───────────────────────────────┘", color: .cyan)
@@ -35810,7 +35810,7 @@ class GameEngine: ObservableObject {
         printWrapped("Save your progress before descending — the deeper levels show no mercy to the unprepared.", indent: 2, color: .dimGreen)
         print("")
 
-        showMenu(["Save & Continue to Level \(nextLevel)", "Continue to Level \(nextLevel)", "Save & End Adventure", "End Adventure"])
+        showMenu(["Save & Continue to \(Dungeon.floorName(nextLevel))", "Continue to \(Dungeon.floorName(nextLevel))", "Save & End Adventure", "End Adventure"])
 
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
@@ -35863,7 +35863,7 @@ class GameEngine: ObservableObject {
             if viaDeepPad {
                 self.print("The floor drops away — and you land, hard, somewhere deeper in \(dungeonName).", color: .cyan)
                 self.print("")
-                self.print("Level \(nextLevel). You slipped past a guardian; the ones down here won't be so easy.", color: .dimGreen)
+                self.print("\(Dungeon.floorName(nextLevel)). You slipped past a guardian; the ones down here won't be so easy.", color: .dimGreen)
             } else {
                 self.print("Your party descends deeper into \(dungeonName)...", color: .cyan)
                 self.print("")
@@ -36557,7 +36557,7 @@ class GameEngine: ObservableObject {
         printWrapped("Party gold: \(totalGold)", indent: 4, color: .dimGreen)
         if let dungeon = dungeon {
             let explored = dungeon.rooms.values.filter { $0.visited }.count
-            printWrapped("Rooms explored on Level \(dungeon.level): \(explored)/\(dungeon.rooms.count)", indent: 4, color: .dimGreen)
+            printWrapped("Rooms explored on \(Dungeon.floorName(dungeon.level)): \(explored)/\(dungeon.rooms.count)", indent: 4, color: .dimGreen)
             printWrapped("Dungeon level: \(dungeon.level)", indent: 4, color: .dimGreen)
         }
         print("")
@@ -36879,7 +36879,7 @@ class GameEngine: ObservableObject {
             print("")
             print("  \(slotName)", color: .cyan)
             print("  \(partyDesc)", color: .dimGreen)
-            print("  \(dungeon.name) (Level \(dungeon.level))", color: .dimGreen)
+            print("  \(dungeon.name) (\(Dungeon.floorName(dungeon.level)))", color: .dimGreen)
 
             let breakpoints = SaveGameManager.shared.listBreakpoints(slotId: slotId)
             let slotCount = SaveGameManager.shared.listSlots().count

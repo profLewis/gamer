@@ -670,6 +670,15 @@ class Dungeon: ObservableObject, Codable {
     /// The dungeon runs downward: Level 1 is the ground floor (0) and each
     /// level below is one floor further down, to floor -6 (Level 7). "Floor"
     /// always means depth — a level's own second storey is a gallery.
+    /// What the player is told. The entrance is on the ground floor, which is
+    /// floor 0; each level below is one further down. `level` itself is left
+    /// alone — it is saved, and it decides which monsters appear, the XP
+    /// thresholds and isFinalLevel, so renumbering it would quietly change the
+    /// difficulty of every adventure already under way.
+    static func floorName(_ level: Int) -> String {
+        level <= 1 ? "Floor 0" : "Floor -\(level - 1)"
+    }
+
     static func depthLabel(_ level: Int) -> String {
         level <= 1 ? "0 (ground)" : "-\(level - 1)"
     }

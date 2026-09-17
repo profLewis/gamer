@@ -464,19 +464,18 @@ struct TerminalView: View {
                                                    height: landingDragonWidth(geometry.size, isLandscape: isLandscape) * 186 / 280)
                                             .clipped()
                                             .offset(x: -6 * scale) // Centre the dragon's head, not the image
-                                            // Tap the picture: About & credits.
+                                            // The picture is not labelled. A tap tells you what it is
+                                            // and the tale behind it; a long press still opens About.
                                             .contentShape(Rectangle())
+                                            .onTapGesture {
+                                                if let caption = gameEngine.currentPoseCaption {
+                                                    gameEngine.showPoseLore(for: caption)
+                                                }
+                                            }
                                             .onLongPressGesture(minimumDuration: 0.6) { gameEngine.followLink("about") }
-                                            .accessibilityHint("Long-press for About and credits")
+                                            .accessibilityLabel(gameEngine.currentPoseCaption ?? "Picture")
+                                            .accessibilityHint("Tap for what this is; long-press for About and credits")
                                         Spacer()
-                                    }
-                                    if let caption = gameEngine.currentPoseCaption {
-                                        Text(caption)
-                                            .font(.system(size: 11 * scale, design: .monospaced))
-                                            .foregroundColor(.secondary)
-                                            .frame(maxWidth: .infinity)
-                                            .multilineTextAlignment(.center)
-                                            .onTapGesture { gameEngine.showPoseLore(for: caption) }
                                     }
                                 }
                                 // Inline image (e.g. main menu portrait)
@@ -489,17 +488,18 @@ struct TerminalView: View {
                                             .frame(maxWidth: 340 * scale, maxHeight: 220 * scale)
                                             .cornerRadius(8)
                                             .opacity(0.85)
+                                            // Unlabelled, like the dragon above it: tap for what it is,
+                                            // long-press for About.
                                             .contentShape(Rectangle())
+                                            .onTapGesture {
+                                                if let caption = gameEngine.currentPoseCaption {
+                                                    gameEngine.showPoseLore(for: caption)
+                                                }
+                                            }
                                             .onLongPressGesture(minimumDuration: 0.6) { gameEngine.followLink("about") }
-                                            .accessibilityHint("Long-press for About and credits")
+                                            .accessibilityLabel(gameEngine.currentPoseCaption ?? "Picture")
+                                            .accessibilityHint("Tap for what this is; long-press for About and credits")
                                         Spacer()
-                                    }
-                                    if let caption = gameEngine.currentPoseCaption {
-                                        Text(caption)
-                                            .font(.system(size: 11 * scale, design: .monospaced))
-                                            .foregroundColor(.secondary)
-                                            .frame(maxWidth: .infinity)
-                                            .multilineTextAlignment(.center)
                                     }
                                 }
                                 // Invisible sentinel — its visibility tells us whether
