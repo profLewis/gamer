@@ -20879,16 +20879,20 @@ class GameEngine: ObservableObject {
             }
         }
 
-        if let pid = room.puzzleId, !room.riddleResolved, (room.cleared || room.encounter == nil), let puzzle = PuzzleBank.puzzle(id: pid) {
-            menuOpts.append(MenuOption("Solve Puzzle"))
+        // Offered even with the fight still standing: solving it is a way PAST
+        // (see presentPuzzle/presentRiddle, which clear the encounter). It used
+        // to require room.cleared, so the only way to reach a riddle was to
+        // kill everything first — which is not much of an alternative.
+        if let pid = room.puzzleId, !room.riddleResolved, let puzzle = PuzzleBank.puzzle(id: pid) {
+            menuOpts.append(MenuOption(room.encounter != nil && !room.cleared ? "Solve Puzzle to Pass" : "Solve Puzzle"))
             actions.append { [weak self] in
                 guard let self = self else { return }
                 if self.roomIsLit { self.presentPuzzle(puzzle, room: room) } else { self.attemptInTheDark("the inscription") { self.presentPuzzle(puzzle, room: room) } }
             }
         }
 
-        if let idx = room.riddleIndex, !room.riddleResolved, (room.cleared || room.encounter == nil) {
-            menuOpts.append(MenuOption("Solve Riddle"))
+        if let idx = room.riddleIndex, !room.riddleResolved {
+            menuOpts.append(MenuOption(room.encounter != nil && !room.cleared ? "Solve Riddle to Pass" : "Solve Riddle"))
             actions.append { [weak self] in
                 guard let self = self else { return }
                 if self.roomIsLit { self.presentRiddle(index: idx, room: room) } else { self.attemptInTheDark("the inscription") { self.presentRiddle(index: idx, room: room) } }
@@ -26684,6 +26688,33 @@ class GameEngine: ObservableObject {
     /// choice so the answer is never ambiguous) with a bonus reward for a
     /// correct answer. Two wrong attempts and the challenge is spent — no
     /// other penalty, and it never blocks progression, only a bonus prize.
+    /// Solving something in a room that still has monsters in it is a way
+    /// PAST them: the way opens and you slip by. You forgo what they were
+    /// carrying — wits instead of spoils, not wits as well as spoils — and the
+    /// screen says so, rather than leaving you to wonder where the loot went.
+    /// Returns true if a fight was actually avoided.
+    @discardableResult
+    private func passWithoutFighting(_ room: Room) -> Bool {
+        guard let encounter = room.encounter, !room.cleared else { return false }
+        let names = encounter.monsters.filter { $0.isAlive }.map { $0.name }
+        room.cleared = true
+        // Recorded as avoided, not beaten — a revisit should describe a room
+        // somebody crept through, not a room somebody won.
+        room.defeatedMonsterNames = []
+        room.encounter = nil
+        print("")
+        if names.isEmpty {
+            printWrapped("The way opens, and you go through.", indent: 2, color: .brightGreen)
+        } else {
+            let who = names.count == 1 ? names[0] : names.dropLast().joined(separator: ", ") + " and " + names.last!
+            printWrapped("The way opens. \(who) \(names.count == 1 ? "watches" : "watch") you go by and \(names.count == 1 ? "does" : "do") nothing about it.", indent: 2, color: .brightGreen)
+            printWrapped("Whatever they were carrying stays with them — that is the price of not fighting.", indent: 2, color: .dimGreen)
+            logEvent("Got past \(who) without a fight", category: "EXPLORE")
+            logMultiplayerAction("Got past \(who) without fighting")
+        }
+        return true
+    }
+
     func presentRiddle(index: Int, room: Room, attemptsUsed: Int = 0) {
         guard index >= 0 && index < RiddleData.all.count else { return }
         let riddle = RiddleData.all[index]
@@ -26708,6 +26739,7 @@ class GameEngine: ObservableObject {
             guard choice >= 1 && choice <= options.count else { return }
             if choice - 1 == correctIndex {
                 room.riddleResolved = true
+                self.passWithoutFighting(room)
                 let level = self.dungeon?.level ?? 1
                 let gold = Dice.rollSum(2, d: 6) * level
                 let reward = level >= 3 ? ItemCatalog.greaterHealingPotion() : ItemCatalog.healingPotion()
@@ -26783,6 +26815,7 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             if right {
                 room.riddleResolved = true
+                self.passWithoutFighting(room)
                 let level = self.dungeon?.level ?? 1
                 let base = Dice.rollSum(2, d: 6) * level * (puzzle.tier + 1) / 2
                 let gold = max(1, base * max(1, 4 - hintsUsed) / 4)

@@ -717,13 +717,16 @@ class Dungeon: ObservableObject, Codable {
 
     enum CodingKeys: String, CodingKey {
         case name, level, rooms, currentRoomId, previousRoomId, nextRoomId, currentFloor, emergencyDropUsed, hasMultiGymPass
-        case archivedLevels, hasCartography, levelCount
+        case archivedLevels, hasCartography, levelCount, startDifficulty
     }
 
-    init(name: String, level: Int, levelCount: Int? = nil) {
+    init(name: String, level: Int, levelCount: Int? = nil, startDifficulty: Int? = nil) {
         self.name = name
         self.level = level
         self.levelCount = levelCount ?? Dungeon.finalLevel
+        // The difficulty chosen at the start — `level` is the floor number too,
+        // so it cannot be asked about this later.
+        self.startDifficulty = startDifficulty ?? level
         self.rooms = [:]
         self.currentRoomId = 0
         self.previousRoomId = nil
@@ -784,7 +787,8 @@ class Dungeon: ObservableObject, Codable {
     private var encounterChance: Double {
         // Fewer fights than at first (play-testers found it repetitive) — more
         // room for exploring, and for the things rooms have to do.
-        level <= 1 ? 0.22 : min(0.34, 0.22 + Double(level - 2) * 0.04)
+        let base = level <= 1 ? 0.22 : min(0.34, 0.22 + Double(level - 2) * 0.04)
+        return base * encounterDensity
     }
 
     private func generateDungeon() {
@@ -1361,6 +1365,24 @@ class Dungeon: ObservableObject, Codable {
     /// it, so changing the setting never reshapes a game already under way.
     var levelCount: Int = Dungeon.defaultFinalLevel
     var isFinalLevel: Bool { level >= levelCount }
+
+    /// The difficulty this dungeon was made at (1 easy, 2 medium, 3+ harder).
+    /// `level` cannot stand in for it: level is also the floor number, so it
+    /// rises as you descend and an easy game grew as many fights as a hard one
+    /// by floor three. Defaulted to 2 so dungeons saved before this decode as
+    /// medium and play exactly as they did.
+    var startDifficulty: Int = 2
+
+    /// How much of the usual fighting this difficulty wants. Easy means fewer
+    /// fights, not just weaker ones — there is more to a dungeon than combat.
+    var encounterDensity: Double {
+        switch startDifficulty {
+        case ...1: return 0.55
+        case 2: return 1.0
+        case 3: return 1.15
+        default: return 1.3
+        }
+    }
 
     /// What the villain is called in a fight: "Mother Sable, the Hag of the
     /// Deep" -> "Mother Sable"; "the Hollow King" -> "The Hollow King".
