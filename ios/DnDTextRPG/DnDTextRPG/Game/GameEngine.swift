@@ -24218,6 +24218,36 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// What a teacher asks once the lesson is done — general dungeon sense,
+    /// so any NPC can set any of them. The right answer is always the first;
+    /// they are shuffled before being shown.
+    private static let lessonQuestions: [(question: String, right: String, wrong: [String])] = [
+        ("You come to a door you cannot see past. What do you do first?",
+         "Listen at it",
+         ["Kick it in", "Shout through it"]),
+        ("A corridor you have already walked feels colder than it was. What does that usually mean?",
+         "Something has opened somewhere",
+         ["The torch is failing", "You imagined it"]),
+        ("Your torch is down to its last stub and the way back is long. What now?",
+         "Turn back while you can still see",
+         ["Press on and hope", "Put it out to save it"]),
+        ("A chest sits alone in an empty room, unlocked and lid ajar. What is it, most likely?",
+         "Bait",
+         ["Luck", "Somebody's forgotten supper"]),
+        ("One of your party is down and the fight is still going. What matters most?",
+         "Ending the fight before anyone else falls",
+         ["Searching the body", "Arguing about whose fault it was"]),
+        ("You find writing on the wall in a language nobody in the party reads. What is worth doing?",
+         "Copying it down to ask about later",
+         ["Scrubbing it off", "Ignoring it"]),
+        ("Water is running somewhere below you that was not running yesterday. What does it tell you?",
+         "Something down there has changed",
+         ["Nothing at all", "That it has rained above"]),
+        ("A creature you have beaten once blocks the way again, and looks unhurt. What should you assume?",
+         "It is not the same one",
+         ["It healed", "You misremember"]),
+    ]
+
     private func learnFromNPC() {
         guard let room = dungeon?.currentRoom, var npc = room.npc else { return }
 
@@ -24227,13 +24257,83 @@ class GameEngine: ObservableObject {
             print("")
         }
 
+        // Once per teacher either way — a lesson sat through is a lesson used.
         npc.hasTaught = true
         room.npc = npc
 
         let desc = npc.type.teachingDescription
         printWrapped(desc, indent: 2, color: .brightGreen)
         logEvent("Learned from \(npc.type.rawValue): \(desc)", category: "NPC")
+        print("")
 
+        // Who is being taught: whoever you have named as Actor, else whoever
+        // has the least to show for themselves so far.
+        let candidates = party.filter { $0.isConscious }
+        guard let learner = actingOverrideCharacter
+                ?? candidates.min(by: { $0.skillProficiencies.count < $1.skillProficiencies.count })
+                ?? candidates.first else {
+            waitForContinue()
+            inputHandler = { [weak self] _ in self?.talkToNPC() }
+            return
+        }
+
+        guard let lesson = Self.lessonQuestions.randomElement() else {
+            waitForContinue()
+            inputHandler = { [weak self] _ in self?.talkToNPC() }
+            return
+        }
+        let answers = ([lesson.right] + lesson.wrong).shuffled()
+
+        printWrapped("\"Before you go,\" says \(npc.displayName), \"let's see what you've taken in.\"", indent: 2, color: .cyan)
+        print("")
+        printWrapped("\(shortName(for: learner)) is asked: \(lesson.question)", indent: 2, color: .yellow)
+        print("")
+
+        showMenuOptions(answers.map { MenuOption($0) }
+                        + [MenuOption("< Back", tint: .navigation, compact: true)])
+        closeHandler = { [weak self] in self?.talkToNPC() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            guard choice >= 1, choice <= answers.count else { self.talkToNPC(); return }
+            self.markLesson(answers[choice - 1] == lesson.right, learner: learner, teacher: npc.displayName)
+        }
+    }
+
+    /// The moment after the answer: a proficiency and a diploma for getting it
+    /// right, the lesson alone for getting it wrong.
+    private func markLesson(_ correct: Bool, learner: Character, teacher: String) {
+        clearTerminal()
+        if dungeon != nil {
+            printExplorationMap()
+            print("")
+        }
+        let name = shortName(for: learner)
+        if correct {
+            printWrapped("\"That's it exactly,\" says \(teacher). \"You were listening after all.\"", indent: 2, color: .brightGreen)
+            print("")
+            let missing = Skill.allCases.filter { !learner.skillProficiencies.contains($0) }
+            if let skill = missing.randomElement() {
+                learner.skillProficiencies.insert(skill)
+                printWrapped("\(name) comes away proficient in \(skill.rawValue).", indent: 2, color: .brightGreen)
+                logEvent("\(name) learned \(skill.rawValue) from \(teacher)", category: "LEVEL")
+                logMultiplayerAction("\(name) learned \(skill.rawValue) from \(teacher)")
+            } else {
+                learner.gold += 40
+                printWrapped("\(name) already knows everything this one had to teach, so the lesson is paid for instead — 40 gold.", indent: 2, color: .yellow)
+            }
+            print("")
+            // A diploma joins the certificates, alongside the merits and the
+            // one for finishing an adventure.
+            saveMeritCertificate("Diploma", recipient: learner,
+                                 deed: "Taught by \(teacher), examined on the same day, and passed.")
+            printWrapped("A diploma is written out on the spot. It's with your certificates.", indent: 2, color: .cyan)
+        } else {
+            printWrapped("\"Not quite,\" says \(teacher). \"Think on it. You'll know it when it matters.\"", indent: 2, color: .yellow)
+            print("")
+            printWrapped("\(name) keeps the lesson, but there's no diploma today.", indent: 2, color: .dimGreen)
+            logEvent("\(name) was taught by \(teacher), but failed the question", category: "NPC")
+        }
+        print("")
         waitForContinue()
         inputHandler = { [weak self] _ in
             self?.talkToNPC()
@@ -26700,6 +26800,10 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped("To \(mq.goal), \(mq.stakes).", indent: 2, color: .yellow)
         printWrapped("The reward: \(mq.reward).", indent: 2, color: .green)
+        // Whatever they have thought to throw in on top, in their own words.
+        if let sweetener = mq.sweetener {
+            printWrapped(sweetener, indent: 2, color: .yellow)
+        }
         if mq.kind != "mystery" && mq.kind != "twist" {
             printWrapped("Waiting at the very bottom: \(mq.villain).", indent: 2, color: .green)
         }

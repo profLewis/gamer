@@ -211,6 +211,10 @@ struct MainQuest: Codable {
     var chapterFound: Int? = nil
     /// Levels whose key task has been done.
     var levelsDone: [Int]? = nil
+    /// A little something offered on top of the reward to talk the party into
+    /// it — not every petitioner thinks to, so this is often nil, and always
+    /// nil on a quest saved before there were any.
+    var sweetener: String? = nil
 
     /// Things a quest might send you looking for, one level at a time.
     static let chapterItems = [
@@ -291,6 +295,22 @@ struct MainQuest: Codable {
 
     var summary: String { goal.prefix(1).uppercased() + goal.dropFirst() + " — " + stakes + "." }
 
+    /// Things a village throws in to get a yes. Small, specific and a little
+    /// desperate — the sort of thing people actually offer when they have more
+    /// larder than gold.
+    static let sweeteners = [
+        "And we'll fill your packs with the best Wensleydale in the county — a whole wheel each, if you'll have it.",
+        "The smith says he'll re-shoe your boots and put an edge on everything you carry, free, before you go down.",
+        "Old Maud will bake for you — bread, pies, and those little seed cakes that keep for a month.",
+        "There's a cellar of good ale with your names chalked on the barrels for when you come back up.",
+        "The weaver's offered new cloaks. Oiled wool, proper hoods. It's cold down there, they say.",
+        "We'll stable and feed your animals the whole time, and not a copper for it.",
+        "The herbalist will make up a bag of salves and bindings — she says you'll want them by the second day.",
+        "Whatever's left in the lost-property chest at the inn is yours. There's a lantern in there, and a decent rope.",
+        "Every child in the village has promised to learn your names for the song afterwards. That's not nothing.",
+        "The chandler will keep you in candles and lamp oil for as long as it takes.",
+    ]
+
     /// A quest where everything fits together: who the villain is, what
     /// they're doing to the village and why — and so what must be done, by
     /// when, for what reward — plus what's found out on the way down.
@@ -298,9 +318,12 @@ struct MainQuest: Codable {
         let village = Int.random(in: 1...3) == 1 ? "Lithlind"
             : ["Brackenford", "Thistledown", "Emberholt", "Wyrmsby", "Millbrook", "Greywater", "Owlcombe"].randomElement()!
         let s = scenarios.randomElement()!
+        // Not every petitioner thinks to sweeten it — about two in three do.
+        let sweetener = Int.random(in: 1...3) == 1 ? nil : sweeteners.randomElement()
         return MainQuest(villain: s.villain, goal: s.goal(village), stakes: s.stakes, reward: s.reward, village: village,
                          harm: s.harm, motive: s.motive, kind: s.kind, beats: s.beats(village, Dungeon.guardianName(s.villain)),
-                         place: s.place, finale: s.finale, informant: s.informant)
+                         place: s.place, finale: s.finale, informant: s.informant,
+                         sweetener: sweetener)
     }
 
     private struct Scenario {
