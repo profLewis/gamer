@@ -5472,7 +5472,11 @@ class GameEngine: ObservableObject {
                return npc.type != .gatekeeper && !npc.sideQuestOffered && npc.willOfferSideQuest != false
                    && !self.allQuests.contains { $0.giverName == npc.type.rawValue }
            }), let npc = route.room.npc {
-            let opener = allQuests.isEmpty ? "You're not on a quest yet." : "There's room for another quest."
+            // A main quest counts. This used to test allQuests alone — the side
+            // errands — and so told a party deep in the main quest that it
+            // wasn't on a quest yet.
+            let onAQuest = (mainQuest != nil && !mainQuestCompleted) || !allQuests.isEmpty
+            let opener = onAQuest ? "There's room for another quest." : "You're not on a quest yet."
             return "\(opener) \(npc.displayName) might have one — \(wayThere(route))."
         }
         if let quest = allQuests.first(where: { $0.type == .visitRoomType && !isSideQuestComplete($0) }),
@@ -19304,7 +19308,14 @@ class GameEngine: ObservableObject {
         } else {
             lines.append("It is day \(gameTimeMinutes / 1440 + 1) of the adventure in \(dungeon.name).")
         }
-        lines.append("\(together) \(names.count == 1 ? "has" : "have") explored \(explored) of the \(dungeon.rooms.count) rooms on level \(dungeon.level) of \(dungeon.name).")
+        // Only claim progress the party has actually made. At the start they
+        // have seen the entrance and nothing else, and "explored 1 of 24 rooms"
+        // reads as a plain untruth to anyone who has just walked in.
+        if explored <= 1 {
+            lines.append("\(together) \(names.count == 1 ? "has" : "have") only just set foot in \(dungeon.name) — the entrance, and the dark beyond it.")
+        } else {
+            lines.append("\(together) \(names.count == 1 ? "has" : "have") explored \(explored) of the \(dungeon.rooms.count) rooms on level \(dungeon.level) of \(dungeon.name).")
+        }
         if monstersSlain > 0 {
             lines.append("They have faced down \(monstersSlain) creature\(monstersSlain == 1 ? "" : "s"), winning \(combatsWon) fight\(combatsWon == 1 ? "" : "s") in the dark.")
         } else {
@@ -27089,7 +27100,11 @@ class GameEngine: ObservableObject {
             let visited = dungeon.rooms.values.filter { $0.visited }
             let bossBeaten = dungeon.rooms.values.contains { $0.roomType == .boss && $0.cleared }
             let prefix = lines.isEmpty ? "On this level (Level \(dungeon.level))" : "Now on Level \(dungeon.level)"
-            lines.append("\(prefix): explored \(visited.count) of \(dungeon.rooms.count) rooms so far\(bossBeaten ? "; guardian beaten" : "; its guardian still waits")\(notable(visited.map { $0.roomType.rawValue })).")
+            // Same again for the level summary the DM and the NPCs read from.
+            let progress = visited.count <= 1
+                ? "\(prefix): only just arrived, with the level still ahead of them"
+                : "\(prefix): explored \(visited.count) of \(dungeon.rooms.count) rooms so far"
+            lines.append("\(progress)\(bossBeaten ? "; guardian beaten" : "; its guardian still waits")\(notable(visited.map { $0.roomType.rawValue })).")
         }
         return lines
     }
