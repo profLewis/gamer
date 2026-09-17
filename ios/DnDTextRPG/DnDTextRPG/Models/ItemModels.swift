@@ -399,6 +399,12 @@ struct ItemCatalog {
              weaponStats: nil, armorStats: nil, potionStats: nil)
     }
 
+    static func wand() -> Item {
+        Item(id: UUID(), name: "Wand", description: "A slender rod of yew — a focus that steadies a spell as it leaves the hand.",
+             type: .misc, weight: 1.0, value: 30,
+             weaponStats: nil, armorStats: nil, potionStats: nil)
+    }
+
     static func holySymbol() -> Item {
         Item(id: UUID(), name: "Holy Symbol", description: "A divine focus for spellcasting.",
              type: .misc, weight: 1.0, value: 5,
@@ -443,6 +449,7 @@ struct ItemCatalog {
             return [
                 ("Quarterstaff + Spell Components", [quarterstaff(), spellComponentPouch(), dagger(), healingPotion(), torch()]),
                 ("Dagger + Spell Components + Extra Potions", [dagger(), spellComponentPouch(), healingPotion(), healingPotion(), torch()]),
+                ("Wand + Spell Components + Dagger", [wand(), spellComponentPouch(), dagger(), healingPotion(), torch()]),
             ]
         case .rogue:
             return [

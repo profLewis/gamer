@@ -27,6 +27,19 @@ struct Monster: Identifiable, Codable {
         currentHP = max(0, currentHP - amount)
     }
 
+    /// Two wolves both called "Wolf" made every combat report ambiguous — you
+    /// could not tell which one you had wounded, or which one was still up.
+    /// The first of a kind keeps its plain name; each repeat takes an epithet
+    /// rather than a bare number, so the fight reads like a story.
+    static let epithets = ["Scarred", "Lean", "Broad", "One-Eyed",
+                           "Grizzled", "Pale", "Ragged", "Snarling"]
+
+    /// nil for the first of its kind — Monster.create then uses the plain name.
+    static func distinctName(_ type: MonsterType, occurrence: Int) -> String? {
+        guard occurrence > 0 else { return nil }
+        return "\(epithets[(occurrence - 1) % epithets.count]) \(type.rawValue)"
+    }
+
     static func create(_ type: MonsterType, customName: String? = nil) -> Monster {
         let stats = type.stats
         return Monster(
@@ -989,13 +1002,20 @@ struct Encounter: Codable {
 
         var monsters: [Monster] = []
         var currentXP = 0
+        // How many of each kind have actually made it into the encounter —
+        // counted on append, not on roll, so a monster rejected for XP does
+        // not burn an epithet and leave a gap in the naming.
+        var typeSeen: [MonsterType: Int] = [:]
 
         while currentXP < targetXP {
             let monsterType = possibleMonsters.randomElement()!
-            let monster = Monster.create(monsterType)
+            let seen = typeSeen[monsterType, default: 0]
+            let monster = Monster.create(monsterType,
+                                         customName: Monster.distinctName(monsterType, occurrence: seen))
 
             if currentXP + monster.experiencePoints <= targetXP * Int(1.5) {
                 monsters.append(monster)
+                typeSeen[monsterType] = seen + 1
                 currentXP += monster.experiencePoints
             } else {
                 break
@@ -1786,7 +1806,7 @@ final class Combat: ObservableObject {
             } else if !char.isConscious {
                 s = "✗"
             } else {
-                s = char.isComputerControlled ? "◆" : "●"  // ◆ = AI, ● = human
+                s = char.isComputerControlled ? "R" : "●"  // R = robot, ● = human
             }
             let n = String(char.name.prefix(16)).padding(toLength: maxPartyName, withPad: " ", startingAt: 0)
             let statusTag = char.hasFledCombat ? " [fled]" : (char.isPlayingDead ? " [playing dead]" : (char.isMindControlled ? " [mind-controlled]" : "")) + (char.sluggishAttacks > 0 ? " [sluggish]" : "")
@@ -1892,6 +1912,9 @@ struct ArenaFighter {
     let maxHP: Int
     let isParty: Bool
     let down: Bool
+    /// Played by the machine — drawn with an R for a head so you can tell at a
+    /// glance which of your side you are not steering.
+    var isRobot: Bool = false
     /// Each character's own colour — sprite, name and roster entry.
     var color: TerminalColor = .brightGreen
 }
@@ -2092,7 +2115,7 @@ enum ArenaRenderer {
                 let step = reduced ? 0 : Int(t * 2 + seed) % 2
                 let said = bubble(isParty: isParty, index: i, count: list.count)
                 let initial = String(f.name.prefix(1)).lowercased()
-                let head = isParty ? " o " : "{\(initial)}"
+                let head = isParty ? (f.isRobot ? "(R)" : " o ") : "{\(initial)}"
                 let body = isParty ? (said != nil ? "\\|/" : (step == 0 ? "/|\\" : "/|)")) : (step == 0 ? "/^\\" : "/^|")
                 put(head, cx - 1, bandBottom - 1, f.color)
                 put(body, cx - 1, bandBottom, f.color)

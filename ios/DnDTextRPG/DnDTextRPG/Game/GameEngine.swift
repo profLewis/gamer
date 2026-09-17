@@ -9040,7 +9040,7 @@ class GameEngine: ObservableObject {
         // enemy's red for a friend).
         let partyColors: [TerminalColor] = [.brightGreen, .cyan, .yellow, .magenta, .white, .orange]
         let enemyColors: [TerminalColor] = [.red, .orange, .magenta, .yellow, .white]
-        let partyF = party.enumerated().map { i, c in ArenaFighter(name: c.name, frames: c.characterClass.asciiArtFrames, hp: c.currentHP, maxHP: c.maxHP, isParty: true, down: !c.isConscious, color: partyColors[i % partyColors.count]) }
+        let partyF = party.enumerated().map { i, c in ArenaFighter(name: c.name, frames: c.characterClass.asciiArtFrames, hp: c.currentHP, maxHP: c.maxHP, isParty: true, down: !c.isConscious, isRobot: c.isComputerControlled, color: partyColors[i % partyColors.count]) }
         let enemies = combat.encounter.monsters.enumerated().map { i, m in ArenaFighter(name: m.name, frames: m.type.asciiArtFrames, hp: m.currentHP, maxHP: m.maxHP, isParty: false, down: !m.isAlive, color: enemyColors[i % enemyColors.count]) }
         let turn = combat.currentCombatant
         let left = (turn?.isPlayer == true ? partyF.first { $0.name == turn?.name && !$0.down } : nil) ?? partyF.first { !$0.down } ?? partyF.first
@@ -9311,7 +9311,7 @@ class GameEngine: ObservableObject {
         // Acting As lived only in the Actions menu mid-dungeon, which is a
         // odd place to look for a setting. It belongs here too, while there
         // is a party to set it on.
-        if party.count > 1 { menuOpts.insert(MenuOption("Acting As"), at: 3) }
+        if party.count > 1 { menuOpts.insert(MenuOption("Actor"), at: 3) }
         menuOpts.append(MenuOption("Save Settings"))
         menuOpts.append(MenuOption("Reset", tint: .danger))
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -9337,7 +9337,7 @@ class GameEngine: ObservableObject {
             case "Accessibility": self.showAccessibilityMenu()
             case "Mood": self.showMusicSettings()
             case "Gameplay": self.showGameplaySettings()
-            case "Acting As": self.showActingAsPicker()
+            case "Actor": self.showActingAsPicker()
             case "Game Saves": self.showSaveSettings()
             case "Save Settings": self.showSettingsBackupMenu()
             case "Reset": self.confirmResetToDefaults()
@@ -20260,8 +20260,8 @@ class GameEngine: ObservableObject {
             self.print("  INVENTORY", color: .cyan, bold: true)
             self.printWrapped("Open pack to equip, use, or drop items.", indent: 2, color: .dimGreen)
             self.print("")
-            self.print("  ACTING AS", color: .cyan, bold: true)
-            self.printWrapped("Search Room, Listen, and Illuminate normally use whoever in the party is automatically best suited. Tap 'Acting As' to override that and have a specific character do it instead — handy for roleplay. Set back to Auto any time.", indent: 2, color: .dimGreen)
+            self.print("  ACTOR", color: .cyan, bold: true)
+            self.printWrapped("Search Room, Listen, and Illuminate normally use whoever in the party is best suited. Tap 'Actor' to name someone instead — handy for roleplay; it shows who is set, as 'Actor: Rachel'. Set it back to Best any time.", indent: 2, color: .dimGreen)
             self.print("")
         }
     }
@@ -22120,7 +22120,7 @@ class GameEngine: ObservableObject {
         // showing once there's more than one conscious party member to pick
         // from.
         if consciousParty.count > 1 {
-            let actingLabel = actingOverrideCharacter.map { "Acting As: \(shortName(for: $0))" } ?? "Acting As: Auto"
+            let actingLabel = actingOverrideCharacter.map { "Actor: \(shortName(for: $0))" } ?? "Actor: Best"
             menuOpts.append(MenuOption(actingLabel, tint: actingOverrideCharacter != nil ? .cyan : .navigation))
             actions.append { [weak self] in
                 returnToActions()
@@ -22185,12 +22185,12 @@ class GameEngine: ObservableObject {
             printExplorationMap()
             print("")
         }
-        printSubtitle("Acting As")
-        printWrapped("Choose who performs Search Room, Listen, and Illuminate. Auto picks whoever in the party is best suited each time.", indent: 2, color: .dimGreen)
+        printSubtitle("Actor")
+        printWrapped("Choose who performs Search Room, Listen, and Illuminate. Best picks whoever in the party is best suited each time.", indent: 2, color: .dimGreen)
         print("")
 
         let candidates = party.filter { $0.isConscious }
-        var options: [String] = ["Auto (best fit)"]
+        var options: [String] = ["Best (choose for me)"]
         for char in candidates {
             options.append(shortName(for: char) + (char.id == actingAsCharacterId ? " (current)" : ""))
         }
