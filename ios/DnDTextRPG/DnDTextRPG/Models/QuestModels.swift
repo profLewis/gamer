@@ -215,6 +215,11 @@ struct MainQuest: Codable {
     /// it — not every petitioner thinks to, so this is often nil, and always
     /// nil on a quest saved before there were any.
     var sweetener: String? = nil
+    /// What actually finishes this quest. Every quest used to end the same
+    /// way — kill the thing at the bottom — however different its story was.
+    /// nil (any quest saved before this existed) means "slay", so old saves
+    /// carry on exactly as they did.
+    var objective: String? = nil
 
     /// Things a quest might send you looking for, one level at a time.
     static let chapterItems = [
@@ -311,6 +316,36 @@ struct MainQuest: Codable {
         "The chandler will keep you in candles and lamp oil for as long as it takes.",
     ]
 
+    /// What a quest of this kind asks of the party. Deliberately not one per
+    /// kind: several stories want the same thing done, and inventing eight
+    /// endings where four will do makes none of them mean anything.
+    static func objective(forKind kind: String) -> String {
+        switch kind {
+        case "plague", "poison", "curse", "nature":
+            return "remedy"      // the cure matters more than the corpse
+        case "mystery", "twist", "knowledge", "haunting":
+            return "mystery"     // find out WHO, and be right about it
+        case "rival", "debt":
+            return "rival"       // somebody else is racing you for it
+        default:
+            return "slay"
+        }
+    }
+
+    /// What the party is told is required of them, in the plea.
+    var objectiveAsk: String? {
+        switch objective ?? "slay" {
+        case "remedy":
+            return "This one is not finished by killing. Whatever is down there must be undone — and that takes the makings, gathered floor by floor on the way."
+        case "mystery":
+            return "Nobody knows for certain who is behind it. You are asked to find out, and to be right — killing the wrong one helps nobody."
+        case "rival":
+            return "You are not the only ones asked. Another company set out before you, so this is a race as much as a fight."
+        default:
+            return nil
+        }
+    }
+
     /// A quest where everything fits together: who the villain is, what
     /// they're doing to the village and why — and so what must be done, by
     /// when, for what reward — plus what's found out on the way down.
@@ -323,7 +358,7 @@ struct MainQuest: Codable {
         return MainQuest(villain: s.villain, goal: s.goal(village), stakes: s.stakes, reward: s.reward, village: village,
                          harm: s.harm, motive: s.motive, kind: s.kind, beats: s.beats(village, Dungeon.guardianName(s.villain)),
                          place: s.place, finale: s.finale, informant: s.informant,
-                         sweetener: sweetener)
+                         sweetener: sweetener, objective: objective(forKind: s.kind))
     }
 
     private struct Scenario {

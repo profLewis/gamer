@@ -669,6 +669,7 @@ class GameEngine: ObservableObject {
     private var lastCombatNudge: String?
     private var lastIdleOpener: String?
     private var lastExplorationTip: String?
+    private var lastAnywhereDetail: String?
     private var lastTeamBoast: String?
     private var lastTeamDoubt: String?
     private var lastTeamOpener: String?
@@ -22444,8 +22445,68 @@ class GameEngine: ObservableObject {
         autoReturn(after: searchResultTimeout(from: textStart, found: false), stretchForReading: false)
     }
 
-    /// Room-type flavour text (merged from former Examine action)
+    /// Incidental things you might notice in any room at all. The dungeon is
+    /// lived in — by somebody, or something — and these are the leavings.
+    static let anywhereDetails = [
+        "A spider the size of a thumbnail is rebuilding a web somebody walked through.",
+        "The remains of last night's dinner: a bone, picked very clean, and a gnawed crust.",
+        "Somebody's boot print in the dust, going the other way.",
+        "A candle stub, burned right down, stuck to the stone with its own wax.",
+        "Three spiders, sitting well apart, as though they had fallen out.",
+        "A rat watches from a crack, entirely unbothered by you.",
+        "A tin cup on its side, and a ring where it stood for a long time.",
+        "Scratches on the wall at knee height. Something small, and in a hurry.",
+        "The floor is swept in one corner. Only one corner.",
+        "A smell of woodsmoke that has no business being down here.",
+        "Somebody's initials, scratched and then half scratched out again.",
+        "A playing card, face down. It's the two of cups.",
+        "Water has got in and left a tidemark higher than you'd like.",
+        "A neat pile of small bones, stacked by someone with time on their hands.",
+        "Moss grows in a perfect circle, and nowhere else.",
+        "A bootlace, knotted twice, lying where it snapped.",
+        "The dust here has been disturbed recently, and then smoothed over.",
+        "An old cooking pot, rust through the bottom, still hanging on its hook.",
+        "A child's wooden horse, missing a leg. Nobody says anything about it.",
+        "Two spiders have made a web across the doorway you came through.",
+        "Chalk marks: four strokes and a line through them, twice over.",
+        "A bird's nest, up in the vaulting, impossibly far from any sky.",
+        "Somebody has eaten here, and washed up after themselves.",
+        "A dropped coin, too worn to name the face on it.",
+        "The air moves. There's a way out of here that you can't see.",
+        "A rope end, cut clean, still knotted to a ring in the wall.",
+        "Beetles scatter from under your boot and are gone.",
+        "A tooth. Not a person's. Not a rat's either.",
+        "Fresh mushrooms, in a ring, growing out of nothing at all.",
+        "A shelf of grease where a lamp has stood, night after night.",
+        "Half a map, torn across, showing somewhere this isn't.",
+        "Something has been dragged across this floor, and not lightly.",
+        "A comb, with three teeth missing, dropped and forgotten.",
+        "Spider silk hangs everywhere, but you cannot find one spider.",
+        "A stub of chalk, worn to nothing, left on a ledge.",
+        "Somebody slept here: a hollow in the dust, roughly person-shaped.",
+        "The last of a fire, cold, with the wood stacked ready for the next one.",
+        "A button, brass, stamped with a crest nobody here recognises.",
+        "Wax has run down the wall from a candle held up to read by.",
+        "There are fingerprints on the underside of the sill. Somebody hung there.",
+    ]
+
+    /// What the party notices: the room's own character, and then an ordinary
+    /// thing or two that could be in any room — which is what stops every
+    /// look around reading like the last one.
     private func examineObservation(for room: Room) -> String {
+        var parts: [String] = []
+        let ofTheRoom = roomTypeObservation(for: room)
+        if !ofTheRoom.isEmpty { parts.append(ofTheRoom) }
+        // One incidental detail usually, two now and then — never the same one
+        // twice running (see pickVaried).
+        let extras = Int.random(in: 1...10) <= 3 ? 2 : 1
+        for _ in 0..<extras {
+            parts.append(Self.pickVaried(Self.anywhereDetails, avoiding: &lastAnywhereDetail))
+        }
+        return parts.joined(separator: " ")
+    }
+    /// Room-type flavour text (merged from former Examine action)
+    private func roomTypeObservation(for room: Room) -> String {
         switch room.roomType {
         case .library:
             return ["Faded journals hint at the dungeon's history.", "The books are mostly ruined, but one contains a partial map.", "Ancient texts warn of deeper dangers."].randomElement()!
@@ -26950,6 +27011,11 @@ class GameEngine: ObservableObject {
         printTitle("Will You Take It On?")
         print("")
         printWrapped("To \(mq.goal), \(mq.stakes).", indent: 2, color: .yellow)
+        // What this one actually asks of you — not every quest ends with a
+        // dead guardian, and the party deserves to know that before saying yes.
+        if let ask = mq.objectiveAsk {
+            printWrapped(ask, indent: 2, color: .cyan)
+        }
         printWrapped("The reward: \(mq.reward).", indent: 2, color: .green)
         // Whatever they have thought to throw in on top, in their own words.
         if let sweetener = mq.sweetener {
@@ -35987,8 +36053,41 @@ class GameEngine: ObservableObject {
                 }
                 print("")
             }
-            mainQuestCompleted = mainQuest != nil
-            if let q = mainQuest { questHistory.append("Completed the quest: \(Dungeon.guardianName(q.villain)) defeated, and \(q.goal) done.") }
+            // The guardian is dead. Whether the QUEST is done depends on what
+            // it asked for — this used to be `mainQuestCompleted = mainQuest
+            // != nil`, so every quest ended identically however it began.
+            var questDone = mainQuest != nil
+            var shortfall: String? = nil
+            if let q = mainQuest {
+                switch q.objective ?? "slay" {
+                case "remedy":
+                    let need = q.chapterNeeded ?? 0
+                    if need > 0 && (q.chapterFound ?? 0) < need {
+                        questDone = false
+                        shortfall = "But the makings were never gathered — \(q.chapterFound ?? 0) of \(need). The thing that caused it is dead and \(q.village) is no better off. They will need someone to go back down."
+                    }
+                case "mystery":
+                    if (q.cluesLearned ?? []).count < 2 {
+                        questDone = false
+                        shortfall = "You killed something terrible tonight. Whether it was the one behind it, nobody in \(q.village) can say — you never found out enough to be sure, and the asking starts again tomorrow."
+                    }
+                case "rival":
+                    if q.deadlinePassed == true {
+                        questDone = false
+                        shortfall = "You were not first. The other company came up days ago with the story already told, and \(q.village) had thanked them before you reached the surface."
+                    }
+                default:
+                    break
+                }
+            }
+            mainQuestCompleted = questDone
+            if let note = shortfall {
+                print("")
+                printWrapped(note, indent: 2, color: .yellow)
+                print("")
+            }
+            if let q = mainQuest, questDone { questHistory.append("Completed the quest: \(Dungeon.guardianName(q.villain)) defeated, and \(q.goal) done.") }
+            else if let q = mainQuest { questHistory.append("Beat \(Dungeon.guardianName(q.villain)) — but the quest to \(q.goal) was left unfinished.") }
             logEvent("THE END: the final guardian of \(dungeonName) is defeated", category: "EXPLORE")
             // No save here: the last save (from before the final fight) is kept,
             // so the ending can be played again. Then the outro and certificate.

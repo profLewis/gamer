@@ -614,6 +614,11 @@ struct TerminalView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .background(terminalBackground)
+                    // A touch shorter, so the row above doesn't peep in at the
+                    // top edge. Padding, not a frame: the view keeps shrinking
+                    // when the controls need the room (see build 51, where a
+                    // fixed height pushed the input line off the screen).
+                    .padding(.bottom, 7)
                     .onPreferenceChange(LinkFramesKey.self) { linkFrames = $0 }
                     .overlay(alignment: .leading) { tapToAdvanceStrip }
                     #if !os(tvOS)
