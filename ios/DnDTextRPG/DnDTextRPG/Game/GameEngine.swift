@@ -462,6 +462,20 @@ class GameEngine: ObservableObject {
         "Somewhere ahead, the others are already waiting…",
     ]
 
+    /// Shown while ANOTHER petitioner's tale is being written. By then you
+    /// are already at the meeting place, so the travelling lines above would
+    /// be a plain untruth — somebody new is simply next in the queue.
+    static let petitionLines = [
+        "New petitioners shuffle in front of you…",
+        "Another delegation edges forward, caps in hand…",
+        "Somebody else clears their throat and steps up…",
+        "The next lot shuffle forward, hopeful…",
+        "A second group presses in, talking over each other…",
+        "Word has got round. Another village sends its askers…",
+        "Someone new is waved to the front, clutching a letter…",
+        "The queue shifts. Fresh faces, the same worried look…",
+    ]
+
     /// Shown while the tale so far is being written: a pause, mid-adventure.
     static let takingStockLines = [
         "Taking stock by torchlight…",
@@ -19467,7 +19481,11 @@ class GameEngine: ObservableObject {
             self.awaitingContinue = false
         }
         for _ in 0..<5 { print("") }
-        print(Self.travelLines.randomElement()!, color: .dimGreen, centered: true)
+        // Already at the meeting place? Then it isn't a journey, it's a queue.
+        // Same test the title uses further down — see `isPlea` in play().
+        let waitingForAnother = questPleaPrevious != nil || questChangeBackup != nil
+        let waitingLines = waitingForAnother ? Self.petitionLines : Self.travelLines
+        print(waitingLines.randomElement()!, color: .dimGreen, centered: true)
         startWritingBar(seconds: 15)
         DMEngine.shared.writeStory(system: storySystemPrompt, prompt: storyPrompt()) { [weak self] text in
             guard let self = self, self.taleWriteToken == writeToken else { return }
