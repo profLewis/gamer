@@ -22223,6 +22223,9 @@ class GameEngine: ObservableObject {
             printExplorationMap()
             print("")
         }
+        // Everything printed after the map is the part worth reading; the
+        // result's own wait is measured from here.
+        let textStart = terminalLines.count
 
         // Wall-mounted torches in a torchlit passage are visible, not hidden —
         // taking a spare one is guaranteed, no perception roll needed.
@@ -22299,7 +22302,9 @@ class GameEngine: ObservableObject {
             printWrapped(observation, indent: 2, color: .dimGreen)
         }
 
-        pendingTimeoutKind = .search; autoReturn(after: max(2.5, infoTimeout * 0.8), stretchForReading: false)   // search results move on briskly
+        showSearchResultButtons()
+        pendingTimeoutKind = .search
+        autoReturn(after: searchResultTimeout(from: textStart, found: false), stretchForReading: false)
     }
 
     /// Room-type flavour text (merged from former Examine action)
@@ -22365,6 +22370,8 @@ class GameEngine: ObservableObject {
         guard let room = dungeon?.currentRoom else { return }
 
         clearTerminal()
+        // No map on this screen — all of it is text worth reading.
+        let textStart = terminalLines.count
         printWrapped("You fumble around in the darkness...", indent: 2, color: .gray)
         print("")
         advanceTime(15)
@@ -22438,7 +22445,9 @@ class GameEngine: ObservableObject {
             logEvent("Dark search — nothing to find in \(room.name)", category: "EXPLORE")
         }
 
-        pendingTimeoutKind = .search; autoReturn(after: max(2.5, infoTimeout * 0.8), stretchForReading: false)   // search results move on briskly
+        showSearchResultButtons()
+        pendingTimeoutKind = .search
+        autoReturn(after: searchResultTimeout(from: textStart, found: false), stretchForReading: false)
     }
 
     /// Long-press Examine in the dark — risky fumbling examination
@@ -22451,6 +22460,7 @@ class GameEngine: ObservableObject {
             print("")
         }
 
+        let textStart = terminalLines.count
         advanceTime(10)
 
         printWrapped("You grope around in the darkness, trying to make sense of this place...", indent: 2, color: .gray)
@@ -22498,7 +22508,9 @@ class GameEngine: ObservableObject {
 
         logEvent("Dark examine in \(room.name)", category: "EXPLORE")
 
-        autoReturn()
+        showSearchResultButtons()
+        pendingTimeoutKind = .search
+        autoReturn(after: searchResultTimeout(from: textStart, found: false), stretchForReading: false)
     }
 
     /// Long-press Supplies in the dark — risky blind foraging
@@ -22511,6 +22523,7 @@ class GameEngine: ObservableObject {
             print("")
         }
 
+        let textStart = terminalLines.count
         advanceTime(15)
         room.searchedFor.insert("foraged")
 
@@ -22546,7 +22559,9 @@ class GameEngine: ObservableObject {
             logEvent("Dark forage — nothing found in \(room.name)", category: "EXPLORE")
         }
 
-        autoReturn()
+        showSearchResultButtons()
+        pendingTimeoutKind = .search
+        autoReturn(after: searchResultTimeout(from: textStart, found: false), stretchForReading: false)
     }
 
     /// Thematic description of where an item was found, based on room type
@@ -22873,6 +22888,47 @@ class GameEngine: ObservableObject {
 
     // MARK: - Forage Supplies
 
+    /// How long a search result sits before it moves on by itself. A find is
+    /// worth reading; "you found nothing" is not, and neither is one short
+    /// line — so the wait is sized from the text actually on screen, measured
+    /// from `startLine` (captured once the map is drawn, so the map never
+    /// counts towards the reading time).
+    private func searchResultTimeout(from startLine: Int, found: Bool) -> Double {
+        let start = min(max(0, startLine), terminalLines.count)
+        let chars = terminalLines[start...].reduce(0) {
+            $0 + $1.text.trimmingCharacters(in: .whitespaces).count
+        }
+        let read = Double(chars) / 22.0                     // ~22 characters a second
+        let cap = infoTimeout * (found ? 0.8 : 0.45)
+        return max(found ? 2.5 : 1.5, min(cap, read))
+    }
+
+    /// Back and help, and nothing else. A search result is something to read,
+    /// not somewhere to act from, so the exploration icon grid comes off it —
+    /// showMenuOptions nulls every d-pad corner as its first act.
+    private func showSearchResultButtons() {
+        showMenuOptions([MenuOption("?", tint: .navigation, compact: true),
+                         MenuOption("< Back", tint: .navigation, compact: true)])
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 { self.showSearchHelp() } else { self.showExplorationView() }
+        }
+    }
+
+    private func showSearchHelp() {
+        showInlineHelp {
+            self.printTitle("Searching — Help")
+            self.print("")
+            self.printWrapped("Searching takes fifteen minutes and uses whoever has the best Perception — or whoever you have named under Actor.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("Once a room's hidden things are found, searching again scavenges instead: odds and ends worth a little gold, and sometimes what the level's guardian asked you to gather. A room can only be scavenged once.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("In the dark it is far harder, and it can go wrong.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("This screen moves on by itself, and does so quicker when there was nothing to find. Tap the hourglass to hold it.", indent: 2, color: .dimGreen)
+        }
+    }
+
     private func forageSupplies() {
         guard let room = dungeon?.currentRoom, let dungeon = dungeon else { return }
 
@@ -22881,8 +22937,11 @@ class GameEngine: ObservableObject {
             clearTerminal()
             printExplorationMap()
             print("")
+            let textStart = terminalLines.count
             printWrapped("You've already scavenged this room — nothing left to find.", indent: 2, color: .yellow)
-            pendingTimeoutKind = .search; autoReturn(after: max(2.5, infoTimeout * 0.8), stretchForReading: false)   // search results move on briskly
+            showSearchResultButtons()
+            pendingTimeoutKind = .search
+            autoReturn(after: searchResultTimeout(from: textStart, found: false), stretchForReading: false)
             return
         }
 
@@ -22890,6 +22949,7 @@ class GameEngine: ObservableObject {
         printExplorationMap()
         print("")
 
+        let textStart = terminalLines.count
         advanceTime(15)
         room.searchedFor.insert("foraged")
 
@@ -23002,7 +23062,9 @@ class GameEngine: ObservableObject {
         logEvent("Foraged \(room.name) — nothing found", category: "EXPLORE")
         logMultiplayerAction("Foraged supplies in \(room.name)")
 
-        pendingTimeoutKind = .search; autoReturn(after: max(2.5, infoTimeout * 0.8), stretchForReading: false)   // search results move on briskly
+        showSearchResultButtons()
+        pendingTimeoutKind = .search
+        autoReturn(after: searchResultTimeout(from: textStart, found: false), stretchForReading: false)
     }
 
     // MARK: - Talk to NPC
