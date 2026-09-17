@@ -35009,6 +35009,20 @@ class GameEngine: ObservableObject {
     /// catch-up), never inside this function itself.
     private var isHandlingCombatVictory = false
 
+    /// The "?" on a victory that dropped something.
+    private func showVictoryHelp(onDone: @escaping () -> Void) {
+        showInlineHelp {
+            self.printTitle("Victory — Help")
+            self.print("")
+            self.printWrapped("What the fight was worth: the experience each of you earned, and anything the creatures left behind.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("Experience is split half evenly among everyone who actually fought, and half by what each of you did — damage dealt, and credit for every turn taken, so healing and helping still earn a share.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("Take the Spoils moves on to sharing out the gold and gear, and then to anyone ready to gain a level. This screen waits for you — nothing is lost while you read it.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
+    }
+
     func handleCombatVictory() {
         guard !isHandlingCombatVictory else { return }
         // currentCombat checked BEFORE setting the guard flag — this flag is
@@ -35244,9 +35258,28 @@ class GameEngine: ObservableObject {
         // already solves exactly this: it guards on closeHandler, set and
         // cleared specifically for THIS destination, not shared with
         // whatever screen comes after.
-        autoReturnDestination = continueAction
-        // Victory moves on reasonably briskly — no reading-time stretch.
-        pendingTimeoutKind = .results; autoReturn(after: max(3.0, infoTimeout * 1.5), stretchForReading: false)
+        // Spoils on the floor mean there is something here worth reading and
+        // something to decide, so a fight that dropped anything now WAITS
+        // rather than sliding off on a timer — picking things up keeps you on
+        // the victory screen until you choose to move on. A fight that dropped
+        // nothing still moves on by itself, but with twice the time and the
+        // ordinary reading-time stretch, instead of the old bare 3 seconds.
+        let wonSomething = lootGold > 0 || !lootItems.isEmpty
+        if wonSomething {
+            showMenuOptions([MenuOption("Take the Spoils", isDefault: true),
+                             MenuOption("?", tint: .navigation, compact: true)])
+            menuHandler = { [weak self] choice in
+                guard let self = self else { return }
+                if choice == 1 { continueAction() } else { self.showVictoryHelp(onDone: continueAction) }
+            }
+            closeHandler = continueAction
+        } else {
+            // Only armed on the path that actually uses it — left set on the
+            // waiting path it would be picked up by some later autoReturn.
+            autoReturnDestination = continueAction
+            pendingTimeoutKind = .results
+            autoReturn(after: max(5.0, infoTimeout * 2.0), stretchForReading: true)
+        }
     }
 
     /// "Emergency Drop" — a rare, automatic anti-total-party-wipe save.
