@@ -69,6 +69,13 @@ private struct LinkFramesKey: PreferenceKey {
     }
 }
 
+/// The height the layout is giving the story text. Measured on the box itself,
+/// which keeps its flexible size — this only reads it, and never sets it.
+private struct StoryBoxHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
 struct TerminalView: View {
     @EnvironmentObject var gameEngine: GameEngine
     @ObservedObject private var voiceInput = VoiceInputManager.shared
@@ -105,6 +112,8 @@ struct TerminalView: View {
     @State private var focusScheduled: Bool = false
     @State private var glideToken = UUID()
     @State private var linkFrames: [LinkFrame] = []
+    /// Measured height of the story box (see StoryBoxHeightKey).
+    @State private var storyBoxHeight: CGFloat = 0
     #if os(macOS)
     /// Mac pane sizes, set by dragging the small handles (remembered).
     /// 0 = map pane tall enough for the whole map box, key included.
@@ -159,6 +168,43 @@ struct TerminalView: View {
     /// The screen's two main regions — (A) map+text, (B) D-pad/buttons/
     /// input — side by side as an even 50/50 split in landscape, or stacked
     /// full-width as portrait always has.
+    /// One line of story text at its natural height, before any spacing.
+    /// TerminalLine renders size 14 as 16 on the Mac, so the pitch is taken at
+    /// the size actually drawn rather than the size asked for.
+    private var storyLineHeight: CGFloat {
+        #if os(macOS)
+        let font = NSFont.monospacedSystemFont(ofSize: 16 * scale, weight: .regular)
+        return ceil(font.ascender - font.descender + font.leading)
+        #else
+        let font = UIFont.monospacedSystemFont(ofSize: 14 * scale, weight: .regular)
+        return ceil(font.lineHeight)
+        #endif
+    }
+
+    /// The gap between lines, chosen so a whole number of them fills the box
+    /// exactly — the remainder that used to show as a sliced half-line is
+    /// shared out between the lines instead.
+    ///
+    /// The box is NOT resized: it keeps its flexible height and can still give
+    /// space back to the buttons and the input line. Falls back to the plain
+    /// value of 2 before the first measurement, or whenever the sum would look
+    /// wrong, so the worst case is today's behaviour rather than a broken one.
+    private var storyLineSpacing: CGFloat {
+        let base: CGFloat = 2
+        let usable = storyBoxHeight - 8          // the block's own .padding(.vertical, 4)
+        let line = storyLineHeight
+        guard usable > line * 3, line > 1 else { return base }
+
+        // Spacing goes BETWEEN rows, so N rows take N*line + (N-1)*spacing.
+        // The first version of this solved N*(line+spacing) instead, which
+        // over-counts by one whole spacing and left about a quarter of a line
+        // showing at the edge — exactly what was reported from play-testing.
+        let rows = floor((usable + base) / (line + base))
+        guard rows >= 3 else { return base }
+        let fitted = (usable - rows * line) / (rows - 1)
+        return (fitted >= 1 && fitted <= 6) ? fitted : base
+    }
+
     private func topLevelStack<Content: View>(isLandscape: Bool, @ViewBuilder content: () -> Content) -> some View {
         Group {
             if isLandscape {
@@ -312,7 +358,7 @@ struct TerminalView: View {
                         #elseif os(tvOS)
                         .frame(height: CGFloat(gameEngine.pinnedMapLines.count) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 8)
                         #else
-                        .frame(height: (CGFloat(gameEngine.mapOnlyLineCount) - (isLandscape ? 0.0 : 0.5)) * (gameEngine.mapFontSize * mapScale * 1.3 + 2))
+                        .frame(height: (CGFloat(gameEngine.mapOnlyLineCount) - 0.5) * (gameEngine.mapFontSize * mapScale * 1.3 + 2))
                         #endif
                         .background(terminalBackground)
                         .contentShape(Rectangle())
@@ -356,7 +402,7 @@ struct TerminalView: View {
                     // Terminal output area
                     ScrollViewReader { scrollProxy in
                         ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 2) {
+                            LazyVStack(alignment: .leading, spacing: storyLineSpacing) {
                                 ForEach(Array(gameEngine.terminalLines.enumerated()), id: \.element.id) { index, line in
                                     Group {
                                     if let link = line.link {
@@ -427,19 +473,18 @@ struct TerminalView: View {
                                                    height: landingDragonWidth(geometry.size, isLandscape: isLandscape) * 186 / 280)
                                             .clipped()
                                             .offset(x: -6 * scale) // Centre the dragon's head, not the image
-                                            // Tap the picture: About & credits.
+                                            // The picture is not labelled. A tap tells you what it is
+                                            // and the tale behind it; a long press still opens About.
                                             .contentShape(Rectangle())
+                                            .onTapGesture {
+                                                if let caption = gameEngine.currentPoseCaption {
+                                                    gameEngine.showPoseLore(for: caption)
+                                                }
+                                            }
                                             .onLongPressGesture(minimumDuration: 0.6) { gameEngine.followLink("about") }
-                                            .accessibilityHint("Long-press for About and credits")
+                                            .accessibilityLabel(gameEngine.currentPoseCaption ?? "Picture")
+                                            .accessibilityHint("Tap for what this is; long-press for About and credits")
                                         Spacer()
-                                    }
-                                    if let caption = gameEngine.currentPoseCaption {
-                                        Text(caption)
-                                            .font(.system(size: 11 * scale, design: .monospaced))
-                                            .foregroundColor(.secondary)
-                                            .frame(maxWidth: .infinity)
-                                            .multilineTextAlignment(.center)
-                                            .onTapGesture { gameEngine.showPoseLore(for: caption) }
                                     }
                                 }
                                 // Inline image (e.g. main menu portrait)
@@ -452,17 +497,18 @@ struct TerminalView: View {
                                             .frame(maxWidth: 340 * scale, maxHeight: 220 * scale)
                                             .cornerRadius(8)
                                             .opacity(0.85)
+                                            // Unlabelled, like the dragon above it: tap for what it is,
+                                            // long-press for About.
                                             .contentShape(Rectangle())
+                                            .onTapGesture {
+                                                if let caption = gameEngine.currentPoseCaption {
+                                                    gameEngine.showPoseLore(for: caption)
+                                                }
+                                            }
                                             .onLongPressGesture(minimumDuration: 0.6) { gameEngine.followLink("about") }
-                                            .accessibilityHint("Long-press for About and credits")
+                                            .accessibilityLabel(gameEngine.currentPoseCaption ?? "Picture")
+                                            .accessibilityHint("Tap for what this is; long-press for About and credits")
                                         Spacer()
-                                    }
-                                    if let caption = gameEngine.currentPoseCaption {
-                                        Text(caption)
-                                            .font(.system(size: 11 * scale, design: .monospaced))
-                                            .foregroundColor(.secondary)
-                                            .frame(maxWidth: .infinity)
-                                            .multilineTextAlignment(.center)
                                     }
                                 }
                                 // Invisible sentinel — its visibility tells us whether
@@ -613,6 +659,19 @@ struct TerminalView: View {
                         }
                     }
                     .frame(maxWidth: .infinity)
+                    // Measure the box so the line spacing can be chosen to fit
+                    // a whole number of rows (see storyLineSpacing). Reading
+                    // only: the box keeps its flexible height, so it still
+                    // gives way to the buttons and the input line — unlike
+                    // build 51, where a fixed height pushed the input line off
+                    // the screen entirely. This replaces the flat 7pt trim of
+                    // build 59, which was a guess at the remainder.
+                    .background(GeometryReader { g in
+                        Color.clear.preference(key: StoryBoxHeightKey.self, value: g.size.height)
+                    })
+                    .onPreferenceChange(StoryBoxHeightKey.self) { h in
+                        if abs(h - storyBoxHeight) > 0.5 { storyBoxHeight = h }
+                    }
                     .background(terminalBackground)
                     .onPreferenceChange(LinkFramesKey.self) { linkFrames = $0 }
                     .overlay(alignment: .leading) { tapToAdvanceStrip }
@@ -969,6 +1028,7 @@ struct TerminalView: View {
                                     },
                                     pressedIndex: gameEngine.pressedMenuIndex,
                                     longPressDuration: gameEngine.longPressDuration,
+                                    awaitingPress: gameEngine.awaitingContinue,
                                     onUndo: gameEngine.undoHandler,
                                     onRedo: gameEngine.redoHandler,
                                     undoTargetIndex: gameEngine.undoTargetButtonIndex,
@@ -1138,6 +1198,10 @@ struct TerminalView: View {
                                     textModeAutoSubmitTimer = nil
                                     submitInput()
                                 }
+                                // A click on the input line means "type here",
+                                // never "next".
+                                .contentShape(Rectangle())
+                                .onTapGesture { isInputFocused = true }
 
                             Spacer()
 
@@ -1705,6 +1769,19 @@ struct TerminalView: View {
             return .ignored
         }
 
+        // Nor while you're actually typing. The input line is always there,
+        // so a waiting screen used to swallow every key — Return included —
+        // as "continue", leaving what you'd typed sitting in the box. With
+        // the field focused or holding anything, the keys are its own, and
+        // Return sends it.
+        if isInputFocused || !inputText.trimmingCharacters(in: .whitespaces).isEmpty {
+            if press.key == .return {
+                submitInput()
+                return .handled
+            }
+            return .ignored
+        }
+
         // Time frozen: Space unfreezes; any other key just says so.
         if gameEngine.timeFrozen {
             if press.key == .space { gameEngine.toggleAutoContinuePause() } else { gameEngine.showFrozenNotice() }
@@ -1904,6 +1981,13 @@ struct TerminalView: View {
         // reread what happened — instead of snapping back down. Once the
         // reader isn't at the bottom any more, stay out of their way until
         // they scroll back down themselves (see isNearBottom).
+        // Something the reader must see (a DM reply) overrides the courtesy
+        // of staying put — once, then the flag is cleared.
+        if gameEngine.forceScrollToNewest {
+            gameEngine.forceScrollToNewest = false
+            withAnimation { proxy.scrollTo("bottomSentinel", anchor: .bottom) }
+            return
+        }
         guard isNearBottom else { return }
         // Scroll to the sentinel itself (not the last content line) — anchoring
         // the last line at .bottom would leave the 1pt sentinel just past the
@@ -2535,6 +2619,9 @@ struct MenuButtonsView: View {
     var pressedIndex: Int? = nil
     /// Long-press duration in seconds (configurable in Gameplay settings)
     var longPressDuration: Double = 0.5
+    /// The screen is waiting to be told to carry on. After a few seconds with
+    /// no answer, the button that would do it glows gently — see attentionGlow.
+    var awaitingPress: Bool = false
     /// Undo/redo handlers — shown as ↩/↪ segments in the compact nav cell
     var onUndo: (() -> Void)? = nil
     var onRedo: (() -> Void)? = nil
@@ -2590,6 +2677,24 @@ struct MenuButtonsView: View {
     private var buttonVerticalPadding: CGFloat { isCompact ? 4 : 8 }
 
     @State private var alertPulse = false
+    /// The slow glow on a button that is waiting to be pressed. It starts only
+    /// after a pause, so it never flashes at somebody who is still reading.
+    @State private var attentionGlow = false
+    /// Long enough that a reader is not hurried, short enough to be a help.
+    private static let glowDelay: Double = 5
+
+    /// Exactly one button glows: the default, else the first that can be
+    /// pressed. Never a compact nav button — a glowing "?" would be a puzzle
+    /// rather than a prompt.
+    private var glowIndex: Int? {
+        guard awaitingPress else { return nil }
+        if let d = options.firstIndex(where: { $0.isDefault && !$0.isDisabled && !$0.isCompactNav }) { return d }
+        return options.firstIndex(where: { !$0.isDisabled && !$0.isCompactNav })
+    }
+
+    private func shouldGlow(_ index: Int) -> Bool {
+        attentionGlow && glowIndex == index
+    }
 
     /// Whether to insert a spacer before the last button to push it to the right column.
     /// Only danger buttons get pushed right; navigation (Help, Save) stay bottom-left.
@@ -2665,6 +2770,18 @@ struct MenuButtonsView: View {
                 }
             }
         }
+        // .task, not a loose timer: it is cancelled when the screen goes away
+        // and restarted whenever the waiting state changes, so a glow can
+        // never outlive the screen that asked for it.
+        .task(id: awaitingPress) {
+            attentionGlow = false
+            guard awaitingPress, !GameEngine.animationsReduced else { return }
+            try? await Task.sleep(nanoseconds: UInt64(Self.glowDelay * 1_000_000_000))
+            guard !Task.isCancelled, awaitingPress else { return }
+            withAnimation(.easeInOut(duration: 1.7).repeatForever(autoreverses: true)) {
+                attentionGlow = true
+            }
+        }
     }
 
     /// An empty slot in the grid — a faint, dead button, so a screen with
@@ -2733,6 +2850,16 @@ struct MenuButtonsView: View {
                         RoundedRectangle(cornerRadius: 6)
                             .fill(buttonFillColor(option))
                     )
+            )
+            // The waiting button's glow: the button's own colour, breathing.
+            // Decorative only — it takes no taps and VoiceOver never sees it.
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(buttonStrokeColor(option), lineWidth: 2)
+                    .shadow(color: buttonStrokeColor(option).opacity(0.7), radius: 5)
+                    .opacity(shouldGlow(index) ? 0.5 : 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             )
         }
         .buttonStyle(.plain)

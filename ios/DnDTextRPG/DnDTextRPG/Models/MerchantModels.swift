@@ -75,6 +75,11 @@ struct Merchant: Codable, Equatable {
     var catchphrase: String
     /// One-line persona summary handed to the DM as context for bargaining/advice/rare-goods narration.
     var personaBlurb: String
+    /// Goods this one's greeting actually names. Whatever they mention is put
+    /// at the front of the shop and so becomes the default button — the patter
+    /// and the counter should agree. Defaulted, because Merchant is saved
+    /// inside a game and merchants from older saves simply have none.
+    var mentions: [String] = []
 
     /// Regular buy-list, rolled once and remembered from then on — a merchant
     /// who's shown you a Chain Mail shouldn't have a different (or no)
@@ -93,6 +98,11 @@ struct Merchant: Codable, Equatable {
         let greeting: String
         let catchphrase: String
         let blurb: String
+        /// See Merchant.mentions. Named here rather than picked out of the
+        /// greeting: parsing English would be brittle, and would miss "the
+        /// bread's still warm", where the noun is there but the sentence is
+        /// not an offer. Only goods that genuinely exist in ItemCatalog.
+        var mentions: [String] = []
     }
 
     // Original, non-copyrighted personas. Small-tier merchants lean into a
@@ -114,7 +124,8 @@ struct Merchant: Codable, Equatable {
         Persona(name: "Pip Thistlewick", shopNames: ["Thistlewick's Barrow", "The Pie & Pocket"],
                 greeting: "\"Hungry? Lost? Both? I've a pie for one and a trinket for the other.\"",
                 catchphrase: "\"A warm pie never let anyone down.\"",
-                blurb: "Pip Thistlewick is a cheerful halfling who pushes a barrow of pies, buttons and oddments through the dark, chatters constantly and gives away more crumbs than he sells."),
+                blurb: "Pip Thistlewick is a cheerful halfling who pushes a barrow of pies, buttons and oddments through the dark, chatters constantly and gives away more crumbs than he sells.",
+                mentions: ["Jar of Honey"]),
         Persona(name: "Madame Ostra", shopNames: ["Ostra's Curiosities", "The Crystal Cart"],
                 greeting: "\"Ah, I foresaw you coming. Also, I heard your boots.\"",
                 catchphrase: "\"The cards say you'll buy something. The cards are rarely wrong.\"",
@@ -126,11 +137,13 @@ struct Merchant: Codable, Equatable {
         Persona(name: "Brother Amble", shopNames: ["The Humble Satchel", "Amble's Almsbag"],
                 greeting: "\"Peace be with you, traveller. And a candle, if you'd like one.\"",
                 catchphrase: "\"A fair price is a small kindness.\"",
-                blurb: "Brother Amble is a wandering monk who trades candles, bandages and herbs to fund his journey; gentle, patient and hard to rush."),
+                blurb: "Brother Amble is a wandering monk who trades candles, bandages and herbs to fund his journey; gentle, patient and hard to rush.",
+                mentions: ["Torch"]),
         Persona(name: "Nell Fairweather", shopNames: ["Fairweather Herbs", "The Green Satchel"],
                 greeting: "\"Mind the moss — it's for sale. So is the mint.\"",
                 catchphrase: "\"There's a leaf for every ache.\"",
-                blurb: "Nell Fairweather is a brisk herbalist who knows every plant that grows in the dark and exactly what it's worth."),
+                blurb: "Nell Fairweather is a brisk herbalist who knows every plant that grows in the dark and exactly what it's worth.",
+                mentions: ["Pouch of Dried Herbs", "Antidote"]),
         Persona(name: "Tobias Crank", shopNames: ["Crank's Cogs & Keys", "The Ticking Trolley"],
                 greeting: "\"Stand back, stand back — the trolley bites when it's excited.\"",
                 catchphrase: "\"If it's broken, I can fix it. If it's fixed, I can improve it.\"",
@@ -251,7 +264,8 @@ struct Merchant: Codable, Equatable {
             tier: tier,
             greeting: persona.greeting,
             catchphrase: persona.catchphrase,
-            personaBlurb: persona.blurb
+            personaBlurb: persona.blurb,
+            mentions: persona.mentions
         )
     }
 

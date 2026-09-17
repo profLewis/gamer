@@ -258,7 +258,7 @@ class HallOfFameManager {
         let party = buildRepairParty(for: entry)
         guard !party.isEmpty else { return nil }
 
-        let dungeon = Dungeon(name: entry.dungeonName, level: entry.dungeonLevel)
+        let dungeon = Dungeon(name: entry.dungeonName, level: entry.dungeonLevel, levelCount: Dungeon.defaultFinalLevel)
         simulateExploration(dungeon: dungeon, roomsExplored: entry.roomsExplored, isDefeat: entry.outcome == .defeat)
 
         let partyDesc = party.map { "\($0.name) (\($0.characterClass.rawValue))" }.joined(separator: ", ")
@@ -448,7 +448,7 @@ class HallOfFameManager {
             let party = buildSeedParty(seed.members, gold: seed.gold, level: seed.level)
 
             // Generate dungeon and simulate exploration
-            let dungeon = Dungeon(name: seed.dungeon, level: seed.level)
+            let dungeon = Dungeon(name: seed.dungeon, level: seed.level, levelCount: Dungeon.defaultFinalLevel)
             simulateExploration(dungeon: dungeon, roomsExplored: seed.explored, isDefeat: seed.outcome == .defeat)
 
             // Create the save game (for defeats: positioned one room before the end)

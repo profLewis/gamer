@@ -27,6 +27,57 @@ struct Monster: Identifiable, Codable {
         currentHP = max(0, currentHP - amount)
     }
 
+    /// Two wolves both called "Wolf" made every combat report ambiguous — you
+    /// could not tell which one you had wounded, or which one was still up.
+    /// The first of a kind keeps its plain name; each repeat takes an epithet
+    /// rather than a bare number, so the fight reads like a story.
+    static let epithets = ["Scarred", "Lean", "Broad", "One-Eyed",
+                           "Grizzled", "Pale", "Ragged", "Snarling"]
+
+    /// nil for the first of its kind — Monster.create then uses the plain name.
+    static func distinctName(_ type: MonsterType, occurrence: Int) -> String? {
+        guard occurrence > 0 else { return nil }
+        return "\(epithets[(occurrence - 1) % epithets.count]) \(type.rawValue)"
+    }
+
+    /// No two things in one fight share a name. Encounter.generate numbers its
+    /// own, but every other way an encounter is assembled did not, and two of
+    /// them collided every single time: the boss encounter appends the same
+    /// minion type twice from level 3 down, and a rest ambush rolls one type
+    /// and makes up to two of it. Both arrived plain-named and identical.
+    ///
+    /// Applied in Encounter's initialiser so every path is covered, including
+    /// any added later — fixing the call sites one at a time is how a previous
+    /// fix of this shape ended up applied to two paths out of four.
+    ///
+    /// A name already unique is left exactly as it is, so a boss ("The Ogre"),
+    /// a remembered zombie, or a monster that wandered in keeps what it had.
+    /// Monster.name is a `let`, so a renamed one is rebuilt, keeping its id —
+    /// combat tracks monsters by id.
+    static func disambiguate(_ monsters: [Monster]) -> [Monster] {
+        var used = Set<String>()
+        var perType: [MonsterType: Int] = [:]
+        return monsters.map { m in
+            guard used.contains(m.name) else {
+                used.insert(m.name)
+                return m
+            }
+            var n = (perType[m.type] ?? 0) + 1
+            var candidate = distinctName(m.type, occurrence: n) ?? m.name
+            while used.contains(candidate) {
+                n += 1
+                candidate = distinctName(m.type, occurrence: n) ?? "\(m.name) \(n + 1)"
+            }
+            perType[m.type] = n
+            used.insert(candidate)
+            return Monster(id: m.id, name: candidate, type: m.type,
+                           currentHP: m.currentHP, maxHP: m.maxHP,
+                           armorClass: m.armorClass, attackBonus: m.attackBonus,
+                           damage: m.damage, challengeRating: m.challengeRating,
+                           experiencePoints: m.experiencePoints)
+        }
+    }
+
     static func create(_ type: MonsterType, customName: String? = nil) -> Monster {
         let stats = type.stats
         return Monster(
@@ -82,6 +133,14 @@ enum MonsterType: String, CaseIterable, Codable {
     case youngDragon = "Young Dragon"
     case vecna = "The Undying King"
 
+    // Deeper floors of their own, now that a dungeon can run to twelve
+    case boneMoth = "Bone Moth"
+    case cinderHound = "Cinder Hound"
+    case ironWeaver = "Iron Weaver"
+    case drownedChoir = "Drowned Choir"
+    case hollowMonk = "Hollow Monk"
+    case gloamTitan = "Gloam Titan"
+
     struct Stats {
         let hp: Int
         let ac: Int
@@ -93,6 +152,18 @@ enum MonsterType: String, CaseIterable, Codable {
 
     var stats: Stats {
         switch self {
+        case .boneMoth:
+            return Stats(hp: 7, ac: 12, attackBonus: 3, damage: "1d4+1", cr: 0.25, xp: 50)
+        case .cinderHound:
+            return Stats(hp: 32, ac: 13, attackBonus: 5, damage: "2d6+2", cr: 1, xp: 200)
+        case .ironWeaver:
+            return Stats(hp: 66, ac: 16, attackBonus: 6, damage: "2d8+3", cr: 3, xp: 700)
+        case .drownedChoir:
+            return Stats(hp: 95, ac: 15, attackBonus: 8, damage: "3d6+4", cr: 6, xp: 2300)
+        case .hollowMonk:
+            return Stats(hp: 110, ac: 17, attackBonus: 9, damage: "2d10+5", cr: 8, xp: 3900)
+        case .gloamTitan:
+            return Stats(hp: 210, ac: 18, attackBonus: 11, damage: "3d10+6", cr: 15, xp: 13000)
         // Starter monsters — very weak, manageable for a solo level 1
         case .giantRat:
             return Stats(hp: 4, ac: 10, attackBonus: 2, damage: "1d4", cr: 0.125, xp: 25)
@@ -163,6 +234,12 @@ enum MonsterType: String, CaseIterable, Codable {
 
     var description: String {
         switch self {
+        case .boneMoth: return "A pale moth the size of a dinner plate, wings powdered with something that is not quite dust. It is drawn to lamplight and lands on faces. Harmless-looking until the powder gets in your eyes and the room swims."
+        case .cinderHound: return "A lean hound with coals where its ribs should be, leaving scorch marks on the flagstones. It hunts by heat rather than scent, so hiding in the dark does you no good at all, and it never seems to tire."
+        case .ironWeaver: return "A many-legged smith-thing that spins wire instead of silk, stringing corridors with humming cables. It repairs itself mid-fight from whatever metal is to hand — including your weapons, if you let it get close."
+        case .drownedChoir: return "Several drowned figures moving as one, mouths open, singing a note just below hearing. The song is the weapon: it makes the floor feel further away than it is, and armour feel heavier than it was."
+        case .hollowMonk: return "A robed figure with nothing inside the hood but a slow blue light. It fights with terrible patience, blocking three times for every blow it strikes, and it has clearly been waiting down here a very long while."
+        case .gloamTitan: return "A shape so large the dark bends around it, hauling itself along on knuckles the size of doors. It is old enough to have been walled in deliberately, and the walls have not held."
         case .giantRat: return "An oversized dungeon rat with diseased fangs, twitching whiskers, and eyes that shine red in torchlight. It lives in filth, feeds on scraps, and attacks in hungry packs. In close tunnels, giant rats overwhelm isolated adventurers by sheer relentless numbers."
         case .kobold: return "A wiry reptilian tunnel-fighter clutching crude weapons and a bag of traps. Kobolds avoid fair fights, preferring ambushes, falling rubble, and narrow kill corridors. Individually weak but collectively dangerous, they excel at turning terrain into a weapon."
         case .stirge: return "A bat-sized blood-feeder with a needle beak and frantic membrane wings. It darts unpredictably, latches onto exposed flesh, and drinks until forced away. A stirge attack creates panic because every second attached drains life and action economy."
@@ -199,6 +276,18 @@ enum MonsterType: String, CaseIterable, Codable {
     /// Flavorful attack descriptions — randomly selected each attack
     var attackDescriptions: [String] {
         switch self {
+        case .boneMoth:
+            return ["a faceful of choking powder", "its blundering wings", "a papery scrape"]
+        case .cinderHound:
+            return ["a searing bite", "a scorching lunge", "its ember-hot flank", "a mouthful of coals"]
+        case .ironWeaver:
+            return ["a whipping wire", "its shearing mandibles", "a snare of hot cable", "a barbed foreleg"]
+        case .drownedChoir:
+            return ["a note that buckles the knees", "many cold hands", "a swell of black water", "the low singing"]
+        case .hollowMonk:
+            return ["an open palm like a hammer", "a patient, perfect strike", "the blue light in its hood", "a sweeping sleeve"]
+        case .gloamTitan:
+            return ["a fist the size of a door", "a shoulder that shakes the floor", "a grinding backhand", "the dark itself"]
         case .giantRat:
             return ["its filthy teeth", "a savage bite", "its diseased claws", "a lunging gnaw"]
         case .kobold:
@@ -330,6 +419,18 @@ enum MonsterType: String, CaseIterable, Codable {
 
     var asciiArt: [String] {
         switch self {
+        case .boneMoth:
+            return ["   /\\ .. /\\", "  /  (oo)  \\", "  \\  /||\\  /", "   \\/ || \\/", "      ''"]
+        case .cinderHound:
+            return ["    /\\__/\\", "   ( >..< )", "   /  ##  \\", "  (  ####  )", "   ^^    ^^"]
+        case .ironWeaver:
+            return ["   __/\\__", "  <( oo )>", " /\\ |||| /\\", "/  \\____/  \\", "  ~  ~~  ~"]
+        case .drownedChoir:
+            return ["  o   o   o", " /|\\ /|\\ /|\\", "  ~~~~~~~~~", " ~~~~~~~~~~~", "  ~~~~~~~~~"]
+        case .hollowMonk:
+            return ["     ____", "    / -- \\", "   |  ..  |", "    \\____/", "    /|  |\\"]
+        case .gloamTitan:
+            return ["   ######", "  # O  O #", "  #  ##  #", " ##########", " ##      ##"]
         case .giantRat:
             return [
                 "      /\\  /\\",
@@ -574,6 +675,42 @@ enum MonsterType: String, CaseIterable, Codable {
     /// Animation frames for bestiary idle animations (eyes, tails, limbs)
     var asciiArtFrames: [[String]] {
         switch self {
+        case .boneMoth:
+            return [
+                ["   /\\ .. /\\", "  /  (oo)  \\", "  \\  /||\\  /", "   \\/ || \\/", "      ''"],
+                ["  _/\\ .. /\\_", " /   (oo)   \\", " \\   /||\\   /", "   \\/ || \\/", "      ''"],
+                ["   /\\ .. /\\", "  /  (--)  \\", "  \\  /||\\  /", "   \\/ || \\/", "      ''"],
+            ]
+        case .cinderHound:
+            return [
+                ["    /\\__/\\", "   ( >..< )", "   /  ##  \\", "  (  ####  )", "   ^^    ^^"],
+                ["    /\\__/\\", "   ( >oo< )", "   /  **  \\", "  (  ####  )", "   ^^    ^^"],
+                ["    /\\__/\\", "   ( >..< )", "   /  ##  \\", "  (  **##  )", "   ^^    ^^"],
+            ]
+        case .ironWeaver:
+            return [
+                ["   __/\\__", "  <( oo )>", " /\\ |||| /\\", "/  \\____/  \\", "  ~  ~~  ~"],
+                ["   __/\\__", "  <( -- )>", " /\\ |||| /\\", "/  \\____/  \\", "   ~ ~~ ~ "],
+                ["   __/\\__", "  <( oo )>", " /\\ ++++ /\\", "/  \\____/  \\", "  ~  ~~  ~"],
+            ]
+        case .drownedChoir:
+            return [
+                ["  o   o   o", " /|\\ /|\\ /|\\", "  ~~~~~~~~~", " ~~~~~~~~~~~", "  ~~~~~~~~~"],
+                ["  O   o   O", " /|\\ /|\\ /|\\", " ~~~~~~~~~~", "  ~~~~~~~~~", " ~~~~~~~~~~~"],
+                ["  o   O   o", " /|\\ /|\\ /|\\", "  ~~~~~~~~~", " ~~~~~~~~~~~", "  ~~~~~~~~~"],
+            ]
+        case .hollowMonk:
+            return [
+                ["     ____", "    / -- \\", "   |  ..  |", "    \\____/", "    /|  |\\"],
+                ["     ____", "    / -- \\", "   |  oo  |", "    \\____/", "   / |  | \\"],
+                ["     ____", "    / == \\", "   |  ..  |", "    \\____/", "    /|  |\\"],
+            ]
+        case .gloamTitan:
+            return [
+                ["   ######", "  # O  O #", "  #  ##  #", " ##########", " ##      ##"],
+                ["   ######", "  # @  @ #", "  #  ##  #", "###########", "###      ##"],
+                ["   ######", "  # O  O #", "  #  **  #", " ##########", " ##      ##"],
+            ]
         case .giantRat:
             return [
                 ["      /\\  /\\", "     (  ..  )", "      )    (", "     /||||||\\", "    ~ ~~~~~  ~"],
@@ -760,19 +897,27 @@ enum MonsterType: String, CaseIterable, Codable {
     static func forLevel(_ level: Int) -> [MonsterType] {
         switch level {
         case 1:
-            return [.giantRat, .kobold, .stirge, .giantBat, .crawlingClaw]
+            return [.giantRat, .kobold, .stirge, .giantBat, .crawlingClaw, .boneMoth]
         case 2:
             return [.goblin, .skeleton, .zombie, .wolf, .kobold]
         case 3:
-            return [.goblin, .skeleton, .orc, .hobgoblin, .gnoll, .rustMonster]
+            return [.goblin, .skeleton, .orc, .hobgoblin, .gnoll, .rustMonster, .cinderHound]
         case 4:
             return [.orc, .hobgoblin, .bugbear, .giantSpider, .gnoll, .gargoyle, .mimic]
         case 5:
             return [.bugbear, .giantSpider, .ogre, .gelatinousCube, .minotaur, .basilisk]
         case 6:
-            return [.ogre, .owlbear, .troll, .displacerBeast, .wraith, .demogorgon, .mindFlayer]
+            return [.ogre, .owlbear, .troll, .displacerBeast, .wraith, .demogorgon, .mindFlayer, .ironWeaver]
+        case 7:
+            return [.troll, .demogorgon, .mindFlayer, .wraith, .hollowMonk, .drownedChoir]
+        case 8:
+            return [.demogorgon, .mindFlayer, .beholder, .hollowMonk, .drownedChoir, .youngDragon]
+        case 9:
+            return [.beholder, .youngDragon, .drownedChoir, .gloamTitan, .hollowMonk]
+        case 10:
+            return [.beholder, .youngDragon, .gloamTitan, .drownedChoir, .vecna]
         default:
-            return [.troll, .demogorgon, .mindFlayer, .beholder, .youngDragon, .wraith]
+            return [.youngDragon, .gloamTitan, .vecna, .beholder, .hollowMonk]
         }
     }
 
@@ -785,6 +930,10 @@ enum MonsterType: String, CaseIterable, Codable {
         case 5: return .demogorgon
         case 6: return .mindFlayer
         case 7: return .beholder
+        case 8: return .hollowMonk
+        case 9: return .drownedChoir
+        case 10: return .gloamTitan
+        case 11: return .youngDragon
         default: return .vecna
         }
     }
@@ -794,7 +943,7 @@ enum MonsterType: String, CaseIterable, Codable {
         let roll = Dice.d20()
         switch self {
         // Starter monsters — rare small drops
-        case .giantRat, .stirge, .giantBat, .crawlingClaw:
+        case .giantRat, .stirge, .giantBat, .crawlingClaw, .boneMoth:
             if roll >= 18 { return TreasureItem(name: "Dagger", value: 2, type: .item) }
             if roll >= 15 { return TreasureItem(name: "\(Dice.d6() * 2) Gold Pieces", value: Dice.d6() * 2, type: .gold) }
             // Poisonous creatures sometimes drop antidotes (from their own resistance)
@@ -812,20 +961,20 @@ enum MonsterType: String, CaseIterable, Codable {
             if roll >= 10 { return TreasureItem(name: "\(Dice.rollSum(2, d: 6) * 5) Gold Pieces", value: Dice.rollSum(2, d: 6) * 5, type: .gold) }
             return nil
         // Mid — better drops
-        case .orc, .hobgoblin, .gnoll, .rustMonster:
+        case .orc, .hobgoblin, .gnoll, .rustMonster, .cinderHound:
             if roll >= 16 { return TreasureItem(name: "Potion of Healing", value: 50, type: .potion) }
             if roll >= 13 { return TreasureItem(name: "Longsword", value: 15, type: .item) }
             if roll >= 8 { return TreasureItem(name: "\(Dice.rollSum(3, d: 6) * 5) Gold Pieces", value: Dice.rollSum(3, d: 6) * 5, type: .gold) }
             return nil
         // High — good drops
-        case .bugbear, .giantSpider, .ogre, .gargoyle, .mimic, .gelatinousCube:
+        case .bugbear, .giantSpider, .ogre, .gargoyle, .mimic, .gelatinousCube, .ironWeaver:
             if roll >= 15 { return TreasureItem(name: "Potion of Greater Healing", value: 150, type: .potion) }
             if canPoison && roll >= 13 { return TreasureItem(name: "Antidote", value: 30, type: .potion) }
             if roll >= 12 { return TreasureItem(name: "Scale Mail", value: 50, type: .item) }
             if roll >= 7 { return TreasureItem(name: "\(Dice.rollSum(4, d: 6) * 10) Gold Pieces", value: Dice.rollSum(4, d: 6) * 10, type: .gold) }
             return nil
         // Boss — guaranteed drops
-        case .owlbear, .troll, .minotaur, .basilisk, .displacerBeast, .wraith, .demogorgon, .mindFlayer, .beholder, .youngDragon, .vecna:
+        case .owlbear, .troll, .minotaur, .basilisk, .displacerBeast, .wraith, .demogorgon, .mindFlayer, .beholder, .youngDragon, .vecna, .drownedChoir, .hollowMonk, .gloamTitan:
             if roll >= 10 { return TreasureItem(name: "Potion of Greater Healing", value: 150, type: .potion) }
             return TreasureItem(name: "\(Dice.rollSum(5, d: 6) * 10) Gold Pieces", value: Dice.rollSum(5, d: 6) * 10, type: .gold)
         }
@@ -853,6 +1002,15 @@ enum EncounterDifficulty: String, Codable {
 struct Encounter: Codable {
     var monsters: [Monster]
     let difficulty: EncounterDifficulty
+
+    /// Every encounter is built through here, whoever assembled the monsters,
+    /// so this is the one place that can promise no two of them share a name.
+    /// See Monster.disambiguate.
+    init(monsters: [Monster], difficulty: EncounterDifficulty, bossDifficulty: BossDifficulty? = nil) {
+        self.monsters = Monster.disambiguate(monsters)
+        self.difficulty = difficulty
+        self.bossDifficulty = bossDifficulty
+    }
 
     /// Adjust monster ACs so the party hits roughly 65% of the time (medium).
     /// Easy = 75%, Medium = 65%, Hard = 55%, Deadly = 50%.
@@ -891,13 +1049,20 @@ struct Encounter: Codable {
 
         var monsters: [Monster] = []
         var currentXP = 0
+        // How many of each kind have actually made it into the encounter —
+        // counted on append, not on roll, so a monster rejected for XP does
+        // not burn an epithet and leave a gap in the naming.
+        var typeSeen: [MonsterType: Int] = [:]
 
         while currentXP < targetXP {
             let monsterType = possibleMonsters.randomElement()!
-            let monster = Monster.create(monsterType)
+            let seen = typeSeen[monsterType, default: 0]
+            let monster = Monster.create(monsterType,
+                                         customName: Monster.distinctName(monsterType, occurrence: seen))
 
             if currentXP + monster.experiencePoints <= targetXP * Int(1.5) {
                 monsters.append(monster)
+                typeSeen[monsterType] = seen + 1
                 currentXP += monster.experiencePoints
             } else {
                 break
@@ -1097,6 +1262,29 @@ final class Combat: ObservableObject {
     /// guards against awarding it twice when a multiplayer catch-up resyncs
     /// state for a fight that was already resolved on another device.
     @Published var lootAwarded: Bool = false
+
+    /// Whoever acts after the one acting now: the next still standing,
+    /// wrapping round the order. Read by BOTH the text status block and the
+    /// arena animation, so the two can never disagree about who is up next —
+    /// this rule used to live inline in displayStatus alone.
+    var upNextName: String? {
+        guard turnOrder.count > 1, currentTurnIndex >= 0, currentTurnIndex < turnOrder.count else { return nil }
+        var i = (currentTurnIndex + 1) % turnOrder.count
+        var looked = 0
+        while looked < turnOrder.count {
+            let entry = turnOrder[i]
+            if isCombatantAlive(entry) { return entry.name }
+            i = (i + 1) % turnOrder.count
+            looked += 1
+        }
+        return nil
+    }
+
+    /// Everyone who has already had their go this round.
+    var actedNames: Set<String> {
+        guard currentTurnIndex > 0, currentTurnIndex <= turnOrder.count else { return [] }
+        return Set(turnOrder[0..<currentTurnIndex].map { $0.name })
+    }
 
     var currentCombatant: TurnOrderEntry? {
         guard currentTurnIndex >= 0 && currentTurnIndex < turnOrder.count else { return nil }
@@ -1677,7 +1865,26 @@ final class Combat: ObservableObject {
     func displayStatus(localCharacterIds: Set<UUID> = []) -> [String] {
         var lines: [String] = []
 
-        lines.append("───── COMBAT ─────")
+        // Who is acting, who has been, who is still to come. Worked out from
+        // currentTurnIndex — everyone before it in turnOrder has had their go
+        // this round, everyone after is waiting — so there is no second copy
+        // of the turn order to keep in step, and nothing new to save.
+        func turnIndexOfPlayer(_ id: UUID) -> Int? {
+            turnOrder.firstIndex { $0.isPlayer && $0.id == id }
+        }
+        func turnIndexOfMonster(_ name: String) -> Int? {
+            turnOrder.firstIndex { !$0.isPlayer && $0.name == name }
+        }
+        func mark(_ idx: Int?) -> String {
+            guard let idx = idx else { return "  " }      // not in the order at all
+            if idx == currentTurnIndex { return "▶ " }    // acting now
+            return idx < currentTurnIndex ? "✓ " : "· "   // been / to come
+        }
+        let nowName = currentCombatant?.name
+        // NOTE: the header must stay ONE line and the blank after it ONE line —
+        // printCombatStatus finds the party rows at lineIdx - 2 to underline
+        // your own characters, so inserting anything above them misaligns it.
+        lines.append(nowName.map { "───── COMBAT · \($0)'s turn ─────" } ?? "───── COMBAT ─────")
         lines.append("")
 
         let maxPartyName = party.map { $0.name.prefix(16).count }.max() ?? 8
@@ -1688,13 +1895,13 @@ final class Combat: ObservableObject {
             } else if !char.isConscious {
                 s = "✗"
             } else {
-                s = char.isComputerControlled ? "◆" : "●"  // ◆ = AI, ● = human
+                s = char.isComputerControlled ? "R" : "●"  // R = robot, ● = human
             }
             let n = String(char.name.prefix(16)).padding(toLength: maxPartyName, withPad: " ", startingAt: 0)
             let statusTag = char.hasFledCombat ? " [fled]" : (char.isPlayingDead ? " [playing dead]" : (char.isMindControlled ? " [mind-controlled]" : "")) + (char.sluggishAttacks > 0 ? " [sluggish]" : "")
             let hp = String("\(char.currentHP)/\(char.maxHP)").padding(toLength: 7, withPad: " ", startingAt: 0)
             let youTag = localCharacterIds.contains(char.id) ? " ◀" : ""
-            lines.append(" \(s) \(n)  \(hp)\(statusTag)\(youTag)")
+            lines.append("\(mark(turnIndexOfPlayer(char.id)))\(s) \(n)  \(hp)\(statusTag)\(youTag)")
         }
 
         lines.append("")
@@ -1704,10 +1911,17 @@ final class Combat: ObservableObject {
             let s = monster.isAlive ? "●" : "✗"
             let n = String(monsterNames[i].prefix(16)).padding(toLength: maxMonName, withPad: " ", startingAt: 0)
             let hp = String("\(monster.currentHP)/\(monster.maxHP)").padding(toLength: 7, withPad: " ", startingAt: 0)
-            lines.append(" \(s) \(n)  \(hp)")
+            lines.append("\(mark(turnIndexOfMonster(monster.name)))\(s) \(n)  \(hp)")
         }
 
         lines.append("──────────────────")
+        // Said plainly as well as marked, because a row of symbols is only
+        // obvious once you already know what it means.
+        if let now = nowName {
+            let upNext = upNextName
+            lines.append(" ▶ now: \(now)" + (upNext.map { "   · next: \($0)" } ?? ""))
+            lines.append(" ✓ = had their turn   · = still to come")
+        }
 
         return lines
     }
@@ -1794,6 +2008,9 @@ struct ArenaFighter {
     let maxHP: Int
     let isParty: Bool
     let down: Bool
+    /// Played by the machine — drawn with an R for a head so you can tell at a
+    /// glance which of your side you are not steering.
+    var isRobot: Bool = false
     /// Each character's own colour — sprite, name and roster entry.
     var color: TerminalColor = .brightGreen
 }
@@ -1804,6 +2021,11 @@ struct ArenaScene {
     var party: [ArenaFighter] = []
     var enemies: [ArenaFighter] = []
     var turnName: String?
+    /// Who goes after the one acting now, and who has already been. The
+    /// renderer marks the roster with these — the same ▶ / ✓ / · the text
+    /// status block uses, so the panel and the text never contradict.
+    var nextName: String? = nil
+    var actedNames: Set<String> = []
     var move: ArenaMove?
 }
 
@@ -1850,7 +2072,7 @@ enum ArenaRenderer {
         func short(_ n: String) -> String { Self.shortName(n) }
         let everyone = scene.party + scene.enemies
         let nameW = min(8, max(3, everyone.map { short($0.name).count }.max() ?? 3))
-        let entryW = nameW + barW + 3            // name, [bar], a space
+        let entryW = nameW + barW + 4            // mark, name, [bar], a space
         let perRow = max(1, (W + 1) / entryW)
         let allyRows = (scene.party.count + perRow - 1) / perRow
         let foeRows = (scene.enemies.count + perRow - 1) / perRow
@@ -1870,12 +2092,21 @@ enum ArenaRenderer {
                 let frac = f.maxHP > 0 ? Double(max(0, f.hp)) / Double(f.maxHP) : 0
                 let filled = f.down ? 0 : min(barW, max(1, Int((frac * Double(barW)).rounded(.up))))
                 let barColor: TerminalColor = f.down ? .gray : (frac > 0.5 ? .green : (frac > 0.25 ? .yellow : .red))
+                // The same marks as the written status: acting now, already
+                // been, still to come. Somebody down is left unmarked — their
+                // turn is not the question any more.
+                let mark: (String, TerminalColor)
+                if f.down { mark = (" ", .gray) }
+                else if f.name == scene.turnName { mark = ("▶", .cyan) }
+                else if scene.actedNames.contains(f.name) { mark = ("✓", .dimGreen) }
+                else { mark = ("·", .dimGreen) }
+                put(mark.0, x, y, mark.1, opaque: true)
                 let name = String(short(f.name).prefix(nameW)).padding(toLength: nameW, withPad: " ", startingAt: 0)
-                put(name, x, y, f.down ? .gray : f.color, opaque: true)
-                put("[", x + nameW, y, .dimGreen, opaque: true)
-                put(String(repeating: "#", count: filled), x + nameW + 1, y, barColor, opaque: true)
-                put(String(repeating: "-", count: barW - filled), x + nameW + 1 + filled, y, .dimGreen, opaque: true)
-                put("]", x + nameW + 1 + barW, y, .dimGreen, opaque: true)
+                put(name, x + 1, y, f.down ? .gray : f.color, opaque: true)
+                put("[", x + 1 + nameW, y, .dimGreen, opaque: true)
+                put(String(repeating: "#", count: filled), x + 2 + nameW, y, barColor, opaque: true)
+                put(String(repeating: "-", count: barW - filled), x + 2 + nameW + filled, y, .dimGreen, opaque: true)
+                put("]", x + 2 + nameW + barW, y, .dimGreen, opaque: true)
             }
         }
         drawRoster(scene.party, firstRow: groundY + 1)
@@ -1994,7 +2225,7 @@ enum ArenaRenderer {
                 let step = reduced ? 0 : Int(t * 2 + seed) % 2
                 let said = bubble(isParty: isParty, index: i, count: list.count)
                 let initial = String(f.name.prefix(1)).lowercased()
-                let head = isParty ? " o " : "{\(initial)}"
+                let head = isParty ? (f.isRobot ? "(R)" : " o ") : "{\(initial)}"
                 let body = isParty ? (said != nil ? "\\|/" : (step == 0 ? "/|\\" : "/|)")) : (step == 0 ? "/^\\" : "/^|")
                 put(head, cx - 1, bandBottom - 1, f.color)
                 put(body, cx - 1, bandBottom, f.color)
@@ -2014,11 +2245,18 @@ enum ArenaRenderer {
             if let m = move, elapsed < m.duration + 1.6 {
                 center("End of \(m.attackerName)'s turn", 0, .dimGreen)
             } else if let turn = scene.turnName {
-                center("\(turn)'s turn", 0, .cyan)
+                let next = scene.nextName.map { " · next: \(Self.shortName($0))" } ?? ""
+                center("▶ \(Self.shortName(turn))'s turn\(next)", 0, .cyan)
             }
             return g
         }
 
+        // NOTE: the blow is already captioned further down ("the matchup, then
+        // what happened" — matchup, HIT/CRIT with damage, fumble, miss,
+        // defeated). An attempt to add a second caption here was removed: it
+        // said the same thing twice and collided with that one. What the
+        // animation genuinely lacked was turn order, which the roster now
+        // marks, and "who is next", which the between-blows caption now names.
         let dir = m.attackerIsParty ? 1 : -1
         let melee = m.style == .melee || m.style == .swoop
         // Attacker movement: lean back, lunge (melee) or hold (ranged), return.

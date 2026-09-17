@@ -61,6 +61,14 @@ extension GameEngine {
         default:
             break
         }
+        // Somewhere with a barrel and company invites a contest. Once only,
+        // and only where somebody would actually be drinking.
+        if [RoomType.shop, .chamber, .armory].contains(room.roomType), room.merchant != nil || room.npc != nil,
+           (room.id * 5 + dungeon.level) % 3 == 0 {
+            all.append(RoomFeature(key: "contest", button: "Drinking Contest",
+                                   hint: "There is a barrel, a bench, and somebody with time on their hands."))
+        }
+
         let plants: [RoomType] = [.chamber, .corridor, .empty, .entrance, .prison]
         if plants.contains(room.roomType) && (room.id * 7 + dungeon.level) % 4 == 0 {
             let hints = ["Pale mushrooms crowd the damp at the foot of one wall.",
@@ -99,7 +107,14 @@ extension GameEngine {
         clearTerminal()
         printTitle(feature.button)
         print("")
-        let actor = party.filter { $0.isConscious }.randomElement() ?? party.first
+        if let who = actingOverrideCharacter {
+            printWrapped("\(shortName(for: who)) steps up — you set them to act.", indent: 2, color: .dimGreen)
+            print("")
+        }
+        // Acting As decides who, when it's set — otherwise whoever is up for
+        // it. Either way the telling names them, so "someone searched" is
+        // never left hanging.
+        let actor = actingOverrideCharacter ?? party.filter { $0.isConscious }.randomElement() ?? party.first
         let name = actor.map { shortName(for: $0) } ?? "You"
         let lines: [(String, TerminalColor)]
         switch feature.key {
@@ -110,17 +125,99 @@ extension GameEngine {
         case "sign": lines = [(signText(), .cyan)]
         case "walls": lines = wallsOutcome(room)
         case "forage": lines = forageOutcome(room)
+        case "contest": lines = drinkingContestOutcome(room, name: name, actor: actor)
         default: lines = []
         }
         for (text, color) in lines {
             printWrapped(text, indent: 2, color: color)
             print("")
         }
+        // A rune was among those lines — offer the notes it went into, after
+        // it has been read rather than before.
+        if lines.contains(where: { $0.0.hasPrefix("ᚱ ") }) {
+            printLink("See your quest notes", to: "questNotes", indent: 2)
+            print("")
+        }
+        if let after = aftermath(of: feature, room: room, actor: name) {
+            printWrapped(after, indent: 2, color: .dimGreen)
+            print("")
+        }
         logEvent("\(feature.button) in \(room.name)", category: "EXPLORE")
+        // A book is worth opening, not just identifying.
+        if feature.key == "book" {
+            showMenu(["Read It", "Put It Back"])
+            closeHandler = { [weak self] in self?.afterFeature(room, onBack: onBack) }
+            menuHandler = { [weak self] choice in
+                guard let self = self else { return }
+                if choice == 1 { self.readTheBook(page: 0, room: room, onBack: onBack) }
+                else { self.afterFeature(room, onBack: onBack) }
+            }
+            return
+        }
         waitForContinueWithTimeout { [weak self] in
             guard let self = self else { return }
-            if self.roomFeatures(room).isEmpty { onBack() } else { self.showRoomFeatures(room, onBack: onBack) }
+            self.afterFeature(room, onBack: onBack)
         }
+    }
+
+    /// Back to the other things in this room, or out if there are none left.
+    private func afterFeature(_ room: Room, onBack: @escaping () -> Void) {
+        if roomFeatures(room).isEmpty { onBack() } else { showRoomFeatures(room, onBack: onBack) }
+    }
+
+    /// One short tale from the shelf, a page at a time, with a picture and a
+    /// moral — the sort of thing somebody down here wrote to pass the dark.
+    private func readTheBook(page: Int, room: Room, onBack: @escaping () -> Void) {
+        let tale = Self.shelfTales[abs(room.id &+ (dungeon?.level ?? 1) &* 7) % Self.shelfTales.count]
+        guard page < tale.pages.count else {
+            clearTerminal(); printTitle(tale.title); print("")
+            printWrapped(tale.moral, indent: 2, color: .yellow); print("")
+            waitForContinueWithTimeout { [weak self] in self?.afterFeature(room, onBack: onBack) }
+            return
+        }
+        clearTerminal()
+        printTitle(tale.title)
+        print("")
+        let p = tale.pages[page]
+        for line in p.art { print("    " + line, color: .cyan) }
+        print("")
+        printWrapped(p.text, indent: 2, color: .green)
+        print("")
+        print("  Page \(page + 1) of \(tale.pages.count)", color: .dimGreen)
+        showMenu([page + 1 < tale.pages.count ? "Turn the Page" : "The End", "Close the Book"])
+        closeHandler = { [weak self] in self?.afterFeature(room, onBack: onBack) }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 { self.readTheBook(page: page + 1, room: room, onBack: onBack) }
+            else { self.afterFeature(room, onBack: onBack) }
+        }
+    }
+
+    /// A contest of constitution rather than wits. Win it and the room
+    /// warms to you; lose it and the floor does something unhelpful.
+    private func drinkingContestOutcome(_ room: Room, name: String, actor: Character?) -> [(String, TerminalColor)] {
+        let opponent = room.merchant?.name ?? room.npc?.displayName ?? "a local"
+        let con = actor?.abilityScores.modifier(for: .constitution) ?? 0
+        let mine = Dice.d20() + con
+        let theirs = Dice.d20() + Int.random(in: 0...3)
+        var out: [(String, TerminalColor)] = [
+            ("\(name) and \(opponent) sit down either side of the barrel. Somebody counts them in.", .cyan)
+        ]
+        if mine > theirs {
+            out.append(("\(name) is still upright, and talking, and \(opponent) is doing neither. The bench applauds.", .brightGreen))
+            out.append(("Word of it gets about. People are friendlier down here for a while.", .dimGreen))
+            actor.map { $0.gold += 5 + Dice.d6() }
+            out.append(("Somebody settles a bet and presses the winnings into \(name)'s hand.", .yellow))
+        } else if mine == theirs {
+            out.append(("Both of them stop at the same moment, look at each other, and agree — with some effort — to call it even.", .yellow))
+        } else {
+            out.append(("\(opponent) sets their cup down first and quite gently. \(name) does not so much sit as arrive.", .yellow))
+            if let a = actor {
+                a.sluggishAttacks = max(a.sluggishAttacks, 3)
+                out.append(("The room tilts pleasantly. \(name) will be swinging wide for a bit — the juice sloshes.", .dimGreen))
+            }
+        }
+        return out
     }
 
     private func forgeOutcome(_ name: String) -> [(String, TerminalColor)] {
@@ -142,6 +239,57 @@ extension GameEngine {
         }
         return out
     }
+
+    /// A consequence, so looking around carries the story on a little
+    /// instead of stopping dead at the description.
+    private func aftermath(of feature: RoomFeature, room: Room, actor: String) -> String? {
+        guard Int.random(in: 1...100) <= 55 else { return nil }
+        switch feature.key {
+        case "forge":
+            return ["The forge ticks as it cools, and goes on ticking after you have stopped listening.",
+                    "\(actor) pockets a nail. No reason. It just seemed a shame to leave it."].randomElement()
+        case "book":
+            return ["\(actor) keeps a finger in the page for a while, then gives up and lets it close.",
+                    "Dust from the shelf hangs in the torchlight long after the book is shut."].randomElement()
+        case "water", "walls", "scratch", "sign":
+            return ["Somebody, a long time ago, stood exactly where \(actor) is standing and did exactly this.",
+                    "The party goes quiet for a moment, then pretends it didn't.",
+                    "\(actor) looks back at it twice on the way out."].randomElement()
+        case "forage":
+            return ["\(actor) wipes their hands on their coat and looks pleased with themselves.",
+                    "Whatever was growing here will grow back. Probably."].randomElement()
+        default:
+            return nil
+        }
+    }
+
+    /// Tales somebody wrote down here, to pass the dark.
+    private static let shelfTales: [(title: String, pages: [(art: [String], text: String)], moral: String)] = [
+        ("The Lamp That Would Not Be Carried",
+         [(["   _n_", "  |   |", "  | * |", "  |___|"],
+           "A lamp was made for a miner who went very deep. It burned well, and he loved it, and he would not put it down even to eat."),
+          (["   _n_", "  |   |", "  |   |", "  |___|"],
+           "So he did not eat. And the lamp, which had no opinion on the matter, burned exactly as long as lamps do, and then stopped."),
+          (["    .", "   . .", "  .   ."],
+           "They found him by the cold lamp, a hand's reach from a shaft where daylight came in.")],
+         "The moral: a light you will not set down is a light you cannot see past."),
+        ("Three Knocks",
+         [(["  +------+", "  |      |", "  |  []  |", "  +------+"],
+           "There was a door in a wall in a room nobody used, and once a year something on the other side knocked three times."),
+          (["  +------+", "  |  ??  |", "  |  []  |", "  +------+"],
+           "For ninety years the household answered the knock politely and did not open the door, and nothing bad happened at all."),
+          (["  +------+", "  |      |", "  |      |", "  +------+"],
+           "In the ninety-first year a clever young man opened it, to settle the question. The question is still settled.")],
+         "The moral: some questions are load-bearing."),
+        ("The Cook and the Crown",
+         [(["   ___", "  (   )", "   | |", "  _|_|_"],
+           "A king asked his cook what the kingdom most needed. The cook said: onions, and a bigger pot."),
+          (["   ___", "  ( ! )", "   | |", "  _|_|_"],
+           "The king had the cook thrown out, and took advice instead from people who spoke of destiny and of war."),
+          (["   ...", "  (   )", "   | |", "  _|_|_"],
+           "The war came. The kingdom was hungry. Somebody, in the end, went and found the cook.")],
+         "The moral: the kitchen keeps you alive rather longer than the throne does."),
+    ]
 
     private func bookOutcome(_ name: String) -> [(String, TerminalColor)] {
         let books = [
@@ -202,13 +350,36 @@ extension GameEngine {
         if let rune = revealRune(chance: room.roomType == .shrine ? 100 : 45, how: "Under the grime, a line of old runes. You copy them down:") {
             return rune
         }
+        // A mural is worth reading, not merely noticing.
+        if Int.random(in: 1...100) <= 40 {
+            let m = Self.murals.randomElement()!
+            return [("A mural, faded and flaking, but most of it still legible.", .dimGreen),
+                    (m.scene, .green),
+                    (m.writing, .yellow)]
+        }
         return [([
             "Claw marks, deep and parallel. Something big came through here, in a hurry.",
             "Old graffiti: 'BRAM WUZ ERE'. Bram, it seems, was everywhere.",
-            "A mural of a feast, mostly flaked away. Only the pies are left.",
             "Water stains in the shape of a face. Probably.",
         ].randomElement()!, .dimGreen)]
     }
+
+    /// What the murals show, and what is written under them — sometimes in
+    /// a hand nobody here can read any more.
+    private static let murals: [(scene: String, writing: String)] = [
+        ("A line of figures carry something long and wrapped between them, down a stair with no bottom drawn in.",
+         "Underneath, in a careful hand: \"WE TOOK IT DOWN. WE DID NOT COME BACK UP.\""),
+        ("A feast. Every diner faces away from the table, and the table is laid for one more than there are chairs.",
+         "Underneath, runes nobody has read in an age: \u{16A0}\u{16B1}\u{16C1} \u{16D2}\u{16A6}\u{16B7} \u{16DE}\u{16A2}\u{16B1}"),
+        ("A great door, painted shut with a red seal, and a small figure standing with its palm flat against it.",
+         "Underneath: \"IT KNOCKS POLITELY. THAT IS THE WORST OF IT.\""),
+        ("Seven rings, one inside the next, with something small and bright kept at the centre.",
+         "Underneath, scratched over the paint much later: \"COUNT THEM AGAIN.\""),
+        ("Two armies, one facing the other, and between them a single figure with both arms raised.",
+         "Underneath, runes worn almost flat: \u{16BE}\u{16A2}\u{16D6} \u{16C1}\u{16A0}\u{16DA}\u{16B1}"),
+        ("A cook, a crown and a hound sharing one long bench, all three of them laughing.",
+         "Underneath, in a rounder hand than the rest: \"THE KITCHEN KEPT US ALIVE, NOT THE THRONE.\""),
+    ]
 
     /// The quest's next rune, if one can be found at this depth (a chance in
     /// 100) — kept under the main quest in Party Status, and told at the end.
@@ -222,8 +393,8 @@ extension GameEngine {
         logEvent("Read a rune (\(next + 1) of \(verses.count)): \(verses[next])", category: "QUEST")
         return [(how, .cyan), ("ᚱ " + verses[next], .yellow),
                 (next + 1 < verses.count
-                    ? "(Rune \(next + 1) of \(verses.count) — noted under your main quest. There are more, deeper down.)"
-                    : "(The last of the runes. Read together, they tell the whole of it — and how it has to end.)", .dimGreen)]
+                    ? "(Rune \(next + 1) of \(verses.count). Copied into your quest notes — Party Status, under the quest — where you can read the ones you have whenever you like. There are more, deeper down.)"
+                    : "(The last of the runes. All \(verses.count) are in your quest notes; read together they tell the whole of it, and how it has to end.)", .dimGreen)]
     }
 
     /// Survival or Nature, whoever's best: something to eat — or a stomach ache.

@@ -670,6 +670,15 @@ class Dungeon: ObservableObject, Codable {
     /// The dungeon runs downward: Level 1 is the ground floor (0) and each
     /// level below is one floor further down, to floor -6 (Level 7). "Floor"
     /// always means depth — a level's own second storey is a gallery.
+    /// What the player is told. The entrance is on the ground floor, which is
+    /// floor 0; each level below is one further down. `level` itself is left
+    /// alone — it is saved, and it decides which monsters appear, the XP
+    /// thresholds and isFinalLevel, so renumbering it would quietly change the
+    /// difficulty of every adventure already under way.
+    static func floorName(_ level: Int) -> String {
+        level <= 1 ? "Floor 0" : "Floor -\(level - 1)"
+    }
+
     static func depthLabel(_ level: Int) -> String {
         level <= 1 ? "0 (ground)" : "-\(level - 1)"
     }
@@ -708,12 +717,16 @@ class Dungeon: ObservableObject, Codable {
 
     enum CodingKeys: String, CodingKey {
         case name, level, rooms, currentRoomId, previousRoomId, nextRoomId, currentFloor, emergencyDropUsed, hasMultiGymPass
-        case archivedLevels, hasCartography
+        case archivedLevels, hasCartography, levelCount, startDifficulty
     }
 
-    init(name: String, level: Int) {
+    init(name: String, level: Int, levelCount: Int? = nil, startDifficulty: Int? = nil) {
         self.name = name
         self.level = level
+        self.levelCount = levelCount ?? Dungeon.finalLevel
+        // The difficulty chosen at the start — `level` is the floor number too,
+        // so it cannot be asked about this later.
+        self.startDifficulty = startDifficulty ?? level
         self.rooms = [:]
         self.currentRoomId = 0
         self.previousRoomId = nil
@@ -741,6 +754,12 @@ class Dungeon: ObservableObject, Codable {
         hasMultiGymPass = (try? container.decodeIfPresent(Bool.self, forKey: .hasMultiGymPass)) ?? false
         archivedLevels = (try? container.decodeIfPresent([AtlasLevel].self, forKey: .archivedLevels)) ?? []
         hasCartography = (try? container.decodeIfPresent(Bool.self, forKey: .hasCartography)) ?? false
+        // Saves made before the depth was configurable were all seven deep.
+        levelCount = (try? container.decodeIfPresent(Int.self, forKey: .levelCount)) ?? Dungeon.defaultFinalLevel
+        // This was in CodingKeys but in neither coder, and Dungeon writes its
+        // own — so it silently went back to medium every time a game was saved
+        // and continued, taking the easy-difficulty fight density with it.
+        startDifficulty = (try? container.decodeIfPresent(Int.self, forKey: .startDifficulty)) ?? 2
     }
 
     func encode(to encoder: Encoder) throws {
@@ -757,6 +776,8 @@ class Dungeon: ObservableObject, Codable {
         try container.encode(hasMultiGymPass, forKey: .hasMultiGymPass)
         try container.encode(archivedLevels, forKey: .archivedLevels)
         try container.encode(hasCartography, forKey: .hasCartography)
+        try container.encode(levelCount, forKey: .levelCount)
+        try container.encode(startDifficulty, forKey: .startDifficulty)
     }
 
     /// Next room ID for dynamic expansion
@@ -771,7 +792,8 @@ class Dungeon: ObservableObject, Codable {
     private var encounterChance: Double {
         // Fewer fights than at first (play-testers found it repetitive) — more
         // room for exploring, and for the things rooms have to do.
-        level <= 1 ? 0.22 : min(0.34, 0.22 + Double(level - 2) * 0.04)
+        let base = level <= 1 ? 0.22 : min(0.34, 0.22 + Double(level - 2) * 0.04)
+        return base * encounterDensity
     }
 
     private func generateDungeon() {
@@ -1302,7 +1324,9 @@ class Dungeon: ObservableObject, Codable {
     /// Teleport pads at a roughly constant density: about one pair for every
     /// 7-8 rooms — fewer on a small map, more on a big one.
     static func teleportPairsWanted(roomCount: Int) -> Int {
-        max(1, Int((Double(roomCount) / 7.5).rounded()))
+        // One pair per fourteen rooms: enough to be worth finding, few
+        // enough that the big map isn't peppered with them.
+        max(1, Int((Double(roomCount) / 14.0).rounded()))
     }
 
     /// Keeps a map near that density: tops up older maps that had one pad or
@@ -1334,8 +1358,73 @@ class Dungeon: ObservableObject, Codable {
 
     /// The bottom of the world: this level's guardian is the villain from
     /// the opening tale, and beating it ends the adventure.
-    static let finalLevel = 7
-    var isFinalLevel: Bool { level >= Dungeon.finalLevel }
+    static let defaultFinalLevel = 7
+    static let minFinalLevel = 1
+    static let maxFinalLevel = 12
+    /// How deep a NEW dungeon goes — the player's setting, clamped. Stays
+    /// deterministic: it is read all over as a display fallback for when there
+    /// is no dungeon yet, so it must never be the random one. When the setting
+    /// is Auto this is only the stand-in; the real depth comes from
+    /// autoLevelCount by way of newAdventure.
+    static var finalLevel: Int {
+        let v = UserDefaults.standard.integer(forKey: "dungeonLevelCount")
+        return (minFinalLevel...maxFinalLevel).contains(v) ? v : defaultFinalLevel
+    }
+
+    /// Whether depth is left to the difficulty. Anything outside the valid
+    /// range means Auto — including 0, which is what UserDefaults hands back
+    /// when nothing was ever stored, so Auto is the default for everybody who
+    /// has not chosen a depth, and no migration is needed for those who have.
+    static var isAutoDepth: Bool {
+        !(minFinalLevel...maxFinalLevel).contains(UserDefaults.standard.integer(forKey: "dungeonLevelCount"))
+    }
+
+    /// How deep an adventure at this difficulty should go, with a bit of
+    /// randomness so two easy games are not the same shape.
+    ///
+    /// Brutal deliberately gets the SAME range as hard. Past hard the request
+    /// was for harder bosses and harder fighting, not a longer climb — that
+    /// part is already carried by difficultyScale, which parseDifficulty raises
+    /// above 3, and by encounterDensity below.
+    static func autoLevelCount(for difficulty: Int) -> Int {
+        let range: ClosedRange<Int>
+        switch difficulty {
+        case ...1: range = 1...2      // easy: a single floor, sometimes two
+        case 2:    range = 4...6      // medium: about five
+        default:   range = 6...8      // hard and beyond: about seven
+        }
+        return min(maxFinalLevel, max(minFinalLevel, Int.random(in: range)))
+    }
+
+    /// A dungeon for a brand-new adventure: depth from the difficulty when the
+    /// setting is Auto, from the setting when it is not, and the difficulty
+    /// itself recorded so that descending cannot mistake the floor number for it.
+    static func newAdventure(name: String, difficulty: Int) -> Dungeon {
+        let depth = isAutoDepth ? autoLevelCount(for: difficulty) : finalLevel
+        return Dungeon(name: name, level: difficulty, levelCount: depth, startDifficulty: difficulty)
+    }
+    /// How deep THIS dungeon goes. Fixed when it was made and stored with
+    /// it, so changing the setting never reshapes a game already under way.
+    var levelCount: Int = Dungeon.defaultFinalLevel
+    var isFinalLevel: Bool { level >= levelCount }
+
+    /// The difficulty this dungeon was made at (1 easy, 2 medium, 3+ harder).
+    /// `level` cannot stand in for it: level is also the floor number, so it
+    /// rises as you descend and an easy game grew as many fights as a hard one
+    /// by floor three. Defaulted to 2 so dungeons saved before this decode as
+    /// medium and play exactly as they did.
+    var startDifficulty: Int = 2
+
+    /// How much of the usual fighting this difficulty wants. Easy means fewer
+    /// fights, not just weaker ones — there is more to a dungeon than combat.
+    var encounterDensity: Double {
+        switch startDifficulty {
+        case ...1: return 0.55
+        case 2: return 1.0
+        case 3: return 1.15
+        default: return 1.3
+        }
+    }
 
     /// What the villain is called in a fight: "Mother Sable, the Hag of the
     /// Deep" -> "Mother Sable"; "the Hollow King" -> "The Hollow King".
@@ -1368,7 +1457,7 @@ class Dungeon: ObservableObject, Codable {
     /// can also carry the party down to the next level. Never on a map
     /// too small to have pads to spare.
     var deepPadRoomId: Int? {
-        guard rooms.count >= 8, level < Dungeon.finalLevel else { return nil }
+        guard rooms.count >= 8, level < levelCount else { return nil }
         let seed = name.unicodeScalars.reduce(0) { $0 + Int($1.value) } + level * 7
         guard seed % 10 < 4 else { return nil }
         return rooms.values.filter { $0.teleportDestinationRoomId != nil && $0.roomType != .entrance && $0.roomType != .boss }

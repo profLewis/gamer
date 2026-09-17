@@ -236,6 +236,11 @@ class GameEngine: ObservableObject {
 
     /// Suppress auto-scroll-to-bottom (for help/card views where top content matters)
     @Published var suppressAutoScroll: Bool = true
+    /// Set for one screen update when something arrives that the reader must
+    /// see — a DM reply, chiefly. TerminalView's scrollToBottom normally
+    /// stays out of the way once you've scrolled up to reread; this overrides
+    /// that once, rather than removing the courtesy altogether.
+    @Published var forceScrollToNewest: Bool = false
     /// Lock scrolling entirely (for card views with swipe navigation)
     @Published var scrollLocked: Bool = false
     /// Bumped by every clearTerminal() call — i.e. every genuine navigation
@@ -435,7 +440,22 @@ class GameEngine: ObservableObject {
     /// The "Continue?" nudges a waiting screen shows — not story, so Read
     /// Aloud skips them (in a fight it gives a quick cheer instead).
     static let combatContinueTitles = ["Next blow?", "The fight goes on…", "Ready for the next move?", "Steel yourselves…", "What happens next?"]
-    static let continueTitles = ["ok?", "Continue?", "Ready?", "Onward?", "Go on?", "…"]
+    static let continueTitles = ["ok?", "Continue?", "Onward?", "…"]
+    /// How a waiting screen counts: one dot, then two, then three.
+    /// The quiet mark on a screen that is waiting for you. One glyph, shown
+    /// once — it used to be ".", then "..", then "…", underlined and growing,
+    /// which looked like a fault rather than a pause. The hourglass by the
+    /// input line and the glow on the waiting button carry the rest of the
+    /// message now. Still an array: the read-aloud filter skips anything in it.
+    static let continueDots = ["⋯"]
+    /// Only after a long silence — a nudge with a bit more in it.
+    static let continueProds = [
+        "Still there? The dungeon holds its breath…",
+        "The torchlight gutters while you think…",
+        "Something down the passage is getting impatient…",
+        "Take your time — but the dark is listening…",
+        "The party glances at you, waiting on your word…",
+    ]
     /// Shown while the opening tale is being written: the party is on its
     /// way to meet up, and the world is being made ready around them.
     static let travelLines = [
@@ -445,6 +465,20 @@ class GameEngine: ObservableObject {
         "Boots on the road — the meeting place isn't far now…",
         "Following the old track to the meeting place…",
         "Somewhere ahead, the others are already waiting…",
+    ]
+
+    /// Shown while ANOTHER petitioner's tale is being written. By then you
+    /// are already at the meeting place, so the travelling lines above would
+    /// be a plain untruth — somebody new is simply next in the queue.
+    static let petitionLines = [
+        "New petitioners shuffle in front of you…",
+        "Another delegation edges forward, caps in hand…",
+        "Somebody else clears their throat and steps up…",
+        "The next lot shuffle forward, hopeful…",
+        "A second group presses in, talking over each other…",
+        "Word has got round. Another village sends its askers…",
+        "Someone new is waved to the front, clutching a letter…",
+        "The queue shifts. Fresh faces, the same worried look…",
     ]
 
     /// Shown while the tale so far is being written: a pause, mid-adventure.
@@ -500,7 +534,7 @@ class GameEngine: ObservableObject {
             continueHintGeneration = screenGeneration
             continueHintCount = 0
         }
-        guard continueHintCount < 2 else { return }
+        guard continueHintCount < 5 else { return }
         let counting = autoContinueCountdownAvailable && !autoContinuePaused
         let delay: Double = continueHintCount == 0 ? 1.5 : (counting ? max(3, autoCountdownTotal * 0.35) : 5)
         // Only worth saying if there'll still be time to read it before the
@@ -533,25 +567,22 @@ class GameEngine: ObservableObject {
     private func combatWaitingLines() -> (title: String, info: [String]) {
         guard let combat = currentCombat else { return ("", []) }
         var title = Self.combatContinueTitles.randomElement()!
-        let order = combat.turnOrder
-        if !order.isEmpty {
-            var idx = combat.currentTurnIndex
-            for _ in 0..<order.count {
-                idx = (idx + 1) % order.count
-                let entry = order[idx]
-                if entry.isPlayer {
-                    guard let c = party.first(where: { $0.id == entry.id }), c.isConscious else { continue }
+        // Name whoever the fight will ACTUALLY hand the turn to: the very
+        // combatant showPlayerCombatMenu opens for. This used to scan forward
+        // past anyone unconscious, while the menu side does no such skipping —
+        // so the screen announced one fighter and then gave you another's
+        // buttons.
+        if let entry = combat.currentCombatant {
+            if entry.isPlayer {
+                if let c = party.first(where: { $0.id == entry.id }), c.isConscious {
                     let n = shortName(for: c)
                     title = c.isComputerControlled
                         ? ["Next: \(n) takes a turn.", "\(n) is up next.", "Coming up: \(n)'s move.", "\(n) is sizing up the next swing."].randomElement()!
                         : ["Next: your move, \(n).", "\(n), get ready — you're next.", "Your turn is coming, \(n).", "\(n): think about what you'll do next."].randomElement()!
-                    break
-                } else {
-                    guard combat.encounter.monsters.contains(where: { $0.name == entry.name && $0.isAlive }) else { continue }
-                    title = ["Next: the \(entry.name) — brace yourselves.", "The \(entry.name) is winding up for its turn.",
-                             "Watch out — the \(entry.name) moves next.", "The \(entry.name) is looking for an opening."].randomElement()!
-                    break
                 }
+            } else if combat.encounter.monsters.contains(where: { $0.name == entry.name && $0.isAlive }) {
+                title = ["Next: the \(entry.name) — brace yourselves.", "The \(entry.name) is winding up for its turn.",
+                         "Watch out — the \(entry.name) moves next.", "The \(entry.name) is looking for an opening."].randomElement()!
             }
         }
         var info: [String] = []
@@ -577,11 +608,19 @@ class GameEngine: ObservableObject {
                "Tap the screen (or type \"go on\") to carry on."]).randomElement()!
     }
 
-    /// All a waiting screen asks for: a short, underlined "ok?" — tap it (or
-    /// anywhere, or press Return), or let the hourglass run out by itself.
+    /// All a waiting screen asks for: a quiet count — . then .. then … —
+    /// tap it (or anywhere, or press Return), or let the hourglass run out.
     private func printAcknowledgePrompt() {
-        let prompt = Self.pickVaried(Self.continueTitles, avoiding: &lastContinueTitle)
-        print("  \(prompt)", color: .dimGreen, underlined: true)
+        // Count quietly — . then .. then … — so the screen reads as waiting
+        // rather than asking "Ready?" over and over. Only after a long
+        // silence does it say something with more character to it.
+        let step = max(1, continueHintCount)
+        if step <= Self.continueDots.count {
+            // Once, quietly, and then left alone.
+            print("  \(Self.continueDots[0])", color: .dimGreen)
+        } else {
+            printWrapped(Self.pickVaried(Self.continueProds, avoiding: &lastContinueTitle), indent: 2, color: .dimGreen)
+        }
     }
 
     /// The first, quiet nudge: one dim line saying how to move on.
@@ -631,6 +670,10 @@ class GameEngine: ObservableObject {
     private var lastCombatNudge: String?
     private var lastIdleOpener: String?
     private var lastExplorationTip: String?
+    private var lastAnywhereDetail: String?
+    private var lastTeamBoast: String?
+    private var lastTeamDoubt: String?
+    private var lastTeamOpener: String?
 
     private var autoContinueHelpShownGeneration = -1
 
@@ -1290,10 +1333,68 @@ class GameEngine: ObservableObject {
     /// over the screen (so showMainMenu shouldn't also render normally).
     private var hasCheckedForCrashThisLaunch = false
     @discardableResult
+    /// Shown once, ever: what this is, the two settings worth knowing about
+    /// before you start, and whether bug reports may be sent. Answered here
+    /// rather than buried in Settings, since it is the one moment somebody
+    /// is definitely paying attention.
+    private func showFirstRunWelcomeIfNeeded() -> Bool {
+        let key = "hasSeenFirstRunWelcome"
+        guard !UserDefaults.standard.bool(forKey: key) else { return false }
+
+        clearTerminal()
+        printTitle("Before You Go Down")
+        print("")
+        printWrapped("A voice out of the dark, friendly enough: \"First time? Then two things, quickly, and you can be on your way.\"", indent: 2, color: .yellow)
+        print("")
+        print("  THE SCREEN WAITS FOR YOU", color: .cyan, bold: true)
+        printWrapped("When a screen is holding, it counts to itself — a dot, then two, then three. Tap anywhere, or press Return, to carry on. Leave it and it moves on by itself; Settings > Gameplay changes how long it waits, or turns the waiting off.", indent: 4, color: .dimGreen)
+        print("")
+        print("  HOW DEEP YOU GO", color: .cyan, bold: true)
+        printWrapped("Seven floors by default, down to the last guardian. Settings > Gameplay > Levels sets how deep a new dungeon runs — one to twelve — and a dungeon keeps the depth it was made with.", indent: 4, color: .dimGreen)
+        print("")
+        print("  IF IT BREAKS", color: .cyan, bold: true)
+        printWrapped("If the game crashes, it can offer to put together a report — what happened, the recent log, and the moment itself so it can be reloaded. Nothing is sent anywhere without you saying so, each time.", indent: 4, color: .dimGreen)
+        print("")
+        printWrapped("\"May I offer, when that happens?\"", indent: 2, color: .yellow)
+        print("")
+        showMenu(["Yes, offer to report crashes", "No, never ask", "?"])
+        closeHandler = { [weak self] in
+            guard let self = self else { return }
+            UserDefaults.standard.set(true, forKey: key)
+            self.showMainMenu()
+        }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1, 2:
+                UserDefaults.standard.set(choice == 1, forKey: "offerCrashReports")
+                UserDefaults.standard.set(true, forKey: key)
+                self.logEvent("First run: crash reports \(choice == 1 ? "allowed" : "declined")", category: "SETTINGS")
+                self.showMainMenu()
+            default:
+                self.showInlineHelp {
+                    self.printTitle("Before You Go Down — Help")
+                    self.print("")
+                    self.printWrapped("This is shown once. Everything on it can be changed later in Settings, including whether crashes may be reported.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("Saying no means the game never mentions it again. Saying yes means it asks — it never sends anything on its own.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            }
+        }
+        return true
+    }
+
     private func checkForPendingCrashReport() -> Bool {
         guard !hasCheckedForCrashThisLaunch else { return false }
         hasCheckedForCrashThisLaunch = true
         guard Self.pendingCrashInfo() != nil else { return false }
+        // Asked once at first run. If they said no, clear it and say nothing.
+        if UserDefaults.standard.object(forKey: "offerCrashReports") != nil,
+           !UserDefaults.standard.bool(forKey: "offerCrashReports") {
+            clearPendingCrashReport()
+            return false
+        }
 
         clearTerminal()
         printTitle("A Glitch in the Weave")
@@ -1302,13 +1403,15 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped("Exporting a bug report shares what happened (device info, recent log, the crash itself) so it can be fixed — and saves this exact moment so it can be reloaded from Continue Adventure.", indent: 2, color: .dimGreen)
         print("")
-        showMenu(["Export Bug Report", "Not Now"])
+        printWrapped("Before assuming the worst: a full disk or a dropped connection can look like a crash. Worth a glance at both.", indent: 2, color: .dimGreen)
+        print("")
+        showMenu(["Export Bug Report", "Report on GitHub", "Not Now"])
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
-            if choice == 1 {
-                self.prepareBugReportExport()
-            } else {
-                self.clearPendingCrashReport()
+            switch choice {
+            case 1: self.prepareBugReportExport()
+            case 2: self.openCrashIssue()
+            default: self.clearPendingCrashReport()
             }
             self.showMainMenu()
         }
@@ -1530,6 +1633,26 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Rewrite the line already at the bottom of the screen, so the waiting
+    /// count grows in place — . then .. then … — instead of stacking three
+    /// lines of dots down the page. Only overwrites a line we recognise as
+    /// ours: if anything else has printed since, that text is story and gets
+    /// to stay, so this falls back to a normal print. No announcement either —
+    /// VoiceOver has no use for "dot, dot dot".
+    private func replaceLastLine(_ text: String, ifLastIsOneOf expected: [String],
+                                 color: TerminalColor = .green, underlined: Bool = false) {
+        let text = Self.platformWording(text)
+        runOnMain {
+            guard let last = self.terminalLines.indices.last,
+                  expected.contains(self.terminalLines[last].text.trimmingCharacters(in: .whitespaces)) else {
+                self.print(text, color: color, underlined: underlined)
+                return
+            }
+            self.terminalLines[last] = TerminalLine(text, color: color, bold: false,
+                                                    underlined: underlined, size: 14, centered: false)
+        }
+    }
+
     // MARK: VoiceOver announcements
     //
     // New story text is read out as it arrives, even while VoiceOver's focus
@@ -1711,7 +1834,7 @@ class GameEngine: ObservableObject {
 
         clearTerminal()
         printTitle("Atlas")
-        printWrapped("Level \(level.level): \(level.dungeonName)\(isCurrent ? " — you are here" : "")", indent: 2, color: .cyan, bold: true)
+        printWrapped("\(Dungeon.floorName(level.level)): \(level.dungeonName)\(isCurrent ? " — you are here" : "")", indent: 2, color: .cyan, bold: true)
         if levels.count > 1 {
             print("  (\(atlasLevelIndex + 1) of \(levels.count) levels mapped)", color: .dimGreen)
         }
@@ -1826,7 +1949,7 @@ class GameEngine: ObservableObject {
 
         clearTerminal()
         printTitle(String(room.name.prefix(26)))
-        print("  Level \(level.level) · \(room.typeName)", color: .dimGreen)
+        print("  \(Dungeon.floorName(level.level)) · \(room.typeName)", color: .dimGreen)
         print("")
         if room.id == level.currentRoomId { print("  You are here.", color: .yellow, bold: true) }
         if room.id == level.exitRoomId { print("  You left this level from here.", color: .yellow) }
@@ -1931,7 +2054,7 @@ class GameEngine: ObservableObject {
             case "Preview":
                 // A look at the page before it's saved or printed.
                 self.pdfPreview = PDFPreviewItem(data: self.atlasPDFData(level: level),
-                                                 name: "atlas-level\(level.level)-\(Self.saveStamp())", title: "Map — Level \(level.level)")
+                                                 name: "atlas-level\(level.level)-\(Self.saveStamp())", title: "Map — \(Dungeon.floorName(level.level))")
             case "?":
                 self.showInlineHelp {
                     self.printTitle("Save Map — Help")
@@ -1949,7 +2072,7 @@ class GameEngine: ObservableObject {
 
     private func atlasPDFData(level: AtlasLevel) -> Data {
         let showAll = atlasShowAllRooms
-        var head = ["\(level.dungeonName) — Level \(level.level)", ""]
+        var head = ["\(level.dungeonName) — \(Dungeon.floorName(level.level))", ""]
         head += atlasStatsLines(level, showAll: showAll)
         head.append("")
         var blocks: [[String]] = head.map { [$0] }
@@ -2425,11 +2548,14 @@ class GameEngine: ObservableObject {
         case "dm": return { [weak self] in self?.showDMSettingsSubMenu() }
         case "ai": return { [weak self] in self?.showAIProviderMenu(onBack: { [weak self] in self?.returnFromLink() }) }
         case "howToPlay": return { [weak self] in self?.showHowToPlay() }
-        case "dndex": return { [weak self] in self?.openWeb("https://proflewis.github.io/gamer/") }
+        case "dndex": return { [weak self] in self?.openWeb("https://proflewis.github.io/gamer/ios_card_images/card-dex/") }
+        case "dndexGallery": return { [weak self] in self?.openWeb("https://proflewis.github.io/gamer/gallery/") }
         case "puzzlePack": return { [weak self] in self?.openWeb("https://github.com/profLewis/gamer/blob/main/puzzles/pack.json") }
         case "puzzleFolder": return { [weak self] in self?.openWeb("https://github.com/profLewis/gamer/tree/main/puzzles") }
         case "contributors": return { [weak self] in self?.openWeb(ContributorsManager.webURL) }
         case "puzzles": return { [weak self] in self?.showPuzzleSettings(onBack: { [weak self] in self?.returnFromLink() }) }
+        case "questNotes": return { [weak self] in self?.showPartyStatus() }
+        case "howTo": return { [weak self] in self?.showHowToIndex() }
         default: return nil
         }
     }
@@ -2489,7 +2615,7 @@ class GameEngine: ObservableObject {
                 self.showInlineHelp {
                     self.printTitle("Auto-Continue — Help")
                     self.print("")
-                    self.printWrapped("Many screens wait for a tap so you can read them. With Auto-Continue on they also move on by themselves after the wait — never before you've had time to read them. The hourglass at the right of the input line shows the time left: tap it to pause (orange = paused), tap again to carry on, long-press to hurry. Typing pauses it too; type 'go on' to continue.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Many screens wait for a tap so you can read them. With Auto-Continue on they also move on by themselves after the wait — never before you've had time to read them. The hourglass at the right of the input line shows the time left: tap it to pause (orange = paused), tap again to carry on, long-press to hurry. Typing pauses it too; type 'go on' to continue. While a screen waits it counts to itself — . then .. then … — so you can see it is holding for you.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             } else if !self.returnFromLink() {
@@ -4820,7 +4946,8 @@ class GameEngine: ObservableObject {
             guard !trimmed.isEmpty else { return nil }
             // "Continue?"-style nudges and tap hints aren't story: skip them —
             // in a fight, a quick cheer instead.
-            if Self.continueTitles.contains(trimmed) || Self.combatContinueTitles.contains(trimmed) {
+            if Self.continueTitles.contains(trimmed) || Self.combatContinueTitles.contains(trimmed)
+                || Self.continueDots.contains(trimmed) || Self.continueProds.contains(trimmed) {
                 return currentCombat != nil ? Self.combatCheers.randomElement() : nil
             }
             let lowerHint = trimmed.lowercased()
@@ -5125,6 +5252,21 @@ class GameEngine: ObservableObject {
                 return
             }
 
+            // "endgame" — one of the hidden buttons (see DevAccess). The rule
+            // just above, where typing a button's name presses it, can never
+            // reach this one: DevAccess.filter has already taken it out of
+            // currentMenuOptions. Gated on the same access the buttons are, and
+            // refused the same way a wrong phrase is when it's off, so the word
+            // gives nothing away either way.
+            if lower == "endgame" || lower == "superuser" || lower == "super user" {
+                if DevAccess.isOn {
+                    showSuperUserMenu()
+                } else {
+                    refuseDevAccess()
+                }
+                return
+            }
+
             if lower == "settings" || lower == "options" || lower == "config" {
                 showSettings()
                 return
@@ -5304,6 +5446,7 @@ class GameEngine: ObservableObject {
     // a varied general one (quests, gyms, merchants, food, torches).
     private var explorationTipTimer: Timer?
     private var explorationTipGeneration = -1
+    private var lastPartyBanter: String? = nil
 
     private func scheduleExplorationTip() {
         explorationTipTimer?.invalidate()
@@ -5313,7 +5456,11 @@ class GameEngine: ObservableObject {
                   self.explorationTipGeneration != self.screenGeneration else { return }
             self.explorationTipGeneration = self.screenGeneration
             self.print("")
-            self.printWrapped("Tip: \(self.explorationTip())", indent: 2, color: .dimGreen)
+            if let chatter = self.partyBanter() {
+                self.printWrapped(chatter, indent: 2, color: .dimGreen)
+            } else {
+                self.printWrapped("Tip: \(self.explorationTip())", indent: 2, color: .dimGreen)
+            }
         }
     }
 
@@ -5357,7 +5504,11 @@ class GameEngine: ObservableObject {
                return npc.type != .gatekeeper && !npc.sideQuestOffered && npc.willOfferSideQuest != false
                    && !self.allQuests.contains { $0.giverName == npc.type.rawValue }
            }), let npc = route.room.npc {
-            let opener = allQuests.isEmpty ? "You're not on a quest yet." : "There's room for another quest."
+            // A main quest counts. This used to test allQuests alone — the side
+            // errands — and so told a party deep in the main quest that it
+            // wasn't on a quest yet.
+            let onAQuest = (mainQuest != nil && !mainQuestCompleted) || !allQuests.isEmpty
+            let opener = onAQuest ? "There's room for another quest." : "You're not on a quest yet."
             return "\(opener) \(npc.displayName) might have one — \(wayThere(route))."
         }
         if let quest = allQuests.first(where: { $0.type == .visitRoomType && !isSideQuestComplete($0) }),
@@ -5368,6 +5519,26 @@ class GameEngine: ObservableObject {
             return "Quest for \(quest.giverName): \(quest.description). \(sideQuestProgressDescription(quest))."
         }
         return nil
+    }
+
+    /// Sometimes the party fills a long pause themselves — chatting, joshing,
+    /// encouraging each other, or suggesting what to do next — instead of the
+    /// DM offering another tip.
+    private func partyBanter() -> String? {
+        guard party.count > 1, Int.random(in: 1...10) <= 4 else { return nil }
+        let who = party.shuffled()
+        let a = shortName(for: who[0]), b = shortName(for: who[1])
+        return Self.pickVaried([
+            "\(a) shifts from foot to foot. \"We've been stood here a while.\"",
+            "\(a) nudges \(b). \"How about we try a door and see what's behind it?\"",
+            "\"Eyes open,\" says \(a). \"I don't like how quiet it's gone.\"",
+            "\(a) grins at \(b). \"Bet you a copper there's something worth having through there.\"",
+            "\"You're doing fine,\" \(a) tells \(b). \"Better than the last lot I came down here with.\"",
+            "\(a) hums something tuneless until \(b) tells them to pack it in.",
+            "\"We could search this room properly,\" \(a) suggests. \"Things get missed in the dark.\"",
+            "\(a) stretches. \"My legs have gone all fizzy, standing about like this.\"",
+            "\(b) checks their pack for the third time, just to be doing something.",
+        ], avoiding: &lastPartyBanter)
     }
 
     private func explorationTip() -> String {
@@ -5389,6 +5560,7 @@ class GameEngine: ObservableObject {
             "Rest when you're hurt — and eat something: hearty food makes you feel strong.",
             "A lit torch lets you see further on the map.",
             "Stuck? Long-press a button to see what shortcut it has.",
+            "Legs gone fizzy from standing about? Pick a direction — anywhere is better than here.",
         ], avoiding: &lastExplorationTip)
     }
 
@@ -5581,6 +5753,7 @@ class GameEngine: ObservableObject {
         if self.musicEnabled { SoundManager.shared.startMusic(.menu, preference: self.menuMelodyChoice) }
 
         if checkForPendingCrashReport() { return }
+        if showFirstRunWelcomeIfNeeded() { return }
 
         renderMainMenu()
 
@@ -6180,7 +6353,84 @@ class GameEngine: ObservableObject {
         }
     }
 
-    func showHowToPlay() {
+    /// The How to… topics: a short answer each, to the things people actually
+    /// ask. "How to Play" (below) is the overview; this is the practical half.
+    /// Kept as data so the index and the pages cannot drift apart.
+    static let howToTopics: [(title: String, lines: [String])] = [
+        ("Find a new main quest", [
+            "Party Status → By the Campfire. The party sits down and asks whether this is still the quest worth risking everything for.",
+            "Hear Another Plea brings somebody new forward with their own trouble. You can take it up, turn it down, or try to go back to the one you had — though a village you walked away from may not want you back.",
+            "Be warned: the dungeon dislikes oath-breakers. Taking up a new quest can fling you back to the entrance, and things fall out of packs on the way."]),
+        ("Give up a quest", [
+            "Party Status → By the Campfire → Give Up Quest.",
+            "You lose the progress and keep a little gold in goodwill, which makes room for another.",
+            "Long-press the button to skip the \"are you sure?\" step, once you know you mean it."]),
+        ("Play with no quests at all", [
+            "Two ways. When a plea is offered, choose No Quest and set off for the adventure of it — there are always errands on the way.",
+            "Or switch them off for good: Settings → Gameplay → Main Quests → Off. A new adventure then skips the plea entirely and goes straight down into the dark, and anything to do with a main quest is greyed out.",
+            "Errands from the people you meet work either way."]),
+        ("Stay healthy", [
+            "Rest gives you four choices: Short Rest (an hour, some hit points back), Long Rest (eight hours, everyone to full), Eat & Drink, and Wash.",
+            "Eating in the dark only does half the good — you cannot see what you are eating, or how much. Light a torch first.",
+            "A Long Rest costs eight hours, which is most of a day. That is fine when nothing is chasing you, and expensive when something is."]),
+        ("Keep an eye on the clock", [
+            "The day counter starts when you go down. A quest with a deadline shows it on the quest line: ☾ and the name, then how many days are left.",
+            "A passed deadline does not end the quest. It halves the reward, and what the village feared happens anyway.",
+            "Settings → Gameplay → Time Limit is separate: with it set, the adventure ends in defeat when game time runs out. With both, sleeping eight hours twice over can cost you the lot — Short Rests and food are the cheap way to stay standing."]),
+        ("Know what a quest wants", [
+            "Not every quest ends with a dead guardian, and the plea says which kind it is.",
+            "Slay — beat the guardian at the bottom.",
+            "Remedy — killing it is not enough. Without the makings gathered floor by floor, the sickness goes on.",
+            "Mystery — you must learn enough on the way to know who was behind it. Kill the wrong thing and nobody can say.",
+            "Rival — another company set out before you. This is a race."]),
+        ("Search a room properly", [
+            "Search Room uses whoever has the best Perception — or whoever you have named under Actor.",
+            "Once a room's hidden things are found, searching again scavenges instead: odds and ends, and sometimes what the guardian asked you to gather. A room can only be scavenged once.",
+            "In the dark it is far harder, and it can go wrong."]),
+        ("Make it faster or slower", [
+            "Settings → Gameplay → Timeouts sets how long each kind of screen waits before moving on by itself.",
+            "Settings → Mood → Music Speed sets how quickly the tunes play.",
+            "The hourglass by the input line pauses a countdown when tapped, and hurries it along when held."]),
+        ("Get help anywhere", [
+            "Every screen has a ? button, and every help page has this list at the foot of it.",
+            "You can also just type a question at the > prompt and the Dungeon Master will answer in plain words.",
+            "Typing a button's name presses it — handy with the buttons hidden, and for anyone who would rather type."]),
+    ]
+
+    /// The How to… index. Reached from the link at the foot of every help page.
+    func showHowToIndex() {
+        clearTerminal()
+        printTitle("How to…")
+        printWrapped("Short answers to the things people actually ask. Tap one.", indent: 2, color: .dimGreen)
+        print("")
+        let titles = Self.howToTopics.map { $0.title }
+        showPaginatedMenuOptions(titles, pinned: ["< Back"], handler: { [weak self] idx in
+            guard let self = self, idx >= 0, idx < Self.howToTopics.count else { return }
+            self.showHowToTopic(idx)
+        }, pinnedHandler: { [weak self] _ in
+            // Back to whatever screen the link was followed from.
+            guard let self = self else { return }
+            if !self.returnFromLink() { self.showHowToPlay() }
+        })
+    }
+
+    private func showHowToTopic(_ index: Int) {
+        guard index >= 0, index < Self.howToTopics.count else { return }
+        let topic = Self.howToTopics[index]
+        clearTerminal()
+        printTitle("How to \(topic.title.prefix(1).lowercased() + topic.title.dropFirst())")
+        print("")
+        for line in topic.lines {
+            printWrapped(line, indent: 2, color: .green)
+            print("")
+        }
+        let opts = [MenuOption("< Back", tint: .navigation, compact: true)]
+        showMenuOptions(opts)
+        closeHandler = { [weak self] in self?.showHowToIndex() }
+        menuHandler = { [weak self] _ in self?.showHowToIndex() }
+    }
+
+    func showHowToPlay(onBack: (() -> Void)? = nil) {
         clearTerminal()
         undoHandler = nil; redoHandler = nil
         inHelpContext = true
@@ -6220,13 +6470,15 @@ class GameEngine: ObservableObject {
         printWrapped("    a button for its shortcut — e.g. long-press Quit Without Saving, Delete or Give Up Quest to skip the \"are you sure?\" step, Long Rest to rest fast, or Continue Adventure to jump straight into your latest save.", color: .green)
         print("")
         print("  • Auto-Continue", color: .brightGreen, bold: true)
-        printWrapped("    A screen that's waiting for you shows a small underlined \"ok?\". Tap it — or anywhere, or press Return — when you've read it. Do nothing and it moves on by itself after a reading pause: the little hourglass at the right of the input line shows how long is left. Tap the hourglass to freeze time (it turns orange and nothing moves until you tap it again), long-press to hurry it along. Settings > Gameplay changes how long screens wait, or turns the waiting off.", color: .green)
+        printWrapped("    A screen that's waiting for you counts quietly to itself: a single \".\", then \"..\", then \"…\". That is all the dots mean — the screen is holding for you and nothing is wrong. Tap them — or anywhere, or press Return — when you've read it. Leave it a good while longer and the dots give way to a line with a bit more character to it. Do nothing at all and it moves on by itself after a reading pause: the little hourglass at the right of the input line shows how long is left. Tap the hourglass to freeze time (it turns orange and nothing moves until you tap it again), long-press to hurry it along.", color: .green)
+        printLink("Auto-Continue — turn the waiting on or off", to: "autoContinue", indent: 4)
+        printLink("Timeouts — how long each kind of screen waits", to: "timeouts", indent: 4)
         printLink("Settings > Gameplay", to: "gameplay", indent: 4)
         print("")
 
         let helpTopics = ["Getting Started", "Exploration", "Combat",
                           "Character & Party", "Recovery",
-                          "Dungeon Master", "Multiplayer", "Tips & Tricks",
+                          "Dungeon Master Brain", "Multiplayer", "Tips & Tricks",
                           "Bestiary", "Gallery & Lore"]
         let helpActions: [(GameEngine) -> Void] = [
             { $0.showHelpGettingStarted() }, { $0.showHelpExploration() },
@@ -6265,7 +6517,9 @@ class GameEngine: ObservableObject {
             self?.closeHandler = nil
             self?.currentHelpTopic = -1
             self?.inHelpContext = false
-            self?.showMainMenu()
+            // Back to wherever this was opened from when that's known — from
+            // About, back to About — and only to the main menu when it isn't.
+            if let onBack = onBack { onBack() } else { self?.showMainMenu() }
         }
     }
 
@@ -6918,7 +7172,7 @@ class GameEngine: ObservableObject {
         clearTerminal()
         undoHandler = nil; redoHandler = nil
         suppressAutoScroll = true
-        printTitle("Dungeon Master (Robot)")
+        printTitle("Dungeon Master Brain")
 
         printWrapped("The DM narrates your adventure. There are three intelligence tiers:", indent: 2)
         print("")
@@ -7138,28 +7392,34 @@ class GameEngine: ObservableObject {
 
     // MARK: - FAQ (data used by DM knowledge system; menu removed from How to Play)
 
-    func showBestiary() {
+    func showBestiary(tier tierIndex: Int = 0) {
         clearTerminal()
         printTitle("Bestiary")
-        printWrapped("Tap any monster to see details.", indent: 2, color: .dimGreen)
+        printWrapped("Tap any monster to see its card. Next and Previous move between the tiers.", indent: 2, color: .dimGreen)
         print("")
         print("")
 
         // Group monsters by tier
         let tiers: [(String, [MonsterType])] = [
-            ("STARTER", [.giantRat, .kobold, .stirge, .giantBat, .crawlingClaw]),
+            ("STARTER", [.giantRat, .kobold, .stirge, .giantBat, .crawlingClaw, .boneMoth]),
             ("LOW", [.goblin, .skeleton, .zombie, .wolf]),
-            ("MID-LOW", [.orc, .hobgoblin, .gnoll, .rustMonster]),
-            ("MID", [.bugbear, .giantSpider, .ogre, .gargoyle, .mimic, .gelatinousCube]),
-            ("HIGH", [.owlbear, .troll, .minotaur, .basilisk, .displacerBeast, .wraith, .demogorgon, .mindFlayer]),
-            ("BOSS", [.beholder, .youngDragon, .vecna]),
+            ("MID-LOW", [.orc, .hobgoblin, .gnoll, .rustMonster, .cinderHound]),
+            ("MID", [.bugbear, .giantSpider, .ogre, .gargoyle, .mimic, .gelatinousCube, .ironWeaver]),
+            ("HIGH", [.owlbear, .troll, .minotaur, .basilisk, .displacerBeast, .wraith, .demogorgon, .mindFlayer, .drownedChoir, .hollowMonk]),
+            ("BOSS", [.beholder, .youngDragon, .gloamTitan, .vecna]),
         ]
 
         // Map line index → monster for tap detection
         // We schedule this on main queue after all prints have been queued
         var monsterLineRanges: [(monster: MonsterType, lineCount: Int)] = []
 
-        for (tier, monsters) in tiers {
+        // One tier a page. The whole bestiary at once was a very long scroll,
+        // and the buttons below page through it. The loop body is unchanged —
+        // it just gets one tier instead of all of them — so the tap handler and
+        // the breathing animation, both built afterwards from what was actually
+        // printed, carry on working a page at a time.
+        let page = max(0, min(tierIndex, tiers.count - 1))
+        for (tier, monsters) in [tiers[page]] {
             print("  \(tier):", color: .cyan, bold: true)
             for monster in monsters {
                 let art = monster.asciiArt
@@ -7181,9 +7441,31 @@ class GameEngine: ObservableObject {
         print("")
         print("")
 
+        // Its own buttons. Without these the screen kept whatever the last one
+        // had — reached from How to Play, that meant the help topics' << and >>,
+        // which then drove the help list's handler against this screen.
+        var opts: [MenuOption] = []
+        if page > 0 { opts.append(MenuOption("< Previous", tint: .navigation)) }
+        if page < tiers.count - 1 { opts.append(MenuOption("Next >", isDefault: true, tint: .navigation)) }
+        opts.append(MenuOption("?", tint: .navigation, compact: true))
+        opts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        showMenuOptions(opts)
         closeHandler = { [weak self] in
             self?.cancelBestiaryAnim()
             self?.showHowToPlay()
+        }
+        // Dispatched by title, not by position: which buttons are present
+        // changes with the page (no Previous on the first, no Next on the last),
+        // so a positional handler would send the wrong one at either end.
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= opts.count else { return }
+            self.cancelBestiaryAnim()
+            switch opts[choice - 1].text {
+            case "< Previous": self.showBestiary(tier: page - 1)
+            case "Next >": self.showBestiary(tier: page + 1)
+            case "?": self.showBestiaryHelp()
+            default: self.showHowToPlay()
+            }
         }
 
         // Build art ranges and block ranges on main queue after all prints are queued
@@ -7222,6 +7504,17 @@ class GameEngine: ObservableObject {
 
             // Start animation with correct art ranges
             self.startBestiaryAnim(artRanges: artRanges)
+        }
+    }
+
+    private func showBestiaryHelp() {
+        showInlineHelp {
+            self.printTitle("Bestiary — Help")
+            self.print("")
+            self.printWrapped("Every creature in the game, grouped by how dangerous it is — one group a page, with Next and Previous to move between them. Tap any of them to see its full card: stats, what it does, and how to handle it.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("The pictures move on their own. That is just them breathing.", indent: 2, color: .dimGreen)
+            self.print("")
         }
     }
 
@@ -7278,7 +7571,7 @@ class GameEngine: ObservableObject {
         let s = monster.stats
         let crText = s.cr < 1 ? "1/\(Int(1.0 / s.cr))" : "\(Int(s.cr))"
         let name = monster.rawValue
-        let cardW = 27
+        let cardW = Self.cardColumns
         let border = String(repeating: "─", count: cardW)
 
         // Card top border with sparkle corners
@@ -7295,7 +7588,7 @@ class GameEngine: ObservableObject {
         // ASCII art (animated)
         let art = monster.asciiArt
         let maxWidth = art.map { $0.count }.max() ?? 0
-        let padded = art.map { $0.padding(toLength: min(maxWidth, 25), withPad: " ", startingAt: 0) }
+        let padded = art.map { $0.padding(toLength: min(maxWidth, cardW - 2), withPad: " ", startingAt: 0) }
 
         let artStart = terminalLines.count
         for line in padded {
@@ -7335,6 +7628,12 @@ class GameEngine: ObservableObject {
         // Combat tips
         let tips: [String]
         switch monster {
+        case .boneMoth: tips = ["The powder blinds before it harms.", "Frail — a single solid hit ends it."]
+        case .cinderHound: tips = ["It hunts by heat, so dousing the torch won't hide you.", "Fire resistance helps more than armour."]
+        case .ironWeaver: tips = ["It mends itself from loose metal — clear the floor.", "Keep your distance; the wires reach further than it looks."]
+        case .drownedChoir: tips = ["Several bodies, one will. Scattering them does little.", "The singing saps the legs — expect to act slowly."]
+        case .hollowMonk: tips = ["It blocks far more than it strikes. Patience beats fury.", "Its guard opens only after it attacks."]
+        case .gloamTitan: tips = ["Too big to flank and too heavy to stagger.", "Bring everything: this is not a fight to win cheaply."]
         case .giantRat: tips = ["Weak but often found in groups.", "Can inflict mild poison — carry antidotes."]
         case .kobold: tips = ["Cunning trapmakers. Check the floor.", "Cowardly alone but dangerous in packs."]
         case .stirge: tips = ["Attaches and drains blood. Venomous bite.", "Fragile — one good hit will do."]
@@ -7401,6 +7700,36 @@ class GameEngine: ObservableObject {
             swipeRandomHandler = { [weak self] in
                 let r = Int.random(in: 0..<allMonsters.count)
                 self?.showMonsterDetail(allMonsters[r])
+            }
+        }
+
+        // Buttons, not just swipes: this page had no visible way back.
+        // Only offer the page-turners when there are pages to turn: these
+        // dispatch to swipeRight/LeftHandler, which are nil when there is
+        // only one card, and a button that is drawn but does nothing reads
+        // as broken.
+        var navOpts: [MenuOption] = []
+        if allMonsters.count > 1 {
+            navOpts.append(MenuOption("<<", tint: .navigation, compact: true))
+            navOpts.append(MenuOption(">>", tint: .navigation, compact: true))
+        }
+        navOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        navOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        showMenuOptions(navOpts)
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= navOpts.count else { return }
+            // By name, not position — which buttons are present now varies.
+            switch navOpts[choice - 1].text {
+            case "<<": self.swipeRightHandler?()
+            case ">>": self.swipeLeftHandler?()
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("Bestiary — Help")
+                    self.print("")
+                    self.printWrapped("Every monster the dungeon can throw at you: what it hits for, how tough it is, and what it drops. << and >> turn the pages (swiping does too), and the dice picks one at random.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default: self.closeHandler?()
             }
         }
 
@@ -7547,7 +7876,7 @@ class GameEngine: ObservableObject {
 
         // Card layout — compact single-page
         let name = npc.rawValue
-        let cardW = 27
+        let cardW = Self.cardColumns
         let border = String(repeating: "─", count: cardW)
 
         // Top border with sparkle corners
@@ -7566,7 +7895,7 @@ class GameEngine: ObservableObject {
         // ASCII art inside card (animated)
         let art = npc.asciiArt
         let maxWidth = art.map { $0.count }.max() ?? 0
-        let padded = art.map { $0.padding(toLength: min(maxWidth, 25), withPad: " ", startingAt: 0) }
+        let padded = art.map { $0.padding(toLength: min(maxWidth, cardW - 2), withPad: " ", startingAt: 0) }
 
         let artStart = terminalLines.count
         for line in padded {
@@ -7651,6 +7980,36 @@ class GameEngine: ObservableObject {
             swipeRandomHandler = { [weak self] in
                 let r = Int.random(in: 0..<allNPCs.count)
                 self?.showNPCDetail(allNPCs[r])
+            }
+        }
+
+        // Buttons, not just swipes: this page had no visible way back.
+        // Only offer the page-turners when there are pages to turn: these
+        // dispatch to swipeRight/LeftHandler, which are nil when there is
+        // only one card, and a button that is drawn but does nothing reads
+        // as broken.
+        var navOpts: [MenuOption] = []
+        if allNPCs.count > 1 {
+            navOpts.append(MenuOption("<<", tint: .navigation, compact: true))
+            navOpts.append(MenuOption(">>", tint: .navigation, compact: true))
+        }
+        navOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        navOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        showMenuOptions(navOpts)
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= navOpts.count else { return }
+            // By name, not position — which buttons are present now varies.
+            switch navOpts[choice - 1].text {
+            case "<<": self.swipeRightHandler?()
+            case ">>": self.swipeLeftHandler?()
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("Rogues Gallery — Help")
+                    self.print("")
+                    self.printWrapped("Everyone you might meet down there: what they do, what they say, and a tip for each. A tick means you have met them. << and >> turn the pages (swiping does too), and the dice picks one at random.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default: self.closeHandler?()
             }
         }
 
@@ -8154,8 +8513,13 @@ class GameEngine: ObservableObject {
         suppressAutoScroll = true
         scrollLocked = true
 
+        // Callers find an index in one list and pass another (see the name-lore
+        // cluster list, which searches allEntries for a filtered entry). Clamp
+        // rather than trust it — an out-of-range index here took the app down.
+        guard !entries.isEmpty else { onBack?(); return }
+        let index = max(0, min(index, entries.count - 1))
         let entry = entries[index]
-        let cardW = 27
+        let cardW = Self.cardColumns
         let border = String(repeating: "─", count: cardW)
 
         // Compute line indices arithmetically (since clearTerminal + print are async)
@@ -8187,7 +8551,7 @@ class GameEngine: ObservableObject {
 
         // Individual ASCII art
         for line in entry.art {
-            let trimmed = line.count > 25 ? String(line.prefix(25)) : line
+            let trimmed = String(line.prefix(cardW - 2))
             let artPad = max(0, cardW - trimmed.count)
             let aLeft = artPad / 2
             let aRight = artPad - aLeft
@@ -8252,6 +8616,36 @@ class GameEngine: ObservableObject {
             }
         }
 
+        // Buttons, not just swipes: this page had no visible way back.
+        // Only offer the page-turners when there are pages to turn: these
+        // dispatch to swipeRight/LeftHandler, which are nil when there is
+        // only one card, and a button that is drawn but does nothing reads
+        // as broken.
+        var navOpts: [MenuOption] = []
+        if entries.count > 1 {
+            navOpts.append(MenuOption("<<", tint: .navigation, compact: true))
+            navOpts.append(MenuOption(">>", tint: .navigation, compact: true))
+        }
+        navOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        navOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        showMenuOptions(navOpts)
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= navOpts.count else { return }
+            // By name, not position — which buttons are present now varies.
+            switch navOpts[choice - 1].text {
+            case "<<": self.swipeRightHandler?()
+            case ">>": self.swipeLeftHandler?()
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("Name Lore — Help")
+                    self.print("")
+                    self.printWrapped("A card for every name the game can give: where it comes from, and what it is known for. << and >> turn the pages (swiping does too), and the dice picks one at random.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default: self.closeHandler?()
+            }
+        }
+
         // Animate: sparkle corners + art sway + stat bar pulse
         let sparkles = ["✦", "✧", "★", "☆"]
         let artLines = entry.art
@@ -8275,7 +8669,7 @@ class GameEngine: ObservableObject {
                 for (j, rawLine) in artLines.enumerated() {
                     let lineIdx = artStart + j
                     guard lineIdx < self.terminalLines.count else { continue }
-                    let trimmed = rawLine.count > 25 ? String(rawLine.prefix(25)) : rawLine
+                    let trimmed = String(rawLine.prefix(cardW - 2))
                     let artPad = max(0, cardW - trimmed.count)
                     let aLeft = artPad / 2 + shift
                     let aRight = max(0, artPad - artPad / 2 - shift)
@@ -8807,12 +9201,14 @@ class GameEngine: ObservableObject {
         // enemy's red for a friend).
         let partyColors: [TerminalColor] = [.brightGreen, .cyan, .yellow, .magenta, .white, .orange]
         let enemyColors: [TerminalColor] = [.red, .orange, .magenta, .yellow, .white]
-        let partyF = party.enumerated().map { i, c in ArenaFighter(name: c.name, frames: c.characterClass.asciiArtFrames, hp: c.currentHP, maxHP: c.maxHP, isParty: true, down: !c.isConscious, color: partyColors[i % partyColors.count]) }
+        let partyF = party.enumerated().map { i, c in ArenaFighter(name: c.name, frames: c.characterClass.asciiArtFrames, hp: c.currentHP, maxHP: c.maxHP, isParty: true, down: !c.isConscious, isRobot: c.isComputerControlled, color: partyColors[i % partyColors.count]) }
         let enemies = combat.encounter.monsters.enumerated().map { i, m in ArenaFighter(name: m.name, frames: m.type.asciiArtFrames, hp: m.currentHP, maxHP: m.maxHP, isParty: false, down: !m.isAlive, color: enemyColors[i % enemyColors.count]) }
         let turn = combat.currentCombatant
         let left = (turn?.isPlayer == true ? partyF.first { $0.name == turn?.name && !$0.down } : nil) ?? partyF.first { !$0.down } ?? partyF.first
         let right = (turn?.isPlayer == false ? enemies.first { $0.name == turn?.name && !$0.down } : nil) ?? enemies.first { !$0.down }
-        return ArenaScene(left: left, right: right, party: partyF, enemies: enemies, turnName: turn?.name, move: arenaMove)
+        return ArenaScene(left: left, right: right, party: partyF, enemies: enemies,
+                          turnName: turn?.name, nextName: combat.upNextName,
+                          actedNames: combat.actedNames, move: arenaMove)
     }
 
     private func arenaFrames(for name: String, fallback: [String]) -> [[String]] {
@@ -9023,7 +9419,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine()
+            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine(), difficultyScale: difficultyScale
         )
 
         try? SaveGameManager.shared.save(saveGame)
@@ -9075,6 +9471,10 @@ class GameEngine: ObservableObject {
         print("")
 
         var menuOpts = [BrainLabels.button, "Accessibility", "Mood", "Gameplay", "Puzzles", "Game Saves", "Certificates", "About"].map { MenuOption($0) }
+        // Acting As lived only in the Actions menu mid-dungeon, which is a
+        // odd place to look for a setting. It belongs here too, while there
+        // is a party to set it on.
+        if party.count > 1 { menuOpts.insert(MenuOption("Actor"), at: 3) }
         menuOpts.append(MenuOption("Save Settings"))
         menuOpts.append(MenuOption("Reset", tint: .danger))
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -9100,6 +9500,7 @@ class GameEngine: ObservableObject {
             case "Accessibility": self.showAccessibilityMenu()
             case "Mood": self.showMusicSettings()
             case "Gameplay": self.showGameplaySettings()
+            case "Actor": self.showActingAsPicker()
             case "Game Saves": self.showSaveSettings()
             case "Save Settings": self.showSettingsBackupMenu()
             case "Reset": self.confirmResetToDefaults()
@@ -9156,7 +9557,10 @@ class GameEngine: ObservableObject {
             "  | ~~~~~~~~ |",
             "   \\________/",
         ]
-        if dance { printAuthorsDance(style: aboutDanceStyle) } else { printLines(philipArt, color: .cyan); print("") }
+        // Still on arrival: they only move when you ask, with the buttons below.
+        let animate = aboutDanceRequested
+        aboutDanceRequested = false
+        if dance { printAuthorsDance(style: aboutDanceStyle, animate: animate) } else { printLines(philipArt, color: .cyan); print("") }
         print("  CREATED BY", color: .cyan, bold: true)
         print("  Philip Lewis", color: .brightGreen)
         printWrapped("Game design, creative direction, and relentless testing.", indent: 2, color: .dimGreen)
@@ -9196,8 +9600,8 @@ class GameEngine: ObservableObject {
         print("")
         print("DnDEX — CARD BROWSER", color: .cyan, bold: true)
         printWrapped("Browse character, monster, and location cards at the DnDex. See the stories behind the default character names and dungeon locations.", indent: 2, color: .dimGreen)
-        printLink("proflewis.github.io/gamer", to: "dndex", indent: 2)
-        print("  ios_card_images/card-dex/", color: .dimGreen)
+        printLink("https://proflewis.github.io/gamer/ios_card_images/card-dex/", to: "dndex", indent: 2)
+        printWrapped("(the same cards are in the repository, under ios_card_images/card-dex/)", indent: 2, color: .dimGreen)
         print("")
 
         print("THE DUNGEON MASTER", color: .cyan, bold: true)
@@ -9241,9 +9645,11 @@ class GameEngine: ObservableObject {
         // the nav cell bottom-right looked like a mistake.
         var opts: [String] = []
         if dance {
-            // First, so it's the default — and a tap on the story starts it.
-            opts.append(aboutDanceStyle == 0 ? "Dance!" : "Wave Again")
-            opts.append(aboutDanceStyle == 0 ? "Wave Again" : "Dance!")
+            // Fixed places. These used to be emitted in whichever order put
+            // the last-pressed one first, so the pair changed position under
+            // your finger every time you tapped one.
+            opts.append("Dance!")
+            opts.append("Wave Again")
         }
         opts.append("How to Play")
         opts.append("The DnDex")
@@ -9256,11 +9662,13 @@ class GameEngine: ObservableObject {
             switch all[choice - 1] {
             case "Wave Again":
                 self.aboutDanceStyle = 0
+                self.aboutDanceRequested = true
                 self.showAbout(onBack: onBack)
             case "Dance!":
                 self.aboutDanceStyle = 1
+                self.aboutDanceRequested = true
                 self.showAbout(onBack: onBack)
-            case "How to Play": self.showHowToPlay()
+            case "How to Play": self.showHowToPlay(onBack: { [weak self] in self?.showAbout(onBack: onBack) })
             case "The DnDex": self.showDnDexInfo(onBack: { [weak self] in self?.showAbout(onBack: onBack) })
             case "Licence": self.showLicenceInfo(onBack: { [weak self] in self?.showAbout(onBack: onBack) })
             case "?":
@@ -9288,16 +9696,34 @@ class GameEngine: ObservableObject {
         printWrapped("A card browser for everything in the game: the adventurers, the monsters and the places — with the story behind each default name, and the art that goes with it.", indent: 2, color: .dimGreen)
         print("")
         print("  On the web:", color: .cyan, bold: true)
-        print("  proflewis.github.io/gamer/", color: .brightGreen)
+        printLink("https://proflewis.github.io/gamer/ios_card_images/card-dex/", to: "dndex", indent: 2)
+        print("")
+        print("  The gallery of every card:", color: .cyan, bold: true)
+        printLink("https://proflewis.github.io/gamer/gallery/", to: "dndexGallery", indent: 2)
         print("")
         print("  In this repository:", color: .cyan, bold: true)
-        print("  ios_card_images/card-dex/", color: .brightGreen)
+        print("  ios_card_images/card-dex/", color: .dimGreen)
         print("")
         printWrapped("Names you meet down here — Auntie Fen, the Iron Forge — are drawn from those cards, so the same character stays the same character from one adventure to the next.", indent: 2, color: .dimGreen)
         print("")
-        showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+        showMenuOptions([MenuOption("?", tint: .navigation, compact: true),
+                         MenuOption("< Back", tint: .navigation, compact: true)])
         closeHandler = onBack
-        menuHandler = { _ in onBack() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                self.showInlineHelp {
+                    self.printTitle("The DnDex — Help")
+                    self.print("")
+                    self.printWrapped("A card for every adventurer, monster and place in the game, with the story behind its name and the art that goes with it. The green links open it in your browser.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("The names you meet in play come from these cards, so Auntie Fen is the same Auntie Fen every time.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+                return
+            }
+            onBack()
+        }
     }
 
     /// What the game is built on, and who owns what.
@@ -9315,20 +9741,37 @@ class GameEngine: ObservableObject {
         print("  THE WORDS AND PICTURES", color: .cyan, bold: true)
         printWrapped("The story, the maps, the ASCII art and the music are the game's own — written for it, not borrowed.", indent: 2, color: .dimGreen)
         print("")
-        showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+        pendingTimeoutKind = .reading
+        showMenuOptions([MenuOption("?", tint: .navigation, compact: true),
+                         MenuOption("< Back", tint: .navigation, compact: true)])
         closeHandler = onBack
-        menuHandler = { _ in onBack() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            guard choice == 1 else { onBack(); return }
+            self.showInlineHelp {
+                self.printTitle("Licence — Help")
+                self.print("")
+                self.printWrapped("What the game is built on, and who owns what. The rules it follows are the freely published ones; the words, maps, art and music were written for this game rather than borrowed.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.printWrapped("The green links open the page they name in your browser.", indent: 2, color: .dimGreen)
+                self.print("")
+            }
+        }
     }
 
     private var aboutDanceTimer: Timer?
 
     /// Which animation the About page is showing: 0 a hello, 1 a dance.
     private var aboutDanceStyle = 0
+    /// Set only by Wave Again / Dance!. Reading it in showAbout clears it, so
+    /// arriving at About — or coming back from How to Play, the DnDex or the
+    /// Licence — always finds the three of them at rest.
+    private var aboutDanceRequested = false
 
     /// The three authors in ASCII — Professor Lewis waving, Beau
     /// bouncing with a controller, Claude twinkling — for about 18 seconds.
     /// Style 1 is the same three, dancing, with the music to go with it.
-    private func printAuthorsDance(style: Int = 0) {
+    private func printAuthorsDance(style: Int = 0, animate: Bool = true) {
         let profWave: [[String]] = [
             ["  _____", " [_____]", "  (o-o)", "  /|_|\\", "   / \\"],
             ["  _____", " [_____]", "  (o-o)/", "  /|_|", "   / \\"],
@@ -9375,6 +9818,8 @@ class GameEngine: ObservableObject {
         if style == 1 { print("        ♪   ♫   ♪   ♫   ♪", color: .yellow) }
         print("")
         aboutDanceTimer?.invalidate()
+        // Frame 0 is already on screen; without a request, that is where it stays.
+        guard animate else { return }
         let generation = screenGeneration
         var tick = 0
         aboutDanceTimer = Timer.scheduledTimer(withTimeInterval: style == 1 ? 0.3 : 0.45, repeats: true) { [weak self] timer in
@@ -9651,6 +10096,11 @@ class GameEngine: ObservableObject {
         printWrapped("Make fights, loot, search results, tales and the rest quicker or slower, each on its own — see Timeouts.", indent: 2, color: .dimGreen)
         print("")
 
+        print("LEVELS:", color: .cyan, bold: true)
+        print("  \(Dungeon.finalLevel) levels deep", color: .brightGreen)
+        printWrapped("How deep a NEW dungeon goes: the ground floor and the levels below it, down to the last guardian. The quest tells a part of its story on each one, so a shallow dungeon is a shorter tale, not a poorer one. Adventures already under way keep the depth they were made with.", indent: 2, color: .dimGreen)
+        print("")
+
         print("QUEST TEXT:", color: .cyan, bold: true)
         print("  \(questVerbosityLabel)", color: .brightGreen)
         printWrapped("How much the quests say: Brief (short tales, few reminders), Normal, or Rich (longer tales, more hints).", indent: 2, color: .dimGreen)
@@ -9759,6 +10209,11 @@ class GameEngine: ObservableObject {
         #endif
         print("")
 
+        print("MAIN QUESTS:", color: .cyan, bold: true)
+        print("  \(mainQuestsEnabled ? "On" : "Off")", color: mainQuestsEnabled ? .brightGreen : .red)
+        printWrapped("Whether a new adventure opens with somebody's plea and a villain to swear against. Off, you just go down for the adventure of it, and anything to do with a main quest is greyed out. Errands from the people you meet are unaffected either way.", indent: 2, color: .dimGreen)
+        print("")
+
         print("DUNGEON QUIRKS:", color: .cyan, bold: true)
         print("  \(dungeonQuirksEnabled ? "On" : "Off")", color: dungeonQuirksEnabled ? .brightGreen : .red)
         printWrapped("Little oddities, off by default: the dragon's winks wander out of the pictures and into the words (\"g- -n\" — the DM still understands). Best left off with VoiceOver.", indent: 2, color: .dimGreen)
@@ -9770,7 +10225,7 @@ class GameEngine: ObservableObject {
             "Map Length", useArrowNavigation ? "Use Swipe" : "Use Buttons",
             "Info Timeout", "Timeouts", "Quest Text: \(questVerbosityLabel)", autoContinueEnabled ? "Auto-Continue Off" : "Auto-Continue On",
             showCountdownControl ? "Countdown Icon Off" : "Countdown Icon On",
-            "Button Limit", "Long Press",
+            "Button Limit", "Long Press", "Levels",
             // Page 2 — Features
             npcsEnabled ? "NPCs Off" : "NPCs On", poisonEnabled ? "Poison Off" : "Poison On",
             multiplayerEnabled ? "Multi Off" : "Multi On",
@@ -9788,6 +10243,7 @@ class GameEngine: ObservableObject {
             teleportPadsEnabled ? "Teleport Off" : "Teleport On",
             combatArenaEnabled ? "Fight Club Off" : "Fight Club On",
             dungeonQuirksEnabled ? "Quirks Off" : "Quirks On",
+            mainQuestsEnabled ? "Main Quests Off" : "Main Quests On",
             // Page 3 — System
             "Log Limit", "List Order",
             atlasShowAllRooms ? "World Map: Visited" : "World Map: All Rooms",
@@ -9829,10 +10285,17 @@ class GameEngine: ObservableObject {
                 UserDefaults.standard.set(self.autoContinueEnabled, forKey: "autoContinueEnabled")
                 if self.autoContinueEnabled { self.autoContinuePaused = false }
                 self.showGameplaySettings(page: currentPage)
+            } else if selected == "Levels" {
+                self.showDungeonLevelsMenu()
             } else if selected == "Button Limit" {
                 self.showButtonLimitMenu()
             } else if selected == "Long Press" {
                 self.showLongPressMenu()
+            } else if selected.hasPrefix("Main Quests") {
+                self.recordSettingChange(screen: "s:gameplay", key: "mainQuestsEnabled", name: "Main Quests")
+                self.mainQuestsEnabled.toggle()
+                UserDefaults.standard.set(self.mainQuestsEnabled, forKey: "mainQuestsEnabled")
+                self.showGameplaySettings(page: currentPage)
             } else if selected.hasPrefix("Quirks") {
                 self.recordSettingChange(screen: "s:gameplay", key: "dungeonQuirks", name: "Quirks")
                 self.dungeonQuirksEnabled.toggle()
@@ -10215,6 +10678,39 @@ class GameEngine: ObservableObject {
                 self.showGameplaySettings()
             } else {
                 self.print("  Invalid value. Enter seconds (e.g. 1.5s or 4.0)", color: .red)
+            }
+        }
+    }
+
+    /// How deep a new dungeon goes. Never changes a game already under way.
+    private func showDungeonLevelsMenu() {
+        clearTerminal()
+        printTitle("Levels")
+        printWrapped("How deep a new dungeon goes — the ground floor and everything below it, down to where the last guardian waits. The quest spreads its story over the levels, so fewer levels means a shorter tale rather than a thinner one.", indent: 2, color: .dimGreen)
+        print("")
+        print("  Current: \(Dungeon.isAutoDepth ? "Auto (by difficulty)" : "\(Dungeon.finalLevel)")", color: .brightGreen)
+        printWrapped("On Auto, an easy adventure is a floor or two, medium about five and hard about seven — with a little variation, so two games are never quite the same shape. Harder than hard does not go deeper: the fighting gets harder instead.", indent: 2, color: .dimGreen)
+        printWrapped("An adventure already under way keeps the depth it was made with.", indent: 2, color: .dimGreen)
+        print("")
+
+        // 0 is Auto, and 0 is also what UserDefaults returns when nothing was
+        // ever stored — so this is the default without needing a migration.
+        let values = [0, 1, 3, 5, 7, 9, 12]
+        var options = values.map { $0 == 0 ? "Auto (by difficulty)" : "\($0)" }
+        options.append("< Back")
+        showMenu(options)
+        let backToGameplay: () -> Void = { [weak self] in self?.showGameplaySettings() }
+        closeHandler = backToGameplay
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice > 0 && choice <= values.count {
+                UserDefaults.standard.set(values[choice - 1], forKey: "dungeonLevelCount")
+                let picked = values[choice - 1]
+                self.logEvent(picked == 0 ? "New dungeons take their depth from the difficulty"
+                                          : "New dungeons are now \(picked) levels deep", category: "SETTINGS")
+                self.showGameplaySettings()
+            } else {
+                backToGameplay()
             }
         }
     }
@@ -11769,6 +12265,11 @@ class GameEngine: ObservableObject {
             print("  \(melodyName(type: "combat", choice: combatMelodyChoice))", color: .brightGreen)
             print("")
 
+            print("MUSIC SPEED:", color: .cyan, bold: true)
+            print("  \(SoundManager.musicSpeedLabel(SoundManager.shared.musicSpeed))", color: .brightGreen)
+            printWrapped("How quickly every tune plays. The exploring tunes were written slow, with silences between the notes, so this starts quicker than written — wind it back if you'd rather they brooded.", indent: 2, color: .dimGreen)
+            print("")
+
             print("CHAT TUNE:", color: .cyan, bold: true)
             print("  \(melodyName(type: "chat", choice: chatMelodyChoice))", color: .brightGreen)
             print("")
@@ -11780,7 +12281,7 @@ class GameEngine: ObservableObject {
 
         var options: [String] = ["Switches"]
         if musicEnabled {
-            options.append(contentsOf: ["Menu Tune", "Explore Tune", "Combat Tune", "Chat Tune"])
+            options.append(contentsOf: ["Menu Tune", "Explore Tune", "Combat Tune", "Chat Tune", "Music Speed"])
         }
         var menuOpts = options.map { MenuOption($0) }
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -11833,6 +12334,17 @@ class GameEngine: ObservableObject {
                 self.chatMelodyChoice = (self.chatMelodyChoice + 1) % 4
                 SoundManager.shared.stopMusic()
                 SoundManager.shared.startMusic(.chat, preference: self.chatMelodyChoice)
+                self.showMusicSettings()
+            case "Music Speed":
+                self.recordSettingChange(screen: "s:mood", key: "musicSpeed", name: "Music Speed")
+                let speeds = SoundManager.musicSpeeds
+                let now = SoundManager.shared.musicSpeed
+                let next = speeds.firstIndex(where: { abs($0 - now) < 0.01 }).map { (
+                    $0 + 1) % speeds.count } ?? 0
+                SoundManager.shared.musicSpeed = speeds[next]
+                // Restart so the new speed is audible at once, on whatever is playing.
+                SoundManager.shared.stopMusic()
+                self.playCurrentMusic()
                 self.showMusicSettings()
             default: break
             }
@@ -15042,6 +15554,16 @@ class GameEngine: ObservableObject {
 
     /// Show character card with edit options — dulled if game in progress
     /// Print a card row: "  ║ Label     Value         ║"
+    /// Cards are drawn in text, so "bigger" means wider — a Mac window has
+    /// the room for it, a phone hasn't.
+    static var cardColumns: Int {
+        #if os(macOS)
+        return 44
+        #else
+        return 27
+        #endif
+    }
+
     private func printCardRow(_ label: String, _ value: String, width: Int, color: TerminalColor) {
         let inner = " \(label)  \(value)"
         let padCount = max(0, width - inner.count)
@@ -15056,7 +15578,7 @@ class GameEngine: ObservableObject {
         clearTerminal()
 
         // ── Card border top ──
-        let cardWidth = 33
+        let cardWidth = Self.cardColumns + 6
         let border = String(repeating: "═", count: cardWidth)
         print("  ╔\(border)╗", color: .cyan)
 
@@ -17116,6 +17638,21 @@ class GameEngine: ObservableObject {
         "Sigurd", "Brynhild", "Volund",
     ]
 
+    /// A dungeon is a place. Where a lore name is a vessel or a contraption
+    /// rather than somewhere you can go down into, it becomes a place named
+    /// after it — which is how such places get their names anyway.
+    static func asPlaceName(_ name: String) -> String {
+        let notPlaces: [String: String] = [
+            "Nostromo": "Nostromo Deep",
+            "Games Machine": "The Games Machine Vaults",
+            "Krell Laboratory": "The Krell Undercroft",
+            "Gateway": "Gateway Hollow",
+            "Change War Station": "The Change War Deeps",
+            "Patrol Crash Site": "The Patrol Wreck",
+        ]
+        return notPlaces[name] ?? name
+    }
+
     private let dungeonNames = [
         // Moorcock
         "Tanelorn", "The Pulsing Cavern", "Melnibone",
@@ -17131,16 +17668,16 @@ class GameEngine: ObservableObject {
         // Classic sci-fi settings
         "Trantor", "Terminus", "Foundation",    // Asimov
         "Arrakeen", "Sietch Tabr",              // Herbert
-        "Solaris Station", "Rama",              // Lem / Clarke
-        "Nostromo", "Acheron",                  // Alien
+        "Solaris Deep", "Rama Hollow",          // Lem / Clarke — named after the craft
+        "Nostromo Deep", "Acheron",             // Alien — after the ship, not the ship
         "Tyrell Pyramid", "Sector 6",           // Blade Runner
         // Samuel Butler
         "Erewhon",
         // Jules Verne
-        "The Nautilus", "Centre of the Earth",
-        "Doct Ox's Experiment", "The Mysterious Island",
+        "The Nautilus Vaults", "Centre of the Earth",
+        "Doctor Ox's Experiment", "The Mysterious Island",
         // H.G. Wells
-        "The Island of Dr. Moreau", "The Time Machine",
+        "The Island of Dr. Moreau", "The Time Machine Works",
         // Jonathan Swift
         "Laputa", "Brobdingnag", "Lilliput",
         // Dante
@@ -18307,8 +18844,10 @@ class GameEngine: ObservableObject {
         clearTerminal()
         printTitle("Adventure Awaits!")
 
-        print("Your party is ready to enter a", color: .dimGreen)
-        print("dungeon. Name it, or pick one:", color: .dimGreen)
+        print("Your party is ready. Every dungeon needs a name —", color: .dimGreen)
+        print("give this one yours.", color: .dimGreen)
+        print("")
+        printWrapped("› Type a name on the line at the bottom and press Return — or tap one of the three below.", indent: 2, color: .brightGreen)
         print("")
 
         // Pick 3 unique random dungeon names
@@ -18323,8 +18862,13 @@ class GameEngine: ObservableObject {
         opts.append("?")
         opts.append("< Back")
         promptTextWithMenu("Name your dungeon, or choose a default:", options: opts)
+        flashTitle()   // a nudge towards the prompt
 
-        let dungeonLoreNames = nameEntries.filter { $0.category == "dungeon" }.map { $0.name }
+        // Some of the lore names are places (Lankhmar, Gormenghast) and read
+        // straight off as a dungeon. Others are a ship, a machine or a single
+        // room — a dungeon can be named AFTER one of those, but it cannot BE
+        // one, so those are given somewhere to be.
+        let dungeonLoreNames = nameEntries.filter { $0.category == "dungeon" }.map { Self.asPlaceName($0.name) }
         rerollHandler = { [weak self] in
             guard let self = self else { return }
             let loreName = dungeonLoreNames.randomElement() ?? self.dungeonNames.randomElement() ?? "The Dark Depths"
@@ -18625,7 +19169,7 @@ class GameEngine: ObservableObject {
             }
             let diff = self.parseDifficulty(Double(choice))
             self.difficultyScale = diff.scale
-            self.dungeon = Dungeon(name: dungeonName, level: diff.level)
+            self.dungeon = Dungeon.newAdventure(name: dungeonName, difficulty: diff.level)
             self.beginQuestOffer(backTo: { [weak self] in self?.confirmAdventure(dungeonName: dungeonName, level: Double(choice)) })
         }
     }
@@ -18676,6 +19220,13 @@ class GameEngine: ObservableObject {
     var questHistory: [String] = []
     /// Chose to adventure with no main quest (people will nag, and offer one).
     var noMainQuest = false
+    /// Settings > Gameplay: whether main quests happen at all. Off means no
+    /// plea, no oath, and no villain waiting at the bottom of the world — but
+    /// the errands people set you on the way carry on exactly as before. This
+    /// is deliberately main-quest only, which is why the errand options stay
+    /// live everywhere below.
+    @Published var mainQuestsEnabled: Bool = UserDefaults.standard.object(forKey: "mainQuestsEnabled") == nil
+        ? true : UserDefaults.standard.bool(forKey: "mainQuestsEnabled")
     var mainQuestCompleted = false
     /// The plea just turned down (the next asker riffs on it), and who's asking.
     private var questPleaPrevious: MainQuest?
@@ -18971,7 +19522,14 @@ class GameEngine: ObservableObject {
         } else {
             lines.append("It is day \(gameTimeMinutes / 1440 + 1) of the adventure in \(dungeon.name).")
         }
-        lines.append("\(together) \(names.count == 1 ? "has" : "have") explored \(explored) of the \(dungeon.rooms.count) rooms on level \(dungeon.level) of \(dungeon.name).")
+        // Only claim progress the party has actually made. At the start they
+        // have seen the entrance and nothing else, and "explored 1 of 24 rooms"
+        // reads as a plain untruth to anyone who has just walked in.
+        if explored <= 1 {
+            lines.append("\(together) \(names.count == 1 ? "has" : "have") only just set foot in \(dungeon.name) — the entrance, and the dark beyond it.")
+        } else {
+            lines.append("\(together) \(names.count == 1 ? "has" : "have") explored \(explored) of the \(dungeon.rooms.count) rooms on level \(dungeon.level) of \(dungeon.name).")
+        }
         if monstersSlain > 0 {
             lines.append("They have faced down \(monstersSlain) creature\(monstersSlain == 1 ? "" : "s"), winning \(combatsWon) fight\(combatsWon == 1 ? "" : "s") in the dark.")
         } else {
@@ -19029,7 +19587,11 @@ class GameEngine: ObservableObject {
             self.awaitingContinue = false
         }
         for _ in 0..<5 { print("") }
-        print(Self.travelLines.randomElement()!, color: .dimGreen, centered: true)
+        // Already at the meeting place? Then it isn't a journey, it's a queue.
+        // Same test the title uses further down — see `isPlea` in play().
+        let waitingForAnother = questPleaPrevious != nil || questChangeBackup != nil
+        let waitingLines = waitingForAnother ? Self.petitionLines : Self.travelLines
+        print(waitingLines.randomElement()!, color: .dimGreen, centered: true)
         startWritingBar(seconds: 15)
         DMEngine.shared.writeStory(system: storySystemPrompt, prompt: storyPrompt()) { [weak self] text in
             guard let self = self, self.taleWriteToken == writeToken else { return }
@@ -19511,7 +20073,7 @@ class GameEngine: ObservableObject {
                 self.adventureRedoStack.removeAll()
                 let diff = self.parseDifficulty(level)
                 self.difficultyScale = diff.scale
-                self.dungeon = Dungeon(name: dungeonName, level: diff.level)
+                self.dungeon = Dungeon.newAdventure(name: dungeonName, difficulty: diff.level)
                 self.beginQuestOffer(backTo: { [weak self] in self?.confirmAdventure(dungeonName: dungeonName, level: level) })
             case "Difficulty":
                 self.adventureUndoStack.append((dungeonName, level))
@@ -19941,8 +20503,8 @@ class GameEngine: ObservableObject {
             self.print("  INVENTORY", color: .cyan, bold: true)
             self.printWrapped("Open pack to equip, use, or drop items.", indent: 2, color: .dimGreen)
             self.print("")
-            self.print("  ACTING AS", color: .cyan, bold: true)
-            self.printWrapped("Search Room, Listen, and Illuminate normally use whoever in the party is automatically best suited. Tap 'Acting As' to override that and have a specific character do it instead — handy for roleplay. Set back to Auto any time.", indent: 2, color: .dimGreen)
+            self.print("  ACTOR", color: .cyan, bold: true)
+            self.printWrapped("Search Room, Listen, and Illuminate normally use whoever in the party is best suited. Tap 'Actor' to name someone instead — handy for roleplay; it shows who is set, as 'Actor: Rachel'. Set it back to Best any time.", indent: 2, color: .dimGreen)
             self.print("")
         }
     }
@@ -20084,7 +20646,7 @@ class GameEngine: ObservableObject {
         print("")
 
         // Where you are: the place, the level, and the floor where there are several.
-        print("\(dungeon.name) · Level \(dungeon.level) · floor \(Dungeon.depthLabel(dungeon.level))\(dungeon.hasVerticalConnections ? " · \(dungeon.galleryName)" : "")", color: .cyan)
+        print("\(dungeon.name) · \(Dungeon.floorName(dungeon.level))\(dungeon.level <= 1 ? " (ground)" : "")\(dungeon.hasVerticalConnections ? " · \(dungeon.galleryName)" : "")", color: .cyan)
 
         // Room description — dim when the room itself isn't lit
         if roomIsLit {
@@ -20143,7 +20705,7 @@ class GameEngine: ObservableObject {
         }
 
         // Party status
-        let levelStr = dungeon.level > 0 ? "Level \(dungeon.level) | " : ""
+        let levelStr = dungeon.level > 0 ? "\(Dungeon.floorName(dungeon.level)) | " : ""
         if gameTimeLimit > 0 {
             let remaining = max(0, gameTimeLimit - gameTimeMinutes)
             let remainStr = formatTimeRemaining(remaining)
@@ -20286,9 +20848,17 @@ class GameEngine: ObservableObject {
                 seedNameRegistry()
                 room.merchant = Merchant.random(tier: MerchantTier.forDungeonLevel(dungeon.level))
             }
-            // Where the smith stays, they and the shopkeeper are one person.
-            if let npc = room.npc, npc.type == .dwarvenSmith, room.merchant != nil, room.merchant?.name != npc.displayName {
-                room.merchant?.name = npc.displayName
+            // Where the smith stays, they and the shopkeeper are one person —
+            // and they must be one person BEFORE the room text names them.
+            // This used to rename the merchant after the description had
+            // already announced it, so "Grub, wandering pedlar" became
+            // "Hetty the Dwarven Smith" the moment you tapped Visit Merchant,
+            // keeping Grub's shop name and greeting. Now the shop takes the
+            // smith's name and a forge-ish sign, once, and stays that way.
+            if let npc = room.npc, npc.type == .dwarvenSmith, var m = room.merchant, m.name != npc.displayName {
+                m.name = npc.displayName
+                if let personal = npc.personalName { m.shopName = "\(personal)'s Forge" }
+                room.merchant = m
             }
         }
 
@@ -20316,16 +20886,20 @@ class GameEngine: ObservableObject {
             }
         }
 
-        if let pid = room.puzzleId, !room.riddleResolved, (room.cleared || room.encounter == nil), let puzzle = PuzzleBank.puzzle(id: pid) {
-            menuOpts.append(MenuOption("Solve Puzzle"))
+        // Offered even with the fight still standing: solving it is a way PAST
+        // (see presentPuzzle/presentRiddle, which clear the encounter). It used
+        // to require room.cleared, so the only way to reach a riddle was to
+        // kill everything first — which is not much of an alternative.
+        if let pid = room.puzzleId, !room.riddleResolved, let puzzle = PuzzleBank.puzzle(id: pid) {
+            menuOpts.append(MenuOption(room.encounter != nil && !room.cleared ? "Solve Puzzle to Pass" : "Solve Puzzle"))
             actions.append { [weak self] in
                 guard let self = self else { return }
                 if self.roomIsLit { self.presentPuzzle(puzzle, room: room) } else { self.attemptInTheDark("the inscription") { self.presentPuzzle(puzzle, room: room) } }
             }
         }
 
-        if let idx = room.riddleIndex, !room.riddleResolved, (room.cleared || room.encounter == nil) {
-            menuOpts.append(MenuOption("Solve Riddle"))
+        if let idx = room.riddleIndex, !room.riddleResolved {
+            menuOpts.append(MenuOption(room.encounter != nil && !room.cleared ? "Solve Riddle to Pass" : "Solve Riddle"))
             actions.append { [weak self] in
                 guard let self = self else { return }
                 if self.roomIsLit { self.presentRiddle(index: idx, room: room) } else { self.attemptInTheDark("the inscription") { self.presentRiddle(index: idx, room: room) } }
@@ -21683,7 +22257,7 @@ class GameEngine: ObservableObject {
         print("")
 
         // Party status
-        let levelStr = dungeon.level > 0 ? "Level \(dungeon.level) | " : ""
+        let levelStr = dungeon.level > 0 ? "\(Dungeon.floorName(dungeon.level)) | " : ""
         if gameTimeLimit > 0 {
             let remaining = max(0, gameTimeLimit - gameTimeMinutes)
             let remainStr = formatTimeRemaining(remaining)
@@ -21793,7 +22367,7 @@ class GameEngine: ObservableObject {
         // showing once there's more than one conscious party member to pick
         // from.
         if consciousParty.count > 1 {
-            let actingLabel = actingOverrideCharacter.map { "Acting As: \(shortName(for: $0))" } ?? "Acting As: Auto"
+            let actingLabel = actingOverrideCharacter.map { "Actor: \(shortName(for: $0))" } ?? "Actor: Best"
             menuOpts.append(MenuOption(actingLabel, tint: actingOverrideCharacter != nil ? .cyan : .navigation))
             actions.append { [weak self] in
                 returnToActions()
@@ -21858,12 +22432,12 @@ class GameEngine: ObservableObject {
             printExplorationMap()
             print("")
         }
-        printSubtitle("Acting As")
-        printWrapped("Choose who performs Search Room, Listen, and Illuminate. Auto picks whoever in the party is best suited each time.", indent: 2, color: .dimGreen)
+        printSubtitle("Actor")
+        printWrapped("Choose who performs Search Room, Listen, and Illuminate. Best picks whoever in the party is best suited each time.", indent: 2, color: .dimGreen)
         print("")
 
         let candidates = party.filter { $0.isConscious }
-        var options: [String] = ["Auto (best fit)"]
+        var options: [String] = ["Best (choose for me)"]
         for char in candidates {
             options.append(shortName(for: char) + (char.id == actingAsCharacterId ? " (current)" : ""))
         }
@@ -21896,6 +22470,9 @@ class GameEngine: ObservableObject {
             printExplorationMap()
             print("")
         }
+        // Everything printed after the map is the part worth reading; the
+        // result's own wait is measured from here.
+        let textStart = terminalLines.count
 
         // Wall-mounted torches in a torchlit passage are visible, not hidden —
         // taking a spare one is guaranteed, no perception roll needed.
@@ -21972,11 +22549,73 @@ class GameEngine: ObservableObject {
             printWrapped(observation, indent: 2, color: .dimGreen)
         }
 
-        pendingTimeoutKind = .search; autoReturn(after: max(2.5, infoTimeout * 0.8), stretchForReading: false)   // search results move on briskly
+        showSearchResultButtons()
+        pendingTimeoutKind = .search
+        autoReturn(after: searchResultTimeout(from: textStart, found: false), stretchForReading: false)
     }
 
-    /// Room-type flavour text (merged from former Examine action)
+    /// Incidental things you might notice in any room at all. The dungeon is
+    /// lived in — by somebody, or something — and these are the leavings.
+    static let anywhereDetails = [
+        "A spider the size of a thumbnail is rebuilding a web somebody walked through.",
+        "The remains of last night's dinner: a bone, picked very clean, and a gnawed crust.",
+        "Somebody's boot print in the dust, going the other way.",
+        "A candle stub, burned right down, stuck to the stone with its own wax.",
+        "Three spiders, sitting well apart, as though they had fallen out.",
+        "A rat watches from a crack, entirely unbothered by you.",
+        "A tin cup on its side, and a ring where it stood for a long time.",
+        "Scratches on the wall at knee height. Something small, and in a hurry.",
+        "The floor is swept in one corner. Only one corner.",
+        "A smell of woodsmoke that has no business being down here.",
+        "Somebody's initials, scratched and then half scratched out again.",
+        "A playing card, face down. It's the two of cups.",
+        "Water has got in and left a tidemark higher than you'd like.",
+        "A neat pile of small bones, stacked by someone with time on their hands.",
+        "Moss grows in a perfect circle, and nowhere else.",
+        "A bootlace, knotted twice, lying where it snapped.",
+        "The dust here has been disturbed recently, and then smoothed over.",
+        "An old cooking pot, rust through the bottom, still hanging on its hook.",
+        "A child's wooden horse, missing a leg. Nobody says anything about it.",
+        "Two spiders have made a web across the doorway you came through.",
+        "Chalk marks: four strokes and a line through them, twice over.",
+        "A bird's nest, up in the vaulting, impossibly far from any sky.",
+        "Somebody has eaten here, and washed up after themselves.",
+        "A dropped coin, too worn to name the face on it.",
+        "The air moves. There's a way out of here that you can't see.",
+        "A rope end, cut clean, still knotted to a ring in the wall.",
+        "Beetles scatter from under your boot and are gone.",
+        "A tooth. Not a person's. Not a rat's either.",
+        "Fresh mushrooms, in a ring, growing out of nothing at all.",
+        "A shelf of grease where a lamp has stood, night after night.",
+        "Half a map, torn across, showing somewhere this isn't.",
+        "Something has been dragged across this floor, and not lightly.",
+        "A comb, with three teeth missing, dropped and forgotten.",
+        "Spider silk hangs everywhere, but you cannot find one spider.",
+        "A stub of chalk, worn to nothing, left on a ledge.",
+        "Somebody slept here: a hollow in the dust, roughly person-shaped.",
+        "The last of a fire, cold, with the wood stacked ready for the next one.",
+        "A button, brass, stamped with a crest nobody here recognises.",
+        "Wax has run down the wall from a candle held up to read by.",
+        "There are fingerprints on the underside of the sill. Somebody hung there.",
+    ]
+
+    /// What the party notices: the room's own character, and then an ordinary
+    /// thing or two that could be in any room — which is what stops every
+    /// look around reading like the last one.
     private func examineObservation(for room: Room) -> String {
+        var parts: [String] = []
+        let ofTheRoom = roomTypeObservation(for: room)
+        if !ofTheRoom.isEmpty { parts.append(ofTheRoom) }
+        // One incidental detail usually, two now and then — never the same one
+        // twice running (see pickVaried).
+        let extras = Int.random(in: 1...10) <= 3 ? 2 : 1
+        for _ in 0..<extras {
+            parts.append(Self.pickVaried(Self.anywhereDetails, avoiding: &lastAnywhereDetail))
+        }
+        return parts.joined(separator: " ")
+    }
+    /// Room-type flavour text (merged from former Examine action)
+    private func roomTypeObservation(for room: Room) -> String {
         switch room.roomType {
         case .library:
             return ["Faded journals hint at the dungeon's history.", "The books are mostly ruined, but one contains a partial map.", "Ancient texts warn of deeper dangers."].randomElement()!
@@ -22038,6 +22677,8 @@ class GameEngine: ObservableObject {
         guard let room = dungeon?.currentRoom else { return }
 
         clearTerminal()
+        // No map on this screen — all of it is text worth reading.
+        let textStart = terminalLines.count
         printWrapped("You fumble around in the darkness...", indent: 2, color: .gray)
         print("")
         advanceTime(15)
@@ -22111,7 +22752,9 @@ class GameEngine: ObservableObject {
             logEvent("Dark search — nothing to find in \(room.name)", category: "EXPLORE")
         }
 
-        pendingTimeoutKind = .search; autoReturn(after: max(2.5, infoTimeout * 0.8), stretchForReading: false)   // search results move on briskly
+        showSearchResultButtons()
+        pendingTimeoutKind = .search
+        autoReturn(after: searchResultTimeout(from: textStart, found: false), stretchForReading: false)
     }
 
     /// Long-press Examine in the dark — risky fumbling examination
@@ -22124,6 +22767,7 @@ class GameEngine: ObservableObject {
             print("")
         }
 
+        let textStart = terminalLines.count
         advanceTime(10)
 
         printWrapped("You grope around in the darkness, trying to make sense of this place...", indent: 2, color: .gray)
@@ -22171,7 +22815,9 @@ class GameEngine: ObservableObject {
 
         logEvent("Dark examine in \(room.name)", category: "EXPLORE")
 
-        autoReturn()
+        showSearchResultButtons()
+        pendingTimeoutKind = .search
+        autoReturn(after: searchResultTimeout(from: textStart, found: false), stretchForReading: false)
     }
 
     /// Long-press Supplies in the dark — risky blind foraging
@@ -22184,6 +22830,7 @@ class GameEngine: ObservableObject {
             print("")
         }
 
+        let textStart = terminalLines.count
         advanceTime(15)
         room.searchedFor.insert("foraged")
 
@@ -22219,7 +22866,9 @@ class GameEngine: ObservableObject {
             logEvent("Dark forage — nothing found in \(room.name)", category: "EXPLORE")
         }
 
-        autoReturn()
+        showSearchResultButtons()
+        pendingTimeoutKind = .search
+        autoReturn(after: searchResultTimeout(from: textStart, found: false), stretchForReading: false)
     }
 
     /// Thematic description of where an item was found, based on room type
@@ -22546,6 +23195,47 @@ class GameEngine: ObservableObject {
 
     // MARK: - Forage Supplies
 
+    /// How long a search result sits before it moves on by itself. A find is
+    /// worth reading; "you found nothing" is not, and neither is one short
+    /// line — so the wait is sized from the text actually on screen, measured
+    /// from `startLine` (captured once the map is drawn, so the map never
+    /// counts towards the reading time).
+    private func searchResultTimeout(from startLine: Int, found: Bool) -> Double {
+        let start = min(max(0, startLine), terminalLines.count)
+        let chars = terminalLines[start...].reduce(0) {
+            $0 + $1.text.trimmingCharacters(in: .whitespaces).count
+        }
+        let read = Double(chars) / 22.0                     // ~22 characters a second
+        let cap = infoTimeout * (found ? 0.8 : 0.45)
+        return max(found ? 2.5 : 1.5, min(cap, read))
+    }
+
+    /// Back and help, and nothing else. A search result is something to read,
+    /// not somewhere to act from, so the exploration icon grid comes off it —
+    /// showMenuOptions nulls every d-pad corner as its first act.
+    private func showSearchResultButtons() {
+        showMenuOptions([MenuOption("?", tint: .navigation, compact: true),
+                         MenuOption("< Back", tint: .navigation, compact: true)])
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 { self.showSearchHelp() } else { self.showExplorationView() }
+        }
+    }
+
+    private func showSearchHelp() {
+        showInlineHelp {
+            self.printTitle("Searching — Help")
+            self.print("")
+            self.printWrapped("Searching takes fifteen minutes and uses whoever has the best Perception — or whoever you have named under Actor.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("Once a room's hidden things are found, searching again scavenges instead: odds and ends worth a little gold, and sometimes what the level's guardian asked you to gather. A room can only be scavenged once.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("In the dark it is far harder, and it can go wrong.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("This screen moves on by itself, and does so quicker when there was nothing to find. Tap the hourglass to hold it.", indent: 2, color: .dimGreen)
+        }
+    }
+
     private func forageSupplies() {
         guard let room = dungeon?.currentRoom, let dungeon = dungeon else { return }
 
@@ -22554,8 +23244,11 @@ class GameEngine: ObservableObject {
             clearTerminal()
             printExplorationMap()
             print("")
+            let textStart = terminalLines.count
             printWrapped("You've already scavenged this room — nothing left to find.", indent: 2, color: .yellow)
-            pendingTimeoutKind = .search; autoReturn(after: max(2.5, infoTimeout * 0.8), stretchForReading: false)   // search results move on briskly
+            showSearchResultButtons()
+            pendingTimeoutKind = .search
+            autoReturn(after: searchResultTimeout(from: textStart, found: false), stretchForReading: false)
             return
         }
 
@@ -22563,11 +23256,33 @@ class GameEngine: ObservableObject {
         printExplorationMap()
         print("")
 
+        let textStart = terminalLines.count
         advanceTime(15)
         room.searchedFor.insert("foraged")
 
         printWrapped("You scavenge the \(room.name.lowercased()) for useful supplies...", indent: 2, color: .cyan)
         print("")
+
+        // What the level's guardian named can turn up while scavenging. Only
+        // once per room (this room is marked foraged above), so it's found by
+        // exploring rather than by standing still and asking again.
+        if var mq = mainQuest, let want = mq.chapterItem, let need = mq.chapterNeeded,
+           (mq.chapterFound ?? 0) < need, Int.random(in: 1...100) <= 45 {
+            let got = (mq.chapterFound ?? 0) + 1
+            mq.chapterFound = got
+            mainQuest = mq
+            let item = Item(id: UUID(), name: want, description: "Part of what the quest asks of this level.",
+                            type: .misc, weight: 0.5, value: 5, weaponStats: nil, armorStats: nil, potionStats: nil)
+            printWrapped(got >= need
+                ? "And there, among the rubbish: \(want) — enough of them at last, \(got) of \(need)."
+                : "And there, among the rubbish: \(want), just as the guardian said. That's \(got) of \(need).",
+                         indent: 2, color: .brightGreen)
+            logEvent("Gathered \(want) — \(got) of \(need) — in \(room.name)", category: "QUEST")
+            showItemPickupMenu(item: item, source: "Foraged in \(room.name)") { [weak self] in
+                self?.showExplorationView()
+            }
+            return
+        }
 
         // Room-type-specific foraging
         var foundItem: Item? = nil
@@ -22654,13 +23369,17 @@ class GameEngine: ObservableObject {
         logEvent("Foraged \(room.name) — nothing found", category: "EXPLORE")
         logMultiplayerAction("Foraged supplies in \(room.name)")
 
-        pendingTimeoutKind = .search; autoReturn(after: max(2.5, infoTimeout * 0.8), stretchForReading: false)   // search results move on briskly
+        showSearchResultButtons()
+        pendingTimeoutKind = .search
+        autoReturn(after: searchResultTimeout(from: textStart, found: false), stretchForReading: false)
     }
 
     // MARK: - Talk to NPC
 
     /// Rooms whose NPC has already been asked about the main quest.
     private var questAskedRooms = Set<Int>()
+    /// How many times running the party has been brushed off over the quest.
+    private var questRepeatAsks = 0
 
     /// Someone down here may know where the prize is kept, or what to do
     /// with it — or at least who to ask. Each person answers once.
@@ -22669,7 +23388,31 @@ class GameEngine: ObservableObject {
         let who = npc.type.rawValue.lowercased()
         print("")
         if questAskedRooms.contains(roomId) {
-            printWrapped("\"I've told you all I know,\" says the \(who).", indent: 2, color: .yellow)
+            // Being told "I've told you already" for ever is no use to anyone.
+            // Brush the party off once or twice, then give in and go over it
+            // again — everything this quest has turned up so far.
+            questRepeatAsks += 1
+            if questRepeatAsks < 3 {
+                printWrapped(["\"I've told you all I know,\" says the \(who).",
+                              "\"Same answer as last time,\" says the \(who), not unkindly.",
+                              "The \(who) raises an eyebrow. \"Again?\""].randomElement()!, indent: 2, color: .yellow)
+            } else {
+                questRepeatAsks = 0
+                printWrapped("The \(who) sighs. \"Once more, then — and pay attention this time.\"", indent: 2, color: .yellow)
+                print("")
+                printWrapped("To \(mq.goal), \(mq.stakes).", indent: 2, color: .dimGreen)
+                for clue in mq.cluesLearned ?? [] { printWrapped("· \(clue)", indent: 4, color: .cyan) }
+                for verse in mq.runeVerses.prefix(mq.runesRead) { printWrapped("\u{16B1} \(verse)", indent: 4, color: .yellow) }
+                if let name = mq.deadlineName, let day = mq.deadlineDay, mq.deadlineKnown == true {
+                    let left = max(0, day - (gameTimeMinutes / 1440 + 1))
+                    printWrapped("And \(name) is \(left == 0 ? "today" : "\(left) day\(left == 1 ? "" : "s") off").", indent: 4, color: .yellow)
+                }
+                if (mq.cluesLearned ?? []).isEmpty, mq.runesRead == 0 {
+                    printWrapped("\"Which is to say: not much yet. Ask around, and read the walls.\"", indent: 2, color: .yellow)
+                }
+                print("")
+                printLink("See your quest notes", to: "questNotes", indent: 2)
+            }
         } else if let name = mq.deadlineName, let day = mq.deadlineDay, mq.deadlineKnown != true, mq.deadlinePassed != true {
             questAskedRooms.insert(roomId)
             mq.deadlineKnown = true
@@ -22686,7 +23429,8 @@ class GameEngine: ObservableObject {
             mainQuest = mq
             printWrapped("The \(who) looks around, then lowers their voice. \"\(clue)\"", indent: 2, color: .yellow)
             print("")
-            printWrapped("(Noted under your main quest in Party Status.)", indent: 2, color: .dimGreen)
+            printWrapped("Written down with your quest notes, along with everything else you've been told and every rune you've read.", indent: 2, color: .dimGreen)
+            printLink("See your quest notes", to: "questNotes", indent: 2)
             if mq.runesRead < mq.runeVerses.count && Int.random(in: 1...2) == 1 {
                 print("")
                 printWrapped("\"The ones who came down before you cut it all into the walls, you know. Runes. Look around — and read them, if you find them.\"", indent: 2, color: .yellow)
@@ -22789,6 +23533,12 @@ class GameEngine: ObservableObject {
             let roomId = room.id
             options.append(MenuOption("Ask About Our Quest", tint: .cyan))
             actions.append { [weak self] in self?.askAboutMainQuest(npc: npc, roomId: roomId) }
+        }
+
+        // This level's errand, once a guardian has named it — asked of anyone.
+        if let mq = mainQuest, !mainQuestCompleted, mq.chapterItem != nil, npc.type != .gatekeeper {
+            options.append(MenuOption("Ask: What We Need", tint: .amber))
+            actions.append { [weak self] in self?.askNPCAbout(topic: "Ingredients") }
         }
         if mainQuest == nil, npc.type != .gatekeeper {
             let roomId = room.id
@@ -22917,6 +23667,8 @@ class GameEngine: ObservableObject {
         print("  \(quest.giverName): \(quest.description)", color: .yellow)
         print("")
         printWrapped("Any progress is lost, and \(quest.giverName) won't offer it again. Word gets around — reneging costs the party's standing, about \(penalty) gold's worth of goodwill. You'll be free to accept a different quest from someone else.", indent: 2, color: .dimGreen)
+        print("")
+        printWrapped("\(quest.giverName) asked for this and has nobody else down here to ask. Walking away won't be the end of them — but they'll still be waiting when you've gone.", indent: 2, color: .yellow)
         print("")
         showMenu(["Yes, Give It Up", "No, Keep It"])
         closeHandler = returnTo
@@ -23176,12 +23928,36 @@ class GameEngine: ObservableObject {
                 let item = Item(id: UUID(), name: name, description: "A framed certificate — mostly for bragging rights.",
                                  type: .misc, weight: 0.1, value: 1, weaponStats: nil, armorStats: nil, potionStats: nil)
                 _ = recipient.addItem(item)
+                saveMeritCertificate(name, recipient: recipient,
+                                     deed: "For a quest asked, accepted, and carried out in full.")
                 return "\(recipient.name) receives a \(name)"
             }
             return reward.description
         case .newSkill, .specialSpell, .instantLevelUp, .familiar:
             return reward.description
         }
+    }
+
+    /// A certificate won along the way — "Certificate of Merit" and its
+    /// cousins — kept on the same shelf as the one for finishing an adventure.
+    /// The endgame certificate carries level maps and a page of statistics; a
+    /// merit has neither, and both are only ever iterated when drawn, so an
+    /// empty set renders as nothing rather than as a gap.
+    private func saveMeritCertificate(_ name: String, recipient: Character, deed: String) {
+        let f = DateFormatter()
+        f.dateStyle = .long
+        let cert = EndgameCertificate(
+            title: name,
+            heroes: [(name: recipient.name,
+                      detail: "\(recipient.race.rawValue) \(recipient.characterClass.rawValue), level \(recipient.level)")],
+            quest: deed,
+            village: mainQuest?.village,
+            stats: [("Awarded on day", "\(gameTimeMinutes / 1440 + 1)")],
+            levels: [],
+            date: f.string(from: Date()),
+            preview: false)
+        CertificateStore.save(cert)
+        logEvent("\(recipient.name) was awarded a \(name)", category: "QUEST")
     }
 
     private func showSideQuestComplete(_ quest: SideQuest) {
@@ -23282,6 +24058,8 @@ class GameEngine: ObservableObject {
                 let item = Item(id: UUID(), name: name, description: "A framed certificate — mostly for bragging rights.",
                                  type: .misc, weight: 0.1, value: 1, weaponStats: nil, armorStats: nil, potionStats: nil)
                 _ = recipient.addItem(item)
+                saveMeritCertificate(name, recipient: recipient,
+                                     deed: "For \(quest.description) — an errand set by \(quest.giverName), and seen through to the end.")
                 print("  \(recipient.name) receives a \(name).", color: .yellow)
             }
         }
@@ -23343,8 +24121,31 @@ class GameEngine: ObservableObject {
             }
         }
 
+        // If the topic touches on the level's errand, answer THAT — what was
+        // named, how many are still wanted, and where they turn up — rather
+        // than a general remark about herbs.
+        var questAnswer: String? = nil
+        if let mq = mainQuest, !mainQuestCompleted, let want = mq.chapterItem, let need = mq.chapterNeeded {
+            let errandTopics: Set<String> = ["Herbs", "Potions", "Ingredients", "Antidotes", "Healing arts",
+                                             "Poison cure", "Rare goods", "Dungeon lore", "Grandfather's tales"]
+            if errandTopics.contains(topic) {
+                let got = mq.chapterFound ?? 0
+                if got >= need {
+                    questAnswer = "\(want)? You've the \(need) you were told to find. Carry them down — that's what they're for."
+                } else {
+                    let short = need - got
+                    let where_ = mq.informant.map { "And \($0) would know more than I do." } ?? "Try the rooms nobody's picked over yet."
+                    questAnswer = got == 0
+                        ? "\(want), is it? You'll want \(need). Scavenge the rooms as you go — they turn up where nobody's been through already. \(where_)"
+                        : "\(want)? You've \(got). \(short) more and you'll have what was asked. \(where_)"
+                }
+            }
+        }
+
         let response: String
-        if npc.type == .gatekeeper {
+        if let answer = questAnswer {
+            response = answer
+        } else if npc.type == .gatekeeper {
             // "Quest" always returns early above via showGatekeeperQuest().
             response = npc.type.gatekeeperResponse(for: topic, trustworthiness: npc.trustworthiness, dungeonLevel: dungeon?.level ?? 1, bossType: bossType, questGold: npc.questGold, askCount: askCount)
         } else {
@@ -23681,6 +24482,36 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// What a teacher asks once the lesson is done — general dungeon sense,
+    /// so any NPC can set any of them. The right answer is always the first;
+    /// they are shuffled before being shown.
+    private static let lessonQuestions: [(question: String, right: String, wrong: [String])] = [
+        ("You come to a door you cannot see past. What do you do first?",
+         "Listen at it",
+         ["Kick it in", "Shout through it"]),
+        ("A corridor you have already walked feels colder than it was. What does that usually mean?",
+         "Something has opened somewhere",
+         ["The torch is failing", "You imagined it"]),
+        ("Your torch is down to its last stub and the way back is long. What now?",
+         "Turn back while you can still see",
+         ["Press on and hope", "Put it out to save it"]),
+        ("A chest sits alone in an empty room, unlocked and lid ajar. What is it, most likely?",
+         "Bait",
+         ["Luck", "Somebody's forgotten supper"]),
+        ("One of your party is down and the fight is still going. What matters most?",
+         "Ending the fight before anyone else falls",
+         ["Searching the body", "Arguing about whose fault it was"]),
+        ("You find writing on the wall in a language nobody in the party reads. What is worth doing?",
+         "Copying it down to ask about later",
+         ["Scrubbing it off", "Ignoring it"]),
+        ("Water is running somewhere below you that was not running yesterday. What does it tell you?",
+         "Something down there has changed",
+         ["Nothing at all", "That it has rained above"]),
+        ("A creature you have beaten once blocks the way again, and looks unhurt. What should you assume?",
+         "It is not the same one",
+         ["It healed", "You misremember"]),
+    ]
+
     private func learnFromNPC() {
         guard let room = dungeon?.currentRoom, var npc = room.npc else { return }
 
@@ -23690,13 +24521,83 @@ class GameEngine: ObservableObject {
             print("")
         }
 
+        // Once per teacher either way — a lesson sat through is a lesson used.
         npc.hasTaught = true
         room.npc = npc
 
         let desc = npc.type.teachingDescription
         printWrapped(desc, indent: 2, color: .brightGreen)
         logEvent("Learned from \(npc.type.rawValue): \(desc)", category: "NPC")
+        print("")
 
+        // Who is being taught: whoever you have named as Actor, else whoever
+        // has the least to show for themselves so far.
+        let candidates = party.filter { $0.isConscious }
+        guard let learner = actingOverrideCharacter
+                ?? candidates.min(by: { $0.skillProficiencies.count < $1.skillProficiencies.count })
+                ?? candidates.first else {
+            waitForContinue()
+            inputHandler = { [weak self] _ in self?.talkToNPC() }
+            return
+        }
+
+        guard let lesson = Self.lessonQuestions.randomElement() else {
+            waitForContinue()
+            inputHandler = { [weak self] _ in self?.talkToNPC() }
+            return
+        }
+        let answers = ([lesson.right] + lesson.wrong).shuffled()
+
+        printWrapped("\"Before you go,\" says \(npc.displayName), \"let's see what you've taken in.\"", indent: 2, color: .cyan)
+        print("")
+        printWrapped("\(shortName(for: learner)) is asked: \(lesson.question)", indent: 2, color: .yellow)
+        print("")
+
+        showMenuOptions(answers.map { MenuOption($0) }
+                        + [MenuOption("< Back", tint: .navigation, compact: true)])
+        closeHandler = { [weak self] in self?.talkToNPC() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            guard choice >= 1, choice <= answers.count else { self.talkToNPC(); return }
+            self.markLesson(answers[choice - 1] == lesson.right, learner: learner, teacher: npc.displayName)
+        }
+    }
+
+    /// The moment after the answer: a proficiency and a diploma for getting it
+    /// right, the lesson alone for getting it wrong.
+    private func markLesson(_ correct: Bool, learner: Character, teacher: String) {
+        clearTerminal()
+        if dungeon != nil {
+            printExplorationMap()
+            print("")
+        }
+        let name = shortName(for: learner)
+        if correct {
+            printWrapped("\"That's it exactly,\" says \(teacher). \"You were listening after all.\"", indent: 2, color: .brightGreen)
+            print("")
+            let missing = Skill.allCases.filter { !learner.skillProficiencies.contains($0) }
+            if let skill = missing.randomElement() {
+                learner.skillProficiencies.insert(skill)
+                printWrapped("\(name) comes away proficient in \(skill.rawValue).", indent: 2, color: .brightGreen)
+                logEvent("\(name) learned \(skill.rawValue) from \(teacher)", category: "LEVEL")
+                logMultiplayerAction("\(name) learned \(skill.rawValue) from \(teacher)")
+            } else {
+                learner.gold += 40
+                printWrapped("\(name) already knows everything this one had to teach, so the lesson is paid for instead — 40 gold.", indent: 2, color: .yellow)
+            }
+            print("")
+            // A diploma joins the certificates, alongside the merits and the
+            // one for finishing an adventure.
+            saveMeritCertificate("Diploma", recipient: learner,
+                                 deed: "Taught by \(teacher), examined on the same day, and passed.")
+            printWrapped("A diploma is written out on the spot. It's with your certificates.", indent: 2, color: .cyan)
+        } else {
+            printWrapped("\"Not quite,\" says \(teacher). \"Think on it. You'll know it when it matters.\"", indent: 2, color: .yellow)
+            print("")
+            printWrapped("\(name) keeps the lesson, but there's no diploma today.", indent: 2, color: .dimGreen)
+            logEvent("\(name) was taught by \(teacher), but failed the question", category: "NPC")
+        }
+        print("")
         waitForContinue()
         inputHandler = { [weak self] _ in
             self?.talkToNPC()
@@ -24106,6 +25007,7 @@ class GameEngine: ObservableObject {
             actions.append { [weak self] in
                 guard let self = self else { return }
                 let doEquip = { (char: Character) in
+                    let acBefore = char.armorClass
                     switch item.type {
                     case .weapon: char.equipWeapon(item)
                     case .armor: char.equipArmor(item)
@@ -24113,6 +25015,33 @@ class GameEngine: ObservableObject {
                     default: break
                     }
                     self.print("  \(char.name) equips themselves with the \(item.name)!", color: .brightGreen)
+                    // Say what actually changed — "equips themselves with the
+                    // Scale Mail" on its own tells you nothing about whether
+                    // it was worth doing.
+                    switch item.type {
+                    case .armor, .shield:
+                        let now = char.armorClass
+                        if now > acBefore {
+                            self.printWrapped("Armour Class \(acBefore) → \(now). Harder to hit, and it shows.", indent: 2, color: .brightGreen)
+                        } else if now < acBefore {
+                            self.printWrapped("Armour Class \(acBefore) → \(now) — worse than what they had on.", indent: 2, color: .yellow)
+                        } else {
+                            self.printWrapped("Armour Class stays at \(now) — no better than what they had on.", indent: 2, color: .dimGreen)
+                        }
+                        if let st = item.armorStats, st.stealthDisadvantage {
+                            self.printWrapped("It clanks. Sneaking will be harder while they wear it.", indent: 2, color: .yellow)
+                        }
+                    case .weapon:
+                        if let st = item.weaponStats {
+                            var how = [st.damage]
+                            if st.isFinesse { how.append("finesse — DEX if that's the better arm") }
+                            if st.isRanged { how.append("ranged — DEX") }
+                            if st.isTwoHanded { how.append("needs both hands") }
+                            self.printWrapped("Now swinging for \(how.joined(separator: ", ")).", indent: 2, color: .brightGreen)
+                        }
+                    default:
+                        break
+                    }
                     self.logEvent("\(char.name) equipped \(item.name)", category: "LOOT")
                     self.waitForContinueWithTimeout { onDone() }
                 }
@@ -24122,6 +25051,40 @@ class GameEngine: ObservableObject {
                 } else if let char = equipEligible.first {
                     doEquip(char)
                 }
+            }
+        }
+
+        // Anything with an edge on it invites a go — throwing it up and
+        // catching it, mostly. Bludgeoning weapons don't tempt anyone.
+        if item.type == .weapon, let t = item.weaponStats?.damageType, t == "slashing" || t == "piercing" {
+            options.append("Try It Out")
+            actions.append { [weak self] in
+                guard let self = self else { return }
+                let who = (self.combatLootEligible ?? self.party).filter { $0.isConscious }.randomElement() ?? self.party[0]
+                let n = self.shortName(for: who)
+                let dex = who.abilityScores.modifier(for: .dexterity)
+                let roll = Dice.d20() + dex
+                self.clearTerminal()
+                self.printTitle("Try It Out")
+                self.print("")
+                let stunt = ["throws the \(item.name) up, spinning, and puts a hand out for it",
+                             "flips the \(item.name) point-over-hilt and reaches for the handle",
+                             "lobs the \(item.name) at the wall to hear how it lands, then goes to fetch it",
+                             "juggles the \(item.name) with two stones, briefly"].randomElement()!
+                self.printWrapped("\(n) \(stunt).", indent: 2, color: .cyan)
+                self.print("")
+                if roll >= 12 {
+                    self.printWrapped("It comes down exactly where a well-caught blade should. \(n) looks around to check that somebody saw.", indent: 2, color: .brightGreen)
+                    self.logEvent("\(n) showed off with \(item.name)", category: "EXPLORE")
+                } else {
+                    let hurt = max(1, Dice.d4() - 1)
+                    if hurt > 0 { who.takeDamage(hurt) }
+                    self.printWrapped("It does not. \(n) takes \(hurt) damage and says something the DM will not repeat — and will need seeing to if it keeps bleeding.", indent: 2, color: .yellow)
+                    self.printWrapped("(\(who.currentHP)/\(who.maxHP) HP — a rest or a potion will settle it.)", indent: 2, color: .dimGreen)
+                    self.logEvent("\(n) cut themselves trying out \(item.name) (\(hurt) damage)", category: "EXPLORE")
+                }
+                self.print("")
+                self.waitForContinueWithTimeout { onDone() }
             }
         }
 
@@ -24252,6 +25215,16 @@ class GameEngine: ObservableObject {
             self.print("  ✦ Quest progress: \(done)/\(quest.target) gold gathered", color: .cyan, bold: true)
         }
 
+        // Every path that hands gold over goes through here. The quest nudge
+        // above is NOT a usable hook on its own: it returns at once unless a
+        // collectGold quest happens to be running, which in most games it is
+        // not — so the achievement check is wrapped around it rather than
+        // added inside it.
+        let announceGoldProgress: () -> Void = { [weak self] in
+            announceGoldQuestProgress()
+            self?.reportProgressAchievements()
+        }
+
         var options: [String] = []
         var actions: [() -> Void] = []
 
@@ -24286,7 +25259,7 @@ class GameEngine: ObservableObject {
                 }
                 self.logEvent("Split \(gold) gold equally from \(source.lowercased())", category: "LOOT")
                 self.logMultiplayerAction("Found \(gold) gold (\(source.lowercased()))")
-                announceGoldQuestProgress()
+                announceGoldProgress()
                 self.waitForContinueWithTimeout { onDone() }
             }
 
@@ -24297,7 +25270,7 @@ class GameEngine: ObservableObject {
                     char.gold += gold
                     self?.print("  \(char.name) takes all \(gold) gold.", color: .yellow)
                     self?.logEvent("\(char.name) took \(gold) gold from \(source.lowercased())", category: "LOOT")
-                    announceGoldQuestProgress()
+                    announceGoldProgress()
                     self?.waitForContinueWithTimeout { onDone() }
                 }
             }
@@ -24309,7 +25282,7 @@ class GameEngine: ObservableObject {
                 char?.gold += gold
                 self?.print("  \(char?.name ?? "You") pocket\(char == nil ? "" : "s") \(gold) gold pieces.", color: .yellow)
                 self?.logEvent("Picked up \(gold) gold from \(source.lowercased())", category: "LOOT")
-                announceGoldQuestProgress()
+                announceGoldProgress()
                 self?.waitForContinueWithTimeout { onDone() }
             }
         }
@@ -24690,8 +25663,35 @@ class GameEngine: ObservableObject {
         })
     }
 
+    /// The Book of Jokes. Groan-worthy on purpose, and clean enough for
+    /// anyone at the table.
+    static let dungeonJokes: [(String, String)] = [
+        ("Why did the skeleton refuse to fight us?", "He didn't have the guts."),
+        ("What do you call a dwarf who's lost his map?", "Unmined."),
+        ("Why don't dragons ever pay for dinner?", "They prefer to eat and fly."),
+        ("What's a goblin's favourite kind of music?", "Anything with a good rock in it."),
+        ("Why did the wizard fail his exam?", "He couldn't spell."),
+        ("What did the torch say at the end of the day?", "I'm burnt out."),
+        ("Why is the dungeon floor never lonely?", "It's always got someone falling for it."),
+        ("What do you call a mimic that's given up?", "A chest of drawers."),
+        ("Why did the rogue bring a ladder to the tavern?", "She heard the drinks were on the house."),
+        ("What's an ogre's favourite meal?", "Anything but seconds — he starts with those."),
+        ("Why did the ghost go to the shop?", "He needed a few boos."),
+        ("How do you make a troll laugh?", "Tell him a joke on Monday. He'll get it by Friday."),
+        ("Why did the cleric bring a pencil to the dungeon?", "To draw the line somewhere."),
+        ("What do you call an armoured knight in a puddle?", "A sunk cost."),
+        ("Why won't the minotaur play cards?", "Too many cheats in the maze."),
+        ("What did the rope say when it slipped?", "That's the end of me."),
+        ("Why did the bard get thrown out?", "He kept hitting the wrong note — and then the lute player."),
+        ("What's a zombie's least favourite room?", "The living room."),
+        ("Why did the potion go to school?", "To improve its concentration."),
+        ("What do you call a cowardly wizard's spellbook?", "Light reading."),
+    ]
+
     private func showUsePotionMenu(character: Character, onBack: (() -> Void)? = nil, fromDM: Bool = false) {
-        let potions = character.inventory.filter { $0.type == .potion || $0.name == "Whetstone" }
+        // The Book of Jokes joins the Whetstone as a thing that isn't drunk
+        // but is definitely used.
+        let potions = character.inventory.filter { $0.type == .potion || $0.name == "Whetstone" || $0.name == "Book of Jokes" }
 
         clearTerminal()
         printSubtitle("Use Item")
@@ -24721,6 +25721,8 @@ class GameEngine: ObservableObject {
                 print("  \(potion.name): \(effect)", color: .dimGreen)
             } else if potion.name == "Whetstone" {
                 print("  Whetstone: sharpen your equipped weapon (+1 to hit/damage for 3 attacks)", color: .dimGreen)
+            } else if potion.name == "Book of Jokes" {
+                print("  Book of Jokes: read one out. Never runs out; the jokes do not improve.", color: .dimGreen)
             }
         }
         print("")
@@ -24731,6 +25733,34 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             guard idx >= 0 && idx < potions.count else { return }
             let potion = potions[idx]
+
+            // A joke is read to whoever is listening, costs nothing, and the
+            // book stays in the pack — so it skips the "who drinks it?" flow
+            // entirely, as the whetstone does below.
+            if potion.name == "Book of Jokes" {
+                let joke = Self.dungeonJokes.randomElement() ?? ("Why did the skeleton stay in?", "It had no body to go with.")
+                self.print("")
+                self.print("  \(character.name) opens the book at random.", color: .cyan)
+                self.print("")
+                self.printWrapped("\"\(joke.0)\"", indent: 2, color: .yellow)
+                self.print("")
+                self.printWrapped("\"\(joke.1)\"", indent: 2, color: .brightGreen)
+                self.print("")
+                let groans = ["Somebody groans. Somebody else writes it down.",
+                              "The echo carries it further than it deserves.",
+                              "Nobody laughs. The book is unrepentant.",
+                              "One of the party laughs far too much.",
+                              "A long silence, then a snort from the dark.",
+                              "\(character.name) laughs at their own joke, which is allowed."]
+                self.printWrapped(groans.randomElement()!, indent: 2, color: .dimGreen)
+                self.logEvent("\(character.name) read a joke from the Book of Jokes", category: "EXPLORE")
+                self.logMultiplayerAction("\(character.name) reads out a terrible joke")
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.showUsePotionMenu(character: character, onBack: onBack, fromDM: fromDM)
+                }
+                return
+            }
 
             // Whetstone sharpens the user's own equipped weapon — not consumed by
             // another party member, so it skips the potion "who drinks it?" flow.
@@ -25529,7 +26559,14 @@ class GameEngine: ObservableObject {
         let sellables = character.inventory.filter { $0.value > 0 }
         clearTerminal()
         printTitle(trainer.gymName)
-        print("  Lesson fee: \(trainer.lessonFee)gp — \(character.name) has \(character.gold)gp.", color: .dimGreen)
+        let short = max(0, trainer.lessonFee - character.gold)
+        print("  Lesson fee ........ \(trainer.lessonFee)gp", color: .cyan)
+        let purseLabel = "  \(shortName(for: character))'s purse "
+        let purseDots = String(repeating: ".", count: max(1, 20 - purseLabel.count))
+        print(purseLabel + purseDots + " \(character.gold)gp", color: .dimGreen)
+        print("  Still to find ..... \(short)gp", color: short > 0 ? .yellow : .brightGreen)
+        print("")
+        printWrapped("\(trainer.name) will take something out of a pack instead — at half what it's worth.", indent: 2, color: .dimGreen)
         print("")
         guard !sellables.isEmpty else {
             print("  \"Nothing on you worth trading in. Come back when you've got coin.\"", color: .red)
@@ -25538,10 +26575,29 @@ class GameEngine: ObservableObject {
             return
         }
 
-        let options = sellables.map { "\($0.name) (worth \(max(1, $0.value / 2))gp)" } + ["< Back"]
+        // What each would fetch, and whether it covers the fee.
+        for item in sellables {
+            let credit = max(1, item.value / 2)
+            let left = max(0, trainer.lessonFee - character.gold - credit)
+            let note = left > 0 ? "still \(left)gp short" : "covers it"
+            printWrapped("\(item.name) — \(credit)gp (\(note))", indent: 4, color: left > 0 ? .dimGreen : .brightGreen)
+        }
+        print("")
+        let options = sellables.map { "\($0.name) — \(max(1, $0.value / 2))gp" } + ["?", "< Back"]
         showMenu(options)
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
+            if choice == sellables.count + 1 {
+                self.showInlineHelp {
+                    self.printTitle("Barter — Help")
+                    self.print("")
+                    self.printWrapped("Short of coin for the lesson? Trainers take goods instead, at half what the item is worth. Pick something and they'll knock its value off the fee; you pay the rest in gold.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("The list shows what each thing would fetch, and whether it covers the fee on its own.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+                return
+            }
             guard choice >= 1 && choice <= sellables.count else {
                 self.showGymTraining(trainer: trainer, room: room)
                 return
@@ -25649,6 +26705,33 @@ class GameEngine: ObservableObject {
     /// choice so the answer is never ambiguous) with a bonus reward for a
     /// correct answer. Two wrong attempts and the challenge is spent — no
     /// other penalty, and it never blocks progression, only a bonus prize.
+    /// Solving something in a room that still has monsters in it is a way
+    /// PAST them: the way opens and you slip by. You forgo what they were
+    /// carrying — wits instead of spoils, not wits as well as spoils — and the
+    /// screen says so, rather than leaving you to wonder where the loot went.
+    /// Returns true if a fight was actually avoided.
+    @discardableResult
+    private func passWithoutFighting(_ room: Room) -> Bool {
+        guard let encounter = room.encounter, !room.cleared else { return false }
+        let names = encounter.monsters.filter { $0.isAlive }.map { $0.name }
+        room.cleared = true
+        // Recorded as avoided, not beaten — a revisit should describe a room
+        // somebody crept through, not a room somebody won.
+        room.defeatedMonsterNames = []
+        room.encounter = nil
+        print("")
+        if names.isEmpty {
+            printWrapped("The way opens, and you go through.", indent: 2, color: .brightGreen)
+        } else {
+            let who = names.count == 1 ? names[0] : names.dropLast().joined(separator: ", ") + " and " + names.last!
+            printWrapped("The way opens. \(who) \(names.count == 1 ? "watches" : "watch") you go by and \(names.count == 1 ? "does" : "do") nothing about it.", indent: 2, color: .brightGreen)
+            printWrapped("Whatever they were carrying stays with them — that is the price of not fighting.", indent: 2, color: .dimGreen)
+            logEvent("Got past \(who) without a fight", category: "EXPLORE")
+            logMultiplayerAction("Got past \(who) without fighting")
+        }
+        return true
+    }
+
     func presentRiddle(index: Int, room: Room, attemptsUsed: Int = 0) {
         guard index >= 0 && index < RiddleData.all.count else { return }
         let riddle = RiddleData.all[index]
@@ -25673,6 +26756,7 @@ class GameEngine: ObservableObject {
             guard choice >= 1 && choice <= options.count else { return }
             if choice - 1 == correctIndex {
                 room.riddleResolved = true
+                self.passWithoutFighting(room)
                 let level = self.dungeon?.level ?? 1
                 let gold = Dice.rollSum(2, d: 6) * level
                 let reward = level >= 3 ? ItemCatalog.greaterHealingPotion() : ItemCatalog.healingPotion()
@@ -25748,6 +26832,7 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             if right {
                 room.riddleResolved = true
+                self.passWithoutFighting(room)
                 let level = self.dungeon?.level ?? 1
                 let base = Dice.rollSum(2, d: 6) * level * (puzzle.tier + 1) / 2
                 let gold = max(1, base * max(1, 4 - hintsUsed) / 4)
@@ -25895,6 +26980,42 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// A pre-filled GitHub issue for a crash. The detail goes in the body so
+    /// nothing has to be retyped; nothing leaves the device until the issue is
+    /// actually submitted, in the browser, by the person reading it.
+    func openCrashIssue() {
+        var c = URLComponents(string: "https://github.com/profLewis/gamer/issues/new")
+        var body = """
+        **What happened just before it went wrong?**
+
+
+        **Anything on screen at the time?**
+
+
+        ---
+        """
+        if let crash = Self.pendingCrashInfo() { body += "\n\nLast launch ended in a crash:\n```\n\(crash)\n```" }
+        if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+           let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String {
+            body += "\n\nApp version: \(version) (\(build))"
+        }
+        if let dungeon = dungeon {
+            body += "\nDungeon: \(dungeon.name), Level \(dungeon.level) of \(dungeon.levelCount)"
+        }
+        c?.queryItems = [URLQueryItem(name: "title", value: "Glitch in the Weave: "),
+                         URLQueryItem(name: "labels", value: "bug"),
+                         URLQueryItem(name: "body", value: body)]
+        guard let url = c?.url else { return }
+        clearPendingCrashReport()
+        DispatchQueue.main.async {
+            #if canImport(UIKit)
+            UIApplication.shared.open(url)
+            #elseif os(macOS)
+            NSWorkspace.shared.open(url)
+            #endif
+        }
+    }
+
     /// A pre-filled GitHub issue — the puzzle's author fills in the blanks.
     private func openPuzzleSuggestion() {
         var c = URLComponents(string: "https://github.com/profLewis/gamer/issues/new")
@@ -26009,6 +27130,15 @@ class GameEngine: ObservableObject {
         questPleaAsker = nil
         npcQuestOffers = [:]
         adventureIntroLines = []
+        // Main quests switched off: no plea, and no tale about one — straight
+        // down into the dark. noMainQuest is set so everything that already
+        // knows how to play without a main quest behaves as it always has.
+        guard mainQuestsEnabled else {
+            noMainQuest = true
+            logEvent("Main quests are switched off — setting out with none", category: "QUEST")
+            enterDungeon()
+            return
+        }
         playAdventureCutscene(then: { [weak self] in
             self?.askToTakeQuest(then: { [weak self] in self?.enterDungeon() })
         }, onCancel: { [weak self] in
@@ -26029,7 +27159,16 @@ class GameEngine: ObservableObject {
         printTitle("Will You Take It On?")
         print("")
         printWrapped("To \(mq.goal), \(mq.stakes).", indent: 2, color: .yellow)
+        // What this one actually asks of you — not every quest ends with a
+        // dead guardian, and the party deserves to know that before saying yes.
+        if let ask = mq.objectiveAsk {
+            printWrapped(ask, indent: 2, color: .cyan)
+        }
         printWrapped("The reward: \(mq.reward).", indent: 2, color: .green)
+        // Whatever they have thought to throw in on top, in their own words.
+        if let sweetener = mq.sweetener {
+            printWrapped(sweetener, indent: 2, color: .yellow)
+        }
         if mq.kind != "mystery" && mq.kind != "twist" {
             printWrapped("Waiting at the very bottom: \(mq.villain).", indent: 2, color: .green)
         }
@@ -26218,14 +27357,22 @@ class GameEngine: ObservableObject {
         print("")
         print("  WHAT YOU'VE SWORN TO", color: .cyan, bold: true)
         printWrapped("To \(mq.goal), \(mq.stakes). The reward: \(mq.reward).", indent: 2, color: .dimGreen)
+        print("")
         if mq.kind != "mystery", mq.kind != "twist" {
-            printWrapped("\(Dungeon.guardianName(mq.villain)) waits at the bottom of the world — Level \(Dungeon.finalLevel). Every guardian between here and there serves it.", indent: 2, color: .dimGreen)
+            printWrapped("\(Dungeon.guardianName(mq.villain)) waits at the bottom of the world — Level \(dungeon?.levelCount ?? Dungeon.finalLevel). Every guardian between here and there serves it.", indent: 2, color: .dimGreen)
         }
-        if let place = mq.place { printWrapped("You're told it's kept in \(place).", indent: 2, color: .dimGreen) }
-        if let who = mq.informant { printWrapped("Worth asking down there: \(who).", indent: 2, color: .dimGreen) }
+        if let place = mq.place {
+            printWrapped("You're told it's kept in \(place).", indent: 2, color: .dimGreen)
+            print("")
+        }
+        if let who = mq.informant {
+            printWrapped("Worth asking down there: \(who).", indent: 2, color: .dimGreen)
+            print("")
+        }
         if let name = mq.deadlineName, mq.deadlineKnown == true {
             printWrapped("And it must be done before \(name) — the countdown shows under the date.", indent: 2, color: .yellow)
         }
+        print("")
         printWrapped("Watch the walls as you go: the ones who came before cut what they learned into them.", indent: 2, color: .dimGreen)
         print("")
         pendingTimeoutKind = .reading
@@ -26245,7 +27392,9 @@ class GameEngine: ObservableObject {
             self.mainQuest = q
             let level = self.dungeon?.level ?? 1
             let cartography = self.dungeon?.hasCartography ?? false
-            self.dungeon = Dungeon(name: world, level: level)
+            let depth = self.dungeon?.levelCount
+            let startedAt = self.dungeon?.startDifficulty
+            self.dungeon = Dungeon(name: world, level: level, levelCount: depth, startDifficulty: startedAt)
             self.dungeon?.hasCartography = cartography
             self.currentCombat = nil
             self.questHistory.append("Travelled with the petitioners from \(q.village) to another world: \(world).")
@@ -26347,9 +27496,23 @@ class GameEngine: ObservableObject {
     private func showResumeStory() {
         storyScreenActive = true
         pinnedMapLines = []
-        let lines = adventureIntroLines.isEmpty ? recoveredIntroLines() : adventureIntroLines
+        var lines = adventureIntroLines.isEmpty ? recoveredIntroLines() : adventureIntroLines
         guard !lines.isEmpty else { showStorySoFar(); return }
-        showTalePages(title: "The Tale Begins", lines: lines, page: 0, onBack: { [weak self] in self?.showStorySoFar() },
+        // The opening tale is written to end on the plea — storyPrompt() tells
+        // the story writer the party hasn't said yes yet. Replayed word for
+        // word on resuming, that asks you to take on a quest you took on long
+        // ago. With the quest already in hand the asking is dropped and the
+        // tale closes on the answer instead; the quest itself is still retold,
+        // which is the part worth hearing again.
+        let questInHand = mainQuest != nil && !noMainQuest
+        if questInHand, lines.count > 1 {
+            lines.removeLast()
+            if let mq = mainQuest {
+                lines.append("You said yes. The oath was to \(mq.goal), \(mq.stakes) — and it stands yet.")
+            }
+        }
+        showTalePages(title: questInHand ? "How It Began" : "The Tale Begins", lines: lines, page: 0,
+                      onBack: { [weak self] in self?.showStorySoFar() },
                       finishLabel: "The Story So Far >", onFinish: { [weak self] in self?.showStorySoFar() }, skipLabel: "Skip")
     }
 
@@ -26399,11 +27562,11 @@ class GameEngine: ObservableObject {
         let together = names.count <= 1 ? (names.first ?? "A lone adventurer") : names.dropLast().joined(separator: ", ") + " and " + names.last!
         let day = gameTimeMinutes / 1440 + 1
         var lines: [String] = []
-        lines.append("\(together) \(names.count <= 1 ? "is" : "are") on day \(day) of the adventure, on Level \(dungeon.level) of \(dungeon.name).")
+        lines.append("\(together) \(names.count <= 1 ? "is" : "are") on day \(day) of the adventure, on \(Dungeon.floorName(dungeon.level)) of \(dungeon.name).")
         if mainQuestCompleted, let mq = mainQuest {
             lines.append("★ The quest is done: \(Dungeon.guardianName(mq.villain)) is defeated, and \(mq.village) is saved.")
         } else if let mq = mainQuest {
-            let left = max(0, Dungeon.finalLevel - dungeon.level)
+            let left = max(0, dungeon.levelCount - dungeon.level)
             let foe = mq.kind == "mystery" ? "whoever is behind it" : Dungeon.guardianName(mq.villain)
             lines.append("The quest: to \(mq.goal), \(mq.stakes). " + (left == 0 ? "This is the last level — \(foe) is somewhere here." : "\(left) more level\(left == 1 ? "" : "s") to go before the bottom, where \(foe) waits."))
             if let line = questDeadlineLine() { lines.append(line) }
@@ -26443,13 +27606,17 @@ class GameEngine: ObservableObject {
             let visited = level.rooms.filter { $0.visited }
             let boss = level.rooms.first { $0.typeName.lowercased().contains("boss") }
             let guardian = boss.map { $0.cleared ? "; guardian beaten" : "; slipped past its guardian" } ?? ""
-            lines.append("Level \(level.level): explored \(visited.count) of \(level.rooms.count) rooms\(guardian)\(notable(visited.map { $0.typeName })).")
+            lines.append("\(Dungeon.floorName(level.level)): explored \(visited.count) of \(level.rooms.count) rooms\(guardian)\(notable(visited.map { $0.typeName })).")
         }
         if includeCurrent {
             let visited = dungeon.rooms.values.filter { $0.visited }
             let bossBeaten = dungeon.rooms.values.contains { $0.roomType == .boss && $0.cleared }
-            let prefix = lines.isEmpty ? "On this level (Level \(dungeon.level))" : "Now on Level \(dungeon.level)"
-            lines.append("\(prefix): explored \(visited.count) of \(dungeon.rooms.count) rooms so far\(bossBeaten ? "; guardian beaten" : "; its guardian still waits")\(notable(visited.map { $0.roomType.rawValue })).")
+            let prefix = lines.isEmpty ? "On this floor (\(Dungeon.floorName(dungeon.level)))" : "Now on \(Dungeon.floorName(dungeon.level))"
+            // Same again for the level summary the DM and the NPCs read from.
+            let progress = visited.count <= 1
+                ? "\(prefix): only just arrived, with the level still ahead of them"
+                : "\(prefix): explored \(visited.count) of \(dungeon.rooms.count) rooms so far"
+            lines.append("\(progress)\(bossBeaten ? "; guardian beaten" : "; its guardian still waits")\(notable(visited.map { $0.roomType.rawValue })).")
         }
         return lines
     }
@@ -26464,12 +27631,38 @@ class GameEngine: ObservableObject {
         return left <= 0 ? "☾ \(cap) is today!" : "☾ \(cap) in \(left) day\(left == 1 ? "" : "s")"
     }
 
+    /// A rough guess at what's left of this floor: about twenty minutes a
+    /// room — a walk there (5) and a proper search (15) — in game-hours.
+    func questTimeEstimateLine() -> String? {
+        guard let dungeon = dungeon else { return nil }
+        let floor = dungeon.currentRoom?.floor ?? dungeon.level
+        let onFloor = dungeon.rooms.values.filter { $0.floor == floor }
+        guard !onFloor.isEmpty else { return nil }
+        let unseen = onFloor.filter { !$0.visited }.count
+        guard unseen > 0 else { return "▸ This floor is walked out — the way on is down." }
+        let minutes = unseen * 20
+        let hours = Double(minutes) / 60.0
+        let howLong: String
+        if minutes < 60 { howLong = "about \(minutes) minutes" }
+        else if hours < 1.75 { howLong = "an hour or so" }
+        else { howLong = "about \(Int(hours.rounded())) hours" }
+        return "▸ \(unseen) room\(unseen == 1 ? "" : "s") still unwalked here — \(howLong) to see it all."
+    }
+
+    /// This level's part of the quest, and how far along it is.
+    func questChapterLine() -> String? {
+        guard let mq = mainQuest, !mainQuestCompleted,
+              let item = mq.chapterItem, let need = mq.chapterNeeded else { return nil }
+        let got = mq.chapterFound ?? 0
+        return got >= need ? "✦ \(need) \(item) — gathered" : "✦ \(got) of \(need) \(item) gathered"
+    }
+
     /// Time-bound quests get their day; and when it passes, it passes.
     private func checkQuestDeadline() {
         guard var mq = mainQuest, !mainQuestCompleted else { return }
         let today = gameTimeMinutes / 1440 + 1
         if mq.deadlineDay == nil {
-            let dated = mq.withDeadline(today: today, level: dungeon?.level ?? 1)
+            let dated = mq.withDeadline(today: today, level: dungeon?.level ?? 1, of: dungeon?.levelCount ?? Dungeon.defaultFinalLevel)
             if dated.deadlineDay != nil { mainQuest = dated; mq = dated }
         }
         guard let day = mq.deadlineDay, today > day, mq.deadlinePassed != true, let name = mq.deadlineName else { return }
@@ -26510,7 +27703,7 @@ class GameEngine: ObservableObject {
     func helpQuestPreamble() -> String? {
         guard let dungeon = dungeon, !party.isEmpty, !storyScreenActive else { return nil }
         let level = dungeon.level
-        let left = max(0, Dungeon.finalLevel - level)
+        let left = max(0, dungeon.levelCount - level)
         var bits: [String] = []
         if mainQuestCompleted, let mq = mainQuest {
             bits.append(["Your quest is done — \(Dungeon.guardianName(mq.villain)) is beaten.",
@@ -26520,7 +27713,7 @@ class GameEngine: ObservableObject {
             bits.append([
                 "Remember why you're here: to \(mq.goal).",
                 "The quest, in case it's slipped your mind: to \(mq.goal), \(mq.stakes).",
-                "Level \(level) of \(Dungeon.finalLevel) — and \(foe) waits at the very bottom.",
+                "Level \(level) of \(dungeon.levelCount) — and \(foe) waits at the very bottom.",
                 "\(mq.village) is counting on you to \(mq.goal).",
                 "Still on the trail: \(mq.goal).",
             ].randomElement()!)
@@ -26692,7 +27885,7 @@ class GameEngine: ObservableObject {
     private func certificateTextPDF(_ cert: EndgameCertificate, keepMapsWhole: Bool) -> Data {
         var blocks: [[String]] = [Self.certificateLines(cert, width: 60)]
         for level in cert.levels {
-            let map = ["", "Level \(level.level)"] + Dungeon.atlasMapLines(level, showAll: false).lines
+            let map = ["", Dungeon.floorName(level.level)] + Dungeon.atlasMapLines(level, showAll: false).lines
             blocks += keepMapsWhole ? [map] : map.map { [$0] }
         }
         return Self.monospacedPDF(blocks: blocks)
@@ -26781,9 +27974,11 @@ class GameEngine: ObservableObject {
         let saved = CertificateStore.list()
         closeHandler = onBack
         if saved.isEmpty {
-            printWrapped("None yet. Finish an adventure — beat the last guardian at the bottom of the world — and its certificate is kept here, to look at, save or print whenever you like.", indent: 2, color: .dimGreen)
+            printWrapped("None yet. Finish an adventure — beat the last guardian at the bottom of the world — and its certificate is kept here, to look at, save or print whenever you like. Smaller honours won on the way, like a Certificate of Merit for finishing someone's errand, are kept here too.", indent: 2, color: .dimGreen)
             print("")
+            pendingTimeoutKind = .reading
             showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+            closeHandler = onBack
             menuHandler = { _ in onBack() }
             return
         }
@@ -26844,6 +28039,55 @@ class GameEngine: ObservableObject {
     }
 
     /// The (hidden) Endgame button: either ending, with a sample party.
+    /// Everything developer access opens, in one place — reached by typing
+    /// "endgame" while it is on. Deliberately built from DevAccess.hiddenLabels
+    /// rather than a second hard-coded list, so a button added to the hidden
+    /// set turns up here without anyone remembering to add it twice.
+    private func showSuperUserMenu() {
+        clearTerminal()
+        printTitle("Super User")
+        print("")
+        printWrapped("Developer access is on. These are the things it opens. They are hidden from players, and they go away again when access is turned off.", indent: 2, color: .dimGreen)
+        print("")
+        for label in DevAccess.hiddenLabels.sorted() {
+            print("  \(label)", color: .brightGreen)
+        }
+        print("")
+        printWrapped("Endgame plays the ending from here, certificate and all, without finishing the dungeon. Report a Bug packages up the save and what led to it. Puzzle List shows every puzzle, answers included.", indent: 2, color: .dimGreen)
+        print("")
+        let back: () -> Void = { [weak self] in
+            guard let self = self else { return }
+            if self.dungeon != nil && self.gameState == .exploring {
+                self.showExplorationView()
+            } else {
+                self.showMainMenu()
+            }
+        }
+        // "Endgame" survives the menu filter here only because access is on —
+        // the same filter that hides it everywhere else.
+        let opts = [MenuOption("Endgame", isDefault: true),
+                    MenuOption("?", tint: .navigation, compact: true),
+                    MenuOption("< Back", tint: .navigation, compact: true)]
+        showMenuOptions(opts)
+        closeHandler = back
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= opts.count else { return }
+            switch opts[choice - 1].text {
+            case "Endgame": self.showEndgamePreviews()
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("Super User — Help")
+                    self.print("")
+                    self.printWrapped("This page only exists while developer access is on. Turning access off hides these buttons again everywhere, including here.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("Access is never saved: it is off again every time the app starts.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default: back()
+            }
+        }
+    }
+
     func showEndgamePreviews() {
         clearTerminal()
         printTitle("Endgame Previews")
@@ -26965,7 +28209,7 @@ class GameEngine: ObservableObject {
     /// One line for save lists: the quest and how far along, done (★), or none.
     func questSummaryLine() -> String? {
         if mainQuestCompleted, let mq = mainQuest { return "★ QUEST COMPLETE — \(Dungeon.guardianName(mq.villain)) defeated; \(mq.goal): done" }
-        if let mq = mainQuest { return "Quest: to \(mq.goal) · Level \(dungeon?.level ?? 1) of \(Dungeon.finalLevel)" }
+        if let mq = mainQuest { return "Quest: to \(mq.goal) · Level \(dungeon?.level ?? 1) of \(dungeon?.levelCount ?? Dungeon.finalLevel)" }
         if noMainQuest { return "No main quest — adventuring for the fun of it" }
         return nil
     }
@@ -26973,7 +28217,13 @@ class GameEngine: ObservableObject {
     /// "Welcome, adventurers — welcome to Helheim!" and a word about the place.
     private func welcomeLine(returning: Bool) -> String {
         guard let dungeon = dungeon else { return "" }
-        var about = nameEntries.first { $0.category == "dungeon" && $0.name == dungeon.name }?.description ?? ""
+        // Match the lore entry by its own name OR by the place-name it becomes
+        // (see asPlaceName) — otherwise renaming the Nostromo to Nostromo Deep
+        // silently loses the description that made the name worth using.
+        var about = nameEntries.first {
+            $0.category == "dungeon"
+                && ($0.name == dungeon.name || Self.asPlaceName($0.name) == dungeon.name)
+        }?.description ?? ""
         if let dot = about.firstIndex(of: ".") { about = String(about[...dot]) }
         if about.isEmpty {
             about = ["Its halls are older than anyone remembers, and few who know them well have come back to say so.",
@@ -27004,13 +28254,33 @@ class GameEngine: ObservableObject {
         var opts = mainQuest != nil ? ["Hold to Our Oath", "Hear Another Plea"] : ["Stay As We Are", "Hear a Plea"]
         if mainQuest != nil { opts.append("Tell It Again") }
         if !allQuests.isEmpty { opts.append("Our Errands") }
+        if activeQuest != nil { opts.append("Give Up Quest") }
         let all = opts + ["?", "< Back"]
-        showMenuOptions(opts.map { MenuOption($0) }
+        // With main quests off the pleas are still listed, so the screen reads
+        // the same, but greyed: nothing here can start one. "Our Errands" and
+        // "Give Up Quest" stay live — the switch is main-quest only.
+        let pleaOptions: Set<String> = ["Hear Another Plea", "Hear a Plea", "Tell It Again"]
+        showMenuOptions(opts.map { MenuOption($0, isDisabled: !mainQuestsEnabled && pleaOptions.contains($0)) }
                         + [MenuOption("?", tint: .navigation, compact: true), MenuOption("< Back", tint: .navigation, compact: true)])
         closeHandler = { [weak self] in self?.showPartyStatus() }
+        // Long-press Give Up Quest still skips the "are you sure?" step.
+        menuLongPressHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= all.count, all[choice - 1] == "Give Up Quest" else { return }
+            self.print("")
+            self.abandonActiveQuest(returnTo: { [weak self] in self?.confirmNewMainQuest() })
+        }
         let hearAPlea: () -> Void = { [weak self] in
             guard let self = self else { return }
             let old = self.mainQuest
+            // Breaking the oath leaves somebody worse off, and they have a
+            // name and a trouble of their own — say so before it happens,
+            // without spelling out what becomes of them.
+            if let leaving = old {
+                self.print("")
+                self.printWrapped("Take up another and \(leaving.village) is on its own again. \(leaving.harm ?? "What they feared is still coming") — and \(leaving.stakes).", indent: 2, color: .yellow)
+                self.printWrapped("Nobody else is coming for them. That is simply how it will be.", indent: 2, color: .dimGreen)
+                self.print("")
+            }
             if let old = old { self.questChangeBackup = (old, self.adventureIntroLines) }
             var next = MainQuest.random()
             for _ in 0..<8 where next.villain == old?.villain || next.kind == old?.kind { next = MainQuest.random() }
@@ -27047,6 +28317,8 @@ class GameEngine: ObservableObject {
                 self.showQuestRetell(onBack: { [weak self] in self?.confirmNewMainQuest() })
             case "Our Errands":
                 self.showQuestsOnHand(onBack: { [weak self] in self?.confirmNewMainQuest() })
+            case "Give Up Quest":
+                self.confirmAbandonQuest(returnTo: { [weak self] in self?.confirmNewMainQuest() })
             case "?":
                 self.showInlineHelp {
                     self.printTitle("By the Campfire — Help")
@@ -27198,7 +28470,7 @@ class GameEngine: ObservableObject {
 
         // Game time & level
         if let level = dungeon?.level {
-            print("  Dungeon Level: \(level) of \(Dungeon.finalLevel)", color: .cyan)
+            print("  Dungeon Level: \(level) of \(dungeon?.levelCount ?? Dungeon.finalLevel)", color: .cyan)
             print("  Depth: \(Dungeon.depthWords(level)) — the way is down", color: .dimGreen)
         }
         print("  Time: \(formattedGameTime())", color: .cyan)
@@ -27208,6 +28480,9 @@ class GameEngine: ObservableObject {
         let dm = DMEngine.shared
         let aiLabel = dm.isConfigured ? dm.provider.displayName : (dm.isAppleModelAvailable ? "Apple On-Device AI" : "Basic DM (no AI)")
         print("  DM's brain: \(aiLabel)", color: .cyan)
+        if let started = dungeon?.startDifficulty {
+            print("  Difficulty: \(difficultyName(for: Double(started)))", color: .cyan)
+        }
         if partySkillMultiplier > 1.0 {
             let pct = Int(((partySkillMultiplier - 1.0) * 100).rounded())
             print("  Monster strength: +\(pct)% (your party has grown stronger)", color: .yellow)
@@ -27224,6 +28499,8 @@ class GameEngine: ObservableObject {
             for verse in mq.runeVerses.prefix(mq.runesRead) { printWrapped("ᚱ \(verse)", indent: 4, color: .yellow) }
             if let who = mq.informant { printWrapped("Who might know more: \(who).", indent: 4, color: .dimGreen) }
             if let line = questDeadlineLine() { printWrapped(line, indent: 4, color: .cyan) }
+            if let est = questTimeEstimateLine() { printWrapped(est, indent: 4, color: .dimGreen) }
+            if let ch = questChapterLine() { printWrapped(ch, indent: 4, color: .cyan) }
             printWrapped("The one behind it all: \(mq.villain), waiting at the very bottom. Reward: \(mq.reward).", indent: 4, color: .dimGreen)
         }
         for quest in allQuests {
@@ -27310,6 +28587,9 @@ class GameEngine: ObservableObject {
         let beenIn = roomsSeen > 1 || monstersSlain > 0 || gameTimeMinutes > 360 || (dungeon?.currentRoomId ?? 0) != 0
         let enterLabel = beenIn ? "Return to the Dungeon" : "Enter the Dungeon"
         var menuOpts = ["Party Review", "Tale", "Save to Roster", "Lore", "Settings", "Quests", enterLabel, "?", "< Back"]
+        if party.count > 1 {
+            menuOpts.insert("Meet the Team", at: menuOpts.firstIndex(of: "Tale") ?? 1)
+        }
         if dungeon?.hasCartography == true {
             menuOpts.insert("Atlas", at: menuOpts.firstIndex(of: "Lore") ?? 0)
         }
@@ -27318,8 +28598,12 @@ class GameEngine: ObservableObject {
         if hasPoisoned {
             menuOpts.insert("Cure Poison", at: menuOpts.firstIndex(of: enterLabel) ?? menuOpts.count)
         }
-        if activeQuest != nil {
-            menuOpts.insert("Give Up Quest", at: menuOpts.firstIndex(of: enterLabel) ?? menuOpts.count)
+        // Harder, never easier. Also at the end, so it can never be the button
+        // someone taps on their way past. Hidden once there is nowhere left to
+        // go: a new adventure is clamped to 1-3, so Brutal is only reachable
+        // from here, and only once.
+        if let d = dungeon, d.startDifficulty < 4 {
+            menuOpts.insert("Raise Difficulty", at: menuOpts.firstIndex(of: enterLabel) ?? menuOpts.count)
         }
 
         showMenu(menuOpts)
@@ -27334,23 +28618,18 @@ class GameEngine: ObservableObject {
             self?.showCharacterCard(index: idx)
         }
 
-        // Long-press Give Up Quest skips the "are you sure?" step.
-        menuLongPressHandler = { [weak self] choice in
-            guard let self = self, choice >= 1, choice <= menuOpts.count, menuOpts[choice - 1] == "Give Up Quest" else { return }
-            self.print("")
-            self.abandonActiveQuest(returnTo: { [weak self] in self?.showPartyStatus() })
-        }
-
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             let selected = menuOpts[choice - 1]
             switch selected {
-            case "Give Up Quest":
-                self.confirmAbandonQuest(returnTo: { self.showPartyStatus() })
             case "Cure Poison":
                 self.showPoisonInfo(onBack: { self.showPartyStatus() })
+            case "Raise Difficulty":
+                self.confirmRaiseDifficulty()
             case "Party Review":
                 self.showInGamePartyReview()
+            case "Meet the Team":
+                self.showMeetTheTeam(onBack: { [weak self] in self?.showPartyStatus() })
             case "Save to Roster":
                 self.showSavePartyToRosterMenu()
             case "Adventure Log":
@@ -27399,7 +28678,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine()
+            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine(), difficultyScale: difficultyScale
         )
         showAdventureTale(AdventureTaleData(inProgress: snapshot), onBack: onBack)
     }
@@ -27531,12 +28810,18 @@ class GameEngine: ObservableObject {
         let entries = loreEntries()
         if entries.isEmpty {
             printWrapped("No named individuals encountered yet — merchants and NPCs you've met will show up here.", indent: 2, color: .dimGreen)
-        } else {
-            for entry in entries {
-                print("  \(entry.name)", color: .brightGreen, bold: true)
-                printWrapped(entry.description, indent: 4, color: .dimGreen)
-                print("")
-            }
+            print("")
+            printWrapped("(Nothing to read yet — tap anywhere to go back.)", indent: 2, color: .dimGreen)
+            // Nothing to look at, so don't make them find a button.
+            waitForContinue()
+            closeHandler = { [weak self] in self?.showPartyStatus() }
+            inputHandler = { [weak self] _ in self?.showPartyStatus() }
+            return
+        }
+        for entry in entries {
+            print("  \(entry.name)", color: .brightGreen, bold: true)
+            printWrapped(entry.description, indent: 4, color: .dimGreen)
+            print("")
         }
         showMenu(["?", "< Back"])
         closeHandler = { [weak self] in self?.showPartyStatus() }
@@ -27552,6 +28837,65 @@ class GameEngine: ObservableObject {
                     self.print("")
                 }
             } else {
+                self.showPartyStatus()
+            }
+        }
+    }
+
+    /// Make the rest of the adventure harder. There is deliberately no way
+    /// back down — which is the whole reason this asks first.
+    private func confirmRaiseDifficulty() {
+        guard let dungeon = dungeon else { showPartyStatus(); return }
+        let now = dungeon.startDifficulty
+        let next = min(4, now + 1)
+        guard next > now else { showPartyStatus(); return }
+
+        clearTerminal()
+        printTitle("Raise the Difficulty")
+        print("")
+        printWrapped("Now: \(difficultyName(for: Double(now))).  After: \(difficultyName(for: Double(next))).", indent: 2, color: .cyan)
+        print("")
+        printWrapped("From here on the dark holds more, and what it holds hits harder — more encounters as you go deeper, and tougher monsters when you meet them.", indent: 2, color: .dimGreen)
+        printWrapped("Nothing already behind you changes: rooms you have cleared stay cleared, and the floors you have walked stay walked.", indent: 2, color: .dimGreen)
+        print("")
+        printWrapped("This only goes one way. There is no button to make it easier again.", indent: 2, color: .yellow)
+        print("")
+
+        let opts = ["Make it Harder", "?", "< Back"]
+        showMenu(opts)
+        closeHandler = { [weak self] in self?.showPartyStatus() }
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= opts.count else { return }
+            switch opts[choice - 1] {
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("Raising the Difficulty — Help")
+                    self.print("")
+                    self.printWrapped("Difficulty does two things: how many fights there are, and how much hit points and damage the monsters get. Raising it turns both up for the rest of this adventure.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("It is one-way on purpose. An adventure that could be turned down whenever it got hard would not be much of an adventure — and the certificate at the end says what you finished it on.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("Your party keeps growing stronger as well, which is counted separately — see 'Monster strength' on Party Status.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            case "Make it Harder":
+                dungeon.startDifficulty = next
+                // Mirror what picking this difficulty at the start would have
+                // given, and never let it fall: max, not assignment.
+                let raised = self.parseDifficulty(Double(next)).scale
+                self.difficultyScale = max(self.difficultyScale, raised)
+                self.logEvent("Difficulty raised to \(self.difficultyName(for: Double(next)))", category: "SETTINGS")
+                self.questHistory.append("Chose to make the rest of the adventure harder: \(self.difficultyName(for: Double(next))).")
+                self.clearTerminal()
+                self.printTitle("So Be It")
+                self.print("")
+                self.printWrapped("The dungeon seems to settle around you, and something further down takes an interest.", indent: 2, color: .yellow)
+                self.print("")
+                self.printWrapped("\(self.difficultyName(for: Double(next))) from here on.", indent: 2, color: .cyan)
+                self.print("")
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in self?.showPartyStatus() }
+            default:
                 self.showPartyStatus()
             }
         }
@@ -27606,6 +28950,11 @@ class GameEngine: ObservableObject {
         print("  UNDO / REDO", color: .cyan, bold: true)
         printWrapped("When you make changes (settings, character edits), labelled Undo/Redo buttons appear in the input bar showing what they will revert. Tap to step back or forward through changes. Undo/Redo must be enabled in Settings > Gameplay.", indent: 2, color: .dimGreen)
         printLink("Settings > Gameplay", to: "gameplay", indent: 4)
+        print("")
+
+        print("  HOW TO…", color: .cyan, bold: true)
+        printWrapped("Short answers to the things people actually ask: finding a quest, giving one up, playing with none at all, staying healthy, and the rest.", indent: 2, color: .dimGreen)
+        printLink("How to…", to: "howTo", indent: 4)
         print("")
     }
 
@@ -27794,7 +29143,7 @@ class GameEngine: ObservableObject {
 
         clearTerminal()
 
-        let cardW = 27
+        let cardW = Self.cardColumns
         let border = String(repeating: "─", count: cardW)
 
         // Card position indicator
@@ -27825,7 +29174,7 @@ class GameEngine: ObservableObject {
 
         // ASCII art
         for line in char.characterClass.asciiArt {
-            let trimmed = line.count > 25 ? String(line.prefix(25)) : line
+            let trimmed = String(line.prefix(cardW - 2))
             let artPad = max(0, cardW - trimmed.count)
             let aL = artPad / 2; let aR = artPad - aL
             print("  ║\(String(repeating: " ", count: aL))\(trimmed)\(String(repeating: " ", count: aR))║", color: .green)
@@ -27935,7 +29284,7 @@ class GameEngine: ObservableObject {
 
         clearTerminal()
 
-        let cardW = 27
+        let cardW = Self.cardColumns
         let border = String(repeating: "─", count: cardW)
 
         if party.count > 1 {
@@ -27964,7 +29313,7 @@ class GameEngine: ObservableObject {
 
         // ASCII art
         for line in char.characterClass.asciiArt {
-            let trimmed = line.count > 25 ? String(line.prefix(25)) : line
+            let trimmed = String(line.prefix(cardW - 2))
             let artPad = max(0, cardW - trimmed.count)
             let aL = artPad / 2; let aR = artPad - aL
             print("  ║\(String(repeating: " ", count: aL))\(trimmed)\(String(repeating: " ", count: aR))║", color: .green)
@@ -28020,6 +29369,26 @@ class GameEngine: ObservableObject {
             let next = (idx + 1) % self.party.count
             self.showCharacterCardFromEdit(index: next, inGame: inGame)
         } : nil
+        defer {
+            // A visible way off the card, not just a swipe.
+            // Only when there is another character to turn to — with a party
+            // of one these dispatched to nil handlers and did nothing.
+            var cardOpts: [MenuOption] = []
+            if party.count > 1 {
+                cardOpts.append(MenuOption("<<", tint: .navigation, compact: true))
+                cardOpts.append(MenuOption(">>", tint: .navigation, compact: true))
+            }
+            cardOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+            showMenuOptions(cardOpts)
+            menuHandler = { [weak self] choice in
+                guard let self = self, choice >= 1, choice <= cardOpts.count else { return }
+                switch cardOpts[choice - 1].text {
+                case "<<": self.swipeRightHandler?()
+                case ">>": self.swipeLeftHandler?()
+                default: self.closeHandler?()
+                }
+            }
+        }
         swipeRightHandler = party.count > 1 ? { [weak self] in
             guard let self = self else { return }
             let prev = (idx - 1 + self.party.count) % self.party.count
@@ -28039,6 +29408,144 @@ class GameEngine: ObservableObject {
     }
 
     /// In-game party review — edit names, types, race, class — returns to Party Status
+    /// Each companion gives an account of themselves — some of it true.
+    /// Reachable from Party Review and Party Status, not forced on anyone.
+    func showMeetTheTeam(onBack: @escaping () -> Void) {
+        clearTerminal()
+        printTitle("Meet the Team")
+        print("")
+        guard !party.isEmpty else {
+            printWrapped("Nobody to meet yet.", indent: 2, color: .dimGreen)
+            print("")
+            pendingTimeoutKind = .reading
+            showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+            closeHandler = onBack
+            menuHandler = { _ in onBack() }
+            return
+        }
+        printWrapped(Self.pickVaried(Self.teamOpeners, avoiding: &lastTeamOpener), indent: 2, color: .dimGreen)
+        print("")
+        for char in party {
+            let n = shortName(for: char)
+            print("  \(n) — \(char.race.rawValue) \(char.characterClass.rawValue)", color: .brightGreen, bold: true)
+            // Picked fresh each visit, and never the same line twice running —
+            // this used to be seeded from the name and level, so every companion
+            // said the one thing for ever.
+            let boasts = Self.teamBoasts[char.characterClass] ?? Self.teamBoastsGeneric
+            printWrapped("\"\(Self.pickVaried(boasts, avoiding: &lastTeamBoast))\"", indent: 4, color: .yellow)
+            // Whether anyone believes it is another matter.
+            printWrapped(Self.pickVaried(Self.teamDoubts, avoiding: &lastTeamDoubt), indent: 4, color: .dimGreen)
+            print("")
+        }
+        pendingTimeoutKind = .reading
+        showMenuOptions([MenuOption("?", tint: .navigation, compact: true),
+                         MenuOption("< Back", tint: .navigation, compact: true)])
+        closeHandler = onBack
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            guard choice == 1 else { onBack(); return }
+            self.showInlineHelp {
+                self.printTitle("Meet the Team — Help")
+                self.print("")
+                self.printWrapped("Each companion gives an account of themselves before you go down. Some of it is true; the rest tells you something anyway.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.printWrapped("They pick something different to say each time you look in, so it is worth coming back.", indent: 2, color: .dimGreen)
+                self.print("")
+            }
+        }
+    }
+
+    /// What they say about themselves, by trade.
+    static let teamBoasts: [CharacterClass: [String]] = [
+        .fighter: ["I held a bridge once. Not a big bridge. But I held it.",
+                   "Twelve of them, there were. Eleven, if you ask my sister.",
+                   "I've been paid to stop trouble and paid to start it. Same coin.",
+                   "I have been hit by most things. I am still the one standing here.",
+                   "My first sword I bought. My second I was given. My third I took.",
+                   "Shields are undervalued. Ask anyone who lived."],
+        .wizard: ["I read every book in my master's house. He noticed on the Tuesday.",
+                  "Fire is simple. It's the stopping that takes study.",
+                  "I have been struck by lightning twice, and only once on purpose.",
+                  "I have a spell for nearly everything, and nearly is doing a lot of work.",
+                  "My tower is small. My library is not.",
+                  "I do not do card tricks. I could. I do not."],
+        .rogue: ["I have never stolen anything. Things have followed me home.",
+                 "Locks and I have an understanding. They open.",
+                 "I was thrown out of a very good guild for being too good at it.",
+                 "I have been in this room longer than you think.",
+                 "Pockets are a promise nobody keeps.",
+                 "I only take what is badly looked after."],
+        .cleric: ["I was called. Loudly, and at an inconvenient hour.",
+                  "I have buried more people than I have healed. I intend to reverse that.",
+                  "My god and I disagree about most things, but we are civil.",
+                  "Faith is the easy part. Getting up at dawn is not.",
+                  "I have argued a plague down to a cough.",
+                  "I keep a list of everyone I could not save. It is shorter than it was."],
+        .ranger: ["I can follow anything that walks. Some things that don't.",
+                  "Three winters in the high wood. I came out talking to myself, and still am.",
+                  "I have never been lost. Occasionally the map has.",
+                  "Give me an hour and a hedge and I will feed the lot of you.",
+                  "The wolves and I have an arrangement. I stay out of their valley.",
+                  "I can tell you what passed this way, and how long since."],
+        .barbarian: ["I do not lose my temper. I put it somewhere useful.",
+                     "My people sing about a thing I did. They exaggerate. Slightly.",
+                     "I was told I could not lift it. I lifted it. It broke.",
+                     "Armour slows a man. I have not needed it yet.",
+                     "Winter is a place I am from, not a thing that happens to me.",
+                     "I have wrestled a bear. We are not on speaking terms."],
+        .bard: ["I have played for a king and for a goat. The goat listened.",
+                "Every song I sing is true by the third verse.",
+                "I talked us out of a hanging once. Mostly out.",
+                "I know four hundred songs and the words to nearly nine.",
+                "A good lie needs a tune. That is all a ballad is.",
+                "I have been thrown out of better places than this, musically."],
+        .engineer: ["Everything is a machine if you are rude enough to it.",
+                    "I built a bridge that is still standing. That was not the clever part.",
+                    "Give me a lever and somewhere to put it and stand well back.",
+                    "I have taken apart three things I could not put back. I learned from two.",
+                    "Traps are just doors with opinions.",
+                    "It is not an explosion if it was meant to do that."],
+        .scout: ["I have seen you three times today. You have seen me once.",
+                 "I go ahead. It is quieter, and I like the view.",
+                 "I can be there and back before you have finished arguing.",
+                 "I read a valley the way you read a page.",
+                 "I have never been caught. Twice I was nearly asked about.",
+                 "The trick is to be somewhere else by the time it matters."],
+        .thief: ["I prefer the word borrower. Nobody else does.",
+                 "A lock is a question. I am very good at questions.",
+                 "I have never been arrested. Detained, yes. Briefly.",
+                 "The window was open. That is practically an invitation.",
+                 "I know what everything in this room is worth, including you.",
+                 "I left a note. It was a very polite note."],
+    ]
+    static let teamBoastsGeneric = ["I get by. I've got this far.",
+                                    "There's not much to tell that's fit for telling.",
+                                    "Ask me again when we're out the other side.",
+                                    "I am better than I look, which is not a high bar.",
+                                    "I came for the money. I stayed for the company.",
+                                    "I have no story yet. That is what this is for."]
+    static let teamDoubts = ["Nobody says anything.",
+                             "Somebody coughs.",
+                             "That one gets a look, but no argument.",
+                             "There is a pause you could park a cart in.",
+                             "Two of the others exchange a glance.",
+                             "It is allowed to stand.",
+                             "Someone stirs the fire, very deliberately.",
+                             "A long silence, and then somebody changes the subject.",
+                             "Nobody asks the obvious question.",
+                             "There is a snort from the far side of the fire.",
+                             "The story is not challenged. It is not believed either.",
+                             "Somebody makes a note to ask about that later."]
+    /// The scene-setting line, which also changes on you.
+    static let teamOpeners = [
+        "Round the fire before you go down, each of them says a little about themselves. Some of it is even true.",
+        "There is time before the descent, and the fire is warm, so the talk turns to who everyone claims to be.",
+        "Packs are checked twice, then a third time, and in between each of them offers a piece of their history.",
+        "Nobody says it aloud, but this is the part where you find out who you are going down there with.",
+        "The fire burns low. One by one, they account for themselves — generously.",
+        "Introductions, of a sort. Take them at whatever discount seems fair.",
+    ]
+
     private func showInGamePartyReview() {
         clearTerminal()
         printTitle("Party Review")
@@ -28063,6 +29570,14 @@ class GameEngine: ObservableObject {
             menuOpts.append(MenuOption(shortN, isDefault: i == 0))
             actions.append { [weak self] in
                 self?.showInGameEditCharacter(index: i)
+            }
+        }
+
+        // Who they say they are, before you take them down a hole.
+        if party.count > 1 {
+            menuOpts.append(MenuOption("Meet the Team", tint: .cyan))
+            actions.append { [weak self] in
+                self?.showMeetTheTeam(onBack: { [weak self] in self?.showInGamePartyReview() })
             }
         }
 
@@ -29016,7 +30531,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine()
+            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine(), difficultyScale: difficultyScale
         )
     }
 
@@ -30364,6 +31879,7 @@ class GameEngine: ObservableObject {
                 let displayText = result.cleanText
 
                 self.dmChatLog.append((isUser: false, text: displayText))
+                self.forceScrollToNewest = true
 
                 // Display DM response
                 self.print("")
@@ -30446,8 +31962,12 @@ class GameEngine: ObservableObject {
         // Item commands
         for itemName in result.grantedItems {
             if let item = resolveItemByName(itemName) {
-                party.first?.addItem(item)
-                print("  [Found: \(item.name)!]", color: .brightGreen, bold: true)
+                giveToParty(item, announce: "[Found: \(item.name)!]")
+            } else {
+                // The DM named something the catalogue has never heard of. Say
+                // so — it used to be skipped silently, so the reply mentioned a
+                // thing that was never going to arrive.
+                print("  (The DM reaches for \(itemName) and comes up empty-handed.)", color: .yellow)
             }
             changed = true
         }
@@ -30570,16 +32090,68 @@ class GameEngine: ObservableObject {
         logEvent("Party took a long rest", category: "Rest")
     }
 
+    /// Hand something the DM has conjured to somebody who can actually carry
+    /// it, and say so honestly if nobody can.
+    ///
+    /// Every one of these paths used to do `party.first?.addItem(item)` and
+    /// throw the result away, then print "[Found: X!]" regardless. addItem
+    /// returns false when the pack is full (see Character.canCarry), so a
+    /// heavy item announced itself and then quietly did not exist. It also
+    /// always went to whoever happened to be first in the party.
+    ///
+    /// Offered to the Actor first if one is named, then to anyone with room.
+    /// Returns the character who took it, or nil if it is still on the floor.
+    @discardableResult
+    func giveToParty(_ item: Item, announce: String? = nil) -> Character? {
+        let candidates: [Character] = {
+            var order: [Character] = []
+            var seen = Set<UUID>()
+            func consider(_ who: Character) {
+                guard !seen.contains(who.id) else { return }
+                seen.insert(who.id)
+                order.append(who)
+            }
+            // The Actor first if one is named, then everyone still standing,
+            // then the rest — somebody unconscious can still be carried for.
+            if let actor = actingOverrideCharacter, actor.isConscious { consider(actor) }
+            for who in party where who.isConscious { consider(who) }
+            for who in party { consider(who) }
+            return order
+        }()
+        for who in candidates where who.addItem(item) {
+            if let note = announce {
+                print("  \(note) — \(shortName(for: who)) takes it.", color: .brightGreen, bold: true)
+            }
+            return who
+        }
+        // Nobody could carry it: it stays where it is, and the room keeps it
+        // rather than the item vanishing into a message.
+        dungeon?.currentRoom?.droppedItems.append(item)
+        print("  \(item.name) is here, but nobody has room for it — it stays on the floor.", color: .yellow)
+        printWrapped("Drop something, or send someone back for it.", indent: 2, color: .dimGreen)
+        return nil
+    }
+
     private func justDMCollectTreasure() {
         guard let room = dungeon?.currentRoom else { return }
         if !room.treasure.isEmpty {
-            for item in room.treasure {
-                if let resolved = resolveItemByName(item.name) {
-                    party.first?.addItem(resolved)
-                    print("  [Collected: \(item.name)]", color: .brightGreen, bold: true)
+            // TreasureItem is a { name, value, type } record, not an Item, so
+            // it cannot go into a pack as it stands — collectTreasure turns it
+            // into one first. Anything the catalogue knows is handed over
+            // properly; the rest is what it always was, a note of what was here.
+            var left: [TreasureItem] = []
+            for entry in room.treasure {
+                if let item = resolveItemByName(entry.name) {
+                    if giveToParty(item, announce: "[Collected: \(entry.name)]") == nil {
+                        left.append(entry)
+                    }
+                } else {
+                    print("  [Collected: \(entry.name)]", color: .brightGreen, bold: true)
                 }
             }
-            dungeon?.currentRoom?.treasure = []
+            // What nobody could carry stays in the room, rather than being
+            // wiped along with what was taken.
+            dungeon?.currentRoom?.treasure = left
         } else {
             print("  No treasure to collect.", color: .dimGreen)
         }
@@ -30589,9 +32161,17 @@ class GameEngine: ObservableObject {
         guard let room = dungeon?.currentRoom else { return }
         let lower = name.lowercased()
         if let idx = room.droppedItems.firstIndex(where: { $0.name.lowercased().contains(lower) }) {
-            let item = room.droppedItems.remove(at: idx)
-            party.first?.addItem(item)
-            print("  [Picked up: \(item.name)]", color: .brightGreen, bold: true)
+            // The worst of this family of bugs: the item was taken OFF the
+            // floor, handed to `party.first` with the result thrown away, and
+            // announced as picked up. A full pack meant it was gone from the
+            // room and in nobody's hands — destroyed, with the screen saying
+            // otherwise. Placed first, and only removed once somebody has it;
+            // giveToParty's own fallback puts a homeless item back on the floor,
+            // so taking it out first would fight that.
+            let item = room.droppedItems[idx]
+            if giveToParty(item, announce: "[Picked up: \(item.name)]") != nil {
+                room.droppedItems.remove(at: idx)
+            }
         } else {
             print("  No item matching '\(name)' on the floor.", color: .dimGreen)
         }
@@ -31273,6 +32853,8 @@ class GameEngine: ObservableObject {
                     let displayText = adLibLevel.rawValue >= DMAdLibLevel.moderate.rawValue ? result.cleanText : response
 
                     self.dmChatLog.append((isUser: false, text: displayText))
+                    self.forceScrollToNewest = true
+                self.forceScrollToNewest = true
 
                     self.print("")
                     self.print("DM:", color: .yellow, bold: true)
@@ -31341,6 +32923,9 @@ class GameEngine: ObservableObject {
                             if let item = self.resolveItemByName(itemName) {
                                 pendingPickupItems.append(item)
                                 self.print("  [Found: \(item.name)!]", color: .brightGreen, bold: true)
+                                self.chargeForDMGift(item) { [weak self] line in
+                                    self?.printWrapped(line, indent: 2, color: .yellow)
+                                }
                             }
                             worldChanged = true
                         }
@@ -31550,14 +33135,19 @@ class GameEngine: ObservableObject {
                         }
                         for itemName in result.grantedItems {
                             if let item = self.resolveItemByName(itemName) {
-                                if let c = self.party.first, c.canCarry(item) {
-                                    _ = c.addItem(item)
-                                    self.print("  [Received: \(item.name)!]", color: .brightGreen, bold: true)
-                                    self.logEvent("DM gave \(c.name) \(item.name)", category: "DM")
-                                    combat.adLibLootGranted = true
-                                } else {
-                                    self.print("  [Too heavy to carry: \(item.name)]", color: .yellow)
+                                // Was `party.first` alone: a gift went to whoever
+                                // happened to be first and to nobody else, and said
+                                // "[Too heavy to carry]" with three other packs
+                                // standing open. giveToParty tries the Actor, then
+                                // anyone with room, and leaves it on the floor —
+                                // saying so — only when nobody can take it.
+                                if let who = self.giveToParty(item, announce: "[Received: \(item.name)!]") {
+                                    self.logEvent("DM gave \(who.name) \(item.name)", category: "DM")
                                 }
+                                self.chargeForDMGift(item) { [weak self] line in
+                                    self?.printWrapped(line, indent: 2, color: .yellow)
+                                }
+                                combat.adLibLootGranted = true
                             }
                             tookAction = true
                         }
@@ -31745,6 +33335,55 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Given to an item the catalogue has never heard of, so a gift is never
+    /// lost to a name nobody recognises. It is also how a real, priced piece of
+    /// kit is told apart from something the DM invented on the spot — which is
+    /// why it is a constant and not a loose string in two places. Such an item
+    /// carries a flat placeholder value, so it must never be charged for.
+    static let dmInventedItemDescription = "A mysterious item from the DM."
+
+    /// What the DM asks for a piece of kit, when there is a merchant in the
+    /// room whose stock it plainly came off. Three ways it can go, about
+    /// evenly: a favour, the going rate, or extra for the trouble of fetching.
+    ///
+    /// nil means no charge — and that covers every case with no merchant
+    /// present (the DM conjured it from nowhere; there is nobody to pay) and
+    /// everything the catalogue could not name.
+    private func dmGiftCharge(for item: Item) -> (amount: Int, line: String)? {
+        guard let merchant = dungeon?.currentRoom?.merchant else { return nil }
+        guard item.description != GameEngine.dmInventedItemDescription else { return nil }
+        let value = max(1, item.value)
+        switch Int.random(in: 1...3) {
+        case 1:
+            return nil
+        case 2:
+            return (value, "\(merchant.name) looks up sharply — but the DM settles it at the going rate.")
+        default:
+            let premium = value * 2 + 1
+            return (premium, "\(merchant.name) wasn't going to part with that. The DM made it worth their while — you're paying for the fetching as much as the goods.")
+        }
+    }
+
+    /// Takes what the DM asks, from whoever is carrying the most: gold is held
+    /// per character, so somebody has to actually pay it.
+    ///
+    /// If nobody can cover it, the gift goes through anyway. Announcing an item
+    /// and then not handing it over is the exact fault giveToParty was written
+    /// to end, and a charge is no reason to bring it back.
+    private func chargeForDMGift(_ item: Item, report: (String) -> Void) {
+        guard let charge = dmGiftCharge(for: item) else { return }
+        let payer = party.filter({ $0.isConscious }).max(by: { $0.gold < $1.gold })
+            ?? party.max(by: { $0.gold < $1.gold })
+        guard let who = payer, who.gold >= charge.amount else {
+            report("The DM sees the state of your purse and waves it away. Call it a favour — this once.")
+            return
+        }
+        who.gold -= charge.amount
+        report(charge.line)
+        report("\(shortName(for: who)) pays \(charge.amount)gp for the \(item.name).")
+        logEvent("DM charged \(charge.amount)gp for \(item.name)", category: "DM")
+    }
+
     private func resolveItemByName(_ name: String) -> Item? {
         let lower = name.lowercased()
 
@@ -31797,7 +33436,7 @@ class GameEngine: ObservableObject {
         // Fallback — create a generic misc item so the DM's gift isn't lost
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanName.isEmpty else { return nil }
-        return Item(id: UUID(), name: cleanName, description: "A mysterious item from the DM.",
+        return Item(id: UUID(), name: cleanName, description: GameEngine.dmInventedItemDescription,
                     type: .misc, weight: 1.0, value: 5,
                     weaponStats: nil, armorStats: nil, potionStats: nil)
     }
@@ -31957,7 +33596,7 @@ class GameEngine: ObservableObject {
         print("")
 
         // Phase 2: Dice roll (after delay)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
             guard let self = self else { return }
 
             self.printLines(self.diceArt(report.d20Roll), color: .yellow)
@@ -31997,7 +33636,7 @@ class GameEngine: ObservableObject {
 
             // Phase 3: Damage (if hit)
             if report.hits, let rolls = report.damageRolls, let totalDmg = report.totalDamage {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                     guard let self = self else { return }
 
                     let diceStr = report.damageDice ?? "?"
@@ -32556,6 +34195,9 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// The turn this menu last announced, so re-opening it doesn't say so again.
+    private var lastAnnouncedTurnKey: String?
+
     func showPlayerCombatMenu(characterId: UUID) {
         guard let combat = currentCombat,
               let character = party.first(where: { $0.id == characterId }) else { return }
@@ -32566,8 +34208,17 @@ class GameEngine: ObservableObject {
             return
         }
 
-        print(">> \(character.name)'s turn! <<", color: .brightGreen, bold: true)
-        print("")
+        // This menu is re-opened several times inside one turn — backing out
+        // of the potion list, cancelling a weapon change, checking the party.
+        // Each re-entry used to announce the turn again, so the screen read
+        // "X's turn ... X's turn" with the turn never having moved. Say it
+        // once, when the turn actually begins.
+        let turnKey = "\(characterId)-\(combat.currentTurnIndex)"
+        if turnKey != lastAnnouncedTurnKey {
+            lastAnnouncedTurnKey = turnKey
+            print(">> \(character.name)'s turn! <<", color: .brightGreen, bold: true)
+            print("")
+        }
 
         let aliveMonsters = combat.encounter.aliveMonsters
         var options: [String] = []
@@ -32800,6 +34451,36 @@ class GameEngine: ObservableObject {
         printTitle("Change Weapon")
         print("  Wielding: \(character.equippedWeapon?.name ?? "bare hands")", color: .dimGreen)
         print("  Switching weapons costs your turn, and there's a small chance you fumble the draw.", color: .yellow)
+        print("")
+
+        // What each one would actually do, measured against what's in hand —
+        // "Change Weapon" used to be a list of bare names.
+        func averageDamage(_ item: Item) -> Double {
+            guard let d = item.weaponStats?.damage else { return 0 }
+            let halves = d.split(separator: "+")
+            let dice = halves[0].split(separator: "d")
+            guard dice.count == 2, let n = Double(dice[0]), let faces = Double(dice[1]) else { return 0 }
+            let bonus = halves.count > 1 ? (Double(halves[1]) ?? 0) : 0
+            return n * (faces + 1) / 2 + bonus
+        }
+        let held = character.equippedWeapon
+        let heldAvg = held.map(averageDamage) ?? 1.5   // bare hands
+        for w in weapons {
+            var notes: [String] = []
+            if let s = w.weaponStats {
+                notes.append(s.damage)
+                if s.isFinesse { notes.append("finesse — uses DEX if that's better") }
+                if s.isRanged { notes.append("ranged — uses DEX") }
+                if s.isTwoHanded { notes.append("two-handed") }
+            }
+            let mine = averageDamage(w)
+            let verdict: (String, TerminalColor)
+            if mine > heldAvg + 0.75 { verdict = ("hits harder than \(held?.name ?? "bare hands")", .brightGreen) }
+            else if mine < heldAvg - 0.75 { verdict = ("hits softer than \(held?.name ?? "bare hands")", .yellow) }
+            else { verdict = ("about the same", .dimGreen) }
+            printWrapped("\(w.name) — \(notes.joined(separator: ", "))", indent: 4, color: .green)
+            printWrapped("   \(verdict.0)", indent: 4, color: verdict.1)
+        }
         print("")
 
         showMenu(weapons.map { $0.name } + ["< Back"])
@@ -34102,6 +35783,20 @@ class GameEngine: ObservableObject {
     /// catch-up), never inside this function itself.
     private var isHandlingCombatVictory = false
 
+    /// The "?" on a victory that dropped something.
+    private func showVictoryHelp(onDone: @escaping () -> Void) {
+        showInlineHelp {
+            self.printTitle("Victory — Help")
+            self.print("")
+            self.printWrapped("What the fight was worth: the experience each of you earned, and anything the creatures left behind.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("Experience is split half evenly among everyone who actually fought, and half by what each of you did — damage dealt, and credit for every turn taken, so healing and helping still earn a share.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("Take the Spoils moves on to sharing out the gold and gear, and then to anyone ready to gain a level. This screen waits for you — nothing is lost while you read it.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
+    }
+
     func handleCombatVictory() {
         guard !isHandlingCombatVictory else { return }
         // currentCombat checked BEFORE setting the guard flag — this flag is
@@ -34125,6 +35820,9 @@ class GameEngine: ObservableObject {
         // Track stats
         monstersSlain += combat.encounter.monsters.count
         combatsWon += 1
+        // First Blood and Slayer are earned here, not at the end of the
+        // adventure — which is the only place they used to be reported.
+        reportProgressAchievements()
 
         // Identify who actually fought — exclude those who fled or played dead
         let fighters = party.filter { !$0.hasFledCombat && !$0.isPlayingDead }
@@ -34337,9 +36035,28 @@ class GameEngine: ObservableObject {
         // already solves exactly this: it guards on closeHandler, set and
         // cleared specifically for THIS destination, not shared with
         // whatever screen comes after.
-        autoReturnDestination = continueAction
-        // Victory moves on reasonably briskly — no reading-time stretch.
-        pendingTimeoutKind = .results; autoReturn(after: max(3.0, infoTimeout * 1.5), stretchForReading: false)
+        // Spoils on the floor mean there is something here worth reading and
+        // something to decide, so a fight that dropped anything now WAITS
+        // rather than sliding off on a timer — picking things up keeps you on
+        // the victory screen until you choose to move on. A fight that dropped
+        // nothing still moves on by itself, but with twice the time and the
+        // ordinary reading-time stretch, instead of the old bare 3 seconds.
+        let wonSomething = lootGold > 0 || !lootItems.isEmpty
+        if wonSomething {
+            showMenuOptions([MenuOption("Take the Spoils", isDefault: true),
+                             MenuOption("?", tint: .navigation, compact: true)])
+            menuHandler = { [weak self] choice in
+                guard let self = self else { return }
+                if choice == 1 { continueAction() } else { self.showVictoryHelp(onDone: continueAction) }
+            }
+            closeHandler = continueAction
+        } else {
+            // Only armed on the path that actually uses it — left set on the
+            // waiting path it would be picked up by some later autoReturn.
+            autoReturnDestination = continueAction
+            pendingTimeoutKind = .results
+            autoReturn(after: max(5.0, infoTimeout * 2.0), stretchForReading: true)
+        }
     }
 
     /// "Emergency Drop" — a rare, automatic anti-total-party-wipe save.
@@ -34681,8 +36398,52 @@ class GameEngine: ObservableObject {
 
         // --- The end of the tale: the villain is beaten, nothing lies deeper ---
         if isFinal {
-            mainQuestCompleted = mainQuest != nil
-            if let q = mainQuest { questHistory.append("Completed the quest: \(Dungeon.guardianName(q.villain)) defeated, and \(q.goal) done.") }
+            // You needn't have seen every level through — but most of them.
+            if let q = mainQuest, let depth = dungeon?.levelCount, depth > 1 {
+                let done = (q.levelsDone ?? []).count
+                let enough = depth / 2 + 1
+                if done >= enough {
+                    printWrapped("\(done) of \(depth) levels seen through to the end — enough, and more than most manage.", indent: 2, color: .brightGreen)
+                } else {
+                    printWrapped("You did \(done) of \(depth) levels' work on the way down, where \(enough) would have been enough to do this properly. It is finished — but not as well as it might have been.", indent: 2, color: .yellow)
+                }
+                print("")
+            }
+            // The guardian is dead. Whether the QUEST is done depends on what
+            // it asked for — this used to be `mainQuestCompleted = mainQuest
+            // != nil`, so every quest ended identically however it began.
+            var questDone = mainQuest != nil
+            var shortfall: String? = nil
+            if let q = mainQuest {
+                switch q.objective ?? "slay" {
+                case "remedy":
+                    let need = q.chapterNeeded ?? 0
+                    if need > 0 && (q.chapterFound ?? 0) < need {
+                        questDone = false
+                        shortfall = "But the makings were never gathered — \(q.chapterFound ?? 0) of \(need). The thing that caused it is dead and \(q.village) is no better off. They will need someone to go back down."
+                    }
+                case "mystery":
+                    if (q.cluesLearned ?? []).count < 2 {
+                        questDone = false
+                        shortfall = "You killed something terrible tonight. Whether it was the one behind it, nobody in \(q.village) can say — you never found out enough to be sure, and the asking starts again tomorrow."
+                    }
+                case "rival":
+                    if q.deadlinePassed == true {
+                        questDone = false
+                        shortfall = "You were not first. The other company came up days ago with the story already told, and \(q.village) had thanked them before you reached the surface."
+                    }
+                default:
+                    break
+                }
+            }
+            mainQuestCompleted = questDone
+            if let note = shortfall {
+                print("")
+                printWrapped(note, indent: 2, color: .yellow)
+                print("")
+            }
+            if let q = mainQuest, questDone { questHistory.append("Completed the quest: \(Dungeon.guardianName(q.villain)) defeated, and \(q.goal) done.") }
+            else if let q = mainQuest { questHistory.append("Beat \(Dungeon.guardianName(q.villain)) — but the quest to \(q.goal) was left unfinished.") }
             logEvent("THE END: the final guardian of \(dungeonName) is defeated", category: "EXPLORE")
             // No save here: the last save (from before the final fight) is kept,
             // so the ending can be played again. Then the outro and certificate.
@@ -34690,13 +36451,33 @@ class GameEngine: ObservableObject {
             return
         }
 
+        // The guardian gives up one part of the quest as it goes: what this
+        // level was hiding, and how much of it, before the party goes deeper.
+        if var mq = mainQuest {
+            let task = mq.chapterTask(forLevel: currentLevel)
+            if !mq.levelDone(currentLevel) { mq.levelsDone = (mq.levelsDone ?? []) + [currentLevel] }
+            mq.chapterItem = task.item
+            mq.chapterNeeded = task.needed
+            mq.chapterFound = mq.chapterFound ?? 0
+            mainQuest = mq
+            let foe = guardian ?? "the one below"
+            print("  \u{2726} THE GUARDIAN'S LAST WORD", color: .cyan, bold: true)
+            printWrapped("Before it goes still it tells you something it plainly didn't mean to: \(task.needed) \(task.item), gathered on levels like this one, and \(foe) can be undone. Go down without them and the ending is a poorer one.", indent: 2, color: .yellow)
+            print("")
+            logEvent("Level \(currentLevel) guardian gave up a clue: \(task.needed) \(task.item)", category: "QUEST")
+            let earned = 50 * currentLevel
+            for char in party where char.isConscious { char.experiencePoints += earned }
+            printWrapped("Seeing this level through is worth \(earned) experience to each of you.", indent: 2, color: .brightGreen)
+            print("")
+        }
+
         // --- What lies ahead ---
         let nextLevel = currentLevel + 1
         print("  ┌─ The Depths Beckon ────────────┐", color: .cyan, bold: true)
-        printWrapped("Level \(nextLevel) of \(dungeonName) awaits. Darker corridors, deadlier foes, and greater treasures lie below. Your party is stronger now — but so are the monsters.", indent: 2, color: .cyan)
+        printWrapped("\(Dungeon.floorName(nextLevel)) of \(dungeonName) awaits. Darker corridors, deadlier foes, and greater treasures lie below. Your party is stronger now — but so are the monsters.", indent: 2, color: .cyan)
         if let g = guardian {
-            let left = Dungeon.finalLevel - currentLevel
-            printWrapped(left <= 1 ? "Level \(nextLevel) is the last. \(g) waits at the bottom."
+            let left = (dungeon?.levelCount ?? Dungeon.finalLevel) - currentLevel
+            printWrapped(left <= 1 ? "\(Dungeon.floorName(nextLevel)) is the last. \(g) waits at the bottom."
                                    : "\(g) waits at the bottom, \(left) levels down. Every guardian between here and there is stronger than the last.", indent: 2, color: .yellow)
         }
         print("  └───────────────────────────────┘", color: .cyan)
@@ -34704,7 +36485,7 @@ class GameEngine: ObservableObject {
         printWrapped("Save your progress before descending — the deeper levels show no mercy to the unprepared.", indent: 2, color: .dimGreen)
         print("")
 
-        showMenu(["Save & Continue to Level \(nextLevel)", "Continue to Level \(nextLevel)", "Save & End Adventure", "End Adventure"])
+        showMenu(["Save & Continue to \(Dungeon.floorName(nextLevel))", "Continue to \(Dungeon.floorName(nextLevel))", "Save & End Adventure", "End Adventure"])
 
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
@@ -34740,7 +36521,14 @@ class GameEngine: ObservableObject {
             // Generate new dungeon at next level, keeping the party — and
             // the Atlas: the level being left is archived onto the new one.
             let previousDungeon = self.dungeon
-            self.dungeon = Dungeon(name: dungeonName, level: nextLevel)
+            // Carry the adventure's shape down with the party. Without this the
+            // new floor took startDifficulty from `level` — the floor number —
+            // so an easy game was back at hard fight density by floor three, and
+            // levelCount was re-read from the live setting, which moved the
+            // bottom of the world if it was changed mid-adventure.
+            self.dungeon = Dungeon(name: dungeonName, level: nextLevel,
+                                   levelCount: previousDungeon?.levelCount,
+                                   startDifficulty: previousDungeon?.startDifficulty)
             if let previous = previousDungeon, let next = self.dungeon {
                 next.archivedLevels = previous.archivedLevels + [previous.atlasLevel(hasTrapSense: self.partyHasTrapSense, archived: true)]
                 next.hasCartography = previous.hasCartography
@@ -34757,7 +36545,7 @@ class GameEngine: ObservableObject {
             if viaDeepPad {
                 self.print("The floor drops away — and you land, hard, somewhere deeper in \(dungeonName).", color: .cyan)
                 self.print("")
-                self.print("Level \(nextLevel). You slipped past a guardian; the ones down here won't be so easy.", color: .dimGreen)
+                self.print("\(Dungeon.floorName(nextLevel)). You slipped past a guardian; the ones down here won't be so easy.", color: .dimGreen)
             } else {
                 self.print("Your party descends deeper into \(dungeonName)...", color: .cyan)
                 self.print("")
@@ -34765,12 +36553,12 @@ class GameEngine: ObservableObject {
             }
             self.print("")
 
-            if let beat = self.mainQuest?.beat(forLevel: nextLevel) {
+            if let beat = self.mainQuest?.beat(forLevel: nextLevel, of: self.dungeon?.levelCount ?? Dungeon.defaultFinalLevel) {
                 self.print("")
                 self.printWrapped(beat, indent: 0, color: .yellow)
                 self.logEvent("Quest: \(beat)", category: "QUEST")
             }
-            if nextLevel >= Dungeon.finalLevel {
+            if nextLevel >= (self.dungeon?.levelCount ?? Dungeon.defaultFinalLevel) {
                 self.print("")
                 let g = self.mainQuest.map { Dungeon.guardianName($0.villain) } ?? "its last guardian"
                 self.printWrapped("This is the last level — the bottom of the world. Somewhere down here, \(g) is waiting.", indent: 0, color: .yellow)
@@ -34955,6 +36743,27 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Achievements earned DURING an adventure. checkAchievements was called
+    /// from recordHallOfFame alone — at the end of a run — so first_blood,
+    /// slayer and hoarder, all three of which are earned while playing, only
+    /// ever surfaced once the adventure was over.
+    ///
+    /// isVictory is false on purpose: dungeon_master, veteran and legend are
+    /// for finishing, and stay where they are.
+    ///
+    /// These IDs must be declared in App Store Connect to show a banner —
+    /// reporting an undeclared one fails silently — which is why this reports
+    /// only the six that already exist rather than inventing new ones.
+    func reportProgressAchievements() {
+        GameCenterManager.shared.checkAchievements(
+            combatsWon: combatsWon,
+            monstersSlain: monstersSlain,
+            goldCollected: party.reduce(0) { $0 + $1.gold },
+            dungeonLevel: dungeon?.level ?? 1,
+            isVictory: false
+        )
+    }
+
     private func recordHallOfFame(outcome: RunOutcome) {
         var totalGold = 0
         for char in party { totalGold += char.gold }
@@ -34980,7 +36789,7 @@ class GameEngine: ObservableObject {
                 torchTurnsRemaining: torchTurnsRemaining,
                 partyChatLog: partyChatLog.suffix(20).map { $0 },
                 monstersSlain: monstersSlain, combatsWon: combatsWon,
-                activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine()
+                activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine(), difficultyScale: difficultyScale
             )
             try? SaveGameManager.shared.save(hofSave)
             linkedSaveId = saveId
@@ -35451,7 +37260,7 @@ class GameEngine: ObservableObject {
         printWrapped("Party gold: \(totalGold)", indent: 4, color: .dimGreen)
         if let dungeon = dungeon {
             let explored = dungeon.rooms.values.filter { $0.visited }.count
-            printWrapped("Rooms explored on Level \(dungeon.level): \(explored)/\(dungeon.rooms.count)", indent: 4, color: .dimGreen)
+            printWrapped("Rooms explored on \(Dungeon.floorName(dungeon.level)): \(explored)/\(dungeon.rooms.count)", indent: 4, color: .dimGreen)
             printWrapped("Dungeon level: \(dungeon.level)", indent: 4, color: .dimGreen)
         }
         print("")
@@ -35710,7 +37519,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine()
+            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine(), difficultyScale: difficultyScale
         )
 
         do {
@@ -35759,7 +37568,7 @@ class GameEngine: ObservableObject {
             partyChatLog: partyChatLog.suffix(20).map { $0 },
             monstersSlain: monstersSlain,
             combatsWon: combatsWon,
-            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine()
+            activeQuest: activeQuest, otherQuests: otherQuests, introLines: adventureIntroLines, mainQuest: mainQuest, questHistory: questHistory, noMainQuest: noMainQuest, mainQuestCompleted: mainQuestCompleted, questSummary: questSummaryLine(), difficultyScale: difficultyScale
         )
 
         do {
@@ -35773,7 +37582,7 @@ class GameEngine: ObservableObject {
             print("")
             print("  \(slotName)", color: .cyan)
             print("  \(partyDesc)", color: .dimGreen)
-            print("  \(dungeon.name) (Level \(dungeon.level))", color: .dimGreen)
+            print("  \(dungeon.name) (\(Dungeon.floorName(dungeon.level)))", color: .dimGreen)
 
             let breakpoints = SaveGameManager.shared.listBreakpoints(slotId: slotId)
             let slotCount = SaveGameManager.shared.listSlots().count
@@ -36392,7 +38201,7 @@ class GameEngine: ObservableObject {
                 partyChatLog: bp.partyChatLog,
                 monstersSlain: bp.monstersSlain,
                 combatsWon: bp.combatsWon,
-                activeQuest: bp.activeQuest, otherQuests: bp.otherQuests, introLines: bp.introLines, mainQuest: bp.mainQuest, questHistory: bp.questHistory, noMainQuest: bp.noMainQuest, mainQuestCompleted: bp.mainQuestCompleted, questSummary: bp.questSummary
+                activeQuest: bp.activeQuest, otherQuests: bp.otherQuests, introLines: bp.introLines, mainQuest: bp.mainQuest, questHistory: bp.questHistory, noMainQuest: bp.noMainQuest, mainQuestCompleted: bp.mainQuestCompleted, questSummary: bp.questSummary, difficultyScale: bp.difficultyScale
             )
             try? SaveGameManager.shared.save(copy)
         }
@@ -36970,7 +38779,7 @@ class GameEngine: ObservableObject {
                 gameTimeMinutes: bp.gameTimeMinutes, adventureLog: bp.adventureLog,
                 dmChatLog: bp.dmChatLog, torchLit: bp.torchLit, torchTurnsRemaining: bp.torchTurnsRemaining,
                 partyChatLog: bp.partyChatLog, monstersSlain: bp.monstersSlain, combatsWon: bp.combatsWon,
-                activeQuest: bp.activeQuest, otherQuests: bp.otherQuests, introLines: bp.introLines, mainQuest: bp.mainQuest, questHistory: bp.questHistory, noMainQuest: bp.noMainQuest, mainQuestCompleted: bp.mainQuestCompleted, questSummary: bp.questSummary
+                activeQuest: bp.activeQuest, otherQuests: bp.otherQuests, introLines: bp.introLines, mainQuest: bp.mainQuest, questHistory: bp.questHistory, noMainQuest: bp.noMainQuest, mainQuestCompleted: bp.mainQuestCompleted, questSummary: bp.questSummary, difficultyScale: bp.difficultyScale
             )
             try? SaveGameManager.shared.save(renamed)
         }
@@ -37220,6 +39029,9 @@ class GameEngine: ObservableObject {
         questHistory = save.questHistory ?? []
         noMainQuest = save.noMainQuest ?? false
         mainQuestCompleted = save.mainQuestCompleted ?? false
+        // Saves made before this was stored were, in fact, played at 1.0 from
+        // their first reload onwards — so that is the honest fallback.
+        difficultyScale = save.difficultyScale ?? 1.0
         // Restore torch state — if not saved, auto-light if anyone has a torch
         if let savedTorchLit = save.torchLit {
             torchLit = savedTorchLit
@@ -37556,7 +39368,34 @@ class GameEngine: ObservableObject {
             return
         }
 
-        performQuit()
+        // No adventure to lose — but X should still never close the app on a
+        // single tap. Ask first, the same as everywhere else.
+        clearTerminal()
+        printTitle("Quit")
+        print("Close the game?", color: .yellow)
+        print("")
+        printWrapped("There's no adventure under way, so nothing is waiting to be saved.", indent: 2, color: .dimGreen)
+        print("")
+        showMenu(["Quit", "?", "< Back"])
+        closeHandler = { [weak self] in self?.showMainMenu() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1:
+                self.performQuit()
+            case 2:
+                self.showInlineHelp {
+                    self.printTitle("Quit — Help")
+                    self.print("")
+                    self.printWrapped("Closes the app. There's no adventure in progress, so there's nothing to save and nothing to lose.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("< Back leaves the app open and returns to the Main Menu.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default:
+                self.showMainMenu()
+            }
+        }
     }
 
     /// Timer for twinkling farewell stars
@@ -40327,6 +42166,7 @@ class GameEngine: ObservableObject {
 
                 // Track in dmChatLog
                 self.dmChatLog.append((isUser: false, text: displayText))
+                self.forceScrollToNewest = true
 
                 // Add to party chat display
                 self.addChatMessage(senderName: "Dungeon Master", message: displayText, isAI: true)
@@ -40400,6 +42240,9 @@ class GameEngine: ObservableObject {
                         if let item = self.resolveItemByName(itemName) {
                             pendingPickupItems.append(item)
                             self.addChatMessage(senderName: "Dungeon Master", message: "[Found: \(item.name)!]", isAI: true)
+                            self.chargeForDMGift(item) { [weak self] line in
+                                self?.addChatMessage(senderName: "Dungeon Master", message: line, isAI: true)
+                            }
                         }
                         worldChanged = true
                     }
