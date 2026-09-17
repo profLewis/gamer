@@ -1795,7 +1795,26 @@ final class Combat: ObservableObject {
     func displayStatus(localCharacterIds: Set<UUID> = []) -> [String] {
         var lines: [String] = []
 
-        lines.append("───── COMBAT ─────")
+        // Who is acting, who has been, who is still to come. Worked out from
+        // currentTurnIndex — everyone before it in turnOrder has had their go
+        // this round, everyone after is waiting — so there is no second copy
+        // of the turn order to keep in step, and nothing new to save.
+        func turnIndexOfPlayer(_ id: UUID) -> Int? {
+            turnOrder.firstIndex { $0.isPlayer && $0.id == id }
+        }
+        func turnIndexOfMonster(_ name: String) -> Int? {
+            turnOrder.firstIndex { !$0.isPlayer && $0.name == name }
+        }
+        func mark(_ idx: Int?) -> String {
+            guard let idx = idx else { return "  " }      // not in the order at all
+            if idx == currentTurnIndex { return "▶ " }    // acting now
+            return idx < currentTurnIndex ? "✓ " : "· "   // been / to come
+        }
+        let nowName = currentCombatant?.name
+        // NOTE: the header must stay ONE line and the blank after it ONE line —
+        // printCombatStatus finds the party rows at lineIdx - 2 to underline
+        // your own characters, so inserting anything above them misaligns it.
+        lines.append(nowName.map { "───── COMBAT · \($0)'s turn ─────" } ?? "───── COMBAT ─────")
         lines.append("")
 
         let maxPartyName = party.map { $0.name.prefix(16).count }.max() ?? 8
@@ -1812,7 +1831,7 @@ final class Combat: ObservableObject {
             let statusTag = char.hasFledCombat ? " [fled]" : (char.isPlayingDead ? " [playing dead]" : (char.isMindControlled ? " [mind-controlled]" : "")) + (char.sluggishAttacks > 0 ? " [sluggish]" : "")
             let hp = String("\(char.currentHP)/\(char.maxHP)").padding(toLength: 7, withPad: " ", startingAt: 0)
             let youTag = localCharacterIds.contains(char.id) ? " ◀" : ""
-            lines.append(" \(s) \(n)  \(hp)\(statusTag)\(youTag)")
+            lines.append("\(mark(turnIndexOfPlayer(char.id)))\(s) \(n)  \(hp)\(statusTag)\(youTag)")
         }
 
         lines.append("")
@@ -1822,10 +1841,27 @@ final class Combat: ObservableObject {
             let s = monster.isAlive ? "●" : "✗"
             let n = String(monsterNames[i].prefix(16)).padding(toLength: maxMonName, withPad: " ", startingAt: 0)
             let hp = String("\(monster.currentHP)/\(monster.maxHP)").padding(toLength: 7, withPad: " ", startingAt: 0)
-            lines.append(" \(s) \(n)  \(hp)")
+            lines.append("\(mark(turnIndexOfMonster(monster.name)))\(s) \(n)  \(hp)")
         }
 
         lines.append("──────────────────")
+        // Said plainly as well as marked, because a row of symbols is only
+        // obvious once you already know what it means.
+        if let now = nowName {
+            var upNext: String? = nil
+            if turnOrder.count > 1 {
+                var i = (currentTurnIndex + 1) % turnOrder.count
+                var looked = 0
+                while looked < turnOrder.count {
+                    let entry = turnOrder[i]
+                    if isCombatantAlive(entry) { upNext = entry.name; break }
+                    i = (i + 1) % turnOrder.count
+                    looked += 1
+                }
+            }
+            lines.append(" ▶ now: \(now)" + (upNext.map { "   · next: \($0)" } ?? ""))
+            lines.append(" ✓ = had their turn   · = still to come")
+        }
 
         return lines
     }

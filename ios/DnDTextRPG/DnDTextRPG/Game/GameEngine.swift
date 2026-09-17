@@ -442,7 +442,12 @@ class GameEngine: ObservableObject {
     static let combatContinueTitles = ["Next blow?", "The fight goes on…", "Ready for the next move?", "Steel yourselves…", "What happens next?"]
     static let continueTitles = ["ok?", "Continue?", "Onward?", "…"]
     /// How a waiting screen counts: one dot, then two, then three.
-    static let continueDots = [".", "..", "…"]
+    /// The quiet mark on a screen that is waiting for you. One glyph, shown
+    /// once — it used to be ".", then "..", then "…", underlined and growing,
+    /// which looked like a fault rather than a pause. The hourglass by the
+    /// input line and the glow on the waiting button carry the rest of the
+    /// message now. Still an array: the read-aloud filter skips anything in it.
+    static let continueDots = ["⋯"]
     /// Only after a long silence — a nudge with a bit more in it.
     static let continueProds = [
         "Still there? The dungeon holds its breath…",
@@ -611,12 +616,8 @@ class GameEngine: ObservableObject {
         // silence does it say something with more character to it.
         let step = max(1, continueHintCount)
         if step <= Self.continueDots.count {
-            let dots = Self.continueDots[step - 1]
-            if step == 1 {
-                print("  \(dots)", color: .dimGreen, underlined: true)
-            } else {
-                replaceLastLine("  \(dots)", ifLastIsOneOf: Self.continueDots, color: .dimGreen, underlined: true)
-            }
+            // Once, quietly, and then left alone.
+            print("  \(Self.continueDots[0])", color: .dimGreen)
         } else {
             printWrapped(Self.pickVaried(Self.continueProds, avoiding: &lastContinueTitle), indent: 2, color: .dimGreen)
         }
@@ -2554,6 +2555,7 @@ class GameEngine: ObservableObject {
         case "contributors": return { [weak self] in self?.openWeb(ContributorsManager.webURL) }
         case "puzzles": return { [weak self] in self?.showPuzzleSettings(onBack: { [weak self] in self?.returnFromLink() }) }
         case "questNotes": return { [weak self] in self?.showPartyStatus() }
+        case "howTo": return { [weak self] in self?.showHowToIndex() }
         default: return nil
         }
     }
@@ -6349,6 +6351,83 @@ class GameEngine: ObservableObject {
                 self.textFlashOpacity = 1.0
             }
         }
+    }
+
+    /// The How to… topics: a short answer each, to the things people actually
+    /// ask. "How to Play" (below) is the overview; this is the practical half.
+    /// Kept as data so the index and the pages cannot drift apart.
+    static let howToTopics: [(title: String, lines: [String])] = [
+        ("Find a new main quest", [
+            "Party Status → By the Campfire. The party sits down and asks whether this is still the quest worth risking everything for.",
+            "Hear Another Plea brings somebody new forward with their own trouble. You can take it up, turn it down, or try to go back to the one you had — though a village you walked away from may not want you back.",
+            "Be warned: the dungeon dislikes oath-breakers. Taking up a new quest can fling you back to the entrance, and things fall out of packs on the way."]),
+        ("Give up a quest", [
+            "Party Status → By the Campfire → Give Up Quest.",
+            "You lose the progress and keep a little gold in goodwill, which makes room for another.",
+            "Long-press the button to skip the \"are you sure?\" step, once you know you mean it."]),
+        ("Play with no quests at all", [
+            "Two ways. When a plea is offered, choose No Quest and set off for the adventure of it — there are always errands on the way.",
+            "Or switch them off for good: Settings → Gameplay → Main Quests → Off. A new adventure then skips the plea entirely and goes straight down into the dark, and anything to do with a main quest is greyed out.",
+            "Errands from the people you meet work either way."]),
+        ("Stay healthy", [
+            "Rest gives you four choices: Short Rest (an hour, some hit points back), Long Rest (eight hours, everyone to full), Eat & Drink, and Wash.",
+            "Eating in the dark only does half the good — you cannot see what you are eating, or how much. Light a torch first.",
+            "A Long Rest costs eight hours, which is most of a day. That is fine when nothing is chasing you, and expensive when something is."]),
+        ("Keep an eye on the clock", [
+            "The day counter starts when you go down. A quest with a deadline shows it on the quest line: ☾ and the name, then how many days are left.",
+            "A passed deadline does not end the quest. It halves the reward, and what the village feared happens anyway.",
+            "Settings → Gameplay → Time Limit is separate: with it set, the adventure ends in defeat when game time runs out. With both, sleeping eight hours twice over can cost you the lot — Short Rests and food are the cheap way to stay standing."]),
+        ("Know what a quest wants", [
+            "Not every quest ends with a dead guardian, and the plea says which kind it is.",
+            "Slay — beat the guardian at the bottom.",
+            "Remedy — killing it is not enough. Without the makings gathered floor by floor, the sickness goes on.",
+            "Mystery — you must learn enough on the way to know who was behind it. Kill the wrong thing and nobody can say.",
+            "Rival — another company set out before you. This is a race."]),
+        ("Search a room properly", [
+            "Search Room uses whoever has the best Perception — or whoever you have named under Actor.",
+            "Once a room's hidden things are found, searching again scavenges instead: odds and ends, and sometimes what the guardian asked you to gather. A room can only be scavenged once.",
+            "In the dark it is far harder, and it can go wrong."]),
+        ("Make it faster or slower", [
+            "Settings → Gameplay → Timeouts sets how long each kind of screen waits before moving on by itself.",
+            "Settings → Mood → Music Speed sets how quickly the tunes play.",
+            "The hourglass by the input line pauses a countdown when tapped, and hurries it along when held."]),
+        ("Get help anywhere", [
+            "Every screen has a ? button, and every help page has this list at the foot of it.",
+            "You can also just type a question at the > prompt and the Dungeon Master will answer in plain words.",
+            "Typing a button's name presses it — handy with the buttons hidden, and for anyone who would rather type."]),
+    ]
+
+    /// The How to… index. Reached from the link at the foot of every help page.
+    func showHowToIndex() {
+        clearTerminal()
+        printTitle("How to…")
+        printWrapped("Short answers to the things people actually ask. Tap one.", indent: 2, color: .dimGreen)
+        print("")
+        let titles = Self.howToTopics.map { $0.title }
+        showPaginatedMenuOptions(titles, pinned: ["< Back"], handler: { [weak self] idx in
+            guard let self = self, idx >= 0, idx < Self.howToTopics.count else { return }
+            self.showHowToTopic(idx)
+        }, pinnedHandler: { [weak self] _ in
+            // Back to whatever screen the link was followed from.
+            guard let self = self else { return }
+            if !self.returnFromLink() { self.showHowToPlay() }
+        })
+    }
+
+    private func showHowToTopic(_ index: Int) {
+        guard index >= 0, index < Self.howToTopics.count else { return }
+        let topic = Self.howToTopics[index]
+        clearTerminal()
+        printTitle("How to \(topic.title.prefix(1).lowercased() + topic.title.dropFirst())")
+        print("")
+        for line in topic.lines {
+            printWrapped(line, indent: 2, color: .green)
+            print("")
+        }
+        let opts = [MenuOption("< Back", tint: .navigation, compact: true)]
+        showMenuOptions(opts)
+        closeHandler = { [weak self] in self?.showHowToIndex() }
+        menuHandler = { [weak self] _ in self?.showHowToIndex() }
     }
 
     func showHowToPlay(onBack: (() -> Void)? = nil) {
@@ -28748,6 +28827,11 @@ class GameEngine: ObservableObject {
         print("  UNDO / REDO", color: .cyan, bold: true)
         printWrapped("When you make changes (settings, character edits), labelled Undo/Redo buttons appear in the input bar showing what they will revert. Tap to step back or forward through changes. Undo/Redo must be enabled in Settings > Gameplay.", indent: 2, color: .dimGreen)
         printLink("Settings > Gameplay", to: "gameplay", indent: 4)
+        print("")
+
+        print("  HOW TO…", color: .cyan, bold: true)
+        printWrapped("Short answers to the things people actually ask: finding a quest, giving one up, playing with none at all, staying healthy, and the rest.", indent: 2, color: .dimGreen)
+        printLink("How to…", to: "howTo", indent: 4)
         print("")
     }
 
