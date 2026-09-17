@@ -173,6 +173,89 @@ While a screen is counting down you'll see a small **hourglass** at the right-ha
 
 Display size, DM narration, VoiceOver labels (D-pad, map summary, navigation), Reduce Animations, Auto-Scroll, a pausable auto-continue countdown, left/right-handed layout, typing or voice instead of tapping, and long-press shortcuts. See [ios/DnDTextRPG/ACCESSIBILITY.md](ios/DnDTextRPG/ACCESSIBILITY.md) for how to use each tool and notes on playing with VoiceOver.
 
+## How to…
+
+Short answers to the things people actually ask. Every screen also has a **?**
+button, and the Dungeon Master will answer in plain words if you ask.
+
+### How to find a new main quest
+Open **Party Status → By the Campfire**. The party sits down and asks whether
+this is still the quest worth risking everything for. Choose **Hear Another
+Plea** and someone new comes forward with their own trouble. You can take it
+up, turn it down, or try to go back to the one you had — though a village you
+walked away from may not want you back. Be warned: the dungeon dislikes
+oath-breakers, and taking up a new quest can fling you back to the entrance,
+with things falling out of packs on the way.
+
+### How to abandon a quest
+Same screen: **By the Campfire → Give Up Quest**. You lose the progress and
+keep a little gold in goodwill, which makes room for another. **Long-press**
+the button to skip the "are you sure?" step once you know you mean it.
+
+### How to play with no quests at all
+Two ways. When a plea is offered, choose **No Quest** and set off for the
+adventure of it — there are always errands on the way. Or switch them off
+entirely: **Settings → Gameplay → Main Quests → Off**. A new adventure then
+skips the plea and goes straight down into the dark, and anything to do with a
+main quest is greyed out. Errands from the people you meet are unaffected
+either way.
+
+### How to stay healthy
+Resting and eating are both under **Rest** in the actions:
+
+| What | Costs | Good for |
+|---|---|---|
+| **Short Rest** | 1 hour | Some hit points back, quickly |
+| **Long Rest** | 8 hours | Everyone back to full |
+| **Eat & Drink** | A few minutes | Hit points, and some food has its own effect |
+| **Wash** | A few minutes | Morale, and how people treat you |
+
+Two things worth knowing. **Eating in the dark only does half the good** — you
+can't see what you're eating, or how much. Light a torch first. And a **Long
+Rest costs eight hours**, which is most of a day: fine when nothing is chasing
+you, expensive when something is.
+
+### How to keep an eye on the clock
+The day counter runs from the moment you go down. If your quest has a deadline,
+it shows on the quest line as **☾ Harvest Moon in 3 days** — and then "is
+today!", and then "has passed — late, but not lost". A passed deadline doesn't
+end the quest; it halves the reward, and what the village feared happens anyway.
+
+If you have also set **Settings → Gameplay → Time Limit**, the adventure ends in
+defeat when game time runs out. With a time limit *and* a deadline, sleeping
+eight hours twice over can cost you both. Short Rests and food are the cheap way
+to stay standing.
+
+### How to get the guardian to talk
+Beat the guardian on any floor and it gives up a piece of the quest before it
+goes still — what this floor was hiding, and how much of it you need. Gather
+those on the way down and the ending is a better one. Some quests cannot be
+finished without them at all: see **Quest objectives**, below.
+
+### How to tell what a quest actually wants
+Not every quest ends with a dead guardian. The plea says which kind it is:
+
+- **Slay** — beat the guardian at the bottom.
+- **Remedy** — killing it is not enough. Without the makings gathered floor by
+  floor, the sickness goes on and the village is no better off.
+- **Mystery** — you must learn enough on the way to know *who* was behind it.
+  Kill the wrong thing and nobody can say whether it was the right one.
+- **Rival** — another company set out before you. This is a race.
+
+### How to find things
+**Search Room** uses whoever has the best Perception — or whoever you have named
+under **Actor**. Once a room's hidden things are found, searching again
+scavenges instead: odds and ends, and sometimes what the guardian asked you to
+gather. A room can only be scavenged once. In the dark it is far harder, and it
+can go wrong.
+
+### How to make the game faster or slower
+- **Settings → Gameplay → Timeouts** — how long each kind of screen waits before
+  moving on by itself.
+- **Settings → Mood → Music Speed** — how quickly the tunes play.
+- Tap the **hourglass** by the input line to pause a countdown; long-press to
+  hurry it along.
+
 ## Building
 
 Requires Xcode 15.0+. Open `ios/DnDTextRPG/DnDTextRPG.xcodeproj` and build for iOS 16.0+ or macOS.
