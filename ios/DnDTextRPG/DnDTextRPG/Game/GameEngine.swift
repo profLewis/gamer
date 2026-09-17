@@ -12137,6 +12137,11 @@ class GameEngine: ObservableObject {
             print("  \(melodyName(type: "combat", choice: combatMelodyChoice))", color: .brightGreen)
             print("")
 
+            print("MUSIC SPEED:", color: .cyan, bold: true)
+            print("  \(SoundManager.musicSpeedLabel(SoundManager.shared.musicSpeed))", color: .brightGreen)
+            printWrapped("How quickly every tune plays. The exploring tunes were written slow, with silences between the notes, so this starts quicker than written — wind it back if you'd rather they brooded.", indent: 2, color: .dimGreen)
+            print("")
+
             print("CHAT TUNE:", color: .cyan, bold: true)
             print("  \(melodyName(type: "chat", choice: chatMelodyChoice))", color: .brightGreen)
             print("")
@@ -12148,7 +12153,7 @@ class GameEngine: ObservableObject {
 
         var options: [String] = ["Switches"]
         if musicEnabled {
-            options.append(contentsOf: ["Menu Tune", "Explore Tune", "Combat Tune", "Chat Tune"])
+            options.append(contentsOf: ["Menu Tune", "Explore Tune", "Combat Tune", "Chat Tune", "Music Speed"])
         }
         var menuOpts = options.map { MenuOption($0) }
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -12201,6 +12206,17 @@ class GameEngine: ObservableObject {
                 self.chatMelodyChoice = (self.chatMelodyChoice + 1) % 4
                 SoundManager.shared.stopMusic()
                 SoundManager.shared.startMusic(.chat, preference: self.chatMelodyChoice)
+                self.showMusicSettings()
+            case "Music Speed":
+                self.recordSettingChange(screen: "s:mood", key: "musicSpeed", name: "Music Speed")
+                let speeds = SoundManager.musicSpeeds
+                let now = SoundManager.shared.musicSpeed
+                let next = speeds.firstIndex(where: { abs($0 - now) < 0.01 }).map { (
+                    $0 + 1) % speeds.count } ?? 0
+                SoundManager.shared.musicSpeed = speeds[next]
+                // Restart so the new speed is audible at once, on whatever is playing.
+                SoundManager.shared.stopMusic()
+                self.playCurrentMusic()
                 self.showMusicSettings()
             default: break
             }

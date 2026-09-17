@@ -736,18 +736,39 @@ class SoundManager {
         return melodies.randomElement()!()
     }
 
+    /// How fast the music plays, as a multiplier on every note and rest.
+    /// 1.0 is the tunes exactly as written; higher is quicker. The tunes were
+    /// composed with long notes (0.35-0.5s) and, in the exploration tracks,
+    /// explicit rests between them — about half the playing time is silence —
+    /// which reads as dragging rather than as atmosphere. Applied in step()
+    /// and rest() below, the only two places a MusicStep is made, so it scales
+    /// the generated buffer and the playback loop's sleep together.
+    var musicSpeed: Double {
+        get {
+            let v = UserDefaults.standard.double(forKey: "musicSpeed")
+            return v > 0 ? v : Self.defaultMusicSpeed
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "musicSpeed") }
+    }
+    static let defaultMusicSpeed = 1.5
+    static let musicSpeeds: [Double] = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+    static func musicSpeedLabel(_ v: Double) -> String {
+        if v == 1.0 { return "As written" }
+        return "×" + String(format: "%g", v) + (v < 1 ? " (slower)" : " (quicker)")
+    }
+
     // Helper to create a step with drone + melody
     private func step(_ dur: Double, drone: (Double, Float, Waveform)? = nil, melody: (Double, Float, Waveform)? = nil, extra: (Double, Float, Waveform)? = nil) -> MusicStep {
         var voices: [(frequency: Double, volume: Float, waveform: Waveform)] = []
         if let d = drone { voices.append(d) }
         if let m = melody { voices.append(m) }
         if let e = extra { voices.append(e) }
-        return MusicStep(voices: voices, duration: dur)
+        return MusicStep(voices: voices, duration: dur / musicSpeed)
     }
 
     // Shorthand for a rest
     private func rest(_ dur: Double) -> MusicStep {
-        MusicStep(voices: [], duration: dur)
+        MusicStep(voices: [], duration: dur / musicSpeed)
     }
 
     // MARK: - Menu Music — "The Dungeon Awaits"

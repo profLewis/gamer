@@ -985,11 +985,21 @@ class ShopEngine {
         // accepting a typed (or spoken) custom offer too. Varies each
         // time this prompt is shown; ">>" re-rolls a fresh batch on demand.
         let offers = suggestedOffers(floor: floor, ceiling: ceiling)
+        // ">>" re-rolls the suggestions — but only worth offering when a
+        // re-roll can actually come back different. Where the range is narrow,
+        // suggestedOffers returns every price in it, so the button would hand
+        // back the very same numbers and read as broken.
+        let canReroll = (ceiling - floor + 1) > offers.count
         // Barter is always here as its own button — not just a fallback
         // shown when gold alone falls short — so trading in an item toward
         // the price is always one tap away, whether or not gold alone
-        // would've been enough.
-        let options = offers.map { "\($0)gp" } + [">>", "Barter", "?", "< Back"]
+        // would've been enough. Walk Away is a button now too: the prompt
+        // always said "or 0 to walk away", but only to someone willing to
+        // type it, and a merchant might just take nothing.
+        var tail: [String] = []
+        if canReroll { tail.append(">>") }
+        tail += ["Barter", "Walk Away", "?", "< Back"]
+        let options = offers.map { "\($0)gp" } + tail
         if ceiling < floor {
             game.print("  Your purse alone won't quite cover a lowball offer here.", color: .yellow)
             game.print("")
@@ -1001,14 +1011,22 @@ class ShopEngine {
                 resolveOffer(offers[choice - 1])
                 return
             }
-            switch choice - offers.count {
-            case 1:
+            // By name, not by position: this used to switch on
+            // `choice - offers.count`, so adding a button silently shifted
+            // every case under it onto the wrong action.
+            guard choice >= 1, choice <= options.count else { backAction(); return }
+            switch options[choice - 1] {
+            case ">>":
                 self?.showNegotiation(item: item, askingPrice: askingPrice, attempt: attempt, isRareGood: isRareGood,
                                        backAction: backAction, returnTo: returnTo, completion: completion)
-            case 2:
+            case "Barter":
                 guard let self = self else { return }
                 self.showBarterMenu(item: item, askingPrice: askingPrice, backAction: backAction, returnTo: returnTo, completion: completion)
-            case 3:
+            case "Walk Away":
+                // The same road a typed 0 takes — including whatever the
+                // merchant makes of being offered nothing at all.
+                resolveOffer(0)
+            case "?":
                 guard let game = self?.game else { return }
                 game.showInlineHelp {
                     game.printTitle("Name Your Price — Help")
@@ -1017,7 +1035,7 @@ class ShopEngine {
                     game.print("")
                     game.printWrapped("Offering \(askingPrice)gp or more buys it outright. Below \(floor)gp is refused outright as insulting. Anything in between is a Persuasion check — the lower you go, the harder it is to land.", indent: 2, color: .dimGreen)
                     game.print("")
-                    game.printWrapped("0 walks away from the item entirely.", indent: 2, color: .dimGreen)
+                    game.printWrapped("Walk Away (or typing 0) offers nothing at all. Usually that ends it — but you never know: ask for a thing for free often enough and somebody eventually says yes.", indent: 2, color: .dimGreen)
                     game.print("")
                 }
             default:

@@ -969,6 +969,7 @@ struct TerminalView: View {
                                     },
                                     pressedIndex: gameEngine.pressedMenuIndex,
                                     longPressDuration: gameEngine.longPressDuration,
+                                    awaitingPress: gameEngine.awaitingContinue,
                                     onUndo: gameEngine.undoHandler,
                                     onRedo: gameEngine.redoHandler,
                                     undoTargetIndex: gameEngine.undoTargetButtonIndex,
@@ -2559,6 +2560,9 @@ struct MenuButtonsView: View {
     var pressedIndex: Int? = nil
     /// Long-press duration in seconds (configurable in Gameplay settings)
     var longPressDuration: Double = 0.5
+    /// The screen is waiting to be told to carry on. After a few seconds with
+    /// no answer, the button that would do it glows gently — see attentionGlow.
+    var awaitingPress: Bool = false
     /// Undo/redo handlers — shown as ↩/↪ segments in the compact nav cell
     var onUndo: (() -> Void)? = nil
     var onRedo: (() -> Void)? = nil
@@ -2614,6 +2618,24 @@ struct MenuButtonsView: View {
     private var buttonVerticalPadding: CGFloat { isCompact ? 4 : 8 }
 
     @State private var alertPulse = false
+    /// The slow glow on a button that is waiting to be pressed. It starts only
+    /// after a pause, so it never flashes at somebody who is still reading.
+    @State private var attentionGlow = false
+    /// Long enough that a reader is not hurried, short enough to be a help.
+    private static let glowDelay: Double = 5
+
+    /// Exactly one button glows: the default, else the first that can be
+    /// pressed. Never a compact nav button — a glowing "?" would be a puzzle
+    /// rather than a prompt.
+    private var glowIndex: Int? {
+        guard awaitingPress else { return nil }
+        if let d = options.firstIndex(where: { $0.isDefault && !$0.isDisabled && !$0.isCompactNav }) { return d }
+        return options.firstIndex(where: { !$0.isDisabled && !$0.isCompactNav })
+    }
+
+    private func shouldGlow(_ index: Int) -> Bool {
+        attentionGlow && glowIndex == index
+    }
 
     /// Whether to insert a spacer before the last button to push it to the right column.
     /// Only danger buttons get pushed right; navigation (Help, Save) stay bottom-left.
@@ -2689,6 +2711,18 @@ struct MenuButtonsView: View {
                 }
             }
         }
+        // .task, not a loose timer: it is cancelled when the screen goes away
+        // and restarted whenever the waiting state changes, so a glow can
+        // never outlive the screen that asked for it.
+        .task(id: awaitingPress) {
+            attentionGlow = false
+            guard awaitingPress, !GameEngine.animationsReduced else { return }
+            try? await Task.sleep(nanoseconds: UInt64(Self.glowDelay * 1_000_000_000))
+            guard !Task.isCancelled, awaitingPress else { return }
+            withAnimation(.easeInOut(duration: 1.7).repeatForever(autoreverses: true)) {
+                attentionGlow = true
+            }
+        }
     }
 
     /// An empty slot in the grid — a faint, dead button, so a screen with
@@ -2757,6 +2791,16 @@ struct MenuButtonsView: View {
                         RoundedRectangle(cornerRadius: 6)
                             .fill(buttonFillColor(option))
                     )
+            )
+            // The waiting button's glow: the button's own colour, breathing.
+            // Decorative only — it takes no taps and VoiceOver never sees it.
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(buttonStrokeColor(option), lineWidth: 2)
+                    .shadow(color: buttonStrokeColor(option).opacity(0.7), radius: 5)
+                    .opacity(shouldGlow(index) ? 0.5 : 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             )
         }
         .buttonStyle(.plain)
