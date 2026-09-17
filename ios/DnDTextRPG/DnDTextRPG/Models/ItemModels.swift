@@ -502,7 +502,10 @@ struct ItemCatalog {
     /// provisions. Rolled once per merchant and remembered (see
     /// ShopEngine.openShop), so each merchant keeps their own selection.
     static func shopStock(forLevel level: Int) -> [Item] {
-        let essentials: [Item] = [healingPotion(), antidote(), torch()]
+        // Rope was one draw among thirteen in the pool below, so a merchant
+        // could easily not have any. The things you would be annoyed to find
+        // missing are guaranteed instead.
+        let essentials: [Item] = [healingPotion(), antidote(), torch(), rope()]
 
         var pool: [Item] = [healingPotion(), rope(), whetstone(), dagger(), leatherArmor(), shortsword(),
                             mace(), shield(), spear(), sling(), paddedArmor(), buckler(), elixirOfClarity()]
@@ -523,7 +526,37 @@ struct ItemCatalog {
         // plus a handful of other everyday goods.
         let goods = Array(everydayProvisions().shuffled().prefix(Int.random(in: 2...3)))
             + Array(cheeses().shuffled().prefix(Int.random(in: 2...3)))
-        return essentials + gear + goods
+        // And two or three oddments, so no two merchants read the same.
+        let odds = Array(curios().shuffled().prefix(Int.random(in: 2...3)))
+        return essentials + gear + goods + odds
+    }
+
+    /// Oddments. Most are for selling on, or for the pleasure of owning a
+    /// tin whistle a mile underground; the Book of Jokes actually does
+    /// something (see showUsePotionMenu).
+    static func curios() -> [Item] {
+        func curio(_ name: String, _ desc: String, value: Int, weight: Double) -> Item {
+            Item(id: UUID(), name: name, description: desc, type: .misc, weight: weight, value: value,
+                 weaponStats: nil, armorStats: nil, potionStats: nil)
+        }
+        return [
+            curio("Book of Jokes", "A well-thumbed little book of terrible jokes. Use it to read one out.", value: 8, weight: 0.5),
+            curio("Tin Whistle", "Six holes and a dent. Plays better than it looks.", value: 4, weight: 0.3),
+            curio("Deck of Ordinary Cards", "Fifty-two cards, all of them the ones they claim to be. The merchant seems disappointed by this.", value: 5, weight: 0.4),
+            curio("Brass Spyglass", "Scratched, but it still brings the far end of a hall up close.", value: 25, weight: 1.0),
+            curio("Pocket Sundial", "Useless underground, which the seller does not mention.", value: 12, weight: 0.3),
+            curio("Ball of Beeswax", "For sealing letters, waxing thread, or plugging your ears against singing.", value: 2, weight: 0.4),
+            curio("Set of Knucklebones", "For gambling with, or for telling fortunes badly.", value: 3, weight: 0.3),
+            curio("Folding Knife", "Not really a weapon. Very good with an apple.", value: 6, weight: 0.4),
+            curio("Bundle of Chalk", "For marking walls, so you know where you have been.", value: 1, weight: 0.3),
+            curio("Small Brass Bell", "Rings clear. Ties to a doorway, or to somebody you keep losing.", value: 7, weight: 0.5),
+            curio("Jar of Buttons", "Hundreds of them. Nobody knows why, including the merchant.", value: 2, weight: 1.0),
+            curio("Length of Ribbon", "Deep red, slightly frayed. Somebody's keepsake, once.", value: 3, weight: 0.1),
+            curio("Wooden Puzzle Box", "It opens. Eventually. The seller has never managed it.", value: 15, weight: 0.6),
+            curio("Bag of Marbles", "Glass, with coloured twists inside. Also excellent on a stone floor behind you.", value: 4, weight: 0.8),
+            curio("Battered Cookbook", "Recipes for things you would need a kitchen for. You do not have a kitchen.", value: 6, weight: 1.0),
+            curio("Pouch of Dried Herbs", "Smells of a garden somebody misses.", value: 5, weight: 0.3),
+        ]
     }
 
     // MARK: Provisions — everyday goods, for variety between merchants

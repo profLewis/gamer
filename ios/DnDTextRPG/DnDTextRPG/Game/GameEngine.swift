@@ -7610,16 +7610,25 @@ class GameEngine: ObservableObject {
         }
 
         // Buttons, not just swipes: this page had no visible way back.
-        showMenuOptions([MenuOption("<<", tint: .navigation, compact: true),
-                         MenuOption(">>", tint: .navigation, compact: true),
-                         MenuOption("?", tint: .navigation, compact: true),
-                         MenuOption("< Back", tint: .navigation, compact: true)])
+        // Only offer the page-turners when there are pages to turn: these
+        // dispatch to swipeRight/LeftHandler, which are nil when there is
+        // only one card, and a button that is drawn but does nothing reads
+        // as broken.
+        var navOpts: [MenuOption] = []
+        if allMonsters.count > 1 {
+            navOpts.append(MenuOption("<<", tint: .navigation, compact: true))
+            navOpts.append(MenuOption(">>", tint: .navigation, compact: true))
+        }
+        navOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        navOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        showMenuOptions(navOpts)
         menuHandler = { [weak self] choice in
-            guard let self = self else { return }
-            switch choice {
-            case 1: self.swipeRightHandler?()
-            case 2: self.swipeLeftHandler?()
-            case 3:
+            guard let self = self, choice >= 1, choice <= navOpts.count else { return }
+            // By name, not position — which buttons are present now varies.
+            switch navOpts[choice - 1].text {
+            case "<<": self.swipeRightHandler?()
+            case ">>": self.swipeLeftHandler?()
+            case "?":
                 self.showInlineHelp {
                     self.printTitle("Bestiary — Help")
                     self.print("")
@@ -7881,16 +7890,25 @@ class GameEngine: ObservableObject {
         }
 
         // Buttons, not just swipes: this page had no visible way back.
-        showMenuOptions([MenuOption("<<", tint: .navigation, compact: true),
-                         MenuOption(">>", tint: .navigation, compact: true),
-                         MenuOption("?", tint: .navigation, compact: true),
-                         MenuOption("< Back", tint: .navigation, compact: true)])
+        // Only offer the page-turners when there are pages to turn: these
+        // dispatch to swipeRight/LeftHandler, which are nil when there is
+        // only one card, and a button that is drawn but does nothing reads
+        // as broken.
+        var navOpts: [MenuOption] = []
+        if allNPCs.count > 1 {
+            navOpts.append(MenuOption("<<", tint: .navigation, compact: true))
+            navOpts.append(MenuOption(">>", tint: .navigation, compact: true))
+        }
+        navOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        navOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        showMenuOptions(navOpts)
         menuHandler = { [weak self] choice in
-            guard let self = self else { return }
-            switch choice {
-            case 1: self.swipeRightHandler?()
-            case 2: self.swipeLeftHandler?()
-            case 3:
+            guard let self = self, choice >= 1, choice <= navOpts.count else { return }
+            // By name, not position — which buttons are present now varies.
+            switch navOpts[choice - 1].text {
+            case "<<": self.swipeRightHandler?()
+            case ">>": self.swipeLeftHandler?()
+            case "?":
                 self.showInlineHelp {
                     self.printTitle("Rogues Gallery — Help")
                     self.print("")
@@ -8505,16 +8523,25 @@ class GameEngine: ObservableObject {
         }
 
         // Buttons, not just swipes: this page had no visible way back.
-        showMenuOptions([MenuOption("<<", tint: .navigation, compact: true),
-                         MenuOption(">>", tint: .navigation, compact: true),
-                         MenuOption("?", tint: .navigation, compact: true),
-                         MenuOption("< Back", tint: .navigation, compact: true)])
+        // Only offer the page-turners when there are pages to turn: these
+        // dispatch to swipeRight/LeftHandler, which are nil when there is
+        // only one card, and a button that is drawn but does nothing reads
+        // as broken.
+        var navOpts: [MenuOption] = []
+        if entries.count > 1 {
+            navOpts.append(MenuOption("<<", tint: .navigation, compact: true))
+            navOpts.append(MenuOption(">>", tint: .navigation, compact: true))
+        }
+        navOpts.append(MenuOption("?", tint: .navigation, compact: true))
+        navOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        showMenuOptions(navOpts)
         menuHandler = { [weak self] choice in
-            guard let self = self else { return }
-            switch choice {
-            case 1: self.swipeRightHandler?()
-            case 2: self.swipeLeftHandler?()
-            case 3:
+            guard let self = self, choice >= 1, choice <= navOpts.count else { return }
+            // By name, not position — which buttons are present now varies.
+            switch navOpts[choice - 1].text {
+            case "<<": self.swipeRightHandler?()
+            case ">>": self.swipeLeftHandler?()
+            case "?":
                 self.showInlineHelp {
                     self.printTitle("Name Lore — Help")
                     self.print("")
@@ -25438,8 +25465,35 @@ class GameEngine: ObservableObject {
         })
     }
 
+    /// The Book of Jokes. Groan-worthy on purpose, and clean enough for
+    /// anyone at the table.
+    static let dungeonJokes: [(String, String)] = [
+        ("Why did the skeleton refuse to fight us?", "He didn't have the guts."),
+        ("What do you call a dwarf who's lost his map?", "Unmined."),
+        ("Why don't dragons ever pay for dinner?", "They prefer to eat and fly."),
+        ("What's a goblin's favourite kind of music?", "Anything with a good rock in it."),
+        ("Why did the wizard fail his exam?", "He couldn't spell."),
+        ("What did the torch say at the end of the day?", "I'm burnt out."),
+        ("Why is the dungeon floor never lonely?", "It's always got someone falling for it."),
+        ("What do you call a mimic that's given up?", "A chest of drawers."),
+        ("Why did the rogue bring a ladder to the tavern?", "She heard the drinks were on the house."),
+        ("What's an ogre's favourite meal?", "Anything but seconds — he starts with those."),
+        ("Why did the ghost go to the shop?", "He needed a few boos."),
+        ("How do you make a troll laugh?", "Tell him a joke on Monday. He'll get it by Friday."),
+        ("Why did the cleric bring a pencil to the dungeon?", "To draw the line somewhere."),
+        ("What do you call an armoured knight in a puddle?", "A sunk cost."),
+        ("Why won't the minotaur play cards?", "Too many cheats in the maze."),
+        ("What did the rope say when it slipped?", "That's the end of me."),
+        ("Why did the bard get thrown out?", "He kept hitting the wrong note — and then the lute player."),
+        ("What's a zombie's least favourite room?", "The living room."),
+        ("Why did the potion go to school?", "To improve its concentration."),
+        ("What do you call a cowardly wizard's spellbook?", "Light reading."),
+    ]
+
     private func showUsePotionMenu(character: Character, onBack: (() -> Void)? = nil, fromDM: Bool = false) {
-        let potions = character.inventory.filter { $0.type == .potion || $0.name == "Whetstone" }
+        // The Book of Jokes joins the Whetstone as a thing that isn't drunk
+        // but is definitely used.
+        let potions = character.inventory.filter { $0.type == .potion || $0.name == "Whetstone" || $0.name == "Book of Jokes" }
 
         clearTerminal()
         printSubtitle("Use Item")
@@ -25469,6 +25523,8 @@ class GameEngine: ObservableObject {
                 print("  \(potion.name): \(effect)", color: .dimGreen)
             } else if potion.name == "Whetstone" {
                 print("  Whetstone: sharpen your equipped weapon (+1 to hit/damage for 3 attacks)", color: .dimGreen)
+            } else if potion.name == "Book of Jokes" {
+                print("  Book of Jokes: read one out. Never runs out; the jokes do not improve.", color: .dimGreen)
             }
         }
         print("")
@@ -25479,6 +25535,34 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             guard idx >= 0 && idx < potions.count else { return }
             let potion = potions[idx]
+
+            // A joke is read to whoever is listening, costs nothing, and the
+            // book stays in the pack — so it skips the "who drinks it?" flow
+            // entirely, as the whetstone does below.
+            if potion.name == "Book of Jokes" {
+                let joke = Self.dungeonJokes.randomElement() ?? ("Why did the skeleton stay in?", "It had no body to go with.")
+                self.print("")
+                self.print("  \(character.name) opens the book at random.", color: .cyan)
+                self.print("")
+                self.printWrapped("\"\(joke.0)\"", indent: 2, color: .yellow)
+                self.print("")
+                self.printWrapped("\"\(joke.1)\"", indent: 2, color: .brightGreen)
+                self.print("")
+                let groans = ["Somebody groans. Somebody else writes it down.",
+                              "The echo carries it further than it deserves.",
+                              "Nobody laughs. The book is unrepentant.",
+                              "One of the party laughs far too much.",
+                              "A long silence, then a snort from the dark.",
+                              "\(character.name) laughs at their own joke, which is allowed."]
+                self.printWrapped(groans.randomElement()!, indent: 2, color: .dimGreen)
+                self.logEvent("\(character.name) read a joke from the Book of Jokes", category: "EXPLORE")
+                self.logMultiplayerAction("\(character.name) reads out a terrible joke")
+                self.waitForContinue()
+                self.inputHandler = { [weak self] _ in
+                    self?.showUsePotionMenu(character: character, onBack: onBack, fromDM: fromDM)
+                }
+                return
+            }
 
             // Whetstone sharpens the user's own equipped weapon — not consumed by
             // another party member, so it skips the potion "who drinks it?" flow.
@@ -28971,14 +29055,20 @@ class GameEngine: ObservableObject {
         } : nil
         defer {
             // A visible way off the card, not just a swipe.
-            showMenuOptions([MenuOption("<<", tint: .navigation, compact: true),
-                             MenuOption(">>", tint: .navigation, compact: true),
-                             MenuOption("< Back", tint: .navigation, compact: true)])
+            // Only when there is another character to turn to — with a party
+            // of one these dispatched to nil handlers and did nothing.
+            var cardOpts: [MenuOption] = []
+            if party.count > 1 {
+                cardOpts.append(MenuOption("<<", tint: .navigation, compact: true))
+                cardOpts.append(MenuOption(">>", tint: .navigation, compact: true))
+            }
+            cardOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+            showMenuOptions(cardOpts)
             menuHandler = { [weak self] choice in
-                guard let self = self else { return }
-                switch choice {
-                case 1: self.swipeRightHandler?()
-                case 2: self.swipeLeftHandler?()
+                guard let self = self, choice >= 1, choice <= cardOpts.count else { return }
+                switch cardOpts[choice - 1].text {
+                case "<<": self.swipeRightHandler?()
+                case ">>": self.swipeLeftHandler?()
                 default: self.closeHandler?()
                 }
             }
