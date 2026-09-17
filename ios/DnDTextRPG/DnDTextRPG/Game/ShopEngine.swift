@@ -20,6 +20,9 @@ class ShopEngine {
     /// Shown at most once per shop visit (not on every trip back to the
     /// main menu after buying/selling) — reset in openShop().
     private var hasShownOneAtATimeQuip = false
+    /// Topics already asked this visit — cleared when a shop is opened, so
+    /// coming back later gives you the full set again.
+    private var chatTopicsAsked: Set<String> = []
 
     /// What happened this visit — feeds the farewell line when leaving
     /// (see showFarewell). Reset in openShop().
@@ -95,6 +98,7 @@ class ShopEngine {
             self.stock = merchant.stock
         }
         self.hasShownOneAtATimeQuip = false
+        self.chatTopicsAsked = []
         self.itemsBoughtThisVisit = []
         self.itemsSoldThisVisit = []
         game?.setBreadcrumb("ShopEngine.openShop(\(merchant.name),lvl:\(dungeonLevel),stock:\(stock.count))")
@@ -121,6 +125,37 @@ class ShopEngine {
 
     // MARK: - Main Menu
 
+    /// Things worth asking whoever is behind the counter. Each has a plain
+    /// answer that works with no AI at all, and a situation line the DM can
+    /// embroider when one is configured — see narrate, which never waits.
+    private static let chatTopics: [(topic: String, situation: String, offline: [String])] = [
+        ("the weather", "The player asks what the weather is doing outside. You are underground and have not seen the sky in a long while. Answer in character, drily.",
+         ["\"Outside? Couldn't tell you. It's cold in here, if that helps.\"",
+          "\"Weather. Hah. There's damp, and there's less damp. Today it's damp.\"",
+          "\"Last I saw the sky it was doing something grey. That was a while ago.\"",
+          "\"It's always the same down here: cold, and then colder near the stairs.\""]),
+        ("business", "The player asks how business is. Answer in character — trade underground is peculiar.",
+         ["\"Business is adventurers. Adventurers are business. Some of them come back.\"",
+          "\"Slow. Then all at once. Then very slow again, usually after a funeral.\"",
+          "\"I've sold three torches and a cheese today. It's not a living, but it's close.\"",
+          "\"Better than last week. Last week something ate a customer.\""]),
+        ("who else has been through", "The player asks who else has come by lately. Mention other adventurers vaguely, in character.",
+         ["\"A quiet lot, a few days back. Bought rope. Lots of rope. Didn't come back up.\"",
+          "\"Someone in very good armour. Didn't buy a thing. Proud, that one.\"",
+          "\"Two of them, arguing about a map. I'd have sold them a better map.\"",
+          "\"Nobody, since you ask. That's either lucky or it isn't.\""]),
+        ("what's below", "The player asks what is further down. You have not been, and you hear things. Answer in character.",
+         ["\"Down? I don't go down. I sell to people who do, and I count who comes back.\"",
+          "\"Noises, mostly. And once, singing, which was worse.\"",
+          "\"Deeper means older. Older means it was here first. That's all I'll say.\"",
+          "\"Something down there has been buying nothing and taking plenty.\""]),
+        ("this shop", "The player asks how you came to be trading down here. Answer in character, briefly.",
+         ["\"I set up where the customers are. The customers are here. It's not complicated.\"",
+          "\"Rent's cheap when the neighbours have teeth.\"",
+          "\"I came down to sell one thing to one person. That was some years ago now.\"",
+          "\"Everybody asks. Nobody likes the answer. I lost a bet.\""]),
+    ]
+
     private func showShopMain(completion: @escaping () -> Void) {
         guard let game = game, let character = character, let merchant = merchant else { return }
 
@@ -145,7 +180,7 @@ class ShopEngine {
         // auto-detection renders it as the standard compact 3-bar nav
         // button, like every other screen's back button — leaving a shop
         // is exactly a "< Back" action, not a distinct one.
-        var shopOpts = ["Buy", "Sell", "Haggle", "Ask About Rare Goods"]
+        var shopOpts = ["Buy", "Sell", "Haggle", "Ask About Rare Goods", "Chat"]
         // Worn tools (whetstones, thieves' tools) can be mended here.
         if game.party.contains(where: { $0.inventory.contains { $0.usesLeft != nil } }) { shopOpts.append("Mend Tools") }
         shopOpts += ["?", "< Back"]
@@ -158,6 +193,7 @@ class ShopEngine {
             case "Sell": self.showSellMenu(completion: completion)
             case "Haggle": self.showHaggleMenu(completion: completion)
             case "Ask About Rare Goods": self.showRareGoods(completion: completion)
+            case "Chat": self.showChatTopics(completion: completion)
             case "Mend Tools": self.mendTools(completion: completion)
             case "?":
                 game.showInlineHelp {
@@ -1300,6 +1336,57 @@ class ShopEngine {
         self.narrate(situation: "Before the player leaves your shop, offer one short piece of unsolicited practical advice about surviving or profiting in the dungeon, in character.",
                      offline: Merchant.adviceLines.randomElement()!, color: .cyan) {
             completion()
+        }
+    }
+
+    /// Things to ask about. Each topic can be asked once a visit — otherwise
+    /// the same four lines could be farmed out of one merchant in a minute.
+    private func showChatTopics(completion: @escaping () -> Void) {
+        guard let game = game, let merchant = merchant else { return }
+        game.clearTerminal()
+        game.printTitle(merchant.shopName)
+        game.print("")
+        game.print("  \(merchant.name) leans on the counter.", color: .green)
+        game.print("  \(merchant.catchphrase)", color: .cyan)
+        game.print("")
+
+        let asked = chatTopicsAsked
+        let available = Self.chatTopics.filter { !asked.contains($0.topic) }
+        if available.isEmpty {
+            game.printWrapped("\(merchant.name) has said their piece for now — there's trading to be getting on with.", indent: 2, color: .dimGreen)
+            game.print("")
+        }
+        var opts = available.map { "Ask: \($0.topic)" }
+        opts += ["?", "< Back"]
+        game.showMenu(opts)
+        game.closeHandler = { [weak self] in self?.showShopMain(completion: completion) }
+        game.menuHandler = { [weak self] choice in
+            guard let self = self, let game = self.game, choice >= 1, choice <= opts.count else { return }
+            let picked = opts[choice - 1]
+            if picked == "?" {
+                game.showInlineHelp {
+                    game.printTitle("Chat — Help")
+                    game.print("")
+                    game.printWrapped("Ask whoever is behind the counter about something. They answer in their own voice — a goblin who left his tribe to go into trade does not sound like a wandering monk.", indent: 2, color: .dimGreen)
+                    game.print("")
+                    game.printWrapped("Each topic can be asked once a visit. Come back another time and there will be more to say.", indent: 2, color: .dimGreen)
+                    game.print("")
+                }
+                return
+            }
+            guard picked != "< Back" else { self.showShopMain(completion: completion); return }
+            guard let entry = Self.chatTopics.first(where: { "Ask: \($0.topic)" == picked }) else { return }
+            self.chatTopicsAsked.insert(entry.topic)
+            game.print("")
+            // narrate prints the plain answer at once and never waits on the
+            // DM; any AI flourish lands after, if it is quick enough.
+            self.narrate(situation: entry.situation,
+                         offline: entry.offline.randomElement()!,
+                         color: .cyan) { [weak self] in
+                guard let self = self, let game = self.game else { return }
+                game.waitForContinue()
+                game.inputHandler = { [weak self] _ in self?.showChatTopics(completion: completion) }
+            }
         }
     }
 
