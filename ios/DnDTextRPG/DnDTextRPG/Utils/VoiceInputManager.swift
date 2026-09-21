@@ -70,7 +70,7 @@ class VoiceInputManager: ObservableObject {
     /// latter used to be asked for, so the first attempt could fail before
     /// the system had ever asked about the microphone.
     private var micGranted: Bool {
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         if #available(iOS 17.0, *) { return AVAudioApplication.shared.recordPermission == .granted }
         return AVAudioSession.sharedInstance().recordPermission == .granted
         #elseif os(macOS)
@@ -81,7 +81,7 @@ class VoiceInputManager: ObservableObject {
     }
 
     private func requestMic(_ done: @escaping (Bool) -> Void) {
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         if #available(iOS 17.0, *) { AVAudioApplication.requestRecordPermission { done($0) } }
         else { AVAudioSession.sharedInstance().requestRecordPermission { done($0) } }
         #elseif os(macOS)
@@ -126,7 +126,7 @@ class VoiceInputManager: ObservableObject {
 
         do {
             // Configure audio session for recording
-            #if os(iOS)
+            #if os(iOS) || os(visionOS)
             let audioSession = AVAudioSession.sharedInstance()
             // Play-and-record, so the narrator is still heard while the mic is
             // open (continuous mode keeps it open); the game's own voice is
@@ -260,7 +260,7 @@ class VoiceInputManager: ObservableObject {
         recognitionTask = nil
 
         // Restore audio session for game music
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try AVAudioSession.sharedInstance().setActive(true)

@@ -232,21 +232,43 @@ class GameEngine: ObservableObject {
     /// instead of stopping at every wrapped line. Only worked out while
     /// VoiceOver is running.
     var voiceOverParagraphs: (labels: [Int: String], hidden: Set<Int>) {
+        // Blocks, not lines: every run of lines between blank lines is ONE
+        // VoiceOver item -- a paragraph, a list, a stat block -- read in one
+        // go. (Joining only wrapped lines left most screens, which print a
+        // line at a time, as a stop at every line.) Titles stay their own
+        // item (they're headings), links stay their own (they're buttons),
+        // and blank and decorative lines are silent.
         guard Self.systemVoiceOverRunning else { return ([:], []) }
         let lines = terminalLines
         var labels: [Int: String] = [:]
         var hidden = Set<Int>()
+        func standalone(_ k: Int) -> Bool { titleLineIndices.contains(k) || lines[k].link != nil }
+        func silent(_ k: Int) -> Bool {
+            lines[k].isDecorativeArt || !lines[k].text.contains(where: { $0.isLetter || $0.isNumber })
+        }
         var i = 0
         while i < lines.count {
+            if silent(i) { hidden.insert(i); i += 1; continue }
+            if standalone(i) { i += 1; continue }
             var j = i + 1
-            while j < lines.count, lines[j].continuesPrevious {
+            var text = TerminalLine.spokenText(lines[i].text).trimmingCharacters(in: .whitespaces)
+            while j < lines.count, !standalone(j) {
+                let blank = lines[j].text.trimmingCharacters(in: .whitespaces).isEmpty
+                if blank { break }
+                if !silent(j) {
+                    let part = TerminalLine.spokenText(lines[j].text).trimmingCharacters(in: .whitespaces)
+                    if lines[j].continuesPrevious {
+                        text += " " + part
+                    } else {
+                        // A new line in the block: end the last one as a sentence.
+                        if let last = text.last, !".!?:…\"'".contains(last) { text += "." }
+                        text += " " + part
+                    }
+                }
                 hidden.insert(j)
                 j += 1
             }
-            if j > i + 1 {
-                let text = lines[i..<j].map { $0.text.trimmingCharacters(in: .whitespaces) }.joined(separator: " ")
-                labels[i] = TerminalLine.spokenText(text)
-            }
+            if j > i + 1 { labels[i] = text }
             i = j
         }
         return (labels, hidden)
@@ -9726,7 +9748,6 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped("A text-based dungeon crawler inspired by classic RPGs and the golden age of adventure gaming.", indent: 2, color: .dimGreen)
         print("")
-        print("")
 
         // Philip ASCII portrait
         let philipArt = [
@@ -9748,19 +9769,18 @@ class GameEngine: ObservableObject {
         aboutDanceRequested = false
         if dance { printAuthorsDance(style: aboutDanceStyle, animate: animate) } else { printLines(philipArt, color: .cyan); print("") }
         print("  CREATED BY", color: .cyan, bold: true)
-        print("  Philip Lewis", color: .brightGreen)
-        printWrapped("Game design, creative direction, and relentless testing.", indent: 2, color: .dimGreen)
-        printWrapped("Concept and code control by Philip Lewis.", indent: 2, color: .dimGreen)
+        print("    Philip Lewis", color: .brightGreen)
+        printWrapped("Game design, creative direction, and relentless testing.", indent: 4, color: .dimGreen)
+        printWrapped("Concept and code control by Philip Lewis.", indent: 4, color: .dimGreen)
         print("")
         // The repository is public, so the address belongs here where anybody
         // reading the credits can go and look at what the game is made of.
         print("  ALL CODE ON GITHUB", color: .cyan, bold: true)
-        printWrapped("https://github.com/profLewis/gamer", indent: 2, color: .brightGreen)
+        printWrapped("https://github.com/profLewis/gamer", indent: 4, color: .brightGreen)
         print("")
         print("  CO-AUTHOR", color: .cyan, bold: true)
-        print("  Beau Lewis", color: .brightGreen)
-        printWrapped("World creation, storytelling, gameplay structure and style, and game testing.", indent: 2, color: .dimGreen)
-        print("")
+        print("    Beau Lewis", color: .brightGreen)
+        printWrapped("World creation, storytelling, gameplay structure and style, and game testing.", indent: 4, color: .dimGreen)
         print("")
 
         // Claude dragon ASCII art (winking)
@@ -9780,55 +9800,50 @@ class GameEngine: ObservableObject {
         ]
         if !dance { printLines(claudeArt, color: .yellow); print("") }
         print("  BUILT WITH", color: .yellow, bold: true)
-        print("  Claude (Anthropic)", color: .brightGreen)
-        printWrapped("Code, monsters, lore, and dungeon mastering by Claude AI.", indent: 2, color: .dimGreen)
+        print("    Claude (Anthropic)", color: .brightGreen)
+        printWrapped("Code, monsters, lore, and dungeon mastering by Claude AI.", indent: 4, color: .dimGreen)
         print("")
+        printWrapped("Made with SwiftUI, imagination, and far too many late nights.", indent: 4, color: .dimGreen)
         print("")
-        printWrapped("Made with SwiftUI, imagination, and far too many late nights.", indent: 2, color: .dimGreen)
+        print("  COPYRIGHT", color: .cyan, bold: true)
+        printWrapped("\u{00A9} 2024-2026 Philip Lewis. All rights reserved.", indent: 4, color: .dimGreen)
         print("")
-        print("")
-        print("COPYRIGHT", color: .cyan, bold: true)
-        printWrapped("\u{00A9} 2024-2026 Philip Lewis. All rights reserved.", indent: 2, color: .dimGreen)
-        print("")
-        print("DnDEX — CARD BROWSER", color: .cyan, bold: true)
-        printWrapped("Browse character, monster, and location cards at the DnDex. See the stories behind the default character names and dungeon locations.", indent: 2, color: .dimGreen)
-        printLink("https://proflewis.github.io/gamer/ios_card_images/card-dex/", to: "dndex", indent: 2)
-        printWrapped("(the same cards are in the repository, under ios_card_images/card-dex/)", indent: 2, color: .dimGreen)
+        print("  DnDEX — CARD BROWSER", color: .cyan, bold: true)
+        printWrapped("Browse character, monster, and location cards at the DnDex. See the stories behind the default character names and dungeon locations.", indent: 4, color: .dimGreen)
+        printLink("https://proflewis.github.io/gamer/ios_card_images/card-dex/", to: "dndex", indent: 4)
+        printWrapped("(the same cards are in the repository, under ios_card_images/card-dex/)", indent: 4, color: .dimGreen)
         print("")
 
-        print("THE DUNGEON MASTER", color: .cyan, bold: true)
-        printWrapped("The DM — the voice that describes the rooms, plays everyone you meet and writes the tales — can be run by an AI, with your own key. Without one the game uses its own built-in DM, and everything still works.", indent: 2, color: .dimGreen)
+        print("  THE DUNGEON MASTER", color: .cyan, bold: true)
+        printWrapped("The DM — the voice that describes the rooms, plays everyone you meet and writes the tales — can be run by an AI, with your own key. Without one the game uses its own built-in DM, and everything still works.", indent: 4, color: .dimGreen)
         let dmNow = DMEngine.shared
         for provider in AIProvider.allCases {
             let key = dmNow.apiKey(for: provider)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let inUse = provider == dmNow.provider && !key.isEmpty
             let state = inUse ? "switched on" : (key.isEmpty ? "not set up" : "set up, not in use")
-            print("  \(provider.displayName) — \(state)", color: inUse ? .brightGreen : .dimGreen)
+            print("    \(provider.displayName) — \(state)", color: inUse ? .brightGreen : .dimGreen)
         }
-        printWrapped("The same brain writes the opening and progress tales when the story writer is on.", indent: 2, color: .dimGreen)
-        printLink("\(BrainLabels.change)", to: "ai", indent: 2)
+        printWrapped("The same brain writes the opening and progress tales when the story writer is on.", indent: 4, color: .dimGreen)
+        printLink("\(BrainLabels.change)", to: "ai", indent: 4)
         print("")
 
-        print("PUZZLES", color: .cyan, bold: true)
-        printWrapped("Libraries and shrines pose riddles, logic puzzles, word puzzles and cryptic clues — harder the deeper you go. New ones arrive as a small signed pack, which the game looks for once a day.", indent: 2, color: .dimGreen)
-        printWrapped("Written a good one? Suggest it — if it goes into the next pack, your name goes on the list below.", indent: 2, color: .dimGreen)
-        printLink("Settings > Puzzles", to: "puzzles", indent: 2)
+        print("  PUZZLES", color: .cyan, bold: true)
+        printWrapped("Libraries and shrines pose riddles, logic puzzles, word puzzles and cryptic clues — harder the deeper you go. New ones arrive as a small signed pack, which the game looks for once a day.", indent: 4, color: .dimGreen)
+        printWrapped("Written a good one? Suggest it — if it goes into the next pack, your name goes on the list below.", indent: 4, color: .dimGreen)
+        printLink("Settings > Puzzles", to: "puzzles", indent: 4)
         print("")
 
-        print("WITH THANKS TO", color: .cyan, bold: true)
+        print("  WITH THANKS TO", color: .cyan, bold: true)
         for who in ContributorsManager.shared.contributors.prefix(12) {
-            print("  \(who.name)", color: .brightGreen)
-            printWrapped(who.reason, indent: 4, color: .dimGreen)
+            print("    \(who.name)", color: .brightGreen)
+            printWrapped(who.reason, indent: 6, color: .dimGreen)
         }
-        printWrapped("Suggest a puzzle, report a bug, or send a fix, and you'll be thanked here too.", indent: 2, color: .dimGreen)
-        printLink("The list on GitHub", to: "contributors", indent: 2)
+        printWrapped("Suggest a puzzle, report a bug, or send a fix, and you'll be thanked here too.", indent: 4, color: .dimGreen)
+        printLink("The list on GitHub", to: "contributors", indent: 4)
         print("")
 
-        print("LICENSE", color: .cyan, bold: true)
-        printWrapped("D&D 5e SRD under the Open Gaming License (OGL) v1.0a by Wizards of the Coast LLC.", indent: 2, color: .dimGreen)
-        print("")
-        print("")
-        print("")
+        print("  LICENSE", color: .cyan, bold: true)
+        printWrapped("D&D 5e SRD under the Open Gaming License (OGL) v1.0a by Wizards of the Coast LLC.", indent: 4, color: .dimGreen)
         print("")
         print("  about:dndRPG", color: .dimGreen)
 
@@ -32293,20 +32308,7 @@ class GameEngine: ObservableObject {
 
         // Replay recent DM chat history
         if !dmChatLog.isEmpty {
-            let recent = Array(dmChatLog.suffix(6))
-            for (i, entry) in recent.enumerated() {
-                let isNewest = i == recent.count - 1
-                if entry.isUser {
-                    print("  > \(entry.text)", color: isNewest ? .cyan : .dimGreen)
-                } else {
-                    let color: TerminalColor = isNewest ? .yellow : .dimGreen
-                    for paragraph in entry.text.components(separatedBy: "\n") {
-                        let t = paragraph.trimmingCharacters(in: .whitespaces)
-                        if !t.isEmpty { printWrapped("  \(t)", indent: 2, color: color) }
-                    }
-                }
-                if isNewest { print("") }
-            }
+            printLastChatExchange()
             // The full "TEXT MODE" guidance below only ever shows once
             // (before the player's said anything at all) — after that, a
             // short rotating example is the only reminder of what you can
@@ -32532,6 +32534,30 @@ class GameEngine: ObservableObject {
             }
         }
         return nil
+    }
+
+    /// The last thing said to the DM and its answer -- not the last six
+    /// messages run together. Each is labelled (You: / DM:), wrapped to the
+    /// screen, and separated by a blank line, so it reads cleanly and
+    /// VoiceOver takes each message as one block. The whole conversation is
+    /// in the Adventure Log.
+    private func printLastChatExchange() {
+        guard let lastDM = dmChatLog.lastIndex(where: { !$0.isUser }) else {
+            if let you = dmChatLog.last(where: { $0.isUser }) {
+                printWrapped("You: \(you.text)", indent: 2, color: .cyan); print("")
+            }
+            return
+        }
+        if let you = dmChatLog[..<lastDM].last(where: { $0.isUser }) {
+            printWrapped("You: \(you.text)", indent: 2, color: .cyan)
+            print("")
+        }
+        let paragraphs = dmChatLog[lastDM].text.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        for (k, para) in paragraphs.enumerated() {
+            printWrapped(k == 0 ? "DM: \(para)" : para, indent: 2, color: .yellow)
+            print("")
+        }
     }
 
     private func sendToJustDM(_ input: String) {
@@ -33212,26 +33238,8 @@ class GameEngine: ObservableObject {
             print("")
         }
 
-        // Replay chat history (compact — newest bright, older dim)
-        if !dmChatLog.isEmpty {
-            let recentEntries = Array(dmChatLog.suffix(6))
-            let lastIdx = recentEntries.count - 1
-            for (ei, entry) in recentEntries.enumerated() {
-                let isNewest = ei == lastIdx
-                if entry.isUser {
-                    print("> \(entry.text)", color: isNewest ? .cyan : .dimGreen)
-                } else {
-                    let color: TerminalColor = isNewest ? .yellow : .dimGreen
-                    print("DM:", color: color, bold: isNewest)
-                    for paragraph in entry.text.components(separatedBy: "\n") {
-                        let trimmed = paragraph.trimmingCharacters(in: .whitespaces)
-                        if trimmed.isEmpty { print("") }
-                        else { print("  \(trimmed)", color: color) }
-                    }
-                }
-                print("")
-            }
-        }
+        // The conversation so far: just the last exchange, tidily.
+        if !dmChatLog.isEmpty { printLastChatExchange() }
 
         // Inject recent actions into DM context and show as history
         if adventureLogIndexAtLastDM < adventureLog.count {

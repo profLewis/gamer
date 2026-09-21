@@ -1073,6 +1073,7 @@ struct TerminalView: View {
                                 .frame(minHeight: reservedButtonGridHeight, alignment: .top)
                             } else if reserveControlSlots {
                                 Color.clear.frame(height: reservedButtonGridHeight)
+                                    .accessibilityHidden(true)
                             }
 
                         }
@@ -2856,6 +2857,8 @@ struct MenuButtonsView: View {
                 if index == spacerIndex {
                     Color.clear
                         .frame(height: buttonMinHeight)
+                        .accessibilityElement()
+                        .accessibilityLabel("Blank")
                 }
                 regularButton(option: option, index: index, fallbackDisplayNumber: displayPos + 1)
             }
@@ -2905,6 +2908,9 @@ struct MenuButtonsView: View {
             .stroke(Color.gray.opacity(0.18), lineWidth: 1)
             .frame(height: buttonMinHeight)
             .allowsHitTesting(false)
+            // VoiceOver: just "Blank", so an empty slot isn't a mystery.
+            .accessibilityElement()
+            .accessibilityLabel("Blank")
     }
 
     /// A standard full-width button. `index` is the real position in the

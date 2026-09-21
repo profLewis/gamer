@@ -77,7 +77,7 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
     // MARK: - Audio Session
 
     private func configureAudioSession() {
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         // The mic is open (voice input): it needs play-and-record, which it set up
         // itself. Switching to playback/ambient here silenced the microphone.
         if VoiceInputManager.micOpen { return }
@@ -92,7 +92,7 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     private func restoreAudioSession() {
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         // The mic is open (voice input): it needs play-and-record, which it set up
         // itself. Switching to playback/ambient here silenced the microphone.
         if VoiceInputManager.micOpen { return }

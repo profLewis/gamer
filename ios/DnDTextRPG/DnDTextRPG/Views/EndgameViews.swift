@@ -203,7 +203,7 @@ struct PDFPreviewSheet: View {
     #endif
 }
 
-#if os(iOS)
+#if os(iOS) || os(visionOS)
 private struct PDFKitView: UIViewRepresentable {
     let data: Data
     func makeUIView(context: Context) -> PDFView {
