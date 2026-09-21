@@ -1,6 +1,7 @@
 const GALLERY = {
   classes: [
-    'barbarian', 'cleric', 'fighter', 'ranger', 'rogue', 'wizard',
+    'barbarian', 'bard', 'cleric', 'engineer', 'fighter', 'ranger', 'rogue',
+    'scout', 'thief', 'wizard',
   ],
   races: [
     'dragonborn', 'half-elf', 'half-orc', 'high-elf', 'hill-dwarf', 'human',

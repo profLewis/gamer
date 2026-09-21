@@ -2580,6 +2580,7 @@ class GameEngine: ObservableObject {
         case "puzzles": return { [weak self] in self?.showPuzzleSettings(onBack: { [weak self] in self?.returnFromLink() }) }
         case "questNotes": return { [weak self] in self?.showPartyStatus() }
         case "howTo": return { [weak self] in self?.showHowToIndex() }
+        case "mood": return { [weak self] in self?.showMusicSettings() }
         default: return nil
         }
     }
@@ -11740,10 +11741,17 @@ class GameEngine: ObservableObject {
             self.print("")
             self.print("  BUTTONS", color: .cyan, bold: true)
             self.printWrapped("\(BrainLabels.title) — configure the AI Dungeon Master provider, API key, creativity level, and log context.", indent: 2, color: .dimGreen)
+            self.printLink(BrainLabels.title, to: "dm", indent: 4)
             self.printWrapped("Accessibility — display size, hit animations, DM voice, companion voices, and voice menus.", indent: 2, color: .dimGreen)
+            self.printLink("Accessibility", to: "accessibility", indent: 4)
             self.printWrapped("Mood — background music tunes for each game phase, plus music and sound effect switches.", indent: 2, color: .dimGreen)
+            self.printLink("Mood", to: "mood", indent: 4)
             self.printWrapped("Gameplay — map radius, card navigation, info timeout, button limit, NPCs, multiplayer, timers, and keyboard.", indent: 2, color: .dimGreen)
+            self.printLink("Gameplay", to: "gameplay", indent: 4)
             self.printWrapped("Game Saves — autosave frequency, and managing/deleting individual save files. Your adventures in progress, not your settings.", indent: 2, color: .dimGreen)
+            self.printLink("Game Saves", to: "saves", indent: 4)
+            self.print("")
+            self.printWrapped("Every one of those is a link: tap it to go straight there, and Back brings you here again.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  SAVE SETTINGS", color: .cyan, bold: true)
             self.printWrapped("A different kind of saving — your settings and API keys, not your adventures. Opens Quick Save, Save As, Load, and API key backup/restore, all in one place. Quick Save also backs up your API keys to the device Keychain in the same tap.", indent: 2, color: .dimGreen)
