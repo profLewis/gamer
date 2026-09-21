@@ -792,7 +792,8 @@ class Dungeon: ObservableObject, Codable {
     private var encounterChance: Double {
         // Fewer fights than at first (play-testers found it repetitive) — more
         // room for exploring, and for the things rooms have to do.
-        let base = level <= 1 ? 0.22 : min(0.34, 0.22 + Double(level - 2) * 0.04)
+        // Cut again (from 0.22-0.34): "still too many combat encounters".
+        let base = level <= 1 ? 0.16 : min(0.26, 0.16 + Double(level - 2) * 0.03)
         return base * encounterDensity
     }
 
@@ -950,10 +951,18 @@ class Dungeon: ObservableObject, Codable {
             }
         }
 
-        // Riddle challenges — libraries and shrines occasionally pose one,
-        // offering a bonus reward for a correct answer.
-        for room in rooms.values where room.roomType == .library || room.roomType == .shrine {
-            if Int.random(in: 1...100) <= 35 {
+        // Riddles and puzzles. They were only in libraries and shrines, and
+        // only one in three of those, so a whole floor could pass without one
+        // ("what about the puzzles and riddles?"). Now: most libraries and
+        // shrines; a third of rooms with monsters (offered BEFORE the fight,
+        // as a way past it -- see c03b4aa); and the odd plain chamber.
+        for room in rooms.values where room.roomType != .entrance && room.roomType != .boss && room.roomType != .shop {
+            let chance: Int
+            switch room.roomType {
+            case .library, .shrine: chance = 80
+            default: chance = room.encounter != nil ? 33 : 12
+            }
+            if Int.random(in: 1...100) <= chance, room.merchant == nil, room.trainer == nil {
                 // Riddles near the top; deeper down, harder puzzles (see PuzzleBank).
                 if level >= 3, let pid = PuzzleBank.nextId(tier: Puzzle.tier(forLevel: level)) {
                     room.puzzleId = pid

@@ -25,6 +25,24 @@ class VoiceInputManager: ObservableObject {
     private var recognitionTask: SFSpeechRecognitionTask?
     private var silenceTimer: Timer?
 
+    // MARK: Continuous mode
+    /// Keep listening after each command (Settings > Accessibility): press
+    /// the mic once, speak a command, pause (or say the enter word) and it is
+    /// sent; speak the next. Press the mic again to stop. On by default.
+    static var continuous: Bool {
+        UserDefaults.standard.object(forKey: "voiceContinuous") == nil ? true : UserDefaults.standard.bool(forKey: "voiceContinuous")
+    }
+    static let enterWords = ["enter", "go", "done", "over"]
+    /// Said at the end of a command, it sends it at once.
+    static var enterWord: String { UserDefaults.standard.string(forKey: "voiceEnterWord") ?? "enter" }
+
+    /// While the game itself is talking, and a moment after, what the mic
+    /// hears is the game -- not the player. It used to be sent as a command,
+    /// the DM answered it aloud, the mic heard that... a loop.
+    private var quietUntil = Date.distantPast
+    private var ttsWatch: Timer?
+    private var wasSpeaking = false
+
     private var onComplete: ((String) -> Void)?
 
     private init() {}
@@ -102,7 +120,10 @@ class VoiceInputManager: ObservableObject {
             // Configure audio session for recording
             #if os(iOS)
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
+            // Play-and-record, so the narrator is still heard while the mic is
+            // open (continuous mode keeps it open); the game's own voice is
+            // filtered out of what's recognised (see quietUntil).
+            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .duckOthers, .allowBluetoothHFP])
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
             #endif
 
@@ -125,41 +146,100 @@ class VoiceInputManager: ObservableObject {
                 self.transcript = ""
             }
 
-            recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
-                guard let self = self else { return }
-
-                if let result = result {
-                    let text = result.bestTranscription.formattedString
-                    DispatchQueue.main.async {
-                        self.transcript = text
-                        onTranscript(text)
-                    }
-
-                    // Reset silence timer — auto-submit after 2 seconds of silence
-                    self.resetSilenceTimer()
-
-                    if result.isFinal {
-                        self.finishListening(with: text)
-                    }
-                }
-
-                if error != nil {
-                    self.finishListening(with: self.transcript)
-                }
-            }
+            self.onTranscript = onTranscript
+            startTask(recognizer)
+            startTTSWatch()
         } catch {
             lastError = "Couldn't start the microphone (\(error.localizedDescription))."
             finishListening(with: "")
         }
     }
 
+    private var onTranscript: ((String) -> Void)?
+
+    /// One recognition pass. In continuous mode a new one starts after each
+    /// command, and whenever the game has just finished speaking, so nothing
+    /// it heard is carried into the next command.
+    private func startTask(_ recognizer: SFSpeechRecognizer) {
+        recognitionTask?.cancel()
+        recognitionRequest?.endAudio()
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        recognitionRequest = request
+        recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+            guard let self = self, self.recognitionRequest === request else { return }
+            if let result = result {
+                // The game's own voice: ignore it entirely.
+                if SpeechEngine.shared.isSpeaking || Date() < self.quietUntil {
+                    DispatchQueue.main.async { self.transcript = ""; self.onTranscript?("") }
+                    return
+                }
+                var text = result.bestTranscription.formattedString
+                // "…north enter" -> send "north" now.
+                let word = Self.enterWord.lowercased()
+                let lower = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+                if lower == word || lower.hasSuffix(" " + word) {
+                    text = String(lower.dropLast(word.count)).trimmingCharacters(in: .whitespaces)
+                    self.submit(text)
+                    return
+                }
+                DispatchQueue.main.async {
+                    self.transcript = text
+                    self.onTranscript?(text)
+                }
+                // Pause to send: two seconds of quiet.
+                self.resetSilenceTimer()
+                if result.isFinal { self.submit(text) }
+            }
+            if error != nil, self.isListening, !Self.continuous {
+                self.finishListening(with: self.transcript)
+            }
+        }
+    }
+
+    /// A command is ready. One-shot mode stops here; continuous mode hands
+    /// it over and listens for the next.
+    private func submit(_ text: String) {
+        silenceTimer?.invalidate()
+        guard Self.continuous else { finishListening(with: text); return }
+        let finalText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        DispatchQueue.main.async {
+            self.transcript = ""
+            self.onTranscript?("")
+            if !finalText.isEmpty { self.onComplete?(finalText) }
+            // What the game says in reply must not be heard as the next command.
+            self.quietUntil = Date().addingTimeInterval(0.8)
+            if let r = self.speechRecognizer, self.isListening { self.startTask(r) }
+        }
+    }
+
+    /// Watches the game's voice: while it speaks the mic is deaf, and when it
+    /// stops, recognition starts afresh a moment later.
+    private func startTTSWatch() {
+        ttsWatch?.invalidate()
+        ttsWatch = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            guard let self = self, self.isListening else { return }
+            let speaking = SpeechEngine.shared.isSpeaking
+            if speaking {
+                self.quietUntil = Date().addingTimeInterval(0.8)
+                self.silenceTimer?.invalidate()
+            } else if self.wasSpeaking, let r = self.speechRecognizer {
+                self.startTask(r)
+            }
+            self.wasSpeaking = speaking
+        }
+    }
+
     func stopListening() {
-        finishListening(with: transcript)
+        finishListening(with: Self.continuous ? "" : transcript)
     }
 
     private func finishListening(with text: String) {
         silenceTimer?.invalidate()
         silenceTimer = nil
+        ttsWatch?.invalidate()
+        ttsWatch = nil
+        wasSpeaking = false
 
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
@@ -193,8 +273,8 @@ class VoiceInputManager: ObservableObject {
     private func resetSilenceTimer() {
         silenceTimer?.invalidate()
         silenceTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
-            guard let self = self, self.isListening else { return }
-            self.finishListening(with: self.transcript)
+            guard let self = self, self.isListening, !self.transcript.isEmpty else { return }
+            self.submit(self.transcript)
         }
     }
 }

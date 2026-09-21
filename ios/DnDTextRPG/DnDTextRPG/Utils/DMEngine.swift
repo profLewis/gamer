@@ -1029,7 +1029,7 @@ class DMEngine {
         \(context.questInfo.map { "\nTHE PARTY'S QUEST AND THE CALENDAR (answer questions about dates, deadlines and what's at stake consistently with this; say how many DAYS away things are; a deadline has NOT arrived unless this says it has passed; never invent seasons or dates):\n\($0)" } ?? "")
         \(context.knownLore.map { "\nKNOWN NAMED CHARACTERS (keep these consistent — same name, same personality, same shop/role — never re-invent who they are):\n\($0)" } ?? "")
 
-        DUNGEON LEVEL: \(context.dungeonLevel)
+        DUNGEON FLOOR: \(Dungeon.floorName(context.dungeonLevel)) (the entrance is floor 0; floors below are negative — call it that, never "level 1")
         TORCH: \(context.torchLit ? "Lit (\(context.torchTurnsRemaining) rooms remaining)" : "Unlit — the party is in darkness")
         \(context.droppedItems ?? "No items on the floor")
 

@@ -1426,13 +1426,13 @@ struct TerminalView: View {
                                 if voiceInput.isListening {
                                     voiceInput.stopListening()
                                 } else {
-                                    let isTextInput = gameEngine.awaitingTextInput
-                                    let onComplete: (String) -> Void = isTextInput ? { text in
+                                    // Decided when each command arrives, not when the mic
+                                    // was pressed: in continuous mode the screen changes
+                                    // between commands.
+                                    let onComplete: (String) -> Void = { text in
                                         inputText = ""
-                                        gameEngine.handleTextInput(text)
-                                    } : { text in
-                                        inputText = ""
-                                        gameEngine.handleVoiceMenuChoice(text)
+                                        if gameEngine.awaitingTextInput { gameEngine.handleTextInput(text) }
+                                        else { gameEngine.handleVoiceMenuChoice(text) }
                                     }
                                     let onTranscript: (String) -> Void = { text in
                                         inputText = text
@@ -1531,13 +1531,13 @@ struct TerminalView: View {
                                 if voiceInput.isListening {
                                     voiceInput.stopListening()
                                 } else {
-                                    let isTextInput = gameEngine.awaitingTextInput
-                                    let onComplete: (String) -> Void = isTextInput ? { text in
+                                    // Decided when each command arrives, not when the mic
+                                    // was pressed: in continuous mode the screen changes
+                                    // between commands.
+                                    let onComplete: (String) -> Void = { text in
                                         inputText = ""
-                                        gameEngine.handleTextInput(text)
-                                    } : { text in
-                                        inputText = ""
-                                        gameEngine.handleVoiceMenuChoice(text)
+                                        if gameEngine.awaitingTextInput { gameEngine.handleTextInput(text) }
+                                        else { gameEngine.handleVoiceMenuChoice(text) }
                                     }
                                     let onTranscript: (String) -> Void = { text in
                                         inputText = text
