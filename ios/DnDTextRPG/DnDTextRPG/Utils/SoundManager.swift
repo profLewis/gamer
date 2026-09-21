@@ -655,7 +655,20 @@ class SoundManager {
 
     // MARK: - Background Music
 
+    /// Whether the player wants music at all. The same stored fact
+    /// GameEngine.musicEnabled reads and writes — one key, so there is no
+    /// second copy to fall out of step. Absent means On, as it does there.
+    static var musicAllowed: Bool {
+        if UserDefaults.standard.object(forKey: "music_enabled") == nil { return true }
+        return UserDefaults.standard.bool(forKey: "music_enabled")
+    }
+
     func startMusic(_ type: MusicType, preference: Int = 0) {
+        // Music Off was enforced by each caller asking first, and not all of
+        // them did — the melody previews in Mood > Music called straight in, so
+        // a tune could start with the setting plainly Off. Asked here instead,
+        // where it holds for every caller there is and every one added later.
+        guard Self.musicAllowed else { stopMusic(); return }
         if currentMusic == type && musicPlaying { return }
         stopMusic()
 

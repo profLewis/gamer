@@ -345,8 +345,12 @@ struct TerminalView: View {
                         // Mac: exactly the map box, from its top +---+ edge to the one
                         // under "@ here" — measured (see MacMapBoxBottomKey), so it
                         // refits itself on launch, window resizes and Map Length changes.
-                        .frame(height: macMapBoxHeight > 0 ? macMapBoxHeight + 6
-                               : CGFloat(gameEngine.mapOnlyLineCount + 3) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 8)
+                        // The slack under the measured box was 6pt; 2 sits the
+                        // bottom edge closer to the frame without touching the
+                        // measurement itself, so it still refits on resize and
+                        // when Map Length changes.
+                        .frame(height: macMapBoxHeight > 0 ? macMapBoxHeight + 2
+                               : CGFloat(gameEngine.mapOnlyLineCount + 3) * (gameEngine.mapFontSize * mapScale * 1.3 + 2) + 4)
                         .onPreferenceChange(MacMapBoxBottomKey.self) { h in
                             if h > 0, abs(h - macMapBoxHeight) > 0.5 { macMapBoxHeight = h }
                         }
@@ -762,7 +766,7 @@ struct TerminalView: View {
                     // hid the typed text the moment it appeared, since
                     // there's so much less vertical space to work with than
                     // portrait has.
-                    VStack(spacing: 0) {
+                    VStack(spacing: macInputToGridGap) {
                         // (VoiceOver: the buttons before the input line, whichever is on top.)
                         if isLandscape {
                             inputBarAndKeyboardBlock.accessibilitySortPriority(1)
@@ -979,7 +983,7 @@ struct TerminalView: View {
                        !gameEngine.directionExits.isEmpty || !gameEngine.currentMenuOptions.isEmpty {
                         // (No controls at all — e.g. a tap-to-continue result — means
                         // no block: the text takes the whole area, all of it tappable.)
-                        VStack(spacing: 10) {
+                        VStack(spacing: macGridToButtonsGap) {
                             // Direction D-pad (when exploring)
                             if !gameEngine.directionExits.isEmpty {
                                 DirectionPadView(exits: gameEngine.directionExits, secured: gameEngine.securedExits, scale: scale,
@@ -2086,8 +2090,15 @@ struct TerminalView: View {
 /// Mac: buttons, D-pad and their text a size up — there's room.
 #if os(macOS)
 let macControlScale: CGFloat = 1.2
+/// Mac has room to breathe on the right: a gap between the input line and the
+/// D-pad, and a wider one between the D-pad and the buttons. On a phone every
+/// point counts, so both stay as they were there.
+let macInputToGridGap: CGFloat = 14
+let macGridToButtonsGap: CGFloat = 20
 #else
 let macControlScale: CGFloat = 1.0
+let macInputToGridGap: CGFloat = 0
+let macGridToButtonsGap: CGFloat = 10
 #endif
 
 /// The Mac map pane's width — reported on every layout, the first included.
