@@ -128,6 +128,11 @@ class ShopEngine {
     /// Things worth asking whoever is behind the counter. Each has a plain
     /// answer that works with no AI at all, and a situation line the DM can
     /// embroider when one is configured — see narrate, which never waits.
+    /// The one chat entry that is not a chatTopic: it opens the under-the-
+    /// counter screen instead of giving an answer. Named once, and matched
+    /// against this exact string, so the menu and the handler cannot drift.
+    private static let rareGoodsAsk = "Ask: anything rare under the counter?"
+
     private static let chatTopics: [(topic: String, situation: String, offline: [String])] = [
         ("the weather", "The player asks what the weather is doing outside. You are underground and have not seen the sky in a long while. Answer in character, drily.",
          ["\"Outside? Couldn't tell you. It's cold in here, if that helps.\"",
@@ -180,7 +185,10 @@ class ShopEngine {
         // auto-detection renders it as the standard compact 3-bar nav
         // button, like every other screen's back button — leaving a shop
         // is exactly a "< Back" action, not a distinct one.
-        var shopOpts = ["Buy", "Sell", "Haggle", "Ask About Rare Goods", "Chat"]
+        // Rare goods used to sit here, beside Buy and Sell. It is a question
+        // you put to a person, not a counter you walk up to, so it now lives
+        // in Chat with everything else you can ask them about.
+        var shopOpts = ["Buy", "Sell", "Haggle", "Chat"]
         // Worn tools (whetstones, thieves' tools) can be mended here.
         if game.party.contains(where: { $0.inventory.contains { $0.usesLeft != nil } }) { shopOpts.append("Mend Tools") }
         shopOpts += ["?", "< Back"]
@@ -1348,6 +1356,9 @@ class ShopEngine {
         game.print("")
         game.print("  \(merchant.name) leans on the counter.", color: .green)
         game.print("  \(merchant.catchphrase)", color: .cyan)
+        // With the loudspeaker on, this screen used to open in silence — only
+        // the answers were ever spoken. speak() checks isEnabled itself.
+        SpeechEngine.shared.speak("\(merchant.name) leans on the counter. \(merchant.catchphrase)")
         game.print("")
 
         // Every topic stays on the menu. Asking about something once is no
@@ -1362,6 +1373,7 @@ class ShopEngine {
             // towards something new, never a closed door.
             asked.contains(entry.topic) ? "Ask again: \(entry.topic)" : "Ask: \(entry.topic)"
         }
+        opts.append(Self.rareGoodsAsk)
         opts += ["?", "< Back"]
         game.showMenu(opts)
         game.closeHandler = { [weak self] in self?.showShopMain(completion: completion) }
@@ -1380,6 +1392,12 @@ class ShopEngine {
                 return
             }
             guard picked != "< Back" else { self.showShopMain(completion: completion); return }
+            // Before the topic lookup: this one is not a chatTopic, and the
+            // lookup below would quietly drop it and leave a dead button.
+            if picked == Self.rareGoodsAsk {
+                self.showRareGoods(completion: completion)
+                return
+            }
             // Both labels lead to the same topic — matching only "Ask: " would
             // leave every "Ask again: " button doing nothing at all.
             let topic = picked
@@ -1387,6 +1405,14 @@ class ShopEngine {
                 .replacingOccurrences(of: "Ask: ", with: "")
             guard let entry = Self.chatTopics.first(where: { $0.topic == topic }) else { return }
             self.chatTopicsAsked.insert(entry.topic)
+            // The answer used to append under the shop's own heading, so once
+            // it was on screen there was nothing to say WHICH question it
+            // answered. The page now carries the question itself as its title,
+            // in full, exactly as the button read.
+            game.clearTerminal()
+            game.printTitle(picked)
+            game.print("")
+            game.print("  \(merchant.name)", color: .green)
             game.print("")
             // narrate prints the plain answer at once and never waits on the
             // DM; any AI flourish lands after, if it is quick enough.
@@ -1414,6 +1440,11 @@ class ShopEngine {
         guard let game = game, let merchant = merchant else { then(); return }
 
         game.print("  \(offline)", color: color)
+        // The shop never spoke a word: SpeechEngine appeared nowhere in this
+        // file, so with the loudspeaker on everything here stayed silent while
+        // the rest of the game read itself aloud. speak() checks isEnabled
+        // itself, so this stays quiet when the speaker is off.
+        SpeechEngine.shared.speak(offline)
         then()
 
         guard DMEngine.shared.hasAnyAI else { return }
@@ -1427,6 +1458,12 @@ class ShopEngine {
                 guard !flag.done else { return }
                 flag.done = true
                 game.print("  \(line)", color: color)
+                SpeechEngine.shared.speak(line)
+                // The countdown started when the plain answer was printed,
+                // seconds ago — so this line could arrive just as the screen
+                // moved on, and be gone before it could be read. Re-arming
+                // restarts the wait with these words counted in.
+                if game.awaitingContinue { game.waitForContinue() }
             }
         }
     }

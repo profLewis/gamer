@@ -6,7 +6,7 @@
 //
 
 import Foundation
-#if canImport(FoundationModels)
+#if canImport(FoundationModels) && !os(tvOS)
 import FoundationModels
 #endif
 
@@ -275,7 +275,7 @@ class DMEngine {
 
     /// Whether the Apple on-device Foundation Model is available
     var isAppleModelAvailable: Bool {
-        #if canImport(FoundationModels)
+        #if canImport(FoundationModels) && !os(tvOS)
         if #available(iOS 26.0, *) {
             return SystemLanguageModel.default.availability == .available
         }
@@ -285,7 +285,7 @@ class DMEngine {
 
     /// Ask the Apple on-device model
     private func askAppleModel(userMessage: String, context: DMContext, completion: @escaping (String?) -> Void) {
-        #if canImport(FoundationModels)
+        #if canImport(FoundationModels) && !os(tvOS)
         guard #available(iOS 26.0, *) else {
             completion(nil)
             return
@@ -1578,7 +1578,7 @@ class DMEngine {
     /// prompt, using a throwaway session rather than the real DM one so this
     /// never disturbs an in-progress conversation's context.
     func testAppleModel(completion: @escaping (Bool, String?) -> Void) {
-        #if canImport(FoundationModels)
+        #if canImport(FoundationModels) && !os(tvOS)
         guard #available(iOS 26.0, *) else {
             completion(false, "Requires iOS 26 or later.")
             return

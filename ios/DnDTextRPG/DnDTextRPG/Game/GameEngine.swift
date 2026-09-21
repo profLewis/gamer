@@ -496,12 +496,20 @@ class GameEngine: ObservableObject {
     /// about 200 words a minute on top of the Info Timeout (capped, so a
     /// huge page can't park the game for minutes). Busy combat reports and
     /// long DM replies get longer; a short "Nothing found." keeps the base.
+    /// How long a screen stays before it moves on by itself: long enough to
+    /// actually read it.
+    ///
+    /// Was 3.3 words a second — 198 a minute, which is an adult reading
+    /// silently down a familiar page. This is a phone, in a game, full of names
+    /// nobody has seen before, and play-testing was plain that it moved on too
+    /// soon. 2.4 a second is about 145 a minute, and the ceiling is higher so a
+    /// genuinely long passage is not cut off at the knees.
     private func countdownDelay(base: Double) -> Double {
         guard base > 0 else { return base }
         let words = terminalLines.reduce(0) { total, line in
             total + line.text.split(separator: " ").filter { $0.contains(where: { $0.isLetter }) }.count
         }
-        return max(base, min(25, Double(words) / 3.3))
+        return max(base, min(40, Double(words) / 2.4))
     }
 
     /// Text mode: how long after you stop typing it sends — never less than
@@ -567,25 +575,41 @@ class GameEngine: ObservableObject {
     private func combatWaitingLines() -> (title: String, info: [String]) {
         guard let combat = currentCombat else { return ("", []) }
         var title = Self.combatContinueTitles.randomElement()!
-        // Name whoever the fight will ACTUALLY hand the turn to: the very
-        // combatant showPlayerCombatMenu opens for. This used to scan forward
-        // past anyone unconscious, while the menu side does no such skipping —
-        // so the screen announced one fighter and then gave you another's
-        // buttons.
-        if let entry = combat.currentCombatant {
-            if entry.isPlayer {
-                if let c = party.first(where: { $0.id == entry.id }), c.isConscious {
-                    let n = shortName(for: c)
-                    title = c.isComputerControlled
-                        ? ["Next: \(n) takes a turn.", "\(n) is up next.", "Coming up: \(n)'s move.", "\(n) is sizing up the next swing."].randomElement()!
-                        : ["Next: your move, \(n).", "\(n), get ready — you're next.", "Your turn is coming, \(n).", "\(n): think about what you'll do next."].randomElement()!
-                }
-            } else if combat.encounter.monsters.contains(where: { $0.name == entry.name && $0.isAlive }) {
-                title = ["Next: the \(entry.name) — brace yourselves.", "The \(entry.name) is winding up for its turn.",
-                         "Watch out — the \(entry.name) moves next.", "The \(entry.name) is looking for an opening."].randomElement()!
-            }
-        }
         var info: [String] = []
+        // This screen used to name currentCombatant and WORD it as though that
+        // fighter were about to go — "Next:", "you're next", "winding up for
+        // its turn". That is only true if the screen is drawn AFTER nextTurn(),
+        // and nextTurn() has fifteen-odd callers on different paths. On the
+        // rest it announced whoever had just finished: "next your move, XX" the
+        // moment after XX moved, and a zombie winding up at the end of the
+        // zombie's own turn.
+        //
+        // So it no longer guesses the tense from the timing. It states what is
+        // true whenever it is drawn — who is acting, and who follows — using
+        // upNextName, the one rule the written status block and the arena
+        // roster already read. Three views, one rule, no backwards claims.
+        if let entry = combat.currentCombatant {
+            let nowName: String
+            var flavour: String? = nil
+            if entry.isPlayer, let c = party.first(where: { $0.id == entry.id }) {
+                nowName = shortName(for: c)
+                if c.isConscious && !c.isComputerControlled {
+                    flavour = ["Take your time — think what \(nowName) should do.",
+                               "\(nowName)'s move. No hurry.",
+                               "It's down to \(nowName) now."].randomElement()!
+                }
+            } else {
+                nowName = entry.name
+                if combat.encounter.monsters.contains(where: { $0.name == entry.name && $0.isAlive }) {
+                    flavour = ["The \(entry.name) is winding up.",
+                               "The \(entry.name) is looking for an opening.",
+                               "Brace yourselves — the \(entry.name) moves."].randomElement()!
+                }
+            }
+            let nextPart = combat.upNextName.map { "   · Next: \($0)" } ?? ""
+            title = "▶ Now: \(nowName)\(nextPart)"
+            if let f = flavour { info.append(f) }
+        }
         let standing = party.filter { $0.isConscious }.count
         let foes = combat.encounter.monsters.filter { $0.isAlive }
         let foeText = foes.prefix(3).map { "\($0.name) \($0.currentHP)/\($0.maxHP)" }.joined(separator: ", ") + (foes.count > 3 ? "…" : "")
@@ -21927,6 +21951,49 @@ class GameEngine: ObservableObject {
             if let s = char.equippedShield { allItems.append((char, s, true)) }
         }
 
+        // Gain patterns FIRST: the DM narrates handing something over without
+        // emitting a grant tag. There was no pattern for this at all — only
+        // dropping and using — so a loaf of bread promised in the story never
+        // reached anybody's pack, and the text said otherwise.
+        //
+        // resolveItemByName knows no food, so bread resolves to the generic
+        // item. That is on purpose: an arriving loaf beats a catalogue-perfect
+        // nothing. looksEdible recognises bread and cheese by name so it can
+        // still be eaten, and dmGiftCharge never prices an invented item, so
+        // nobody is charged for it.
+        let gainPatterns = ["hands you ", "hands over ", "gives you ", "hands him ", "hands her ",
+                            "offers you ", "passes you ", "slides you ", "presses into your hands ",
+                            "you receive ", "you are given ", "you now have ",
+                            "tucks into your pack ", "drops into your pack ", "throws in "]
+        let articles: Set<String> = ["a", "an", "the", "some", "one", "your", "his", "her", "their",
+                                     "fresh", "warm", "small", "large", "little", "good", "fine", "half"]
+        var gained = 0
+        for pattern in gainPatterns where gained < 2 {
+            guard let r = lower.range(of: pattern) else { continue }
+            // Already handled by a proper tag? Leave it alone.
+            let tail = String(lower[r.upperBound...].prefix(48))
+            var words = tail.split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init)
+            while let w = words.first, articles.contains(w) { words.removeFirst() }
+            guard !words.isEmpty else { continue }
+            var found: Item? = nil
+            for n in stride(from: min(3, words.count), through: 1, by: -1) {
+                let span = words.prefix(n).joined(separator: " ")
+                    .trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+                guard span.count >= 3 else { continue }
+                if alreadyApplied.grantedItems.contains(where: { $0.lowercased().contains(span) || span.contains($0.lowercased()) }) {
+                    found = nil
+                    break
+                }
+                if let item = resolveItemByName(span) { found = item; break }
+            }
+            if let item = found {
+                giveToParty(item, announce: "[Received: \(item.name)!]")
+                logEvent("DM (auto): the story handed over \(item.name)", category: "DM")
+                gained += 1
+                changed = true
+            }
+        }
+
         // Drop patterns: "drops the X", "throws away X", "discards X", "sets down X", "tosses X"
         let dropPatterns = ["drops the ", "drop the ", "drops his ", "drops her ",
                             "throws away ", "discards the ", "sets down the ",
@@ -31890,7 +31957,15 @@ class GameEngine: ObservableObject {
                 }
 
                 // Apply all command tags
-                let worldChanged = self.applyJustDMCommands(result)
+                var worldChanged = self.applyJustDMCommands(result)
+                // ...and the same safety net the button paths use. This was
+                // called from ask-the-DM, combat and party chat but NEVER from
+                // here, so text mode — where the story IS the interface — had
+                // no fallback at all and a narrated gift simply never arrived.
+                // Text mode and button mode have to behave the same way.
+                if self.applyNarrativeFallbacks(text: displayText, alreadyApplied: result) {
+                    worldChanged = true
+                }
 
                 if worldChanged {
                     self.print("")
@@ -32120,7 +32195,19 @@ class GameEngine: ObservableObject {
         }()
         for who in candidates where who.addItem(item) {
             if let note = announce {
-                print("  \(note) — \(shortName(for: who)) takes it.", color: .brightGreen, bold: true)
+                // Every gift used to end with the same four words. Chosen from
+                // the item's own name so the same thing twice running rarely
+                // reads the same way.
+                let takings = ["\(shortName(for: who)) takes it.",
+                               "\(shortName(for: who)) tucks it away.",
+                               "\(shortName(for: who)) stows it in their pack.",
+                               "Into \(shortName(for: who))'s pack it goes.",
+                               "\(shortName(for: who)) turns it over once, then pockets it.",
+                               "\(shortName(for: who)) has room for that.",
+                               "\(shortName(for: who)) takes charge of it.",
+                               "\(shortName(for: who)) accepts it with a nod."]
+                let pick = takings[abs(item.name.hashValue &+ who.name.hashValue) % takings.count]
+                print("  \(note) — \(pick)", color: .brightGreen, bold: true)
             }
             return who
         }
