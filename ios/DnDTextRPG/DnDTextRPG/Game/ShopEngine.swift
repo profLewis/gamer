@@ -405,7 +405,7 @@ class ShopEngine {
         game.menuHandler = { [weak self] choice in
             guard let self = self, let character = self.character else { return }
             guard choice == 1 else { backToList(); return }
-            self.completePurchase(item: item, price: item.value, buyer: character,
+            self.completePurchase(item: item, price: self.merchant?.buyPrice(item) ?? item.value, buyer: character,
                                    lines: [("  Purchased \(item.name) for \(item.value) gold.", .brightGreen),
                                            ("  Gold remaining: \(character.gold - item.value)", .yellow)],
                                    returnTo: backToList, completion: completion)
@@ -645,7 +645,7 @@ class ShopEngine {
         var itemLineRanges: [Range<Int>] = []
         for item in sellableItems {
             let lineStart = game.terminalLines.count
-            let sellValue = max(1, item.value / 2)
+            let sellValue = merchant?.sellPrice(item) ?? max(1, item.value / 2)
             options.append(shopButtonLabel(name: item.name, priceLabel: "+\(sellValue)gp", weight: game.formatWeight(item.weight)))
             game.print("  \(item.name) — sells for \(sellValue)gp, \(game.formatWeight(item.weight)): \(item.description)", color: .green)
             itemLineRanges.append(lineStart..<game.terminalLines.count)
@@ -655,7 +655,7 @@ class ShopEngine {
             guard let self = self, let game = self.game else { return }
             guard idx >= 0 && idx < sellableItems.count else { return }
             let item = sellableItems[idx]
-            let sellValue = max(1, item.value / 2)
+            let sellValue = self.merchant?.sellPrice(item) ?? max(1, item.value / 2)
 
             character.removeItem(item)
             character.gold += sellValue

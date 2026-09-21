@@ -25817,7 +25817,22 @@ class GameEngine: ObservableObject {
 
         closeHandler = { [weak self] in self?.showPackMenu(character: character, onBack: onBack, fromDM: fromDM) }
 
-        showPaginatedMenu(options) { [weak self] idx in
+        // The 3-bar nav was missing here: only the ✕ closed it and there was
+        // no help at all. showPaginatedMenu already takes pinned buttons that
+        // survive paging — they were never passed.
+        showPaginatedMenu(options, pinned: ["?", "< Back"], pinnedHandler: { [weak self] pinnedIdx in
+            guard let self = self else { return }
+            if pinnedIdx == 0 {
+                self.showInlineHelp {
+                    self.printTitle("Use Item — Help")
+                    self.print("")
+                    self.printWrapped("Everything this character can use rather than wear or wield: potions and elixirs to drink, food to eat, and the odd oddity like a whetstone or a book of jokes.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else {
+                self.showPackMenu(character: character, onBack: onBack, fromDM: fromDM)
+            }
+        }) { [weak self] idx in
             guard let self = self else { return }
             guard idx >= 0 && idx < potions.count else { return }
             let potion = potions[idx]
@@ -25952,7 +25967,22 @@ class GameEngine: ObservableObject {
 
         closeHandler = { [weak self] in self?.showPackMenu(character: character, onBack: onBack, fromDM: fromDM) }
 
-        showPaginatedMenu(options) { [weak self] idx in
+        // The 3-bar nav was missing here: only the ✕ closed it and there was
+        // no help at all. showPaginatedMenu already takes pinned buttons that
+        // survive paging — they were never passed.
+        showPaginatedMenu(options, pinned: ["?", "< Back"], pinnedHandler: { [weak self] pinnedIdx in
+            guard let self = self else { return }
+            if pinnedIdx == 0 {
+                self.showInlineHelp {
+                    self.printTitle("Drop Item — Help")
+                    self.print("")
+                    self.printWrapped("Leaves something here in this room. Dropped things stay where you leave them, so you can come back for them — useful when a pack is full and you would rather not sell.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else {
+                self.showPackMenu(character: character, onBack: onBack, fromDM: fromDM)
+            }
+        }) { [weak self] idx in
             guard let self = self else { return }
             guard idx >= 0 && idx < items.count else { return }
             let item = items[idx]
@@ -26358,7 +26388,22 @@ class GameEngine: ObservableObject {
         closeHandler = { [weak self] in self?.showPackMenu(character: character, onBack: onBack, fromDM: fromDM) }
 
         let inventoryItems = character.inventory
-        showPaginatedMenu(options) { [weak self] idx in
+        // The 3-bar nav was missing here: only the ✕ closed it and there was
+        // no help at all. showPaginatedMenu already takes pinned buttons that
+        // survive paging — they were never passed.
+        showPaginatedMenu(options, pinned: ["?", "< Back"], pinnedHandler: { [weak self] pinnedIdx in
+            guard let self = self else { return }
+            if pinnedIdx == 0 {
+                self.showInlineHelp {
+                    self.printTitle("Give Item — Help")
+                    self.print("")
+                    self.printWrapped("Hands something to another member of the party. Useful for sharing out potions before a fight, or moving weight off whoever is carrying too much.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else {
+                self.showPackMenu(character: character, onBack: onBack, fromDM: fromDM)
+            }
+        }) { [weak self] idx in
             guard let self = self else { return }
             guard idx >= 0 && idx < inventoryItems.count else { return }
             let item = inventoryItems[idx]
@@ -36222,9 +36267,12 @@ class GameEngine: ObservableObject {
             var showVictoryButtons: (() -> Void)!
             showVictoryButtons = { [weak self] in
                 guard let self = self else { return }
+                // The label says what the button will DO next, so it is a real
+                // toggle rather than something that only ever starts again.
+                let readLabel = SpeechEngine.shared.isSpeaking ? "Stop Reading" : "Read Aloud"
                 let opts = [MenuOption("Take the Spoils", isDefault: true),
                             MenuOption("How We Fared"),
-                            MenuOption("Read Aloud"),
+                            MenuOption(readLabel),
                             MenuOption("?", tint: .navigation, compact: true)]
                 self.showMenuOptions(opts)
                 self.closeHandler = continueAction
@@ -36245,9 +36293,17 @@ class GameEngine: ObservableObject {
                             self.print("  \(self.shortName(for: char)): \(char.currentHP)/\(char.maxHP) HP\(state)", color: colour)
                         }
                         self.print("")
+                        // Without this the lines were appended below the
+                        // visible area and the button appeared to do nothing —
+                        // which is exactly how it was reported.
+                        self.forceScrollToNewest = true
                         showVictoryButtons()
-                    case "Read Aloud":
-                        SpeechEngine.shared.speakAloud(self.terminalLines.map { $0.text }.joined(separator: " "))
+                    case "Read Aloud", "Stop Reading":
+                        if SpeechEngine.shared.isSpeaking {
+                            SpeechEngine.shared.stop()
+                        } else {
+                            SpeechEngine.shared.speakAloud(self.terminalLines.map { $0.text }.joined(separator: " "))
+                        }
                         showVictoryButtons()
                     default:
                         self.showVictoryHelp(onDone: continueAction)
