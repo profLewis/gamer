@@ -18,6 +18,14 @@ class VoiceInputManager: ObservableObject {
     /// failure here used to be silent, so a microphone that never listened
     /// looked exactly like one that heard nothing.
     @Published var lastError: String?
+    /// True while the microphone is open -- the speech engine then leaves
+    /// the audio session alone (switching it to playback-only cut the mic off
+    /// every time the DM spoke).
+    static var micOpen = false
+    /// True while the game is speaking, and a moment after: the mic passes
+    /// no sound at all to the recogniser, so the DM can never be heard as a
+    /// command and the game can never play itself.
+    static var gameSpeaking = false
 
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-GB"))
     private let audioEngine = AVAudioEngine()  // Separate from SoundManager's engine
@@ -135,12 +143,14 @@ class VoiceInputManager: ObservableObject {
             let recordingFormat = inputNode.outputFormat(forBus: 0)
 
             inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+                guard !VoiceInputManager.gameSpeaking else { return }
                 self?.recognitionRequest?.append(buffer)
             }
 
             audioEngine.prepare()
             try audioEngine.start()
 
+            Self.micOpen = true
             DispatchQueue.main.async {
                 self.isListening = true
                 self.transcript = ""
@@ -240,6 +250,7 @@ class VoiceInputManager: ObservableObject {
         ttsWatch?.invalidate()
         ttsWatch = nil
         wasSpeaking = false
+        Self.micOpen = false
 
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
@@ -294,6 +305,14 @@ class VoiceInputManager: ObservableObject {
     /// failure here used to be silent, so a microphone that never listened
     /// looked exactly like one that heard nothing.
     @Published var lastError: String?
+    /// True while the microphone is open -- the speech engine then leaves
+    /// the audio session alone (switching it to playback-only cut the mic off
+    /// every time the DM spoke).
+    static var micOpen = false
+    /// True while the game is speaking, and a moment after: the mic passes
+    /// no sound at all to the recogniser, so the DM can never be heard as a
+    /// command and the game can never play itself.
+    static var gameSpeaking = false
 
     private init() {}
 

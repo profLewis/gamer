@@ -78,6 +78,9 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
 
     private func configureAudioSession() {
         #if os(iOS)
+        // The mic is open (voice input): it needs play-and-record, which it set up
+        // itself. Switching to playback/ambient here silenced the microphone.
+        if VoiceInputManager.micOpen { return }
         do {
             // Use .playback to override silent switch
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.duckOthers])
@@ -90,6 +93,9 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
 
     private func restoreAudioSession() {
         #if os(iOS)
+        // The mic is open (voice input): it needs play-and-record, which it set up
+        // itself. Switching to playback/ambient here silenced the microphone.
+        if VoiceInputManager.micOpen { return }
         do {
             // Restore to ambient for game music
             try AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default)
@@ -102,7 +108,16 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
 
     // MARK: - Delegate
 
+    /// The mic stays deaf for a moment after the voice stops (room echo).
+    private func releaseMicSoon() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            guard let self = self, !self.synthesizer.isSpeaking else { return }
+            VoiceInputManager.gameSpeaking = false
+        }
+    }
+
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        releaseMicSoon()
         SoundManager.shared.unduckMusic()
         restoreAudioSession()
         if utterance === trackedUtterance, let done = trackedCompletion {
@@ -117,6 +132,7 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        releaseMicSoon()
         SoundManager.shared.unduckMusic()
         restoreAudioSession()
         if utterance === trackedUtterance { trackedUtterance = nil; trackedCompletion = nil }
@@ -175,6 +191,7 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
             utterance.voice = AVSpeechSynthesisVoice(language: "en-GB")
         }
 
+        VoiceInputManager.gameSpeaking = true
         synthesizer.speak(utterance)
         return utterance
     }
@@ -591,6 +608,7 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
             utterance.voice = AVSpeechSynthesisVoice(language: "en-GB")
         }
 
+        VoiceInputManager.gameSpeaking = true
         synthesizer.speak(utterance)
     }
 
@@ -645,6 +663,7 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
         utterance.pitchMultiplier = 1.15  // Higher than DM, distinct
         utterance.preUtteranceDelay = 0.05
         utterance.voice = AVSpeechSynthesisVoice(language: "en-GB")
+        VoiceInputManager.gameSpeaking = true
         synthesizer.speak(utterance)
     }
 }

@@ -4137,7 +4137,7 @@ class GameEngine: ObservableObject {
         // a generous ceiling: there is a lot on it (XP for each character,
         // level-ups, what each monster dropped, quest progress), and it is the
         // pay-off for the fight.
-        if combatLootEligible != nil { delay = max(6.0, min(delay, 20.0)) }
+        if combatLootEligible != nil { delay = max(12.0, min(delay * 1.5, 45.0)) }
         delay *= timeoutScale(pendingTimeoutKind ?? (combatLootEligible != nil ? .loot : .reading))
         pendingTimeoutKind = nil
         scheduleAutoAdvance(after: delay, isStillValid: { [weak self] in
@@ -28457,9 +28457,11 @@ class GameEngine: ObservableObject {
             printWrapped("None yet. Finish an adventure — beat the last guardian at the bottom of the world — and its certificate is kept here, to look at, save or print whenever you like. Smaller honours won on the way, like a Certificate of Merit for finishing someone's errand, are kept here too.", indent: 2, color: .dimGreen)
             print("")
             pendingTimeoutKind = .reading
-            showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+            showMenuOptions([MenuOption("?", tint: .navigation, compact: true), MenuOption("< Back", tint: .navigation, compact: true)])
             closeHandler = onBack
-            menuHandler = { _ in onBack() }
+            menuHandler = { [weak self] choice in
+                if choice == 1 { self?.showCertificatesHelp() } else { onBack() }
+            }
             return
         }
         let f = DateFormatter()
@@ -28471,10 +28473,27 @@ class GameEngine: ObservableObject {
             print("")
         }
         let labels = saved.map { String($0.heroNames.prefix(MenuOption.maxButtonLength)) }
-        showPaginatedMenuOptions(labels, pinned: ["< Back"], handler: { [weak self] idx in
+        let pinned = ["?", "< Back"]
+        showPaginatedMenuOptions(labels, pinned: pinned, handler: { [weak self] idx in
             guard let self = self, idx >= 0, idx < saved.count else { return }
             self.showCertificateEntry(saved[idx], onBack: onBack)
-        }, pinnedHandler: { _ in onBack() })
+        }, pinnedHandler: { [weak self] i in
+            if i >= 0, i < pinned.count, pinned[i] == "?" { self?.showCertificatesHelp() } else { onBack() }
+        })
+    }
+
+    private func showCertificatesHelp() {
+        showInlineHelp {
+            self.printTitle("Certificates — Help")
+            self.print("")
+            self.printWrapped("Every certificate your adventurers earn is kept here, newest first:", indent: 2, color: .dimGreen)
+            self.printWrapped("• Adventure certificates — for finishing an adventure, with its maps and a page of statistics.", indent: 2, color: .dimGreen)
+            self.printWrapped("• Certificates of Merit — for finishing someone's errand.", indent: 2, color: .dimGreen)
+            self.printWrapped("• Certificates of Training and of Grit — for learning a skill at a gym, or sparring your way in.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.printWrapped("Tap one to see it, then View Certificate to look at it full size, save it or print it. Delete removes it for good.", indent: 2, color: .dimGreen)
+            self.print("")
+        }
     }
 
     private func showCertificateEntry(_ saved: SavedCertificate, onBack: @escaping () -> Void) {
@@ -36940,7 +36959,8 @@ class GameEngine: ObservableObject {
             // waiting path it would be picked up by some later autoReturn.
             autoReturnDestination = continueAction
             pendingTimeoutKind = .results
-            autoReturn(after: max(5.0, infoTimeout * 2.0), stretchForReading: true)
+            // "WAIT at the end of a fight": a real pause, not five seconds.
+            autoReturn(after: max(15.0, infoTimeout * 4.0), stretchForReading: true)
         }
     }
 
