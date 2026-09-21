@@ -750,6 +750,10 @@ class Dungeon: ObservableObject, Codable {
         nextRoomId = try container.decodeIfPresent(Int.self, forKey: .nextRoomId)
             ?? (roomsDict.keys.max().map { $0 + 1 } ?? 0)
         currentFloor = try container.decodeIfPresent(Int.self, forKey: .currentFloor) ?? 1
+        // The floor is whichever floor the party's room is on. A save where
+        // these disagreed drew an empty map ("No map available.") and hid
+        // the Atlas; the room is the truth.
+        if let here = roomsDict[currentRoomId], here.floor != currentFloor { currentFloor = here.floor }
         emergencyDropUsed = (try? container.decodeIfPresent(Bool.self, forKey: .emergencyDropUsed)) ?? false
         hasMultiGymPass = (try? container.decodeIfPresent(Bool.self, forKey: .hasMultiGymPass)) ?? false
         archivedLevels = (try? container.decodeIfPresent([AtlasLevel].self, forKey: .archivedLevels)) ?? []
@@ -1790,9 +1794,14 @@ class Dungeon: ObservableObject, Codable {
         let viewMinY = current.y - vRadius
         let viewMaxY = current.y + vRadius
 
-        // Only show visited rooms within the viewport
+        // Only show visited rooms within the viewport -- on the floor of the
+        // room you are actually standing in. This used to trust currentFloor,
+        // and whenever that disagreed with the room (an older save, or a route
+        // between floors that didn't update it) nothing matched and the map
+        // said "No map available." The room you're in always counts as seen.
+        let floorHere = current.floor
         let visibleRooms = rooms.values.filter {
-            $0.floor == currentFloor && $0.visited && $0.x >= viewMinX && $0.x <= viewMaxX && $0.y >= viewMinY && $0.y <= viewMaxY
+            $0.floor == floorHere && ($0.visited || $0.id == current.id) && $0.x >= viewMinX && $0.x <= viewMaxX && $0.y >= viewMinY && $0.y <= viewMaxY
         }
         guard !visibleRooms.isEmpty else { return ["No map available."] }
 

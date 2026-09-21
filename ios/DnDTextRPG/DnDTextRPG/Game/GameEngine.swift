@@ -1387,9 +1387,16 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped("\"May I offer, when that happens?\"", indent: 2, color: .yellow)
         print("")
-        showMenu(["Yes, offer to report crashes", "No, never ask", "?"])
+        // No default button: a tap anywhere on the page presses the default,
+        // so the very tap that started the game (or one made while reading)
+        // answered "Yes" and whisked this away before it could be read. It
+        // now waits for an actual answer, and ignores taps for a moment.
+        showMenu(["Yes, offer to report crashes", "No, never ask", "?"], defaultIndex: -1)
+        suppressMenuUntil = Date().addingTimeInterval(1.5)
         closeHandler = { [weak self] in
             guard let self = self else { return }
+            // Closing without answering is a no -- never a silent yes.
+            UserDefaults.standard.set(false, forKey: "offerCrashReports")
             UserDefaults.standard.set(true, forKey: key)
             self.showMainMenu()
         }
