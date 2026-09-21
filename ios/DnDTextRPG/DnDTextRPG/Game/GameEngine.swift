@@ -2582,6 +2582,7 @@ class GameEngine: ObservableObject {
         case "dndexGallery": return { [weak self] in self?.openWeb("https://proflewis.github.io/gamer/gallery/") }
         case "puzzlePack": return { [weak self] in self?.openWeb("https://github.com/profLewis/gamer/blob/main/puzzles/pack.json") }
         case "puzzleFolder": return { [weak self] in self?.openWeb("https://github.com/profLewis/gamer/tree/main/puzzles") }
+        case "puzzleDoc": return { [weak self] in self?.openWeb("https://github.com/profLewis/gamer/blob/main/puzzles/README.md") }
         case "contributors": return { [weak self] in self?.openWeb(ContributorsManager.webURL) }
         case "puzzles": return { [weak self] in self?.showPuzzleSettings(onBack: { [weak self] in self?.returnFromLink() }) }
         case "questNotes": return { [weak self] in self?.showPartyStatus() }
@@ -27084,6 +27085,18 @@ class GameEngine: ObservableObject {
         print("")
         if pack.puzzles.isEmpty {
             printWrapped("Check for New Puzzles fetches the pack; it's only installed if its signature checks out and its version is newer than any seen before.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  WHAT ONE LOOKS LIKE", color: .cyan, bold: true)
+            // A real puzzle from the pack rather than an invented one, so the
+            // example cannot drift away from the format it claims to show.
+            self.printWrapped("\"Two coins add up to 15 gold pieces, and one of them is not a 5-gold piece. What are the two coins?\"", indent: 4, color: .green)
+            self.printWrapped("Tier 2 · logic · pick one of four. The answer is a 10 and a 5 — ONE of them is not a 5. A hint would nudge you towards re-reading it, for a little of the prize.", indent: 4, color: .dimGreen)
+            self.print("")
+            self.print("  WHERE THEY ARE WRITTEN DOWN", color: .cyan, bold: true)
+            self.printLink("How puzzles work — the full table of tiers", to: "puzzleDoc", indent: 4)
+            self.printLink("The puzzle pack itself (signed)", to: "puzzlePack", indent: 4)
+            self.printLink("All the puzzle files", to: "puzzleFolder", indent: 4)
+            self.print("")
         } else {
             for puzzle in pack.puzzles.sorted(by: { ($0.tier, $0.id) < ($1.tier, $1.id) }) {
                 print("  \(puzzle.id) — \(Puzzle.kindName(puzzle.tier)) (tier \(puzzle.tier))", color: .cyan, bold: true)
