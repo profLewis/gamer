@@ -847,25 +847,18 @@ class Character: ObservableObject, Identifiable, Codable {
         willpowerSurgeUsesRemaining = characterClass.willpowerSurgeMaxUses
     }
 
-    /// Called each combat turn — returns damage taken from poison, or 0 if recovered
-    func tickPoison() -> (damage: Int, cured: Bool) {
-        guard isPoisoned, poisonTurnsRemaining > 0 else { return (0, false) }
-
-        // 20% chance of naturally recovering each turn (CON save)
-        let conMod = abilityScores.modifier(for: .constitution)
-        let saveRoll = Int.random(in: 1...20) + conMod
-        if saveRoll >= 14 {
-            curePoison()
-            return (0, true)
-        }
-
-        let dmg = poisonDamagePerTurn
+    /// One bite of poison. It does NOT wear off by itself any more -- no CON
+    /// save, no countdown -- it lasts until something cures it (an antidote,
+    /// a healing potion given by the DM, a shrine). `floor` keeps it from
+    /// taking the last HP: exploring passes 1, so poison can leave you
+    /// desperate but not dead between rooms; combat passes 0.
+    /// `cured` is always false now; it is kept so callers need not change.
+    func tickPoison(floor: Int = 0) -> (damage: Int, cured: Bool) {
+        guard isPoisoned, isConscious else { return (0, false) }
+        let dmg = min(max(1, poisonDamagePerTurn), max(0, currentHP - floor))
+        guard dmg > 0 else { return (0, false) }
         takeDamage(dmg)
-        poisonTurnsRemaining -= 1
-        if poisonTurnsRemaining <= 0 {
-            curePoison()
-        }
-        return (dmg, poisonTurnsRemaining <= 0)
+        return (dmg, false)
     }
 
     // MARK: - Carry Capacity

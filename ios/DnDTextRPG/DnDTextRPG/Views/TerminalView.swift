@@ -1094,7 +1094,7 @@ struct TerminalView: View {
     /// Auto-continue countdown — a little hourglass by the > prompt that
     /// turns over as the screen's timeout runs, with a thin ring showing the
     /// time left. Tap it (and only it) to pause/resume — amber, still, with a
-    /// gently pulsing "paused" while held; long-press to hurry it along.
+    /// gently pulsing "paused" while held; long-press does the same.
     /// Tapping anywhere else still just continues.
     private var autoCountdownBar: some View {
         let paused = gameEngine.autoContinuePaused
@@ -1148,9 +1148,12 @@ struct TerminalView: View {
         .padding(.horizontal, 2)
         .contentShape(Rectangle())
         .onTapGesture { gameEngine.toggleAutoContinuePause() }
-        .onLongPressGesture(minimumDuration: 0.45) { gameEngine.hurryAutoContinue() }
+        // Long-press pauses too, as it used to. It had been changed to
+        // "hurry", which read as the pause being broken; tapping elsewhere
+        // already moves a screen on.
+        .onLongPressGesture(minimumDuration: 0.45) { gameEngine.toggleAutoContinuePause() }
         .accessibilityElement()
-        .accessibilityLabel(paused ? "Auto-continue paused. Tap to resume." : "Auto-continue countdown. Tap to pause, long-press to hurry.")
+        .accessibilityLabel(paused ? "Auto-continue paused. Tap to resume." : "Auto-continue countdown. Tap or long-press to pause.")
         .accessibilityAddTraits(.isButton)
     }
 
@@ -1221,7 +1224,7 @@ struct TerminalView: View {
                             Spacer()
 
                             // Auto-continue countdown — at the right of the line, clear of
-                            // where you type. Tap to pause/resume, long-press to hurry.
+                            // where you type. Tap or long-press to pause/resume.
                             // While time is frozen it always shows — it's how you unfreeze.
                             // Every waiting screen shows it (speaker mode and iOS included).
                             if gameEngine.timeFrozen || ((gameEngine.awaitingContinue || gameEngine.taleCountdownOn) && gameEngine.showCountdownControl) {

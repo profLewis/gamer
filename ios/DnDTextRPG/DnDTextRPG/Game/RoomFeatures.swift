@@ -172,7 +172,15 @@ extension GameEngine {
         guard page < tale.pages.count else {
             clearTerminal(); printTitle(tale.title); print("")
             printWrapped(tale.moral, indent: 2, color: .yellow); print("")
-            waitForContinueWithTimeout { [weak self] in self?.afterFeature(room, onBack: onBack) }
+            // The last page vanished before it could be read. The end of a
+            // book waits for the reader: no timer, and a way back into it.
+            showMenu(["Close the Book", "Read It Again"])
+            closeHandler = { [weak self] in self?.afterFeature(room, onBack: onBack) }
+            menuHandler = { [weak self] choice in
+                guard let self = self else { return }
+                if choice == 2 { self.readTheBook(page: 0, room: room, onBack: onBack) }
+                else { self.afterFeature(room, onBack: onBack) }
+            }
             return
         }
         clearTerminal()

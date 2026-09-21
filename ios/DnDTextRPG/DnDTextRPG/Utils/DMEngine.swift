@@ -352,6 +352,13 @@ class DMEngine {
         if let encounter = context.encounterInfo { prompt += "\n\(encounter)" }
         if let dropped = context.droppedItems { prompt += "\n\(dropped)" }
         prompt += "\nPARTY: \(context.partyStatus)"
+        // The quest and the calendar were missing from this prompt entirely,
+        // so asked "when is winter?" the model made it up -- and said it was
+        // already here. Kept short, as everything in this prompt is.
+        if let quest = context.questInfo {
+            prompt += "\nQUEST & CALENDAR: \(String(quest.prefix(700)))"
+            prompt += "\nTIME RULES: speak of time in days (\"in about six days\"). A deadline has NOT arrived unless the calendar above says it has passed. Never invent seasons or dates."
+        }
 
         if context.justDMMode {
             prompt += """
@@ -1016,7 +1023,7 @@ class DMEngine {
 
         INVENTORY:
         \(context.inventorySummary)
-        \(context.questInfo.map { "\nTHE PARTY'S QUEST AND THE CALENDAR (answer questions about dates, deadlines and what's at stake consistently with this):\n\($0)" } ?? "")
+        \(context.questInfo.map { "\nTHE PARTY'S QUEST AND THE CALENDAR (answer questions about dates, deadlines and what's at stake consistently with this; say how many DAYS away things are; a deadline has NOT arrived unless this says it has passed; never invent seasons or dates):\n\($0)" } ?? "")
         \(context.knownLore.map { "\nKNOWN NAMED CHARACTERS (keep these consistent — same name, same personality, same shop/role — never re-invent who they are):\n\($0)" } ?? "")
 
         DUNGEON LEVEL: \(context.dungeonLevel)
