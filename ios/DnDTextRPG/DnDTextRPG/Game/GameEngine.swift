@@ -225,6 +225,33 @@ class GameEngine: ObservableObject {
     /// Indices of title-border lines in terminalLines (for title flash effect)
     var titleLineIndices: Set<Int> = []
 
+    /// VoiceOver's view of the story: whole paragraphs, not line fragments.
+    /// A printWrapped paragraph is one line plus lines marked
+    /// continuesPrevious; the first carries the full paragraph as its label
+    /// and the rest are hidden, so VoiceOver reads a paragraph as one item
+    /// instead of stopping at every wrapped line. Only worked out while
+    /// VoiceOver is running.
+    var voiceOverParagraphs: (labels: [Int: String], hidden: Set<Int>) {
+        guard Self.systemVoiceOverRunning else { return ([:], []) }
+        let lines = terminalLines
+        var labels: [Int: String] = [:]
+        var hidden = Set<Int>()
+        var i = 0
+        while i < lines.count {
+            var j = i + 1
+            while j < lines.count, lines[j].continuesPrevious {
+                hidden.insert(j)
+                j += 1
+            }
+            if j > i + 1 {
+                let text = lines[i..<j].map { $0.text.trimmingCharacters(in: .whitespaces) }.joined(separator: " ")
+                labels[i] = TerminalLine.spokenText(text)
+            }
+            i = j
+        }
+        return (labels, hidden)
+    }
+
     /// When set, TerminalView shows an icon bar (close + optional mic/chat-focus)
     @Published var closeHandler: (() -> Void)?
 
@@ -317,6 +344,10 @@ class GameEngine: ObservableObject {
     /// pack/hourglass animations, the countdown spin and pulsing buttons.
     /// Until chosen, follows the system's Reduce Motion setting.
     @Published var reduceAnimations: Bool = GameEngine.animationsReduced
+    /// Animations off: the Reduce Animations setting, OR VoiceOver running.
+    /// Typewriter text, flashes and dances make VoiceOver read half-written
+    /// lines and lose its place, so with VoiceOver on the screen keeps still.
+    var calmScreen: Bool { reduceAnimations || Self.systemVoiceOverRunning }
     static var animationsReduced: Bool {
         if let chosen = UserDefaults.standard.object(forKey: "reduceAnimations") as? Bool { return chosen }
         #if os(iOS) || os(tvOS)
@@ -1740,7 +1771,7 @@ class GameEngine: ObservableObject {
 
     private func queueAnnouncement(_ line: TerminalLine) {
         guard Self.systemVoiceOverRunning, !speakerModeOn, !line.isDecorativeArt else { return }
-        let spoken = TerminalLine.spokenText(line.text)
+        let spoken = TerminalLine.spokenText(line.text).trimmingCharacters(in: .whitespaces)
         guard spoken.contains(where: { $0.isLetter || $0.isNumber }) else { return }
         pendingAnnouncement.append(spoken)
         announcementTimer?.invalidate()
@@ -1751,7 +1782,21 @@ class GameEngine: ObservableObject {
 
     private func flushAnnouncement() {
         guard !pendingAnnouncement.isEmpty else { return }
-        var text = pendingAnnouncement.joined(separator: ". ").replacingOccurrences(of: "..", with: ".")
+        // Rebuilt from the lines themselves, now their paragraph marks are
+        // set: a wrapped line joins its paragraph with a space. Joining every
+        // line with ". " put full stops in the middle of sentences.
+        var parts: [String] = []
+        let tail = terminalLines.suffix(pendingAnnouncement.count + 12)
+        for line in tail where !line.isDecorativeArt {
+            let spoken = TerminalLine.spokenText(line.text).trimmingCharacters(in: .whitespaces)
+            guard spoken.contains(where: { $0.isLetter || $0.isNumber }), pendingAnnouncement.contains(spoken) else { continue }
+            if line.continuesPrevious, let last = parts.popLast() { parts.append(last + " " + spoken) } else { parts.append(spoken) }
+        }
+        if parts.isEmpty { parts = pendingAnnouncement }
+        var text = parts.map { p in
+            let t = p.trimmingCharacters(in: .whitespaces)
+            return (t.last.map { ".!?:…\"'".contains($0) } ?? true) ? t : t + "."
+        }.joined(separator: " ")
         pendingAnnouncement.removeAll()
         if text.count > 900 { text = String(text.prefix(900)) + "… More on screen." }
         #if os(macOS)
@@ -2368,7 +2413,7 @@ class GameEngine: ObservableObject {
 
     /// Flash only the title lines — dim then restore
     func flashTitle() {
-        guard !reduceAnimations else { return }
+        guard !calmScreen else { return }
         guard !titleLineIndices.isEmpty else { return }
         let indices = titleLineIndices
         // Save original colors, dim them
@@ -5671,7 +5716,7 @@ class GameEngine: ObservableObject {
     }
 
     private func startIdleAnimations() {
-        guard !reduceAnimations else { return }
+        guard !calmScreen else { return }
         idleAnimTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in
             self?.playIdleAnimation()
         }
@@ -6450,7 +6495,7 @@ class GameEngine: ObservableObject {
 
     /// Dim-then-restore pulse on the text area
     func flashText() {
-        guard !reduceAnimations else { return }
+        guard !calmScreen else { return }
         DispatchQueue.main.async {
             self.textFlashOpacity = 0.3
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
@@ -9673,7 +9718,7 @@ class GameEngine: ObservableObject {
     private func showAbout(onBack: (() -> Void)? = nil) {
         clearTerminal()
         // With battle animations on, the three authors wave hello.
-        let dance = hitAnimationsEnabled && !reduceAnimations
+        let dance = hitAnimationsEnabled && !calmScreen
         ContributorsManager.shared.checkIfDue()   // the thank-you list, at most once a day
         printTitle("About")
         print("")
@@ -19523,7 +19568,7 @@ class GameEngine: ObservableObject {
         let start = terminalLines.count
         printWrapped(text, indent: 2, color: color)
         let end = terminalLines.count
-        guard !reduceAnimations, end > start else { return }
+        guard !calmScreen, end > start else { return }
         let full = (start..<end).map { terminalLines[$0].text }
         for i in start..<end { terminalLines[i].text = "" }
         let generation = screenGeneration
@@ -19993,7 +20038,7 @@ class GameEngine: ObservableObject {
     private func paceTaleParagraph(_ text: String, last: Bool, paceScale: Double = 1.0, isStillValid: @escaping () -> Bool, turn: @escaping () -> Void) {
         let speech = SpeechEngine.shared
         let spoken = speech.estimatedDuration(of: text)
-        let typing = reduceAnimations ? 0 : Double(text.count) * 0.028
+        let typing = calmScreen ? 0 : Double(text.count) * 0.028
         let pause = (last ? 6.0 : 2.5) * timeoutScale(.tales) * paceScale
         let go: () -> Void = { [weak self] in
             guard let self = self, isStillValid() else { return }
@@ -25755,7 +25800,7 @@ class GameEngine: ObservableObject {
     }
 
     private func showPackAnimation(completion: @escaping () -> Void) {
-        guard !reduceAnimations else { completion(); return }
+        guard !calmScreen else { completion(); return }
         clearTerminal()
         printExplorationMap()
         print("")
@@ -31909,7 +31954,7 @@ class GameEngine: ObservableObject {
     }
 
     private func playHourglassAnimation(repeats: Int, fast: Bool = false, onFrame: ((Double) -> Void)? = nil, completion: @escaping () -> Void) {
-        guard !reduceAnimations else { onFrame?(1.0); completion(); return }
+        guard !calmScreen else { onFrame?(1.0); completion(); return }
         let frames = hourglassFrames
         let frameCount = frames.count
         let totalFrames = frameCount * repeats

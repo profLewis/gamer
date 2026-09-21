@@ -417,6 +417,7 @@ struct TerminalView: View {
                                         .onChange(of: scale) { _ in updateWrapColumns(width: g.size.width) }
                                 }
                                 .frame(height: 0)
+                                let vo = gameEngine.voiceOverParagraphs
                                 ForEach(Array(gameEngine.terminalLines.enumerated()), id: \.element.id) { index, line in
                                     Group {
                                     if let link = line.link {
@@ -472,6 +473,11 @@ struct TerminalView: View {
                                             .id(line.id)
                                     }
                                     }
+                                    // VoiceOver: a paragraph is one item (its wrapped lines
+                                    // hidden), and screen titles are headings for the rotor.
+                                    .modifier(VoiceOverLine(label: vo.labels[index],
+                                                            hidden: vo.hidden.contains(index),
+                                                            heading: gameEngine.titleLineIndices.contains(index)))
                                     .onAppear { lineVisibility.indices.insert(index) }
                                     .onDisappear { lineVisibility.indices.remove(index) }
                                 }
@@ -1118,7 +1124,7 @@ struct TerminalView: View {
             let fraction = min(1, max(0, remaining / total))
             // A quick flip every two seconds while running; still when paused.
             let phase = t.truncatingRemainder(dividingBy: 2.0)
-            let angle = (paused || gameEngine.reduceAnimations) ? 0 : (phase < 0.45 ? phase / 0.45 * 180 : 180)
+            let angle = (paused || gameEngine.calmScreen) ? 0 : (phase < 0.45 ? phase / 0.45 * 180 : 180)
             // A soft pulse for "paused", not a blink.
             let pulse = 0.45 + 0.4 * (0.5 + 0.5 * sin(t * 2.6))
             HStack(spacing: 4) {
@@ -2216,8 +2222,8 @@ struct CombatArenaView: View {
             let lineHeight = (fontSize * 1.22).rounded(.up)
             let cols = max(10, Int((geo.size.width - 12) / charWidth))
             let rows = max(4, Int((geo.size.height - 8) / lineHeight))
-            TimelineView(.periodic(from: .now, by: engine.reduceAnimations ? 0.5 : 1.0 / 24)) { context in
-                let grid = ArenaRenderer.render(engine.arenaScene(), width: cols, height: rows, now: context.date, reduced: engine.reduceAnimations)
+            TimelineView(.periodic(from: .now, by: engine.calmScreen ? 0.5 : 1.0 / 24)) { context in
+                let grid = ArenaRenderer.render(engine.arenaScene(), width: cols, height: rows, now: context.date, reduced: engine.calmScreen)
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(0..<grid.count, id: \.self) { r in
                         Text(Self.attributed(grid[r]))
@@ -3603,5 +3609,29 @@ struct CertificateView: View {
                 .background(Capsule().fill(p.ink))
         }
         .buttonStyle(.plain)
+    }
+}
+
+
+/// How one story line presents itself to VoiceOver: the first line of a
+/// paragraph speaks the whole paragraph; its continuation lines are silent;
+/// titles are headings. Did nothing visible -- layout is untouched.
+struct VoiceOverLine: ViewModifier {
+    let label: String?
+    let hidden: Bool
+    let heading: Bool
+    func body(content: Content) -> some View {
+        if hidden {
+            content.accessibilityHidden(true)
+        } else if let label = label {
+            content
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(label)
+                .accessibilityAddTraits(heading ? .isHeader : [])
+        } else if heading {
+            content.accessibilityAddTraits(.isHeader)
+        } else {
+            content
+        }
     }
 }
