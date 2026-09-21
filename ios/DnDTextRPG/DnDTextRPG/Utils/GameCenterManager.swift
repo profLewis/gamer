@@ -46,6 +46,9 @@ class GameCenterManager: NSObject {
     // MARK: - Authentication
 
     func authenticatePlayer() {
+        // For App Store screenshots in the Simulator only: launched with
+        // "-skipGameCenter YES", the sign-in sheet isn't raised over the game.
+        if UserDefaults.standard.bool(forKey: "skipGameCenter") { return }
         GKLocalPlayer.local.authenticateHandler = { [weak self] viewController, error in
             if let vc = viewController {
                 #if canImport(UIKit)

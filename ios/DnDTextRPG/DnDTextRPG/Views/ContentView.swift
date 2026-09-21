@@ -9,7 +9,9 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var gameEngine: GameEngine
-    @State private var showingSplash = true
+    // No splash in screenshot mode (Simulator, "-screenshotScene"): the
+    // sample adventure is what the picture is for.
+    @State private var showingSplash = (UserDefaults.standard.string(forKey: "screenshotScene") ?? "").isEmpty
     @State private var splashOpacity = 1.0
 
     let terminalBackground = Color.black

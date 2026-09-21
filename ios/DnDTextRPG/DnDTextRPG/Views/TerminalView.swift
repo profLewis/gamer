@@ -1588,6 +1588,9 @@ struct TerminalView: View {
                 if !gameEngine.leftHanded { Spacer(minLength: 0) }
                 }
             }
+            // A see-through tap catcher: VoiceOver must never land on it
+            // instead of the text beneath (it has its own way to continue).
+            .accessibilityHidden(true)
         }
     }
 

@@ -232,35 +232,41 @@ class GameEngine: ObservableObject {
     /// instead of stopping at every wrapped line. Only worked out while
     /// VoiceOver is running.
     var voiceOverParagraphs: (labels: [Int: String], hidden: Set<Int>) {
-        // Blocks, not lines: every run of lines between blank lines is ONE
-        // VoiceOver item -- a paragraph, a list, a stat block -- read in one
-        // go. (Joining only wrapped lines left most screens, which print a
-        // line at a time, as a stop at every line.) Titles stay their own
-        // item (they're headings), links stay their own (they're buttons),
-        // and blank and decorative lines are silent.
+        // Sections, not lines: VoiceOver gets a SMALL number of items per
+        // screen. A section runs from one heading to the next -- the page
+        // title, or a sub-heading such as "CREATED BY" -- and everything in
+        // it (paragraphs, lists, blank lines and all) is read as one item.
+        // Links stay separate (they can be activated); decorative lines and
+        // blank lines are silent. A very long section is split so no single
+        // item runs on for minutes.
         guard Self.systemVoiceOverRunning else { return ([:], []) }
         let lines = terminalLines
         var labels: [Int: String] = [:]
         var hidden = Set<Int>()
-        func standalone(_ k: Int) -> Bool { titleLineIndices.contains(k) || lines[k].link != nil }
+        func isHeading(_ k: Int) -> Bool {
+            if titleLineIndices.contains(k) { return true }
+            let t = lines[k].text.trimmingCharacters(in: .whitespaces)
+            let letters = t.filter { $0.isLetter }
+            // A short line in capitals ("CREATED BY", "THE DUNGEON MASTER").
+            return lines[k].isBold && t.count <= 40 && letters.count >= 3 && letters == letters.uppercased()
+        }
         func silent(_ k: Int) -> Bool {
             lines[k].isDecorativeArt || !lines[k].text.contains(where: { $0.isLetter || $0.isNumber })
         }
         var i = 0
         while i < lines.count {
             if silent(i) { hidden.insert(i); i += 1; continue }
-            if standalone(i) { i += 1; continue }
-            var j = i + 1
+            if lines[i].link != nil { i += 1; continue }
+            // A heading starts the section and is read as its opening words.
             var text = TerminalLine.spokenText(lines[i].text).trimmingCharacters(in: .whitespaces)
-            while j < lines.count, !standalone(j) {
-                let blank = lines[j].text.trimmingCharacters(in: .whitespaces).isEmpty
-                if blank { break }
+            if isHeading(i) && !titleLineIndices.contains(i) { text += ":" }
+            var j = i + 1
+            while j < lines.count, !isHeading(j), lines[j].link == nil, text.count < 1500 {
                 if !silent(j) {
                     let part = TerminalLine.spokenText(lines[j].text).trimmingCharacters(in: .whitespaces)
-                    if lines[j].continuesPrevious {
+                    if lines[j].continuesPrevious || text.hasSuffix(":") {
                         text += " " + part
                     } else {
-                        // A new line in the block: end the last one as a sentence.
                         if let last = text.last, !".!?:…\"'".contains(last) { text += "." }
                         text += " " + part
                     }
@@ -268,7 +274,27 @@ class GameEngine: ObservableObject {
                 hidden.insert(j)
                 j += 1
             }
-            if j > i + 1 { labels[i] = text }
+            if titleLineIndices.contains(i) {
+                // The page title stays a heading on its own; its section
+                // starts at the next line.
+                if j > i + 1 {
+                    for k in (i + 1)..<j { hidden.remove(k) }
+                    var k = i + 1
+                    while k < j, silent(k) { hidden.insert(k); k += 1 }
+                    if k < j {
+                        var body = TerminalLine.spokenText(lines[k].text).trimmingCharacters(in: .whitespaces)
+                        for m in (k + 1)..<j where !silent(m) {
+                            let part = TerminalLine.spokenText(lines[m].text).trimmingCharacters(in: .whitespaces)
+                            if lines[m].continuesPrevious { body += " " + part }
+                            else { if let last = body.last, !".!?:…\"'".contains(last) { body += "." }; body += " " + part }
+                        }
+                        for m in (k + 1)..<j { hidden.insert(m) }
+                        labels[k] = body
+                    }
+                }
+            } else if j > i + 1 || text.hasSuffix(":") {
+                labels[i] = text
+            }
             i = j
         }
         return (labels, hidden)
@@ -1387,6 +1413,47 @@ class GameEngine: ObservableObject {
 
     init() {
         installGlitchInTheWeaveCrashHandler()
+        syncAnimationsWithVoiceOver()
+        #if os(iOS) || os(visionOS) || os(tvOS)
+        NotificationCenter.default.addObserver(forName: UIAccessibility.voiceOverStatusDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.syncAnimationsWithVoiceOver()
+        }
+        #elseif os(macOS)
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.syncAnimationsWithVoiceOver()
+        }
+        #endif
+    }
+
+    /// VoiceOver on: every animation off, with the player's own settings put
+    /// aside first. VoiceOver off: those settings put back exactly as they
+    /// were. The saved copy lives in UserDefaults, so it survives the app
+    /// being closed while VoiceOver is still on.
+    private func syncAnimationsWithVoiceOver() {
+        let d = UserDefaults.standard
+        let savedKey = "preVoiceOverAnimations"
+        if Self.systemVoiceOverRunning {
+            guard d.dictionary(forKey: savedKey) == nil else { return }   // already put aside
+            d.set(["reduceAnimations": reduceAnimations,
+                   "hit_animations": hitAnimationsEnabled,
+                   "combatArena": combatArenaEnabled,
+                   "blinkingCursorEnabled": blinkingCursorEnabled], forKey: savedKey)
+            reduceAnimations = true
+            hitAnimationsEnabled = false
+            combatArenaEnabled = false
+            blinkingCursorEnabled = false
+            stopIdleAnimations()
+            logEvent("VoiceOver on: animations switched off (your settings are kept)", category: "SETTINGS")
+        } else if let saved = d.dictionary(forKey: savedKey) {
+            reduceAnimations = saved["reduceAnimations"] as? Bool ?? false
+            d.set(reduceAnimations, forKey: "reduceAnimations")
+            hitAnimationsEnabled = saved["hit_animations"] as? Bool ?? true
+            combatArenaEnabled = saved["combatArena"] as? Bool ?? true
+            blinkingCursorEnabled = saved["blinkingCursorEnabled"] as? Bool ?? false
+            d.set(blinkingCursorEnabled, forKey: "blinkingCursorEnabled")
+            d.removeObject(forKey: savedKey)
+            logEvent("VoiceOver off: animation settings restored", category: "SETTINGS")
+        }
     }
 
     // MARK: - Glitch in the Weave (crash reporting)
@@ -5825,6 +5892,12 @@ class GameEngine: ObservableObject {
     // MARK: - Game Start
 
     func startGame() {
+        // App Store screenshots only (Simulator, launched with
+        // "-screenshotScene explore"): straight into a sample adventure.
+        if let scene = UserDefaults.standard.string(forKey: "screenshotScene"), !scene.isEmpty {
+            startScreenshotScene(scene)
+            return
+        }
         GameCenterManager.shared.authenticatePlayer()
         GameCenterManager.shared.turnBasedDelegate = self
         // Roster first — repairOrphanEntries can read the roster (to
@@ -20955,6 +21028,18 @@ class GameEngine: ObservableObject {
         nudgeAboutGuardian()
         printExplorationMap()   // same map everywhere (fills the Mac pane's width)
         // The date and time, and — once someone's said when — the quest's deadline.
+        // VoiceOver: where you are and who you are, said first.
+        if Self.systemVoiceOverRunning, let room = dungeon.currentRoom {
+            let d = dungeon
+            let lead = party.first { !$0.isComputerControlled } ?? party.first
+            let health = party.map { c -> String in
+                let state = !c.isConscious ? "down" : (c.currentHP * 4 <= c.maxHP ? "badly hurt" : (c.currentHP * 2 <= c.maxHP ? "hurt" : "well"))
+                return "\(shortName(for: c)) \(state)"
+            }.joined(separator: ", ")
+            let exits = room.exits.keys.map { $0.rawValue.lowercased() }.sorted().joined(separator: ", ")
+            printWrapped("You are in \(room.name), \(Dungeon.floorName(d.level)) of \(d.name). \(formattedGameTime()). \(lead.map { "You are \(shortName(for: $0)), the \($0.characterClass.rawValue). " } ?? "")Party: \(health). Exits: \(exits.isEmpty ? "none" : exits).", indent: 2, color: .dimGreen)
+            print("")
+        }
         print("  ☼ \(formattedGameTime())", color: .cyan, bold: true)
         if let line = questDeadlineLine() { print("  \(line)", color: .dimGreen) }
         if !torchLit {
@@ -28699,6 +28784,35 @@ class GameEngine: ObservableObject {
     }
 
     /// A sample party, quest and seven explored levels, for the previews.
+    /// A sample adventure for screenshots: three heroes on the first floor
+    /// down, a few rooms explored, a quest in hand, day three.
+    private func startScreenshotScene(_ scene: String) {
+        UserDefaults.standard.set(true, forKey: "hasSeenFirstRunWelcome")
+        let scores = AbilityScores(strength: 16, dexterity: 14, constitution: 14, intelligence: 12, wisdom: 12, charisma: 12)
+        let heroes = [
+            Character(name: "Ada Stone", race: .human, characterClass: .fighter, abilityScores: scores),
+            Character(name: "Wren Ashby", race: .highElf, characterClass: .wizard, abilityScores: scores),
+            Character(name: "Pip Tallow", race: .lightfootHalfling, characterClass: .bard, abilityScores: scores),
+        ]
+        for (i, h) in heroes.enumerated() { h.currentHP = max(1, h.maxHP - i * 3); h.gold = 140 + i * 55; if i > 0 { h.isComputerControlled = true; h.markAsAI() } }
+        party = heroes
+        let d = Dungeon(name: "The Sunken Keep", level: 2)
+        if let here = d.currentRoom {
+            here.visited = true
+            for id in here.exits.values { d.rooms[id]?.visited = true }
+        }
+        dungeon = d
+        mainQuest = MainQuest.random()
+        noMainQuest = false
+        monstersSlain = 7
+        combatsWon = 4
+        gameTimeMinutes = 1440 * 2 + 9 * 60 + 20
+        torchLit = true
+        torchTurnsRemaining = 40
+        gameState = .exploring
+        showExplorationView()
+    }
+
     private func setUpSampleEnding() {
         let scores = AbilityScores(strength: 16, dexterity: 14, constitution: 14, intelligence: 12, wisdom: 12, charisma: 12)
         let heroes = [
