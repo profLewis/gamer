@@ -3957,7 +3957,10 @@ class GameEngine: ObservableObject {
         if currentCombat == nil { delay = base * timeoutScale(.reading) }
         else if readingPaceNext { delay = base * timeoutScale(.reading) }
         // A monster's or companion's turn: long enough to read what just happened.
-        else if aiTurnInProgress { delay = max(2.5, min(12, newTextReadingTime())) * timeoutScale(.fights) }
+        // Somebody else's turn: long enough to read what just happened and
+        // glance at the fight, and no longer. This was up to TWELVE seconds of
+        // watching a companion think, which play-testing found interminable.
+        else if aiTurnInProgress { delay = max(1.5, min(5.0, newTextReadingTime() * 0.75)) * timeoutScale(.fights) }
         else { delay = base * Double.random(in: 0.55...0.85) * timeoutScale(.fights) }
         readingPaceNext = false
         // A "defeated!" report moves on sooner still.
@@ -4053,9 +4056,13 @@ class GameEngine: ObservableObject {
         // way (e.g. the corner X), where `action` would no longer make sense.
         let myGeneration = Self.continueGeneration
         var delay = countdownDelay(base: infoTimeout * multiplier)
-        // Picking up the spoils after a fight: move along quicker (still
-        // time to read who took what).
-        if combatLootEligible != nil { delay = max(1.5, min(delay, 4.0) * 0.6) }
+        // After a fight the screen used to be hurried along — capped at four
+        // seconds and then cut to 60% of that — which is why the victory
+        // screen went by before it could be read. It now gets a real floor and
+        // a generous ceiling: there is a lot on it (XP for each character,
+        // level-ups, what each monster dropped, quest progress), and it is the
+        // pay-off for the fight.
+        if combatLootEligible != nil { delay = max(6.0, min(delay, 20.0)) }
         delay *= timeoutScale(pendingTimeoutKind ?? (combatLootEligible != nil ? .loot : .reading))
         pendingTimeoutKind = nil
         scheduleAutoAdvance(after: delay, isStillValid: { [weak self] in
@@ -9588,6 +9595,12 @@ class GameEngine: ObservableObject {
         print("  CREATED BY", color: .cyan, bold: true)
         print("  Philip Lewis", color: .brightGreen)
         printWrapped("Game design, creative direction, and relentless testing.", indent: 2, color: .dimGreen)
+        printWrapped("Concept and code control by Philip Lewis.", indent: 2, color: .dimGreen)
+        print("")
+        // The repository is public, so the address belongs here where anybody
+        // reading the credits can go and look at what the game is made of.
+        print("  ALL CODE ON GITHUB", color: .cyan, bold: true)
+        printWrapped("https://github.com/profLewis/gamer", indent: 2, color: .brightGreen)
         print("")
         print("  CO-AUTHOR", color: .cyan, bold: true)
         print("  Beau Lewis", color: .brightGreen)
