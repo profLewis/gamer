@@ -2495,7 +2495,7 @@ class GameEngine: ObservableObject {
     func withForwardOption(_ options: [MenuOption]) -> [MenuOption] {
         auditCompactNavMiddleSlot(options)
         guard canShowForwardOption else { return options }
-        guard !options.contains(where: { $0.text == ">>" }) else { return options }
+        guard !options.contains(where: { $0.text == ">>" || $0.text == "Next >" }) else { return options }
         guard options.contains(where: { $0.text == "< Back" || $0.text == "<<" }) else { return options }
         guard options.contains(where: { $0.text == "?" || $0.text == "?\u{0338}" }) else { return options }
         return options + [MenuOption("Fwd >", tint: .navigation, compact: true)]
@@ -21298,9 +21298,19 @@ class GameEngine: ObservableObject {
         // (A bard's "Play a Tune" lives in conversations now — see talkToNPC —
         // not on the main buttons, where it turned up in almost every room.)
 
-        // --- Bottom row: Help ---
+        // --- Bottom row: Back, Help, Next ---
+        // Back undoes the last step (and Next redoes it), each written into
+        // the adventure log. Only there when there's something to undo.
+        if !stepUndo.isEmpty {
+            menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
+            actions.append { [weak self] in self?.undoStep() }
+        }
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showExplorationHelp() }
+        if !stepRedo.isEmpty {
+            menuOpts.append(MenuOption("Next >", tint: .navigation, compact: true))
+            actions.append { [weak self] in self?.redoStep() }
+        }
 
         // No always-on "< Leave Game" button (it put people off): leaving
         // takes a deliberate step — the ✕ by the input line (closeHandler
@@ -21656,6 +21666,10 @@ class GameEngine: ObservableObject {
         if room.isLockedShut(direction) {
             showLockedDoor(direction: direction, room: room)
             return
+        }
+        // Remember how things stood, so Back (in the 3-bar) can undo this step.
+        if room.exits[direction] != nil, !room.secured.contains(direction) {
+            recordStepForUndo(label: "the move \(direction.rawValue.lowercased()) from \(room.name)")
         }
 
         // Cannot move through barricaded doors — must unsecure first. Falls
@@ -34544,6 +34558,8 @@ class GameEngine: ObservableObject {
 
     func startCombat(encounter: Encounter) {
         fightBeats = []
+        // A fight can't be taken back: Back/Next history ends here.
+        if !stepUndo.isEmpty || !stepRedo.isEmpty { stepUndo.removeAll(); stepRedo.removeAll() }
         gameState = .combat
         let renames = ensureUniqueNames()   // two of the same name muddle a fight
         combatHesitating = false
@@ -39978,7 +39994,58 @@ class GameEngine: ObservableObject {
         dungeon.rooms[dungeon.currentRoomId]?.cleared = true
     }
 
-    private func loadGame(_ save: SaveGame) {
+    // MARK: - Back / Next (undo and redo of steps)
+
+    /// Encoded snapshots of the whole game: before each step (to go Back to)
+    /// and the states left by Back (to go Next to). Encoded, not the live
+    /// objects, which would change as play went on. Kept short.
+    private var stepUndo: [(state: Data, label: String)] = []
+    private var stepRedo: [(state: Data, label: String)] = []
+
+    private func encodedSnapshot() -> Data? {
+        guard let save = makeSnapshotSave(slotName: activeSlotName ?? "Undo") else { return nil }
+        let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
+        return try? enc.encode(save)
+    }
+
+    private func recordStepForUndo(label: String) {
+        guard gameState == .exploring, currentCombat == nil, let data = encodedSnapshot() else { return }
+        stepUndo.append((data, label))
+        if stepUndo.count > 10 { stepUndo.removeFirst() }
+        stepRedo.removeAll()   // a new step replaces anything undone
+    }
+
+    private func restoreSnapshot(_ data: Data) -> Bool {
+        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+        guard let save = try? dec.decode(SaveGame.self, from: data) else { return false }
+        loadGame(save, asStep: true)
+        return true
+    }
+
+    private func undoStep() {
+        guard let last = stepUndo.popLast(), let now = encodedSnapshot() else { return }
+        guard restoreSnapshot(last.state) else { return }
+        stepRedo.append((now, last.label))
+        logEvent("↶ Went back: undid \(last.label)", category: "EXPLORE")
+        explorationStatusMessage = ("↶ Back: undid \(last.label).", .cyan)
+        showExplorationView()
+    }
+
+    private func redoStep() {
+        guard let next = stepRedo.popLast(), let now = encodedSnapshot() else { return }
+        guard restoreSnapshot(next.state) else { return }
+        stepUndo.append((now, next.label))
+        logEvent("↷ Went forward again: redid \(next.label)", category: "EXPLORE")
+        explorationStatusMessage = ("↷ Next: redid \(next.label).", .cyan)
+        showExplorationView()
+    }
+
+    private func loadGame(_ save: SaveGame) { loadGame(save, asStep: false) }
+
+    /// `asStep`: restoring a Back/Next snapshot, not opening a saved game --
+    /// so no fresh encounters, no "Where We Are", the same save slot, and
+    /// the log carries on (the caller notes what was undone).
+    private func loadGame(_ save: SaveGame, asStep: Bool) {
         party = save.party
         // A save can predate the Robot Prefix setting, or the setting can
         // have changed since it was made — re-sync every loaded character's
@@ -40032,6 +40099,14 @@ class GameEngine: ObservableObject {
         } else {
             dmChatLog = []
             DMEngine.shared.clearHistory()
+        }
+
+        if asStep {
+            // Keep the slot we were playing in; the snapshot carried its own
+            // copy of the log, which is the log as it stood -- the undo line
+            // is added by the caller.
+            ensureSafeRoom()
+            return
         }
 
         // Track the loaded slot for future saves/autosaves
