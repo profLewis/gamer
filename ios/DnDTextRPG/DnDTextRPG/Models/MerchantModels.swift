@@ -47,6 +47,30 @@ enum MerchantTier: String, CaseIterable, Codable {
         }
     }
 
+    /// What this sort of shop adds to the catalogue price. A peddler who
+    /// carried it down here on his own back charges most; a hyperstore buying
+    /// by the cartload charges least.
+    var buyMarkup: Double {
+        switch self {
+        case .wanderingPeddler: return 1.35
+        case .generalStore: return 1.20
+        case .tradingPost: return 1.10
+        case .superstore: return 1.00
+        }
+    }
+
+    /// What this sort of shop pays for your second-hand goods, as a fraction of
+    /// the catalogue price. Everyone pays less than they charge — that is the
+    /// trade — but some a great deal less.
+    var sellFraction: Double {
+        switch self {
+        case .wanderingPeddler: return 0.35
+        case .generalStore: return 0.45
+        case .tradingPost: return 0.50
+        case .superstore: return 0.55
+        }
+    }
+
     /// Base difficulty of the merchant's haggle disposition — higher = harder to talk down.
     var haggleDC: Int {
         switch self {
@@ -75,6 +99,37 @@ struct Merchant: Codable, Equatable {
     var catchphrase: String
     /// One-line persona summary handed to the DM as context for bargaining/advice/rare-goods narration.
     var personaBlurb: String
+    /// Goods this one's greeting actually names. Whatever they mention is put
+    /// at the front of the shop and so becomes the default button — the patter
+    /// and the counter should agree. Defaulted, because Merchant is saved
+    /// inside a game and merchants from older saves simply have none.
+    var mentions: [String] = []
+
+    /// How sharp THIS trader is, on top of what their sort of shop charges.
+    /// 1.0 is straight dealing; above it they lean on you, below it they are
+    /// unusually fair. Rolled once when the merchant is made and remembered, so
+    /// the same person quotes the same prices whenever you come back.
+    var greed: Double = 1.0
+
+    /// What they charge for something, and what they will pay for yours. Never
+    /// less than a coin, and a shop never pays more than it charges.
+    func buyPrice(_ item: Item) -> Int {
+        max(1, Int((Double(item.value) * tier.buyMarkup * greed).rounded()))
+    }
+    func sellPrice(_ item: Item) -> Int {
+        max(1, Int((Double(item.value) * tier.sellFraction / greed).rounded()))
+    }
+
+    /// A plain word for how this one prices things, so a sharp dealer can be
+    /// told from a fair one without doing arithmetic.
+    var pricingReputation: String {
+        switch greed {
+        case ..<0.93: return "fair prices"
+        case ..<1.08: return "the usual prices"
+        case ..<1.22: return "steep prices"
+        default: return "daylight robbery"
+        }
+    }
 
     /// Regular buy-list, rolled once and remembered from then on — a merchant
     /// who's shown you a Chain Mail shouldn't have a different (or no)
@@ -87,12 +142,85 @@ struct Merchant: Codable, Equatable {
 
     static func == (lhs: Merchant, rhs: Merchant) -> Bool { lhs.name == rhs.name && lhs.shopName == rhs.shopName }
 
+    enum CodingKeys: String, CodingKey {
+        case name, shopName, tier, greeting, catchphrase, personaBlurb
+        case mentions, greed, stock, rareGoodsOffered, hasOfferedAdviceThisVisit
+    }
+
+    /// Written by hand rather than synthesised, and it has to be.
+    ///
+    /// Swift's synthesised decoder does NOT fall back to a property's default
+    /// value when the key is missing — it throws. Merchants are saved inside
+    /// rooms, and Room decodes one with decodeIfPresent and no `try?`, so one
+    /// missing key fails the room, then the dungeon, then the whole save —
+    /// which SaveGameManager swallows with `try?`, making the save disappear
+    /// from the list altogether. Adding `mentions` in build 64 armed exactly
+    /// that for every earlier save; `greed` would have armed it again.
+    ///
+    /// So everything after the original six is read with decodeIfPresent and
+    /// falls back to its default. Old saves load, and the next field added
+    /// costs nobody their game.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        shopName = try c.decode(String.self, forKey: .shopName)
+        tier = try c.decode(MerchantTier.self, forKey: .tier)
+        greeting = try c.decode(String.self, forKey: .greeting)
+        catchphrase = try c.decode(String.self, forKey: .catchphrase)
+        personaBlurb = try c.decode(String.self, forKey: .personaBlurb)
+        mentions = (try? c.decodeIfPresent([String].self, forKey: .mentions)) as? [String] ?? []
+        greed = (try? c.decodeIfPresent(Double.self, forKey: .greed)) as? Double ?? 1.0
+        stock = (try? c.decodeIfPresent([Item].self, forKey: .stock)) as? [Item] ?? []
+        rareGoodsOffered = (try? c.decodeIfPresent([Item].self, forKey: .rareGoodsOffered)) as? [Item] ?? []
+        hasOfferedAdviceThisVisit = (try? c.decodeIfPresent(Bool.self, forKey: .hasOfferedAdviceThisVisit)) as? Bool ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(name, forKey: .name)
+        try c.encode(shopName, forKey: .shopName)
+        try c.encode(tier, forKey: .tier)
+        try c.encode(greeting, forKey: .greeting)
+        try c.encode(catchphrase, forKey: .catchphrase)
+        try c.encode(personaBlurb, forKey: .personaBlurb)
+        try c.encode(mentions, forKey: .mentions)
+        try c.encode(greed, forKey: .greed)
+        try c.encode(stock, forKey: .stock)
+        try c.encode(rareGoodsOffered, forKey: .rareGoodsOffered)
+        try c.encode(hasOfferedAdviceThisVisit, forKey: .hasOfferedAdviceThisVisit)
+    }
+
+    /// The memberwise init, which the custom coder above would otherwise
+    /// suppress. Greed is rolled here unless a caller names it.
+    init(name: String, shopName: String, tier: MerchantTier, greeting: String,
+         catchphrase: String, personaBlurb: String, mentions: [String] = [],
+         greed: Double? = nil, stock: [Item] = [], rareGoodsOffered: [Item] = [],
+         hasOfferedAdviceThisVisit: Bool = false) {
+        self.name = name
+        self.shopName = shopName
+        self.tier = tier
+        self.greeting = greeting
+        self.catchphrase = catchphrase
+        self.personaBlurb = personaBlurb
+        self.mentions = mentions
+        // Most traders are near enough straight; a few on each side are not.
+        self.greed = greed ?? Double.random(in: 0.85...1.30)
+        self.stock = stock
+        self.rareGoodsOffered = rareGoodsOffered
+        self.hasOfferedAdviceThisVisit = hasOfferedAdviceThisVisit
+    }
+
     private struct Persona {
         let name: String
         let shopNames: [String]
         let greeting: String
         let catchphrase: String
         let blurb: String
+        /// See Merchant.mentions. Named here rather than picked out of the
+        /// greeting: parsing English would be brittle, and would miss "the
+        /// bread's still warm", where the noun is there but the sentence is
+        /// not an offer. Only goods that genuinely exist in ItemCatalog.
+        var mentions: [String] = []
     }
 
     // Original, non-copyrighted personas. Small-tier merchants lean into a
@@ -114,7 +242,8 @@ struct Merchant: Codable, Equatable {
         Persona(name: "Pip Thistlewick", shopNames: ["Thistlewick's Barrow", "The Pie & Pocket"],
                 greeting: "\"Hungry? Lost? Both? I've a pie for one and a trinket for the other.\"",
                 catchphrase: "\"A warm pie never let anyone down.\"",
-                blurb: "Pip Thistlewick is a cheerful halfling who pushes a barrow of pies, buttons and oddments through the dark, chatters constantly and gives away more crumbs than he sells."),
+                blurb: "Pip Thistlewick is a cheerful halfling who pushes a barrow of pies, buttons and oddments through the dark, chatters constantly and gives away more crumbs than he sells.",
+                mentions: ["Jar of Honey"]),
         Persona(name: "Madame Ostra", shopNames: ["Ostra's Curiosities", "The Crystal Cart"],
                 greeting: "\"Ah, I foresaw you coming. Also, I heard your boots.\"",
                 catchphrase: "\"The cards say you'll buy something. The cards are rarely wrong.\"",
@@ -126,11 +255,13 @@ struct Merchant: Codable, Equatable {
         Persona(name: "Brother Amble", shopNames: ["The Humble Satchel", "Amble's Almsbag"],
                 greeting: "\"Peace be with you, traveller. And a candle, if you'd like one.\"",
                 catchphrase: "\"A fair price is a small kindness.\"",
-                blurb: "Brother Amble is a wandering monk who trades candles, bandages and herbs to fund his journey; gentle, patient and hard to rush."),
+                blurb: "Brother Amble is a wandering monk who trades candles, bandages and herbs to fund his journey; gentle, patient and hard to rush.",
+                mentions: ["Torch"]),
         Persona(name: "Nell Fairweather", shopNames: ["Fairweather Herbs", "The Green Satchel"],
                 greeting: "\"Mind the moss — it's for sale. So is the mint.\"",
                 catchphrase: "\"There's a leaf for every ache.\"",
-                blurb: "Nell Fairweather is a brisk herbalist who knows every plant that grows in the dark and exactly what it's worth."),
+                blurb: "Nell Fairweather is a brisk herbalist who knows every plant that grows in the dark and exactly what it's worth.",
+                mentions: ["Pouch of Dried Herbs", "Antidote"]),
         Persona(name: "Tobias Crank", shopNames: ["Crank's Cogs & Keys", "The Ticking Trolley"],
                 greeting: "\"Stand back, stand back — the trolley bites when it's excited.\"",
                 catchphrase: "\"If it's broken, I can fix it. If it's fixed, I can improve it.\"",
@@ -251,7 +382,8 @@ struct Merchant: Codable, Equatable {
             tier: tier,
             greeting: persona.greeting,
             catchphrase: persona.catchphrase,
-            personaBlurb: persona.blurb
+            personaBlurb: persona.blurb,
+            mentions: persona.mentions
         )
     }
 

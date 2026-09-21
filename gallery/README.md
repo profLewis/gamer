@@ -14,6 +14,10 @@ Interactive viewer with voice showcase and clickable NPC greetings:
 | [Cleric](classes/cleric.md) | d8 | WIS | Spellcasting (WIS) |
 | [Ranger](classes/ranger.md) | d10 | DEX | Hunter's Mark |
 | [Barbarian](classes/barbarian.md) | d12 | STR | Rage |
+| [Engineer](classes/engineer.md) | d8 | INT | Mechanical Insight |
+| [Scout](classes/scout.md) | d8 | DEX | Keen Eyes |
+| [Thief](classes/thief.md) | d8 | DEX | Street Smart |
+| [Bard](classes/bard.md) | d8 | CHA | Play a Tune, Spellcasting (CHA) |
 
 ## Races
 | Race | Ability Bonuses |
@@ -31,7 +35,7 @@ Interactive viewer with voice showcase and clickable NPC greetings:
 | [Tiefling](races/tiefling.md) | +2 CHA, +1 INT |
 | [Dragonborn](races/dragonborn.md) | +2 STR, +1 CHA |
 
-## Monsters (30)
+## Monsters (36)
 | Monster | HP | AC | CR | Special |
 |---------|----|----|-----|---------|
 | [Giant Rat](monsters/giant-rat.md) | 4 | 10 | 1/8 | Poison |
@@ -57,13 +61,25 @@ Interactive viewer with voice showcase and clickable NPC greetings:
 | [Troll](monsters/troll.md) | 84 | 15 | 5 | Regeneration |
 | [Minotaur](monsters/minotaur.md) | 76 | 14 | 3 | — |
 | [Basilisk](monsters/basilisk.md) | 52 | 15 | 3 | Poison |
-| [Displacer Beast](monsters/displacer-beast.md) | 85 | 13 | 3 | — |
+| [Phase Stalker](monsters/phase-stalker.md) | 85 | 13 | 3 | — |
 | [Wraith](monsters/wraith.md) | 67 | 13 | 5 | Life drain |
-| [Demogorgon](monsters/demogorgon.md) | 68 | 14 | 3 | — |
-| [Mind Flayer](monsters/mind-flayer.md) | 71 | 15 | 7 | — |
-| [Beholder](monsters/beholder.md) | 180 | 18 | 13 | Eye rays |
+| [The Maw](monsters/the-maw.md) | 68 | 14 | 4 | — |
+| [Brain Eater](monsters/brain-eater.md) | 71 | 15 | 7 | — |
+| [Eye Tyrant](monsters/eye-tyrant.md) | 180 | 18 | 13 | Eye rays |
 | [Young Dragon](monsters/young-dragon.md) | 142 | 18 | 10 | Poison, breath |
-| [Vecna](monsters/vecna.md) | 120 | 18 | 10 | The Undying King |
+| [The Undying King](monsters/the-undying-king.md) | 120 | 18 | 10 | The Undying King |
+
+### Deep Floors
+Encountered on the lower levels, now that a dungeon can run to twelve floors.
+
+| Monster | HP | AC | CR | Special |
+|---------|----|----|-----|---------|
+| [Bone Moth](monsters/bone-moth.md) | 7 | 12 | 1/4 | — |
+| [Cinder Hound](monsters/cinder-hound.md) | 32 | 13 | 1 | — |
+| [Iron Weaver](monsters/iron-weaver.md) | 66 | 16 | 3 | — |
+| [Drowned Choir](monsters/drowned-choir.md) | 95 | 15 | 6 | — |
+| [Hollow Monk](monsters/hollow-monk.md) | 110 | 17 | 8 | — |
+| [Gloam Titan](monsters/gloam-titan.md) | 210 | 18 | 15 | — |
 
 ## NPCs (13)
 | NPC | Role | Services |

@@ -24,5 +24,7 @@
 
 **Level 1:** Cure Wounds (1d8+WIS healing, touch), Guiding Bolt (4d6 radiant), Healing Word (1d4+WIS healing, bonus action).
 
+**Level 2 (learned at level 3):** Spiritual Weapon (2d8 force, bonus action), Prayer of Healing (2d8+WIS healing).
+
 ## Recommended Races
 Hill Dwarf, Human, Wood Elf (WIS bonuses).

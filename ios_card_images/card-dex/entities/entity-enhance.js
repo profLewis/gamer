@@ -492,109 +492,111 @@
   const aceOrigins = {
     "D-031": {
       books: "The World of Null-A / The Universe Maker",
-      authors: "A. E. van Vogt",
+      authors: "A. E. van Vogt (both sides)",
       story:
-        `The A-side tracks ${cardLink("Gosseyn")} through a society that uses formal testing to classify people and hide political control. ` +
-        `Much of the tension comes from identity uncertainty, since memory, status, and even bodily continuity are repeatedly challenged. ` +
+        `Ace's first SF double put van Vogt back to back with himself. The A-side tracks ${cardLink("Gosseyn")} through the annual Games of the Machine, a society that sorts and rules people by formal testing in non-Aristotelian logic. ` +
+        `Its engine is identity uncertainty: Gosseyn's memories are planted, ${cardLink("Patricia Hardie")} is not the dead wife he remembers but the President's daughter, and each time he is killed he wakes in a spare body. ` +
         `The setting around ${cardLink("Null-A City")} and the ${cardLink("Games Machine")} reads like a puzzle-dungeon in social form, not just a battlefield. ` +
-        `The reverse title shifts from personal conspiracy toward large-scale cosmological engineering, so the full pair links mind-level and universe-level stakes. ` +
-        `For deeper background see ${extLink("van Vogt bibliography context", "https://en.wikipedia.org/wiki/A._E._van_Vogt")}.`,
+        `The reverse title, <em>The Universe Maker</em>, throws Morton Cargill thousands of years forward to be executed by a descendant of the woman he killed, and instead drops him between the Floaters, Tweeners and Shadows, so the full pair links mind-level and universe-level stakes. ` +
+        `For deeper background see ${extLink("The World of Null-A", "https://en.wikipedia.org/wiki/The_World_of_Null-A")} and ${extLink("The Universe Maker", "https://en.wikipedia.org/wiki/The_Universe_Maker")}.`,
     },
     "D-053": {
-      books: "The Weapon Shops of Isher / Gateway to Elsewhere",
-      authors: "A. E. van Vogt and Murray Leinster",
+      books: "Gateway to Elsewhere / The Weapon Shops of Isher",
+      authors: "Murray Leinster and A. E. van Vogt",
       story:
-        `This double combines constitutional conflict and portal fantasy. On one side, ${cardLink("Robert Hedrock")} and ${cardLink("Innelda Isher")} sit inside a power struggle between imperial command and the quasi-underground institutions in ${cardLink("Isher")}. ` +
-        `On the other side, ${cardLink("Gateway")} represents threshold fiction: crossing into a realm where assumptions from modern science stop being reliable. ` +
+        `This double combines portal fantasy and constitutional conflict. Leinster's side sends an ordinary American through a coin from Barkut &mdash; a country on no map &mdash; into a fourth-dimensional world where the djinn are a practical problem; ${cardLink("Gateway")} is threshold fiction, where the assumptions of modern science stop being reliable. ` +
+        `Van Vogt's side is set in the year 4784: ${cardLink("Innelda Isher")} rules an empire from ${cardLink("Isher")}, and against her stand the Weapon Shops, storefronts that appear where they are needed and sell guns that cannot be fired in aggression, founded and quietly steered by the immortal ${cardLink("Robert Hedrock")}. ` +
         `Together they create a clean origin thread for the game: rights, force, and legitimacy at home; unknown rules and survival abroad. ` +
-        `Reference overviews: ${extLink("Weapon Shops of Isher", "https://en.wikipedia.org/wiki/The_Weapon_Shops_of_Isher")} and ${extLink("Murray Leinster", "https://en.wikipedia.org/wiki/Murray_Leinster")}.`,
+        `Reference overviews: ${extLink("The Weapon Shops of Isher", "https://en.wikipedia.org/wiki/The_Weapon_Shops_of_Isher")} and ${extLink("Murray Leinster", "https://en.wikipedia.org/wiki/Murray_Leinster")}.`,
     },
     "D-096": {
-      books: "The Last Planet / Maza of the Moon",
-      authors: "Andre Norton and Otis Adelbert Kline",
+      books: "The Last Planet / A Man Obsessed",
+      authors: "Andre Norton and Alan E. Nourse",
       story:
-        `The Norton side opens with patrol collapse and forced adaptation: ${cardLink("Kartr Rhyn")} and ${cardLink("Dosvard Rhyn")} move from formal command into frontier statecraft after landing near the ${cardLink("Patrol Crash Site")} and ${cardLink("Astra Ruins")}. ` +
+        `<em>The Last Planet</em> is Ace's retitling of Norton's <em>Star Rangers</em>. It opens with patrol collapse and forced adaptation: the Stellar Patrol ship Starfire is wrecked far from a failing Central Control, and ${cardLink("Kartr Rhyn")} and ${cardLink("Dosvard Rhyn")} move from formal command into frontier statecraft around the ${cardLink("Patrol Crash Site")} and the ${cardLink("Astra Ruins")}. ` +
         `That progression from military drill to settlement-building gives the card set a strong campaign arc origin. ` +
-        `Kline's companion novel keeps planetary-adventure momentum, emphasizing exploration pressure and local conflict economies. ` +
-        `Author context: ${extLink("Andre Norton", "https://en.wikipedia.org/wiki/Andre_Norton")} and ${extLink("Otis Adelbert Kline", "https://en.wikipedia.org/wiki/Otis_Adelbert_Kline")}.`,
+        `Nourse's companion novel, later expanded as <em>The Mercy Men</em>, is a five-year revenge hunt that ends inside sealed medical-research wards where the desperate sell themselves as experimental subjects &mdash; a much tighter, nastier kind of pressure. ` +
+        `Author context: ${extLink("Andre Norton", "https://en.wikipedia.org/wiki/Andre_Norton")} and ${extLink("Alan E. Nourse", "https://en.wikipedia.org/wiki/Alan_E._Nourse")}.`,
     },
     "D-103": {
       books: "Solar Lottery / The Big Jump",
       authors: "Philip K. Dick and Leigh Brackett",
       story:
-        `Dick's early political SF imagines leadership selected by mechanism and maintained by violence. ${cardLink("Ted Benteley")}, ${cardLink("Leon Cartwright")}, and ${cardLink("Reese Verrick")} map onto competing responses to that system: witness, participant, and operator. ` +
+        `Dick's first published novel imagines leadership assigned by a randomising bottle and maintained by legal assassination. ${cardLink("Ted Benteley")}, ${cardLink("Leon Cartwright")}, and ${cardLink("Reese Verrick")} map onto competing responses to that system: oath-bound idealist, accidental incumbent, and displaced operator. ` +
         `Place cards like ${cardLink("Lottery Hall")} and ${cardLink("Telepath Court")} turn the novel's central institutions into playable spaces for intrigue encounters. ` +
-        `Brackett's paired title contributes outward-movement adventure energy, balancing Dick's claustrophobic paranoia with expedition tempo. ` +
-        `Useful references: ${extLink("Solar Lottery", "https://en.wikipedia.org/wiki/Solar_Lottery")} and ${extLink("Leigh Brackett", "https://en.wikipedia.org/wiki/Leigh_Brackett")}.`,
+        `Brackett's paired title contributes outward-movement adventure energy: one man forces his way to the last survivor of humanity's first interstellar flight and then makes the jump himself, balancing Dick's claustrophobic paranoia with expedition tempo. ` +
+        `Useful references: ${extLink("Solar Lottery", "https://en.wikipedia.org/wiki/Solar_Lottery")} and ${extLink("The Big Jump", "https://en.wikipedia.org/wiki/The_Big_Jump")}.`,
     },
     "D-150": {
-      books: "The World Jones Made / Agent of Vega",
-      authors: "Philip K. Dick and James H. Schmitz",
+      books: "The World Jones Made / Agent of the Unknown",
+      authors: "Philip K. Dick and Margaret St. Clair",
       story:
-        `${cardLink("Floyd Jones")} is built around prediction as social force: seeing ahead does not remove conflict, it intensifies it. ` +
-        `Counterpoints such as ${cardLink("Cussick")} keep the narrative grounded in ordinary political resistance instead of prophecy myth. ` +
+        `${cardLink("Floyd Jones")} is built around prediction as social force: he sees exactly one year ahead and must live everything twice, and that certainty makes him a demagogue against the enforced post-war doctrine of Relativism. Seeing ahead does not remove conflict, it intensifies it. ` +
+        `Counterpoints such as ${cardLink("Cussick")}, a Fedgov security agent, keep the narrative grounded in ordinary political resistance instead of prophecy myth. ` +
+        `St. Clair's side moves to the pleasure planetoid Fyon, where a drifter inherits a small weeping doll whose maker's secret attracts forces far beyond him. ` +
         `Locations including ${cardLink("Jonesville")} and ${cardLink("Vega Port")} translate the double's core pressures into campaign geography: cult charisma, surveillance, and frontier maneuvering. ` +
-        `Schmitz's side supports fast-moving interstellar operations, so this pair works as origin material for both psychological and mission-based play. ` +
-        `References: ${extLink("The World Jones Made", "https://en.wikipedia.org/wiki/The_World_Jones_Made")} and ${extLink("James H. Schmitz", "https://en.wikipedia.org/wiki/James_H._Schmitz")}.`,
+        `References: ${extLink("The World Jones Made", "https://en.wikipedia.org/wiki/The_World_Jones_Made")} and ${extLink("Margaret St. Clair", "https://en.wikipedia.org/wiki/Margaret_St._Clair")}.`,
     },
     "D-249": {
-      books: "The Cosmic Puppets / The Last Enemy",
-      authors: "Philip K. Dick and H. Beam Piper",
+      books: "The Cosmic Puppets / Sargasso of Space",
+      authors: "Philip K. Dick and Andre Norton (as Andrew North)",
       story:
-        `This Ace pairing starts local and becomes metaphysical. ${cardLink("Ted Barton")} and ${cardLink("Mary Barton")} return to a familiar town, then watch that familiarity break as memory and environment diverge around ${cardLink("Millgate")} and routes like ${cardLink("Blinding Alley")}. ` +
-        `The reverse novel raises scale toward military and species-level conflict, giving the double both intimate and strategic angles. ` +
+        `This Ace pairing starts local and becomes metaphysical. ${cardLink("Ted Barton")} and ${cardLink("Mary Barton")} return to a familiar town, then watch that familiarity break as memory and environment diverge around ${cardLink("Millgate")} and routes like ${cardLink("Blinding Alley")} &mdash; the records say Ted Barton died of scarlet fever aged nine, and two ancient powers are using the valley as a board. ` +
+        `The reverse novel is the first Solar Queen book: a free-trader crew wins sole rights to Limbo, a world burned bare in a Forerunner war where surviving alien machinery still drags ships down out of orbit. ` +
         `As an origin set, it supports campaigns where players first detect subtle wrongness before confronting open systemic threat. ` +
-        `See ${extLink("The Cosmic Puppets", "https://en.wikipedia.org/wiki/The_Cosmic_Puppets")} and ${extLink("H. Beam Piper", "https://en.wikipedia.org/wiki/H._Beam_Piper")}.`,
+        `See ${extLink("The Cosmic Puppets", "https://en.wikipedia.org/wiki/The_Cosmic_Puppets")} and ${extLink("Sargasso of Space", "https://en.wikipedia.org/wiki/Sargasso_of_Space")}.`,
     },
     "D-295": {
-      books: "Big Planet / The Last Spaceship",
-      authors: "Jack Vance and Murray Leinster",
+      books: "Big Planet / Slaves of the Klau",
+      authors: "Jack Vance (both sides)",
       story:
-        `Vance's ${cardLink("Big Planet")} is a scale experiment: technology limits, sparse resources, and culture change every few days of travel. ` +
-        `${cardLink("Claude Glystra")} and ${cardLink("Woudiver")} anchor the human conflict side while regions such as ${cardLink("Glinster Marsh")} demonstrate how geography itself becomes a social challenge. ` +
-        `Leinster's partner novel keeps survival stakes high with transport fragility and mission urgency. ` +
+        `Vance's ${cardLink("Big Planet")} is a scale experiment: a world huge in diameter but poor in heavy metals, so technology never takes hold and culture changes every few days of travel. ` +
+        `${cardLink("Claude Glystra")} leads an Earth commission brought down tens of thousands of miles from the only Earth enclave, and the book is the walk back; regions such as ${cardLink("Glinster Marsh")} demonstrate how geography itself becomes a social challenge. ` +
+        `The reverse side, also Vance, follows Roy Barch from Klau forced labour into a runaway band kept alive only as quarry for hunting parties, so survival stakes stay high on both halves. ` +
+        `The card ${cardLink("Woudiver")} borrows a Vance name from elsewhere in his work rather than from this volume: Aila Woudiver belongs to the later Planet of Adventure books. ` +
         `The combined origin story is exploration-first: movement, negotiation, and adaptation drive progression more than static dungeon-clearing. ` +
-        `Reference links: ${extLink("Big Planet", "https://en.wikipedia.org/wiki/Big_Planet")} and ${extLink("The Last Spaceship", "https://www.isfdb.org/cgi-bin/title.cgi?5861")}.`,
+        `Reference links: ${extLink("Big Planet", "https://en.wikipedia.org/wiki/Big_Planet")} and ${extLink("Slaves of the Klau", "https://en.wikipedia.org/wiki/Slaves_of_the_Klau")}.`,
     },
     "D-413": {
-      books: "The Man with Nine Lives / Destiny Times Three",
-      authors: "Harlan Ellison and Fritz Leiber",
+      books: "The Man with Nine Lives / A Touch of Infinity",
+      authors: "Harlan Ellison (both sides)",
       story:
-        `The Ellison side frames identity as unstable evidence: people recur, personalities shift, and investigators like ${cardLink("Krantz")} must decide what continuity even means. ` +
-        `Card spaces such as ${cardLink("Nine Lives Safehouse")} capture the pressure of repeated pursuit and strategic concealment. ` +
-        `Leiber's companion novella adds branching-future logic, represented in locations like ${cardLink("Destiny Branchpoint")}, where alternate outcomes feel immediate and tactical. ` +
-        `This gives the D-413 origin block a strong mystery-plus-timeline flavor rather than pure action. ` +
-        `References: ${extLink("Harlan Ellison", "https://en.wikipedia.org/wiki/Harlan_Ellison")} and ${extLink("Fritz Leiber", "https://en.wikipedia.org/wiki/Fritz_Leiber")}.`,
+        `An early Ellison double, novel on one side and collection on the other. <em>The Man with Nine Lives</em> is a revenge story driven across a string of worlds; Ellison disliked the Ace title and reissued a revised text in 2011 as <em>The Sound of a Scythe</em>. ` +
+        `Card spaces such as ${cardLink("Nine Lives Safehouse")} capture the pressure of repeated pursuit and strategic concealment, and the ${cardLink("Nine Lives")} card takes its name straight from the title. ` +
+        `<em>A Touch of Infinity</em> gathers Ellison's early magazine short fiction from the same period, which is where the set's shorter, sharper set-pieces come from. ` +
+        `Some cards grouped under D-413, including ${cardLink("Krantz")} and ${cardLink("Destiny Branchpoint")}, are game inventions rather than characters or places traceable to either half of this volume. ` +
+        `References: ${extLink("The Man with Nine Lives", "https://en.wikipedia.org/wiki/The_Man_with_Nine_Lives")} and ${extLink("Harlan Ellison", "https://en.wikipedia.org/wiki/Harlan_Ellison")}.`,
     },
     "D-421": {
-      books: "Dr. Futurity / No World of Their Own",
-      authors: "Philip K. Dick and Clifford D. Simak",
+      books: "Dr. Futurity / Slavers of Space",
+      authors: "Philip K. Dick and John Brunner",
       story:
-        `${cardLink("Dr Parsons")} gives this double a direct ethical core: a healer is displaced into a social order where healing may violate local norms. ` +
+        `${cardLink("Dr Parsons")} gives this double a direct ethical core: a twentieth-century physician is displaced into a society built around youth and a cult of death, where the reflex to save a life is a crime. ` +
         `Locations like ${cardLink("Future Ward")} and ${cardLink("Exile Quarter")} convert those abstract tensions into practical gameplay zones involving law, triage, and political tradeoffs. ` +
-        `Simak's paired novel reinforces outsider perspective and community boundary themes, making belonging itself a strategic question. ` +
+        `Brunner's paired novel sends Derry Horn out from a comfortable, android-served Earth to investigate one android's murder, and ends on the discovery that there is no such thing as an android &mdash; making belonging and personhood themselves strategic questions. ` +
         `As origin material, D-421 supports campaigns that center moral negotiation and social engineering, not only combat outcomes. ` +
-        `References: ${extLink("Dr. Futurity", "https://en.wikipedia.org/wiki/Dr._Futurity")} and ${extLink("Clifford D. Simak", "https://en.wikipedia.org/wiki/Clifford_D._Simak")}.`,
+        `References: ${extLink("Dr. Futurity", "https://en.wikipedia.org/wiki/Dr._Futurity")} and ${extLink("Into the Slave Nebula", "https://en.wikipedia.org/wiki/Into_the_Slave_Nebula")}.`,
     },
     "D-449": {
-      books: "The Genetic General / Time Crime",
-      authors: "Gordon R. Dickson and H. Beam Piper",
+      books: "The Genetic General / Time to Teleport",
+      authors: "Gordon R. Dickson (both sides)",
       story:
-        `${cardLink("Donal Graeme")} and ${cardLink("Cletus Grahame")} sit inside a future of specialized worlds, contract militaries, and doctrine-level conflict. ` +
+        `<em>The Genetic General</em> is Ace's cut text of <em>Dorsai!</em>, the first Childe Cycle novel. ${cardLink("Donal Graeme")} sits inside a future of specialized splinter worlds, contract militaries, and doctrine-level conflict, and rises from junior officer to something no longer quite human. ` +
         `${cardLink("Dorsai")} and the ${cardLink("Friendly Worlds Council")} represent two ends of that system: field capability and strategic coordination. ` +
-        `Piper's companion title adds temporal law and intervention themes, so command decisions can ripple beyond one battlefield or era. ` +
+        `The reverse side, also Dickson, is set on an Earth carved into economic Groups, with one Group manoeuvring to absorb the rest and a secret society popularly loathed as "the Inhumans" in the middle of it. ` +
+        `${cardLink("Cletus Grahame")} is Donal's ancestor in the same Childe Cycle, but he belongs to <em>Tactics of Mistake</em> (1971) and does not appear in this volume. ` +
         `The overall origin thread is organized power: who plans, who fights, and who writes legitimacy after the fight. ` +
-        `Further reading: ${extLink("Dorsai!", "https://en.wikipedia.org/wiki/Dorsai!")} and ${extLink("Time Crime", "https://www.isfdb.org/cgi-bin/title.cgi?5022")}.`,
+        `Further reading: ${extLink("Dorsai!", "https://en.wikipedia.org/wiki/Dorsai!")} and ${extLink("Tactics of Mistake", "https://en.wikipedia.org/wiki/Tactics_of_Mistake")}.`,
     },
     "D-491": {
-      books: "The Big Time / The Mind-Spider and Other Stories",
-      authors: "Fritz Leiber",
+      books: "The Big Time / The Mind Spider and Other Stories",
+      authors: "Fritz Leiber (both sides)",
       story:
-        `${cardLink("Greta Forzane")} narrates a conflict staged away from ordinary chronology, where agents from many eras gather in ${cardLink("The Big Time")} and facilities like ${cardLink("Change War Station")}. ` +
-        `Characters such as ${cardLink("Bruce Marchant")} ground that large temporal conflict in individual loyalties, fatigue, and moral compromise. ` +
-        `The paired short-fiction side broadens Leiber's speculative toolkit while keeping attention on perception, pressure, and tactical framing. ` +
+        `${cardLink("Greta Forzane")} narrates a conflict staged away from ordinary chronology, where agents snatched from many eras gather in ${cardLink("The Big Time")} and facilities like ${cardLink("Change War Station")}, and the whole Hugo-winning novel plays out in one sealed room that turns into a locked-room problem when an atomic device goes missing. ` +
+        `Characters such as ${cardLink("Bruce Marchant")}, an RAF pilot arguing that the war should simply be abandoned, ground that large temporal conflict in individual loyalties, fatigue, and moral compromise. ` +
+        `The paired short-fiction side gathers further Change War stories while keeping attention on perception, pressure, and tactical framing. ` +
         `For gameplay origin, this double is ideal for missions where chronology itself is unstable and strategic certainty never lasts. ` +
-        `References: ${extLink("The Big Time", "https://en.wikipedia.org/wiki/The_Big_Time_(novel)")} and ${extLink("List of Ace doubles", "https://en.wikipedia.org/wiki/List_of_Ace_double_titles")}.`,
+        `References: ${extLink("The Big Time", "https://en.wikipedia.org/wiki/The_Big_Time_(novel)")} and ${extLink("List of Ace SF double titles", "https://en.wikipedia.org/wiki/List_of_Ace_SF_double_titles")}.`,
     },
   };
 

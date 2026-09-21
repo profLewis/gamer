@@ -24,5 +24,7 @@
 
 **Level 1:** Magic Missile (3d4+3, auto-hit), Burning Hands (3d6, AoE), Sleep (5d8 HP unconscious).
 
+**Level 2 (learned at level 3):** Scorching Ray (4d6 fire), Acid Arrow (4d4 acid).
+
 ## Recommended Races
 High Elf, Rock Gnome, Tiefling (INT bonuses).

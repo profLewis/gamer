@@ -204,10 +204,43 @@ struct MainQuest: Codable {
     var otherWorld: Bool? = nil
     var worldName: String? = nil
     var travelBy: String? = nil
+    /// One part of the quest per level: something to gather on this level and
+    /// carry down. Set when that level's guardian falls.
+    var chapterItem: String? = nil
+    var chapterNeeded: Int? = nil
+    var chapterFound: Int? = nil
+    /// Levels whose key task has been done.
+    var levelsDone: [Int]? = nil
+    /// A little something offered on top of the reward to talk the party into
+    /// it — not every petitioner thinks to, so this is often nil, and always
+    /// nil on a quest saved before there were any.
+    var sweetener: String? = nil
+    /// What actually finishes this quest. Every quest used to end the same
+    /// way — kill the thing at the bottom — however different its story was.
+    /// nil (any quest saved before this existed) means "slay", so old saves
+    /// carry on exactly as they did.
+    var objective: String? = nil
+
+    /// Things a quest might send you looking for, one level at a time.
+    static let chapterItems = [
+        "mooncap mushrooms", "shards of black glass", "vials of still water",
+        "lengths of rootbound ironwort", "handfuls of ash from a cold forge",
+        "teeth of the deep", "grave-lily petals", "measures of old sea salt",
+    ]
+
+    /// What this level asks of the party. Fixed for a given quest and level,
+    /// so it reads the same every time the screen is drawn or reloaded.
+    func chapterTask(forLevel level: Int) -> (item: String, needed: Int) {
+        let seed = villain.unicodeScalars.reduce(0) { $0 + Int($1.value) } + level * 13
+        return (MainQuest.chapterItems[seed % MainQuest.chapterItems.count], 2 + seed % 3)
+    }
+
+    /// True once this level's key task has been done.
+    func levelDone(_ level: Int) -> Bool { (levelsDone ?? []).contains(level) }
 
     /// A quest whose stakes are time-bound gets a real day for it — generous
     /// enough to reach the bottom, but it does run out.
-    func withDeadline(today: Int, level: Int) -> MainQuest {
+    func withDeadline(today: Int, level: Int, of levelCount: Int = Dungeon.defaultFinalLevel) -> MainQuest {
         guard deadlineDay == nil else { return self }
         let s = stakes.lowercased()
         let table: [(String, String, Int)] = [
@@ -222,7 +255,7 @@ struct MainQuest: Codable {
         guard let hit = table.first(where: { s.contains($0.0) }) else { return self }
         var q = self
         q.deadlineName = hit.1
-        q.deadlineDay = today + max(hit.2, (Dungeon.finalLevel - level + 1) * 2)
+        q.deadlineDay = today + max(hit.2, (levelCount - level + 1) * 2)
         return q
     }
 
@@ -236,17 +269,26 @@ struct MainQuest: Codable {
     }
 
     /// The discovery waiting on arriving at this level, if any.
-    func beat(forLevel level: Int) -> String? {
-        guard level >= 2, level % 2 == 0, level <= 6 else { return nil }
+    func beat(forLevel level: Int, of levelCount: Int = Dungeon.defaultFinalLevel) -> String? {
+        guard level >= 2, level <= levelCount else { return nil }
         let all = beats ?? MainQuest.genericBeats(villain: villain)
-        let i = level / 2 - 1
-        return i < all.count ? all[i] : nil
+        guard !all.isEmpty else { return nil }
+        // Spread what the quest has to tell across every level below the
+        // first, so a shallow dungeon still tells the whole story and a deep
+        // one doesn't run dry half way down. A level only gets a beat when
+        // it is the first to reach that part of the tale.
+        let steps = max(1, levelCount - 1)
+        let index = { (l: Int) -> Int in min(all.count - 1, ((l - 2) * all.count) / steps) }
+        let i = index(level)
+        if level > 2, index(level - 1) == i { return nil }
+        return all[i]
     }
 
     /// Everything found out by this level, in order.
-    func beatsSoFar(level: Int) -> [String] {
-        guard level >= 2 else { return [] }
-        return stride(from: 2, through: min(level, 6), by: 2).compactMap { beat(forLevel: $0) }
+    func beatsSoFar(level: Int, of levelCount: Int = Dungeon.defaultFinalLevel) -> [String] {
+        let top = min(level, levelCount)
+        guard top >= 2 else { return [] }
+        return (2...top).compactMap { beat(forLevel: $0, of: levelCount) }
     }
 
     static func genericBeats(villain: String) -> [String] {
@@ -258,6 +300,52 @@ struct MainQuest: Codable {
 
     var summary: String { goal.prefix(1).uppercased() + goal.dropFirst() + " — " + stakes + "." }
 
+    /// Things a village throws in to get a yes. Small, specific and a little
+    /// desperate — the sort of thing people actually offer when they have more
+    /// larder than gold.
+    static let sweeteners = [
+        "And we'll fill your packs with the best Wensleydale in the county — a whole wheel each, if you'll have it.",
+        "The smith says he'll re-shoe your boots and put an edge on everything you carry, free, before you go down.",
+        "Old Maud will bake for you — bread, pies, and those little seed cakes that keep for a month.",
+        "There's a cellar of good ale with your names chalked on the barrels for when you come back up.",
+        "The weaver's offered new cloaks. Oiled wool, proper hoods. It's cold down there, they say.",
+        "We'll stable and feed your animals the whole time, and not a copper for it.",
+        "The herbalist will make up a bag of salves and bindings — she says you'll want them by the second day.",
+        "Whatever's left in the lost-property chest at the inn is yours. There's a lantern in there, and a decent rope.",
+        "Every child in the village has promised to learn your names for the song afterwards. That's not nothing.",
+        "The chandler will keep you in candles and lamp oil for as long as it takes.",
+    ]
+
+    /// What a quest of this kind asks of the party. Deliberately not one per
+    /// kind: several stories want the same thing done, and inventing eight
+    /// endings where four will do makes none of them mean anything.
+    static func objective(forKind kind: String) -> String {
+        switch kind {
+        case "plague", "poison", "curse", "nature":
+            return "remedy"      // the cure matters more than the corpse
+        case "mystery", "twist", "knowledge", "haunting":
+            return "mystery"     // find out WHO, and be right about it
+        case "rival", "debt":
+            return "rival"       // somebody else is racing you for it
+        default:
+            return "slay"
+        }
+    }
+
+    /// What the party is told is required of them, in the plea.
+    var objectiveAsk: String? {
+        switch objective ?? "slay" {
+        case "remedy":
+            return "This one is not finished by killing. Whatever is down there must be undone — and that takes the makings, gathered floor by floor on the way."
+        case "mystery":
+            return "Nobody knows for certain who is behind it. You are asked to find out, and to be right — killing the wrong one helps nobody."
+        case "rival":
+            return "You are not the only ones asked. Another company set out before you, so this is a race as much as a fight."
+        default:
+            return nil
+        }
+    }
+
     /// A quest where everything fits together: who the villain is, what
     /// they're doing to the village and why — and so what must be done, by
     /// when, for what reward — plus what's found out on the way down.
@@ -265,9 +353,12 @@ struct MainQuest: Codable {
         let village = Int.random(in: 1...3) == 1 ? "Lithlind"
             : ["Brackenford", "Thistledown", "Emberholt", "Wyrmsby", "Millbrook", "Greywater", "Owlcombe"].randomElement()!
         let s = scenarios.randomElement()!
+        // Not every petitioner thinks to sweeten it — about two in three do.
+        let sweetener = Int.random(in: 1...3) == 1 ? nil : sweeteners.randomElement()
         return MainQuest(villain: s.villain, goal: s.goal(village), stakes: s.stakes, reward: s.reward, village: village,
                          harm: s.harm, motive: s.motive, kind: s.kind, beats: s.beats(village, Dungeon.guardianName(s.villain)),
-                         place: s.place, finale: s.finale, informant: s.informant)
+                         place: s.place, finale: s.finale, informant: s.informant,
+                         sweetener: sweetener, objective: objective(forKind: s.kind))
     }
 
     private struct Scenario {
