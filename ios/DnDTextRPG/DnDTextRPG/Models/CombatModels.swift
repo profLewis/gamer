@@ -1280,6 +1280,15 @@ final class Combat: ObservableObject {
         return nil
     }
 
+    /// Whether the fighter whose turn it is has already ACTED.
+    ///
+    /// This is the fault behind "I attacked and it still says it's my turn".
+    /// An attack resolves, the report is shown, and the screen WAITS for a tap
+    /// — and only in that tap's completion does nextTurn() run. For the whole
+    /// of that wait currentCombatant is still the character who just swung, so
+    /// any screen naming them reads as though they had yet to move.
+    var currentTurnActed: Bool = false
+
     /// Everyone who has already had their go this round.
     var actedNames: Set<String> {
         guard currentTurnIndex > 0, currentTurnIndex <= turnOrder.count else { return [] }
@@ -1322,6 +1331,8 @@ final class Combat: ObservableObject {
     }
 
     func nextTurn() {
+        // A new turn: nobody has acted in it yet.
+        currentTurnActed = false
         currentTurnIndex += 1
         if currentTurnIndex >= turnOrder.count {
             currentTurnIndex = 0

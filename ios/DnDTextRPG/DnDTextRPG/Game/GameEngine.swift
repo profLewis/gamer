@@ -606,9 +606,15 @@ class GameEngine: ObservableObject {
                                "Brace yourselves — the \(entry.name) moves."].randomElement()!
                 }
             }
-            let nextPart = combat.upNextName.map { "   · Next: \($0)" } ?? ""
-            title = "▶ Now: \(nowName)\(nextPart)"
-            if let f = flavour { info.append(f) }
+            let next = combat.upNextName
+            if combat.currentTurnActed {
+                // They have had their go — say so, and point at who follows.
+                // Saying "Now: X" here is what read as "it is still X's turn".
+                title = next.map { "\(nowName) is done — \($0) is up" } ?? "\(nowName) is done"
+            } else {
+                title = next.map { "\(nowName) to act — then \($0)" } ?? "\(nowName) to act"
+                if let f = flavour { info.append(f) }
+            }
         }
         let standing = party.filter { $0.isConscious }.count
         let foes = combat.encounter.monsters.filter { $0.isAlive }
@@ -33788,6 +33794,9 @@ class GameEngine: ObservableObject {
     }
 
     func displayAttackReport(_ report: AttackReport, completion: @escaping () -> Void) {
+        // The blow has landed: whoever's turn it is has now taken it, even
+        // though nextTurn() will not run until this report is dismissed.
+        currentCombat?.currentTurnActed = true
         arenaPlayAttack(report)
         let attackColor: TerminalColor = report.isPlayerAttack ? .brightGreen : .red
 
@@ -35429,6 +35438,7 @@ class GameEngine: ObservableObject {
     }
 
     func displaySpellReport(_ report: SpellReport, completion: @escaping () -> Void) {
+        currentCombat?.currentTurnActed = true
         arenaPlaySpell(report)
         // Every spell cast — the player's own and companions' — gets its whoosh here.
         SoundManager.shared.playSpellCast()
