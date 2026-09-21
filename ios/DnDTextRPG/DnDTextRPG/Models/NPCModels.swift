@@ -1237,3 +1237,44 @@ struct DungeonNPC: Codable {
         return count
     }
 }
+
+// MARK: - Save compatibility
+
+/// Decoded by hand, and it has to be. Swift's synthesised decoder does NOT
+/// use a property's default when a key is missing -- it throws. Two fields
+/// added after v2.4 (sideQuestOffered, hasOfferedOneOffTrade) made every v2.4
+/// save fail: each dungeon has a Gatekeeper, the NPC failed, then the room,
+/// the dungeon and the save, which SaveGameManager swallows -- so the save
+/// simply vanished from the list. Every field but `type` now falls back to
+/// its default, so the next field added cannot do it again.
+extension DungeonNPC {
+    enum CodingKeys: String, CodingKey {
+        case type, hasBeenTalkedTo, hasTraded, hasHealed, hasTaught, hasJoined, hasRepaired
+        case roomsRemainingAsCompanion, trustworthiness, questGold, questAccepted
+        case willOfferSideQuest, sideQuestOffered, timesAsked, voiceIdentifier, merchant
+        case hasOfferedOneOffTrade, personalName
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        type = try c.decode(NPCType.self, forKey: .type)
+        func opt<T: Decodable>(_ t: T.Type, _ k: CodingKeys) -> T? { (try? c.decodeIfPresent(t, forKey: k)) ?? nil }
+        hasBeenTalkedTo = opt(Bool.self, .hasBeenTalkedTo) ?? false
+        hasTraded = opt(Bool.self, .hasTraded) ?? false
+        hasHealed = opt(Bool.self, .hasHealed) ?? false
+        hasTaught = opt(Bool.self, .hasTaught) ?? false
+        hasJoined = opt(Bool.self, .hasJoined) ?? false
+        hasRepaired = opt(Bool.self, .hasRepaired) ?? false
+        roomsRemainingAsCompanion = opt(Int.self, .roomsRemainingAsCompanion) ?? 0
+        trustworthiness = opt(NPCTrustworthiness.self, .trustworthiness) ?? .honest
+        questGold = opt(Int.self, .questGold) ?? 0
+        questAccepted = opt(Bool.self, .questAccepted) ?? false
+        willOfferSideQuest = opt(Bool.self, .willOfferSideQuest)
+        sideQuestOffered = opt(Bool.self, .sideQuestOffered) ?? false
+        timesAsked = opt([String: Int].self, .timesAsked) ?? [:]
+        voiceIdentifier = opt(String.self, .voiceIdentifier)
+        merchant = opt(Merchant.self, .merchant)
+        hasOfferedOneOffTrade = opt(Bool.self, .hasOfferedOneOffTrade) ?? false
+        personalName = opt(String.self, .personalName)
+    }
+}

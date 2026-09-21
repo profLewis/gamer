@@ -69,3 +69,26 @@ struct Trainer: Codable, Equatable {
         )
     }
 }
+
+// MARK: - Save compatibility
+
+/// Hand-decoded for the same reason as DungeonNPC and Merchant: lessonFee and
+/// membershipPaid were added after gyms first shipped, and a synthesised
+/// decoder throws on a missing key -- taking the whole save with it.
+extension Trainer {
+    enum CodingKeys: String, CodingKey {
+        case name, gymName, specialty, greeting, membershipFee, sparDC, lessonFee, membershipPaid
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        gymName = try c.decode(String.self, forKey: .gymName)
+        specialty = try c.decode(Skill.self, forKey: .specialty)
+        greeting = (try? c.decodeIfPresent(String.self, forKey: .greeting)) ?? nil ?? ""
+        membershipFee = (try? c.decodeIfPresent(Int.self, forKey: .membershipFee)) ?? nil ?? 25
+        sparDC = (try? c.decodeIfPresent(Int.self, forKey: .sparDC)) ?? nil ?? 13
+        lessonFee = (try? c.decodeIfPresent(Int.self, forKey: .lessonFee)) ?? nil ?? 15
+        membershipPaid = (try? c.decodeIfPresent(Bool.self, forKey: .membershipPaid)) ?? nil ?? false
+    }
+}
