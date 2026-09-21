@@ -9008,7 +9008,13 @@ class GameEngine: ObservableObject {
         let raw = UserDefaults.standard.object(forKey: "font_size_setting") as? Int
         let base = raw.flatMap { FontSizeSetting(rawValue: $0) }?.scale ?? FontSizeSetting.defaultSetting.scale
         let follow = UserDefaults.standard.object(forKey: "followSystemTextSize") == nil ? true : UserDefaults.standard.bool(forKey: "followSystemTextSize")
+        #if os(tvOS)
+        // A television is read from across the room: the same point sizes
+        // that suit a phone in the hand were a smudge in one corner.
+        return min(3.6, base * 2.0)
+        #else
         return min(2.2, base * (follow ? systemTextScale : 1))
+        #endif
     }
 
     static var systemTextScale: CGFloat {
