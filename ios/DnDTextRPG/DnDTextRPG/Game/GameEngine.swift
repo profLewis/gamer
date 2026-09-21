@@ -36214,13 +36214,47 @@ class GameEngine: ObservableObject {
         // ordinary reading-time stretch, instead of the old bare 3 seconds.
         let wonSomething = lootGold > 0 || !lootItems.isEmpty
         if wonSomething {
-            showMenuOptions([MenuOption("Take the Spoils", isDefault: true),
-                             MenuOption("?", tint: .navigation, compact: true)])
-            menuHandler = { [weak self] choice in
+            // One real button left most of the grid empty. These two are
+            // things you actually want in the moment after a fight, and
+            // neither leaves the screen — the spoils are still here when you
+            // are done. Dispatch is by title, so adding a button cannot shift
+            // another onto the wrong action.
+            var showVictoryButtons: (() -> Void)!
+            showVictoryButtons = { [weak self] in
                 guard let self = self else { return }
-                if choice == 1 { continueAction() } else { self.showVictoryHelp(onDone: continueAction) }
+                let opts = [MenuOption("Take the Spoils", isDefault: true),
+                            MenuOption("How We Fared"),
+                            MenuOption("Read Aloud"),
+                            MenuOption("?", tint: .navigation, compact: true)]
+                self.showMenuOptions(opts)
+                self.closeHandler = continueAction
+                self.menuHandler = { [weak self] choice in
+                    guard let self = self, choice >= 1, choice <= opts.count else { return }
+                    switch opts[choice - 1].text {
+                    case "Take the Spoils":
+                        continueAction()
+                    case "How We Fared":
+                        // Straight after a fight, the thing worth knowing is
+                        // who took a beating. Printed here rather than opening
+                        // Party Status, so the spoils are not left behind.
+                        self.print("")
+                        for char in self.party {
+                            let frac = char.maxHP > 0 ? Double(char.currentHP) / Double(char.maxHP) : 0
+                            let colour: TerminalColor = !char.isConscious ? .red : (frac > 0.5 ? .brightGreen : (frac > 0.25 ? .yellow : .red))
+                            let state = !char.isConscious ? " — down" : (frac <= 0.25 ? " — badly hurt" : "")
+                            self.print("  \(self.shortName(for: char)): \(char.currentHP)/\(char.maxHP) HP\(state)", color: colour)
+                        }
+                        self.print("")
+                        showVictoryButtons()
+                    case "Read Aloud":
+                        SpeechEngine.shared.speakAloud(self.terminalLines.map { $0.text }.joined(separator: " "))
+                        showVictoryButtons()
+                    default:
+                        self.showVictoryHelp(onDone: continueAction)
+                    }
+                }
             }
-            closeHandler = continueAction
+            showVictoryButtons()
         } else {
             // Only armed on the path that actually uses it — left set on the
             // waiting path it would be picked up by some later autoReturn.
