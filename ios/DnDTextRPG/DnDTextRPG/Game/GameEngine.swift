@@ -418,7 +418,8 @@ class GameEngine: ObservableObject {
         let kinds = TimeoutKind.allCases
         let options = kinds.map { "\($0.label): \(Self.timeoutScaleLabel(timeoutScale($0)))" } + ["Base Wait", "Reset All"]
         closeHandler = onBack
-        showPaginatedMenuOptions(options, pinned: ["< Back"], handler: { [weak self] idx in
+        let pinned = ["?", "< Back"]
+        showPaginatedMenuOptions(options, pinned: pinned, handler: { [weak self] idx in
             guard let self = self else { return }
             if idx < kinds.count {
                 let k = kinds[idx]
@@ -434,7 +435,21 @@ class GameEngine: ObservableObject {
                 self.logEvent("Timeouts reset to normal", category: "SETTINGS")
                 self.showTimeoutsSettings(onBack: onBack)
             }
-        }, pinnedHandler: { _ in onBack() })
+        }, pinnedHandler: { [weak self] i in
+            guard let self = self else { return }
+            if i >= 0, i < pinned.count, pinned[i] == "?" {
+                self.showInlineHelp {
+                    self.printTitle("Timeouts — Help")
+                    self.print("")
+                    self.printWrapped("Each button is one kind of timed screen (fights, loot, reading and so on). Tap it to step through quicker and slower speeds; each runs on top of the Base Wait.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("Base Wait sets how long a plain screen waits before moving on. Reset All puts every kind back to normal.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("Whatever the setting, tapping or long-pressing the hourglass on any screen pauses it.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else { onBack() }
+        })
     }
 
     /// The "Continue?" nudges a waiting screen shows — not story, so Read
@@ -2499,7 +2514,11 @@ class GameEngine: ObservableObject {
         let hasHelp = compactOptions.contains { $0.text == "?" || $0.text == "?\u{0338}" }
         guard !hasHelp else { return }
         let texts = compactOptions.map { $0.text }.joined(separator: ", ")
-        assertionFailure("3-bar nav cell has no \"?\" help button — its middle slot will be claimed by another icon instead: [\(texts)]")
+        // Logged, never fatal: this was an assertionFailure, and the builds
+        // on the family's phones ARE debug builds -- so a screen missing "?"
+        // (Settings > Gameplay > Timeouts, once paginated) crashed the app
+        // for real. A layout nit is not worth a crash.
+        Swift.print("⚠︎ 3-bar nav cell has no \"?\" help button — its middle slot will be claimed by another icon instead: [\(texts)]")
     }
     #else
     private func auditCompactNavMiddleSlot(_ options: [MenuOption]) {}
@@ -19012,6 +19031,18 @@ class GameEngine: ObservableObject {
 
     // MARK: - Adventure
 
+    /// "1", "one", "no. 2", "number 3", "button 1", "option two" -> the
+    /// zero-based index of that button, if it is one of `count`.
+    static func numberedPick(_ text: String, count: Int) -> Int? {
+        let words = ["one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "first": 1, "second": 2, "third": 3]
+        var t = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        for prefix in ["button ", "number ", "option ", "no. ", "no ", "#"] where t.hasPrefix(prefix) {
+            t = String(t.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
+        }
+        guard let n = Int(t) ?? words[t], n >= 1, n <= count else { return nil }
+        return n - 1
+    }
+
     func startAdventure() {
         clearAllUndoRedo()
         clearTerminal()
@@ -19085,6 +19116,21 @@ class GameEngine: ObservableObject {
             if self.isReservedWord(name) {
                 self.clearTerminal()
                 self.startNewGame()
+                return
+            }
+            // "1" (or "one", "button 1") means the first suggestion -- not a
+            // dungeon called "1". A number that matches no button is not a
+            // name at all.
+            if let pick = Self.numberedPick(name, count: suggestions.count) {
+                let chosen = suggestions[pick]
+                self.tempDungeonName = chosen
+                self.selectDifficulty(dungeonName: chosen)
+                return
+            }
+            if name.trimmingCharacters(in: .whitespaces).allSatisfy({ $0.isNumber }) && !name.trimmingCharacters(in: .whitespaces).isEmpty {
+                self.print("That's a number, not a name — type a name, or tap one of the three.", color: .yellow)
+                self.print("")
+                self.startAdventure()
                 return
             }
             let raw = name.isEmpty ? suggestions.first ?? "The Dark Depths" : name
