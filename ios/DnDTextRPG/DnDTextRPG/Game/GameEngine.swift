@@ -2906,6 +2906,14 @@ class GameEngine: ObservableObject {
             combatLogShowing = false
         }
         pendingAnnouncement.removeAll()   // a new page: only its own text is announced
+        // Remember the screen being left, for "< Back" during play: the
+        // victory screen, the fight, the last room... Not the history pages
+        // themselves, and not blank screens.
+        if !replayingHistory, let title = currentScreenTitle,
+           terminalLines.contains(where: { $0.text.contains(where: { $0.isLetter }) }) {
+            screenHistory.append((title: title, lines: terminalLines, when: formattedGameTime()))
+            if screenHistory.count > 15 { screenHistory.removeFirst() }
+        }
         breadcrumbFrom = currentScreenTitle
         breadcrumbDid = lastEventThisScreen
         currentScreenTitle = nil
@@ -21452,9 +21460,13 @@ class GameEngine: ObservableObject {
         // --- Bottom row: Back, Help, Next ---
         // Back undoes the last step (and Next redoes it), each written into
         // the adventure log. Only there when there's something to undo.
-        if !stepUndo.isEmpty {
+        if !screenHistory.isEmpty || !stepUndo.isEmpty {
             menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
-            actions.append { [weak self] in self?.undoStep() }
+            actions.append { [weak self] in
+                guard let self = self else { return }
+                if self.screenHistory.isEmpty { self.undoStep() }
+                else { self.showScreenHistory(index: self.screenHistory.count - 1) }
+            }
         }
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showExplorationHelp() }
@@ -40165,6 +40177,54 @@ class GameEngine: ObservableObject {
         guard dungeon.rooms[dungeon.currentRoomId]?.roomType != .boss else { return }
         dungeon.rooms[dungeon.currentRoomId]?.encounter = nil
         dungeon.rooms[dungeon.currentRoomId]?.cleared = true
+    }
+
+    // MARK: - Earlier screens
+
+    /// The last screens left behind, oldest first -- for looking back at a
+    /// victory, a fight or a room you've moved on from. Not saved.
+    private var screenHistory: [(title: String, lines: [TerminalLine], when: String)] = []
+    private var replayingHistory = false
+
+    /// One earlier screen, read-only, with Earlier / Later / Return to Play,
+    /// and Undo Last Step when there's a move to take back.
+    private func showScreenHistory(index: Int) {
+        guard screenHistory.indices.contains(index) else { showExplorationView(); return }
+        let entry = screenHistory[index]
+        replayingHistory = true
+        clearTerminal()
+        replayingHistory = false
+        printTitle("Earlier: \(entry.title)")
+        print("  (\(screenHistory.count - index) of \(screenHistory.count) back · \(entry.when) · read-only)", color: .dimGreen)
+        print("")
+        runOnMain {
+            // The old screen's own lines, minus its title block.
+            let body = entry.lines.drop(while: { line in
+                let t = line.text.trimmingCharacters(in: .whitespaces)
+                return t.isEmpty || t.allSatisfy({ "═║╔╗╚╝─│┌┐└┘+-=|".contains($0) }) || t.contains(entry.title)
+            })
+            self.terminalLines.append(contentsOf: body.map { old in
+                var copy = TerminalLine(old.text, color: old.color, bold: old.isBold, underlined: old.isUnderlined, size: 14, centered: old.isCentered)
+                copy.continuesPrevious = old.continuesPrevious
+                return copy
+            })
+        }
+        var opts: [String] = []
+        if index > 0 { opts.append("< Earlier") }
+        if index < screenHistory.count - 1 { opts.append("Later >") }
+        if !stepUndo.isEmpty { opts.append("Undo Last Step") }
+        opts.append("Return to Play")
+        showMenu(opts, defaultIndex: opts.count - 1)
+        closeHandler = { [weak self] in self?.showExplorationView() }
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= opts.count else { return }
+            switch opts[choice - 1] {
+            case "< Earlier": self.showScreenHistory(index: index - 1)
+            case "Later >": self.showScreenHistory(index: index + 1)
+            case "Undo Last Step": self.undoStep()
+            default: self.showExplorationView()
+            }
+        }
     }
 
     // MARK: - Back / Next (undo and redo of steps)
