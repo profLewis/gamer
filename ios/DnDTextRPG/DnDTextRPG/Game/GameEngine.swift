@@ -9541,6 +9541,18 @@ class GameEngine: ObservableObject {
 
     // MARK: - Settings
 
+    /// The Settings summary is a list you can tap: every line of a block
+    /// opens that block's own settings screen (Back returns here).
+    private var currentSettingsLinkKey = "dm"
+    private func linkSettingsLines(from start: Int, to key: String) {
+        runOnMain {
+            guard start < self.terminalLines.count else { return }
+            for i in start..<self.terminalLines.count where !self.terminalLines[i].text.trimmingCharacters(in: .whitespaces).isEmpty {
+                self.terminalLines[i].link = key
+            }
+        }
+    }
+
     func showSettings() {
         clearTerminal()
         printTitle("Settings")
@@ -9548,7 +9560,9 @@ class GameEngine: ObservableObject {
         let dm = DMEngine.shared
         let speech = SpeechEngine.shared
 
-        print("DUNGEON MASTER:", color: .cyan, bold: true)
+        var sectionStart = terminalLines.count
+        print("DUNGEON MASTER ›", color: .cyan, bold: true)
+        currentSettingsLinkKey = "dm"
         if dm.isConfigured {
             print("  Provider: \(dm.provider.displayName)", color: .brightGreen)
         } else if dm.isAppleModelAvailable {
@@ -9559,18 +9573,27 @@ class GameEngine: ObservableObject {
         print("  Ad-lib: \(dm.adLibLevel.displayName)  Log: \(dmLogContextSize == Int.max ? "Unlimited" : "\(dmLogContextSize)")", color: .dimGreen)
         print("")
 
-        print("ACCESSIBILITY:", color: .cyan, bold: true)
+        linkSettingsLines(from: sectionStart, to: currentSettingsLinkKey)
+        sectionStart = terminalLines.count
+        print("ACCESSIBILITY ›", color: .cyan, bold: true)
+        currentSettingsLinkKey = "accessibility"
         let modeLabel = speech.companionVoiceMode == .characterAppropriate ? "Character" : "Random"
         print("  Size: \(fontSizeSetting.displayName)  Hits: \(hitAnimationsEnabled ? "On" : "Off")", color: .dimGreen)
         print("  DM Voice: \(speech.isEnabled ? "On" : "Off")  Companions: \(modeLabel)  Menus: \(voiceMenuEnabled ? "On" : "Off")", color: .dimGreen)
         print("")
 
-        print("MOOD:", color: .cyan, bold: true)
+        linkSettingsLines(from: sectionStart, to: currentSettingsLinkKey)
+        sectionStart = terminalLines.count
+        print("MOOD ›", color: .cyan, bold: true)
+        currentSettingsLinkKey = "mood"
         print("  Music: \(musicEnabled ? "On" : "Off")  Sounds: \(battleSoundsEnabled ? "On" : "Off")", color: .dimGreen)
         print("  Melodies: Menu/\(melodyName(type: "menu", choice: menuMelodyChoice))  Explore/\(melodyName(type: "exploration", choice: explorationMelodyChoice))", color: .dimGreen)
         print("")
 
-        print("GAMEPLAY:", color: .cyan, bold: true)
+        linkSettingsLines(from: sectionStart, to: currentSettingsLinkKey)
+        sectionStart = terminalLines.count
+        print("GAMEPLAY ›", color: .cyan, bold: true)
+        currentSettingsLinkKey = "gameplay"
         print("  Map: \(mapRadius)  Buttons: \(maxButtonsPerScreen)  Multi: \(multiplayerEnabled ? "On" : "Off")", color: .dimGreen)
         let timeLimitText = gameTimeLimit == 0 ? "Off" : formatTimeLimitValue(gameTimeLimit)
         print("  NPCs: \(npcsEnabled ? "On" : "Off")  Poison: \(poisonEnabled ? "On" : "Off")  Time: \(timeLimitText)", color: .dimGreen)
@@ -9580,9 +9603,13 @@ class GameEngine: ObservableObject {
         print("  Undo/Redo: \(undoRedoEnabled ? "On" : "Off")", color: .dimGreen)
         print("")
 
-        print("SAVE:", color: .cyan, bold: true)
+        linkSettingsLines(from: sectionStart, to: currentSettingsLinkKey)
+        sectionStart = terminalLines.count
+        print("SAVE ›", color: .cyan, bold: true)
+        currentSettingsLinkKey = "saves"
         print("  Autosave: \(autosaveInterval.displayName)", color: .dimGreen)
         print("")
+        linkSettingsLines(from: sectionStart, to: currentSettingsLinkKey)
 
         var menuOpts = [BrainLabels.button, "Accessibility", "Mood", "Gameplay", "Puzzles", "Game Saves", "Certificates", "About"].map { MenuOption($0) }
         // Acting As lived only in the Actions menu mid-dungeon, which is a
@@ -32391,14 +32418,61 @@ class GameEngine: ObservableObject {
         sendToJustDM(trimmed)
     }
 
+    /// "@mol climb the wall" -> (Molly, "climb the wall"). Matches any party
+    /// member by full name, chat name, or an unambiguous start of either.
+    private func partyMention(in message: String) -> (Character, String)? {
+        // Spoken forms, since nobody can say "@": "Molly says …", "as Molly, …",
+        // "this is Molly …", "Molly here …", "Molly: …". (Not a bare "Molly, …" —
+        // that is as likely the leader talking TO Molly.) Without a name, the
+        // speaker is the main adventurer, as most of the time it will be.
+        guard let at = message.range(of: "@") else { return spokenPartyMention(in: message) }
+        let after = message[at.upperBound...]
+        let fragment = String(after.prefix(while: { $0.isLetter || $0 == "'" || $0 == "-" || $0 == "." }))
+        let key = fragment.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        guard !key.isEmpty, key != "dm" else { return nil }
+        let exact = party.first { $0.name.lowercased() == key || chatName(for: $0.name).lowercased() == key || shortName(for: $0).lowercased() == key }
+        let prefix = party.filter { $0.name.lowercased().hasPrefix(key) || chatName(for: $0.name).lowercased().hasPrefix(key) || $0.name.lowercased().replacingOccurrences(of: "r. ", with: "").hasPrefix(key) }
+        guard let who = exact ?? (prefix.count == 1 ? prefix.first : nil) else { return nil }
+        var rest = message
+        rest.removeSubrange(at.lowerBound..<message.index(at.upperBound, offsetBy: fragment.count))
+        return (who, rest.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ",:"))))
+    }
+
+    private func spokenPartyMention(in message: String) -> (Character, String)? {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+        for c in party {
+            let names = Set([c.name, chatName(for: c.name), shortName(for: c)].map { $0.lowercased() }.filter { $0.count >= 2 })
+            for n in names {
+                for (pre, post) in [("as \(n),", ""), ("as \(n) ", ""), ("this is \(n)", ""), ("\(n) here", ""), ("\(n) says", ""), ("\(n):", "")] {
+                    _ = post
+                    if lower.hasPrefix(pre) {
+                        let rest = String(trimmed.dropFirst(pre.count)).trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ",:.")))
+                        return (c, rest)
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
     private func sendToJustDM(_ input: String) {
         dmChatLog.append((isUser: true, text: input))
         print("")
+        // "@mol" is Molly -- not the lead adventurer. The DM used to be handed
+        // the raw text and assumed the main character was acting.
+        var question = input
+        if let (who, rest) = partyMention(in: input) {
+            let lead = party.first { !$0.isComputerControlled }
+            let isLead = lead?.id == who.id
+            print("  → \(who.name)\(isLead ? "" : " (not \(lead.map { shortName(for: $0) } ?? "the leader"))")", color: .dimGreen)
+            question = "[This is \(who.name) (\(who.race.rawValue) \(who.characterClass.rawValue))\(isLead ? "" : ", one of the party — NOT the lead adventurer") acting or speaking. Narrate it as \(who.name) doing it.] " + (rest.isEmpty ? "(\(who.name) steps forward.)" : rest)
+        }
         print("  ...", color: .dimGreen)
 
         let context = buildDMContext()
 
-        DMEngine.shared.ask(input, context: context) { [weak self] response in
+        DMEngine.shared.ask(question, context: context) { [weak self] response in
             DispatchQueue.main.async {
                 // Bail if player exited text mode while DM was thinking
                 guard let self = self, self.justDMMode else { return }
@@ -32442,8 +32516,13 @@ class GameEngine: ObservableObject {
 
                 // Check if movement happened — re-render exploration
                 if result.moveDirection != nil || result.teleport {
+                    // The DM's telling of the move stays until you're done
+                    // with it: it used to count down and whisk you into the
+                    // next room mid-read ("goes to the next page but doesn't
+                    // wait long enough"). Tap, or say/type "next".
                     self.print("")
-                    self.waitForContinue()
+                    self.print("  (Tap, or say \"next\", to go on.)", color: .dimGreen)
+                    self.waitForContinue(autoContinue: false)
                     self.inputHandler = { [weak self] _ in
                         self?.showJustDMExploration()
                     }
@@ -34126,6 +34205,37 @@ class GameEngine: ObservableObject {
         return result
     }
 
+    /// One blow, told as the DM would say it -- varied, and true to the roll.
+    private func narrateBlow(_ r: AttackReport) -> String {
+        let w = r.weaponName.lowercased()
+        let a = r.attackerName, t = r.targetName
+        let lead: String
+        if r.isCriticalMiss {
+            lead = ["\(a) lunges — and stumbles, the \(w) swinging at nothing.",
+                    "\(a)'s \(w) slips; \(t) barely has to move.",
+                    "A clumsy moment: \(a) overreaches and nearly falls."].randomElement()!
+        } else if !r.hits {
+            lead = ["\(a) swings at \(t), but \(t) twists aside.",
+                    "The \(w) goes wide — \(t) is quicker than it looks.",
+                    "\(a) strikes; \(t) turns it away.",
+                    "Close — but \(a)'s blow glances off."].randomElement()!
+        } else if r.isCritical {
+            lead = ["\(a) finds the perfect opening — the \(w) bites deep into \(t)!",
+                    "A tremendous blow from \(a): \(t) reels!",
+                    "Everything comes together — \(a) hits \(t) as hard as a blow can land."].randomElement()!
+        } else {
+            lead = ["\(a)'s \(w) catches \(t).",
+                    "\(a) drives in and lands a solid hit on \(t).",
+                    "\(t) takes \(a)'s \(w) full on.",
+                    "A clean strike — \(a) connects."].randomElement()!
+        }
+        var tail = ""
+        if r.targetDefeated { tail = [" \(t) crumples and does not rise.", " That's the end of \(t).", " \(t) goes down for good."].randomElement()! }
+        else if r.targetUnconscious { tail = " \(t) drops, senseless." }
+        else if r.hits, r.targetMaxHP > 0, r.targetCurrentHP * 4 <= r.targetMaxHP { tail = " \(t) is badly hurt now." }
+        return lead + tail
+    }
+
     func displayAttackReport(_ report: AttackReport, completion: @escaping () -> Void) {
         // The blow has landed: whoever's turn it is has now taken it, even
         // though nextTurn() will not run until this report is dismissed.
@@ -34150,6 +34260,13 @@ class GameEngine: ObservableObject {
         }
 
         print("\(report.attackerName) attacks \(report.targetName) with \(report.weaponName)!", color: attackColor, bold: true)
+        // With the voice on, the DM tells the blow in words, not just dice:
+        // "the DM needs to describe more of the general action".
+        if SpeechEngine.shared.isEnabled {
+            let told = narrateBlow(report)
+            printWrapped("DM: " + told, indent: 2, color: .cyan)
+            SpeechEngine.shared.speak(told)
+        }
         print("")
         print("  To Hit: d20 + \(report.attackModifier)", color: .cyan)
         print("  (\(report.modifierBreakdown))", color: .dimGreen)
@@ -35905,6 +36022,18 @@ class GameEngine: ObservableObject {
 
     func displaySpellReport(_ report: SpellReport, completion: @escaping () -> Void) {
         currentCombat?.currentTurnActed = true
+        if SpeechEngine.shared.isEnabled {
+            let target = report.targetName ?? report.targetsHit.first ?? "the foe"
+            var told: String
+            if report.healAmount > 0 { told = "\(report.casterName) calls on \(report.spellName) — warmth floods back, \(report.healAmount) hit points restored." }
+            else if report.totalDamage > 0 { told = ["\(report.casterName)'s \(report.spellName) crackles into \(target).", "\(report.casterName) looses \(report.spellName) — \(target) is struck.", "Light and fury: \(report.spellName) hits \(target)."].randomElement()! }
+            else { told = "\(report.casterName) casts \(report.spellName)\(report.hits == false ? ", but it misses its mark" : "")." }
+            if !report.targetsDefeated.isEmpty { told += " " + report.targetsDefeated.joined(separator: " and ") + (report.targetsDefeated.count == 1 ? " falls." : " fall.") }
+            DispatchQueue.main.async { [weak self] in
+                self?.printWrapped("DM: " + told, indent: 2, color: .cyan)
+                SpeechEngine.shared.speak(told)
+            }
+        }
         let byParty = party.contains { $0.name == report.casterName }
         fightBeats.append(FightBeat(who: report.casterName, target: report.targetName ?? report.targetsHit.first ?? "",
                                     byParty: byParty, damage: report.totalDamage, crit: report.isCritical, fumble: false,

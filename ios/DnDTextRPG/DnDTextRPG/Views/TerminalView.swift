@@ -111,6 +111,7 @@ struct TerminalView: View {
     @State private var lastSeenLineCount: Int = 0
     @State private var focusScheduled: Bool = false
     @State private var glideToken = UUID()
+    @State private var showCogMenu = false
     @State private var linkFrames: [LinkFrame] = []
     /// Measured height of the story box (see StoryBoxHeightKey).
     @State private var storyBoxHeight: CGFloat = 0
@@ -1267,32 +1268,17 @@ struct TerminalView: View {
                             // returns to where you were. Mac-only at first; now on
                             // iPhone and iPad too, so settings buttons need not crowd
                             // other screens.
-                            Menu {
-                                Button(gameEngine.speakerModeOn ? "Stop Reading Aloud" : "Read Aloud") { gameEngine.readScreenAloud() }
-                                Button(gameEngine.musicEnabled ? "Music Off" : "Music On") { gameEngine.toggleMusicQuick() }
-                                Button(gameEngine.battleSoundsEnabled ? "Sound Effects Off" : "Sound Effects On") { gameEngine.battleSoundsEnabled.toggle() }
-                                Button(gameEngine.combatArenaEnabled ? "Fight Club Off" : "Fight Club On") { gameEngine.combatArenaEnabled.toggle() }
-                                Button(gameEngine.hitAnimationsEnabled ? "Hit Animations Off" : "Hit Animations On") {
-                                    gameEngine.hitAnimationsEnabled.toggle()
-                                    gameEngine.objectWillChange.send()
-                                }
-                                Divider()
-                                Button("Change Brain…") { gameEngine.followLink("ai") }
-                                Button("DM & Voice…") { gameEngine.followLink("dm") }
-                                Button("Gameplay…") { gameEngine.followLink("gameplay") }
-                                Button("Accessibility…") { gameEngine.followLink("accessibility") }
-                                Divider()
-                                Button("All Settings…") { gameEngine.followLink("settings") }
-                            } label: {
+                            // A pop-over of our own rather than the system Menu, which
+                            // iOS always draws white-on-grey: this one is the game's
+                            // green on black, like everything else.
+                            Button(action: { showCogMenu = true }) {
                                 Image(systemName: "gearshape")
                                     .font(.system(size: 17 * scale))
                                     .foregroundColor(terminalGreen)
                             }
-                            #if os(macOS)
-                            .menuStyle(.borderlessButton)
-                            #endif
-                            .menuIndicator(.hidden)
-                            .fixedSize()
+                            .buttonStyle(.plain)
+                            .keyboardShortcut(",", modifiers: .command)
+                            .popover(isPresented: $showCogMenu) { cogMenu }
                             .help("Settings — music, AI, gameplay (⌘,)")
                             .accessibilityLabel("Settings")
                             #endif
@@ -1946,6 +1932,54 @@ struct TerminalView: View {
         let column = isLandscape ? size.width / 2 : size.width
         return max(120, min(280 * scale, column * 0.8, size.height * 0.35 * 280 / 186))
     }
+
+    #if !os(tvOS)
+    /// The cog's quick settings, in the game's own colours.
+    @ViewBuilder
+    private var cogMenu: some View {
+        let items: [(String, () -> Void)] = [
+            (gameEngine.speakerModeOn ? "Stop Reading Aloud" : "Read Aloud", { gameEngine.readScreenAloud() }),
+            (gameEngine.musicEnabled ? "Music Off" : "Music On", { gameEngine.toggleMusicQuick() }),
+            (gameEngine.battleSoundsEnabled ? "Sound Effects Off" : "Sound Effects On", { gameEngine.battleSoundsEnabled.toggle() }),
+            (gameEngine.combatArenaEnabled ? "Fight Club Off" : "Fight Club On", { gameEngine.combatArenaEnabled.toggle() }),
+            (gameEngine.hitAnimationsEnabled ? "Hit Animations Off" : "Hit Animations On", { gameEngine.hitAnimationsEnabled.toggle(); gameEngine.objectWillChange.send() }),
+            ("—", {}),
+            ("Change Brain…", { gameEngine.followLink("ai") }),
+            ("DM & Voice…", { gameEngine.followLink("dm") }),
+            ("Gameplay…", { gameEngine.followLink("gameplay") }),
+            ("Accessibility…", { gameEngine.followLink("accessibility") }),
+            ("—", {}),
+            ("All Settings…", { gameEngine.followLink("settings") }),
+        ]
+        let menu = VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                if item.0 == "—" {
+                    Rectangle().fill(terminalDarkGreen.opacity(0.5)).frame(height: 1).padding(.vertical, 4)
+                } else {
+                    Button(action: { showCogMenu = false; item.1() }) {
+                        Text(item.0)
+                            .font(.system(size: 15 * scale, design: .monospaced))
+                            .foregroundColor(terminalGreen)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 7)
+                            .padding(.horizontal, 14)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.vertical, 8)
+        .frame(minWidth: 230)
+        .background(Color.black)
+        if #available(iOS 16.4, macOS 13.3, *) {
+            menu.presentationCompactAdaptation(.popover)
+                .presentationBackground(Color.black)
+        } else {
+            menu
+        }
+    }
+    #endif
 
     /// Characters per line at the current font: a monospaced glyph is about
     /// 0.6 of its point size wide. Clamped so a tiny window or a huge font
