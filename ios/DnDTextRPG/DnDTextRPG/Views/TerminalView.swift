@@ -570,6 +570,17 @@ struct TerminalView: View {
                                     guard gameEngine.suppressAutoScroll else { return }
                                     scrollToTop(scrollProxy)
                                 }
+                                // Auto-Scroll used to be scheduled only in the
+                                // other branch -- and every freshly cleared page
+                                // lands HERE, so help, lore and the demo itself
+                                // never glided at all.
+                                if isNewScreen {
+                                    let token = UUID()
+                                    glideToken = token
+                                    scheduleAutoGlide(scrollProxy, token: token)
+                                } else {
+                                    glideToken = UUID()   // new text takes over from any glide
+                                }
                             } else {
                                 let count = gameEngine.terminalLines.count
                                 if gameEngine.screenGeneration != lastScrolledGeneration {
@@ -1931,11 +1942,25 @@ struct TerminalView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             guard glideToken == token, !isNearBottom,
                   Date().timeIntervalSince(lastManualScrollAt) > 1.5 else { return }
-            let lines = gameEngine.terminalLines.count
-            let duration = max(0.8, Double(max(0, lines - 10)) / linesPerSecond)
-            withAnimation(.linear(duration: duration)) {
-                proxy.scrollTo("bottomSentinel", anchor: .bottom)
-            }
+            glideStep(proxy, token: token, index: 1, interval: 1.0 / linesPerSecond, startedAt: Date())
+        }
+    }
+
+    /// One line further down, then the next, on a timer. A single long
+    /// animated scrollTo was the old way, and SwiftUI does not reliably honour
+    /// its duration -- it either jumped or did nothing. Stepping makes the
+    /// chosen speed the actual speed. Stops at the end of the page, when the
+    /// page changes, or the moment the reader scrolls for themselves.
+    private func glideStep(_ proxy: ScrollViewProxy, token: UUID, index: Int,
+                           interval: Double, startedAt: Date) {
+        let lines = gameEngine.terminalLines
+        guard glideToken == token, lastManualScrollAt < startedAt,
+              !isNearBottom, index < lines.count else { return }
+        withAnimation(.linear(duration: interval)) {
+            proxy.scrollTo(lines[index].id, anchor: .top)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + interval) {
+            glideStep(proxy, token: token, index: index + 1, interval: interval, startedAt: startedAt)
         }
     }
 

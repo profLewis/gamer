@@ -9879,7 +9879,7 @@ class GameEngine: ObservableObject {
     /// shows what each speed does; picking a speed replays it at that speed.
     private func showAutoScrollDemo() {
         clearTerminal()
-        printTitle("Auto-Scroll Demo")
+        printTitle("Auto-Scroll")
         if autoScrollSpeed == 0 {
             printWrapped("Auto-Scroll is Off: this long page stays at the top and you scroll it yourself. Pick a speed below to watch it glide down.", indent: 2, color: .yellow)
         } else {
@@ -9909,14 +9909,37 @@ class GameEngine: ObservableObject {
         print("")
         let speeds = Self.autoScrollSpeedNames
         let labels = speeds.enumerated().map { $0.element + ($0.offset == autoScrollSpeed ? " ✓" : "") }
-        showPaginatedMenuOptions(labels, pinned: ["< Back"], handler: { [weak self] idx in
+        let pinned = ["?", "< Back"]
+        showPaginatedMenuOptions(labels, pinned: pinned, handler: { [weak self] idx in
             guard let self = self, idx >= 0, idx < speeds.count else { return }
             self.recordSettingChange(screen: "s:access", key: "autoScrollSpeed", name: "Auto-Scroll")
             self.autoScrollSpeed = idx
             UserDefaults.standard.set(idx, forKey: "autoScrollSpeed")
             self.showAutoScrollDemo()
-        }, pinnedHandler: { [weak self] _ in self?.showAccessibilityMenu() })
+        }, pinnedHandler: { [weak self] i in
+            guard let self = self else { return }
+            if i >= 0, i < pinned.count, pinned[i] == "?" { self.showAutoScrollHelp() }
+            else { self.showAccessibilityMenu() }
+        })
         closeHandler = { [weak self] in self?.showAccessibilityMenu() }
+    }
+
+    private func showAutoScrollHelp() {
+        clearTerminal()
+        printTitle("Auto-Scroll Help")
+        print("")
+        printWrapped("Every new page opens at the top, so you always see the start of long text. Auto-Scroll then moves the page down by itself, a line at a time, so you can read without touching the screen.", indent: 2, color: .dimGreen)
+        print("")
+        printWrapped("Off -- the default. The page stays put; you scroll it yourself.", indent: 2, color: .green)
+        printWrapped("Slow, Medium, Fast -- how quickly it moves, from about one and a half lines a second up to six.", indent: 2, color: .green)
+        print("")
+        printWrapped("It waits a moment and a half before starting, so you can see where you are. Touch or drag the page and it stops at once; it also stops at the bottom, and when a new page appears.", indent: 2, color: .dimGreen)
+        print("")
+        printWrapped("Tap a speed on the Auto-Scroll page and the page underneath runs at that speed straight away, so you can try each one before you leave.", indent: 2, color: .dimGreen)
+        print("")
+        showMenu(["< Back"])
+        menuHandler = { [weak self] _ in self?.showAutoScrollDemo() }
+        closeHandler = { [weak self] in self?.showAutoScrollDemo() }
     }
 
     private func showAccessibilityMenu() {
@@ -9962,7 +9985,7 @@ class GameEngine: ObservableObject {
 
         print("AUTO-SCROLL:", color: .cyan, bold: true)
         print("  \(autoScrollSpeedName)", color: autoScrollSpeed > 0 ? .brightGreen : .red)
-        printWrapped("New pages always open at the top, so you see the start of long text. With Auto-Scroll on, a long page then glides down by itself at this speed — touch it to stop. Off (the default): you scroll yourself. Try Auto-Scroll shows each speed.", indent: 2, color: .dimGreen)
+        printWrapped("New pages always open at the top, so you see the start of long text. With Auto-Scroll on, a long page then glides down by itself at this speed — touch it to stop. Off (the default): you scroll yourself. Tap Auto-Scroll to pick a speed and watch it run.", indent: 2, color: .dimGreen)
         print("")
 
         print("ANIMATIONS:", color: .cyan, bold: true)
@@ -9987,7 +10010,7 @@ class GameEngine: ObservableObject {
         let cursorLabel = blinkingCursorEnabled ? "Cursor Off" : "Cursor On"
         let autoScrollLabel = "Auto-Scroll: \(autoScrollSpeedName)"
         let options = [displaySizeLabel, hitsLabel, dmVoiceLabel, "Companion Voices", voiceMenuLabel, cursorLabel,
-                       autoScrollLabel, "Try Auto-Scroll",
+                       autoScrollLabel,
                        reduceAnimations ? "Animations: Full" : "Animations: Reduced",
                        leftHanded ? "Right-Handed" : "Left-Handed",
                        "Help Button: \(MenuOption.helpGlyph)"]
@@ -10037,10 +10060,8 @@ class GameEngine: ObservableObject {
                 UserDefaults.standard.set(self.voiceMenuEnabled, forKey: "voiceMenuEnabled")
                 self.showAccessibilityMenu()
             case autoScrollLabel:
-                self.recordSettingChange(screen: "s:access", key: "autoScrollSpeed", name: "Auto-Scroll")
-                self.autoScrollSpeed = (self.autoScrollSpeed + 1) % 4
-                UserDefaults.standard.set(self.autoScrollSpeed, forKey: "autoScrollSpeed")
-                self.showAccessibilityMenu()
+                // One button: speed and a live demo live together inside it.
+                self.showAutoScrollDemo()
             case let label where label.hasPrefix("Animations:"):
                 self.recordSettingChange(screen: "s:access", key: "reduceAnimations", name: "Animations")
                 self.reduceAnimations.toggle()
@@ -10058,8 +10079,6 @@ class GameEngine: ObservableObject {
                 let next = glyphs[((glyphs.firstIndex(of: MenuOption.helpGlyph) ?? 0) + 1) % glyphs.count]
                 UserDefaults.standard.set(next, forKey: "helpGlyph")
                 self.showAccessibilityMenu()
-            case "Try Auto-Scroll":
-                self.showAutoScrollDemo()
             case cursorLabel:
                 self.recordSettingChange(screen: "s:access", key: "blinkingCursorEnabled", name: "Cursor")
                 self.blinkingCursorEnabled.toggle()
