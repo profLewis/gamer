@@ -28672,6 +28672,12 @@ class GameEngine: ObservableObject {
         if let d = dungeon, d.startDifficulty < 4 {
             menuOpts.insert("Raise Difficulty", at: menuOpts.firstIndex(of: enterLabel) ?? menuOpts.count)
         }
+        // Somewhere to turn the music off without going digging. The typed
+        // "mute" takes the sound effects and the narrator with it; this is just
+        // the music, one tap from play — and it fills one of the empty slots
+        // the reserved grid leaves behind.
+        menuOpts.insert(musicEnabled ? "Music Off" : "Music On",
+                        at: menuOpts.firstIndex(of: enterLabel) ?? menuOpts.count)
 
         showMenu(menuOpts)
 
@@ -28693,6 +28699,9 @@ class GameEngine: ObservableObject {
                 self.showPoisonInfo(onBack: { self.showPartyStatus() })
             case "Raise Difficulty":
                 self.confirmRaiseDifficulty()
+            case "Music Off", "Music On":
+                self.toggleMusicQuick()
+                self.showPartyStatus()
             case "Party Review":
                 self.showInGamePartyReview()
             case "Meet the Team":
@@ -28840,6 +28849,12 @@ class GameEngine: ObservableObject {
         return "\(merchant.shopName), \(room.name). \(merchant.personaBlurb) This one \(Self.loreLooks[seed % Self.loreLooks.count]) and \(Self.loreHabits[(seed / 7) % Self.loreHabits.count]). \(Self.loreRumours[(seed / 53) % Self.loreRumours.count]) Favourite saying: \"\(merchant.catchphrase)\""
     }
 
+    /// Lore list options. Newest-met first is the default (it is a record of
+    /// who you have just met); A-Z helps once the list is long. A filter narrows
+    /// it to one person. Both are view state — nothing to save.
+    private var loreSortAZ = false
+    private var loreFilter: String? = nil
+
     private func loreEntries() -> [(name: String, description: String)] {
         guard let dungeon = dungeon else { return [] }
         var entries: [(name: String, description: String)] = []
@@ -28885,22 +28900,70 @@ class GameEngine: ObservableObject {
             inputHandler = { [weak self] _ in self?.showPartyStatus() }
             return
         }
-        for entry in entries {
+        var shown = entries
+        if let f = loreFilter?.lowercased(), !f.isEmpty {
+            shown = entries.filter { $0.name.lowercased().contains(f) || $0.description.lowercased().contains(f) }
+            if shown.isEmpty {
+                printWrapped("Nobody on record matches \"\(loreFilter ?? "")\".", indent: 2, color: .yellow)
+                print("")
+                shown = entries
+                loreFilter = nil
+            } else {
+                printWrapped("Showing \(shown.count) of \(entries.count) — tap Look Up again to widen it.", indent: 2, color: .dimGreen)
+                print("")
+            }
+        }
+        if loreSortAZ { shown.sort { $0.name.lowercased() < $1.name.lowercased() } }
+        for entry in shown {
             print("  \(entry.name)", color: .brightGreen, bold: true)
             printWrapped(entry.description, indent: 4, color: .dimGreen)
             print("")
         }
-        showMenu(["?", "< Back"])
+        // The grid reserves room for more buttons than this screen used to
+        // offer, which left a block of nothing under two lonely ones. These
+        // three act on what is actually on the page.
+        let opts = ["Look Up", loreSortAZ ? "Sort: Newest" : "Sort: A–Z", "Read Aloud", "?", "< Back"]
+        showMenu(opts)
         closeHandler = { [weak self] in self?.showPartyStatus() }
         menuHandler = { [weak self] choice in
-            guard let self = self else { return }
-            if choice == 1 {
+            guard let self = self, choice >= 1, choice <= opts.count else { return }
+            switch opts[choice - 1] {
+            case "Look Up":
+                if self.loreFilter != nil { self.loreFilter = nil; self.showLoreBook(); return }
+                self.clearTerminal()
+                self.printTitle("Look Up")
+                self.print("")
+                self.printWrapped("Type a name (or part of one) to narrow the list.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.promptTextWithMenu("> ", options: ["< Back"])
+                self.menuHandler = { [weak self] _ in self?.showLoreBook() }
+                self.inputHandler = { [weak self] text in
+                    guard let self = self else { return }
+                    let t = text.trimmingCharacters(in: .whitespaces)
+                    self.loreFilter = t.isEmpty ? nil : t
+                    self.showLoreBook()
+                }
+                return
+            case "Sort: A–Z", "Sort: Newest":
+                self.loreSortAZ.toggle()
+                self.showLoreBook()
+                return
+            case "Read Aloud":
+                let text = shown.map { "\($0.name). \($0.description)" }.joined(separator: " ")
+                SpeechEngine.shared.speakAloud(text.isEmpty ? "Nobody on record yet." : text)
+                return
+            default:
+                break
+            }
+            if opts[choice - 1] == "?" {
                 self.showInlineHelp {
                     self.printTitle("Lore — Help")
                     self.print("")
                     self.printWrapped("A running record of every named merchant or NPC your party has actually met — so you can look someone up if you forget who they were or where you found them.", indent: 2, color: .dimGreen)
                     self.print("")
                     self.printWrapped("The AI DM keeps this list in mind too, so a named character it introduced stays consistent instead of being described differently later on.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("Look Up narrows the list to one person; tap it again to see everybody. Sort swaps between newest-met and A to Z. Read Aloud speaks the page, whether or not the narrator is switched on.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             } else {
