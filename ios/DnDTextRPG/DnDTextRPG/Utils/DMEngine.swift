@@ -371,7 +371,10 @@ class DMEngine {
             narrate only — no tags needed.
             """
         } else if context.adLibLevel == .moderate || context.adLibLevel == .full {
-            prompt += "\nYou may rarely use tags like [HEAL:n], [GRANT_ITEM:name], [BONUS_GOLD:n] if dramatically fitting, but sparingly."
+            prompt += "\nYou may rarely use tags like [HEAL:n], [BONUS_GOLD:n] if dramatically fitting, but sparingly."
+            // "Sparingly" used to cover GRANT_ITEM too, so the model narrated
+            // "you pick up a nail" and the nail never reached the pack.
+            prompt += "\nIf your reply has anyone pick up, take, pocket or be given an object, you MUST add [GRANT_ITEM:name] for it on its own line — otherwise do not say they got it."
         }
 
         return prompt

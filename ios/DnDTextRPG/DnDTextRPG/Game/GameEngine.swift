@@ -2383,7 +2383,15 @@ class GameEngine: ObservableObject {
     }
 
     /// Word-wrap text to fit within maxWidth characters, with optional indent
-    func printWrapped(_ text: String, indent: Int = 0, color: TerminalColor = .green, bold: Bool = false, maxWidth: Int = 38) {
+    /// How many characters fit on a line of the story at the current Display
+    /// Size -- measured by the view from the real width of the text area.
+    /// Prose used to be wrapped at a fixed 38 whatever the font, so a bigger
+    /// font overflowed and wrapped raggedly, and a smaller one left half the
+    /// screen empty.
+    var wrapColumns: Int = 38
+
+    func printWrapped(_ text: String, indent: Int = 0, color: TerminalColor = .green, bold: Bool = false, maxWidth: Int? = nil) {
+        let maxWidth = maxWidth ?? wrapColumns
         let text = Self.platformWording(text)
         // Detect any extra leading whitespace in the text and fold it into indent
         let trimmed = text.replacingOccurrences(of: "^\\s+", with: "", options: .regularExpression)
@@ -8804,7 +8812,7 @@ class GameEngine: ObservableObject {
             #if os(macOS)
             return allCases.sorted { $0.scale < $1.scale }
             #else
-            return [.small, .medium, .large]
+            return [.tiny, .small, .medium, .large]
             #endif
         }
 
@@ -9269,7 +9277,15 @@ class GameEngine: ObservableObject {
         let partyF = party.enumerated().map { i, c in ArenaFighter(name: c.name, frames: c.characterClass.asciiArtFrames, hp: c.currentHP, maxHP: c.maxHP, isParty: true, down: !c.isConscious, isRobot: c.isComputerControlled, color: partyColors[i % partyColors.count]) }
         let enemies = combat.encounter.monsters.enumerated().map { i, m in ArenaFighter(name: m.name, frames: m.type.asciiArtFrames, hp: m.currentHP, maxHP: m.maxHP, isParty: false, down: !m.isAlive, color: enemyColors[i % enemyColors.count]) }
         let turn = combat.currentCombatant
-        let left = (turn?.isPlayer == true ? partyF.first { $0.name == turn?.name && !$0.down } : nil) ?? partyF.first { !$0.down } ?? partyF.first
+        // On a monster's turn the party side used to show whoever was FIRST in
+        // the party, every time -- the same person fighting every fight. It is
+        // now the one actually being attacked, or else it moves round the
+        // party turn by turn.
+        let standing = partyF.filter { !$0.down }
+        let targeted = (arenaMove.map { !$0.attackerIsParty } ?? false)
+            ? standing.first { $0.name == arenaMove?.targetName } : nil
+        let rotating = standing.isEmpty ? nil : standing[combat.currentTurnIndex % standing.count]
+        let left = (turn?.isPlayer == true ? partyF.first { $0.name == turn?.name && !$0.down } : nil) ?? targeted ?? rotating ?? partyF.first
         let right = (turn?.isPlayer == false ? enemies.first { $0.name == turn?.name && !$0.down } : nil) ?? enemies.first { !$0.down }
         return ArenaScene(left: left, right: right, party: partyF, enemies: enemies,
                           turnName: turn?.name, nextName: combat.upNextName,
@@ -10069,6 +10085,12 @@ class GameEngine: ObservableObject {
                 self.iconScaleSetting = self.fontSizeSetting.scale >= 1.6 ? 1 : 0
                 UserDefaults.standard.set(self.iconScaleSetting, forKey: "iconScaleSetting")
                 self.showAccessibilityMenu()
+                // Draw it again once the view has measured the new font, so this
+                // page is wrapped to the new line length too, not just the next.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                    guard let self = self, self.currentScreenTitle == "Accessibility" else { return }
+                    self.showAccessibilityMenu()
+                }
             case hitsLabel:
                 self.recordSettingChange(screen: "s:access", key: "hit_animations", name: "Hits")
                 self.hitAnimationsEnabled.toggle()
@@ -22070,7 +22092,18 @@ class GameEngine: ObservableObject {
         let gainPatterns = ["hands you ", "hands over ", "gives you ", "hands him ", "hands her ",
                             "offers you ", "passes you ", "slides you ", "presses into your hands ",
                             "you receive ", "you are given ", "you now have ",
-                            "tucks into your pack ", "drops into your pack ", "throws in "]
+                            "tucks into your pack ", "drops into your pack ", "throws in ",
+                            // Picking things up while exploring: "you pick up a nail" never
+                            // reached the pack, because only being HANDED things was caught.
+                            "picks up ", "picked up ", "you pick up ", "pockets ", "pocketed ",
+                            "scoops up ", "stuffs into a pack ", "tucks away "]
+        // Pick-up phrases that are not objects: "picks up the pace", "you find
+        // nothing", "you find yourself"... never turn these into items.
+        let notThings: Set<String> = ["pace", "speed", "nothing", "none", "yourself", "yourselves", "it", "them",
+                                      "that", "this", "way", "path", "trail", "scent", "sound", "courage", "nerve",
+                                      "door", "room", "wall", "floor", "passage", "corridor", "stairs", "exit",
+                                      "no", "little", "much", "time", "strength", "breath", "footing", "thread",
+                                      "pieces", "gold", "coins", "coin"]
         let articles: Set<String> = ["a", "an", "the", "some", "one", "your", "his", "her", "their",
                                      "fresh", "warm", "small", "large", "little", "good", "fine", "half"]
         var gained = 0
@@ -22081,6 +22114,7 @@ class GameEngine: ObservableObject {
             var words = tail.split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init)
             while let w = words.first, articles.contains(w) { words.removeFirst() }
             guard !words.isEmpty else { continue }
+            if let w = words.first?.trimmingCharacters(in: CharacterSet.alphanumerics.inverted), notThings.contains(w) { continue }
             var found: Item? = nil
             for n in stride(from: min(3, words.count), through: 1, by: -1) {
                 let span = words.prefix(n).joined(separator: " ")
@@ -33676,6 +33710,13 @@ class GameEngine: ObservableObject {
     func merchantNarration(_ situation: String, merchant: Merchant, completion: @escaping (String) -> Void) {
         var context = buildDMContext()
         context.npcInfo = "Merchant present: \(merchant.name), proprietor of \(merchant.shopName) (\(merchant.tier.rawValue)). Persona: \(merchant.personaBlurb) Catchphrase: \(merchant.catchphrase) Stay fully in character as this merchant — do not break the persona, do not narrate outside the shop."
+        // The AI used to make prices up ("a whetstone for 3 gold") that the
+        // shop list then contradicted. It is given this merchant's own prices,
+        // the same ones the list shows and the till charges.
+        let priced = merchant.stock.prefix(14).map { "\($0.name) \(merchant.buyPrice($0))gp" }
+        if !priced.isEmpty {
+            context.npcInfo! += " Their goods and prices (if you mention a price, use exactly one of these; never invent one): " + priced.joined(separator: ", ") + "."
+        }
         DMEngine.shared.ask(situation, context: context) { response in
             completion(response)
         }
@@ -34104,6 +34145,38 @@ class GameEngine: ObservableObject {
 
     // MARK: - Combat
 
+    /// What the DM says going into a fight: the foe, then a tip for one of
+    /// the player's own adventurers, in the terms of their class.
+    private func combatEntryRemark(_ encounter: Encounter) -> String {
+        let foes = encounter.monsters.filter { $0.isAlive }
+        let kinds = Array(Set(foes.map { $0.type.rawValue }))
+        let foe: String
+        if foes.count == 1, let one = foes.first { foe = "a \(one.type.rawValue.lowercased())" }
+        else if kinds.count == 1, let k = kinds.first { foe = "\(foes.count) \(k.lowercased())s" }
+        else { foe = "\(foes.count) of them" }
+        let opener = ["Weapons out — \(foe), and they've seen you.",
+                      "Here it comes: \(foe). Stay together.",
+                      "No talking your way past \(foe) this time.",
+                      "\(foe.prefix(1).uppercased() + foe.dropFirst()) — and nowhere to run that isn't behind you."].randomElement()!
+        let mine = party.filter { $0.isConscious && !$0.isComputerControlled }
+        guard let c = (mine.isEmpty ? party.filter { $0.isConscious } : mine).randomElement() else { return opener }
+        let n = shortName(for: c)
+        let tip: String
+        switch c.characterClass {
+        case .wizard: tip = "\(n), you're a Wizard — your spells are your sharpest weapon. Stay back and cast."
+        case .fighter: tip = "\(n), you're a Fighter — front of the line; you can take the hits the others can't."
+        case .barbarian: tip = "\(n), you're a Barbarian — Rage early and wade in."
+        case .rogue: tip = "\(n), you're a Rogue — strike where they aren't looking; it hurts far more."
+        case .thief: tip = "\(n), you're a Thief — quick hands, quick blade: pick your moment, then vanish."
+        case .cleric: tip = "\(n), you're a Cleric — keep everyone standing; a heal at the right time wins fights."
+        case .ranger: tip = "\(n), you're a Ranger — keep your distance and let the arrows do the work."
+        case .scout: tip = "\(n), you're a Scout — fast and hard to pin down; hit the stragglers."
+        case .engineer: tip = "\(n), you're an Engineer — your gadgets change a fight; don't save them for later."
+        case .bard: tip = "\(n), you're a Bard — a cutting word or a Healing Word can matter more than a sword."
+        }
+        return opener + " " + tip
+    }
+
     func startCombat(encounter: Encounter) {
         gameState = .combat
         let renames = ensureUniqueNames()   // two of the same name muddle a fight
@@ -34202,6 +34275,13 @@ class GameEngine: ObservableObject {
             }
             print("")
         }
+        // The DM says something as the fight starts, and gives one of your own
+        // adventurers a word about how their class fights best. Going in used
+        // to be a silent list of monsters.
+        let entry = combatEntryRemark(encounter)
+        printWrapped("DM: " + entry, indent: 0, color: .cyan)
+        SpeechEngine.shared.speak(entry)
+        print("")
         print("Rolling initiative...")
         print("")
 
@@ -34547,6 +34627,33 @@ class GameEngine: ObservableObject {
     /// The turn this menu last announced, so re-opening it doesn't say so again.
     private var lastAnnouncedTurnKey: String?
 
+    /// A class-aware nudge for this turn, or nil if nothing useful to say.
+    private func classTurnTip(_ c: Character) -> String? {
+        let slots = c.spellSlots.level1Current + c.spellSlots.level2Current
+        let hurt = party.filter { $0.isConscious && $0.id != c.id && $0.currentHP * 2 < $0.maxHP }
+        let foes = currentCombat?.encounter.aliveMonsters.count ?? 0
+        switch c.characterClass {
+        case .wizard:
+            return slots > 0 ? "You're a Wizard with \(slots) spell slot\(slots == 1 ? "" : "s") left — your spells hit much harder than your staff." : "Out of spell slots — keep your distance; a rest will bring them back."
+        case .cleric:
+            if let h = hurt.first { return "\(shortName(for: h)) is badly hurt — as a Cleric, a heal now may matter more than a blow." }
+            return slots > 0 ? "Clerics fight well enough, but your spells are the real strength — \(slots) slot\(slots == 1 ? "" : "s") left." : nil
+        case .bard:
+            if let h = hurt.first { return "\(shortName(for: h)) is flagging — a Bard's Healing Word would help." }
+            return "A Bard's Vicious Mockery hurts, and needs no slot."
+        case .barbarian:
+            return c.isRaging ? "Raging: you hit harder and shrug off blows. Keep swinging." : (c.rageUsesRemaining > 0 ? "You're a Barbarian — Rage now and you hit harder and take less." : nil)
+        case .fighter:
+            return c.secondWindUsed ? "Fighters hold the line — stay in front so the others can work." : "Hurt? A Fighter's Second Wind heals you once a fight."
+        case .rogue, .thief:
+            return foes > 1 ? "Pick the one already busy with someone else — that's where a \(c.characterClass.rawValue) does the most harm." : "Strike fast and make it count."
+        case .ranger, .scout:
+            return "You fight best at range — let the others stand in front."
+        case .engineer:
+            return "An Engineer's gadgets can turn a fight — try one before it's too late."
+        }
+    }
+
     func showPlayerCombatMenu(characterId: UUID) {
         guard let combat = currentCombat,
               let character = party.first(where: { $0.id == characterId }) else { return }
@@ -34566,6 +34673,11 @@ class GameEngine: ObservableObject {
         if turnKey != lastAnnouncedTurnKey {
             lastAnnouncedTurnKey = turnKey
             print(">> \(character.name)'s turn! <<", color: .brightGreen, bold: true)
+            // Now and then, a word on what this adventurer is good at, in the
+            // situation actually in front of them -- only for the player's own.
+            if !character.isComputerControlled, let tip = classTurnTip(character), Int.random(in: 0..<3) == 0 {
+                printWrapped(tip, indent: 2, color: .dimGreen)
+            }
             print("")
         }
 

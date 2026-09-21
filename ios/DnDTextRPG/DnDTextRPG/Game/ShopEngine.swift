@@ -302,14 +302,14 @@ class ShopEngine {
         var itemLineRanges: [Range<Int>] = []
         for item in stock {
             let lineStart = game.terminalLines.count
-            options.append(shopButtonLabel(name: item.name, priceLabel: "\(item.value)gp", weight: game.formatWeight(item.weight)))
+            options.append(shopButtonLabel(name: item.name, priceLabel: "\(price(item))gp", weight: game.formatWeight(item.weight)))
             // Price/weight only ever appeared on the button label above, and
             // the description used dimGreen — a colour speaker mode treats
             // as a decorative nav hint and skips. Between the two, nothing
             // about an item was ever actually read aloud. Folding price and
             // weight into this line and switching to a readable colour
             // fixes both at once.
-            game.print("  \(item.name) — \(item.value)gp, \(game.formatWeight(item.weight)): \(item.description)", color: .green)
+            game.print("  \(item.name) — \(price(item))gp, \(game.formatWeight(item.weight)): \(item.description)", color: .green)
             game.print("    \(game.itemUsageHint(item))", color: .yellow)
             itemLineRanges.append(lineStart..<game.terminalLines.count)
         }
@@ -354,11 +354,11 @@ class ShopEngine {
     private func showBuyConfirm(item: Item, completion: @escaping () -> Void) {
         guard let game = game, let character = character else { return }
 
-        guard character.gold >= item.value else {
+        guard character.gold >= self.price(item) else {
             game.clearTerminal()
             game.print("")
             game.print("  \"You haven't got enough gold for that, friend.\"", color: .red)
-            game.print("  \(item.name) costs \(item.value)gp — you have \(character.gold)gp.", color: .dimGreen)
+            game.print("  \(item.name) costs \(price(item))gp — you have \(character.gold)gp.", color: .dimGreen)
             game.print("")
             game.printWrapped("\"...unless you'd like to make an offer?\"", indent: 2, color: .yellow)
             game.print("")
@@ -369,10 +369,10 @@ class ShopEngine {
                 guard let self = self else { return }
                 switch choice {
                 case 1:
-                    self.showNegotiation(item: item, askingPrice: item.value, attempt: 1, isRareGood: false,
+                    self.showNegotiation(item: item, askingPrice: self.price(item), attempt: 1, isRareGood: false,
                                           backAction: backToList, returnTo: backToList, completion: completion)
                 case 2:
-                    self.showBarterMenu(item: item, askingPrice: item.value, backAction: backToList, returnTo: backToList, completion: completion)
+                    self.showBarterMenu(item: item, askingPrice: self.price(item), backAction: backToList, returnTo: backToList, completion: completion)
                 default:
                     backToList()
                 }
@@ -391,10 +391,10 @@ class ShopEngine {
         game.clearTerminal()
         game.printTitle("Buy \(item.name)?")
         game.print("")
-        game.print("  Price: \(item.value)gp   Weight: \(game.formatWeight(item.weight))", color: .brightGreen, bold: true)
+        game.print("  Price: \(price(item))gp   Weight: \(game.formatWeight(item.weight))", color: .brightGreen, bold: true)
         game.printWrapped("  \(item.description)", indent: 2, color: .dimGreen)
         game.print("")
-        game.print("  Gold: \(character.gold) → \(character.gold - item.value)", color: .yellow)
+        game.print("  Gold: \(character.gold) → \(character.gold - price(item))", color: .yellow)
         let newWeight = character.currentWeight + item.weight
         game.print("  Carry: \(game.formatWeightPair(character.currentWeight, character.carryCapacity)) → \(game.formatWeightPair(newWeight, character.carryCapacity))", color: .yellow)
         game.print("")
@@ -405,9 +405,9 @@ class ShopEngine {
         game.menuHandler = { [weak self] choice in
             guard let self = self, let character = self.character else { return }
             guard choice == 1 else { backToList(); return }
-            self.completePurchase(item: item, price: self.merchant?.buyPrice(item) ?? item.value, buyer: character,
-                                   lines: [("  Purchased \(item.name) for \(item.value) gold.", .brightGreen),
-                                           ("  Gold remaining: \(character.gold - item.value)", .yellow)],
+            self.completePurchase(item: item, price: self.price(item), buyer: character,
+                                   lines: [("  Purchased \(item.name) for \(price(item)) gold.", .brightGreen),
+                                           ("  Gold remaining: \(character.gold - price(item))", .yellow)],
                                    returnTo: backToList, completion: completion)
         }
     }
@@ -805,8 +805,8 @@ class ShopEngine {
         var itemLineRanges: [Range<Int>] = []
         for item in stock {
             let lineStart = game.terminalLines.count
-            options.append("\(item.name) (\(item.value)gp)")
-            game.print("  \(item.name) — asking \(item.value)gp: \(item.description)", color: .green)
+            options.append("\(item.name) (\(price(item))gp)")
+            game.print("  \(item.name) — asking \(price(item))gp: \(item.description)", color: .green)
             itemLineRanges.append(lineStart..<game.terminalLines.count)
         }
         let stockItems = self.stock
@@ -815,7 +815,7 @@ class ShopEngine {
             guard let self = self else { return }
             guard idx >= 0 && idx < stockItems.count else { return }
             let item = stockItems[idx]
-            self.showNegotiation(item: item, askingPrice: item.value, attempt: 1, isRareGood: false,
+            self.showNegotiation(item: item, askingPrice: self.price(item), attempt: 1, isRareGood: false,
                                   backAction: { self.showHaggleMenu(completion: completion) },
                                   returnTo: { self.showShopMain(completion: completion) },
                                   completion: completion)
@@ -1412,11 +1412,15 @@ class ShopEngine {
             game.clearTerminal()
             game.printTitle(picked)
             game.print("")
-            game.print("  \(merchant.name)", color: .green)
+            // The reply says what it's a reply TO: the canned answers rarely
+            // use the word, so "Business is adventurers..." read as a remark
+            // out of nowhere. A lead line names the topic, and the AI's
+            // flourish is asked to name it too.
+            game.printWrapped("You ask \(merchant.name) about \(entry.topic).", indent: 2, color: .green)
             game.print("")
             // narrate prints the plain answer at once and never waits on the
             // DM; any AI flourish lands after, if it is quick enough.
-            self.narrate(situation: entry.situation,
+            self.narrate(situation: entry.situation + " Mention the topic (\(entry.topic)) by name in your answer.",
                          offline: entry.offline.randomElement()!,
                          color: .cyan) { [weak self] in
                 guard let self = self, let game = self.game else { return }
@@ -1425,6 +1429,12 @@ class ShopEngine {
             }
         }
     }
+
+    /// What this merchant charges for an item -- the one price shown in the
+    /// list, on the item card, in haggling, and at the till. The lists used to
+    /// show the catalogue price while the till charged the merchant's own, so
+    /// a whetstone offered at 3gp could cost 4.
+    private func price(_ item: Item) -> Int { merchant?.buyPrice(item) ?? item.value }
 
     // MARK: - Narration helper
 

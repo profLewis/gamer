@@ -407,6 +407,15 @@ struct TerminalView: View {
                     ScrollViewReader { scrollProxy in
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: storyLineSpacing) {
+                                // Measures the story's width so prose wraps to the
+                                // screen at this Display Size (see wrapColumns).
+                                GeometryReader { g in
+                                    Color.clear
+                                        .onAppear { updateWrapColumns(width: g.size.width) }
+                                        .onChange(of: g.size.width) { w in updateWrapColumns(width: w) }
+                                        .onChange(of: scale) { _ in updateWrapColumns(width: g.size.width) }
+                                }
+                                .frame(height: 0)
                                 ForEach(Array(gameEngine.terminalLines.enumerated()), id: \.element.id) { index, line in
                                     Group {
                                     if let link = line.link {
@@ -1253,9 +1262,11 @@ struct TerminalView: View {
                                 .buttonStyle(.plain)
                                 .accessibilityLabel(gameEngine.fightClubOn ? "Hide Fight Club" : "Show Fight Club")
                             }
-                            #if os(macOS)
-                            // Settings, always to hand on the Mac — music, AI and the rest;
-                            // Back returns to where you were.
+                            #if !os(tvOS)
+                            // Settings, always to hand — music, AI and the rest; Back
+                            // returns to where you were. Mac-only at first; now on
+                            // iPhone and iPad too, so settings buttons need not crowd
+                            // other screens.
                             Menu {
                                 Button(gameEngine.speakerModeOn ? "Stop Reading Aloud" : "Read Aloud") { gameEngine.readScreenAloud() }
                                 Button(gameEngine.musicEnabled ? "Music Off" : "Music On") { gameEngine.toggleMusicQuick() }
@@ -1277,7 +1288,9 @@ struct TerminalView: View {
                                     .font(.system(size: 17 * scale))
                                     .foregroundColor(terminalGreen)
                             }
+                            #if os(macOS)
                             .menuStyle(.borderlessButton)
+                            #endif
                             .menuIndicator(.hidden)
                             .fixedSize()
                             .help("Settings — music, AI, gameplay (⌘,)")
@@ -1436,6 +1449,10 @@ struct TerminalView: View {
                                 }
                             }) {
                                 Image(systemName: voiceInput.isListening ? "mic.fill" : "mic")
+                                    .onChange(of: voiceInput.lastError) { err in
+                                        // Say why the microphone didn't listen, rather than nothing.
+                                        if let err = err { gameEngine.print("  🎤 " + err, color: .yellow); voiceInput.lastError = nil }
+                                    }
                                     .accessibilityLabel(voiceInput.isListening ? "Stop listening" : "Voice input")
                                     .font(.system(size: 20 * scale * gameEngine.iconScale))
                                     .foregroundColor(voiceInput.isListening ? .red : Color(red: 0.0, green: 0.6, blue: 0.25))
@@ -1538,6 +1555,9 @@ struct TerminalView: View {
                             }
                         )
                         .transition(.move(edge: .bottom))
+                        .onChange(of: voiceInput.lastError) { err in
+                            if let err = err { gameEngine.print("  🎤 " + err, color: .yellow); voiceInput.lastError = nil }
+                        }
                     }
                     #endif
     }
@@ -1925,6 +1945,21 @@ struct TerminalView: View {
     private func landingDragonWidth(_ size: CGSize, isLandscape: Bool) -> CGFloat {
         let column = isLandscape ? size.width / 2 : size.width
         return max(120, min(280 * scale, column * 0.8, size.height * 0.35 * 280 / 186))
+    }
+
+    /// Characters per line at the current font: a monospaced glyph is about
+    /// 0.6 of its point size wide. Clamped so a tiny window or a huge font
+    /// never produces something unreadable.
+    private func updateWrapColumns(width: CGFloat) {
+        #if os(macOS)
+        let base: CGFloat = 16
+        #else
+        let base: CGFloat = 14
+        #endif
+        let glyph = base * scale * 0.61
+        guard glyph > 0, width > 50 else { return }
+        let cols = max(24, min(72, Int((width - 4) / glyph)))
+        if cols != gameEngine.wrapColumns { gameEngine.wrapColumns = cols }
     }
 
     /// New page: straight to its first line, no animation (it should simply

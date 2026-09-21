@@ -14,6 +14,10 @@ class VoiceInputManager: ObservableObject {
 
     @Published var isListening = false
     @Published var transcript = ""
+    /// Why listening didn't start, in plain words -- shown on screen. Every
+    /// failure here used to be silent, so a microphone that never listened
+    /// looked exactly like one that heard nothing.
+    @Published var lastError: String?
 
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-GB"))
     private let audioEngine = AVAudioEngine()  // Separate from SoundManager's engine
@@ -33,13 +37,48 @@ class VoiceInputManager: ObservableObject {
     }
 
     var isAuthorised: Bool {
-        SFSpeechRecognizer.authorizationStatus() == .authorized
+        SFSpeechRecognizer.authorizationStatus() == .authorized && micGranted
+    }
+
+    /// Microphone permission, separate from speech recognition -- only the
+    /// latter used to be asked for, so the first attempt could fail before
+    /// the system had ever asked about the microphone.
+    private var micGranted: Bool {
+        #if os(iOS)
+        if #available(iOS 17.0, *) { return AVAudioApplication.shared.recordPermission == .granted }
+        return AVAudioSession.sharedInstance().recordPermission == .granted
+        #elseif os(macOS)
+        return AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        #else
+        return false
+        #endif
+    }
+
+    private func requestMic(_ done: @escaping (Bool) -> Void) {
+        #if os(iOS)
+        if #available(iOS 17.0, *) { AVAudioApplication.requestRecordPermission { done($0) } }
+        else { AVAudioSession.sharedInstance().requestRecordPermission { done($0) } }
+        #elseif os(macOS)
+        AVCaptureDevice.requestAccess(for: .audio) { done($0) }
+        #else
+        done(false)
+        #endif
     }
 
     func requestAuthorisation(completion: @escaping (Bool) -> Void) {
         SFSpeechRecognizer.requestAuthorization { status in
-            DispatchQueue.main.async {
-                completion(status == .authorized)
+            guard status == .authorized else {
+                DispatchQueue.main.async {
+                    self.lastError = "Speech recognition is switched off for this game — turn it on in Settings > Privacy & Security > Speech Recognition."
+                    completion(false)
+                }
+                return
+            }
+            self.requestMic { granted in
+                DispatchQueue.main.async {
+                    if !granted { self.lastError = "The microphone is switched off for this game — turn it on in Settings > Privacy & Security > Microphone." }
+                    completion(granted)
+                }
             }
         }
     }
@@ -47,7 +86,12 @@ class VoiceInputManager: ObservableObject {
     // MARK: - Start / Stop
 
     func startListening(onTranscript: @escaping (String) -> Void, onComplete: @escaping (String) -> Void) {
-        guard !isListening, let recognizer = speechRecognizer, recognizer.isAvailable else { return }
+        guard !isListening else { return }
+        guard let recognizer = speechRecognizer, recognizer.isAvailable else {
+            lastError = "Speech recognition isn't available just now — it may need Dictation turned on, or a network connection."
+            return
+        }
+        lastError = nil
 
         self.onComplete = onComplete
 
@@ -104,6 +148,7 @@ class VoiceInputManager: ObservableObject {
                 }
             }
         } catch {
+            lastError = "Couldn't start the microphone (\(error.localizedDescription))."
             finishListening(with: "")
         }
     }
@@ -165,6 +210,10 @@ class VoiceInputManager: ObservableObject {
 
     @Published var isListening = false
     @Published var transcript = ""
+    /// Why listening didn't start, in plain words -- shown on screen. Every
+    /// failure here used to be silent, so a microphone that never listened
+    /// looked exactly like one that heard nothing.
+    @Published var lastError: String?
 
     private init() {}
 
