@@ -666,10 +666,21 @@ struct ItemCatalog {
     /// Solid food by its name, for anything not on the food list.
     static func looksEdible(_ item: Item) -> Bool {
         let name = item.name.lowercased()
+        // Anything solid is eaten. Kept wide on purpose: a mushroom by its
+        // own name ("Morels", "Chanterelles") was being drunk, which read as
+        // nonsense.
         let eatWords = ["cheese", "cheddar", "brie", "gouda", "stilton", "halloumi", "wensleydale", "bread", "loaf",
                         "ration", "meat", "pork", "beef", "jerky", "apple", "pie", "cake", "biscuit", "honey",
                         "jam", "marmite", "fruit", "egg", "fish", "eel", "truffle", "mushroom", "sausage", "stew",
-                        "nut", "berries", "haggis", "onion", "liquorice", "violet", "durian", "ice cream"]
+                        "nut", "berries", "haggis", "onion", "liquorice", "violet", "durian", "ice cream",
+                        // mushrooms and other foraged food by their own names
+                        "morel", "chanterelle", "porcini", "puffball", "truffles", "toadstool", "fungus", "fungi",
+                        "root", "tuber", "herb", "leaf", "leaves", "seed", "grain", "oat", "barley", "porridge",
+                        "bun", "roll", "tart", "pasty", "pastry", "dumpling", "pudding", "jelly", "sweet",
+                        "ham", "bacon", "venison", "rabbit", "mutton", "lamb", "chicken", "trout", "salmon",
+                        "crab", "oyster", "olive", "pickle", "plum", "pear", "peach", "grape", "raisin", "date",
+                        "fig", "carrot", "turnip", "potato", "leek", "cabbage", "bean", "pea", "lentil", "rice",
+                        "cracker", "oatcake", "flapjack", "toffee", "fudge", "chocolate", "waybread", "hardtack"]
         return eatWords.contains { name.contains($0) }
     }
 

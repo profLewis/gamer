@@ -4446,6 +4446,13 @@ class GameEngine: ObservableObject {
             delay = (monsterTurn ? max(1.0, min(2.5, newTextReadingTime() * 0.35))
                                  : max(1.2, min(3.0, newTextReadingTime() * 0.5))) * timeoutScale(.fights)
         }
+        // Your own blow: long enough to read what it did, then the next
+        // fighter goes. This used to be infoTimeout x2 x 0.55-0.85 — seven to
+        // ten seconds of nothing before a companion moved, about twice what
+        // it should be.
+        else if currentCombat != nil {
+            delay = max(1.0, min(3.5, newTextReadingTime() * 0.45)) * timeoutScale(.fights)
+        }
         else { delay = base * Double.random(in: 0.55...0.85) * timeoutScale(.fights) }
         readingPaceNext = false
         // A "defeated!" report moves on sooner still.
@@ -7086,6 +7093,14 @@ class GameEngine: ObservableObject {
     /// key is found now rather than halfway through an adventure.
     private func checkAIKeyAtStartup() {
         let dm = DMEngine.shared
+        // Say it in the story, once, if the connection goes mid-adventure —
+        // rather than the DM simply going quiet.
+        dm.onConnectionDropped = { [weak self] in
+            guard let self = self else { return }
+            self.print("")
+            self.printWrapped("(The connection has gone, so \(dm.offlineBrainName) is telling the tale for now. Everything still works; \(dm.provider.displayName) picks up again by itself when the signal is back.)", indent: 2, color: .yellow)
+            self.print("")
+        }
         guard dm.isConfigured else { return }
         // No connection is not a broken key: say so quietly on the menu and
         // let the game get on with it.
@@ -21425,6 +21440,11 @@ class GameEngine: ObservableObject {
             self.print(" 4+  Brutal — Scaled-up monster HP and damage.", color: .dimGreen)
             self.print("     For experienced parties only.", color: .dimGreen)
             self.print("")
+            self.print("")
+            self.print("WHAT HARDER GAMES ADD", color: .cyan, bold: true)
+            self.printWrapped("Beyond tougher fights, difficulty changes the shape of the dungeon. Deeper floors grow larger, hold harder puzzles, and can break into sealed wings: rooms with no passage to the rest of the floor, reached only by a teleport pad or by the gallery above. The guardian's lair is often inside one.", indent: 2, color: .dimGreen)
+            self.printWrapped("An Easy game never splits a floor. From Medium up the chance grows with depth — on Medium about one floor in five at floor 3, rising to three in five by floor 7; on Hard and Brutal, higher again.", indent: 2, color: .dimGreen)
+            self.print("")
             self.print("CUSTOM LEVELS", color: .cyan, bold: true)
             self.printWrapped("You can type any number, including decimals (e.g. 1.5, 2.5). Values between whole numbers blend difficulty smoothly.", indent: 2)
             self.print("")
@@ -22846,6 +22866,11 @@ class GameEngine: ObservableObject {
             }
             self.printWrapped("Each floor has a guardian in its lair (B on the map). Beat it and the way down opens. The guardian of the last floor is the Boss — the villain of your tale; in a one-floor game the guardian is the Boss. A rare deep-blue teleport pad can drop you a floor early, past that guardian.", indent: 2, color: .dimGreen)
             self.printWrapped("Stairs and ropes inside a floor lead to its other gallery — a shortcut across the same depth, not a way down. The header line shows the floor you're on, and which gallery.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.print("  SEALED WINGS", color: .cyan, bold: true)
+            self.printWrapped("Deeper down, a floor can break into more than one piece. A few rooms — often the guardian's lair among them — have no passage joining them to anywhere else, and show on the map as an island set apart, with no lines running to it. Walking will never get you there.", indent: 2, color: .green)
+            self.printWrapped("There are always two ways in. A teleport pad (*) somewhere on the main part of the floor carries you across and back again. Or take the stairs up to the gallery above, walk along it, and come back down on the far side — the same trick as crossing a river by a footbridge.", indent: 2, color: .dimGreen)
+            self.printWrapped("So if the floor seems explored but the lair is nowhere, look for a pad you haven't stepped on, or a stair you haven't climbed. Easy games never do this; the deeper and harder the game, the more often a floor is split.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  LESSER MAGICK", color: .magenta, bold: true)
             self.printWrapped("There are lesser magicks. A party with a spellcaster in it — or someone clever, wise or forceful enough — can speak an incantation at the > prompt: \"magick: show …\" and a word for something that might be on the map. What answers is for you to find out. \"magick: hide …\" undoes it.", indent: 2, color: .dimGreen)
@@ -27737,7 +27762,7 @@ class GameEngine: ObservableObject {
                         let roll = Dice.rollDamage(healStr)
                         let amount = max(1, roll.total)
                         char.heal(amount)
-                        self.print("  \(char.name) drinks the \(item.name)!", color: .brightGreen)
+                        self.print("  \(char.name) \(ItemCatalog.consumeVerb(for: item)) the \(item.name)!", color: .brightGreen)
                         self.print("  Restored \(amount) HP! (\(char.currentHP)/\(char.maxHP))", color: .brightGreen)
                         self.logEvent("\(char.name) used \(item.name) — healed \(amount) HP", category: "LOOT")
                     }

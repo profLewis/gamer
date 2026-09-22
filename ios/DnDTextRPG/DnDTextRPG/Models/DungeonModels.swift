@@ -808,6 +808,22 @@ class Dungeon: ObservableObject, Codable {
         return base * encounterDensity
     }
 
+    /// How likely this floor is to hold a sealed wing — rooms with no
+    /// passage to the rest of the floor, reached only by a teleport pad or
+    /// the gallery above, with the guardian's lair at the far end.
+    ///
+    ///     Easy, or floors 1–2:  never
+    ///     otherwise:            min(85, 12 × (difficulty − 1) + 10 × (floor − 2))  per cent
+    ///
+    /// with difficulty 1 Easy, 2 Medium, 3 Hard, 4 Brutal. So Medium runs
+    /// 22% on floor 3 to 62% on floor 7; Hard 34% to 74%; Brutal 46% up to
+    /// the 85% ceiling — deeper and harder means more often cut off, and an
+    /// easy game never is.
+    static func sealedWingChance(level: Int, difficulty: Int) -> Int {
+        guard difficulty >= 2, level >= 3 else { return 0 }
+        return min(85, 12 * (difficulty - 1) + 10 * (level - 2))
+    }
+
     private func generateDungeon() {
         NameRegistry.reset()   // a fresh dungeon: every name is free again
         // Easy floors are small, so the guardian's lair is never far to look.
@@ -897,7 +913,7 @@ class Dungeon: ObservableObject, Codable {
         // (both added below, once the pads and the upper floor exist).
         var sealedWingIds: [Int] = []
         var sealedWingEntranceId: Int? = nil
-        if level >= 5, Int.random(in: 1...100) <= 70, roomId >= 8 {
+        if roomId >= 8, Int.random(in: 1...100) <= Dungeon.sealedWingChance(level: level, difficulty: startDifficulty) {
             // Far enough from every occupied cell that nothing looks joined
             // on the map — a gap of two squares all round.
             func cellIsFree(_ x: Int, _ y: Int) -> Bool {

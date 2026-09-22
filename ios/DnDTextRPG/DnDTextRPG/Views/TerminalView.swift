@@ -2063,9 +2063,29 @@ struct TerminalView: View {
         #else
         let base: CGFloat = 14
         #endif
-        let glyph = base * scale * 0.61
-        guard glyph > 0, width > 50 else { return }
-        let cols = max(24, min(72, Int((width - 4) / glyph)))
+        let size = base * scale
+        guard size > 0, width > 50 else { return }
+        // Measure the font rather than guessing at it. The old guess (0.61 of
+        // the point size) ran a shade narrow, so the game wrapped to more
+        // characters than the view could hold; the screen then wrapped each
+        // line again and the spill-over sat hard against the left margin with
+        // no indent — the "hanging text". Bold is measured too, since a bold
+        // line has to fit as well, and one column is kept in hand.
+        #if canImport(UIKit)
+        let regular = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        let bold = UIFont.monospacedSystemFont(ofSize: size, weight: .bold)
+        let glyph = max(("0" as NSString).size(withAttributes: [.font: regular]).width,
+                        ("0" as NSString).size(withAttributes: [.font: bold]).width)
+        #elseif os(macOS)
+        let regular = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        let bold = NSFont.monospacedSystemFont(ofSize: size, weight: .bold)
+        let glyph = max(("0" as NSString).size(withAttributes: [.font: regular]).width,
+                        ("0" as NSString).size(withAttributes: [.font: bold]).width)
+        #else
+        let glyph = size * 0.62
+        #endif
+        guard glyph > 0 else { return }
+        let cols = max(24, min(72, Int((width - 4) / glyph) - 1))
         if cols != gameEngine.wrapColumns { gameEngine.wrapColumns = cols }
     }
 
@@ -2773,6 +2793,9 @@ struct TerminalLineView: View {
             Text(attributedString)
                 .font(.system(size: scaledSize, design: .monospaced))
                 .fixedSize(horizontal: false, vertical: true)
+                // A blank line separates paragraphs, so give it a little more
+                // than a line's worth of air — easier to read at a glance.
+                .padding(.bottom, line.text.isEmpty ? scaledSize * 0.5 : 0)
                 .accessibilityLabel(TerminalLine.spokenText(line.text))
                 .accessibilityHidden(line.isDecorativeArt)
         }

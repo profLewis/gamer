@@ -17,6 +17,14 @@ Version 3.0 is the biggest update yet: many rounds of play-testing by Beau and P
 - **Quests that differ in what they ask**, not just in the words: rescue, fetch, find, clear, escort and more, each with its own win condition.
 - **Deadlines in days** on a calendar the DM knows about ("by the full moon, day 12"), counted down on the status screen. Slow quests get a chaser: carry on, give up, or hold out for a bigger prize.
 - **A guardian on every floor.** Beat it and the way down opens; the last floor holds the villain from your opening tale. Nudges tell you when you've explored most of a floor without finding it.
+- **Sealed wings on the deeper, harder floors**: part of a floor can be cut off entirely — no passage joins it, and it shows on the map as an island with no lines running to it — often with the guardian's lair inside. Two ways in, always: a teleport pad, or up the stairs to the gallery above, along, and down again on the far side. An Easy game never splits a floor; the chance grows with difficulty and depth:
+
+  ```
+  Easy, or floors 1–2:  never
+  otherwise:            min(85, 12 × (difficulty − 1) + 10 × (floor − 2))  per cent
+  ```
+
+  with difficulty 1 Easy, 2 Medium, 3 Hard, 4 Brutal — so Medium runs 22% on floor 3 to 62% on floor 7, Hard 34% to 74%, and Brutal 46% up to the 85% ceiling.
 - **Depth follows difficulty**: Easy is a single, smaller floor with the guardian's lair pointed out as you go; Medium is about five floors; Hard about seven, with harder fights rather than longer ones. You can raise the difficulty mid-game (one way only).
 - **Endgame**: an outro tale, fireworks, a **certificate** with your stats and the maps of every floor (saved as a PDF), a Hall of Fame entry, and, if the party falls, encouragement and a Try Again.
 
@@ -107,6 +115,21 @@ Game Center multiplayer (turn-based, shared party, remote players becoming robot
 - **Cleric**: Sacred Flame, Cure Wounds, Guiding Bolt, Healing Word, Spare the Dying
 - **Ranger**: Hunter's Mark, Cure Wounds
 - Cantrips (unlimited) and spell slots that recover on long rest
+
+### Sealed Wings (deeper, harder floors)
+
+Part of a floor with no passage to the rest of it — an island on the map — usually holding the guardian's lair. Reached by a teleport pad, or by the gallery above (stairs up, along, stairs down). Locked doors are never placed inside one, and both routes are built by hand during generation, so a wing can never be unreachable. Chance per floor (`Dungeon.sealedWingChance`):
+
+```
+Easy, or floors 1–2:  never
+otherwise:            min(85, 12 × (difficulty − 1) + 10 × (floor − 2))  per cent
+```
+
+| Floor | Medium | Hard | Brutal |
+|---|---|---|---|
+| 3 | 22% | 34% | 46% |
+| 5 | 42% | 54% | 66% |
+| 7 | 62% | 74% | 85% (cap) |
 
 ### Procedural Dungeons
 - 11 room types: corridors, chambers, treasure rooms, armories, shrines, libraries, prisons, trap rooms, boss chambers, and more

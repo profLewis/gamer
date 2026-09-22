@@ -572,9 +572,11 @@ class DMEngine {
 
         callAI(provider: provider, apiKey: key, system: systemPrompt, messages: conversationHistory) { [weak self] response in
             if let response = response {
+                self?.noteCloudSuccess()
                 self?.conversationHistory.append((role: "assistant", content: response))
                 completion(response)
             } else {
+                self?.noteCloudFailure(offline: !(self?.isOnline ?? true))
                 // API failed — try Apple model, then simple DM
                 if self?.isAppleModelAvailable == true {
                     self?.askAppleModel(userMessage: userMessage, context: context) { appleResponse in
@@ -633,6 +635,27 @@ class DMEngine {
 
     /// What answers the DM while there's no internet.
     var offlineBrainName: String { isAppleModelAvailable ? "Apple On-Device AI" : "Built-in DM" }
+
+    /// Called once when a cloud brain stops answering because the connection
+    /// has gone, so the game can say so in the story instead of the player
+    /// wondering why the DM has gone quiet. Set by GameEngine.
+    var onConnectionDropped: (() -> Void)?
+    private var toldAboutDrop = false
+
+    /// A cloud call failed. If the connection is the reason, say so once;
+    /// the next success clears it, so a later drop is mentioned again.
+    func noteCloudFailure(offline: Bool) {
+        guard offline else { return }
+        DispatchQueue.main.async {
+            guard !self.toldAboutDrop else { return }
+            self.toldAboutDrop = true
+            self.onConnectionDropped?()
+        }
+    }
+
+    func noteCloudSuccess() {
+        if toldAboutDrop { DispatchQueue.main.async { self.toldAboutDrop = false } }
+    }
 
     // MARK: - Hugging Face backup
 
@@ -1882,6 +1905,7 @@ class DMEngine {
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 20   // a dropped connection must never hang a turn
 
         let body: [String: Any] = [
             "model": model ?? modelToUse(for: .anthropic),
@@ -1920,6 +1944,8 @@ class DMEngine {
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        request.timeoutInterval = endpoint == HuggingFace.endpoint ? 30 : 20
 
         var oaiMessages: [[String: String]] = [["role": "system", "content": system]]
         oaiMessages += messages.map { ["role": $0.role, "content": $0.content] }
@@ -2065,6 +2091,7 @@ class DMEngine {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+        request.timeoutInterval = 20
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
