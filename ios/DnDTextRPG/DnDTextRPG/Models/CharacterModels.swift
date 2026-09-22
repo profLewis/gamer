@@ -484,6 +484,10 @@ class Character: ObservableObject, Identifiable, Codable {
     @Published var name: String
     @Published var race: Race
     @Published var characterClass: CharacterClass
+    /// A rescued companion walks with the party for this many more rooms
+    /// (0 = an ordinary member of the party, who stays).
+    @Published var companionRoomsLeft: Int = 0
+
     @Published var level: Int
     @Published var abilityScores: AbilityScores
     @Published var currentHP: Int
@@ -567,6 +571,7 @@ class Character: ObservableObject, Identifiable, Codable {
         case willpowerSurgeUsesRemaining
         case wellFedAttacks, juiceCount, sluggishAttacks
         case knownIncantations
+        case companionRoomsLeft
     }
 
     init(name: String, race: Race, characterClass: CharacterClass, abilityScores: AbilityScores, isComputerControlled: Bool = false) {
@@ -663,6 +668,7 @@ class Character: ObservableObject, Identifiable, Codable {
         ethicalLog = (try? container.decodeIfPresent([String].self, forKey: .ethicalLog)) ?? []
         willpowerSurgeUsesRemaining = (try? container.decodeIfPresent(Int.self, forKey: .willpowerSurgeUsesRemaining)) ?? characterClass.willpowerSurgeMaxUses
         wellFedAttacks = (try? container.decodeIfPresent(Int.self, forKey: .wellFedAttacks)) ?? 0
+        companionRoomsLeft = (try? container.decodeIfPresent(Int.self, forKey: .companionRoomsLeft)) ?? 0
         juiceCount = (try? container.decodeIfPresent(Int.self, forKey: .juiceCount)) ?? 0
         sluggishAttacks = (try? container.decodeIfPresent(Int.self, forKey: .sluggishAttacks)) ?? 0
         knownIncantations = (try? container.decodeIfPresent(Set<String>.self, forKey: .knownIncantations)) ?? []
@@ -706,6 +712,7 @@ class Character: ObservableObject, Identifiable, Codable {
         try container.encode(ethicalLog, forKey: .ethicalLog)
         try container.encode(willpowerSurgeUsesRemaining, forKey: .willpowerSurgeUsesRemaining)
         try container.encode(wellFedAttacks, forKey: .wellFedAttacks)
+        try container.encode(companionRoomsLeft, forKey: .companionRoomsLeft)
         try container.encode(juiceCount, forKey: .juiceCount)
         try container.encode(sluggishAttacks, forKey: .sluggishAttacks)
         try container.encode(knownIncantations, forKey: .knownIncantations)

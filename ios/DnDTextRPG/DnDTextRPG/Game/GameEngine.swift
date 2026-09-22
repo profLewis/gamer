@@ -23981,6 +23981,8 @@ class GameEngine: ObservableObject {
             advanceTime(10)
             tickTorch()
             checkTorchEvent()
+            // A rescued companion's stay is counted in rooms walked.
+            tickCompanions()
             if let room = dungeon.currentRoom {
                 logEvent("Moved \(direction.rawValue) to \(room.name)", category: "EXPLORE")
                 logMultiplayerAction("The party entered \(room.name)")
@@ -26228,6 +26230,14 @@ class GameEngine: ObservableObject {
             actions.append { [weak self] in self?.learnFromNPC() }
         }
 
+        // Ask them along. The card has promised this since the beginning and
+        // nothing ever did it — canJoinTemporarily was only ever read to
+        // print a tick.
+        if npc.type.canJoinTemporarily && !npc.hasJoined {
+            options.append(MenuOption("Ask to Join", tint: .cyan))
+            actions.append { [weak self] in self?.askNPCToJoin() }
+        }
+
         if npc.type.canCurePoison {
             let hasPoisoned = party.contains { $0.isPoisoned }
             if hasPoisoned {
@@ -26276,6 +26286,137 @@ class GameEngine: ObservableObject {
         menuHandler = { choice in
             if choice > 0 && choice <= actions.count {
                 actions[choice - 1]()
+            }
+        }
+    }
+
+    /// The most adventurers who can walk together.
+    static let maxPartySize = 4
+
+    /// How a rescued companion fights: what they were before they were here.
+    private func companionBuild(for type: NPCType) -> (race: Race, charClass: CharacterClass) {
+        switch type {
+        case .prisoner: return (.human, .rogue)
+        case .elfScout: return (.woodElf, .ranger)
+        case .goblinDefector: return (.halfOrc, .rogue)
+        case .woundedKnight: return (.human, .fighter)
+        default: return (.human, .fighter)
+        }
+    }
+
+    /// "Will you come with us?" — the promise the NPC card has been making.
+    private func askNPCToJoin() {
+        guard let room = dungeon?.currentRoom, var npc = room.npc else { return }
+        let back: () -> Void = { [weak self] in self?.talkToNPC() }
+        clearTerminal()
+        printTitle("Will You Come?")
+        print("")
+        printLines(npc.type.asciiArt, color: .cyan)
+        print("")
+
+        guard party.count < Self.maxPartySize else {
+            printWrapped("\"Four of you already,\" they say, counting. \"Any more and we'd be tripping over each other in these corridors. Come back if you lose one — though I'd rather you didn't.\"", indent: 2, color: .yellow)
+            print("")
+            printWrapped("A party is at most \(Self.maxPartySize). Ask again if someone falls and doesn't get up.", indent: 2, color: .dimGreen)
+            print("")
+            showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+            closeHandler = back
+            menuHandler = { _ in back() }
+            return
+        }
+
+        let hurt = party.contains { !$0.isConscious }
+        let line: String
+        switch npc.type {
+        case .prisoner:
+            line = "\"You'd cut me loose?\" The ropes come away stiff with old blood. \"Then I'm yours until we're both out of here. I know these tunnels — I've had long enough to listen to them.\""
+        case .woundedKnight:
+            line = "\"My sword arm still works,\" the knight says, rising with a wince. \"It would be a poor sort of rescue that left me here to rust. Lead on.\""
+        case .elfScout:
+            line = "\"I was going your way,\" the scout says, already checking the corridor ahead. \"I'll walk in front. I see trouble before it sees us.\""
+        case .goblinDefector:
+            line = "\"They'll kill me for this,\" the goblin says cheerfully. \"Good. I know where they sleep, what they fear, and which doors they never open.\""
+        default:
+            line = "\"Aye. I'll come.\""
+        }
+        printWrapped(line, indent: 2, color: .yellow)
+        print("")
+        if hurt {
+            printWrapped("They glance at the one being carried, and say nothing about it.", indent: 2, color: .dimGreen)
+            print("")
+        }
+
+        let opts = [MenuOption("Welcome Them", isDefault: true), MenuOption("Not Now"), MenuOption("< Back", tint: .navigation, compact: true)]
+        showMenuOptions(opts)
+        closeHandler = back
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            guard choice == 1 else { back(); return }
+            npc.hasJoined = true
+            // Long enough to matter, short enough to be a companion rather
+            // than a fifth of the party for ever.
+            npc.roomsRemainingAsCompanion = 30
+            room.npc = npc
+            self.addCompanion(from: npc, room: room, then: back)
+        }
+    }
+
+    /// Turn the NPC into an adventurer and put them in the line.
+    private func addCompanion(from npc: DungeonNPC, room: Room, then back: @escaping () -> Void) {
+        let build = companionBuild(for: npc.type)
+        // A little better than a raw recruit: they have survived down here.
+        let scores = AbilityScores(strength: 13, dexterity: 14, constitution: 13,
+                                   intelligence: 11, wisdom: 12, charisma: 10)
+        let companion = Character(name: npc.displayName, race: build.race,
+                                  characterClass: build.charClass, abilityScores: scores,
+                                  isComputerControlled: true)
+        companion.markAsAI()
+        // Brought up to the party's footing, so they are neither a liability
+        // nor a free win.
+        let partyLevel = max(1, party.map { $0.level }.max() ?? 1)
+        if partyLevel > 1 {
+            companion.level = partyLevel
+            let extraHP = (partyLevel - 1) * 5
+            companion.maxHP += extraHP
+            companion.currentHP = companion.maxHP
+        }
+        companion.companionRoomsLeft = npc.roomsRemainingAsCompanion
+        autoEquip(companion)
+        let spells = SpellCatalog.startingSpells(for: build.charClass)
+        if !spells.isEmpty {
+            companion.knownSpells = spells
+            companion.spellSlots = SpellCatalog.startingSlots(for: build.charClass, level: companion.level)
+        }
+        party.append(companion)
+
+        clearTerminal()
+        printTitle("A Companion")
+        print("")
+        print("  \(companion.name) joins the party!", color: .brightGreen, bold: true)
+        print("")
+        printLines(companion.displaySheet())
+        print("")
+        printWrapped("They walk with you for a while — about \(npc.roomsRemainingAsCompanion) rooms — and fight on their own account, like any robot companion. You'll be told when they take their leave.", indent: 2, color: .dimGreen)
+        print("")
+        logEvent("\(companion.name) (\(npc.type.rawValue)) joined the party in \(room.name)", category: "NPC")
+        breadcrumbDid = "\(companion.name) joined"
+        // They are with the party now, not standing in the room.
+        room.npc = nil
+        waitForContinueWithTimeout(multiplier: 1.2) { back() }
+    }
+
+    /// Count down a rescued companion's stay, and say goodbye when it ends.
+    func tickCompanions() {
+        for character in party where character.isComputerControlled && character.companionRoomsLeft > 0 {
+            character.companionRoomsLeft -= 1
+            if character.companionRoomsLeft == 0 {
+                party.removeAll { $0.id == character.id }
+                print("")
+                printWrapped("\(character.name) stops. \"This is as far as I go — my road turns here. Luck to you, all of you.\" They clasp hands with each of you in turn, and are gone up the passage before anyone can argue.", indent: 2, color: .yellow)
+                print("")
+                logEvent("\(character.name) left the party", category: "NPC")
+            } else if character.companionRoomsLeft == 5 {
+                printWrapped("\(character.name) says they can walk with you a little further — five rooms or so — and then they must turn back.", indent: 2, color: .dimGreen)
             }
         }
     }
@@ -26690,7 +26831,19 @@ class GameEngine: ObservableObject {
             }
             if let learner = candidates.randomElement(), let spell = SpellCatalog.specialSpellFor(characterClass: learner.characterClass) {
                 learner.knownSpells.append(spell)
-                print("  \(learner.name) learns \(spell.name) — \(spell.description)", color: .yellow)
+                // A rare technique can be cast from a level-1 slot, but a
+                // caster with no slots at all (a ranger at level 1) had
+                // nowhere to cast it from — the spell sat in the book,
+                // unusable, which is what "learned it and can't use it"
+                // looked like. Give them the one slot it needs.
+                if learner.spellSlots.isEmpty {
+                    learner.spellSlots.level1Max = 1
+                    learner.spellSlots.level1Current = 1
+                    print("  \(learner.name) learns \(spell.name) — \(spell.description)", color: .yellow)
+                    print("  (And with it, the knack of holding one spell ready.)", color: .dimGreen)
+                } else {
+                    print("  \(learner.name) learns \(spell.name) — \(spell.description)", color: .yellow)
+                }
             } else {
                 party.first?.gold += 50
                 print("  (No one could make use of it — 50 gold instead.)", color: .yellow)
@@ -28700,8 +28853,38 @@ class GameEngine: ObservableObject {
             }
         }
 
-        showMenu(options)
-        closeHandler = { [weak self] in self?.showDropItemMenu(character: from, onBack: onBack, fromDM: fromDM) }
+        // This screen had no way out but the ✕, which went back to the item
+        // list — pick an item, change your mind, and you were looking at the
+        // same list again, which is what played as a loop. Keep Nothing goes
+        // straight back to the pack, and the 3-bar has Back and help.
+        var menuOptions = options.map { text in
+            MenuOption(text,
+                       isDisabled: text.contains("[full]") || text.contains("[heavy]"),
+                       tint: text == "Drop on Floor" ? .danger : .normal)
+        }
+        menuOptions.append(MenuOption("Keep It", isDefault: true))
+        actions.append { [weak self] in
+            self?.showPackMenu(character: from, onBack: onBack, fromDM: fromDM)
+        }
+        menuOptions.append(MenuOption("?", tint: .navigation, compact: true))
+        actions.append { [weak self] in
+            guard let self = self else { return }
+            self.showInlineHelp {
+                self.printTitle("Give or Drop — Help")
+                self.print("")
+                self.printWrapped("Hand \(item.name) to someone else in the party, or leave it here in this room. Dropped things stay where you leave them, so you can come back for them.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.printWrapped("Keep It changes nothing and goes back to the pack. A greyed-out name means their pack is full or the item is too heavy for them.", indent: 2, color: .dimGreen)
+                self.print("")
+            }
+        }
+        menuOptions.append(MenuOption("< Back", tint: .navigation, compact: true))
+        actions.append { [weak self] in
+            self?.showDropItemMenu(character: from, onBack: onBack, fromDM: fromDM)
+        }
+
+        showMenuOptions(menuOptions)
+        closeHandler = { [weak self] in self?.showPackMenu(character: from, onBack: onBack, fromDM: fromDM) }
         menuHandler = { choice in
             if choice > 0 && choice <= actions.count {
                 actions[choice - 1]()
