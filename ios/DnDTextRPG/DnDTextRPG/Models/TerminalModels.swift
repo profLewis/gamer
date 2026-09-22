@@ -183,6 +183,7 @@ struct MenuOption: Identifiable {
         case "< Leave": return "Leave"
         case "< Leave Game": return "Leave game"
         case "ⓘ": return "About"
+        case "⚄": return "New ideas"
         case "▲": return "Up"
         case "▼": return "Down"
         default:

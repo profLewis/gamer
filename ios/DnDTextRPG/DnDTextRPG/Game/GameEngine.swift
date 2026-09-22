@@ -2057,6 +2057,12 @@ class GameEngine: ObservableObject {
     /// The map viewer's Show the Boss button — the same as "magick: show the boss".
     func toggleRevealBossFromOverlay() {
         guard let d = dungeon else { return }
+        if !d.revealBoss && !partyCanWorkMagick {
+            explorationStatusMessage = ("✧ Nobody in the party has the magick for that — it needs a spellcaster, or someone clever, wise or forceful enough.", .magenta)
+            mapOverlayVisible = false
+            if gameState == .exploring && currentCombat == nil { showExplorationView() }
+            return
+        }
         d.revealBoss.toggle()
         objectWillChange.send()
         if mapOverlayVisible { presentAtlasMapOverlay() }
@@ -4832,7 +4838,7 @@ class GameEngine: ObservableObject {
     func tryDirectCommand(_ transcript: String) -> Bool {
         // Spoken incantations have no colon: "magic show the boss".
         if let words = Self.incantation(transcript, spoken: true) {
-            castIncantation(words)
+            castIncantation(words, asCheat: transcript.lowercased().hasPrefix("cheat"))
             return true
         }
         // In DM chat everything said is part of the conversation.
@@ -5217,9 +5223,14 @@ class GameEngine: ObservableObject {
         let speech = SpeechEngine.shared
         guard speech.isAvailable else { return }
 
-        // Toggle persistent speaker mode
+        // Toggle persistent speaker mode — and say so, so it never seems to
+        // switch itself on or off unnoticed.
         if speakerModeOn {
             // Turn off entirely
+            logEvent("Read Aloud off (speaker button)", category: "SETTINGS")
+            if gameState == .exploring && currentCombat == nil {
+                explorationStatusMessage = ("Read Aloud is off. Tap the speaker to turn it on again.", .dimGreen)
+            }
             speakerModeOn = false
             speakerPaused = false
             speech.stop()
@@ -5231,6 +5242,10 @@ class GameEngine: ObservableObject {
         }
 
         // Turn on — read current screen (title first) and stay in mode
+        logEvent("Read Aloud on (speaker button)", category: "SETTINGS")
+        if gameState == .exploring && currentCombat == nil {
+            explorationStatusMessage = ("Read Aloud is on: each screen is read to you. Tap the speaker again to stop.", .cyan)
+        }
         speakerModeOn = true
         speakerPaused = false
         speakerHasReadCurrentPage = false
@@ -5565,7 +5580,7 @@ class GameEngine: ObservableObject {
         // "cheat:", "magic:", "magick:" or "magik:" first — an incantation,
         // wherever it's typed.
         if let words = Self.incantation(trimmed) {
-            castIncantation(words)
+            castIncantation(words, asCheat: trimmed.lowercased().hasPrefix("cheat"))
             return
         }
         // Training: "skip" passes an optional step.
@@ -5901,7 +5916,7 @@ class GameEngine: ObservableObject {
                let cur = self.currentTrainingStep() {
                 self.explorationTipGeneration = self.screenGeneration
                 self.print("")
-                self.print("  🎓 STEP \(cur.index + 1) OF \(cur.count)", color: .cyan, bold: true)
+                self.print("  ✦ STEP \(cur.index + 1) OF \(cur.count)", color: .cyan, bold: true)
                 self.printWrapped(cur.step.detail, indent: 2, color: .cyan)
                 self.forceScrollToNewest = true
                 return
@@ -6149,10 +6164,26 @@ class GameEngine: ObservableObject {
 
     /// Cheats: "show the boss", "show monsters", "show traps" (or "show
     /// everything"); "hide ..." takes it off the map again.
-    func castIncantation(_ words: String) {
-        logEvent("Incantation: \(words)", category: "CHEAT")
+    /// Magick needs someone able to work it: a spellcaster, or someone
+    /// clever, wise or forceful enough (14+ in Intelligence, Wisdom or
+    /// Charisma), awake. "cheat:" is the grown-ups' way and always works.
+    var partyCanWorkMagick: Bool {
+        party.contains { c in
+            c.isConscious && (!c.knownSpells.isEmpty
+                || [Ability.intelligence, .wisdom, .charisma].contains { c.abilityScores.score(for: $0) >= 14 })
+        }
+    }
+
+    func castIncantation(_ words: String, asCheat: Bool = false) {
+        logEvent("Incantation: \(words)\(asCheat ? " (cheat)" : "")", category: "CHEAT")
         guard let d = dungeon else {
             print("  The words echo, but there's no dungeon here to work on.", color: .magenta)
+            return
+        }
+        if !asCheat && !partyCanWorkMagick {
+            let msg = "The words fall flat. Magick needs someone who can work it — a spellcaster, or someone clever, wise or forceful enough."
+            if gameState == .exploring { explorationStatusMessage = ("✧ " + msg, .magenta); showExplorationView() }
+            else { print("  ✧ " + msg, color: .magenta) }
             return
         }
         let hiding = words.hasPrefix("hide") || words.hasPrefix("unshow")
@@ -6175,7 +6206,7 @@ class GameEngine: ObservableObject {
         let merchants = all || words.contains("merchant") || words.contains("shop") || words.contains("trader") || words.contains("gym")
         let people = all || words.contains("npc") || words.contains("people") || words.contains("folk") || words.contains("someone")
         guard (words.hasPrefix("show") || words.hasPrefix("reveal") || hiding), boss || monsters || traps || stairs || merchants || people else {
-            let msg = "The magic fizzles. Try \"magick: show the boss\", \"show monsters\", \"show traps\", \"show stairs\", \"show merchants\" or \"show people\"."
+            let msg = "The magick fizzles. It answers \"show …\" and \"hide …\" — and only asks for things a map could hold."
             if gameState == .exploring { explorationStatusMessage = ("✧ " + msg, .magenta); showExplorationView() }
             else { print("  ✧ " + msg, color: .magenta) }
             return
@@ -6262,6 +6293,10 @@ class GameEngine: ObservableObject {
              "Each adventurer carries a pack: weapons, armour, potions, food, torches, keys. Open it by typing \"inventory\" (or \"i\"), or from the Party button. Tap an item to use, equip, give or drop it.", false),
             ("status", "Open Party Status (the Party button) to see everyone's health, spells and your quest.",
              "Party Status shows each adventurer's hit points, armour, level and spells, your gold, and what you're here to do. It's the place to check before a fight or after one.", true),
+            ("quest", "Take on a quest: find someone to talk to (N on the map), Talk, and ask if they need help. (\"skip\" if nobody's here.)",
+             "Quests give an adventure its point, and pay. People you meet — N on the map — often need something done: talk to them, ask about their troubles, and say yes. Your quests (and any deadline, counted in days) are on Party Status; the status line reminds you which way to go. In a real adventure the main quest is offered at the start. If there's nobody on this floor, type \"skip\".", false),
+            ("merchant", "Visit a merchant (M on the map): buy, sell or haggle. (\"skip\" if there's none.)",
+             "Merchants sell torches, food, potions, weapons and armour, buy what you don't need, and haggle — offer less and see what they say. Walk into their room (M on the map) and tap Visit Merchant. Check your packs after buying. If there's no merchant on this floor, type \"skip\".", false),
             ("fight", "Win a fight. Attack, or cast a spell — the ? in a fight shows each hero's chances.",
              "When monsters appear, the fight takes turns: each of you, and each monster, in the order rolled at the start. On your turn choose Attack, a spell, a potion, Dodge or run. The ? in a fight lists the enemy's strength and your real chance to hit it. Your robot companion takes their own turns.", false),
             ("rest", "Rest to heal: the button in the middle of the pad (hold it for a long rest).",
@@ -6289,6 +6324,7 @@ class GameEngine: ObservableObject {
     private func trainingStepDone(_ key: String, in d: Dungeon) -> Bool {
         if d.trainingDone.contains(key) { return true }
         switch key {
+        case "quest": return !allQuests.isEmpty || mainQuest != nil
         case "walk": return d.rooms.values.filter { $0.visited }.count >= 2
         case "torch": return torchLit
         case "fight": return combatsWon > 0
@@ -6308,8 +6344,11 @@ class GameEngine: ObservableObject {
     private func trainingNudge() {
         guard let d = dungeon, explorationStatusMessage == nil, let cur = currentTrainingStep() else { return }
         var hint = cur.step.hint
+        if cur.step.key == "walk" {
+            hint += " This training floor has \(d.rooms.count) rooms — the line under the map counts how many you've explored."
+        }
         if cur.step.key == "guardian", let bearing = guardianBearing(in: d) { hint += " Its lair is \(bearing)." }
-        explorationStatusMessage = ("🎓 Training \(cur.index + 1) of \(cur.count): " + hint, .cyan)
+        explorationStatusMessage = ("✦ Training \(cur.index + 1) of \(cur.count): " + hint, .cyan)
     }
 
     /// "skip" in training passes the current step.
@@ -6317,6 +6356,78 @@ class GameEngine: ObservableObject {
         guard let cur = currentTrainingStep(), cur.step.key != "guardian" else { return false }
         trainingDid(cur.step.key)
         return true
+    }
+
+    // MARK: How To…
+    //
+    // Short worked examples, each drawing a little of the screen you'll
+    // meet, so the steps can be matched to what's really there.
+
+    private static let trainingHowTos: [(title: String, lines: [String], screen: [String])] = [
+        ("Save a Game", [
+            "Tap Save while exploring — the game saves on the spot. Or tap ✕ (right of the input line), then Save & Leave to save and go to the menu.",
+            "The game also saves by itself as you go (Settings > Game Saves sets how often)."],
+         ["  [ Search ] [ Listen ] [ Save ]", "            ↑ one tap", "  ✓ Saved: Wren — Goblin Hollow"]),
+        ("Load a Game", [
+            "From the title screen: Play > Continue Adventure. Your adventures are listed newest first; tap one to see its save points, or long-press it to jump straight back in.",
+            "Tap the \"Sorted by\" line to sort by points instead — that's the Hall of Fame."],
+         ["  CONTINUE ADVENTURE", "  1. Goblin Hollow Lv.1 PLAYING", "     Wren (Rogue), R. Pip (Cleric)", "  → tap 1 to open, hold 1 to load"]),
+        ("Take on a Quest", [
+            "The main quest is offered as an adventure begins: hear the plea, then Take Up the Quest (or hear another). Side quests come from people you meet: walk into a room with someone (N), Talk, and ask what troubles them.",
+            "Party Status lists every quest, its reward and any deadline in days. The status line points the way."],
+         ["  Old Maren: \"My lantern — lost below.", "   Bring it back and it's yours to keep.\"", "  [ Accept ] [ Not Now ] [ Ask About… ]"]),
+        ("Use a Merchant", [
+            "Walk into a merchant's room (M on the map) and tap Visit Merchant. Buy: pick an item, then who carries it. Sell: turn spare loot into gold. Haggle: offer less — they may meet you halfway, and you can Accept their counter-offer.",
+            "Torches, food and healing potions are always worth having."],
+         ["  AUNTIE FEN'S STALL        Gold: 64", "  Torch ......... 1gp", "  Healing Potion  50gp", "  [ Buy ] [ Sell ] [ Haggle ] [ Leave ]"]),
+        ("Fight", [
+            "Fights take turns in the order rolled at the start. On your turn: Attack, cast a Spell, drink a Potion, Dodge, or Run. The ? shows the enemy's strength and each hero's real chance to hit.",
+            "Robot companions take their own turns. When it's won, Replay Fight steps back through it."],
+         ["  Goblin  7/7 HP  armour 13", "  Wren's turn:", "  [ Attack ] [ Spell ] [ Potion ] [ Dodge ]"]),
+        ("Rest (and Time)", [
+            "Tap the middle of the direction pad for a short rest: some healing, one hour. Hold it for a long rest: full healing and spells back — but eight hours.",
+            "Time matters: quests have deadlines in days, torches burn down and monsters move. Rest when you need to, not in every room."],
+         ["           [ N ]", "     [ W ] [Rest] [ E ]", "           [ S ]", "  tap = 1 hour · hold = 8 hours"]),
+        ("Add an AI Brain", [
+            "The game's own Dungeon Master needs nothing. For a DM that chats freely: Settings (the cog) > AI Brain. Apple's on-device brain needs no key on newer devices; Claude, ChatGPT or Gemini need a key from their website — the key screen has a Get Key link, and tests the key for you.",
+            "If a key stops working the game says why when it starts."],
+         ["  AI BRAIN", "  Apple (on device) — ready", "  Anthropic (Claude) — not set up", "  [ Get Key ] [ Paste Key ] [ Test Key ]"]),
+        ("Certificates & Hall of Fame", [
+            "Winning an adventure, and training at a gym, earns a certificate: your party, your stats and the maps you drew. They're kept in Settings > Certificates, and can be printed or saved as a PDF.",
+            "Your best adventures are in the Hall of Fame: Play > Continue Adventure, sorted by points."],
+         ["  ╔═════════════════════════╗", "  ║  CERTIFICATE OF VALOUR  ║", "  ║  Wren & R. Pip          ║", "  ╚═════════════════════════╝"]),
+        ("Talk or Type Instead", [
+            "Tap the microphone to speak a command: a button's name or number, a direction, or anything you'd like the DM to hear. Or type at the > prompt.",
+            "Read Aloud (the speaker) reads each screen. With VoiceOver on, the game speaks through VoiceOver so only one voice talks."],
+         ["  > go north", "  > search the altar", "  > @pip heal Wren"]),
+    ]
+
+    func showHowToMenu(onBack: @escaping () -> Void) {
+        clearTerminal()
+        printTitle("How To…")
+        print("")
+        printWrapped("Pick something to see how it's done — each shows a little of the screen you'll meet.", indent: 2, color: .dimGreen)
+        print("")
+        let topics = Self.trainingHowTos
+        var opts = topics.map { MenuOption($0.title) }
+        opts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        showMenuOptions(opts)
+        closeHandler = onBack
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            guard choice >= 1, choice <= topics.count else { onBack(); return }
+            let t = topics[choice - 1]
+            self.clearTerminal()
+            self.printTitle(t.title)
+            self.print("")
+            for l in t.lines { self.printWrapped(l, indent: 2); self.print("") }
+            self.print("  WHAT YOU'LL SEE", color: .cyan, bold: true)
+            for l in t.screen { self.print(l, color: .green) }
+            self.print("")
+            self.showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+            self.closeHandler = { [weak self] in self?.showHowToMenu(onBack: onBack) }
+            self.menuHandler = { [weak self] _ in self?.showHowToMenu(onBack: onBack) }
+        }
     }
 
     func startTrainingGame() {
@@ -6357,10 +6468,11 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped("Each training game is a little different. When you're ready for the real thing, start a New Adventure from the Play menu.", indent: 2, color: .dimGreen)
         print("")
-        printWrapped("Quick Training: the basics in eight steps — moving, light, searching, listening, packs, a fight, resting and the Boss.", indent: 2, color: .green)
-        printWrapped("Full Training: fourteen steps — those, plus the map viewer, help, Party Status, saving and loading, certificates and the AI Dungeon Master.", indent: 2, color: .green)
+        printWrapped("Quick Training: the basics in \(trainingSteps(full: false).count) steps — moving, light, searching, listening, packs, a quest, a merchant, a fight, resting and the Boss.", indent: 2, color: .green)
+        printWrapped("Full Training: \(trainingSteps(full: true).count) steps — those, plus the map viewer, help, Party Status, saving and loading, certificates and the AI Dungeon Master.", indent: 2, color: .green)
+        printWrapped("How To…: short worked examples of saving, loading, quests, merchants, fights, resting, the AI brain and certificates.", indent: 2, color: .green)
         print("")
-        showMenuOptions([MenuOption("Quick Training", isDefault: true), MenuOption("Full Training"),
+        showMenuOptions([MenuOption("Quick Training", isDefault: true), MenuOption("Full Training"), MenuOption("How To…"),
                          MenuOption("?", tint: .navigation, compact: true),
                          MenuOption("< Back", tint: .navigation, compact: true)])
         let back: () -> Void = { [weak self] in self?.dungeon = nil; self?.party = []; self?.showPlayMenu() }
@@ -6373,6 +6485,8 @@ class GameEngine: ObservableObject {
                 self.logEvent(choice == 2 ? "Full training" : "Quick training", category: "EXPLORE")
                 self.enterDungeon()
             case 3:
+                self.showHowToMenu(onBack: { [weak self] in self?.startTrainingGame() })
+            case 4:
                 self.showInlineHelp {
                     self.printTitle("Training — Help")
                     self.print("")
@@ -14138,7 +14252,7 @@ class GameEngine: ObservableObject {
             voiceIds.append(vo.id)
         }
 
-        print("  Tap to select & preview. 🎲 for more voices.", color: .dimGreen)
+        print("  Tap to select & preview. ⚄ for more voices.", color: .dimGreen)
         print("  \(allEligible.count) voices available.", color: .dimGreen)
         print("")
 
@@ -21438,6 +21552,10 @@ class GameEngine: ObservableObject {
         showInlineHelp {
             self.printTitle("Exploration Help")
             self.print("")
+            self.print("  THE MAP", color: .cyan, bold: true)
+            self.printWrapped("The box at the top is the map of the rooms around you. [@] is your party; each [ ] is a room you've seen, and the lines between them (-- and |) are the ways through. XX = a barred door, KK = a locked one. Long-press the map for the whole floor, every floor you've been to, and a printable copy. The line under the map shows the time and how many rooms you've explored. Full symbol key:", indent: 2, color: .green)
+            self.printFullMapLegend()
+            self.print("")
             self.print("  THE 3-BAR BUTTON", color: .cyan, bold: true)
             self.printWrapped("The small three-part button at the bottom right of the buttons. Left: < Back. (The exploring screen has no Back: to leave the adventure, tap ✕ at the right of the input line, or the Leave link on its ? help page — you're asked about saving first, and the app stays open.) Middle: ? — help for whatever screen you're on. Right: >> — more buttons when they don't all fit (<< goes back). Long-press << or >> to jump three pages.", indent: 2, color: .dimGreen)
             self.print("")
@@ -21453,12 +21571,8 @@ class GameEngine: ObservableObject {
             self.printWrapped("Each floor has a guardian in its lair (B on the map). Beat it and the way down opens. The guardian of the last floor is the Boss — the villain of your tale; in a one-floor game the guardian is the Boss. A rare deep-blue teleport pad can drop you a floor early, past that guardian.", indent: 2, color: .dimGreen)
             self.printWrapped("Stairs and ropes inside a floor lead to its other gallery — a shortcut across the same depth, not a way down. The header line shows the floor you're on, and which gallery.", indent: 2, color: .dimGreen)
             self.print("")
-            self.print("  THE MAP", color: .cyan, bold: true)
-            self.printWrapped("@ is your party. XX = secured door, KK = locked door. Full symbol key:", indent: 2, color: .green)
-            self.printFullMapLegend()
-            self.print("")
-            self.print("  A LITTLE MAGICK", color: .magenta, bold: true)
-            self.printWrapped("Things can be made to show on the map with an incantation typed at the > prompt: \"magick: show ...\" (or cheat:, magic:, magik:). Try \"magick: show the boss\" (purple B), \"show monsters\" (red), \"show traps\" (orange), \"show stairs\" (stairs, ropes, teleport pads), \"show merchants\", \"show people\", \"show all\" (the same as \"show everything\") or \"show all floors\" — or something of your own. They show on every floor in the map viewer too. \"hide ...\" undoes it.", indent: 2, color: .dimGreen)
+            self.print("  LESSER MAGICK", color: .magenta, bold: true)
+            self.printWrapped("There are lesser magicks. A party with a spellcaster in it — or someone clever, wise or forceful enough — can speak an incantation at the > prompt: \"magick: show …\" and a word for something that might be on the map. What answers is for you to find out. \"magick: hide …\" undoes it.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  DIRECTIONS", color: .cyan, bold: true)
             self.printWrapped("Tap N/S/E/W to move. Long-press a direction to secure/unsecure that door.", indent: 2, color: .dimGreen)
@@ -21756,7 +21870,9 @@ class GameEngine: ObservableObject {
             printWrapped("You are in \(room.name), \(Dungeon.floorName(d.level)) of \(d.name). \(formattedGameTime()). \(lead.map { "You are \(shortName(for: $0)), the \($0.characterClass.rawValue). " } ?? "")Party: \(health). Exits: \(exits.isEmpty ? "none" : exits).", indent: 2, color: .dimGreen)
             print("")
         }
-        print("  ☼ \(formattedGameTime())", color: .cyan, bold: true)
+        // The time, and how much of this level you've walked.
+        let seenRooms = dungeon.rooms.values.filter { $0.visited }.count
+        print("  ☼ \(formattedGameTime())  ·  rooms \(seenRooms) of \(dungeon.rooms.count) explored", color: .cyan, bold: true)
         if let line = questDeadlineLine() { print("  \(line)", color: .dimGreen) }
         if !torchLit {
             if partyHasTorch() {
@@ -27689,7 +27805,7 @@ class GameEngine: ObservableObject {
                                                   deed: "Out-sparred \(trainer.name) of \(trainer.gymName) to earn free entry (\(total) against \(trainer.sparDC)).")
                         room.trainer = trainer
                         self.print("  \"Not bad! You've earned your way in — for good.\"", color: .brightGreen)
-                        self.print("  🎓 A Certificate of Grit for \(character.name) — kept in Settings > Certificates.", color: .yellow)
+                        self.print("  ✦ A Certificate of Grit for \(character.name) — kept in Settings > Certificates.", color: .yellow)
                         self.waitForContinue()
                         self.inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
                     } else {
@@ -27938,7 +28054,7 @@ class GameEngine: ObservableObject {
         // others (Settings > Certificates).
         self.saveMeritCertificate("Certificate of Training", recipient: character,
                                   deed: "Trained in \(skill.rawValue) under \(trainer.name) at \(trainer.gymName).")
-        self.print("  🎓 A Certificate of Training in \(skill.rawValue) — kept in Settings > Certificates.", color: .yellow)
+        self.print("  ✦ A Certificate of Training in \(skill.rawValue) — kept in Settings > Certificates.", color: .yellow)
         self.advanceTime(30)
         self.waitForContinue()
         self.inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
@@ -29226,13 +29342,23 @@ class GameEngine: ObservableObject {
             ? "(This was a preview — nothing was saved.)"
             : "Your last save — from just before the final battle — is kept, so you can play the ending again from Continue Adventure. The certificate is kept too, in Settings > Certificates.", indent: 2, color: .dimGreen)
         print("")
-        showMenu(["See the Certificate", "Fireworks!", preview ? "Back to the Menu" : "End Adventure"])
+        // The end of Training: a How To… menu, to see how everything else is done.
+        let training = dungeon?.training == true
+        if training {
+            printWrapped("Training complete! See How To… for saving, loading, quests, merchants and more — then start a New Adventure from the Play menu.", indent: 2, color: .cyan)
+            print("")
+        }
+        var endOpts = ["See the Certificate", "Fireworks!"]
+        if training { endOpts.append("How To…") }
+        endOpts.append(preview ? "Back to the Menu" : "End Adventure")
+        showMenu(endOpts)
         closeHandler = { [weak self] in self?.finishEndgame() }
         menuHandler = { [weak self] choice in
-            guard let self = self else { return }
-            switch choice {
-            case 1: self.certificate = self.makeCertificate(preview: preview)
-            case 2: self.launchFireworks()
+            guard let self = self, choice >= 1, choice <= endOpts.count else { return }
+            switch endOpts[choice - 1] {
+            case "See the Certificate": self.certificate = self.makeCertificate(preview: preview)
+            case "Fireworks!": self.launchFireworks()
+            case "How To…": self.showHowToMenu(onBack: { [weak self] in self?.finishEndgame() })
             default: self.finishEndgame()
             }
         }
@@ -30482,6 +30608,40 @@ class GameEngine: ObservableObject {
     /// Toggle inline help: prepends help text above existing content, swaps ? for ?̸.
     /// Pressing ?̸ restores the original screen. Menu buttons are preserved.
     /// - helpBuilder: closure that prints help text (should NOT call clearTerminal)
+    /// Every help page ends by saying what this screen's own back, forward
+    /// and page buttons do — only the ones that are really there.
+    private func printNavButtonsHelp(menu: [MenuOption], undo: String?, redo: String?) {
+        let texts = Set(menu.map { $0.text })
+        var lines: [String] = []
+        if texts.contains("<<") || texts.contains(">>") {
+            lines.append("<< and >> (in the small 3-part button, bottom-right): this list is longer than fits, so it's split into pages. >> shows the next page of it, << the page before. Long-press either to jump three pages. The list itself doesn't change — only which part you see.")
+        }
+        if texts.contains("< Back") {
+            lines.append("< Back: leave this screen and go back to the one you came from. Nothing on this screen is undone by it.")
+        }
+        if texts.contains("< Leave") || texts.contains("< Leave Game") {
+            lines.append("< Leave: leave this place or adventure (you're asked about saving first).")
+        }
+        if texts.contains("< Earlier") || texts.contains("Later >") {
+            lines.append("< Earlier and Later >: step back through screens you've already seen, and forward again. They're read-only — looking back changes nothing.")
+        }
+        if texts.contains("Fwd >") {
+            lines.append("Fwd >: go forward again to the screen you just came back from.")
+        }
+        if texts.contains("Next >") {
+            lines.append("Next >: redo a step you've just undone with < Back.")
+        }
+        if let undo = undo {
+            lines.append("The curved back arrow on the input line: \(undo.isEmpty ? "undo your last change here" : "undo — " + undo). The forward arrow beside it (when shown) puts it back\(redo.map { $0.isEmpty ? "" : " — " + $0 } ?? "").")
+        } else if let redo = redo {
+            lines.append("The curved forward arrow on the input line: redo\(redo.isEmpty ? "" : " — " + redo).")
+        }
+        guard !lines.isEmpty else { return }
+        print("  BUTTONS HERE: BACK, FORWARD AND PAGES", color: .cyan, bold: true)
+        for l in lines { printWrapped(l, indent: 2, color: .dimGreen) }
+        print("")
+    }
+
     func showInlineHelp(_ helpBuilder: () -> Void) {
         // Only "close help" if the help page is still the screen showing.
         // A help page left some other way (navigating elsewhere) used to
@@ -30554,6 +30714,8 @@ class GameEngine: ObservableObject {
                 print("")
             }
             helpBuilder()
+            printNavButtonsHelp(menu: savedMenu, undo: savedUndo != nil ? (savedUndoLabel ?? "") : nil,
+                                redo: savedRedo != nil ? (savedRedoLabel ?? "") : nil)
             printInputHelp()
             let helpLines = terminalLines
 
@@ -31637,7 +31799,7 @@ class GameEngine: ObservableObject {
             self.print("")
 
             self.print("  HOW TO USE", color: .cyan, bold: true)
-            self.printWrapped("Type a new name and press return to apply it. Tap the 🎲 icon above the keyboard for fresh suggestions. Names matching heroes from Name Lore will have character cards!", indent: 2, color: .dimGreen)
+            self.printWrapped("Type a new name and press return to apply it. Tap the ⚄ icon above the keyboard for fresh suggestions. Names matching heroes from Name Lore will have character cards!", indent: 2, color: .dimGreen)
             self.print("")
 
             self.print("  UNDO / CANCEL", color: .cyan, bold: true)
@@ -39112,7 +39274,7 @@ class GameEngine: ObservableObject {
               "    │ ●_● │",
               "    │  ▽  │",
               "    ╰──┬──╯",
-              "     ╱│╲ 🎲",
+              "     ╱│╲ ⚄",
               "      │",
               "     ╱ ╲"]),
             ("\"I haven't got all day. Well, actually I have. But still.\"",
@@ -40677,13 +40839,13 @@ class GameEngine: ObservableObject {
         printTitle("Rename Adventure")
         print("  Now: \(slot.slotName)", color: .brightGreen)
         print("")
-        printWrapped("Tap a suggestion, tap 🎲 for new ideas, or type your own name at the > prompt.", indent: 2, color: .dimGreen)
+        printWrapped("Tap a suggestion, tap ⚄ for new ideas, or type your own name at the > prompt.", indent: 2, color: .dimGreen)
         print("")
         for (i, name) in suggestions.enumerated() {
             print("  \(i + 1). \(name)", color: .green)
         }
         print("")
-        let options = suggestions + ["🎲 New Ideas", "?", "< Back"]
+        let options = suggestions + ["⚄ New Ideas", "?", "< Back"]
         promptTextWithMenu("New name:", options: options)
         closeHandler = cancelAction
 
@@ -40703,13 +40865,13 @@ class GameEngine: ObservableObject {
         menuHandler = { [weak self] choice in
             guard let self = self, choice >= 1, choice <= options.count else { return }
             switch options[choice - 1] {
-            case "🎲 New Ideas":
+            case "⚄ New Ideas":
                 self.renameSlot(slot: slot, returnTo: origin, onCancel: onCancel, onDone: onDone)
             case "?":
                 self.showInlineHelp {
                     self.printTitle("Rename — Help")
                     self.print("")
-                    self.printWrapped("Tap one of the suggested names, tap 🎲 New Ideas for another batch, or type any name at the > prompt and press Return. Only the name changes — every save point in the adventure is kept.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Tap one of the suggested names, tap ⚄ New Ideas for another batch, or type any name at the > prompt and press Return. Only the name changes — every save point in the adventure is kept.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             case "< Back":
@@ -41014,13 +41176,18 @@ class GameEngine: ObservableObject {
                 return copy
             })
         }
-        var opts: [String] = []
+        // < Earlier and Later > are always there, in the same two places —
+        // greyed when there's nowhere to go — so they never jump about; and
+        // the 3-bar row keeps its ? like every other screen.
         let replaying = historyReturn != nil
-        if index > (replaying ? historyFloor : 0) { opts.append("< Earlier") }
-        if index < screenHistory.count - 1 { opts.append("Later >") }
-        if !replaying && !stepUndo.isEmpty { opts.append("Undo Last Step") }
-        opts.append(replaying ? "Back to Victory" : "Return to Play")
-        showMenu(opts, defaultIndex: opts.count - 1)
+        let canEarlier = index > (replaying ? historyFloor : 0)
+        let canLater = index < screenHistory.count - 1
+        var opts: [MenuOption] = [MenuOption("< Earlier", isDisabled: !canEarlier),
+                                  MenuOption("Later >", isDisabled: !canLater)]
+        if !replaying && !stepUndo.isEmpty { opts.append(MenuOption("Undo Last Step")) }
+        opts.append(MenuOption(replaying ? "Back to Victory" : "Return to Play", isDefault: true))
+        opts.append(MenuOption("?", tint: .navigation, compact: true))
+        showMenuOptions(opts)
         let leave: () -> Void = { [weak self] in
             guard let self = self else { return }
             if let back = self.historyReturn { self.historyReturn = nil; back() } else { self.showExplorationView() }
@@ -41028,10 +41195,17 @@ class GameEngine: ObservableObject {
         closeHandler = leave
         menuHandler = { [weak self] choice in
             guard let self = self, choice >= 1, choice <= opts.count else { return }
-            switch opts[choice - 1] {
-            case "< Earlier": self.showScreenHistory(index: index - 1)
-            case "Later >": self.showScreenHistory(index: index + 1)
+            switch opts[choice - 1].text {
+            case "< Earlier": if canEarlier { self.showScreenHistory(index: index - 1) }
+            case "Later >": if canLater { self.showScreenHistory(index: index + 1) }
             case "Undo Last Step": self.undoStep()
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("Earlier Screens — Help")
+                    self.print("")
+                    self.printWrapped("A look back at the screens you've left — read-only; nothing here changes the game. < Earlier goes further back, Later > comes forward again (each is greyed when there's no further to go). \(replaying ? "Back to Victory returns to the end of the fight." : "Return to Play takes you back to where you are now; Undo Last Step really goes back a step.")", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
             default: leave()
             }
         }

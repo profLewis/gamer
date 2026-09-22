@@ -53,7 +53,7 @@ Version 3.0 is the biggest update yet: many rounds of play-testing by Beau and P
 ### Finding your way
 - **Back and Next** in the 3-bar undo and redo a step while exploring; **< Back** also looks back through the screens you've left.
 - **The Atlas**: long-press the map for the whole floor, every floor you've mapped, pinch-zoom, room labels, a full key, and a printable PDF.
-- **A little magick**: type `magick: show the boss` (or `cheat:`, `magic:`, `magik:`) to mark the guardian's lair on the map, in purple, on every floor; also `show monsters`, `show traps`, `show stairs`, `show merchants`, `show people`, `show all` and `show all floors`, each in its own colour. The map viewer has a **Show the boss's lair** button too.
+- **Lesser magick**: a party with the gift can speak incantations (`magick: show …`) that mark things on the map, in their own colours, on every floor.
 
 ### Saves, settings and the rest
 - **Continue Adventure** sorts by date or by points (then it's the **Hall of Fame**), with a Character Hall of Fame; unfinished adventures show their points so far.
@@ -311,20 +311,11 @@ scavenges instead: odds and ends, and sometimes what the guardian asked you to
 gather. A room can only be scavenged once. In the dark it is far harder, and it
 can go wrong.
 
-### How to work a little magick (cheats)
+### How to work a little magick
 
-Type a keyword and a colon at the > prompt — `cheat:`, `magic:`, `magick:` or `magik:` — then what you want. (Spoken, just say the word: "magic show the boss".)
+There are lesser magicks. If someone in your party can work them — a spellcaster, or someone clever, wise or forceful enough — speak an incantation at the > prompt: `magick:` (or `magic:`, `magik:`) followed by `show …` and something that might be on the map. What answers is for you to find out; `hide …` undoes it. (Spoken, just say the word: "magick show …".)
 
-- `magick: show the boss` — marks the guardian's lair as a purple **(B)**: where it is, not the way there. In the map viewer (long-press the map) it's marked on every floor.
-- `magick: show monsters` — rooms with monsters in them **(m)**, in red.
-- `magick: show traps` — unsprung traps **(!)**, in orange.
-- `magick: show stairs` — stairs and ropes **(↓ ↑)** and teleport pads **(\*)**, in yellow.
-- `magick: show merchants` — merchants **(M)** and gyms **(G)**; `magick: show people` — anyone to talk to **(N)**; both in cyan.
-- `magick: show all` (the same as `show everything`) — all of the above at once.
-- `magick: show all floors` — the map viewer shows every room of every floor reached.
-- `hide …` takes marks off again (`hide all`, `hide traps`…).
-
-Other things may show on the map with a `magick: show …` incantation of your own — try it.
+The full Book of Small Magicks is kept on a private page.
 
 ### How to make the game faster or slower
 - **Settings → Gameplay → Timeouts** — how long each kind of screen waits before

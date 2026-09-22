@@ -90,7 +90,7 @@ BUILT FOR VOICEOVER
 • Screens read as a few clear sections, starting with where you are; every button named; long press and scrolling available as VoiceOver actions; only ever one voice speaking.
 
 AND MORE
-• Back and Next undo a step; an Atlas of every floor you've mapped; adjustable timers; font sizes down to Tiny; a little magick for the stuck ("magick: show the boss").
+• Back and Next undo a step; an Atlas of every floor you've mapped; adjustable timers; font sizes down to Tiny; a little magick for the stuck.
 • Game Center multiplayer is included as an early preview.
 • Many fixes — and saves from 2.4 still load.
 

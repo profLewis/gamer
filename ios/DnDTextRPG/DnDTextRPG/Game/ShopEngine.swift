@@ -84,6 +84,7 @@ class ShopEngine {
     }
 
     func openShop(character: Character, dungeonLevel: Int, merchant: Merchant, completion: @escaping () -> Void) {
+        game?.trainingDid("merchant")
         self.character = character
         self.merchant = merchant
         // Roll stock once per merchant and remember it from then on — a

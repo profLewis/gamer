@@ -1255,9 +1255,17 @@ struct TerminalView: View {
                             // shown on every waiting screen, it used to spin on with
                             // nothing behind it when none was armed (Auto-Continue off,
                             // speaker pacing, or a countdown that had already ended).
-                            if gameEngine.timeFrozen || ((gameEngine.awaitingContinue || gameEngine.taleCountdownOn)
-                                && gameEngine.showCountdownControl && gameEngine.hasLiveCountdown) {
+                            // Its space is always kept (invisible and untappable when no
+                            // countdown runs): the icons beside it — the speaker most of
+                            // all — must not shift about, or a tap meant for one lands on
+                            // another and Read Aloud "switches itself on".
+                            let countdownShown = gameEngine.timeFrozen || ((gameEngine.awaitingContinue || gameEngine.taleCountdownOn)
+                                && gameEngine.showCountdownControl && gameEngine.hasLiveCountdown)
+                            if gameEngine.showCountdownControl || gameEngine.timeFrozen {
                                 autoCountdownBar
+                                    .opacity(countdownShown ? 1 : 0)
+                                    .allowsHitTesting(countdownShown)
+                                    .accessibilityHidden(!countdownShown)
                             }
                             // Combat help, among the other symbols on this line.
                             // (Not when the buttons' 3-bar row has its own ? already.)
@@ -3070,7 +3078,7 @@ struct MenuButtonsView: View {
         // About (ⓘ) always sits on the right, where >> would be.
         let aboutIdx = indices.first(where: { options[$0].text == "ⓘ" })
 
-        // Any other compact items (e.g. 🎲, ↺) fill remaining empty slots
+        // Any other compact items (e.g. ⚄, ↺) fill remaining empty slots
         let knownIdxs = Set([backIdx, backButtonIdx, helpIdx, nextIdx, aboutIdx].compactMap { $0 })
         let otherIndices = indices.filter { !knownIdxs.contains($0) }
         var otherIter = otherIndices.makeIterator()
