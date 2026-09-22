@@ -953,7 +953,7 @@ enum NPCType: String, CaseIterable, Codable {
                 if let boss = bossType {
                     let article = "aeiouAEIOU".contains(boss.rawValue.first ?? " ") ? "an" : "a"
                     return [
-                        "I've seen it with my own eyes — \(article) \(boss.rawValue) lairs in the deepest chamber. Prepare well. It is fearsome.",
+                        "I've seen it with my own eyes — \(article) \(boss.rawValue) makes its lair in the deepest chamber. Prepare well. It is fearsome.",
                         "\(article.capitalized) \(boss.rawValue) rules these depths. I watched it tear apart the last party that challenged it. Go prepared or don't go at all.",
                         "The \(boss.rawValue) waits below. I've heard its roar echo through these halls for years. Bring your strongest steel.",
                     ].randomElement()!

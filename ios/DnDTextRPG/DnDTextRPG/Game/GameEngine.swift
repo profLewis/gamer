@@ -6168,7 +6168,7 @@ class GameEngine: ObservableObject {
             if let bearing = guardianBearing(in: d) {
                 msg += " The lair lies \(bearing)."
             } else if lairs.isEmpty {
-                msg += " No guardian lairs on this level."
+                msg += " There is no guardian on this level."
             } else if lairs.allSatisfy({ $0.cleared }) {
                 msg += " This level's guardian is already beaten."
             } else if let other = lairs.first(where: { !$0.cleared && $0.floor != here }) {
@@ -28798,7 +28798,7 @@ class GameEngine: ObservableObject {
             } else {
                 explorationStatusMessage = (wandered
                     ? "☠ This floor's guardian has left its lair and is wandering — find it and beat it to go deeper."
-                    : "☠ Find and beat this floor's guardian to go deeper — it lairs far from where you came in.", .yellow)
+                    : "☠ Find and beat this floor's guardian to go deeper — its lair is far from where you came in.", .yellow)
             }
             return
         }
