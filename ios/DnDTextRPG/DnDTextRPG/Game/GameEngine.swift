@@ -6215,6 +6215,7 @@ class GameEngine: ObservableObject {
         // install apart from one that's simply been emptied.
         seedCharacterRosterIfEmpty()
         HallOfFameManager.shared.seedIfEmpty()
+        HallOfFameManager.shared.seedExamplesIfNeeded()
         HallOfFameManager.shared.repairOrphanEntries()
         // Sync sound settings from UserDefaults
         SoundManager.shared.battleSoundsEnabled = battleSoundsEnabled
@@ -7160,6 +7161,9 @@ class GameEngine: ObservableObject {
         }
         menuOptions.append(MenuOption("Play"))
         actions.append { [weak self] in self?.showPlayMenu() }
+        // The Hall of Fame, on its own: completed adventures, and heroes.
+        menuOptions.append(MenuOption("Hall of Fame"))
+        actions.append { [weak self] in self?.showHallOfFame() }
 
         // Show flashing Requests button when there's a pending invite
         if pendingInviteMatch != nil {
@@ -16096,8 +16100,12 @@ class GameEngine: ObservableObject {
         print("")
         printTitle("Hall of Fame")
 
-        var entries = HallOfFameManager.shared.listEntries()
+        // Completed adventures only, best first: the Hall of Fame is for
+        // those who finished. (Adventures that fell are in Continue Adventure.)
+        var entries = HallOfFameManager.shared.listHallOfFame()
         let manager = HallOfFameManager.shared
+        printWrapped("Adventures that were completed, with their points. Tap one to read its tale, or long-press to play it again.", indent: 2, color: .dimGreen)
+        print("")
 
         // listEntries() already comes back points-desc, which is the
         // .points order, so only re-sort for the other modes (see
@@ -16177,13 +16185,14 @@ class GameEngine: ObservableObject {
             // number past the end of the list regardless of page, or
             // appended to the list itself where a long history would bury
             // it behind however many pages that needs.
-            showPaginatedMenuOptions(options, pinned: ["?", "Manage", "< Back"], handler: { idx in
+            showPaginatedMenuOptions(options, pinned: ["Characters", "?", "Manage", "< Back"], handler: { idx in
                 openTale(idx)
             }, pinnedHandler: { [weak self] choice in
                 guard let self = self else { return }
                 switch choice {
-                case 0: self.showHallOfFameHelp()
-                case 1: self.showHallOfFameManage()
+                case 0: self.showCharacterHallOfFame(onBack: { [weak self] in self?.showHallOfFame() })
+                case 1: self.showHallOfFameHelp()
+                case 2: self.showHallOfFameManage()
                 default: self.showMainMenu()
                 }
             })
@@ -40411,8 +40420,7 @@ class GameEngine: ObservableObject {
 
     private func showLoadGameMenu(returnTo origin: LoadGameOrigin, page: Int = 0) {
         clearTerminal()
-        // Sorted by points, this list IS the Hall of Fame.
-        printTitle(listSortMode == .points ? "Hall of Fame" : "Continue Adventure")
+        printTitle("Continue Adventure")
 
         let backAction: () -> Void = { [weak self] in
             switch origin {
@@ -40449,7 +40457,9 @@ class GameEngine: ObservableObject {
             HallOfFameManager.shared.deleteEntry(id: entry.id)
         }
 
-        var rows: [AdventureRow] = slots.map { .slot($0) }
+        // Newest first, always; the Hall of Fame's examples (⭐) live there,
+        // not here.
+        var rows: [AdventureRow] = slots.filter { !$0.slotName.hasPrefix("⭐") }.map { .slot($0) }
 
         if rows.isEmpty {
             print("  No saved games or adventures recorded yet.", color: .yellow)
@@ -40511,25 +40521,9 @@ class GameEngine: ObservableObject {
             }
         }
 
-        switch listSortMode {
-        case .date:
-            rows.sort { rowDate($0) > rowDate($1) }
-        case .points:
-            // Rows with no score yet (in-progress saves) sort after every
-            // completed (scored) adventure, most recent first among themselves.
-            rows.sort { a, b in
-                switch (rowScore(a), rowScore(b)) {
-                case let (sa?, sb?): return sa > sb
-                case (nil, nil): return rowDate(a) > rowDate(b)
-                case (_?, nil): return true
-                case (nil, _?): return false
-                }
-            }
-        case .name:
-            rows.sort { rowName($0).localizedCaseInsensitiveCompare(rowName($1)) == .orderedAscending }
-        case .level:
-            rows.sort { rowLevel($0) > rowLevel($1) }
-        }
+        // Newest first — the one order for saved adventures. Points and
+        // rankings belong to the Hall of Fame.
+        rows.sort { rowDate($0) > rowDate($1) }
 
         let dateFormatter = DateFormatter()
         dateFormatter.dateStyle = .medium
@@ -40538,12 +40532,6 @@ class GameEngine: ObservableObject {
         // Quick flip between newest-first and most-points-first right here
         // (every order, incl. name and level, is in Settings > Gameplay >
         // List Order). Tap the line itself.
-        let sortLineIndex = terminalLines.count
-        let nextSort: ListSortMode = listSortMode == .date ? .points : .date
-        let currentSortName = listSortMode == .date ? "newest" : (listSortMode == .points ? "most points" : listSortMode.label.lowercased())
-        print("  Sorted by \(currentSortName) — tap here for \(nextSort == .date ? "newest" : "most points") first", color: .cyan, underlined: true)
-        print("")
-
         var options: [String] = []
         // Exact printed-line range per entry (not a guessed fixed count —
         // printWrapped can span more than one terminal line depending on
@@ -40754,8 +40742,8 @@ class GameEngine: ObservableObject {
                     self.print("  MANAGE", color: .cyan, bold: true)
                     self.printWrapped("Rename, copy, or delete saves — including bulk multi-select delete.", indent: 2, color: .dimGreen)
                     self.print("")
-                    self.print("  SORT", color: .cyan, bold: true)
-                    self.printWrapped("Tap the \"Sorted by\" line at the top to switch between newest first and most points first — the list and its buttons both re-order. Sorted by points the list becomes the Hall of Fame; adventures still going show their points so far.", indent: 2, color: .dimGreen)
+                    self.print("  ORDER", color: .cyan, bold: true)
+                    self.printWrapped("Newest first. Completed adventures and their points are in the Hall of Fame (on the title screen); adventures still going show their points so far here.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             default:
@@ -40778,11 +40766,6 @@ class GameEngine: ObservableObject {
         // text (see textTapEnabled), so the descriptive block above each
         // button is a live target too, not just inert decoration.
         textLongPressHandler = { [weak self] lineIndex in
-            if lineIndex == sortLineIndex {
-                self?.listSortMode = nextSort
-                self?.showLoadGameMenu(returnTo: origin)
-                return
-            }
             guard let idx = entryLineRanges.firstIndex(where: { $0.contains(lineIndex) }) else { return }
             openRow(rows[idx])
         }

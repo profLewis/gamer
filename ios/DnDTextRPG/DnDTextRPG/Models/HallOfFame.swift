@@ -124,7 +124,9 @@ class HallOfFameManager {
     }
 
     private func trimToTop10() {
-        let entries = listEntries()
+        // Only completed adventures compete for the ten places; losses are
+        // kept (Continue Adventure shows them as L).
+        let entries = listHallOfFame()
         guard entries.count > 10 else { return }
 
         let toDelete = entries.suffix(from: 10)
@@ -384,7 +386,27 @@ class HallOfFameManager {
         defaults.set(true, forKey: Self.seedDoneKey)
         guard !usedBefore, listEntries().isEmpty else { return }
 
-        let seeds: [SeedDef] = [
+
+        for seed in exampleSeeds { addSeed(seed) }
+    }
+
+    /// Hall of Fame examples for an install that already existed: the
+    /// ten example adventures, added once, skipping any already there.
+    func seedExamplesIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: "hallOfFameExamplesV2") else { return }
+        defaults.set(true, forKey: "hallOfFameExamplesV2")
+        let have = Set(listEntries().map { $0.dungeonName })
+        for seed in exampleSeeds where !have.contains(seed.dungeon) { addSeed(seed) }
+    }
+
+    /// The Hall of Fame proper: adventures that were completed, best first.
+    func listHallOfFame() -> [HallOfFameEntry] {
+        listEntries().filter { $0.outcome == .victory }
+    }
+
+    private var exampleSeeds: [SeedDef] {
+                return [
             // Robin's Company — folk heroes, the high score to beat
             SeedDef(daysAgo: 2, names: ["Robin of Loxley", "Ged", "Granny Weatherwax"],
                     members: [("Robin of Loxley", .ranger, .human), ("Ged", .wizard, .halfElf), ("Granny Weatherwax", .cleric, .human)],
@@ -398,7 +420,7 @@ class HallOfFameManager {
             // Edgin's Heist — Honour Among Thieves
             SeedDef(daysAgo: 8, names: ["Edgin", "Holga", "Xenk"],
                     members: [("Edgin", .rogue, .human), ("Holga", .barbarian, .halfOrc), ("Xenk", .fighter, .human)],
-                    dungeon: "Barsoom", level: 3, outcome: .defeat,
+                    dungeon: "Barsoom", level: 3, outcome: .victory,
                     gold: 280, slain: 14, combats: 5, explored: 8, total: 14, minutes: 1100),
             // Disc World Expedition — Pratchett
             SeedDef(daysAgo: 10, names: ["Rincewind", "DEATH"],
@@ -418,12 +440,12 @@ class HallOfFameManager {
             // Robots Expedition — sci-fi robots
             SeedDef(daysAgo: 22, names: ["Daneel", "K-9", "Marvin"],
                     members: [("Daneel", .rogue, .human), ("K-9", .wizard, .gnome), ("Marvin", .wizard, .tiefling)],
-                    dungeon: "Nostromo", level: 2, outcome: .defeat,
+                    dungeon: "Nostromo", level: 2, outcome: .victory,
                     gold: 95, slain: 6, combats: 3, explored: 6, total: 12, minutes: 540),
             // Hellfire Club — Stranger Things tribute
             SeedDef(daysAgo: 28, names: ["Eddie Munson", "Will the Wise", "Eleven"],
                     members: [("Eddie Munson", .rogue, .human), ("Will the Wise", .cleric, .human), ("Eleven", .wizard, .human)],
-                    dungeon: "Krell Laboratory", level: 1, outcome: .defeat,
+                    dungeon: "Krell Laboratory", level: 1, outcome: .victory,
                     gold: 65, slain: 4, combats: 2, explored: 5, total: 10, minutes: 480),
             // Burroughs' Barsoom — pulp legends
             SeedDef(daysAgo: 32, names: ["Doct Carter", "Dejah Thoris", "Tars Tarkas"],
@@ -436,11 +458,12 @@ class HallOfFameManager {
                     dungeon: "The Iron Tower", level: 2, outcome: .victory,
                     gold: 260, slain: 12, combats: 5, explored: 11, total: 12, minutes: 950),
         ]
+    }
 
+    private func addSeed(_ seed: SeedDef) {
         let calendar = Calendar.current
         let now = Date()
-
-        for seed in seeds {
+        do {
             let date = calendar.date(byAdding: .day, value: -seed.daysAgo, to: now)!
             let desc = seed.members.map { "\($0.0) (\($0.1.rawValue))" }.joined(separator: ", ")
 
