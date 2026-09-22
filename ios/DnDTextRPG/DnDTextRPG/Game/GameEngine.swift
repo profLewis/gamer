@@ -2868,6 +2868,10 @@ class GameEngine: ObservableObject {
     }
 
     private func linkTarget(_ key: String) -> (() -> Void)? {
+        // A web address written into a message: open it.
+        if key.hasPrefix("https://") || key.hasPrefix("http://") {
+            return { [weak self] in self?.openWeb(key) }
+        }
         switch key {
         case "settings": return { [weak self] in self?.showSettings() }
         case "leaveGame": return { [weak self] in self?.leaveExplorationTapped() }
@@ -6906,6 +6910,59 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Test whichever brain the DM is using right now, and say how it went.
+    func testCurrentBrain(then back: @escaping () -> Void) {
+        let dm = DMEngine.shared
+        clearTerminal()
+        printTitle("Test Brain")
+        print("")
+        let report: (Bool, String?, String) -> Void = { [weak self] ok, message, name in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                // A working cloud key: offer to keep it in the Keychain.
+                let provider = dm.provider
+                let offerKeychain = ok && dm.isConfigured
+                let alreadyKept = offerKeychain && self.loadAPIKeyFromKeychain(for: provider) == dm.apiKey
+                if ok {
+                    self.print("  ✓ \(name) is working.", color: .brightGreen, bold: true)
+                    if alreadyKept { self.print("  Its key is already safe in the Keychain.", color: .dimGreen) }
+                    else if offerKeychain { self.printWrapped("Save its key in the Keychain, so it survives a reinstall and can be loaded again?", indent: 2, color: .cyan) }
+                } else {
+                    self.print("  ✗ \(name) didn't answer.", color: .red, bold: true)
+                    if let m = message { self.printWrapped(m, indent: 2, color: .yellow); self.printURLLinks(in: m, indent: 2) }
+                }
+                self.print("")
+                var opts: [MenuOption] = []
+                if offerKeychain && !alreadyKept { opts.append(MenuOption("Save to Keychain", isDefault: true)) }
+                opts.append(MenuOption("< Back", tint: .navigation, compact: true))
+                self.showMenuOptions(opts)
+                self.closeHandler = back
+                self.menuHandler = { [weak self] choice in
+                    guard let self = self else { return }
+                    if opts[choice - 1].text == "Save to Keychain" {
+                        self.backupSingleAPIKeyToKeychain(for: provider)
+                        self.print("  ✓ Saved to the Keychain.", color: .brightGreen)
+                        self.print("")
+                        self.waitForContinueWithTimeout(multiplier: 0.8) { back() }
+                    } else { back() }
+                }
+            }
+        }
+        if dm.isConfigured {
+            print("  Testing \(dm.provider.displayName)…", color: .dimGreen)
+            dm.testAPIKey { ok, msg in report(ok, msg, dm.provider.displayName) }
+        } else if dm.isAppleModelAvailable {
+            print("  Testing Apple On-Device AI…", color: .dimGreen)
+            dm.testAppleModel { ok, msg in report(ok, msg, "Apple On-Device AI") }
+        } else {
+            printWrapped("No AI brain is set up, so the game's own Dungeon Master is running things — nothing to test. Pick a provider on the previous screen to add one.", indent: 2, color: .dimGreen)
+            print("")
+            showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+            closeHandler = back
+            menuHandler = { _ in back() }
+        }
+    }
+
     /// A key problem found at launch, waiting for the next visit to the
     /// Play menu (the player had already moved on when the test answered).
     private var startupKeyProblem: String?
@@ -6929,6 +6986,23 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Every web address in a message, as a tappable link.
+    func printURLLinks(in message: String, indent: Int = 4) {
+        guard let rx = try? NSRegularExpression(pattern: #"https?://[^\s\)\]\"',]+"#) else { return }
+        let ns = message as NSString
+        var seen = Set<String>()
+        for m in rx.matches(in: message, range: NSRange(location: 0, length: ns.length)) {
+            var url = ns.substring(with: m.range)
+            while let last = url.last, ".;:".contains(last) { url.removeLast() }
+            guard seen.insert(url).inserted else { continue }
+            // A short label that fits the line; the link still opens the whole address.
+            let bare = url.replacingOccurrences(of: "https://", with: "").replacingOccurrences(of: "http://", with: "")
+            let room = max(16, wrapColumns - indent - 8)
+            let label = "Open: " + (bare.count > room ? String(bare.prefix(room - 1)) + "…" : bare)
+            printLink(label, to: url, indent: indent)
+        }
+    }
+
     /// Where a provider's keys are made and listed.
     private func keysURL(for provider: AIProvider) -> String {
         switch provider {
@@ -6948,35 +7022,48 @@ class GameEngine: ObservableObject {
         printWrapped("The \(provider.displayName) key didn't work when the game started. Until it's fixed the game uses its own built-in Dungeon Master — everything still works.", indent: 2)
         print("")
         print("  WHAT IT SAID", color: .cyan, bold: true)
-        printWrapped(message, indent: 4, color: .yellow)
+        printWrapped(message, indent: 2, color: .yellow)
         print("")
         print("  LIKELY CAUSE", color: .cyan, bold: true)
         let lower = message.lowercased()
         let billing = billingURL(for: provider)
-        if lower.contains("credit") || lower.contains("billing") || lower.contains("402") || lower.contains("insufficient") || lower.contains("payment") {
-            printWrapped("The account has run out of credit. API use is paid for separately from any Claude or ChatGPT subscription — add credit on the billing page, and the same key will work again. A new key won't help: credit belongs to the account, not the key.", indent: 4, color: .dimGreen)
+        if provider == .google && (lower.contains("429") || lower.contains("quota") || lower.contains("rate") || lower.contains("exhausted")) {
+            printWrapped("Free Gemini keys have limits — a number of requests a minute and a day. This one has hit its limit for now; it resets by itself (a minute, or by tomorrow for the daily limit). Test Again later, or switch brain meanwhile. The rate-limits page below says what the free tier allows.", indent: 2, color: .dimGreen)
+        } else if provider == .google && (lower.contains("403") || lower.contains("permission") || lower.contains("not enabled") || lower.contains("location") || lower.contains("region")) {
+            printWrapped("Free Gemini keys still need the Gemini API allowed for the key's project, and Google doesn't offer it in every country. Check the key in AI Studio (link below) — making a fresh key there usually sorts it.", indent: 2, color: .dimGreen)
+        } else if provider == .google && (lower.contains("404") || lower.contains("not found") || lower.contains("model")) {
+            printWrapped("The Gemini model the game asked for isn't available to this key. The game looks for a newer one by itself — Test Again in a moment.", indent: 2, color: .dimGreen)
+        } else if lower.contains("credit") || lower.contains("billing") || lower.contains("402") || lower.contains("insufficient") || lower.contains("payment") {
+            printWrapped("The account has run out of credit. API use is paid for separately from any Claude or ChatGPT subscription — add credit on the billing page, and the same key will work again. A new key won't help: credit belongs to the account, not the key.", indent: 2, color: .dimGreen)
         } else if lower.contains("401") || lower.contains("authentication") || lower.contains("invalid") || lower.contains("incorrect") {
-            printWrapped("The key is wrong, or has been deleted. Make a new one on the keys page — copy it straight away, as it's only shown once — and paste it in.", indent: 4, color: .dimGreen)
+            printWrapped("The key is wrong, or has been deleted. Make a new one on the keys page — copy it straight away, as it's only shown once — and paste it in.", indent: 2, color: .dimGreen)
         } else if lower.contains("429") || lower.contains("rate") || lower.contains("quota") {
-            printWrapped("Too many requests, or a usage limit reached. Wait a minute and test again, or check the account's limits.", indent: 4, color: .dimGreen)
+            printWrapped("Too many requests, or a usage limit reached. Wait a minute and test again, or check the account's limits.", indent: 2, color: .dimGreen)
         } else if lower.contains("403") || lower.contains("permission") || lower.contains("forbidden") {
-            printWrapped("The key isn't allowed to use this service. Check the account's settings.", indent: 4, color: .dimGreen)
+            printWrapped("The key isn't allowed to use this service. Check the account's settings.", indent: 2, color: .dimGreen)
         } else if lower.contains("connection") || lower.contains("network") || lower.contains("timed out") || lower.contains("offline") || lower.contains("no response") {
-            printWrapped("No internet just now. Check Wi-Fi or mobile data, then test again.", indent: 4, color: .dimGreen)
+            printWrapped("No internet just now. Check Wi-Fi or mobile data, then test again.", indent: 2, color: .dimGreen)
         } else if lower.contains("overloaded") || lower.contains("529") || lower.contains("500") || lower.contains("503") {
-            printWrapped("The service is busy or having trouble. It usually passes — test again in a few minutes.", indent: 4, color: .dimGreen)
+            printWrapped("The service is busy or having trouble. It usually passes — test again in a few minutes.", indent: 2, color: .dimGreen)
         } else {
-            printWrapped("Not clear from the message. Check the key and the account on the pages below.", indent: 4, color: .dimGreen)
+            printWrapped("Not clear from the message. Check the key and the account on the pages below.", indent: 2, color: .dimGreen)
         }
         print("")
         print("  WHERE TO LOOK", color: .cyan, bold: true)
-        if billing != nil { printLink("\(provider.displayName) billing and credit", to: "aiBilling", indent: 4) }
-        printLink("\(provider.displayName) API keys", to: "aiKeys", indent: 4)
+        if billing != nil { printLink("\(provider.displayName) billing and credit", to: "aiBilling", indent: 2) }
+        printLink("\(provider.displayName) API keys", to: "aiKeys", indent: 2)
+        if provider == .google {
+            printLink("Gemini free-tier limits (rate limits)", to: "https://ai.google.dev/gemini-api/docs/rate-limits", indent: 2)
+            print("")
+            printWrapped("Note: Google only lets people aged 18 and over use Gemini keys — a key made on a younger person's Google account won't work. Apple's on-device brain (newer devices) or the game's own Dungeon Master need no key and no age check.", indent: 2, color: .yellow)
+        }
+        // Any address in the provider's own message, tappable too.
+        printURLLinks(in: message)
         print("")
         printWrapped("Or switch to another AI brain — or none — with Change AI Brain.", indent: 2, color: .dimGreen)
         print("")
         let opts = [MenuOption("Continue", isDefault: true), MenuOption("Change AI Brain"), MenuOption("Test Again"),
-                    MenuOption("?", tint: .navigation, compact: true)]
+                    MenuOption("?", tint: .navigation, compact: true), MenuOption("< Back", tint: .navigation, compact: true)]
         showMenuOptions(opts)
         let back: () -> Void = { [weak self] in self?.clearTerminal(); self?.showMainMenu() }
         closeHandler = back
@@ -14040,19 +14127,14 @@ class GameEngine: ObservableObject {
             print("  Upgrade to a cloud provider below", color: .dimGreen)
             print("  for a more creative DM.", color: .dimGreen)
         } else {
-            print("  Basic DM (no AI)", color: .red)
-            print("  This device doesn't support Apple", color: .yellow)
-            print("  on-device AI (requires iOS 26+", color: .yellow)
-            print("  on iPhone 16 or newer).", color: .yellow)
+            print("  The game's own DM (no AI)", color: .red)
+            printWrapped("Apple's on-device AI isn't available here. It needs Apple Intelligence: an iPhone 15 Pro or newer (or an iPad or Mac with an M-series chip) on iOS 26 or later, with Apple Intelligence switched on in the device's Settings. Older phones can't run it.", indent: 2, color: .yellow)
             print("")
-            print("  Without AI, you get a simple DM", color: .yellow)
-            print("  with canned responses.", color: .yellow)
+            printWrapped("Without an AI brain the game's own Dungeon Master runs everything, with simpler, ready-written replies.", indent: 2, color: .yellow)
             print("")
             print("  OPTIONS:", color: .cyan, bold: true)
-            print("  - Set up a cloud AI below", color: .dimGreen)
-            print("    (Gemini is FREE for ages 18+)", color: .brightGreen)
-            print("  - Use a newer iPhone/iPad", color: .dimGreen)
-            print("  - Try the web version (coming soon)", color: .dimGreen)
+            printWrapped("• Set up a cloud AI below — Gemini has a free tier for adults (18+); Claude and ChatGPT need a paid account.", indent: 2, color: .dimGreen)
+            printWrapped("• On a newer device, switch Apple Intelligence on in Settings and it appears here by itself.", indent: 2, color: .dimGreen)
         }
         print("")
 
@@ -14099,11 +14181,14 @@ class GameEngine: ObservableObject {
             let label = isSelected ? "\(provider.displayName) <--" : provider.displayName
             options.append(MenuOption(label, isDefault: isSelected, tint: hasKey ? .normal : .amber))
         }
+        // Test whichever brain is in use now, from here.
+        options.append(MenuOption("Test Brain", tint: .cyan))
         options.append(MenuOption("?", tint: .navigation, compact: true))
         options.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(options)
 
         let appleOffset = dm.isAppleModelAvailable ? 1 : 0
+        let testIndex = options.count - 2  // 1-based choice for Test Brain
         let helpIndex = options.count - 1  // 1-based choice for ?
         let backIndex = options.count      // 1-based choice for < Back
 
@@ -14113,12 +14198,16 @@ class GameEngine: ObservableObject {
                 back()
                 return
             }
+            if choice == testIndex {
+                self?.testCurrentBrain(then: { [weak self] in self?.showAIProviderMenu(onBack: onBack) })
+                return
+            }
             if choice == helpIndex {
                 self?.showInlineHelp {
                     self?.printTitle("Brain Help")
                     self?.print("")
                     self?.print("  APPLE ON-DEVICE AI", color: .cyan, bold: true)
-                    self?.printWrapped("Runs locally on your device. Free, works offline, no account needed. Requires iOS 26+ on iPhone 16 or newer. May refuse some queries.", indent: 2, color: .dimGreen)
+                    self?.printWrapped("Runs locally on your device. Free, works offline, no account needed. Needs Apple Intelligence: iPhone 15 Pro or newer (or an M-series iPad/Mac) on iOS 26+, with Apple Intelligence switched on. May refuse some queries.", indent: 2, color: .dimGreen)
                     self?.print("")
                     self?.print("  GOOGLE GEMINI", color: .cyan, bold: true)
                     self?.printWrapped("Free tier available (ages 18+). Good creative narration. Requires a Google account and API key from AI Studio.", indent: 2, color: .dimGreen)
@@ -16030,13 +16119,13 @@ class GameEngine: ObservableObject {
                         self.print("")
                     }
                     if let msg = errorMessage {
-                        // Wrap long error messages
-                        let maxLen = 30
-                        var remaining = msg
-                        while !remaining.isEmpty {
-                            let line = String(remaining.prefix(maxLen))
-                            remaining = String(remaining.dropFirst(line.count))
-                            self?.print("  \(line)", color: .yellow)
+                        // Wrapped at word breaks (chopping every 30 characters
+                        // cut web addresses in half), with any address as a link.
+                        self?.printWrapped(msg, indent: 2, color: .yellow)
+                        self?.printURLLinks(in: msg, indent: 2)
+                        if provider == .google {
+                            self?.printLink("Gemini free-tier limits", to: "https://ai.google.dev/gemini-api/docs/rate-limits", indent: 2)
+                            self?.printWrapped("Gemini keys are for people 18 and over — a key on a younger person's Google account is refused. Apple's on-device brain or the game's own DM need no key.", indent: 2, color: .yellow)
                         }
                         self?.print("")
                         // Provide helpful guidance based on error
@@ -16212,7 +16301,7 @@ class GameEngine: ObservableObject {
             menuLongPressHandler = { [weak self] choice in
                 guard let self = self, choice >= 1, choice <= tales.count else { return }
                 let tale = tales[choice - 1]
-                guard tale.saveGameId != nil, SaveGameManager.shared.load(id: tale.saveGameId!) != nil else { return }
+                guard let sid = tale.saveGameId, SaveGameManager.shared.exists(id: sid) else { return }
                 self.showLoadTransition(tale)
             }
         }
@@ -16329,7 +16418,7 @@ class GameEngine: ObservableObject {
         // "Read Tale" alone meant loading/reliving a specific adventure
         // needed an extra detour through that narrative screen first — this
         // scroll-wheel selector had no way to just pick one directly.
-        let canRelive = entry.saveGameId != nil && SaveGameManager.shared.load(id: entry.saveGameId!) != nil
+        let canRelive = entry.saveGameId.map { SaveGameManager.shared.exists(id: $0) } ?? false
         var options = ["▲ Prev", "▼ Next", "Read Tale"]
         if canRelive {
             options.append("⚔ Relive")
@@ -16634,7 +16723,7 @@ class GameEngine: ObservableObject {
         print("")
 
         // Hint about continuing/reliving the adventure
-        let hasSave = tale.saveGameId != nil && SaveGameManager.shared.load(id: tale.saveGameId!) != nil
+        let hasSave = tale.saveGameId.map { SaveGameManager.shared.exists(id: $0) } ?? false
         let label: String
         switch tale.outcome {
         case .victory: label = "⚔ Relive"
@@ -25331,7 +25420,7 @@ class GameEngine: ObservableObject {
         // Show NPC art and info
         printLines(npc.type.asciiArt, color: .cyan)
         print("")
-        print("  \(npc.type.rawValue)", color: .brightGreen, bold: true)
+        print("  \(npc.displayName)", color: .brightGreen, bold: true)   // their name, when they have one
         printWrapped(npc.type.description, indent: 2, color: .dimGreen)
         print("")
         printPartyPurses()
@@ -25966,7 +26055,7 @@ class GameEngine: ObservableObject {
 
         printLines(npc.type.asciiArt, color: .cyan)
         print("")
-        print("  \(npc.type.rawValue)", color: .brightGreen, bold: true)
+        print("  \(npc.displayName)", color: .brightGreen, bold: true)   // their name, when they have one
         print("")
 
         let bossType = dungeon?.rooms.values.first(where: { $0.roomType == .boss })?.encounter?.monsters.first?.type
@@ -26050,7 +26139,7 @@ class GameEngine: ObservableObject {
 
         printLines(npc.type.asciiArt, color: .cyan)
         print("")
-        print("  \(npc.type.rawValue)", color: .brightGreen, bold: true)
+        print("  \(npc.displayName)", color: .brightGreen, bold: true)   // their name, when they have one
         print("")
 
         let bossType = dungeon?.rooms.values.first(where: { $0.roomType == .boss })?.encounter?.monsters.first?.type
@@ -26174,7 +26263,7 @@ class GameEngine: ObservableObject {
         clearTerminal()
         printLines(npc.type.asciiArt, color: .cyan)
         print("")
-        print("  \(npc.type.rawValue)", color: .brightGreen, bold: true)
+        print("  \(npc.displayName)", color: .brightGreen, bold: true)   // their name, when they have one
         print("")
 
         npc.hasOfferedOneOffTrade = true
@@ -26185,7 +26274,7 @@ class GameEngine: ObservableObject {
             if Int.random(in: 1...100) <= 35 {
                 printWrapped("\"Trade?! You think I've got treasure for the likes of you?!\"", indent: 2, color: .red)
                 print("")
-                printWrapped("The \(npc.type.rawValue) turns on you!", indent: 2, color: .red, bold: true)
+                printWrapped("\(npc.displayName) turns on you!", indent: 2, color: .red, bold: true)
                 logEvent("\(npc.type.rawValue) turned hostile and attacked", category: "NPC")
                 room.npc = nil
                 let monster = Monster.create(.goblin, customName: npc.type.rawValue)
@@ -26301,7 +26390,7 @@ class GameEngine: ObservableObject {
                 if !isFree { character.gold -= cost }
                 let healAmount = Dice.rollDamage("2d4+2").total
                 character.heal(healAmount)
-                self.printWrapped("The \(npc.type.rawValue) tends to \(character.name)'s wounds.", indent: 2, color: .cyan)
+                self.printWrapped("\(npc.displayName) tends to \(character.name)'s wounds.", indent: 2, color: .cyan)
                 self.print("")
                 self.printWrapped("\(character.name) heals \(healAmount) HP!\(isFree ? "" : " (-\(cost) gold)")", indent: 2, color: .brightGreen)
                 self.logEvent("\(npc.type.rawValue) healed \(character.name) for \(healAmount) HP", category: "NPC")
@@ -26342,7 +26431,7 @@ class GameEngine: ObservableObject {
                         fixedNames.append(member.inventory[idx].name)
                     }
                 }
-                self.printWrapped("The \(npc.type.rawValue) hammers away at your broken gear.", indent: 2, color: .cyan)
+                self.printWrapped("\(npc.displayName) hammers away at your broken gear.", indent: 2, color: .cyan)
                 self.print("")
                 self.printWrapped("\"Good as new! Well, almost. That'll be \(cost) gold.\"", indent: 2, color: .yellow)
                 self.logEvent("\(npc.type.rawValue) repaired \(fixedNames.joined(separator: ", ")) for \(character.name) (-\(cost) gold)", category: "NPC")
@@ -33030,6 +33119,7 @@ class GameEngine: ObservableObject {
         }
         clearTerminal()
         printTitle("Eat & Drink")
+        printAnimatedArt(Self.eatArtFrames, color: .yellow)
         closeHandler = { [weak self] in self?.rest() }
         guard !entries.isEmpty else {
             printWrapped("Nobody has anything to eat or drink. A merchant's counter is the place to fix that.", indent: 2, color: .dimGreen)
@@ -33087,10 +33177,44 @@ class GameEngine: ObservableObject {
     /// Game time of the party's last wash — a proper scrub only helps so often.
     private var lastWashGameMinutes: Int?
 
+    /// A bucket of suds, bubbles rising.
+    static let washArtFrames: [[String]] = [
+        ["      o   .        ", "    .   O    o     ", "   \\~~~~~~~~~~//   ", "    |  ~ ~ ~ ~ |    ", "    |__________|    "],
+        ["    .   o   O      ", "      O    .   o   ", "   \\~~~~~~~~~~//   ", "    | ~ ~ ~ ~  |    ", "    |__________|    "],
+        ["   O    .     .    ", "     o    O  .     ", "   \\~~~~~~~~~~//   ", "    |  ~ ~ ~ ~ |    ", "    |__________|    "],
+    ]
+    /// A loaf and a steaming mug.
+    static let eatArtFrames: [[String]] = [
+        ["             (      ", "    ____      )     ", "   /    \\   c[_]    ", "  (______)          "],
+        ["              )     ", "    ____     (      ", "   /    \\   c[_]    ", "  (______)          "],
+        ["             (  )   ", "    ____      (     ", "   /    \\   c[_]    ", "  (______)          "],
+    ]
+
+    /// An ASCII picture, animated (a few loops) when animations are on,
+    /// still when they're off or VoiceOver is reading.
+    func printAnimatedArt(_ frames: [[String]], color: TerminalColor) {
+        guard let first = frames.first else { return }
+        let start = terminalLines.count
+        printLines(first, color: color)
+        print("")
+        guard !calmScreen, frames.count > 1 else { return }
+        let generation = screenGeneration
+        for step in 1..<(frames.count * 3) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(step) * 0.45) { [weak self] in
+                guard let self = self, self.screenGeneration == generation else { return }
+                let frame = frames[step % frames.count]
+                for (k, text) in frame.enumerated() where start + k < self.terminalLines.count {
+                    self.terminalLines[start + k].text = text
+                }
+            }
+        }
+    }
+
     /// Rest screen "Wash" — a light-hearted freshen-up worth 1 temporary HP each.
     private func restWash() {
         clearTerminal()
         printTitle("Wash")
+        printAnimatedArt(Self.washArtFrames, color: .cyan)
         if let last = lastWashGameMinutes, gameTimeMinutes - last < 240 {
             printWrapped("You're all still squeaky clean from the last scrub. Any cleaner and the monsters won't recognise you.", indent: 2, color: .dimGreen)
         } else {
@@ -40465,7 +40589,7 @@ class GameEngine: ObservableObject {
         // or from a deletion path that predates SaveGameManager.delete's
         // own cascade — quietly, on every visit, so a deleted adventure
         // never resurfaces here again.
-        for entry in allHofEntries where entry.saveGameId == nil || SaveGameManager.shared.load(id: entry.saveGameId!) == nil {
+        for entry in allHofEntries where entry.saveGameId == nil || !SaveGameManager.shared.exists(id: entry.saveGameId!) {
             HallOfFameManager.shared.deleteEntry(id: entry.id)
         }
 

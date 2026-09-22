@@ -241,7 +241,7 @@ class HallOfFameManager {
                 // back on every relaunch. Drop the entry instead, so the
                 // one Continue Adventure list stays in step with what the
                 // player actually chose to keep.
-                if SaveGameManager.shared.load(id: linkedId) == nil {
+                if !SaveGameManager.shared.exists(id: linkedId) {
                     deleteEntry(id: entry.id)
                 }
                 continue
