@@ -43,6 +43,14 @@ Version 3.0 is the biggest update yet: many rounds of play-testing by Beau and P
 - **A key check at startup**: if your AI key stops working (no credit, deleted key, no internet) the game says why, links to the provider's billing and key pages, and offers Change AI Brain. A key that passes its test is saved to the Keychain automatically.
 - **Mood switches**, a DM calendar, and the DM told firmly never to invent actions for you.
 
+### Choose your Dungeon Master's brain
+- **Apple's on-device AI is the default** where the device has it (iPhone 15 Pro or later, M-series iPad or Mac, iOS 26+ with Apple Intelligence on): free, private, offline, no account.
+- **Hugging Face** is new: one free account and token reach many open models (Llama, Gemma, Qwen…). A free account comes with a small monthly allowance (US$0.10 of credit; the game's compact prompts make that several hundred DM replies). The key screen walks through making the token step by step, with links.
+- **A saved Hugging Face token is the backup** on devices without Apple Intelligence, and steps in if the chosen cloud brain fails. When nothing is available the game's own built-in DM runs everything.
+- **Choose a model** for every provider (Change Brain > provider > Model): a few recommended models with a note on speed, cost and cleverness, **More Models** for everything the service offers right now, or **Custom** for any model name. The game tests each choice.
+- **Test Brain** on the Dungeon Master Brain screen tests whichever brain is in use, and offers to keep a working key in the Keychain.
+- Without a cloud key, the game says **once** which brain it's using and how to get a better one; after that the main menu shows a quiet "DM: …" line.
+
 ### Built for VoiceOver
 - The story is read as **a few sections, each starting at its heading**, not line by line, and each screen starts by saying **where you are**.
 - Every button is named; empty slots say **"No button"**; symbols like triangles and middle dots are no longer read out.
@@ -136,11 +144,22 @@ Friendly NPCs appear in dungeon rooms — traders, healers, scholars, smiths, sc
 
 ### AI Dungeon Master
 
-The game has three tiers of DM intelligence:
+The DM's "brain" is chosen in **Settings (cog) > Change Brain…**. In order of preference when nothing else is chosen:
 
-1. **Basic DM** (all devices) — A simple built-in DM with canned responses. Works everywhere but gives only very basic room descriptions and atmosphere. No AI, no setup needed.
-2. **Apple On-Device AI** (iPhone 16 / iPad with M-series or newer, iOS 26+) — A much smarter DM that runs entirely on your device. No API key, no account, works offline. May be fussy with some queries — try rephrasing if it won't answer.
-3. **Cloud AI** (any device) — The best DM experience. Supports Claude (Anthropic), GPT (OpenAI), and **Gemini (Google — free if you have a Google account, ages 18+)**. Requires an API key configured in Settings.
+1. **A cloud AI with your own key** (any device) — the best DM. Choose Claude (Anthropic), GPT (OpenAI), Gemini (Google — free tier, adults 18+) or **Hugging Face** (free account with a monthly allowance; open models such as Llama 3.3 70B). Each provider has a **Model** screen to pick which of its models runs the DM.
+2. **Apple On-Device AI** (iPhone 15 Pro or later, or an M-series iPad/Mac, on iOS 26+ with Apple Intelligence switched on) — the default where available. Runs entirely on the device: no key, no account, works offline. May refuse some queries — try rephrasing.
+3. **Hugging Face as backup** — on a device without Apple Intelligence, a saved Hugging Face token takes over automatically.
+4. **Built-in DM** (all devices) — simpler, ready-written replies. No AI, no setup; the whole game works with it.
+
+| Provider | Cost | Key from | Default model |
+|---|---|---|---|
+| Apple On-Device | Free | — (built in) | Apple Foundation Model |
+| Hugging Face | Free monthly allowance (US$0.10 credit; PRO US$2) | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens/new?tokenType=fineGrained) — tick *Make calls to Inference Providers* | Llama 3.3 70B |
+| Google Gemini | Free tier (18+) | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | Auto (newest Flash) |
+| Anthropic Claude | Pay as you go, a few pence a session | [platform.claude.com/settings/keys](https://platform.claude.com/settings/keys) | Claude Sonnet 4.5 |
+| OpenAI GPT | Pay as you go | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | GPT-4o mini |
+
+Keys stay on the device (and in its Keychain once tested); prompts go straight from the device to the provider you chose.
 
 Features:
 - 4 DM levels: Off, Flavour Only, Moderate, Full

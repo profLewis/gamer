@@ -6954,9 +6954,9 @@ class GameEngine: ObservableObject {
         } else if dm.isAppleModelAvailable {
             print("  Testing Apple On-Device AI…", color: .dimGreen)
             dm.testAppleModel { ok, msg in report(ok, msg, "Apple On-Device AI") }
-        } else if dm.freeOnlineEnabled {
-            print("  Testing \(FreeOnlineDM.name)…", color: .dimGreen)
-            dm.testFreeOnline { ok, msg in report(ok, msg, FreeOnlineDM.name) }
+        } else if dm.huggingFaceBackupKey != nil {
+            print("  Testing Hugging Face (\(dm.modelLabel(for: .huggingFace)))…", color: .dimGreen)
+            dm.testHuggingFaceBackup { ok, msg in report(ok, msg, "Hugging Face") }
         } else {
             printWrapped("No AI brain is set up, so the game's own Dungeon Master is running things — nothing to test. Pick a provider on the previous screen to add one.", indent: 2, color: .dimGreen)
             print("")
@@ -7012,6 +7012,7 @@ class GameEngine: ObservableObject {
         case .anthropic: return "https://platform.claude.com/settings/keys"
         case .openAI: return "https://platform.openai.com/api-keys"
         case .google: return "https://aistudio.google.com/apikey"
+        case .huggingFace: return HuggingFace.tokens
         }
     }
 
@@ -7030,7 +7031,13 @@ class GameEngine: ObservableObject {
         print("  LIKELY CAUSE", color: .cyan, bold: true)
         let lower = message.lowercased()
         let billing = billingURL(for: provider)
-        if provider == .google && (lower.contains("429") || lower.contains("quota") || lower.contains("rate") || lower.contains("exhausted")) {
+        if provider == .huggingFace && (lower.contains("402") || lower.contains("credit") || lower.contains("exceeded") || lower.contains("payment")) {
+            printWrapped("The token's monthly allowance is used up (US$0.10 of credit a month on a free account). It refills at the start of next month; or add credit on the billing page, or pick a smaller model (Model > Llama 3.1 8B) to make it last longer.", indent: 2, color: .dimGreen)
+        } else if provider == .huggingFace && (lower.contains("403") || lower.contains("permission") || lower.contains("inference providers")) {
+            printWrapped("The token isn't allowed to use Inference Providers. Make a new fine-grained token and tick 'Make calls to Inference Providers' (the link below opens the right page).", indent: 2, color: .dimGreen)
+        } else if provider == .huggingFace && (lower.contains("404") || lower.contains("model") || lower.contains("not supported")) {
+            printWrapped("The chosen model isn't available just now. Pick another on the Model screen (Change Brain > Hugging Face > Model).", indent: 2, color: .dimGreen)
+        } else if provider == .google && (lower.contains("429") || lower.contains("quota") || lower.contains("rate") || lower.contains("exhausted")) {
             printWrapped("Free Gemini keys have limits — a number of requests a minute and a day. This one has hit its limit for now; it resets by itself (a minute, or by tomorrow for the daily limit). Test Again later, or switch brain meanwhile. The rate-limits page below says what the free tier allows.", indent: 2, color: .dimGreen)
         } else if provider == .google && (lower.contains("403") || lower.contains("permission") || lower.contains("not enabled") || lower.contains("location") || lower.contains("region")) {
             printWrapped("Free Gemini keys still need the Gemini API allowed for the key's project, and Google doesn't offer it in every country. Check the key in AI Studio (link below) — making a fresh key there usually sorts it.", indent: 2, color: .dimGreen)
@@ -7055,6 +7062,10 @@ class GameEngine: ObservableObject {
         print("  WHERE TO LOOK", color: .cyan, bold: true)
         if billing != nil { printLink("\(provider.displayName) billing and credit", to: "aiBilling", indent: 2) }
         printLink("\(provider.displayName) API keys", to: "aiKeys", indent: 2)
+        if provider == .huggingFace {
+            printLink("Create a new token", to: HuggingFace.newToken, indent: 2)
+            printLink("Monthly credit and pricing", to: HuggingFace.pricing, indent: 2)
+        }
         if provider == .google {
             printLink("Gemini free-tier limits (rate limits)", to: "https://ai.google.dev/gemini-api/docs/rate-limits", indent: 2)
             print("")
@@ -7226,18 +7237,15 @@ class GameEngine: ObservableObject {
         if dm.isAppleModelAvailable {
             printWrapped("Your Dungeon Master runs on Apple's on-device AI — free, private, and it works offline.", indent: 2, color: .brightGreen)
             print("")
-            printWrapped("For a livelier, cleverer DM that remembers more, add a cloud brain: Claude or ChatGPT (paid, a few pence a session) or Gemini (free, for adults 18+).", indent: 2, color: .dimGreen)
-        } else if dm.freeOnlineEnabled {
-            printWrapped("Apple's on-device AI isn't available on this device, so your Dungeon Master uses the Free Online DM: a free AI service that needs no key or account. It needs the internet; when it's offline or busy, the game's own built-in DM answers instead.", indent: 2, color: .brightGreen)
-            print("")
-            print("  FOR A BETTER DM", color: .cyan, bold: true)
-            printWrapped("• Add a cloud brain: Claude or ChatGPT (a few pence a session) or Gemini (free for adults 18+, so a grown-up can make the key). They're quicker and cleverer.", indent: 2, color: .dimGreen)
-            printWrapped("• Apple's on-device AI needs a newer device: iPhone 15 Pro or later on iOS 26+, with Apple Intelligence switched on.", indent: 2, color: .dimGreen)
+            printWrapped("For a livelier, cleverer DM that remembers more, add a cloud brain: Claude or ChatGPT (paid, a few pence a session), Gemini (free, adults 18+) or Hugging Face (free account with a monthly allowance).", indent: 2, color: .dimGreen)
+        } else if dm.huggingFaceBackupKey != nil {
+            printWrapped("Apple's on-device AI isn't available on this device, so your Dungeon Master uses Hugging Face, with your saved token (model: \(dm.modelLabel(for: .huggingFace))). When the monthly allowance runs out or there's no internet, the game's own built-in DM answers instead.", indent: 2, color: .brightGreen)
         } else {
             printWrapped("No AI brain is available on this device, so the game's own built-in Dungeon Master runs everything. The whole game works — the DM's replies are just simpler and ready-written.", indent: 2, color: .brightGreen)
             print("")
             print("  FOR A BETTER DM", color: .cyan, bold: true)
-            printWrapped("• Add a cloud brain: Gemini is free for adults (18+), so a grown-up can make the key; Claude and ChatGPT cost a few pence a session.", indent: 2, color: .dimGreen)
+            printWrapped("• Hugging Face: a free account and token give a monthly allowance of AI replies (Change Brain > Hugging Face > ? explains how).", indent: 2, color: .dimGreen)
+            printWrapped("• Gemini is free for adults (18+), so a grown-up can make the key; Claude and ChatGPT cost a few pence a session.", indent: 2, color: .dimGreen)
             printWrapped("• Apple's on-device AI needs a newer device: iPhone 15 Pro or later on iOS 26+, with Apple Intelligence switched on.", indent: 2, color: .dimGreen)
         }
         print("")
@@ -11055,6 +11063,7 @@ class GameEngine: ObservableObject {
         print("DUNGEON MASTER ›", color: .cyan, bold: true)
         currentSettingsLinkKey = "dm"
         print("  Provider: \(dm.activeBrainName)", color: dm.hasAnyAI ? .brightGreen : .dimGreen)
+        if dm.isConfigured { print("  Model: \(dm.modelLabel(for: dm.provider))", color: .dimGreen) }
         print("  Ad-lib: \(dm.adLibLevel.displayName)  Log: \(dmLogContextSize == Int.max ? "Unlimited" : "\(dmLogContextSize)")", color: .dimGreen)
         print("")
 
@@ -14162,15 +14171,13 @@ class GameEngine: ObservableObject {
         print("CURRENT DM:", color: .cyan, bold: true)
         if dm.isConfigured {
             print("  \(dm.provider.displayName) [key set]", color: .brightGreen)
+            print("  Model: \(dm.modelLabel(for: dm.provider))", color: .dimGreen)
         } else if dm.isAppleModelAvailable {
             print("  Apple On-Device AI", color: .brightGreen)
             print("  Running locally on this device.", color: .dimGreen)
             print("  Works offline, no account needed.", color: .dimGreen)
             print("  Upgrade to a cloud provider below", color: .dimGreen)
             print("  for a more creative DM.", color: .dimGreen)
-        } else if dm.freeOnlineEnabled {
-            print("  \(FreeOnlineDM.name)", color: .brightGreen)
-            printWrapped("Free, no key or account needed; uses the internet. Apple's on-device AI isn't available on this device. Upgrade to a cloud provider below for a quicker, cleverer DM.", indent: 2, color: .dimGreen)
         } else {
             print("  The game's own DM (no AI)", color: .red)
             printWrapped("Apple's on-device AI isn't available here. It needs Apple Intelligence: an iPhone 15 Pro or newer (or an iPad or Mac with an M-series chip) on iOS 26 or later, with Apple Intelligence switched on in the device's Settings. Older phones can't run it.", indent: 2, color: .yellow)
@@ -14178,7 +14185,8 @@ class GameEngine: ObservableObject {
             printWrapped("Without an AI brain the game's own Dungeon Master runs everything, with simpler, ready-written replies.", indent: 2, color: .yellow)
             print("")
             print("  OPTIONS:", color: .cyan, bold: true)
-            printWrapped("• Set up a cloud AI below — Gemini has a free tier for adults (18+); Claude and ChatGPT need a paid account.", indent: 2, color: .dimGreen)
+            printWrapped("• Set up a cloud AI below — Hugging Face has a free monthly allowance (free account and token); Gemini has a free tier for adults (18+); Claude and ChatGPT need a paid account.", indent: 2, color: .dimGreen)
+            printWrapped("• A saved Hugging Face token also acts as the backup whenever Apple's AI isn't available.", indent: 2, color: .dimGreen)
             printWrapped("• On a newer device, switch Apple Intelligence on in Settings and it appears here by itself.", indent: 2, color: .dimGreen)
         }
         print("")
@@ -14201,7 +14209,7 @@ class GameEngine: ObservableObject {
             let marker = isCurrent ? " <--" : ""
             let hasKey = dm.apiKey(for: provider) != nil
             let keyStatus = hasKey ? " [key set]" : " [not set up]"
-            let freeTag = provider == .google && !hasKey ? " (FREE!)" : ""
+            let freeTag = !hasKey && provider == .google ? " (FREE!)" : (!hasKey && provider == .huggingFace ? " (FREE allowance)" : "")
             let rowColor: TerminalColor = isCurrent ? .brightGreen : (hasKey ? .dimGreen : .orange)
             print("  \(provider.displayName)\(keyStatus)\(freeTag)\(marker)",
                   color: rowColor, bold: isCurrent)
@@ -14226,10 +14234,6 @@ class GameEngine: ObservableObject {
             let label = isSelected ? "\(provider.displayName) <--" : provider.displayName
             options.append(MenuOption(label, isDefault: isSelected, tint: hasKey ? .normal : .amber))
         }
-        let freeSelected = !dm.isConfigured && !dm.isAppleModelAvailable && dm.freeOnlineEnabled
-        options.append(MenuOption(freeSelected ? "\(FreeOnlineDM.name) <--" : FreeOnlineDM.name, isDefault: freeSelected,
-                                  tint: dm.freeOnlineEnabled ? .normal : .amber))
-        let freeIndex = options.count
         // Test whichever brain is in use now, from here.
         options.append(MenuOption("Test Brain", tint: .cyan))
         options.append(MenuOption("?", tint: .navigation, compact: true))
@@ -14247,10 +14251,6 @@ class GameEngine: ObservableObject {
                 back()
                 return
             }
-            if choice == freeIndex {
-                self?.showFreeOnlineInfo(onBack: { [weak self] in self?.showAIProviderMenu(onBack: onBack) })
-                return
-            }
             if choice == testIndex {
                 self?.testCurrentBrain(then: { [weak self] in self?.showAIProviderMenu(onBack: onBack) })
                 return
@@ -14262,11 +14262,14 @@ class GameEngine: ObservableObject {
                     self?.print("  APPLE ON-DEVICE AI", color: .cyan, bold: true)
                     self?.printWrapped("Runs locally on your device. Free, works offline, no account needed. Needs Apple Intelligence: iPhone 15 Pro or newer (or an M-series iPad/Mac) on iOS 26+, with Apple Intelligence switched on. May refuse some queries.", indent: 2, color: .dimGreen)
                     self?.print("")
-                    self?.print("  FREE ONLINE DM", color: .cyan, bold: true)
-                    self?.printWrapped("For devices without Apple's AI. A free AI service (Pollinations): no key, no account, no age check. Needs the internet and can be slow when busy; if it doesn't answer, the built-in DM does. Only the game's own text is sent, never anything about you.", indent: 2, color: .dimGreen)
-                    self?.print("")
                     self?.print("  GOOGLE GEMINI", color: .cyan, bold: true)
                     self?.printWrapped("Free tier available (ages 18+). Good creative narration. Requires a Google account and API key from AI Studio.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                    self?.print("  HUGGING FACE", color: .cyan, bold: true)
+                    self?.printWrapped("One free account and token reach many open models (Llama, Gemma, Qwen…). Free accounts get a small monthly allowance — plenty for a few sessions a month. No age check beyond Hugging Face's own sign-up. A saved token is also the backup brain when Apple's AI isn't available. Tap Hugging Face, then ? for step-by-step setup and links.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                    self?.print("  CHOOSING A MODEL", color: .cyan, bold: true)
+                    self?.printWrapped("Every cloud provider offers several models. Tap a provider, then Model, to pick one — each comes with a note on speed, cost and cleverness.", indent: 2, color: .dimGreen)
                     self?.print("")
                     self?.print("  ANTHROPIC CLAUDE", color: .cyan, bold: true)
                     self?.printWrapped("Excellent narrative quality. Pay-as-you-go — a typical session costs a few pence. Requires an Anthropic account with credit.", indent: 2, color: .dimGreen)
@@ -14297,53 +14300,148 @@ class GameEngine: ObservableObject {
         }
     }
 
-    /// The Free Online DM's screen: what it is, a Test, and on/off. It is
-    /// only used when there's no cloud key and no Apple on-device AI.
-    private func showFreeOnlineInfo(onBack: @escaping () -> Void) {
+    /// Open a web page in the browser.
+    func openExternalURL(_ address: String) {
+        guard let url = URL(string: address) else { return }
+        DispatchQueue.main.async {
+            #if canImport(UIKit)
+            UIApplication.shared.open(url)
+            #elseif os(macOS)
+            NSWorkspace.shared.open(url)
+            #endif
+        }
+    }
+
+    /// Choose a provider's model: the recommended few with notes, every model
+    /// the service offers now (More Models), or any name typed in (Custom).
+    func showModelMenu(provider: AIProvider, onBack: @escaping () -> Void) {
         let dm = DMEngine.shared
         clearTerminal()
-        printTitle(FreeOnlineDM.name)
+        printTitle("\(provider.shortName) Model")
         print("")
-        print("  \(dm.freeOnlineEnabled ? "On" : "Off")", color: dm.freeOnlineEnabled ? .brightGreen : .yellow, bold: true)
+        let current = dm.chosenModel(for: provider) ?? provider.defaultModel
+        print("  In use: \(dm.modelLabel(for: provider))", color: .brightGreen, bold: true)
         print("")
-        printWrapped("A free AI Dungeon Master for devices without Apple's on-device AI: no key, no account and no age check. It remembers the recent conversation and knows where you are, who's with you and your quest.", indent: 2, color: .dimGreen)
-        print("")
-        printWrapped("It needs the internet and can be slow when busy; if it doesn't answer in time, the game's own built-in DM does. Only the game's own text is sent, never anything about you.", indent: 2, color: .dimGreen)
-        print("")
-        if dm.isConfigured {
-            printWrapped("Not in use now: your \(dm.provider.displayName) key is. It steps in only if that fails.", indent: 2, color: .yellow)
-            print("")
-        } else if dm.isAppleModelAvailable {
-            printWrapped("Not in use now: Apple's on-device AI is. It steps in only if that fails.", indent: 2, color: .yellow)
+        let choices = provider.modelChoices
+        for c in choices {
+            let mark = c.id == current ? "  <--" : ""
+            print("  \(c.label)\(mark)", color: c.id == current ? .brightGreen : .cyan, bold: c.id == current)
+            printWrapped(c.note, indent: 4, color: .dimGreen)
+            if !c.id.isEmpty { print("    \(c.id)", color: .dimGreen) }
             print("")
         }
-        printLink("About the service (pollinations.ai)", to: FreeOnlineDM.site, indent: 2)
+        printWrapped("More Models lists everything \(provider.displayName) offers right now; Custom takes any model name from its website.", indent: 2, color: .dimGreen)
         print("")
-        let opts = [MenuOption("Test", isDisabled: !dm.freeOnlineEnabled),
-                    MenuOption(dm.freeOnlineEnabled ? "Turn Off" : "Turn On", isDefault: !dm.freeOnlineEnabled),
-                    MenuOption("< Back", tint: .navigation, compact: true)]
+        var opts = choices.map { MenuOption($0.id == current ? "\($0.label) <--" : $0.label, isDefault: $0.id == current) }
+        opts.append(MenuOption("More Models"))
+        opts.append(MenuOption("Custom…"))
+        opts.append(MenuOption("?", tint: .navigation, compact: true))
+        opts.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(opts)
         closeHandler = onBack
+        let again: () -> Void = { [weak self] in self?.showModelMenu(provider: provider, onBack: onBack) }
         menuHandler = { [weak self] choice in
-            guard let self = self else { return }
-            switch choice {
-            case 1:
+            guard let self = self, choice >= 1, choice <= opts.count else { return }
+            if choice <= choices.count {
+                self.applyModelChoice(choices[choice - 1].id, provider: provider, then: again)
+                return
+            }
+            switch opts[choice - 1].text {
+            case "More Models":
+                self.showLiveModelList(provider: provider, onBack: again)
+            case "Custom…":
                 self.print("")
-                self.print("  Testing \(FreeOnlineDM.name)…", color: .dimGreen)
-                dm.testFreeOnline { ok, msg in
-                    self.print("")
-                    if ok { self.print("  ✓ \(FreeOnlineDM.name) is working.", color: .brightGreen, bold: true) }
-                    else { self.print("  ✗ No answer.", color: .red, bold: true); self.printWrapped(msg ?? "", indent: 2, color: .yellow) }
-                    self.print("")
-                    self.waitForContinueWithTimeout(multiplier: 1.0) { [weak self] in self?.showFreeOnlineInfo(onBack: onBack) }
+                self.promptText("Model name (as the service spells it):")
+                self.prefillInputText = dm.chosenModel(for: provider) ?? provider.defaultModel
+                self.inputHandler = { [weak self] text in
+                    let name = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !name.isEmpty else { again(); return }
+                    self?.applyModelChoice(name, provider: provider, then: again)
                 }
-            case 2:
-                dm.freeOnlineEnabled.toggle()
-                dm.clearHistory()
-                self.showFreeOnlineInfo(onBack: onBack)
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("Model Help")
+                    self.print("")
+                    self.printWrapped("Each AI company offers several models. Bigger ones write better stories and follow the game's rules more closely; smaller ones answer faster and cost less (or make a free allowance last longer).", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  MORE MODELS", color: .cyan, bold: true)
+                    self.printWrapped("Asks \(provider.displayName) for every chat model it offers right now\(provider == .huggingFace ? "" : " (needs a saved key)"), and lets you pick one.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  CUSTOM", color: .cyan, bold: true)
+                    self.printWrapped("Type any model name exactly as the service spells it — useful for a brand-new model.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("After a change the game tests the model. If a model stops working, pick another; Gemini's Auto always follows Google's newest Flash model.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
             default:
                 onBack()
             }
+        }
+    }
+
+    /// Save a model choice (empty = the provider's default) and test it
+    /// when there's a key to test with.
+    private func applyModelChoice(_ id: String, provider: AIProvider, then back: @escaping () -> Void) {
+        let dm = DMEngine.shared
+        dm.setChosenModel(id.isEmpty ? nil : id, for: provider)
+        dm.clearHistory()
+        print("")
+        print("  Model set: \(dm.modelLabel(for: provider))", color: .brightGreen, bold: true)
+        let hasKey = !(dm.apiKey(for: provider) ?? "").isEmpty
+        guard hasKey else {
+            print("  (Add a key to use it.)", color: .dimGreen)
+            print("")
+            waitForContinueWithTimeout(multiplier: 0.8) { back() }
+            return
+        }
+        print("  Testing it…", color: .dimGreen)
+        let done: (Bool, String?) -> Void = { [weak self] ok, msg in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if ok { self.print("  ✓ It works.", color: .brightGreen) }
+                else {
+                    self.print("  ✗ It didn't answer.", color: .red, bold: true)
+                    if let m = msg { self.printWrapped(m, indent: 2, color: .yellow); self.printURLLinks(in: m, indent: 2) }
+                }
+                self.print("")
+                self.waitForContinueWithTimeout(multiplier: 1.2) { back() }
+            }
+        }
+        if dm.isConfigured && dm.provider == provider { dm.testAPIKey(completion: done) }
+        else if provider == .huggingFace { dm.testHuggingFaceBackup(completion: done) }
+        else {
+            print("  (It will be tested when \(provider.displayName) is the brain in use.)", color: .dimGreen)
+            print("")
+            waitForContinueWithTimeout(multiplier: 0.8) { back() }
+        }
+    }
+
+    /// Every model the service offers right now, fetched live.
+    private func showLiveModelList(provider: AIProvider, onBack: @escaping () -> Void) {
+        clearTerminal()
+        printTitle("\(provider.shortName) — All Models")
+        print("")
+        print("  Asking \(provider.displayName)…", color: .dimGreen)
+        DMEngine.shared.fetchModelList(for: provider) { [weak self] ids in
+            guard let self = self else { return }
+            guard let ids = ids else {
+                self.print("")
+                self.printWrapped("Couldn't get the list\(provider == .huggingFace ? "" : " — it needs a saved, working key") (or there's no internet). Use Custom to type a model name instead.", indent: 2, color: .yellow)
+                self.print("")
+                self.showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+                self.closeHandler = onBack
+                self.menuHandler = { _ in onBack() }
+                return
+            }
+            self.clearTerminal()
+            self.printTitle("\(provider.shortName) — All Models")
+            self.print("")
+            self.printWrapped("\(ids.count) models offered now. Tap one to use it. Not every model suits a story-telling DM — the recommended ones on the previous screen are safest.", indent: 2, color: .dimGreen)
+            self.print("")
+            self.closeHandler = onBack
+            self.showPaginatedMenu(ids, pinned: ["< Back"], pinnedHandler: { _ in onBack() }, handler: { [weak self] idx in
+                self?.applyModelChoice(ids[idx], provider: provider, then: onBack)
+            })
         }
     }
 
@@ -15707,6 +15805,7 @@ class GameEngine: ObservableObject {
     /// of this check).
     private func detectedProvider(forKeyFormat key: String) -> AIProvider? {
         if key.hasPrefix("sk-ant-") { return .anthropic }
+        if key.hasPrefix("hf_") { return .huggingFace }
         // Google's AI Studio now issues "AQ."-prefixed Auth keys by default;
         // older "AIza"-prefixed Standard keys still exist but Google rejects
         // them from September 2026 — recognize both formats as Google.
@@ -15734,6 +15833,8 @@ class GameEngine: ObservableObject {
             return key.hasPrefix("sk-ant-") ? nil : ("Anthropic keys normally start with 'sk-ant-'.", false)
         case .google:
             return (key.hasPrefix("AQ.") || key.hasPrefix("AIza")) ? nil : ("Google (Gemini) keys normally start with 'AQ.' (or the older 'AIza' format).", false)
+        case .huggingFace:
+            return key.hasPrefix("hf_") ? nil : ("Hugging Face tokens normally start with 'hf_'.", false)
         }
     }
 
@@ -15744,6 +15845,7 @@ class GameEngine: ObservableObject {
         case .anthropic: return "https://platform.claude.com/settings/billing"
         case .openAI: return "https://platform.openai.com/settings/billing"
         case .google: return nil
+        case .huggingFace: return HuggingFace.billing
         }
     }
 
@@ -15794,9 +15896,12 @@ class GameEngine: ObservableObject {
         printTitle("Set API Key")
         print("")
         print("  Provider: \(provider.displayName)", color: .cyan)
+        print("  Model: \(DMEngine.shared.modelLabel(for: provider))", color: .cyan)
         if provider == .google {
             print("  Free tier — just needs a Google", color: .brightGreen)
             print("  account (you must be 18+).", color: .brightGreen)
+        } else if provider == .huggingFace {
+            printWrapped("Free account; its token comes with a small monthly allowance of AI replies (US$0.10 of credit a month on a free account, US$2 on PRO). No card needed to start. See '?' below for step-by-step setup.", indent: 2, color: .brightGreen)
         } else {
             print("  Requires a paid account with", color: .dimGreen)
             print("  credit — a typical session costs", color: .dimGreen)
@@ -15878,9 +15983,13 @@ class GameEngine: ObservableObject {
             return
         }
 
-        var options = ["Provider"]
+        var options = ["Provider", "Model"]
         if provider == .google {
             options.append("Get Free Key")
+        } else if provider == .huggingFace {
+            options.append("Sign Up")
+            options.append("Get Free Key")
+            options.append("Billing Page")
         } else {
             options.append("Get Key")
             options.append("Billing Page")
@@ -15930,6 +16039,11 @@ class GameEngine: ObservableObject {
     private func handleAPIKeySelection(_ selected: String, provider: AIProvider) {
         if selected == "Provider" {
             self.showAIProviderMenu()
+        } else if selected == "Model" {
+            self.showModelMenu(provider: provider, onBack: { [weak self] in self?.promptAPIKey() })
+        } else if selected == "Sign Up" {
+            self.openExternalURL(HuggingFace.join)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.promptAPIKey() }
         } else if selected == "Get Free Key" || selected == "Get Key" {
                 // Open the provider's key URL in Safari
                 let urlString: String
@@ -15937,6 +16051,7 @@ class GameEngine: ObservableObject {
                 case .google: urlString = "https://aistudio.google.com/apikey"
                 case .anthropic: urlString = "https://console.anthropic.com/settings/keys"
                 case .openAI: urlString = "https://platform.openai.com/api-keys"
+                case .huggingFace: urlString = HuggingFace.newToken
                 }
                 if let url = URL(string: urlString) {
                     DispatchQueue.main.async {
@@ -16099,6 +16214,9 @@ class GameEngine: ObservableObject {
             self.print("  PROVIDER", color: .cyan, bold: true)
             self.printWrapped("Switch which AI service powers the Dungeon Master (Anthropic, OpenAI, Google, or Apple on-device).", indent: 2, color: .dimGreen)
             self.print("")
+            self.print("  MODEL", color: .cyan, bold: true)
+            self.printWrapped("Choose which of \(provider.displayName)'s models runs the DM. Each has a note on speed, cost and cleverness; More Models lists everything the service offers right now, and Custom takes any model name.", indent: 2, color: .dimGreen)
+            self.print("")
             self.print("  GET KEY", color: .cyan, bold: true)
             self.printWrapped("Opens your provider's website where you can create an API key. Copy it there, then come back and paste it. See below for the exact steps and what it costs.", indent: 2, color: .dimGreen)
             self.print("")
@@ -16135,7 +16253,29 @@ class GameEngine: ObservableObject {
             self.print("")
             self.printWrapped("Your API key is stored locally on this device and never shared. Each provider has its own key — switching providers preserves other keys.", indent: 2, color: .dimGreen)
             self.print("")
-            if provider != .google {
+            if provider == .huggingFace {
+                self.print("  GETTING YOUR HUGGING FACE TOKEN", color: .cyan, bold: true)
+                self.printWrapped("1. Tap Sign Up (or the link below) and make a free Hugging Face account with an email address, then confirm the email.", indent: 2, color: .dimGreen)
+                self.printWrapped("2. Tap Get Free Key. It opens Settings > Access Tokens > Create new token, on the 'Fine-grained' tab.", indent: 2, color: .dimGreen)
+                self.printWrapped("3. Give it a name (e.g. DnD Game). Under 'Inference', tick 'Make calls to Inference Providers' — the game can't use the token without it. Nothing else needs ticking.", indent: 2, color: .dimGreen)
+                self.printWrapped("4. Tap Create token and copy it straight away — it starts 'hf_' and is shown once only.", indent: 2, color: .dimGreen)
+                self.printWrapped("5. Come back and use Paste Key or Edit Key. The game tests it and keeps a working token in the Keychain.", indent: 2, color: .dimGreen)
+                self.printWrapped("6. Optional: tap Model to choose which open model runs the DM (Llama 3.3 70B by default).", indent: 2, color: .dimGreen)
+                self.print("")
+                self.print("  WHAT IT COSTS", color: .cyan, bold: true)
+                self.printWrapped("Free accounts get US$0.10 of credit each month — the game's compact prompts make that roughly several hundred DM replies with Llama 3.3 70B, more with the smaller models. PRO accounts (US$9 a month) get US$2 of credit. When credit runs out the game's own DM takes over until the next month, or add credit on the billing page.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.print("  LINKS", color: .cyan, bold: true)
+                self.printLink("Sign up (free account)", to: HuggingFace.join, indent: 2)
+                self.printLink("Create a token", to: HuggingFace.newToken, indent: 2)
+                self.printLink("Your tokens", to: HuggingFace.tokens, indent: 2)
+                self.printLink("Monthly credit and pricing", to: HuggingFace.pricing, indent: 2)
+                self.printLink("Billing (add credit)", to: HuggingFace.billing, indent: 2)
+                self.printLink("PRO account", to: HuggingFace.pro, indent: 2)
+                self.printLink("How Inference Providers work", to: HuggingFace.docs, indent: 2)
+                self.printLink("Terms of service", to: HuggingFace.terms, indent: 2)
+                self.print("")
+            } else if provider != .google {
                 self.print("  GETTING A PAID ACCOUNT SET UP", color: .cyan, bold: true)
                 self.printWrapped("1. Tap Get Key — sign in or create an account.", indent: 2, color: .dimGreen)
                 self.printWrapped("2. Create a new API key there and copy it immediately — it's shown once only.", indent: 2, color: .dimGreen)
@@ -30887,7 +31027,7 @@ class GameEngine: ObservableObject {
         let totalRooms = dungeon?.rooms.count ?? 0
         print("  Explored: \(roomsVisited)/\(totalRooms) rooms", color: .cyan)
         let dm = DMEngine.shared
-        let aiLabel = dm.activeBrainName
+        let aiLabel = dm.isConfigured ? "\(dm.provider.displayName) (\(dm.modelLabel(for: dm.provider)))" : dm.activeBrainName
         print("  DM's brain: \(aiLabel)", color: .cyan)
         if let started = dungeon?.startDifficulty {
             print("  Difficulty: \(difficultyName(for: Double(started)))", color: .cyan)

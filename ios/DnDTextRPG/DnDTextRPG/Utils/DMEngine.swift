@@ -16,12 +16,14 @@ enum AIProvider: Int, CaseIterable {
     case anthropic = 0
     case openAI = 1
     case google = 2
+    case huggingFace = 3
 
     var displayName: String {
         switch self {
         case .anthropic: return "Anthropic (Claude)"
         case .openAI: return "OpenAI (GPT)"
         case .google: return "Google (Gemini)"
+        case .huggingFace: return "Hugging Face"
         }
     }
 
@@ -31,6 +33,7 @@ enum AIProvider: Int, CaseIterable {
         case .anthropic: return "Claude"
         case .openAI: return "GPT"
         case .google: return "Gemini"
+        case .huggingFace: return "Hugging Face"
         }
     }
 
@@ -39,6 +42,7 @@ enum AIProvider: Int, CaseIterable {
         case .anthropic: return "sk-ant-..."
         case .openAI: return "sk-..."
         case .google: return "AIza..."
+        case .huggingFace: return "hf_..."
         }
     }
 
@@ -47,6 +51,7 @@ enum AIProvider: Int, CaseIterable {
         case .anthropic: return "console.anthropic.com"
         case .openAI: return "platform.openai.com/api-keys"
         case .google: return "aistudio.google.com/apikey"
+        case .huggingFace: return "huggingface.co/settings/tokens"
         }
     }
 
@@ -55,8 +60,74 @@ enum AIProvider: Int, CaseIterable {
         case .anthropic: return "anthropic_api_key"
         case .openAI: return "openai_api_key"
         case .google: return "google_api_key"
+        case .huggingFace: return "huggingface_api_key"
         }
     }
+
+    /// The model the everyday DM uses unless the player picks another.
+    /// Empty for Google, which finds its newest Flash model by itself.
+    var defaultModel: String {
+        switch self {
+        case .anthropic: return "claude-sonnet-4-5-20250929"
+        case .openAI: return "gpt-4o-mini"
+        case .google: return ""
+        case .huggingFace: return HuggingFace.defaultModel
+        }
+    }
+
+    /// A short list of good choices for the DM, each with a note. "More
+    /// Models" on the Model screen lists everything the service offers.
+    var modelChoices: [AIModelChoice] {
+        switch self {
+        case .anthropic: return [
+            AIModelChoice(id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5", note: "Fastest and cheapest. Good, short narration."),
+            AIModelChoice(id: "claude-sonnet-4-5-20250929", label: "Claude Sonnet 4.5", note: "The default. Quick, lively and reliable."),
+            AIModelChoice(id: "claude-sonnet-5", label: "Claude Sonnet 5", note: "Newer and cleverer. A little more per reply."),
+            AIModelChoice(id: "claude-opus-5", label: "Claude Opus 5", note: "The most capable. Slower, and costs the most.")]
+        case .openAI: return [
+            AIModelChoice(id: "gpt-4o-mini", label: "GPT-4o mini", note: "The default. Fast and very cheap."),
+            AIModelChoice(id: "gpt-4.1-mini", label: "GPT-4.1 mini", note: "Fast and cheap, follows rules closely."),
+            AIModelChoice(id: "gpt-4o", label: "GPT-4o", note: "Richer storytelling. Costs more."),
+            AIModelChoice(id: "gpt-4.1", label: "GPT-4.1", note: "Strong and careful. Costs more.")]
+        case .google: return [
+            AIModelChoice(id: "", label: "Auto (newest Flash)", note: "The default. Always Google's latest fast model; changes by itself when Google retires one."),
+            AIModelChoice(id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", note: "Fast; works on the free tier."),
+            AIModelChoice(id: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash-Lite", note: "Fastest, with the most free requests a day."),
+            AIModelChoice(id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", note: "Cleverest, but few free requests a day.")]
+        case .huggingFace: return [
+            AIModelChoice(id: "meta-llama/Llama-3.3-70B-Instruct", label: "Llama 3.3 70B", note: "The default. Clever and good at stories; about 1p per 100 replies."),
+            AIModelChoice(id: "meta-llama/Llama-3.1-8B-Instruct", label: "Llama 3.1 8B", note: "Smaller and quicker; makes the free allowance last longest."),
+            AIModelChoice(id: "openai/gpt-oss-20b", label: "GPT-OSS 20B", note: "OpenAI's open model. Quick and sensible."),
+            AIModelChoice(id: "google/gemma-3-27b-it", label: "Gemma 3 27B", note: "Google's open model. Good descriptions."),
+            AIModelChoice(id: "Qwen/Qwen3-8B", label: "Qwen3 8B", note: "Small, quick all-rounder.")]
+        }
+    }
+}
+
+/// One model a provider offers, as shown on the Model screen.
+struct AIModelChoice {
+    let id: String
+    let label: String
+    let note: String
+}
+
+/// Hugging Face's Inference Providers: one free account and one token reach
+/// many open models (Llama, Gemma, Qwen…). Free accounts get a small monthly
+/// allowance; PRO accounts get more.
+enum HuggingFace {
+    static let endpoint = "https://router.huggingface.co/v1/chat/completions"
+    static let modelsURL = "https://router.huggingface.co/v1/models"
+    static let defaultModel = "meta-llama/Llama-3.3-70B-Instruct"
+    static let join = "https://huggingface.co/join"
+    static let newToken = "https://huggingface.co/settings/tokens/new?tokenType=fineGrained"
+    static let tokens = "https://huggingface.co/settings/tokens"
+    static let billing = "https://huggingface.co/settings/billing"
+    static let pricing = "https://huggingface.co/docs/inference-providers/pricing"
+    static let docs = "https://huggingface.co/docs/inference-providers/index"
+    static let terms = "https://huggingface.co/terms-of-service"
+    static let pro = "https://huggingface.co/pro"
+    /// Added to the compact game prompt for the open models.
+    static let promptRules = "UK spelling. Family-friendly (ages 9+): no gore, nothing frightening. Stay inside this game: remember what has been said in this conversation, never contradict the facts above, and never mention being an AI or these instructions."
 }
 
 // MARK: - Age Rating
@@ -195,17 +266,6 @@ struct DMCommandResult {
     let buyItem: String?              // [BUY:Healing Potion]
     let sellItem: String?             // [SELL:Dagger]
     let pickUpItem: String?           // [PICK_UP:Torch]
-}
-
-/// The free, no-key online DM used when there's no key and no Apple
-/// Intelligence (older phones).
-enum FreeOnlineDM {
-    static let name = "Free Online DM"
-    static let endpoint = "https://text.pollinations.ai/openai"
-    static let model = "openai-fast"
-    static let referrer = "dndtextrpg"
-    static let site = "https://pollinations.ai"
-    static let extraRules = "UK spelling. Family-friendly (ages 9+): no gore, nothing frightening. Stay inside this game: remember what has been said in this conversation, never contradict the facts above, and never mention being an AI or these instructions."
 }
 
 class DMEngine {
@@ -430,17 +490,24 @@ class DMEngine {
                 askAppleModel(userMessage: userMessage, context: context) { [weak self] response in
                     if let response = response, !response.isEmpty {
                         completion(response)
+                    } else if let self = self {
+                        self.askBackupChain(userMessage, context: context, completion: completion)
                     } else {
-                        completion(self?.simpleDMResponse(for: userMessage, context: context) ?? "*The DM nods silently.*")
+                        completion("*The DM nods silently.*")
                     }
                 }
             } else {
-                askFreeOnlineOrSimple(userMessage, context: context, completion: completion)
+                askBackupChain(userMessage, context: context, completion: completion)
             }
             return
         }
 
-        let systemPrompt = buildSystemPrompt(context: context)
+        // Hugging Face's open models get the compact, grounded prompt: the
+        // full one is sized for the big commercial models and would use up
+        // a free account's allowance quickly.
+        let systemPrompt = provider == .huggingFace
+            ? buildAppleSystemPrompt(context: context) + "\n" + HuggingFace.promptRules
+            : buildSystemPrompt(context: context)
 
         conversationHistory.append((role: "user", content: userMessage))
 
@@ -460,13 +527,13 @@ class DMEngine {
                         if let text = appleResponse, !text.isEmpty {
                             completion(text)
                         } else if let self = self {
-                            self.askFreeOnlineOrSimple(userMessage, context: context, historyHasMessage: true, completion: completion)
+                            self.askBackupChain(userMessage, context: context, historyHasMessage: true, completion: completion)
                         } else {
                             completion("*The DM nods silently.*")
                         }
                     }
                 } else if let self = self {
-                    self.askFreeOnlineOrSimple(userMessage, context: context, historyHasMessage: true, completion: completion)
+                    self.askBackupChain(userMessage, context: context, historyHasMessage: true, completion: completion)
                 } else {
                     completion("*The DM nods silently.*")
                 }
@@ -474,34 +541,35 @@ class DMEngine {
         }
     }
 
-    /// Whether any AI (API, Apple on-device, or the free online DM) is available
+    /// Whether any AI (API, Apple on-device, or a Hugging Face backup) is available
     var hasAnyAI: Bool {
-        isConfigured || isAppleModelAvailable || freeOnlineEnabled
+        isConfigured || isAppleModelAvailable || huggingFaceBackupKey != nil
     }
 
     /// What's running the Dungeon Master right now, in words.
     var activeBrainName: String {
         if isConfigured { return provider.displayName }
         if isAppleModelAvailable { return "Apple On-Device AI" }
-        if freeOnlineEnabled { return FreeOnlineDM.name }
+        if huggingFaceBackupKey != nil { return AIProvider.huggingFace.displayName }
         return "Built-in DM"
     }
 
-    // MARK: - Free Online DM (no key)
+    // MARK: - Hugging Face backup
 
-    /// The no-key fallback for devices without Apple Intelligence: a free
-    /// public text service (Pollinations) taking an OpenAI-style request with
-    /// no account. On by default; the player can switch it off.
-    var freeOnlineEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: "free_online_dm") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "free_online_dm") }
+    /// A saved Hugging Face token that isn't already the main brain: used as
+    /// the backup on devices without Apple Intelligence, and if the chosen
+    /// cloud brain fails.
+    var huggingFaceBackupKey: String? {
+        if isConfigured && provider == .huggingFace { return nil }
+        guard let k = apiKey(for: .huggingFace), !k.isEmpty else { return nil }
+        return k
     }
 
-    /// Try the free online DM with the chat history, so it remembers the
-    /// conversation; the game's own DM answers if it's off, slow or down.
-    private func askFreeOnlineOrSimple(_ userMessage: String, context: DMContext, historyHasMessage: Bool = false,
-                                       completion: @escaping (String) -> Void) {
-        guard freeOnlineEnabled else {
+    /// Hugging Face (if a token is saved), then the game's own DM. Keeps the
+    /// chat history, so the backup remembers the conversation too.
+    private func askBackupChain(_ userMessage: String, context: DMContext, historyHasMessage: Bool = false,
+                                completion: @escaping (String) -> Void) {
+        guard let hfKey = huggingFaceBackupKey else {
             completion(simpleDMResponse(for: userMessage, context: context))
             return
         }
@@ -511,68 +579,100 @@ class DMEngine {
                 conversationHistory = Array(conversationHistory.suffix(effectiveMaxHistory))
             }
         }
-        let system = buildAppleSystemPrompt(context: context) + "\n" + FreeOnlineDM.extraRules
-        callFreeOnline(system: system, messages: conversationHistory, maxTokens: effectiveMaxTokens + 300) { [weak self] text in
-            guard let self = self else { return }
-            if let text = text {
-                self.conversationHistory.append((role: "assistant", content: text))
-                completion(text)
-            } else {
-                // Drop the unanswered question so the history stays paired.
-                if self.conversationHistory.last?.role == "user" { self.conversationHistory.removeLast() }
-                completion(self.simpleDMResponse(for: userMessage, context: context))
-            }
-        }
-    }
-
-    /// One request to the free online service. nil on any failure, or if it
-    /// takes longer than `timeout` seconds (it can be slow when busy).
-    func callFreeOnline(system: String, messages: [(role: String, content: String)], maxTokens: Int = 500,
-                        timeout: Double = 20, completion: @escaping (String?) -> Void) {
-        guard let url = URL(string: FreeOnlineDM.endpoint) else { completion(nil); return }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = timeout
-        var msgs: [[String: String]] = [["role": "system", "content": system]]
-        msgs += messages.map { ["role": $0.role == "assistant" ? "assistant" : "user", "content": $0.content] }
-        let body: [String: Any] = [
-            "model": FreeOnlineDM.model,
-            "messages": msgs,
-            "private": true,            // keep game text off the service's public feed
-            "referrer": FreeOnlineDM.referrer,
-            "reasoning_effort": "low",  // several times quicker; plenty for narration
-            "max_tokens": maxTokens,
-            "seed": Int.random(in: 1...999_999)
-        ]
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        var finished = false
-        let finish: (String?) -> Void = { text in
+        let system = buildAppleSystemPrompt(context: context) + "\n" + HuggingFace.promptRules
+        callOpenAI(apiKey: hfKey, system: system, messages: conversationHistory,
+                   model: modelToUse(for: .huggingFace), endpoint: HuggingFace.endpoint) { [weak self] text in
             DispatchQueue.main.async {
-                guard !finished else { return }
-                finished = true
-                completion(text)
+                guard let self = self else { return }
+                if let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+                    self.conversationHistory.append((role: "assistant", content: text))
+                    completion(text)
+                } else {
+                    if self.conversationHistory.last?.role == "user" { self.conversationHistory.removeLast() }
+                    completion(self.simpleDMResponse(for: userMessage, context: context))
+                }
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + timeout + 1) { finish(nil) }
-        URLSession.shared.dataTask(with: request) { data, response, _ in
-            guard let data = data, (response as? HTTPURLResponse)?.statusCode == 200,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let choices = json["choices"] as? [[String: Any]],
-                  let message = choices.first?["message"] as? [String: Any],
-                  let content = message["content"] as? String else { finish(nil); return }
-            let text = content.trimmingCharacters(in: .whitespacesAndNewlines)
-            finish(text.isEmpty ? nil : text)
-        }.resume()
     }
 
-    /// Same shape as testAPIKey, for the free online DM.
-    func testFreeOnline(completion: @escaping (Bool, String?) -> Void) {
-        callFreeOnline(system: "Reply with exactly one word.", messages: [(role: "user", content: "Say hello.")],
-                       maxTokens: 60, timeout: 25) { text in
-            if text != nil { completion(true, nil) }
-            else { completion(false, "No answer from the free online service. Check the internet connection; if it's busy, try again in a minute.") }
+    // MARK: - Model choice
+
+    /// The model the player picked for a provider, if any.
+    func chosenModel(for provider: AIProvider) -> String? {
+        let m = UserDefaults.standard.string(forKey: "ai_model_\(provider.userDefaultsKey)")
+        return (m?.isEmpty ?? true) ? nil : m
+    }
+
+    func setChosenModel(_ model: String?, for provider: AIProvider) {
+        UserDefaults.standard.set(model, forKey: "ai_model_\(provider.userDefaultsKey)")
+    }
+
+    /// The model the everyday DM uses for a provider.
+    func modelToUse(for provider: AIProvider) -> String {
+        if provider == .google { return googleModelToUse }
+        return chosenModel(for: provider) ?? provider.defaultModel
+    }
+
+    /// A friendly name for the model in use.
+    func modelLabel(for provider: AIProvider) -> String {
+        let id = chosenModel(for: provider) ?? provider.defaultModel
+        if let known = provider.modelChoices.first(where: { $0.id == id }) { return known.label }
+        return id.isEmpty ? "Auto" : id
+    }
+
+    /// Every chat model the service offers right now, straight from it
+    /// (Hugging Face's list needs no key). nil if it can't be fetched.
+    func fetchModelList(for provider: AIProvider, completion: @escaping ([String]?) -> Void) {
+        let key = apiKey(for: provider) ?? ""
+        var request: URLRequest
+        switch provider {
+        case .anthropic:
+            guard let url = URL(string: "https://api.anthropic.com/v1/models?limit=100") else { completion(nil); return }
+            request = URLRequest(url: url)
+            request.setValue(key, forHTTPHeaderField: "x-api-key")
+            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        case .openAI:
+            guard let url = URL(string: "https://api.openai.com/v1/models") else { completion(nil); return }
+            request = URLRequest(url: url)
+            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        case .google:
+            guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models?pageSize=200") else { completion(nil); return }
+            request = URLRequest(url: url)
+            request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+        case .huggingFace:
+            guard let url = URL(string: HuggingFace.modelsURL) else { completion(nil); return }
+            request = URLRequest(url: url)
         }
+        request.timeoutInterval = 20
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            var ids: [String] = []
+            if let data = data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                if let list = json["data"] as? [[String: Any]] {
+                    for m in list {
+                        guard let id = m["id"] as? String else { continue }
+                        if provider == .huggingFace,
+                           let arch = m["architecture"] as? [String: Any],
+                           let out = arch["output_modalities"] as? [String], !out.contains("text") { continue }
+                        if provider == .openAI {
+                            let l = id.lowercased()
+                            guard l.hasPrefix("gpt-") || l.hasPrefix("chatgpt") else { continue }
+                            if ["audio", "realtime", "tts", "transcribe", "image", "search", "codex"].contains(where: { l.contains($0) }) { continue }
+                        }
+                        ids.append(id)
+                    }
+                } else if let list = json["models"] as? [[String: Any]] {
+                    for m in list {
+                        guard let name = m["name"] as? String,
+                              let methods = m["supportedGenerationMethods"] as? [String],
+                              methods.contains("generateContent") else { continue }
+                        let id = name.hasPrefix("models/") ? String(name.dropFirst("models/".count)) : name
+                        if id.lowercased().contains("gemini") { ids.append(id) }
+                    }
+                }
+            }
+            let sorted = ids.sorted()
+            DispatchQueue.main.async { completion(sorted.isEmpty ? nil : sorted) }
+        }.resume()
     }
 
     /// Request a brief DM narration for a game event. Only fires if adLibLevel >= .moderate
@@ -1425,11 +1525,14 @@ class DMEngine {
                          completion: @escaping (String?) -> Void) {
         switch provider {
         case .anthropic:
-            callAnthropic(apiKey: apiKey, system: system, messages: messages, completion: completion)
+            callAnthropic(apiKey: apiKey, system: system, messages: messages, model: modelToUse(for: .anthropic), completion: completion)
         case .openAI:
-            callOpenAI(apiKey: apiKey, system: system, messages: messages, completion: completion)
+            callOpenAI(apiKey: apiKey, system: system, messages: messages, model: modelToUse(for: .openAI), completion: completion)
         case .google:
             callGoogle(apiKey: apiKey, system: system, messages: messages, completion: completion)
+        case .huggingFace:
+            callOpenAI(apiKey: apiKey, system: system, messages: messages, model: modelToUse(for: .huggingFace),
+                       endpoint: HuggingFace.endpoint, completion: completion)
         }
     }
 
@@ -1440,11 +1543,14 @@ class DMEngine {
     /// one). nil if there's no key, the call fails, or it takes too long.
     func writeStory(system: String, prompt: String, timeout: Double = 15, completion: @escaping (String?) -> Void) {
         guard isConfigured, let key = apiKey, !key.isEmpty else {
-            // No key: the free online DM can still write it.
-            if freeOnlineEnabled {
-                callFreeOnline(system: system, messages: [(role: "user", content: prompt)], maxTokens: 1500,
-                               timeout: max(timeout, 20), completion: completion)
-            } else { completion(nil) }
+            // No main key: a saved Hugging Face token can still write it.
+            guard let hfKey = huggingFaceBackupKey else { completion(nil); return }
+            var done = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + max(timeout, 20)) { if !done { done = true; completion(nil) } }
+            callOpenAI(apiKey: hfKey, system: system, messages: [(role: "user", content: prompt)],
+                       model: modelToUse(for: .huggingFace), maxTokens: 900, endpoint: HuggingFace.endpoint) { text in
+                DispatchQueue.main.async { if !done { done = true; completion(text) } }
+            }
             return
         }
         var finished = false
@@ -1461,6 +1567,8 @@ class DMEngine {
         case .anthropic: callAnthropic(apiKey: key, system: system, messages: messages, model: "claude-opus-5", maxTokens: 900, completion: finish)
         case .openAI: callOpenAI(apiKey: key, system: system, messages: messages, model: "gpt-4o", maxTokens: 900, completion: finish)
         case .google: callGoogle(apiKey: key, system: system, messages: messages, maxTokens: 900, completion: finish)
+        case .huggingFace: callOpenAI(apiKey: key, system: system, messages: messages, model: modelToUse(for: .huggingFace),
+                                      maxTokens: 900, endpoint: HuggingFace.endpoint, completion: finish)
         }
     }
 
@@ -1482,7 +1590,7 @@ class DMEngine {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let body: [String: Any] = [
-            "model": model ?? "claude-sonnet-4-5-20250929",
+            "model": model ?? modelToUse(for: .anthropic),
             "max_tokens": maxTokens ?? effectiveMaxTokens,
             "system": system,
             "messages": messages.map { ["role": $0.role, "content": $0.content] }
@@ -1507,8 +1615,9 @@ class DMEngine {
     private func callOpenAI(apiKey: String, system: String,
                              messages: [(role: String, content: String)],
                              model: String? = nil, maxTokens: Int? = nil,
+                             endpoint: String = "https://api.openai.com/v1/chat/completions",
                              completion: @escaping (String?) -> Void) {
-        guard let url = URL(string: "https://api.openai.com/v1/chat/completions") else {
+        guard let url = URL(string: endpoint) else {
             completion(nil)
             return
         }
@@ -1521,11 +1630,17 @@ class DMEngine {
         var oaiMessages: [[String: String]] = [["role": "system", "content": system]]
         oaiMessages += messages.map { ["role": $0.role, "content": $0.content] }
 
-        let body: [String: Any] = [
-            "model": model ?? "gpt-4o-mini",
-            "max_tokens": maxTokens ?? effectiveMaxTokens,
-            "messages": oaiMessages
-        ]
+        let chosen = model ?? "gpt-4o-mini"
+        var body: [String: Any] = ["model": chosen, "messages": oaiMessages]
+        let limit = maxTokens ?? effectiveMaxTokens
+        if Self.isOpenAIReasoningModel(chosen, endpoint: endpoint) {
+            // Newer OpenAI models reject max_tokens and think before they
+            // answer: keep the thinking short and leave room for the reply.
+            body["max_completion_tokens"] = limit * 4
+            body["reasoning_effort"] = "low"
+        } else {
+            body["max_tokens"] = limit
+        }
 
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
@@ -1542,6 +1657,16 @@ class DMEngine {
         }.resume()
     }
 
+    /// OpenAI's reasoning models (o-series, GPT-5 and later) take
+    /// max_completion_tokens and a reasoning effort instead of max_tokens.
+    static func isOpenAIReasoningModel(_ model: String, endpoint: String) -> Bool {
+        guard endpoint.contains("api.openai.com") else { return false }
+        let m = model.lowercased()
+        if m.hasPrefix("o1") || m.hasPrefix("o3") || m.hasPrefix("o4") { return true }
+        if m.hasPrefix("gpt-"), let v = Double(m.dropFirst(4).prefix { $0.isNumber || $0 == "." }), v >= 5 { return true }
+        return false
+    }
+
     // MARK: - Google (Gemini)
 
     /// Google retires Gemini model names surprisingly often (e.g. gemini-2.0-flash
@@ -1555,7 +1680,7 @@ class DMEngine {
         get { UserDefaults.standard.string(forKey: "google_resolved_model") }
         set { UserDefaults.standard.set(newValue, forKey: "google_resolved_model") }
     }
-    private var googleModelToUse: String { resolvedGoogleModel ?? Self.defaultGoogleModel }
+    private var googleModelToUse: String { chosenModel(for: .google) ?? resolvedGoogleModel ?? Self.defaultGoogleModel }
 
     /// Google's newer "AQ."-prefixed Auth keys (the default AI Studio now issues)
     /// aren't accepted via the "?key=" query parameter — only the "x-goog-api-key"
@@ -1646,6 +1771,8 @@ class DMEngine {
                         return
                     }
                     self.resolvedGoogleModel = discovered
+                    // A model the player picked that Google has retired: back to Auto.
+                    self.setChosenModel(nil, for: .google)
                     self.googlePost(apiKey: apiKey, body: body, attemptedDiscovery: true, completion: completion)
                 }
             } else {
@@ -1701,7 +1828,15 @@ class DMEngine {
             testAnthropicKey(apiKey: key, completion: completion)
         case .openAI:
             testOpenAIKey(apiKey: key, completion: completion)
+        case .huggingFace:
+            testOpenAIKey(apiKey: key, model: modelToUse(for: .huggingFace), endpoint: HuggingFace.endpoint, completion: completion)
         }
+    }
+
+    /// Test a saved Hugging Face token (used when it's the backup brain).
+    func testHuggingFaceBackup(completion: @escaping (Bool, String?) -> Void) {
+        guard let key = apiKey(for: .huggingFace), !key.isEmpty else { completion(false, "No Hugging Face token saved."); return }
+        testOpenAIKey(apiKey: key, model: modelToUse(for: .huggingFace), endpoint: HuggingFace.endpoint, completion: completion)
     }
 
     /// Same shape as testAPIKey (success, errorMessage), but for the Apple
@@ -1792,7 +1927,7 @@ class DMEngine {
         request.timeoutInterval = 15
 
         let body: [String: Any] = [
-            "model": "claude-sonnet-4-5-20250929",
+            "model": modelToUse(for: .anthropic),
             "max_tokens": 10,
             "messages": [["role": "user", "content": "Say hello."]]
         ]
@@ -1828,8 +1963,10 @@ class DMEngine {
         }.resume()
     }
 
-    private func testOpenAIKey(apiKey: String, completion: @escaping (Bool, String?) -> Void) {
-        guard let url = URL(string: "https://api.openai.com/v1/chat/completions") else {
+    private func testOpenAIKey(apiKey: String, model: String? = nil,
+                               endpoint: String = "https://api.openai.com/v1/chat/completions",
+                               completion: @escaping (Bool, String?) -> Void) {
+        guard let url = URL(string: endpoint) else {
             completion(false, "Invalid URL.")
             return
         }
@@ -1837,13 +1974,16 @@ class DMEngine {
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 15
+        request.timeoutInterval = endpoint == HuggingFace.endpoint ? 30 : 15
 
-        let body: [String: Any] = [
-            "model": "gpt-4o-mini",
-            "max_tokens": 10,
-            "messages": [["role": "user", "content": "Say hello."]]
-        ]
+        let testModel = model ?? modelToUse(for: .openAI)
+        var body: [String: Any] = ["model": testModel, "messages": [["role": "user", "content": "Say hello."]]]
+        if Self.isOpenAIReasoningModel(testModel, endpoint: endpoint) {
+            body["max_completion_tokens"] = 200
+            body["reasoning_effort"] = "low"
+        } else {
+            body["max_tokens"] = 10
+        }
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         URLSession.shared.dataTask(with: request) { data, response, error in
@@ -1862,6 +2002,10 @@ class DMEngine {
                 let errType = errorObj["type"] as? String ?? ""
                 let prefix = errType.isEmpty ? "HTTP \(statusCode)" : "HTTP \(statusCode) (\(errType))"
                 completion(false, "\(prefix): \(message)")
+                return
+            }
+            if let message = json["error"] as? String {
+                completion(false, "HTTP \(statusCode): \(message)")
                 return
             }
             if statusCode != 200 {

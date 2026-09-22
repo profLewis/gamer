@@ -34,7 +34,7 @@ PLAY IT YOUR WAY
 
 A DUNGEON MASTER THAT TALKS BACK
 • The DM describes rooms, plays everyone you meet, answers questions, and remembers who told you what.
-• On supported devices it runs entirely on the device with Apple Intelligence — nothing leaves your phone. Or plug in your own key for a cloud AI of your choice. Without either, the built-in DM runs the whole game.
+• On devices with Apple Intelligence it runs entirely on the device — nothing leaves your phone. Or choose a cloud AI with your own key: Claude, ChatGPT, Gemini, or Hugging Face with a free monthly allowance — and pick which model tells your story. Without any of them, the built-in DM runs the whole game.
 • A content-safety tool lets you wipe any response and steer the story somewhere gentler, any time, no questions asked.
 
 REAL RULES, READABLE DICE
@@ -65,6 +65,17 @@ Version 3.0 — the biggest update yet, shaped by months of play-testing.
 NOW ON EVERY APPLE SCREEN
 • iPhone and iPad, plus a native Mac app, Apple TV (text you can read from the sofa) and Apple Vision Pro.
 
+CHOOSE YOUR DUNGEON MASTER'S BRAIN
+• Apple's on-device AI is the default where your device has it: free, private and offline.
+• New: Hugging Face. One free account opens up many open AI models, with a monthly allowance that covers plenty of play. Step-by-step setup and links are built in.
+• Pick the model for every AI: a few recommended ones with notes on speed, cost and cleverness, or any model the service offers.
+• Test Brain checks your AI in one tap, and a working key is kept safe in the Keychain.
+• No AI on your device? A Hugging Face token steps in automatically, and the built-in DM still runs the whole game.
+
+LEARN AS YOU PLAY
+• A guided Gameplay Test walks new players through exploring, fighting, merchants, quests and saving, with a short quiz at the end.
+• A Hall of Fame of completed adventures, with example games to load and explore.
+
 A QUEST WORTH GOING DOWN FOR
 • A main quest from the start, told in-character, and side quests from almost anyone you meet.
 • Quests that differ in what they ask — rescue, fetch, find, clear, escort — with deadlines in days on the DM's own calendar.
@@ -84,7 +95,7 @@ FIGHTS YOU CAN FOLLOW
 A DUNGEON MASTER THAT LISTENS
 • Speak your commands; button names, numbers and directions are understood first.
 • Chat with the DM, with a recap when you leave.
-• If your AI key stops working, the game tells you why and how to fix it.
+• If your AI key stops working, the game tells you why, links to the right page, and offers another brain.
 
 BUILT FOR VOICEOVER
 • Screens read as a few clear sections, starting with where you are; every button named; long press and scrolling available as VoiceOver actions; only ever one voice speaking.
@@ -92,7 +103,7 @@ BUILT FOR VOICEOVER
 AND MORE
 • Back and Next undo a step; an Atlas of every floor you've mapped; adjustable timers; font sizes down to Tiny; a little magick for the stuck.
 • Game Center multiplayer is included as an early preview.
-• Many fixes — and saves from 2.4 still load.
+• Much faster saving and loading, many fixes — and saves from 2.4 still load.
 
 ---
 
@@ -134,10 +145,10 @@ The shared fields above work for all four. Where a platform differs:
 - **Privacy Policy URL:** https://github.com/profLewis/gamer/blob/main/PRIVACY.md
 - **Copyright:** © 2026 Timbaloo Ltd
 - **Age rating:** Infrequent/Mild Fantasy Violence. The optional AI features generate text, so answer the AI / user-generated-content questions accordingly (the app filters AI output to the chosen age rating).
-- **App Privacy ("nutrition label"):** Data Not Collected. Optional cloud-AI prompts go directly from the device to the provider the player chose, with the player's own key.
+- **App Privacy ("nutrition label"):** Data Not Collected. Optional cloud-AI prompts (Anthropic, OpenAI, Google or Hugging Face) go directly from the device to the provider the player chose, with the player's own key; the developer receives nothing.
 
 ## Notes for App Review
-The game needs no account and no AI key: the built-in Dungeon Master runs everything. To try the AI DM, use a device with Apple Intelligence (on-device, no key needed). Game Center is optional ("Not Now" works). A quick path: Play → New Adventure → Random Party → Start Adventure → any dungeon name → Normal.
+The game needs no account and no AI key: the built-in Dungeon Master runs everything. To try the AI DM, use a device with Apple Intelligence (on-device, no key needed). Cloud AI (Claude, ChatGPT, Gemini, Hugging Face) is optional and uses the player's own key, entered under Settings > Change Brain. Game Center is optional ("Not Now" works). A quick path: Play → New Adventure → Random Party → Start Adventure → any dungeon name → Normal.
 
 ## Screenshots (screendumps/appstore-build91/ — retake on build 97 when convenient)
 - iPhone 6.9" — iphone-6.9in-explore.png (1320 × 2868)
