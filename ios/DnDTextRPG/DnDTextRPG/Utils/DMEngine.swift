@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Network
 #if canImport(FoundationModels) && !os(tvOS)
 import FoundationModels
 #endif
@@ -310,6 +311,8 @@ struct DMCommandResult {
 class DMEngine {
     static let shared = DMEngine()
 
+    private init() { startWatchingNetwork() }
+
     // Conversation history for context (last few exchanges)
     private var conversationHistory: [(role: String, content: String)] = []
     private let maxHistory = 8  // Keep last 8 messages (4 exchanges)
@@ -523,6 +526,18 @@ class DMEngine {
     }
 
     func ask(_ userMessage: String, context: DMContext, completion: @escaping (String) -> Void) {
+        // Nothing to reach: straight to whatever works without a connection.
+        guard isOnline else {
+            if isAppleModelAvailable {
+                askAppleModel(userMessage: userMessage, context: context) { [weak self] response in
+                    if let response = response, !response.isEmpty { completion(response) }
+                    else { completion(self?.simpleDMResponse(for: userMessage, context: context) ?? "*The DM nods silently.*") }
+                }
+            } else {
+                completion(simpleDMResponse(for: userMessage, context: context))
+            }
+            return
+        }
         guard let key = apiKey, !key.isEmpty else {
             // No API key — try Apple on-device model first, then simple DM
             if isAppleModelAvailable {
@@ -593,6 +608,32 @@ class DMEngine {
         return "Built-in DM"
     }
 
+    // MARK: - Internet
+
+    /// Whether the device has a usable connection. Watched rather than
+    /// guessed, so a cloud brain isn't asked at all when there's nothing to
+    /// ask over — no twenty-second wait before the game's own DM answers.
+    private(set) var isOnline: Bool = true
+    private let pathMonitor = NWPathMonitor()
+
+    private func startWatchingNetwork() {
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            DispatchQueue.main.async { self?.isOnline = path.status == .satisfied }
+        }
+        pathMonitor.start(queue: DispatchQueue(label: "dm.network.watch"))
+    }
+
+    /// True when a failure was the connection, not the key or the account.
+    static func looksOffline(_ message: String?) -> Bool {
+        guard let m = message?.lowercased() else { return false }
+        return m.contains("offline") || m.contains("internet connection")
+            || m.contains("network connection was lost") || m.contains("not connected to the internet")
+            || m.contains("could not connect to the server") || m.contains("timed out")
+    }
+
+    /// What answers the DM while there's no internet.
+    var offlineBrainName: String { isAppleModelAvailable ? "Apple On-Device AI" : "Built-in DM" }
+
     // MARK: - Hugging Face backup
 
     /// A saved Hugging Face token that isn't already the main brain: used as
@@ -608,7 +649,7 @@ class DMEngine {
     /// chat history, so the backup remembers the conversation too.
     private func askBackupChain(_ userMessage: String, context: DMContext, historyHasMessage: Bool = false,
                                 completion: @escaping (String) -> Void) {
-        guard let hfKey = huggingFaceBackupKey else {
+        guard isOnline, let hfKey = huggingFaceBackupKey else {
             completion(simpleDMResponse(for: userMessage, context: context))
             return
         }
@@ -1794,6 +1835,7 @@ class DMEngine {
     /// capable model for the chosen provider (the everyday DM uses a quicker
     /// one). nil if there's no key, the call fails, or it takes too long.
     func writeStory(system: String, prompt: String, timeout: Double = 15, completion: @escaping (String?) -> Void) {
+        guard isOnline else { completion(nil); return }
         guard isConfigured, let key = apiKey, !key.isEmpty else {
             // No main key: a saved Hugging Face token can still write it.
             guard let hfKey = huggingFaceBackupKey else { completion(nil); return }
@@ -2081,6 +2123,10 @@ class DMEngine {
     func testAPIKey(completion: @escaping (Bool, String?) -> Void) {
         guard let key = apiKey, !key.isEmpty else {
             completion(false, "No API key set.")
+            return
+        }
+        guard isOnline else {
+            completion(false, "No internet just now, so \(provider.displayName) can't be reached. The key itself may be perfectly good. \(offlineBrainName) is running the game meanwhile.")
             return
         }
 

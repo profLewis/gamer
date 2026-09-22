@@ -891,6 +891,76 @@ class Dungeon: ObservableObject, Codable {
             frontier.removeAll { $0.0 == x && $0.1 == y }
         }
 
+        // Deep floors can hold a sealed wing: a handful of rooms with no
+        // passage to the rest of the floor at all, holding the guardian's
+        // lair. The only ways in are the teleport pad and the gallery above
+        // (both added below, once the pads and the upper floor exist).
+        var sealedWingIds: [Int] = []
+        var sealedWingEntranceId: Int? = nil
+        if level >= 5, Int.random(in: 1...100) <= 70, roomId >= 8 {
+            // Far enough from every occupied cell that nothing looks joined
+            // on the map — a gap of two squares all round.
+            func cellIsFree(_ x: Int, _ y: Int) -> Bool {
+                for dx in -1...1 {
+                    for dy in -1...1 where !occupied.isDisjoint(with: ["\(x + dx),\(y + dy)"]) {
+                        return false
+                    }
+                }
+                return true
+            }
+            let spread = 3 + farthestDist
+            var origin: (x: Int, y: Int)? = nil
+            for _ in 0..<80 {
+                let x = Int.random(in: -spread...spread)
+                let y = Int.random(in: -spread...spread)
+                guard abs(x) + abs(y) >= farthestDist + 3, cellIsFree(x, y) else { continue }
+                origin = (x, y)
+                break
+            }
+            if let origin = origin {
+                let wingSize = Int.random(in: 3...5)
+                let first = Room(id: roomId, x: origin.x, y: origin.y, type: .chamber)
+                first.name = Room.generateName(for: .chamber)
+                rooms[roomId] = first
+                occupied.insert("\(origin.x),\(origin.y)")
+                sealedWingIds.append(roomId)
+                sealedWingEntranceId = roomId
+                roomId += 1
+                var wingFrontier: [Room] = [first]
+                while sealedWingIds.count < wingSize, !wingFrontier.isEmpty, roomId < numRooms + wingSize {
+                    guard let from = wingFrontier.randomElement() else { break }
+                    var grew = false
+                    for direction in Direction.allCases.shuffled() {
+                        guard sealedWingIds.count < wingSize else { break }
+                        guard from.exits[direction] == nil else { continue }
+                        let nx = from.x + direction.offset.x
+                        let ny = from.y + direction.offset.y
+                        guard cellIsFree(nx, ny) else { continue }
+                        occupied.insert("\(nx),\(ny)")
+                        let room = Room(id: roomId, x: nx, y: ny, type: .chamber)
+                        room.name = Room.generateName(for: .chamber)
+                        from.exits[direction] = roomId
+                        room.exits[direction.opposite] = from.id
+                        if Double.random(in: 0...1) < encounterChance {
+                            room.encounter = Encounter.generate(level: level, difficulty: .medium)
+                        }
+                        let loot = Room.generateHiddenLoot(roomType: .chamber, level: level)
+                        room.hiddenItems = loot.items
+                        room.hiddenGold = loot.gold
+                        rooms[roomId] = room
+                        wingFrontier.append(room)
+                        sealedWingIds.append(roomId)
+                        roomId += 1
+                        grew = true
+                    }
+                    if !grew { wingFrontier.removeAll { $0.id == from.id } }
+                }
+                // The guardian waits at the far end of the wing.
+                if sealedWingIds.count >= 2 { farthestId = sealedWingIds.last! }
+                else { sealedWingIds.removeAll(); sealedWingEntranceId = nil }
+            }
+        }
+
         // Place boss in the farthest room from entrance
         if let bossRoom = rooms[farthestId], bossRoom.roomType != .entrance {
             bossRoom.roomType = .boss
@@ -1094,6 +1164,92 @@ class Dungeon: ObservableObject, Codable {
             }
         }
 
+        // The sealed wing's two ways in. Without these it would simply be
+        // unreachable, so both are made by hand rather than left to chance:
+        // a teleport pad from the main floor, and a route through the
+        // gallery above — up a stair, along, and down again.
+        if let wingEntranceId = sealedWingEntranceId, let wingEntrance = rooms[wingEntranceId] {
+            let mainRooms = rooms.values.filter { $0.floor == 1 && !sealedWingIds.contains($0.id) && $0.roomType != .entrance }
+            // 1. A pad, two-way, from a room well away from the entrance.
+            if let padRoom = mainRooms.filter({ $0.roomType != .boss && $0.teleportDestinationRoomId == nil })
+                .max(by: { (abs($0.x) + abs($0.y)) < (abs($1.x) + abs($1.y)) }) {
+                padRoom.teleportDestinationRoomId = wingEntrance.id
+                wingEntrance.teleportDestinationRoomId = padRoom.id
+            }
+            // 2. A gallery above: down into the wing at its own x,y, and up
+            //    again from a room on the main floor, with a short passage
+            //    between the two landings.
+            let gallery = rooms.values.filter { $0.floor == 2 }
+            let wingLandingExists = gallery.contains { $0.x == wingEntrance.x && $0.y == wingEntrance.y }
+            if !wingLandingExists,
+               let upFrom = mainRooms.filter({ $0.verticalDestinationRoomId == nil && $0.roomType != .boss }).randomElement() {
+                // The landing above the wing.
+                let overWing = Room(id: roomId, x: wingEntrance.x, y: wingEntrance.y, type: .chamber)
+                overWing.floor = 2
+                overWing.name = Room.generateName(for: .chamber)
+                rooms[roomId] = overWing
+                roomId += 1
+                // The landing above the main floor.
+                let overMain = Room(id: roomId, x: upFrom.x, y: upFrom.y, type: .chamber)
+                overMain.floor = 2
+                overMain.name = Room.generateName(for: .chamber)
+                rooms[roomId] = overMain
+                roomId += 1
+                // A passage between them, room by room along x then y.
+                var previous = overMain
+                var cx = overMain.x, cy = overMain.y
+                var taken: Set<String> = ["\(overMain.x),\(overMain.y)", "\(overWing.x),\(overWing.y)"]
+                taken.formUnion(gallery.map { "\($0.x),\($0.y)" })
+                var guardCount = 0
+                while (cx != overWing.x || cy != overWing.y), guardCount < 40 {
+                    guardCount += 1
+                    var direction: Direction
+                    if cx != overWing.x { direction = overWing.x > cx ? .east : .west }
+                    else { direction = overWing.y > cy ? .south : .north }
+                    let nx = cx + direction.offset.x
+                    let ny = cy + direction.offset.y
+                    if nx == overWing.x && ny == overWing.y {
+                        previous.exits[direction] = overWing.id
+                        overWing.exits[direction.opposite] = previous.id
+                        break
+                    }
+                    guard !taken.contains("\(nx),\(ny)") else { cx = nx; cy = ny; continue }
+                    taken.insert("\(nx),\(ny)")
+                    let step = Room(id: roomId, x: nx, y: ny, type: .chamber)
+                    step.floor = 2
+                    step.name = Room.generateName(for: .chamber)
+                    previous.exits[direction] = step.id
+                    step.exits[direction.opposite] = previous.id
+                    if Double.random(in: 0...1) < encounterChance * 0.5 {
+                        step.encounter = Encounter.generate(level: level, difficulty: .medium)
+                    }
+                    rooms[roomId] = step
+                    roomId += 1
+                    previous = step
+                    cx = nx; cy = ny
+                }
+                // Stairs up from the main floor, and down into the wing:
+                // stairs both ways, so no rope is needed for a way that has
+                // to work.
+                upFrom.verticalDestinationRoomId = overMain.id
+                upFrom.verticalMethod = "stairs"
+                upFrom.verticalDirection = "up"
+                overMain.verticalDestinationRoomId = upFrom.id
+                overMain.verticalMethod = "stairs"
+                overMain.verticalDirection = "down"
+                overWing.verticalDestinationRoomId = wingEntrance.id
+                overWing.verticalMethod = "stairs"
+                overWing.verticalDirection = "down"
+                wingEntrance.verticalDestinationRoomId = overWing.id
+                wingEntrance.verticalMethod = "stairs"
+                wingEntrance.verticalDirection = "up"
+            }
+            // The wing's rooms say what they are, so the map's island makes sense.
+            for id in sealedWingIds {
+                rooms[id]?.roomDescription += " No passage joins this place to the rest of the floor; it is reached only by the pad or the stair above."
+            }
+        }
+
         // Locked doors — a rare obstacle needing a key, lockpicking, or force.
         // Generation is a flood fill with no cycles, so a room's exit toward
         // a higher room id always leads to a "child" subtree with exactly one
@@ -1108,6 +1264,7 @@ class Dungeon: ObservableObject, Codable {
         for room in rooms.values.shuffled() {
             guard lockedCount < maxLocks else { break }
             guard room.roomType != .entrance else { continue }
+            guard !sealedWingIds.contains(room.id) else { continue }
             guard let (direction, childId) = room.exits.first(where: { dir, id in
                 id > room.id && rooms[id]?.roomType != .boss && room.doorLockIds[dir] == nil
             }), let childRoom = rooms[childId] else { continue }

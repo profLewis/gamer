@@ -2715,16 +2715,22 @@ class GameEngine: ObservableObject {
     /// `justify: false` on the call instead.
     var justifyText = true
 
-    /// Pad the gaps between words so the line fills the column exactly.
-    /// Left alone if it would leave gaps wider than three spaces, which
-    /// looks worse than a ragged edge.
+    /// Pad the gaps between words so the line fills the column.
+    ///
+    /// Two rules keep it readable. It stops two characters short of the
+    /// measured width: padding to the very edge made a line a shade wider
+    /// than the view really is, so the screen wrapped it again and the
+    /// spill-over landed hard against the left margin (no indent). And it
+    /// gives up when the gaps would have to be more than two spaces wide,
+    /// since rivers of white space read worse than a ragged edge.
     private func justified(_ line: String, width: Int) -> String {
+        let width = width - 2
         let words = line.split(separator: " ").map(String.init)
         guard words.count > 1 else { return line }
         let letters = words.reduce(0) { $0 + $1.count }
         let gaps = words.count - 1
         let spaces = width - letters
-        guard spaces > gaps, spaces <= gaps * 3 else { return line }
+        guard spaces > gaps, spaces <= gaps * 2 else { return line }
         let base = spaces / gaps
         let extra = spaces % gaps
         var out = words[0]
@@ -7081,10 +7087,15 @@ class GameEngine: ObservableObject {
     private func checkAIKeyAtStartup() {
         let dm = DMEngine.shared
         guard dm.isConfigured else { return }
+        // No connection is not a broken key: say so quietly on the menu and
+        // let the game get on with it.
+        guard dm.isOnline else { return }
         let generation = screenGeneration
         dm.testAPIKey { [weak self] ok, message in
             DispatchQueue.main.async {
                 guard let self = self, !ok else { return }
+                // The connection dropped between the check and the answer.
+                guard !DMEngine.looksOffline(message) else { return }
                 let problem = message ?? "Unknown error"
                 if self.screenGeneration == generation {
                     self.showAIKeyProblem(problem)
@@ -7125,6 +7136,31 @@ class GameEngine: ObservableObject {
     /// The launch-time warning: what failed, the likely reason, where to
     /// look, and a way straight to changing the AI brain.
     private func showAIKeyProblem(_ message: String) {
+        let dm = DMEngine.shared
+        // No connection: nothing is broken, so say that instead of a page
+        // about keys and billing.
+        if !dm.isOnline || DMEngine.looksOffline(message) {
+            clearTerminal()
+            printTitle("No Internet")
+            print("")
+            printWrapped("There's no internet just now, so \(dm.provider.displayName) can't be reached. Nothing is wrong with your key.", indent: 2)
+            print("")
+            printWrapped("\(dm.offlineBrainName) is telling the tale meanwhile, and the whole game works: the dungeon, the fights, the merchants, the quests and your saves all live on this device. When the connection comes back, \(dm.provider.displayName) picks up again by itself.", indent: 2, color: .dimGreen)
+            print("")
+            let opts = [MenuOption("Play On", isDefault: true), MenuOption(BrainLabels.change), MenuOption("Test Again")]
+            showMenuOptions(opts)
+            let home: () -> Void = { [weak self] in self?.clearTerminal(); self?.showMainMenu() }
+            closeHandler = home
+            menuHandler = { [weak self] choice in
+                guard let self = self else { return }
+                switch choice {
+                case 2: self.showAIProviderMenu(onBack: home)
+                case 3: self.testCurrentBrain(then: home)
+                default: home()
+                }
+            }
+            return
+        }
         let provider = DMEngine.shared.provider
         clearTerminal()
         printTitle("AI Brain Problem")
@@ -7388,7 +7424,10 @@ class GameEngine: ObservableObject {
         // Quiet reminder of which brain runs the DM, and — on Hugging Face —
         // how much of this month's free credit is left.
         print("DM: \(DMEngine.shared.activeBrainName)", color: .dimGreen, centered: true)
-        if DMEngine.shared.activeBrainName == AIProvider.huggingFace.displayName {
+        if !DMEngine.shared.isOnline && DMEngine.shared.hasAnyAI {
+            print("no internet — \(DMEngine.shared.offlineBrainName) is telling the tale", color: .dimGreen, centered: true)
+        }
+        if DMEngine.shared.isOnline, DMEngine.shared.activeBrainName == AIProvider.huggingFace.displayName {
             let dm = DMEngine.shared
             if dm.hfPrices.isEmpty { dm.fetchHuggingFacePrices { _ in } }
             let left = max(0, HuggingFace.freeCredit - dm.hfSpentThisMonth)
