@@ -1304,7 +1304,8 @@ class Dungeon: ObservableObject, Codable {
         ("$", "Loot"), ("+", "Shrine"), ("L", "Library"),
         ("B", "Boss"), ("A", "Armoury"), ("P", "Prison"),
         ("M", "Merchant"), ("G", "Gym"), ("N", "NPC"), ("X", "Secured"), ("K", "Locked"),
-        ("*", "Teleport"), ("\u{2191}", "Way up"), ("\u{2193}", "Way down"), ("{ }", "More here")
+        ("*", "Teleport"), ("\u{2191}", "Way up"), ("\u{2193}", "Way down"), ("{ }", "More here"),
+        ("<B>", "You, in the lair")
     ]
 
     /// Mac/TV have room for the whole key, not just nearby symbols.
@@ -1738,7 +1739,9 @@ class Dungeon: ObservableObject, Codable {
             let thingsHere = [room.danger, room.typeName.hasPrefix("Boss"), room.verticalTo != nil, room.teleportTo != nil,
                               room.merchantName != nil, room.gymName != nil, room.npcName != nil].filter { $0 }.count
             let several = room.visited && thingsHere > 1
-            put(mark.map { "(\($0))" } ?? (several ? "{\(glyph)}" : "[\(glyph)]"), cy, cx)
+            // Standing in a lair: <B> — the B stays visible, the <> say "you are here".
+            let youInLair = room.id == level.currentRoomId && room.typeName.hasPrefix("Boss") && !room.cleared
+            put(youInLair ? "<B>" : (mark.map { "(\($0))" } ?? (several ? "{\(glyph)}" : "[\(glyph)]")), cy, cx)
             for dir in Direction.allCases {
                 guard let targetId = room.exits[dir.rawValue] else { continue }
                 // Each passage is drawn once — from its east/south end, or
@@ -1958,7 +1961,8 @@ class Dungeon: ObservableObject, Codable {
                     corridorRow += "     "
                 } else if let room = visibleRooms.first(where: { $0.x == x && $0.y == y }) {
                     if room.id == currentRoomId {
-                        roomRow += "[@]"
+                        // In the guardian's lair: <B>, so the B isn't hidden under @.
+                        roomRow += (room.roomType == .boss && !room.cleared) ? "<B>" : "[@]"
                     } else {
                         // Most important thing in the room; {X} when there's more than one.
                         let cell = cellGlyph(for: room)

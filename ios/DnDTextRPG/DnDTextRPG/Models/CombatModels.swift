@@ -11,7 +11,7 @@ import Foundation
 
 struct Monster: Identifiable, Codable {
     let id: UUID
-    let name: String
+    var name: String   // var: a floor's guardian is labelled "(Guardian)" / "(Boss)" as the fight starts
     let type: MonsterType
     var currentHP: Int
     var maxHP: Int

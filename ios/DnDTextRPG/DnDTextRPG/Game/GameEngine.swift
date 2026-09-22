@@ -451,7 +451,8 @@ class GameEngine: ObservableObject {
     /// Accessibility > Auto-Scroll — 0 Off (default), 1 Slow, 2 Medium,
     /// 3 Fast. Pages always open at their top; only with this on does a
     /// long page then glide down by itself.
-    @Published var autoScrollSpeed: Int = UserDefaults.standard.integer(forKey: "autoScrollSpeed")
+    /// Medium by default (2) — until someone chooses otherwise.
+    @Published var autoScrollSpeed: Int = UserDefaults.standard.object(forKey: "autoScrollSpeed") == nil ? 2 : UserDefaults.standard.integer(forKey: "autoScrollSpeed")
     static let autoScrollSpeedNames = ["Off", "Slow", "Medium", "Fast"]
     var autoScrollLinesPerSecond: Double { [0, 1.5, 3, 6][min(max(autoScrollSpeed, 0), 3)] }
     var autoScrollSpeedName: String { Self.autoScrollSpeedNames[min(max(autoScrollSpeed, 0), 3)] }
@@ -3638,7 +3639,7 @@ class GameEngine: ObservableObject {
         case "autoContinueEnabled":
             autoContinueEnabled = UserDefaults.standard.object(forKey: key) == nil ? true : UserDefaults.standard.bool(forKey: key)
         case "autoScrollSpeed":
-            autoScrollSpeed = UserDefaults.standard.integer(forKey: key)
+            autoScrollSpeed = UserDefaults.standard.object(forKey: key) == nil ? 2 : UserDefaults.standard.integer(forKey: key)
         case "leftHanded":
             leftHanded = UserDefaults.standard.bool(forKey: key)
         case "reduceAnimations":
@@ -5964,7 +5965,7 @@ class GameEngine: ObservableObject {
                let cur = self.currentTrainingStep() {
                 self.explorationTipGeneration = self.screenGeneration
                 self.print("")
-                self.print("  ✦ STEP \(cur.index + 1) OF \(cur.count)", color: .cyan, bold: true)
+                self.print("  ✦ STEP \(cur.index + 1) OF \(cur.count) — not done yet", color: .cyan, bold: true)
                 self.printWrapped(cur.step.detail, indent: 2, color: .cyan)
                 self.forceScrollToNewest = true
                 return
@@ -6397,13 +6398,196 @@ class GameEngine: ObservableObject {
             explorationStatusMessage = ("✦ \(shortName(for: hurt)) is badly hurt (\(hurt.currentHP)/\(hurt.maxHP) HP). Rest before going on — tap the middle of the pad, or hold it for a long rest — and put your torch out while you rest, so it doesn't burn down.", .yellow)
             return
         }
-        guard let cur = currentTrainingStep() else { return }
+        guard let cur = currentTrainingStep() else {
+            if d.training && lastTrainingIndex >= 0 {
+                lastTrainingIndex = -1
+                explorationStatusMessage = ("✦ Every training step done. The Training button has a recap and a quick test.", .cyan)
+            }
+            return
+        }
+        // Say so when a step has just been done.
+        let justDone = lastTrainingIndex >= 0 && cur.index > lastTrainingIndex
+        let doneStep = justDone ? trainingSteps(full: d.trainingFull)[lastTrainingIndex] : nil
+        lastTrainingIndex = cur.index
         var hint = cur.step.hint
+        if let doneStep = doneStep {
+            hint = "Done: " + (doneStep.hint.components(separatedBy: " — ").first?.components(separatedBy: ":").first ?? doneStep.key) + ". Next — " + hint
+        }
         if cur.step.key == "walk" {
             hint += " This training floor has \(d.rooms.count) rooms — the line under the map counts how many you've explored."
         }
         if cur.step.key == "guardian", let bearing = guardianBearing(in: d) { hint += " Its lair is \(bearing)." }
         explorationStatusMessage = ("✦ Training \(cur.index + 1) of \(cur.count): " + hint, .cyan)
+    }
+
+    private var lastTrainingIndex = -1
+
+    /// The Training button: recap the steps, test yourself, or quit.
+    func showTrainingMenu() {
+        guard let d = dungeon, d.training else { showExplorationView(); return }
+        let steps = trainingSteps(full: d.trainingFull)
+        let done = steps.filter { trainingStepDone($0.key, in: d) }.count
+        clearTerminal()
+        printTitle("Training")
+        print("")
+        printWrapped("\(d.trainingFull ? "Full" : "Quick") training: \(done) of \(steps.count) steps done.", indent: 2, color: .cyan)
+        print("")
+        printWrapped("Recap goes back over every step, one page at a time. Test Yourself is a short quiz — answer them all, then see how you did and try again if you like. Quit Training ends it (nothing is saved).", indent: 2, color: .dimGreen)
+        print("")
+        let opts = [MenuOption("Recap", isDefault: true), MenuOption("Test Yourself"), MenuOption("Quit Training", tint: .danger),
+                    MenuOption("?", tint: .navigation, compact: true), MenuOption("< Back", tint: .navigation, compact: true)]
+        showMenuOptions(opts)
+        closeHandler = { [weak self] in self?.showExplorationView() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1: self.showTrainingRecap(index: 0)
+            case 2: self.startTrainingQuiz()
+            case 3:
+                self.clearTerminal()
+                self.printTitle("Quit Training?")
+                self.print("")
+                self.printWrapped("This ends the training game and goes back to the Play menu. It isn't kept.", indent: 2, color: .yellow)
+                self.print("")
+                self.showMenuOptions([MenuOption("Keep Training", isDefault: true), MenuOption("Quit Training", tint: .danger)])
+                self.closeHandler = { [weak self] in self?.showTrainingMenu() }
+                self.menuHandler = { [weak self] c in
+                    guard let self = self else { return }
+                    if c == 2 {
+                        self.logEvent("Quit training", category: "EXPLORE")
+                        self.currentCombat = nil
+                        self.gameState = .mainMenu
+                        self.dungeon = nil
+                        self.party = []
+                        self.showPlayMenu()
+                    } else { self.showTrainingMenu() }
+                }
+            case 4:
+                self.showInlineHelp {
+                    self.printTitle("Training — Help")
+                    self.print("")
+                    self.printWrapped("The Training line at the top of the exploring screen shows the step you're on and says \"Done\" as each is finished. Here: Recap to look back at every step, Test Yourself for a quiz, Quit Training to stop.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default: self.showExplorationView()
+            }
+        }
+    }
+
+    /// One step per page: what it's about, and whether it's done yet.
+    private func showTrainingRecap(index: Int) {
+        guard let d = dungeon else { return }
+        let steps = trainingSteps(full: d.trainingFull)
+        let i = min(max(0, index), steps.count - 1)
+        let step = steps[i]
+        let done = trainingStepDone(step.key, in: d)
+        clearTerminal()
+        printTitle("Recap: Step \(i + 1) of \(steps.count)")
+        print("")
+        print(done ? "  ✓ Done" : "  ○ Not done yet", color: done ? .brightGreen : .yellow, bold: true)
+        print("")
+        printWrapped(step.hint, indent: 2, color: .cyan)
+        print("")
+        printWrapped(step.detail, indent: 2)
+        print("")
+        // Previous / Next always in the same two places, greyed at the ends.
+        let opts = [MenuOption("< Previous", isDisabled: i == 0), MenuOption("Next >", isDisabled: i == steps.count - 1),
+                    MenuOption("Back to Training", isDefault: true),
+                    MenuOption("?", tint: .navigation, compact: true)]
+        showMenuOptions(opts)
+        closeHandler = { [weak self] in self?.showTrainingMenu() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1: if i > 0 { self.showTrainingRecap(index: i - 1) }
+            case 2: if i < steps.count - 1 { self.showTrainingRecap(index: i + 1) }
+            case 4:
+                self.showInlineHelp {
+                    self.printTitle("Recap — Help")
+                    self.print("")
+                    self.printWrapped("Every training step, one to a page. < Previous and Next > move between them (greyed at the first and last); Back to Training returns to the Training menu.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default: self.showTrainingMenu()
+            }
+        }
+    }
+
+    // MARK: Training quiz
+    //
+    // Answer every question first; then it's marked, with the right answers,
+    // and can be taken again.
+
+    private static let trainingQuiz: [(q: String, options: [String], answer: Int, why: String)] = [
+        ("What does [@] on the map mean?", ["Your party", "A merchant", "The Boss", "A locked door"], 0,
+         "[@] is you — where your party is standing."),
+        ("Which letter marks the Boss's (or a guardian's) lair?", ["M", "N", "B", "G"], 2,
+         "B is the lair. M is a merchant, N someone to talk to, G a gym."),
+        ("Why keep your torch lit?", ["It scares every monster away", "Without light you can't see rooms, exits or what's in them", "It heals you", "It saves the game"], 1,
+         "In the dark you can't see the room, its exits or what's there — and you walk into trouble."),
+        ("What does a long rest cost?", ["Nothing", "Ten minutes", "Eight hours of game time", "All your gold"], 2,
+         "A long rest heals fully but takes eight hours — and quests have deadlines."),
+        ("How do you hear what's in the next room before going in?", ["Search", "Listen", "Rest", "Save"], 1,
+         "Listen (the ear on the pad) tells you what's behind the doors."),
+        ("How do you load a saved adventure?", ["Settings > Load", "Play > Continue Adventure", "Long-press the map", "Type \"load\""], 1,
+         "Play > Continue Adventure lists your adventures; tap one to open it."),
+        ("Where can you see your quests and their deadlines?", ["Party Status", "The map viewer", "About", "The merchant"], 0,
+         "Party Status lists every quest, its reward and deadline."),
+        ("In a fight, where do you see your real chance to hit?", ["Nowhere", "The ? in the fight", "Settings", "The map"], 1,
+         "The ? in a fight shows the enemy's strength and each hero's chances."),
+    ]
+
+    private func startTrainingQuiz() { askTrainingQuestion(0, answers: []) }
+
+    private func askTrainingQuestion(_ n: Int, answers: [Int]) {
+        let quiz = Self.trainingQuiz
+        guard n < quiz.count else { markTrainingQuiz(answers); return }
+        let item = quiz[n]
+        clearTerminal()
+        printTitle("Test Yourself: \(n + 1) of \(quiz.count)")
+        print("")
+        printWrapped(item.q, indent: 2, color: .cyan)
+        print("")
+        printWrapped("Pick one — you'll find out how you did at the end.", indent: 2, color: .dimGreen)
+        print("")
+        var opts = item.options.map { MenuOption($0) }
+        opts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        showMenuOptions(opts)
+        closeHandler = { [weak self] in self?.showTrainingMenu() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            guard choice >= 1, choice <= item.options.count else {
+                // Back: the question before, or the Training menu.
+                if n > 0 { self.askTrainingQuestion(n - 1, answers: Array(answers.dropLast())) } else { self.showTrainingMenu() }
+                return
+            }
+            self.askTrainingQuestion(n + 1, answers: answers + [choice - 1])
+        }
+    }
+
+    private func markTrainingQuiz(_ answers: [Int]) {
+        let quiz = Self.trainingQuiz
+        let right = zip(quiz, answers).filter { $0.0.answer == $0.1 }.count
+        logEvent("Training quiz: \(right) of \(quiz.count)", category: "EXPLORE")
+        clearTerminal()
+        printTitle("Your Marks")
+        print("")
+        print("  \(right) out of \(quiz.count)\(right == quiz.count ? " — full marks!" : "")", color: right * 4 >= quiz.count * 3 ? .brightGreen : .yellow, bold: true)
+        print("")
+        for (i, (item, a)) in zip(quiz, answers).enumerated() {
+            let ok = item.answer == a
+            print("  \(ok ? "✓" : "✗") \(i + 1). \(item.q)", color: ok ? .brightGreen : .yellow)
+            if !ok {
+                printWrapped("You said: \(item.options[a]). Answer: \(item.options[item.answer]).", indent: 6, color: .dimGreen)
+            }
+            printWrapped(item.why, indent: 6, color: .dimGreen)
+            print("")
+        }
+        showMenuOptions([MenuOption("Take It Again"), MenuOption("Back to Training", isDefault: true)])
+        closeHandler = { [weak self] in self?.showTrainingMenu() }
+        menuHandler = { [weak self] choice in
+            if choice == 1 { self?.startTrainingQuiz() } else { self?.showTrainingMenu() }
+        }
     }
 
     /// "skip" in training passes the current step.
@@ -6658,8 +6842,11 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped("Each training game is a little different. When you're ready for the real thing, start a New Adventure from the Play menu.", indent: 2, color: .dimGreen)
         print("")
+        print("")
         printWrapped("Quick Training: the basics in \(trainingSteps(full: false).count) steps — moving, light, searching, listening, packs, a quest, a merchant, a fight, resting and the Boss.", indent: 2, color: .green)
+        print("")
         printWrapped("Full Training: \(trainingSteps(full: true).count) steps — those, plus the map viewer, help, Party Status, saving and loading, certificates and the AI Dungeon Master.", indent: 2, color: .green)
+        print("")
         printWrapped("How To…: short worked examples of saving, loading, quests, merchants, fights, resting, the AI brain and certificates.", indent: 2, color: .green)
         print("")
         showMenuOptions([MenuOption("Quick Training", isDefault: true), MenuOption("Full Training"), MenuOption("How To…"),
@@ -11215,7 +11402,7 @@ class GameEngine: ObservableObject {
 
         print("AUTO-SCROLL:", color: .cyan, bold: true)
         print("  \(autoScrollSpeedName)", color: autoScrollSpeed > 0 ? .brightGreen : .red)
-        printWrapped("New pages always open at the top, so you see the start of long text. With Auto-Scroll on, a long page then glides down by itself at this speed — touch it to stop. Off (the default): you scroll yourself. Tap Auto-Scroll to pick a speed and watch it run.", indent: 2, color: .dimGreen)
+        printWrapped("New pages always open at the top, so you see the start of long text. With Auto-Scroll on, a long page then glides down by itself at this speed — touch it to pause it, and it carries on a few seconds after. Medium is the default; Off: you scroll yourself. Tap Auto-Scroll to pick a speed and watch it run.", indent: 2, color: .dimGreen)
         #if !os(tvOS)
         print("")
         print("MICROPHONE:", color: .cyan, bold: true)
@@ -13390,7 +13577,7 @@ class GameEngine: ObservableObject {
         add("infoTimeout", "Info Timeout", current: infoStr, dflt: "5.0s")
         add("autoContinueEnabled", "Auto-Continue", current: autoContinueEnabled ? "On" : "Off", dflt: "On")
         add("showCountdownControl", "Countdown Icon", current: showCountdownControl ? "On" : "Off", dflt: "On")
-        add("autoScrollSpeed", "Auto-Scroll", current: autoScrollSpeedName, dflt: "Off")
+        add("autoScrollSpeed", "Auto-Scroll", current: autoScrollSpeedName, dflt: "Medium")
 
         let lpStr = String(format: "%.1fs", longPressDuration)
         add("longPressDuration", "Long Press", current: lpStr, dflt: "0.5s")
@@ -22562,6 +22749,12 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("Party Status"))
         actions.append { [weak self] in self?.showPartyStatus() }
 
+        // Training: recap, a quick test, or quit.
+        if dungeon.training {
+            menuOpts.append(MenuOption("Training", tint: .cyan))
+            actions.append { [weak self] in self?.showTrainingMenu() }
+        }
+
         // (A bard's "Play a Tune" lives in conversations now — see talkToNPC —
         // not on the main buttons, where it turned up in almost every room.)
 
@@ -29750,7 +29943,7 @@ class GameEngine: ObservableObject {
         fireworksUntil = until
         SoundManager.shared.playCrowdCheer()
         for i in 0..<5 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6 + Double(i) * 1.1) { SoundManager.shared.playArrowShot() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6 + Double(i) * 1.1) { SoundManager.shared.playFirework() }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.fireworksLength + 0.3) { [weak self] in
             if self?.fireworksUntil == until { self?.fireworksUntil = nil }
@@ -29771,6 +29964,14 @@ class GameEngine: ObservableObject {
             ("Rooms explored", "\(rooms)"), ("Gold carried home", "\(party.reduce(0) { $0 + $1.gold })"),
         ]
         if let mq = mainQuest, mq.runesRead > 0 { stats.append(("Runes read", "\(mq.runesRead) of \(mq.runeVerses.count)")) }
+        // Where the Boss fell, crossed swords and all, and the points earned —
+        // the Hall of Fame's own reckoning, so the two always agree.
+        if let lair = dungeon.rooms.values.first(where: { $0.roomType == .boss }) {
+            stats.append(("⚔ Scene of the final battle", "\(lair.name), \(Dungeon.floorName(dungeon.level))"))
+        }
+        let explored = dungeon.rooms.isEmpty ? 0 : dungeon.rooms.values.filter { $0.visited }.count * 100 / dungeon.rooms.count
+        let points = (500 + party.reduce(0) { $0 + $1.gold } + monstersSlain * 20 + combatsWon * 50 + explored) * max(1, dungeon.level)
+        stats.append(("Points awarded", "\(points)"))
         let f = DateFormatter()
         f.dateStyle = .long
         return EndgameCertificate(title: "Certificate of Heroism", heroes: heroes, quest: quest, village: mainQuest?.village,
@@ -36053,6 +36254,14 @@ class GameEngine: ObservableObject {
 
         // Balance monster ACs for ~65% hit rate (medium encounters)
         var balanced = encounter
+        // A floor's guardian says what it is in every line of the fight:
+        // "(Boss)" on the last floor, where the guardian is the Boss.
+        let isBossFight = encounter.bossDifficulty != nil
+        let bossLabel = (dungeon?.isFinalLevel ?? false) ? "Boss" : "Guardian"
+        if isBossFight, let first = balanced.monsters.indices.first,
+           !balanced.monsters[first].name.hasSuffix("(Boss)"), !balanced.monsters[first].name.hasSuffix("(Guardian)") {
+            balanced.monsters[first].name += " (\(bossLabel))"
+        }
         let avgAttackBonus: Int = {
             guard !party.isEmpty else { return 4 }
             let total = party.map { char -> Int in
@@ -36106,7 +36315,16 @@ class GameEngine: ObservableObject {
         suppressAutoScroll = false
         printLines(asciiSwords, color: .red)
         print("")
-        printTitle("COMBAT!")
+        printTitle(isBossFight ? (bossLabel == "Boss" ? "THE BOSS!" : "THE GUARDIAN!") : "COMBAT!")
+        if isBossFight {
+            let final = bossLabel == "Boss"
+            print("  ☠ ═══════════════════════════ ☠", color: .red, bold: true)
+            print(final ? "        THE BOSS OF THIS DUNGEON" : "       THE GUARDIAN OF THIS FLOOR", color: .red, bold: true)
+            print("  ☠ ═══════════════════════════ ☠", color: .red, bold: true)
+            printWrapped(final ? "This is the fight the whole adventure has been leading to. Beat it and you win." : "Beat it and the way down opens.", indent: 2, color: .yellow)
+            printWrapped("It is far tougher than anything else here — more hit points, harder to hit, and it hits back hard. Heal first if you can; the ? shows your real chances.", indent: 2, color: .dimGreen)
+            print("")
+        }
         for remark in renames { printWrapped(remark, indent: 2, color: .cyan) }
         readingPaceNext = true   // time to read (or hear) what has appeared
 
@@ -41946,8 +42164,11 @@ class GameEngine: ObservableObject {
         if gameState == .victory || gameState == .gameOver {
             resetGame()
         } else if gameState == .combat {
-            // Return to exploration if possible, otherwise reset
-            if dungeon != nil && !party.isEmpty {
+            // ✕ mid-fight used to drop the fight and go back to exploring — a
+            // free escape from anything, the Boss included. Now it asks.
+            if dungeon != nil && !party.isEmpty && currentCombat != nil {
+                confirmLeaveFight()
+            } else if dungeon != nil && !party.isEmpty {
                 currentCombat = nil
                 gameState = .exploring
                 showExplorationView()
@@ -41958,6 +42179,24 @@ class GameEngine: ObservableObject {
             confirmLeaveAdventure()
         } else {
             resetGame()
+        }
+    }
+
+    /// ✕ during a fight: stay and fight, or leave the adventure properly
+    /// (the usual save question). There's no walking away from a fight here —
+    /// Run Away is a choice in the fight itself, with its risks.
+    private func confirmLeaveFight() {
+        clearTerminal()
+        printTitle("In the Middle of a Fight")
+        print("")
+        printWrapped("You can't just walk away from a fight. Keep fighting — or leave the adventure altogether (you'll be asked about saving; a save made mid-fight restarts outside the room).", indent: 2, color: .yellow)
+        printWrapped("To try to escape, use Run Away in the fight: it may not work.", indent: 2, color: .dimGreen)
+        print("")
+        showMenuOptions([MenuOption("Keep Fighting", isDefault: true), MenuOption("Leave the Adventure", tint: .danger)])
+        let back: () -> Void = { [weak self] in self?.runCombatTurn() }
+        closeHandler = back
+        menuHandler = { [weak self] choice in
+            if choice == 2 { self?.confirmLeaveAdventure() } else { back() }
         }
     }
 

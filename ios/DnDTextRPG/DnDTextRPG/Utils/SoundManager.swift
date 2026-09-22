@@ -269,6 +269,23 @@ class SoundManager {
         ])
     }
 
+    /// A firework: a rising whistle as it climbs, a bang, then crackle.
+    func playFirework() {
+        guard battleSoundsEnabled else { return }
+        let start = Double.random(in: 600...900)
+        var tones: [(frequency: Double, duration: Double, volume: Float, waveform: Waveform)] = []
+        for step in 0..<8 {   // the whistle, climbing
+            tones.append((start + Double(step) * 170, 0.06, 0.10, .sine))
+        }
+        tones.append((90, 0.10, 0.45, .noise))   // bang
+        tones.append((60, 0.12, 0.35, .noise))
+        for _ in 0..<6 {                          // crackle as it bursts
+            tones.append((Double.random(in: 1800...4200), 0.025, 0.12, .noise))
+            tones.append((20, 0.03, 0.0, .sine))  // gap
+        }
+        playSequence(tones)
+    }
+
     /// Arrow shot — twang then whistle
     func playArrowShot() {
         guard battleSoundsEnabled else { return }
