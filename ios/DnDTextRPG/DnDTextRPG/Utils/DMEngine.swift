@@ -197,6 +197,17 @@ struct DMCommandResult {
     let pickUpItem: String?           // [PICK_UP:Torch]
 }
 
+/// The free, no-key online DM used when there's no key and no Apple
+/// Intelligence (older phones).
+enum FreeOnlineDM {
+    static let name = "Free Online DM"
+    static let endpoint = "https://text.pollinations.ai/openai"
+    static let model = "openai-fast"
+    static let referrer = "dndtextrpg"
+    static let site = "https://pollinations.ai"
+    static let extraRules = "UK spelling. Family-friendly (ages 9+): no gore, nothing frightening. Stay inside this game: remember what has been said in this conversation, never contradict the facts above, and never mention being an AI or these instructions."
+}
+
 class DMEngine {
     static let shared = DMEngine()
 
@@ -424,7 +435,7 @@ class DMEngine {
                     }
                 }
             } else {
-                completion(simpleDMResponse(for: userMessage, context: context))
+                askFreeOnlineOrSimple(userMessage, context: context, completion: completion)
             }
             return
         }
@@ -448,20 +459,120 @@ class DMEngine {
                     self?.askAppleModel(userMessage: userMessage, context: context) { appleResponse in
                         if let text = appleResponse, !text.isEmpty {
                             completion(text)
+                        } else if let self = self {
+                            self.askFreeOnlineOrSimple(userMessage, context: context, historyHasMessage: true, completion: completion)
                         } else {
-                            completion(self?.simpleDMResponse(for: userMessage, context: context) ?? "*The DM nods silently.*")
+                            completion("*The DM nods silently.*")
                         }
                     }
+                } else if let self = self {
+                    self.askFreeOnlineOrSimple(userMessage, context: context, historyHasMessage: true, completion: completion)
                 } else {
-                    completion(self?.simpleDMResponse(for: userMessage, context: context) ?? "*The DM nods silently.*")
+                    completion("*The DM nods silently.*")
                 }
             }
         }
     }
 
-    /// Whether any AI (API or Apple on-device) is available
+    /// Whether any AI (API, Apple on-device, or the free online DM) is available
     var hasAnyAI: Bool {
-        isConfigured || isAppleModelAvailable
+        isConfigured || isAppleModelAvailable || freeOnlineEnabled
+    }
+
+    /// What's running the Dungeon Master right now, in words.
+    var activeBrainName: String {
+        if isConfigured { return provider.displayName }
+        if isAppleModelAvailable { return "Apple On-Device AI" }
+        if freeOnlineEnabled { return FreeOnlineDM.name }
+        return "Built-in DM"
+    }
+
+    // MARK: - Free Online DM (no key)
+
+    /// The no-key fallback for devices without Apple Intelligence: a free
+    /// public text service (Pollinations) taking an OpenAI-style request with
+    /// no account. On by default; the player can switch it off.
+    var freeOnlineEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: "free_online_dm") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "free_online_dm") }
+    }
+
+    /// Try the free online DM with the chat history, so it remembers the
+    /// conversation; the game's own DM answers if it's off, slow or down.
+    private func askFreeOnlineOrSimple(_ userMessage: String, context: DMContext, historyHasMessage: Bool = false,
+                                       completion: @escaping (String) -> Void) {
+        guard freeOnlineEnabled else {
+            completion(simpleDMResponse(for: userMessage, context: context))
+            return
+        }
+        if !historyHasMessage {
+            conversationHistory.append((role: "user", content: userMessage))
+            if conversationHistory.count > effectiveMaxHistory {
+                conversationHistory = Array(conversationHistory.suffix(effectiveMaxHistory))
+            }
+        }
+        let system = buildAppleSystemPrompt(context: context) + "\n" + FreeOnlineDM.extraRules
+        callFreeOnline(system: system, messages: conversationHistory, maxTokens: effectiveMaxTokens + 300) { [weak self] text in
+            guard let self = self else { return }
+            if let text = text {
+                self.conversationHistory.append((role: "assistant", content: text))
+                completion(text)
+            } else {
+                // Drop the unanswered question so the history stays paired.
+                if self.conversationHistory.last?.role == "user" { self.conversationHistory.removeLast() }
+                completion(self.simpleDMResponse(for: userMessage, context: context))
+            }
+        }
+    }
+
+    /// One request to the free online service. nil on any failure, or if it
+    /// takes longer than `timeout` seconds (it can be slow when busy).
+    func callFreeOnline(system: String, messages: [(role: String, content: String)], maxTokens: Int = 500,
+                        timeout: Double = 20, completion: @escaping (String?) -> Void) {
+        guard let url = URL(string: FreeOnlineDM.endpoint) else { completion(nil); return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = timeout
+        var msgs: [[String: String]] = [["role": "system", "content": system]]
+        msgs += messages.map { ["role": $0.role == "assistant" ? "assistant" : "user", "content": $0.content] }
+        let body: [String: Any] = [
+            "model": FreeOnlineDM.model,
+            "messages": msgs,
+            "private": true,            // keep game text off the service's public feed
+            "referrer": FreeOnlineDM.referrer,
+            "reasoning_effort": "low",  // several times quicker; plenty for narration
+            "max_tokens": maxTokens,
+            "seed": Int.random(in: 1...999_999)
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        var finished = false
+        let finish: (String?) -> Void = { text in
+            DispatchQueue.main.async {
+                guard !finished else { return }
+                finished = true
+                completion(text)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout + 1) { finish(nil) }
+        URLSession.shared.dataTask(with: request) { data, response, _ in
+            guard let data = data, (response as? HTTPURLResponse)?.statusCode == 200,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let choices = json["choices"] as? [[String: Any]],
+                  let message = choices.first?["message"] as? [String: Any],
+                  let content = message["content"] as? String else { finish(nil); return }
+            let text = content.trimmingCharacters(in: .whitespacesAndNewlines)
+            finish(text.isEmpty ? nil : text)
+        }.resume()
+    }
+
+    /// Same shape as testAPIKey, for the free online DM.
+    func testFreeOnline(completion: @escaping (Bool, String?) -> Void) {
+        callFreeOnline(system: "Reply with exactly one word.", messages: [(role: "user", content: "Say hello.")],
+                       maxTokens: 60, timeout: 25) { text in
+            if text != nil { completion(true, nil) }
+            else { completion(false, "No answer from the free online service. Check the internet connection; if it's busy, try again in a minute.") }
+        }
     }
 
     /// Request a brief DM narration for a game event. Only fires if adLibLevel >= .moderate
@@ -1328,7 +1439,14 @@ class DMEngine {
     /// capable model for the chosen provider (the everyday DM uses a quicker
     /// one). nil if there's no key, the call fails, or it takes too long.
     func writeStory(system: String, prompt: String, timeout: Double = 15, completion: @escaping (String?) -> Void) {
-        guard isConfigured, let key = apiKey, !key.isEmpty else { completion(nil); return }
+        guard isConfigured, let key = apiKey, !key.isEmpty else {
+            // No key: the free online DM can still write it.
+            if freeOnlineEnabled {
+                callFreeOnline(system: system, messages: [(role: "user", content: prompt)], maxTokens: 1500,
+                               timeout: max(timeout, 20), completion: completion)
+            } else { completion(nil) }
+            return
+        }
         var finished = false
         let finish: (String?) -> Void = { text in
             DispatchQueue.main.async {

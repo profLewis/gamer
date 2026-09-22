@@ -1216,7 +1216,7 @@ class GameEngine: ObservableObject {
     // Just DM mode — entire game driven through AI DM conversation
     @Published var justDMMode: Bool = UserDefaults.standard.bool(forKey: "justDMMode")
     var isJustDMActive: Bool {
-        justDMMode && (DMEngine.shared.isConfigured || DMEngine.shared.isAppleModelAvailable)
+        justDMMode && (DMEngine.shared.hasAnyAI)
     }
     /// justDMMode is a persisted preference — a player who enabled it last
     /// session can land right back in buttons-off text mode with no menus
@@ -5027,7 +5027,7 @@ class GameEngine: ObservableObject {
         guard !options.isEmpty else {
             // No menu options — route to DM if available
             let dm = DMEngine.shared
-            if dm.isConfigured || dm.isAppleModelAvailable {
+            if dm.hasAnyAI {
                 print("")
                 print("  You:", color: .cyan, bold: true)
                 printWrapped("  \(transcript)", indent: 2, color: .cyan)
@@ -5188,7 +5188,7 @@ class GameEngine: ObservableObject {
         DispatchQueue.main.async { self.menuImageName = nil }
         clearTerminal()
         let dm = DMEngine.shared
-        if dm.isConfigured || dm.isAppleModelAvailable {
+        if dm.hasAnyAI {
             print("")
             print("You:", color: .cyan, bold: true)
             printWrapped("  \(transcript)", indent: 2, color: .cyan)
@@ -6954,6 +6954,9 @@ class GameEngine: ObservableObject {
         } else if dm.isAppleModelAvailable {
             print("  Testing Apple On-Device AI…", color: .dimGreen)
             dm.testAppleModel { ok, msg in report(ok, msg, "Apple On-Device AI") }
+        } else if dm.freeOnlineEnabled {
+            print("  Testing \(FreeOnlineDM.name)…", color: .dimGreen)
+            dm.testFreeOnline { ok, msg in report(ok, msg, FreeOnlineDM.name) }
         } else {
             printWrapped("No AI brain is set up, so the game's own Dungeon Master is running things — nothing to test. Pick a provider on the previous screen to add one.", indent: 2, color: .dimGreen)
             print("")
@@ -7196,6 +7199,7 @@ class GameEngine: ObservableObject {
 
         if checkForPendingCrashReport() { return }
         if showFirstRunWelcomeIfNeeded() { return }
+        if showBrainNoticeOnceIfNeeded() { return }
 
         renderMainMenu()
 
@@ -7205,6 +7209,48 @@ class GameEngine: ObservableObject {
             // Re-check periodically while on main menu (Game Center events are unreliable)
             startInvitePollTimer()
         }
+    }
+
+    /// Without a cloud key, say once which brain the DM runs on and how to
+    /// get a better one; after that the main menu only shows a quiet
+    /// "DM: …" line. Shown again only if the brain changes.
+    private func showBrainNoticeOnceIfNeeded() -> Bool {
+        let dm = DMEngine.shared
+        guard !dm.isConfigured else { return false }
+        let key = "brainNoticeShown_" + dm.activeBrainName
+        guard !UserDefaults.standard.bool(forKey: key) else { return false }
+        UserDefaults.standard.set(true, forKey: key)
+        clearTerminal()
+        printTitle("Dungeon Master Brain")
+        print("")
+        if dm.isAppleModelAvailable {
+            printWrapped("Your Dungeon Master runs on Apple's on-device AI — free, private, and it works offline.", indent: 2, color: .brightGreen)
+            print("")
+            printWrapped("For a livelier, cleverer DM that remembers more, add a cloud brain: Claude or ChatGPT (paid, a few pence a session) or Gemini (free, for adults 18+).", indent: 2, color: .dimGreen)
+        } else if dm.freeOnlineEnabled {
+            printWrapped("Apple's on-device AI isn't available on this device, so your Dungeon Master uses the Free Online DM: a free AI service that needs no key or account. It needs the internet; when it's offline or busy, the game's own built-in DM answers instead.", indent: 2, color: .brightGreen)
+            print("")
+            print("  FOR A BETTER DM", color: .cyan, bold: true)
+            printWrapped("• Add a cloud brain: Claude or ChatGPT (a few pence a session) or Gemini (free for adults 18+, so a grown-up can make the key). They're quicker and cleverer.", indent: 2, color: .dimGreen)
+            printWrapped("• Apple's on-device AI needs a newer device: iPhone 15 Pro or later on iOS 26+, with Apple Intelligence switched on.", indent: 2, color: .dimGreen)
+        } else {
+            printWrapped("No AI brain is available on this device, so the game's own built-in Dungeon Master runs everything. The whole game works — the DM's replies are just simpler and ready-written.", indent: 2, color: .brightGreen)
+            print("")
+            print("  FOR A BETTER DM", color: .cyan, bold: true)
+            printWrapped("• Add a cloud brain: Gemini is free for adults (18+), so a grown-up can make the key; Claude and ChatGPT cost a few pence a session.", indent: 2, color: .dimGreen)
+            printWrapped("• Apple's on-device AI needs a newer device: iPhone 15 Pro or later on iOS 26+, with Apple Intelligence switched on.", indent: 2, color: .dimGreen)
+        }
+        print("")
+        printWrapped("You won't see this again. Change it any time in Settings (cog) > \(BrainLabels.change)…", indent: 2, color: .dimGreen)
+        print("")
+        let opts = [MenuOption("Continue", isDefault: true), MenuOption(BrainLabels.change)]
+        showMenuOptions(opts)
+        let back: () -> Void = { [weak self] in self?.clearTerminal(); self?.showMainMenu() }
+        closeHandler = back
+        menuHandler = { [weak self] choice in
+            if choice == 2 { self?.showAIProviderMenu(onBack: back) } else { back() }
+        }
+        return true
     }
 
     // MARK: - Main Menu Animation
@@ -7223,6 +7269,8 @@ class GameEngine: ObservableObject {
         print("")
         print("D&D 5e ASCII Adventure", color: .brightGreen, bold: true, centered: true)
         print("A text-based role-playing game", color: .dimGreen, centered: true)
+        // Quiet reminder of which brain runs the DM.
+        print("DM: \(DMEngine.shared.activeBrainName)", color: .dimGreen, centered: true)
         print("")
 
         // Dragon & castle art on the opening screen
@@ -11006,13 +11054,7 @@ class GameEngine: ObservableObject {
         var sectionStart = terminalLines.count
         print("DUNGEON MASTER ›", color: .cyan, bold: true)
         currentSettingsLinkKey = "dm"
-        if dm.isConfigured {
-            print("  Provider: \(dm.provider.displayName)", color: .brightGreen)
-        } else if dm.isAppleModelAvailable {
-            print("  Provider: Apple On-Device", color: .brightGreen)
-        } else {
-            print("  Provider: Basic DM", color: .dimGreen)
-        }
+        print("  Provider: \(dm.activeBrainName)", color: dm.hasAnyAI ? .brightGreen : .dimGreen)
         print("  Ad-lib: \(dm.adLibLevel.displayName)  Log: \(dmLogContextSize == Int.max ? "Unlimited" : "\(dmLogContextSize)")", color: .dimGreen)
         print("")
 
@@ -14126,6 +14168,9 @@ class GameEngine: ObservableObject {
             print("  Works offline, no account needed.", color: .dimGreen)
             print("  Upgrade to a cloud provider below", color: .dimGreen)
             print("  for a more creative DM.", color: .dimGreen)
+        } else if dm.freeOnlineEnabled {
+            print("  \(FreeOnlineDM.name)", color: .brightGreen)
+            printWrapped("Free, no key or account needed; uses the internet. Apple's on-device AI isn't available on this device. Upgrade to a cloud provider below for a quicker, cleverer DM.", indent: 2, color: .dimGreen)
         } else {
             print("  The game's own DM (no AI)", color: .red)
             printWrapped("Apple's on-device AI isn't available here. It needs Apple Intelligence: an iPhone 15 Pro or newer (or an iPad or Mac with an M-series chip) on iOS 26 or later, with Apple Intelligence switched on in the device's Settings. Older phones can't run it.", indent: 2, color: .yellow)
@@ -14181,6 +14226,10 @@ class GameEngine: ObservableObject {
             let label = isSelected ? "\(provider.displayName) <--" : provider.displayName
             options.append(MenuOption(label, isDefault: isSelected, tint: hasKey ? .normal : .amber))
         }
+        let freeSelected = !dm.isConfigured && !dm.isAppleModelAvailable && dm.freeOnlineEnabled
+        options.append(MenuOption(freeSelected ? "\(FreeOnlineDM.name) <--" : FreeOnlineDM.name, isDefault: freeSelected,
+                                  tint: dm.freeOnlineEnabled ? .normal : .amber))
+        let freeIndex = options.count
         // Test whichever brain is in use now, from here.
         options.append(MenuOption("Test Brain", tint: .cyan))
         options.append(MenuOption("?", tint: .navigation, compact: true))
@@ -14198,6 +14247,10 @@ class GameEngine: ObservableObject {
                 back()
                 return
             }
+            if choice == freeIndex {
+                self?.showFreeOnlineInfo(onBack: { [weak self] in self?.showAIProviderMenu(onBack: onBack) })
+                return
+            }
             if choice == testIndex {
                 self?.testCurrentBrain(then: { [weak self] in self?.showAIProviderMenu(onBack: onBack) })
                 return
@@ -14208,6 +14261,9 @@ class GameEngine: ObservableObject {
                     self?.print("")
                     self?.print("  APPLE ON-DEVICE AI", color: .cyan, bold: true)
                     self?.printWrapped("Runs locally on your device. Free, works offline, no account needed. Needs Apple Intelligence: iPhone 15 Pro or newer (or an M-series iPad/Mac) on iOS 26+, with Apple Intelligence switched on. May refuse some queries.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                    self?.print("  FREE ONLINE DM", color: .cyan, bold: true)
+                    self?.printWrapped("For devices without Apple's AI. A free AI service (Pollinations): no key, no account, no age check. Needs the internet and can be slow when busy; if it doesn't answer, the built-in DM does. Only the game's own text is sent, never anything about you.", indent: 2, color: .dimGreen)
                     self?.print("")
                     self?.print("  GOOGLE GEMINI", color: .cyan, bold: true)
                     self?.printWrapped("Free tier available (ages 18+). Good creative narration. Requires a Google account and API key from AI Studio.", indent: 2, color: .dimGreen)
@@ -14237,6 +14293,56 @@ class GameEngine: ObservableObject {
                 dm.clearHistory()
                 self?.dmChatLog = []
                 self?.promptAPIKey()
+            }
+        }
+    }
+
+    /// The Free Online DM's screen: what it is, a Test, and on/off. It is
+    /// only used when there's no cloud key and no Apple on-device AI.
+    private func showFreeOnlineInfo(onBack: @escaping () -> Void) {
+        let dm = DMEngine.shared
+        clearTerminal()
+        printTitle(FreeOnlineDM.name)
+        print("")
+        print("  \(dm.freeOnlineEnabled ? "On" : "Off")", color: dm.freeOnlineEnabled ? .brightGreen : .yellow, bold: true)
+        print("")
+        printWrapped("A free AI Dungeon Master for devices without Apple's on-device AI: no key, no account and no age check. It remembers the recent conversation and knows where you are, who's with you and your quest.", indent: 2, color: .dimGreen)
+        print("")
+        printWrapped("It needs the internet and can be slow when busy; if it doesn't answer in time, the game's own built-in DM does. Only the game's own text is sent, never anything about you.", indent: 2, color: .dimGreen)
+        print("")
+        if dm.isConfigured {
+            printWrapped("Not in use now: your \(dm.provider.displayName) key is. It steps in only if that fails.", indent: 2, color: .yellow)
+            print("")
+        } else if dm.isAppleModelAvailable {
+            printWrapped("Not in use now: Apple's on-device AI is. It steps in only if that fails.", indent: 2, color: .yellow)
+            print("")
+        }
+        printLink("About the service (pollinations.ai)", to: FreeOnlineDM.site, indent: 2)
+        print("")
+        let opts = [MenuOption("Test", isDisabled: !dm.freeOnlineEnabled),
+                    MenuOption(dm.freeOnlineEnabled ? "Turn Off" : "Turn On", isDefault: !dm.freeOnlineEnabled),
+                    MenuOption("< Back", tint: .navigation, compact: true)]
+        showMenuOptions(opts)
+        closeHandler = onBack
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1:
+                self.print("")
+                self.print("  Testing \(FreeOnlineDM.name)…", color: .dimGreen)
+                dm.testFreeOnline { ok, msg in
+                    self.print("")
+                    if ok { self.print("  ✓ \(FreeOnlineDM.name) is working.", color: .brightGreen, bold: true) }
+                    else { self.print("  ✗ No answer.", color: .red, bold: true); self.printWrapped(msg ?? "", indent: 2, color: .yellow) }
+                    self.print("")
+                    self.waitForContinueWithTimeout(multiplier: 1.0) { [weak self] in self?.showFreeOnlineInfo(onBack: onBack) }
+                }
+            case 2:
+                dm.freeOnlineEnabled.toggle()
+                dm.clearHistory()
+                self.showFreeOnlineInfo(onBack: onBack)
+            default:
+                onBack()
             }
         }
     }
@@ -30781,7 +30887,7 @@ class GameEngine: ObservableObject {
         let totalRooms = dungeon?.rooms.count ?? 0
         print("  Explored: \(roomsVisited)/\(totalRooms) rooms", color: .cyan)
         let dm = DMEngine.shared
-        let aiLabel = dm.isConfigured ? dm.provider.displayName : (dm.isAppleModelAvailable ? "Apple On-Device AI" : "Basic DM (no AI)")
+        let aiLabel = dm.activeBrainName
         print("  DM's brain: \(aiLabel)", color: .cyan)
         if let started = dungeon?.startDifficulty {
             print("  Difficulty: \(difficultyName(for: Double(started)))", color: .cyan)
@@ -45238,7 +45344,7 @@ class GameEngine: ObservableObject {
     /// Generate a response from a specific @mentioned party member
     private func generateTargetedChatResponse(to playerMessage: String, from character: Character) {
         // Use DMEngine for AI response if available, else use simple response
-        if DMEngine.shared.isConfigured || DMEngine.shared.isAppleModelAvailable {
+        if DMEngine.shared.hasAnyAI {
             let context = buildDMContext()
             let prompt = """
             You are \(character.name), a \(character.race.rawValue) \(character.characterClass.rawValue) in a D&D party. \
@@ -45277,7 +45383,7 @@ class GameEngine: ObservableObject {
 
     /// Generate a DM response in the party chat
     private func generateDMChatResponse(to playerMessage: String) {
-        guard DMEngine.shared.isConfigured || DMEngine.shared.isAppleModelAvailable else {
+        guard DMEngine.shared.hasAnyAI else {
             addChatMessage(
                 senderName: "Dungeon Master",
                 message: "The Dungeon Master is not available. Set up an API key in Settings to enable the DM.",
@@ -45513,7 +45619,7 @@ class GameEngine: ObservableObject {
         guard let responder = aiChars.randomElement() else { showPartyChat(); return }
 
         // Use DMEngine for AI response if available, else use simple response
-        if DMEngine.shared.isConfigured || DMEngine.shared.isAppleModelAvailable {
+        if DMEngine.shared.hasAnyAI {
             let context = buildDMContext()
             let prompt = """
             You are \(responder.name), a \(responder.race.rawValue) \(responder.characterClass.rawValue) in a D&D party. \
