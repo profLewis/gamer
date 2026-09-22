@@ -50,7 +50,10 @@ struct TerminalLine: Identifiable {
     /// "║STR████░░ 16║" is read "strength 16", "HP:12/20" "hit points 12 of 20".
     static func spokenText(_ text: String) -> String {
         let drop: Set<Swift.Character> = ["║", "═", "╔", "╗", "╚", "╝", "╠", "╣", "╦", "╩", "╬", "│", "─", "┌", "┐", "└", "┘",
-                                          "├", "┤", "┬", "┴", "┼", "█", "░", "▒", "▓", "■", "□", "|"]
+                                          "├", "┤", "┬", "┴", "┼", "█", "░", "▒", "▓", "■", "□", "|",
+                                          // Pointer triangles are markers, not words — VoiceOver
+                                          // read them as "left-pointing triangle".
+                                          "◀", "▶", "◂", "▸", "◄", "►", "◁", "▷", "▲", "▼", "△", "▽"]
         var s = String(text.map { drop.contains($0) ? " " : $0 })
         s = s.replacingOccurrences(of: "[-=_+*~#]{3,}", with: " ", options: .regularExpression)
         let words: [(String, String)] = [("STR", "strength"), ("DEX", "dexterity"), ("CON", "constitution"),
@@ -178,7 +181,14 @@ struct MenuOption: Identifiable {
         case "Next >": return "Next, redo the last step"
         case "< Leave": return "Leave"
         case "< Leave Game": return "Leave game"
-        default: return text
+        case "▲": return "Up"
+        case "▼": return "Down"
+        default:
+            // "▲ Prev", "▶ Continue": the words without the triangle.
+            let triangles = CharacterSet(charactersIn: "◀▶◂▸◄►◁▷▲▼△▽")
+            let cleaned = text.unicodeScalars.filter { !triangles.contains($0) }
+            let words = String(String.UnicodeScalarView(cleaned)).trimmingCharacters(in: .whitespaces)
+            return words.isEmpty ? text : words
         }
     }
     static var helpGlyph: String {

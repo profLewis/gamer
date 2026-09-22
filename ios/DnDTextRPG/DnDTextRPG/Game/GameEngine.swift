@@ -246,6 +246,8 @@ class GameEngine: ObservableObject {
             guard t.contains(where: { $0.isLetter || $0.isNumber }) else { continue }
             out.append((t, line.link, titleLineIndices.contains(k)))
         }
+        // Heard only with VoiceOver: how to scroll, long-press and switch it off.
+        if !out.isEmpty { out.append(("VoiceOver help: scrolling, long press, and turning VoiceOver off", "voiceOverHelp", false)) }
         return out
     }
 
@@ -1959,7 +1961,15 @@ class GameEngine: ObservableObject {
         let maxLen = lines.map { $0.count }.max() ?? 0
         let mapped = lines.map { line -> TerminalLine in
             let padded = maxLen > 0 ? line.padding(toLength: maxLen, withPad: " ", startingAt: 0) : line
-            return TerminalLine(padded, color: color, size: size)
+            var tl = TerminalLine(padded, color: color, size: size)
+            // Cheat-revealed rooms — (B), (m), (!) — stand out in magenta.
+            let chars = Array(padded)
+            if chars.count >= 3 {
+                for i in 0..<(chars.count - 2) where chars[i] == "(" && chars[i + 2] == ")" && "Bm!".contains(chars[i + 1]) {
+                    tl.extraHighlights.append((range: i..<(i + 3), color: .magenta))
+                }
+            }
+            return tl
         }
         runOnMain {
             self.pinnedMapLines = mapped
@@ -2816,6 +2826,7 @@ class GameEngine: ObservableObject {
         case "aiKeys": return { [weak self] in
             guard let self = self else { return }
             self.openWeb(self.keysURL(for: DMEngine.shared.provider)) }
+        case "voiceOverHelp": return { [weak self] in self?.showVoiceOverHelp() }
         case "github": return { [weak self] in self?.openWeb("https://github.com/profLewis/gamer") }
         case "dndexGallery": return { [weak self] in self?.openWeb("https://proflewis.github.io/gamer/gallery/") }
         case "puzzlePack": return { [weak self] in self?.openWeb("https://github.com/profLewis/gamer/blob/main/puzzles/pack.json") }
@@ -2913,6 +2924,37 @@ class GameEngine: ObservableObject {
             pauseHelpRangeAtLink = autoContinueHelpShownGeneration == screenGeneration ? autoContinueHelpRange : nil
         }
         open()
+    }
+
+    /// Reached from the VoiceOver-only link at the end of every screen.
+    func showVoiceOverHelp() {
+        clearTerminal()
+        printTitle("VoiceOver Help")
+        print("")
+        print("  READING", color: .cyan, bold: true)
+        printWrapped("Swipe right to go through the screen a section at a time — that is the way to read on; the story is handed over whole, so nothing is missed by not scrolling. Three-finger swipe up or down moves the text itself.", indent: 2, color: .dimGreen)
+        print("")
+        print("  LONG PRESS", color: .cyan, bold: true)
+        printWrapped("Anything that does something extra on a long press has a Long press action: on the button, swipe up or down until you hear Long press, then double-tap. Directions use it to bar a door, Rest for a long rest, the map to show the whole map.", indent: 2, color: .dimGreen)
+        printWrapped("Or double-tap and hold, which passes a real press through.", indent: 2, color: .dimGreen)
+        print("")
+        print("  TURNING VOICEOVER OFF AND ON", color: .cyan, bold: true)
+        printWrapped("The game can't switch VoiceOver for you — only the phone can. Set up the Accessibility Shortcut (Settings > Accessibility > Accessibility Shortcut > VoiceOver), then triple-click the side button to turn it off or on at any time, even mid-game. Or ask Siri: \"Turn VoiceOver off\".", indent: 2, color: .dimGreen)
+        print("")
+        print("  WHILE VOICEOVER IS ON", color: .cyan, bold: true)
+        printWrapped("Animations and auto-scroll pause, and come back as they were when VoiceOver goes off.", indent: 2, color: .dimGreen)
+        print("")
+        showMenu(["< Back"])
+        let back: () -> Void = { [weak self] in
+            guard let self = self else { return }
+            if !self.returnFromLink() { self.showExplorationViewOrMenu() }
+        }
+        closeHandler = back
+        menuHandler = { _ in back() }
+    }
+
+    private func showExplorationViewOrMenu() {
+        if dungeon != nil && currentCombat == nil { showExplorationView() } else { clearTerminal(); showMainMenu() }
     }
 
     /// Back to the screen a link was followed from, if any. True if it did.
@@ -4769,6 +4811,11 @@ class GameEngine: ObservableObject {
     /// ("north", "go east") -- and only if nothing matches is it free text.
     /// Returns true if it did something.
     func tryDirectCommand(_ transcript: String) -> Bool {
+        // Spoken incantations have no colon: "magic show the boss".
+        if let words = Self.incantation(transcript, spoken: true) {
+            castIncantation(words)
+            return true
+        }
         // In DM chat everything said is part of the conversation.
         guard !chatInputMode else { return false }
         let lower = transcript.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
@@ -5496,6 +5543,13 @@ class GameEngine: ObservableObject {
             trimmed = String(spoken)
         }
 
+        // "cheat:", "magic:", "magick:" or "magik:" first — an incantation,
+        // wherever it's typed.
+        if let words = Self.incantation(trimmed) {
+            castIncantation(words)
+            return
+        }
+
         // Time frozen: nobody can hear you — ask to unfreeze first, and send
         // what was typed once they say yes.
         if timeFrozen && !trimmed.isEmpty {
@@ -6035,6 +6089,84 @@ class GameEngine: ObservableObject {
         clearTerminal()
         showMainMenu()
         checkAIKeyAtStartup()
+    }
+
+    /// The words after "cheat:", "magic:", "magick:" or "magik:" — nil for
+    /// anything else. Spoken, the colon never arrives, so the word alone does.
+    static func incantation(_ text: String, spoken: Bool = false) -> String? {
+        let lower = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let keywords = ["cheat", "magic", "magick", "magik"]
+        var rest: Substring?
+        if let colon = lower.firstIndex(of: ":"),
+           keywords.contains(lower[..<colon].trimmingCharacters(in: .whitespaces)) {
+            rest = lower[lower.index(after: colon)...]
+        } else if spoken, let space = lower.firstIndex(of: " "), keywords.contains(String(lower[..<space])) {
+            rest = lower[lower.index(after: space)...]
+        }
+        guard let words = rest?.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)),
+              !words.isEmpty else { return nil }
+        return words
+    }
+
+    /// Cheats: "show the boss", "show monsters", "show traps" (or "show
+    /// everything"); "hide ..." takes it off the map again.
+    func castIncantation(_ words: String) {
+        logEvent("Incantation: \(words)", category: "CHEAT")
+        guard let d = dungeon else {
+            print("  The words echo, but there's no dungeon here to work on.", color: .magenta)
+            return
+        }
+        let hiding = words.hasPrefix("hide") || words.hasPrefix("unshow")
+        // "show all floors" / "show the whole map": the map viewer's Whole
+        // Deep — every room of every floor reached so far.
+        if words.contains("floor") || words.contains("whole map") || words.contains("full map") || words.contains("all rooms") {
+            setAtlasShowAll(!hiding)
+            let msg = hiding ? "The map viewer shows only where you've been again."
+                : "The map viewer now shows every room of every floor reached (floors further down aren't dug yet). Long-press the map to look."
+            if gameState == .exploring { explorationStatusMessage = ("✧ " + msg, .magenta); showExplorationView() }
+            else { print("  ✧ " + msg, color: .magenta) }
+            if !hiding { showExpandedMapOverlay() }
+            return
+        }
+        let all = words.contains("everything") || words.contains(" all")
+        let boss = all || words.contains("boss") || words.contains("guardian")
+        let monsters = all || words.contains("monster") || words.contains("enem") || words.contains("foe")
+        let traps = all || words.contains("trap")
+        guard (words.hasPrefix("show") || words.hasPrefix("reveal") || hiding), boss || monsters || traps else {
+            let msg = "The magic fizzles. Try \"magick: show the boss\", \"show monsters\" or \"show traps\"."
+            if gameState == .exploring { explorationStatusMessage = ("✧ " + msg, .magenta); showExplorationView() }
+            else { print("  ✧ " + msg, color: .magenta) }
+            return
+        }
+        if boss { d.revealBoss = !hiding }
+        if monsters { d.revealMonsters = !hiding }
+        if traps { d.revealTraps = !hiding }
+        var shown: [String] = []
+        if boss { shown.append("the guardian's lair (B)") }
+        if monsters { shown.append("monsters (m)") }
+        if traps { shown.append("traps (!)") }
+        var msg = hiding ? "The map forgets " + shown.joined(separator: ", ") + "."
+                         : "The map shimmers: " + shown.joined(separator: ", ") + " marked in violet."
+        if boss && !hiding {
+            let here = d.currentRoom?.floor
+            let lairs = d.rooms.values.filter { $0.roomType == .boss }
+            if let bearing = guardianBearing(in: d) {
+                msg += " The lair lies \(bearing)."
+            } else if lairs.isEmpty {
+                msg += " No guardian lairs on this level."
+            } else if lairs.allSatisfy({ $0.cleared }) {
+                msg += " This level's guardian is already beaten."
+            } else if let other = lairs.first(where: { !$0.cleared && $0.floor != here }) {
+                // Not in this gallery: the level's guardian is in the other one.
+                msg += " The guardian isn't in this gallery — it's in the other one (gallery \(other.floor)), marked there on the map."
+            }
+        }
+        if gameState == .exploring {
+            explorationStatusMessage = ("✧ " + msg, .magenta)
+            showExplorationView()
+        } else {
+            print("  ✧ " + msg, color: .magenta)
+        }
     }
 
     /// A key problem found at launch, waiting for the next visit to the
@@ -21090,6 +21222,9 @@ class GameEngine: ObservableObject {
             self.print("  THE MAP", color: .cyan, bold: true)
             self.printWrapped("@ is your party. XX = secured door, KK = locked door. Full symbol key:", indent: 2, color: .green)
             self.printFullMapLegend()
+            self.print("")
+            self.print("  A LITTLE MAGICK", color: .magenta, bold: true)
+            self.printWrapped("Things can be made to show on the map with an incantation typed at the > prompt: \"magick: show ...\" (or cheat:, magic:, magik:). Try \"magick: show the boss\", \"show monsters\", \"show traps\" or \"show all floors\" — or something of your own. \"hide ...\" undoes it.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  DIRECTIONS", color: .cyan, bold: true)
             self.printWrapped("Tap N/S/E/W to move. Long-press a direction to secure/unsecure that door.", indent: 2, color: .dimGreen)

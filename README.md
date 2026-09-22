@@ -249,6 +249,18 @@ scavenges instead: odds and ends, and sometimes what the guardian asked you to
 gather. A room can only be scavenged once. In the dark it is far harder, and it
 can go wrong.
 
+### How to work a little magick (cheats)
+
+Type a keyword and a colon at the > prompt — `cheat:`, `magic:`, `magick:` or `magik:` — then what you want. (Spoken, just say the word: "magic show the boss".)
+
+- `magick: show the boss` — marks this floor's guardian lair as a violet **(B)** on the map: where it is, not the way there.
+- `magick: show monsters` — marks unexplored rooms with monsters in them **(m)**.
+- `magick: show traps` — marks unsprung traps **(!)**.
+- `magick: show all floors` — the map viewer (long-press the map) shows every room of every floor reached.
+- `magick: show everything`, or `hide …` to take marks off again.
+
+Other things may show on the map with a `magick: show …` incantation of your own — try it.
+
 ### How to make the game faster or slower
 - **Settings → Gameplay → Timeouts** — how long each kind of screen waits before
   moving on by itself.

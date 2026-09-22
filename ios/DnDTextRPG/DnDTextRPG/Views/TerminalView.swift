@@ -373,6 +373,7 @@ struct TerminalView: View {
                         // VoiceOver: a plain-words summary, not a string of ASCII.
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(gameEngine.mapAccessibilitySummary)
+                        .accessibilityAction(named: "Whole map") { gameEngine.showExpandedMapOverlay() }
                         .accessibilityHint("Long-press for the whole map")
 
                         // No on-screen resize control here — a drag handle
@@ -548,6 +549,12 @@ struct TerminalView: View {
                         // whole -- not whichever lines the lazy list has built.
                         .modifier(VoiceOverStory(sections: gameEngine.voiceOverSections,
                                                  follow: { gameEngine.followLink($0) }))
+                        // VoiceOver's three-finger swipe scrolls the story, as a
+                        // finger drag would.
+                        .accessibilityScrollAction { edge in
+                            swipeScrollLines = edge == .top ? -12 : 12
+                            swipeScrollToken += 1
+                        }
                         #if !os(tvOS)
                         // tvOS has no touch/drag input (remote + focus engine
                         // instead) — this only tracks manual scroll drags to
@@ -1416,6 +1423,7 @@ struct TerminalView: View {
                                     gameEngine.pauseSpeaker()
                                 }
                             )
+                            .accessibilityAction(named: "Pause this page") { gameEngine.pauseSpeaker() }
                         }
 
                         // Microphone icon (only when no keyboard is showing)
@@ -2884,7 +2892,7 @@ struct MenuButtonsView: View {
                     Color.clear
                         .frame(height: buttonMinHeight)
                         .accessibilityElement()
-                        .accessibilityLabel("Blank")
+                        .accessibilityLabel("No button")
                 }
                 regularButton(option: option, index: index, fallbackDisplayNumber: displayPos + 1)
             }
@@ -2934,9 +2942,9 @@ struct MenuButtonsView: View {
             .stroke(Color.gray.opacity(0.18), lineWidth: 1)
             .frame(height: buttonMinHeight)
             .allowsHitTesting(false)
-            // VoiceOver: just "Blank", so an empty slot isn't a mystery.
+            // VoiceOver: just "No button", so an empty slot isn't a mystery.
             .accessibilityElement()
-            .accessibilityLabel("Blank")
+            .accessibilityLabel("No button")
     }
 
     /// A standard full-width button. `index` is the real position in the
@@ -3023,6 +3031,9 @@ struct MenuButtonsView: View {
                     }
                 }
         )
+        // VoiceOver can't long-press reliably: offer it as a named action
+        // (swipe up or down on the button, then double-tap).
+        .accessibilityAction(named: "Long press") { onLongPress?(index + 1) }
     }
 
     /// Fixed 3-slot compact nav cell: [slot0 | slot1 | slot2]
@@ -3126,11 +3137,13 @@ struct MenuButtonsView: View {
                             LongPressGesture(minimumDuration: longPressDuration)
                                 .onEnded { _ in onLongPress?(index + 1) }
                         )
+                        .accessibilityAction(named: "Long press") { onLongPress?(index + 1) }
                     case .empty:
                         Text("·")
                             .font(.system(size: 10 * scale, design: .monospaced))
                             .foregroundColor(terminalDimGreen.opacity(0.2))
                             .frame(maxWidth: .infinity, minHeight: buttonMinHeight, maxHeight: buttonMinHeight)
+                            .accessibilityLabel("No button")   // not "middle dot"
                     }
                 }
                 // Divider between slots — always visible
@@ -3351,6 +3364,7 @@ struct DirectionPadView: View {
                                 onCenterLongPress?()
                             }
                     )
+                    .accessibilityAction(named: "Long press") { onCenterLongPress?() }
                 }
                 dirButton(.east)
             }
@@ -3363,7 +3377,11 @@ struct DirectionPadView: View {
                 if npcLabel != nil {
                     cornerIconButton(systemName: "scroll", color: npcCyan, action: onNPCTap)
                 } else {
+                    // Invisible, but VoiceOver finds a cell here and says so,
+                    // rather than the grid seeming to end one short.
                     Color.clear.frame(width: effectiveCellWidth, height: max(44, 34 * scale) * macControlScale)
+                        .accessibilityElement()
+                        .accessibilityLabel("No button")
                 }
             }
         }
@@ -3437,6 +3455,9 @@ struct DirectionPadView: View {
                     if isDark || hasExit { onLongPress?(dir) }
                 }
         )
+        .accessibilityAction(named: "Long press: secure or unsecure this door") {
+            if isDark || hasExit { onLongPress?(dir) }
+        }
     }
 }
 

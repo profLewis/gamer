@@ -1429,6 +1429,22 @@ class Dungeon: ObservableObject, Codable {
     /// medium and play exactly as they did.
     var startDifficulty: Int = 2
 
+    /// Cheats ("magick: show the boss" and friends) — mark these rooms on the
+    /// map even unexplored, as (B), (m) or (!), with no corridors to them:
+    /// where they are, not how to get there. For this visit only, not saved.
+    var revealBoss = false
+    var revealMonsters = false
+    var revealTraps = false
+
+    /// The marker for an unexplored room a cheat has revealed, or nil.
+    func revealedGlyph(_ room: Room) -> String? {
+        guard !room.visited else { return nil }
+        if revealBoss && room.roomType == .boss && !room.cleared { return "B" }
+        if revealMonsters && !(room.encounter?.aliveMonsters.isEmpty ?? true) { return "m" }
+        if revealTraps && room.roomType == .trap && !room.trapTriggered { return "!" }
+        return nil
+    }
+
     /// How much of the usual fighting this difficulty wants. Easy means fewer
     /// fights, not just weaker ones — there is more to a dungeon than combat.
     var encounterDensity: Double {
@@ -1802,7 +1818,7 @@ class Dungeon: ObservableObject, Codable {
         // said "No map available." The room you're in always counts as seen.
         let floorHere = current.floor
         let visibleRooms = rooms.values.filter {
-            $0.floor == floorHere && ($0.visited || $0.id == current.id) && $0.x >= viewMinX && $0.x <= viewMaxX && $0.y >= viewMinY && $0.y <= viewMaxY
+            $0.floor == floorHere && ($0.visited || $0.id == current.id || revealedGlyph($0) != nil) && $0.x >= viewMinX && $0.x <= viewMaxX && $0.y >= viewMinY && $0.y <= viewMaxY
         }
         guard !visibleRooms.isEmpty else { return ["No map available."] }
 
@@ -1886,7 +1902,12 @@ class Dungeon: ObservableObject, Codable {
             var corridorRow = "| " + gridLeadPad
 
             for x in viewMinX...viewMaxX {
-                if let room = visibleRooms.first(where: { $0.x == x && $0.y == y }) {
+                if let room = visibleRooms.first(where: { $0.x == x && $0.y == y }),
+                   room.id != currentRoomId, let mark = revealedGlyph(room) {
+                    // Revealed by a cheat: the room alone, no corridors to it.
+                    roomRow += "(\(mark))  "
+                    corridorRow += "     "
+                } else if let room = visibleRooms.first(where: { $0.x == x && $0.y == y }) {
                     if room.id == currentRoomId {
                         roomRow += "[@]"
                     } else {
