@@ -6,10 +6,9 @@ repository once a day, so this list can grow without a new release.
 
 | Who | What for |
 | --- | --- |
-| Philip Lewis | Created the game: design, creative direction and relentless testing |
+| Professor Lewis | Created the game: design, coding, creative direction and relentless testing |
 | Beau Lewis | World creation, storytelling, gameplay structure and style, and game testing |
 | Claude (Anthropic) | Code, words, and a great deal of ASCII |
-| Codex (OpenAI) | Code assistance |
 
 ## How to get on the list
 
