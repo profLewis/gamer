@@ -6432,7 +6432,7 @@ class GameEngine: ObservableObject {
         guard let cur = currentTrainingStep() else {
             if d.training && lastTrainingIndex >= 0 {
                 lastTrainingIndex = -1
-                explorationStatusMessage = ("✦ Every training step done. The Training button has a recap and a quick test.", .cyan)
+                explorationStatusMessage = ("✦ Every training step done. The Gameplay Test button has a recap and a quick test.", .cyan)
             }
             return
         }
@@ -6459,7 +6459,7 @@ class GameEngine: ObservableObject {
         let steps = trainingSteps(full: d.trainingFull)
         let done = steps.filter { trainingStepDone($0.key, in: d) }.count
         clearTerminal()
-        printTitle("Training")
+        printTitle("Gameplay Test")
         print("")
         printWrapped("\(d.trainingFull ? "Full" : "Quick") training: \(done) of \(steps.count) steps done.", indent: 2, color: .cyan)
         print("")
@@ -6495,7 +6495,7 @@ class GameEngine: ObservableObject {
                 }
             case 4:
                 self.showInlineHelp {
-                    self.printTitle("Training — Help")
+                    self.printTitle("Gameplay Test — Help")
                     self.print("")
                     self.printWrapped("The Training line at the top of the exploring screen shows the step you're on and says \"Done\" as each is finished. Here: Recap to look back at every step, Test Yourself for a quiz, Quit Training to stop.", indent: 2, color: .dimGreen)
                     self.print("")
@@ -6523,7 +6523,7 @@ class GameEngine: ObservableObject {
         print("")
         // Previous / Next always in the same two places, greyed at the ends.
         let opts = [MenuOption("< Previous", isDisabled: i == 0), MenuOption("Next >", isDisabled: i == steps.count - 1),
-                    MenuOption("Back to Training", isDefault: true),
+                    MenuOption("Back to Test", isDefault: true),
                     MenuOption("?", tint: .navigation, compact: true)]
         showMenuOptions(opts)
         closeHandler = { [weak self] in self?.showTrainingMenu() }
@@ -6536,7 +6536,7 @@ class GameEngine: ObservableObject {
                 self.showInlineHelp {
                     self.printTitle("Recap — Help")
                     self.print("")
-                    self.printWrapped("Every training step, one to a page. < Previous and Next > move between them (greyed at the first and last); Back to Training returns to the Training menu.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Every training step, one to a page. < Previous and Next > move between them (greyed at the first and last); Back to Test returns to the Training menu.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             default: self.showTrainingMenu()
@@ -6614,7 +6614,7 @@ class GameEngine: ObservableObject {
             printWrapped(item.why, indent: 6, color: .dimGreen)
             print("")
         }
-        showMenuOptions([MenuOption("Take It Again"), MenuOption("Back to Training", isDefault: true)])
+        showMenuOptions([MenuOption("Take It Again"), MenuOption("Back to Test", isDefault: true)])
         closeHandler = { [weak self] in self?.showTrainingMenu() }
         menuHandler = { [weak self] choice in
             if choice == 1 { self?.startTrainingQuiz() } else { self?.showTrainingMenu() }
@@ -22794,7 +22794,7 @@ class GameEngine: ObservableObject {
 
         // Training: recap, a quick test, or quit.
         if dungeon.training {
-            menuOpts.append(MenuOption("Training", tint: .cyan))
+            menuOpts.append(MenuOption("Gameplay Test", tint: .cyan))
             actions.append { [weak self] in self?.showTrainingMenu() }
         }
 
