@@ -62,6 +62,16 @@ dungeon,text adventure,rpg,5e,roleplaying,fantasy,quest,interactive fiction,voic
 ## What's New in This Version  (4000)
 Version 3.0 — the biggest update yet, shaped by months of play-testing.
 
+A NEW NAME
+• The game is now Wyverns & Catacombs. The rules it plays by are the freely licensed System Reference Document 5.1, but the famous name for them belongs to its owners, so the game has taken a name of its own. Nothing else changes: the same app, the same saves, the same adventurers.
+
+WHILE YOU PLAY
+• A fight now keeps its own panel above the story: whose turn it is, every fighter with a bar and their hit points, and who goes next — so nothing scrolls away mid-battle.
+• Rescued prisoners, wounded knights, elf scouts and goblin defectors can actually be asked to join you now, and they walk with you for a while before going their own way.
+• Deeper, harder floors can break in two: a wing with no passage to it at all, reached by a teleport pad or by the gallery above. An easy game never does this.
+• When the quest is done, the DM asks what next — keep the tale, sleep a week, throw a party, or go again.
+• No internet? The game says so once and carries on with the Dungeon Master on your device. Nothing waits on a connection that isn't there.
+
 NOW ON EVERY APPLE SCREEN
 • iPhone and iPad, plus a native Mac app, Apple TV (text you can read from the sofa) and Apple Vision Pro.
 
