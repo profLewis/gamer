@@ -231,7 +231,29 @@ class GameEngine: ObservableObject {
     /// and the rest are hidden, so VoiceOver reads a paragraph as one item
     /// instead of stopping at every wrapped line. Only worked out while
     /// VoiceOver is running.
+    /// The whole screen as VoiceOver should hear it: a short list of
+    /// sections (heading to heading), each read in one go, with links kept
+    /// as pressable items and titles as headings. Handed to VoiceOver
+    /// directly (see TerminalView's accessibilityChildren), so it doesn't
+    /// depend on which lines the scrolling list happens to have built.
+    var voiceOverSections: [(text: String, link: String?, heading: Bool)] {
+        guard Self.systemVoiceOverRunning else { return [] }
+        let lines = terminalLines
+        let groups = voiceOverParagraphsFor(lines)
+        var out: [(text: String, link: String?, heading: Bool)] = []
+        for (k, line) in lines.enumerated() where !groups.hidden.contains(k) {
+            let t = groups.labels[k] ?? TerminalLine.spokenText(line.text).trimmingCharacters(in: .whitespaces)
+            guard t.contains(where: { $0.isLetter || $0.isNumber }) else { continue }
+            out.append((t, line.link, titleLineIndices.contains(k)))
+        }
+        return out
+    }
+
     var voiceOverParagraphs: (labels: [Int: String], hidden: Set<Int>) {
+        voiceOverParagraphsFor(terminalLines)
+    }
+
+    private func voiceOverParagraphsFor(_ lines: [TerminalLine]) -> (labels: [Int: String], hidden: Set<Int>) {
         // Sections, not lines: VoiceOver gets a SMALL number of items per
         // screen. A section runs from one heading to the next -- the page
         // title, or a sub-heading such as "CREATED BY" -- and everything in
@@ -240,7 +262,6 @@ class GameEngine: ObservableObject {
         // blank lines are silent. A very long section is split so no single
         // item runs on for minutes.
         guard Self.systemVoiceOverRunning else { return ([:], []) }
-        let lines = terminalLines
         var labels: [Int: String] = [:]
         var hidden = Set<Int>()
         func isHeading(_ k: Int) -> Bool {
@@ -2918,6 +2939,7 @@ class GameEngine: ObservableObject {
         breadcrumbDid = lastEventThisScreen
         currentScreenTitle = nil
         lastEventThisScreen = nil
+        titleLineIndices.removeAll()   // a stale title index mislabelled the next screen for VoiceOver
         // "Fwd >" is an undo of the "< Back" that's about to happen, not a
         // general "recently visited" cache — only actually useful right
         // after a real Back tap. justNavigatedBack (set in handleMenuChoice,
@@ -4711,6 +4733,43 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Voice and typed commands: try the buttons and directions FIRST --
+    /// a number ("two", "button 2"), a button's words, or a way to go
+    /// ("north", "go east") -- and only if nothing matches is it free text.
+    /// Returns true if it did something.
+    func tryDirectCommand(_ transcript: String) -> Bool {
+        // In DM chat everything said is part of the conversation.
+        guard !chatInputMode else { return false }
+        let lower = transcript.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        guard !lower.isEmpty else { return false }
+        // Directions, when there's somewhere to go.
+        if gameState == .exploring, let room = dungeon?.currentRoom {
+            var word = lower
+            for pre in ["go ", "head ", "walk ", "move ", "travel ", "we go ", "i go "] where word.hasPrefix(pre) { word = String(word.dropFirst(pre.count)) }
+            let map: [String: Direction] = ["north": .north, "n": .north, "south": .south, "s": .south,
+                                            "east": .east, "e": .east, "west": .west, "w": .west]
+            if let dir = map[word], room.exits[dir] != nil {
+                print("\"\(transcript)\" -> \(dir.rawValue)", color: .dimGreen)
+                handleDirectionChoice(dir)
+                return true
+            }
+        }
+        let options = currentMenuOptions
+        guard !options.isEmpty else { return false }
+        func press(_ i: Int) -> Bool {
+            guard i >= 1, i <= options.count, !options[i - 1].isDisabled else { return false }
+            print("\"\(transcript)\" -> \(options[i - 1].text)", color: .dimGreen)
+            handleMenuChoice(i)
+            return true
+        }
+        let regular = options.enumerated().filter { !$0.element.isCompactNav }.map { $0.offset + 1 }
+        if let k = Self.numberedPick(lower, count: regular.count) { return press(regular[k]) }
+        if let i = options.firstIndex(where: { $0.text.lowercased() == lower }) { return press(i + 1) }
+        if lower.count >= 3, let i = options.firstIndex(where: { !$0.isCompactNav && $0.text.lowercased().hasPrefix(lower) }) { return press(i + 1) }
+        if lower == "help", let i = options.firstIndex(where: { $0.text == "?" }) { return press(i + 1) }
+        return false
+    }
+
     func handleVoiceMenuChoice(_ transcript: String) {
         let lower = transcript.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !lower.isEmpty else { return }
@@ -4755,7 +4814,9 @@ class GameEngine: ObservableObject {
         }
 
         // "done", "back", "return", "close", "go back", "b", "d" → trigger close handler or emergency exit
-        let backWords: Set<String> = ["done", "back", "return", "close", "go back", "exit", "cancel", "b", "d"]
+        // (No single letters: a misheard syllable came through as "d" and
+        // counted as Back, throwing the player off the screen they were on.)
+        let backWords: Set<String> = ["done", "back", "return", "close", "go back", "exit", "cancel"]
         if backWords.contains(lower) || lower.hasSuffix(" back") || lower.hasSuffix(" return") {
             if let handler = closeHandler {
                 print("\"\(transcript)\" -> Back", color: .dimGreen)
@@ -4878,8 +4939,9 @@ class GameEngine: ObservableObject {
                 return
             }
         }
-        // Level 4: option contains transcript
-        for (i, opt) in options.enumerated() where !opt.isDisabled {
+        // Level 4: option contains transcript (not for a word or two of
+        // letters, which match inside almost any label)
+        for (i, opt) in options.enumerated() where !opt.isDisabled && lower.count >= 3 {
             if opt.text.lowercased().contains(lower) {
                 selectButton(i + 1)
                 return
@@ -4928,8 +4990,20 @@ class GameEngine: ObservableObject {
             return
         }
 
-        // If DM engine is available, give a real AI response; otherwise canned fallback
-        // Clear screen and hide any image (e.g. dragon castle) for clean DM chat
+        // Nothing matched. On a menu screen (the saves list, settings...) stay
+        // put and say so -- it used to clear the screen and hand the words to
+        // the DM, so one misheard name threw you off the page you were on.
+        // Only while exploring does free speech go to the DM, as chat.
+        guard gameState == .exploring, dungeon != nil else {
+            print("")
+            print("  Didn't catch \"\(transcript)\" — say a number (1–\(options.count)) or a button's name.", color: .yellow)
+            forceScrollToNewest = true
+            return
+        }
+        showPartyChat(initialMessage: transcript)
+        return
+
+        // (Unreachable: kept for reference while the new route settles.)
         DispatchQueue.main.async { self.menuImageName = nil }
         clearTerminal()
         let dm = DMEngine.shared
@@ -32544,7 +32618,10 @@ class GameEngine: ObservableObject {
     private func processJustDMInput(_ input: String) {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { showJustDMExploration(); return }
-        let lower = trimmed.lowercased()
+        // Speech arrives as "North." -- the full stop kept it from matching
+        // "north", so it went to the DM, who moved the party AND made up
+        // what they did next. Punctuation is ignored for the shortcuts.
+        let lower = trimmed.lowercased().trimmingCharacters(in: .punctuationCharacters.union(.whitespaces))
 
         // "buttons on" — exit text mode (check FIRST, before anything else)
         if lower == "buttons on" || lower == "buttons" || lower == "button"
@@ -42736,6 +42813,12 @@ class GameEngine: ObservableObject {
         get { multiplayerState?.partyChatLog ?? partyChatLog }
     }
 
+    /// When the current chat session began, and what the party held then —
+    /// used for the recap shown on returning to play.
+    private var chatSessionStartedAt: Date?
+    private var chatGoldAtStart = 0
+    private var chatItemsAtStart: [String] = []
+
     func handleChatExit() {
         // Log state on leaving chat so normal mode has full context
         logChatStateExit()
@@ -42745,11 +42828,63 @@ class GameEngine: ObservableObject {
         SoundManager.shared.stopMusic()
         playCurrentMusic()
         SpeechEngine.shared.stop()
-        if gameState == .combat {
-            advanceCombat()
-        } else {
-            showExplorationView()
+        let resume: () -> Void = { [weak self] in
+            guard let self = self else { return }
+            if self.gameState == .combat {
+                self.advanceCombat()
+            } else {
+                self.showExplorationView()
+            }
         }
+        let recap = chatRecapLines()
+        chatSessionStartedAt = nil
+        guard !recap.isEmpty else { resume(); return }
+        clearTerminal()
+        printTitle("Chat Recap")
+        print("")
+        for line in recap { printWrapped(line, indent: 2) }
+        print("")
+        waitForContinue()
+        inputHandler = { _ in resume() }
+    }
+
+    /// A few lines on what happened in the chat just ended: how much was
+    /// said, the gist of the DM's last word, and anything gained or lost.
+    private func chatRecapLines() -> [String] {
+        guard let start = chatSessionStartedAt else { return [] }
+        let myName = localPlayerDisplayName
+        let session = activeChatLog.filter { $0.timestamp >= start && $0.senderName != "System" }
+        let mine = session.filter { $0.senderName == myName }
+        guard !mine.isEmpty else { return [] }
+        var lines: [String] = []
+        let others = Set(session.map { $0.senderName }).subtracting([myName])
+        let whom = others.isEmpty ? "the party" : others.sorted().map { $0 == "Dungeon Master" ? "the DM" : $0 }.joined(separator: ", ")
+        lines.append("You spoke \(mine.count) time\(mine.count == 1 ? "" : "s") with \(whom).")
+        let asked = mine.suffix(3).map { "“\($0.message.count > 60 ? String($0.message.prefix(57)) + "…" : $0.message)”" }
+        lines.append("You said: " + asked.joined(separator: ", "))
+        if let last = session.last(where: { $0.senderName != myName }) {
+            let text = last.message.replacingOccurrences(of: "\n", with: " ")
+            var gist = text
+            if let end = text.range(of: #"[.!?](\s|$)"#, options: .regularExpression) {
+                gist = String(text[..<end.upperBound]).trimmingCharacters(in: .whitespaces)
+            }
+            if gist.count > 160 { gist = String(gist.prefix(157)) + "…" }
+            let who = last.senderName == "Dungeon Master" ? "The DM" : last.senderName
+            lines.append("\(who) last said: \(gist)")
+        }
+        let goldNow = party.reduce(0) { $0 + $1.gold }
+        if goldNow != chatGoldAtStart {
+            let d = goldNow - chatGoldAtStart
+            lines.append(d > 0 ? "Gold gained: \(d)." : "Gold spent: \(-d).")
+        }
+        var before = chatItemsAtStart
+        var gained: [String] = []
+        for name in party.flatMap({ $0.inventory.map { $0.name } }) {
+            if let i = before.firstIndex(of: name) { before.remove(at: i) } else { gained.append(name) }
+        }
+        if !gained.isEmpty { lines.append("New: " + gained.joined(separator: ", ") + ".") }
+        if !before.isEmpty { lines.append("Gone: " + before.joined(separator: ", ") + ".") }
+        return lines
     }
 
     /// Log a snapshot of game state when entering chat mode
@@ -42886,6 +43021,11 @@ class GameEngine: ObservableObject {
         }
 
         DispatchQueue.main.async { self.chatInputMode = true }
+        if chatSessionStartedAt == nil {
+            chatSessionStartedAt = Date()
+            chatGoldAtStart = party.reduce(0) { $0 + $1.gold }
+            chatItemsAtStart = party.flatMap { $0.inventory.map { $0.name } }
+        }
 
         clearTerminal()
         suppressAutoScroll = false
@@ -42919,9 +43059,14 @@ class GameEngine: ObservableObject {
             print("  No messages yet.", color: .dimGreen)
         } else {
             let myName = localPlayerDisplayName
-            let lastIndex = recentChat.count - 1
+            // The current exchange — the player's latest line and every
+            // reply after it — is bright; everything earlier is dimmed.
+            let lastIndex = recentChat.lastIndex(where: { $0.senderName == myName }) ?? (recentChat.count - 1)
             for (mi, msg) in recentChat.enumerated() {
-                let isNewest = mi == lastIndex
+                let isNewest = mi >= lastIndex
+                if mi == lastIndex && mi > 0 {
+                    print("  ─── now ───", color: .dimGreen)
+                }
                 let label: String
                 let brightColor: TerminalColor
                 if msg.senderName == "Dungeon Master" {
@@ -43198,6 +43343,12 @@ class GameEngine: ObservableObject {
             // Add message to chat log
             let senderName = self.localPlayerDisplayName
             self.addChatMessage(senderName: senderName, message: message)
+            // Show what was said straight away — spoken lines otherwise
+            // never appeared until the reply redrew the chat.
+            self.print("")
+            self.print("  ─── now ───", color: .dimGreen)
+            self.print("  >:", color: .orange, bold: true)
+            self.printWrapped(message, indent: 4, color: .orange)
 
             // In multiplayer, also log as a recent action and save state
             if self.isMultiplayer {

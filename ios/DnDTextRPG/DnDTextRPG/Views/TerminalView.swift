@@ -417,7 +417,6 @@ struct TerminalView: View {
                                         .onChange(of: scale) { _ in updateWrapColumns(width: g.size.width) }
                                 }
                                 .frame(height: 0)
-                                let vo = gameEngine.voiceOverParagraphs
                                 ForEach(Array(gameEngine.terminalLines.enumerated()), id: \.element.id) { index, line in
                                     Group {
                                     if let link = line.link {
@@ -475,9 +474,6 @@ struct TerminalView: View {
                                     }
                                     // VoiceOver: a paragraph is one item (its wrapped lines
                                     // hidden), and screen titles are headings for the rotor.
-                                    .modifier(VoiceOverLine(label: vo.labels[index],
-                                                            hidden: vo.hidden.contains(index),
-                                                            heading: gameEngine.titleLineIndices.contains(index)))
                                     .onAppear { lineVisibility.indices.insert(index) }
                                     .onDisappear { lineVisibility.indices.remove(index) }
                                 }
@@ -548,6 +544,10 @@ struct TerminalView: View {
                             .animation(.easeInOut(duration: 0.12), value: gameEngine.textFlashOpacity)
                         }
                         .scrollDisabled(gameEngine.scrollLocked)
+                        // VoiceOver hears the story as a few sections, handed over
+                        // whole -- not whichever lines the lazy list has built.
+                        .modifier(VoiceOverStory(sections: gameEngine.voiceOverSections,
+                                                 follow: { gameEngine.followLink($0) }))
                         #if !os(tvOS)
                         // tvOS has no touch/drag input (remote + focus engine
                         // instead) — this only tracks manual scroll drags to
@@ -1424,6 +1424,8 @@ struct TerminalView: View {
                                     // between commands.
                                     let onComplete: (String) -> Void = { text in
                                         inputText = ""
+                                        // Buttons and directions first; only then free text.
+                                        if gameEngine.tryDirectCommand(text) { return }
                                         if gameEngine.awaitingTextInput { gameEngine.handleTextInput(text) }
                                         else { gameEngine.handleVoiceMenuChoice(text) }
                                     }
@@ -1529,6 +1531,8 @@ struct TerminalView: View {
                                     // between commands.
                                     let onComplete: (String) -> Void = { text in
                                         inputText = ""
+                                        // Buttons and directions first; only then free text.
+                                        if gameEngine.tryDirectCommand(text) { return }
                                         if gameEngine.awaitingTextInput { gameEngine.handleTextInput(text) }
                                         else { gameEngine.handleVoiceMenuChoice(text) }
                                     }
@@ -3621,6 +3625,31 @@ struct CertificateView: View {
     }
 }
 
+
+/// The story as VoiceOver's children: one element per section (a heading
+/// and what follows it), links as buttons. Only applied while VoiceOver is
+/// running (the list is empty otherwise), so nothing changes for anyone else.
+struct VoiceOverStory: ViewModifier {
+    let sections: [(text: String, link: String?, heading: Bool)]
+    let follow: (String) -> Void
+    func body(content: Content) -> some View {
+        if sections.isEmpty {
+            content
+        } else {
+            content
+                .accessibilityElement(children: .contain)
+                .accessibilityChildren {
+                    ForEach(Array(sections.enumerated()), id: \.offset) { _, sec in
+                        if let key = sec.link {
+                            Button(sec.text) { follow(key) }
+                        } else {
+                            Text(sec.text).accessibilityAddTraits(sec.heading ? .isHeader : [])
+                        }
+                    }
+                }
+        }
+    }
+}
 
 /// How one story line presents itself to VoiceOver: the first line of a
 /// paragraph speaks the whole paragraph; its continuation lines are silent;

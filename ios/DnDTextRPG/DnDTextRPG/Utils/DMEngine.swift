@@ -363,6 +363,8 @@ class DMEngine {
         if context.justDMMode {
             prompt += """
 
+            PLAYER'S TURN: narrate only what the player said they do — never invent further actions, \
+            speech or choices for them — and end by asking what they do next. \
             MODE: Interpret the player's intent, narrate briefly, then add short command tags on \
             their own line if the intent maps to an action: [MOVE:direction] [SEARCH] [LISTEN] \
             [REST] [LONG_REST] [SHOW_MAP] [SHOW_INVENTORY] [SHOW_PARTY] [SAVE] [ATTACK:name] \
