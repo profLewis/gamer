@@ -1647,8 +1647,11 @@ class Dungeon: ObservableObject, Codable {
     /// The whole level drawn in the same [X]--[Y] style as the main map,
     /// sized to fit every shown room. `highlight` is the line/column of
     /// the "[@]" cell, for colouring where you are.
-    static func atlasMapLines(_ level: AtlasLevel, showAll: Bool, frame: AtlasFrame? = nil) -> (lines: [String], highlight: (line: Int, column: Int)?) {
-        let shown = level.rooms.filter { $0.visited || showAll }
+    static func atlasMapLines(_ level: AtlasLevel, showAll: Bool, frame: AtlasFrame? = nil, revealBoss: Bool = false) -> (lines: [String], highlight: (line: Int, column: Int)?) {
+        // "Show the boss": its lair is drawn too, even unexplored — (B), alone.
+        let isRevealedBoss: (AtlasRoom) -> Bool = { revealBoss && !$0.visited && !showAll && $0.typeName == "Boss" && !$0.cleared }
+        let shown = level.rooms.filter { $0.visited || showAll || isRevealedBoss($0) }
+        let frame = shown.contains(where: isRevealedBoss) ? nil : frame   // make room for it
         guard var minX = shown.map({ $0.x }).min(), var maxX = shown.map({ $0.x }).max(),
               var minY = shown.map({ $0.y }).min(), var maxY = shown.map({ $0.y }).max() else {
             return (["(nothing mapped yet)"], nil)
@@ -1680,6 +1683,7 @@ class Dungeon: ObservableObject, Codable {
         }
         for room in shown {
             let cx = (room.x - minX) * 5, cy = (room.y - minY) * 2
+            if isRevealedBoss(room) { put("(B)", cy, cx); continue }   // no passages to it
             let glyph: String
             if room.id == level.currentRoomId { glyph = "@" }
             else if !room.visited { glyph = padNumber[room.id] ?? " " }

@@ -1680,6 +1680,12 @@ struct TerminalView: View {
                     if gameEngine.atlasExploreAvailable && !gameEngine.atlasScreenActive {
                         overlayCapsule("Explore the rooms, one by one", systemImage: "book.closed") { gameEngine.openAtlasFromOverlay() }
                     }
+                    if gameEngine.dungeon != nil && gameEngine.atlasLevelIndex == gameEngine.atlasLevelCount - 1 {
+                        overlayCapsule(gameEngine.dungeon?.revealBoss == true ? "Hide the boss's lair" : "Show the boss's lair (a little magick)",
+                                       systemImage: "crown") {
+                            gameEngine.toggleRevealBossFromOverlay()
+                        }
+                    }
                     overlayCapsule(gameEngine.atlasShowAllRooms ? "Show only where you've been (The Charted Reaches)" : "Show every room (The Whole Deep)",
                                    systemImage: gameEngine.atlasShowAllRooms ? "map" : "globe") {
                         gameEngine.setAtlasShowAll(!gameEngine.atlasShowAllRooms)

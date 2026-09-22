@@ -121,6 +121,11 @@ class VoiceInputManager: ObservableObject {
 
         self.onComplete = onComplete
 
+        // Taking turns: the game stops talking when you start to (the mic
+        // otherwise hears the game reading the screen and takes it for you).
+        // Continuous mode is always listening, and filters the game's voice out.
+        if !Self.continuous { SpeechEngine.shared.stop() }
+
         // Stop game music during voice input
         SoundManager.shared.duckMusic()
 

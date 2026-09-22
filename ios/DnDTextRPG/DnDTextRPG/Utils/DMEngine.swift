@@ -340,7 +340,8 @@ class DMEngine {
         var prompt = """
         You are a Dungeon Master for a D&D 5e text adventure. Be vivid but brief (1-3 sentences), \
         second person. Base everything on the facts below — never invent rooms, exits, monsters, \
-        or items not listed here. If cleared, describe aftermath, not active threats.
+        or items not listed here. If cleared, describe aftermath, not active threats. \
+        NAMES: a companion called like 'R. Athos' is a robot; 'R.' is part of the name (as in 'Mr.'), never the end of a sentence — call them 'R. Athos' or 'Athos'.
 
         LOCATION: \(context.roomName) — \(context.roomDescription)
         EXITS: \(context.exits)
@@ -990,7 +991,8 @@ class DMEngine {
         var prompt = """
         You are a Dungeon Master for a D&D 5e text adventure. Be creative, atmospheric, \
         and immersive. Keep responses brief (2-4 sentences). Speak in second person ("You see...", \
-        "You hear...").
+        "You hear..."). \
+        NAMES: a companion called like 'R. Athos' is a robot; 'R.' is part of the name (as in 'Mr.'), never the end of a sentence — call them 'R. Athos' or 'Athos'.
 
         IMPORTANT — ASCII ART RULE:
         - If the player asks to SEE something, asks "what does X look like", asks for a picture, \

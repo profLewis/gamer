@@ -2026,7 +2026,9 @@ class GameEngine: ObservableObject {
         let levels = atlasLevels()
         guard levels.indices.contains(atlasLevelIndex) else { return }
         let frame = Dungeon.atlasFrames(levels, showAll: atlasShowAllRooms)[atlasLevelIndex]
-        let map = Dungeon.atlasMapLines(levels[atlasLevelIndex], showAll: atlasShowAllRooms, frame: frame)
+        let onThisLevel = atlasLevelIndex == levels.count - 1
+        let map = Dungeon.atlasMapLines(levels[atlasLevelIndex], showAll: atlasShowAllRooms, frame: frame,
+                                        revealBoss: onThisLevel && (dungeon?.revealBoss ?? false))
         // The Whole Deep: rooms you've been to bright, the rest dim.
         let visited = atlasShowAllRooms ? Dungeon.atlasVisitedCells(levels[atlasLevelIndex], frame: frame) : []
         var out: [TerminalLine] = map.lines.enumerated().map { index, text in
@@ -2035,6 +2037,10 @@ class GameEngine: ObservableObject {
                 line.extraHighlights.append((cell.column..<(cell.column + 3), .brightGreen))
             }
             if let hl = map.highlight, hl.line == index { line.highlightRange = hl.column..<(hl.column + 3) }
+            if let r = text.range(of: "(B)") {
+                let col = text.distance(from: text.startIndex, to: r.lowerBound)
+                line.extraHighlights.append((col..<(col + 3), .magenta))
+            }
             return line
         }
         out.insert(TerminalLine(atlasShowAllRooms ? "THE WHOLE DEEP — every room on this level" : "THE CHARTED REACHES — where you've been", color: .cyan, size: mapFontSize), at: 0)
@@ -2042,6 +2048,15 @@ class GameEngine: ObservableObject {
         out += Dungeon.atlasKeyLines().map { TerminalLine($0, color: .dimGreen, size: mapFontSize) }
         mapOverlayLines = out
         mapOverlayVisible = true
+    }
+
+    /// The map viewer's Show the Boss button — the same as "magick: show the boss".
+    func toggleRevealBossFromOverlay() {
+        guard let d = dungeon else { return }
+        d.revealBoss.toggle()
+        objectWillChange.send()
+        if mapOverlayVisible { presentAtlasMapOverlay() }
+        if gameState == .exploring && currentCombat == nil { showExplorationView() }
     }
 
     /// The map overlay's Charted/Whole switch — the same setting as
@@ -43346,7 +43361,8 @@ class GameEngine: ObservableObject {
         if let last = session.last(where: { $0.senderName != myName }) {
             let text = last.message.replacingOccurrences(of: "\n", with: " ")
             var gist = text
-            if let end = text.range(of: #"[.!?](\s|$)"#, options: .regularExpression) {
+            // Not at "R." — that's the start of a robot's name ("R. Athos").
+            if let end = text.range(of: #"(?<!\bR)[.!?](\s|$)"#, options: .regularExpression) {
                 gist = String(text[..<end.upperBound]).trimmingCharacters(in: .whitespaces)
             }
             if gist.count > 160 { gist = String(gist.prefix(157)) + "…" }

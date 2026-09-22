@@ -6,6 +6,9 @@
 //
 
 import AVFoundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
     static let shared = SpeechEngine()
@@ -51,7 +54,58 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     var isSpeaking: Bool {
-        synthesizer.isSpeaking
+        synthesizer.isSpeaking || announcing != nil
+    }
+
+    // MARK: - VoiceOver
+    //
+    // With VoiceOver on, the game speaking in its own voice as well meant two
+    // voices at once ("two DMs talking"). Instead the text goes to VoiceOver
+    // as an announcement: one voice, taking turns, and the mic stays deaf
+    // while it's said. Finishing is reported the same way as the
+    // synthesizer's, so pacing and read-aloud still move on.
+
+    /// The stand-in utterance for an announcement in progress.
+    private var announcing: AVSpeechUtterance?
+
+    private var voiceOverOn: Bool {
+        #if os(iOS) || os(visionOS)
+        return UIAccessibility.isVoiceOverRunning
+        #else
+        return false
+        #endif
+    }
+
+    private func announce(_ text: String) -> AVSpeechUtterance {
+        let token = AVSpeechUtterance(string: text)
+        announcing = token
+        VoiceInputManager.gameSpeaking = true
+        #if os(iOS) || os(visionOS)
+        UIAccessibility.post(notification: .announcement, argument: text)
+        #endif
+        // VoiceOver doesn't always report finishing (another announcement, or
+        // the user moving on, can cut it off) — never stall waiting for it.
+        let limit = estimatedDuration(of: text) * 1.3 + 2
+        DispatchQueue.main.asyncAfter(deadline: .now() + limit) { [weak self] in
+            self?.finishAnnouncement(token)
+        }
+        return token
+    }
+
+    @objc private func announcementDidFinish(_ note: Notification) {
+        #if os(iOS) || os(visionOS)
+        if let token = announcing,
+           let said = note.userInfo?[UIAccessibility.announcementStringValueUserInfoKey] as? String,
+           said == token.speechString {
+            DispatchQueue.main.async { self.finishAnnouncement(token) }
+        }
+        #endif
+    }
+
+    private func finishAnnouncement(_ token: AVSpeechUtterance) {
+        guard announcing === token else { return }
+        announcing = nil
+        speechSynthesizer(synthesizer, didFinish: token)
     }
 
     /// Completion callback — called on main queue when an utterance finishes
@@ -75,6 +129,10 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
     private override init() {
         super.init()
         synthesizer.delegate = self
+        #if os(iOS) || os(visionOS)
+        NotificationCenter.default.addObserver(self, selector: #selector(announcementDidFinish(_:)),
+                                               name: UIAccessibility.announcementDidFinishNotification, object: nil)
+        #endif
     }
 
     // MARK: - Audio Session
@@ -114,7 +172,7 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
     /// The mic stays deaf for a moment after the voice stops (room echo).
     private func releaseMicSoon() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-            guard let self = self, !self.synthesizer.isSpeaking else { return }
+            guard let self = self, !self.isSpeaking else { return }
             VoiceInputManager.gameSpeaking = false
         }
     }
@@ -170,6 +228,12 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
+        // "R. Athos" is a name: said without the full stop's pause.
+        let text = text.replacingOccurrences(of: #"\bR\. (?=[A-Z])"#, with: "R ", options: .regularExpression)
+        if voiceOverOn {
+            let cleaned = text.replacingOccurrences(of: "*", with: "").replacingOccurrences(of: "_", with: "")
+            return announce(cleaned)
+        }
 
         configureAudioSession()
         SoundManager.shared.duckMusic()
@@ -204,6 +268,10 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
     /// and carry on after the speaker was switched off.
     func stop() {
         synthesizer.stopSpeaking(at: .immediate)
+        if announcing != nil {
+            announcing = nil
+            releaseMicSoon()
+        }
         trackedUtterance = nil
         trackedCompletion = nil
         SoundManager.shared.unduckMusic()

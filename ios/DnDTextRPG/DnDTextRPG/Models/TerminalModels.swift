@@ -64,6 +64,7 @@ struct TerminalLine: Identifiable {
             s = s.replacingOccurrences(of: "\\b\(short)\\b:?", with: "\(long) ", options: .regularExpression)
         }
         s = s.replacingOccurrences(of: "(\\d+)/(\\d+)", with: "$1 of $2", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\bR\\. (?=[A-Z])", with: "R ", options: .regularExpression)   // "R. Athos" is a name
         s = s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
         return s.trimmingCharacters(in: .whitespaces)
     }
