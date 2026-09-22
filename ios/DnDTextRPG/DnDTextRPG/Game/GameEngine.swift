@@ -2808,7 +2808,60 @@ class GameEngine: ObservableObject {
     /// broken. The result shows just its text; the full exploration view
     /// (D-pad and buttons) returns when it ends.
     private func runPreservingDirectionExits(_ action: () -> Void) {
+        // This did nothing at all — it called the action and returned, while
+        // its own comment promised to put the D-pad back. showMenu and
+        // waitForContinue clear every D-pad handler as part of wiping the
+        // last screen, so a quick action like Search or Listen came back to
+        // a pad with no corners: no magnifying glass, no ear, no flame, no
+        // pad at all if the room's exits went with them.
+        //
+        // Now it really does hold them: everything the pad shows is kept,
+        // the action runs, and anything the action left empty is put back —
+        // unless the action took us somewhere the pad doesn't belong (a
+        // fight, or out of the dungeon), where empty is correct.
+        let exits = directionExits
+        let secured = securedExits
+        let longPress = directionLongPressHandler
+        let centreLabel = dpadCenterLabel
+        let centreTap = dpadCenterHandler
+        let centreLong = dpadCenterLongPressHandler
+        let npcLabel = dpadNPCLabel
+        let npcTap = dpadNPCHandler
+        let teleportTap = dpadTeleportHandler
+        let torchLabel = dpadTorchLabel
+        let torchTap = dpadTorchHandler
+        let searchTap = dpadSearchHandler
+        let listenTap = dpadListenHandler
+
         action()
+
+        runOnMain {
+            guard self.currentCombat == nil, self.dungeon != nil else { return }
+            guard self.directionExits.isEmpty, !exits.isEmpty else { return }
+            self.directionExits = exits
+            self.securedExits = secured
+            self.directionLongPressHandler = longPress
+            self.dpadCenterLabel = centreLabel
+            self.dpadCenterHandler = centreTap
+            self.dpadCenterLongPressHandler = centreLong
+            self.dpadNPCLabel = npcLabel
+            self.dpadNPCHandler = npcTap
+            self.dpadTeleportHandler = teleportTap
+            // The torch corner tells the truth about the torch as it is now,
+            // not as it was before the action.
+            if self.torchLit {
+                self.dpadTorchLabel = "Douse"
+                self.dpadTorchHandler = { [weak self] in self?.douseTorch() }
+            } else if self.partyHasTorch() {
+                self.dpadTorchLabel = "Illuminate"
+                self.dpadTorchHandler = { [weak self] in self?.lightTorch() }
+            } else {
+                self.dpadTorchLabel = torchLabel
+                self.dpadTorchHandler = torchTap
+            }
+            self.dpadSearchHandler = searchTap
+            self.dpadListenHandler = listenTap
+        }
     }
 
     /// True whenever the compact nav cell's third slot would otherwise be
@@ -2963,6 +3016,11 @@ class GameEngine: ObservableObject {
         // A web address written into a message: open it.
         if key.hasPrefix("https://") || key.hasPrefix("http://") {
             return { [weak self] in self?.openWeb(key) }
+        }
+        // A quiz answer tapped in the text, rather than on its button.
+        if key.hasPrefix("quiz:"), let index = Int(key.dropFirst(5)) {
+            guard let handler = quizChoiceHandler else { return nil }
+            return { handler(index) }
         }
         switch key {
         case "settings": return { [weak self] in self?.showSettings() }
@@ -6085,6 +6143,9 @@ class GameEngine: ObservableObject {
     // Idle on the exploration screen for a while (Idle Prompts on): one tip
     // per screen — about this room if there's an NPC or a gym here, otherwise
     // a varied general one (quests, gyms, merchants, food, torches).
+    /// Training steps whose full explanation has been given once.
+    private var trainingStepsExplained: Set<String> = []
+
     private var explorationTipTimer: Timer?
     private var explorationTipGeneration = -1
     private var lastPartyBanter: String? = nil
@@ -6098,9 +6159,19 @@ class GameEngine: ObservableObject {
                self.currentCombat == nil, self.explorationTipGeneration != self.screenGeneration,
                let cur = self.currentTrainingStep() {
                 self.explorationTipGeneration = self.screenGeneration
+                // "not done yet" told the player nothing they didn't already
+                // know, and the whole explanation came back every time the
+                // screen was redrawn — hence the same "6 of 10" over and
+                // over. The full account comes once; after that, one line.
+                let firstTime = !self.trainingStepsExplained.contains(cur.step.key)
                 self.print("")
-                self.print("  ✦ STEP \(cur.index + 1) OF \(cur.count) — not done yet", color: .cyan, bold: true)
-                self.printWrapped(cur.step.detail, indent: 2, color: .cyan)
+                if firstTime {
+                    self.trainingStepsExplained.insert(cur.step.key)
+                    self.print("  ✦ STEP \(cur.index + 1) OF \(cur.count) — HOW TO DO IT", color: .cyan, bold: true)
+                    self.printWrapped(cur.step.detail, indent: 2, color: .cyan)
+                } else {
+                    self.printWrapped("✦ Still on step \(cur.index + 1) of \(cur.count): \(cur.step.hint)", indent: 2, color: .cyan)
+                }
                 self.forceScrollToNewest = true
                 return
             }
@@ -6477,8 +6548,8 @@ class GameEngine: ObservableObject {
              "Each adventurer carries a pack: weapons, armour, potions, food, torches, keys. Tap Inventory (or type \"inventory\" or \"i\"). Tap an item's line to see it and use, equip, give or drop it.", false),
             ("status", "Tap Party Status to see everyone's health, spells and your quest.",
              "Party Status shows each adventurer's hit points, armour, level and spells, your gold, and what you're here to do. It's the place to check before a fight or after one.", true),
-            ("quest", "Take on a quest: find someone to talk to (N on the map), Talk, and ask if they need help. (\"skip\" if nobody's here.)",
-             "Quests give an adventure its point, and pay. People you meet — N on the map — often need something done: talk to them, ask about their troubles, and say yes. Your quests (and any deadline, counted in days) are on Party Status; the status line reminds you which way to go. In a real adventure the main quest is offered at the start. If there's nobody on this floor, type \"skip\".", false),
+            ("quest", "Take on a quest: walk to someone (N on the map), tap Talk, then Ask for a Quest. (\"skip\" if nobody's here.)",
+             "Quests give an adventure its point, and pay. Normally the main quest is given at the start, in the opening tale — but you can take one up at any time, from almost anyone you meet, and that is worth knowing when a quest is finished or given up. HOW: walk into a room marked N on the map, tap Talk, and look at the buttons on the conversation screen. With no main quest running, the first one is Ask for a Quest: that gives you one, with its reward and its deadline. With a main quest already running, the same screen offers Side Quest instead — a smaller errand to carry alongside it — and Ask About Our Quest, which asks anyone what they know about the one you're on. Every quest you hold, its reward, and how many days are left, is listed on Party Status; the line under the map points the way to the nearest one. If there's nobody on this floor, type \"skip\".", false),
             ("merchant", "Visit a merchant (M on the map): buy, sell or haggle. (\"skip\" if there's none.)",
              "Merchants sell torches, food, potions, weapons and armour, buy what you don't need, and haggle — offer less and see what they say. Walk into their room (M on the map) and tap Visit Merchant. Check your packs after buying. If there's no merchant on this floor, type \"skip\".", false),
             ("fight", "Win a fight. Attack, or cast a spell — the ? in a fight shows each hero's chances.",
@@ -6502,8 +6573,23 @@ class GameEngine: ObservableObject {
         guard let d = dungeon, d.training else { return nil }
         let steps = trainingSteps(full: d.trainingFull)
         guard let n = steps.firstIndex(where: { !trainingStepDone($0.key, in: d) }) else { return nil }
+        // "Light your torch" was being marked done the moment it came up, if
+        // the torch happened to be burning already — so the one step that
+        // teaches the flame button taught nothing. Put the torch out as the
+        // step arrives, and say why.
+        if steps[n].key == "torch", torchLit, !trainingTorchDoused {
+            trainingTorchDoused = true
+            torchLit = false
+            print("")
+            printWrapped("A draught comes down the passage and your torch gutters out. The room goes dark.", indent: 2, color: .yellow)
+            print("")
+        }
         return (n, steps.count, steps[n])
     }
+
+    /// The training torch is put out once, so the flame button has something
+    /// to do; after that the player is in charge of it.
+    private var trainingTorchDoused = false
 
     private func trainingStepDone(_ key: String, in d: Dungeon) -> Bool {
         if d.trainingDone.contains(key) { return true }
@@ -6654,25 +6740,43 @@ class GameEngine: ObservableObject {
     // and can be taken again.
 
     private static let trainingQuiz: [(q: String, options: [String], answer: Int, why: String)] = [
-        ("What does [@] on the map mean?", ["Your party", "A merchant", "The Boss", "A locked door"], 0,
+        ("What does [@] on the map mean?",
+         ["Your party — where you are standing", "A merchant's stall", "The Boss's lair", "A locked door", "A room you haven't been to yet"], 0,
          "[@] is you — where your party is standing."),
-        ("Which letter marks the Boss's (or a guardian's) lair?", ["M", "N", "B", "G"], 2,
-         "B is the lair. M is a merchant, N someone to talk to, G a gym."),
-        ("Why keep your torch lit?", ["It scares every monster away", "Without light you can't see rooms, exits or what's in them", "It heals you", "It saves the game"], 1,
+        ("Which letter marks the Boss's (or a guardian's) lair?",
+         ["M", "N", "B", "G", "X"], 2,
+         "B is the lair. M is a merchant, N someone to talk to, G a gym, XX a barred door."),
+        ("Why keep your torch lit?",
+         ["It scares every monster away", "Without light you can't see the room, its exits or what's in it", "It heals the party as you walk", "It saves the game for you", "It makes monsters easier to hit"], 1,
          "In the dark you can't see the room, its exits or what's there — and you walk into trouble."),
-        ("What does a long rest cost?", ["Nothing", "Ten minutes", "Eight hours of game time", "All your gold"], 2,
+        ("What does a long rest cost?",
+         ["Nothing at all", "Ten minutes of game time", "Eight hours of game time", "All your gold", "One party member's turn"], 2,
          "A long rest heals fully but takes eight hours — and quests have deadlines."),
-        ("How do you hear what's in the next room before going in?", ["Search", "Listen", "Rest", "Save"], 1,
+        ("How do you hear what's in the next room before going in?",
+         ["Search the room you're in", "Listen at the doors (the ear on the pad)", "Rest until something happens", "Save and reload", "Ask a merchant"], 1,
          "Listen (the ear on the pad) tells you what's behind the doors."),
-        ("How do you load a saved adventure?", ["Settings > Load", "Play > Continue Adventure", "Long-press the map", "Type \"load\""], 1,
+        ("How do you load a saved adventure?",
+         ["Settings > Load", "Play > Continue Adventure", "Long-press the map", "Type \"load\" at the prompt", "It loads by itself when you start"], 1,
          "Play > Continue Adventure lists your adventures; tap one to open it."),
-        ("Where can you see your quests and their deadlines?", ["Party Status", "The map viewer", "About", "The merchant"], 0,
+        ("Where can you see your quests and their deadlines?",
+         ["Party Status", "The map viewer", "About", "Ask the nearest merchant", "The Adventure Log only"], 0,
          "Party Status lists every quest, its reward and deadline."),
-        ("In a fight, where do you see your real chance to hit?", ["Nowhere", "The ? in the fight", "Settings", "The map"], 1,
+        ("In a fight, where do you see your real chance to hit?",
+         ["It isn't shown anywhere", "The ? button during the fight", "Settings > Gameplay", "On the map", "Party Status, before the fight"], 1,
          "The ? in a fight shows the enemy's strength and each hero's chances."),
+        ("A floor seems fully explored but the lair is nowhere. What now?",
+         ["Start the adventure again", "Look for a teleport pad or a stair you haven't taken", "Rest until it appears", "Sell everything and buy a map", "Wait for the DM to tell you"], 1,
+         "Deeper floors can be split in two. A pad, or the gallery above, is the way across."),
+        ("What happens when there's no internet?",
+         ["The game stops working", "The game carries on with its own Dungeon Master", "Your saves are lost", "You can only look at the map", "The dungeon resets"], 1,
+         "Everything is on the device. Only a cloud AI brain needs the internet, and the built-in DM takes over."),
     ]
 
-    private func startTrainingQuiz() { askTrainingQuestion(0, answers: []) }
+    /// Set while a quiz question is on screen, so tapping an answer in the
+    /// text chooses it just as its button would.
+    private var quizChoiceHandler: ((Int) -> Void)?
+
+    private func startTrainingQuiz() { quizChoiceHandler = nil; askTrainingQuestion(0, answers: []) }
 
     private func askTrainingQuestion(_ n: Int, answers: [Int]) {
         let quiz = Self.trainingQuiz
@@ -6683,14 +6787,33 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped(item.q, indent: 2, color: .cyan)
         print("")
-        printWrapped("Pick one — you'll find out how you did at the end.", indent: 2, color: .dimGreen)
+        // The answers are written out in full here, and each line is its own
+        // tap target: a button is too small a place for a whole sentence, and
+        // the buttons below were cutting them off mid-word.
+        for (i, option) in item.options.enumerated() {
+            printLink("\(i + 1). \(option)", to: "quiz:\(i)", indent: 2)
+        }
         print("")
-        var opts = item.options.map { MenuOption($0) }
+        printWrapped("Tap an answer above, or its number below. You'll find out how you did at the end.", indent: 2, color: .dimGreen)
+        print("")
+        quizChoiceHandler = { [weak self] index in
+            guard let self = self else { return }
+            self.quizChoiceHandler = nil
+            self.askTrainingQuestion(n + 1, answers: answers + [index])
+        }
+        // Buttons carry the number and as much of the answer as fits, so
+        // either way of choosing shows the same thing.
+        var opts = item.options.enumerated().map { i, option -> MenuOption in
+            let room = 14
+            let short = option.count > room ? String(option.prefix(room - 1)) + "…" : option
+            return MenuOption(short)
+        }
         opts.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(opts)
-        closeHandler = { [weak self] in self?.showTrainingMenu() }
+        closeHandler = { [weak self] in self?.quizChoiceHandler = nil; self?.showTrainingMenu() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
+            self.quizChoiceHandler = nil
             guard choice >= 1, choice <= item.options.count else {
                 // Back: the question before, or the Training menu.
                 if n > 0 { self.askTrainingQuestion(n - 1, answers: Array(answers.dropLast())) } else { self.showTrainingMenu() }
@@ -10681,10 +10804,16 @@ class GameEngine: ObservableObject {
 
     /// Formats a single weight (stored in pounds) per the Units setting.
     func formatWeight(_ lb: Double) -> String {
+        // Nothing carried weighs nothing: a light thing still takes up a
+        // hand and a corner of the pack, and "0lb" beside an item read as a
+        // mistake. Anything with any weight at all shows as at least 1lb.
+        // A true zero (an empty pack's total) still shows as zero.
         if useMetricUnits {
-            return String(format: "%.1fkg", lb * Self.lbPerKg)
+            let kg = lb * Self.lbPerKg
+            return String(format: "%.1fkg", lb > 0 ? Swift.max(0.5, kg) : 0)
         } else {
-            return "\(Int(lb.rounded()))lb"
+            let rounded = Int(lb.rounded())
+            return "\(lb > 0 ? Swift.max(1, rounded) : rounded)lb"
         }
     }
 
@@ -11451,8 +11580,8 @@ class GameEngine: ObservableObject {
             // Fixed places. These used to be emitted in whichever order put
             // the last-pressed one first, so the pair changed position under
             // your finger every time you tapped one.
-            opts.append("Dance!")
-            opts.append("Wave Again")
+            opts.append(aboutDanceRunning && aboutDanceStyle == 1 ? "Stop Dancing" : "Dance!")
+            opts.append(aboutDanceRunning && aboutDanceStyle == 0 ? "Stop Waving" : "Wave Again")
         }
         opts.append("How to Play")
         opts.append("The DnDex")
@@ -11463,6 +11592,8 @@ class GameEngine: ObservableObject {
         menuHandler = { [weak self] choice in
             guard let self = self, choice >= 1, choice <= all.count else { return }
             switch all[choice - 1] {
+            // Pressing the same one again stops them: it reads as a switch,
+            // so it behaves like one.
             case "Wave Again":
                 self.aboutDanceStyle = 0
                 self.aboutDanceRequested = true
@@ -11470,6 +11601,10 @@ class GameEngine: ObservableObject {
             case "Dance!":
                 self.aboutDanceStyle = 1
                 self.aboutDanceRequested = true
+                self.showAbout(onBack: onBack)
+            case "Stop Dancing", "Stop Waving":
+                self.aboutDanceTimer?.invalidate()
+                self.aboutDanceTimer = nil
                 self.showAbout(onBack: onBack)
             case "How to Play": self.showHowToPlay(onBack: { [weak self] in self?.showAbout(onBack: onBack) })
             case "The DnDex": self.showDnDexInfo(onBack: { [weak self] in self?.showAbout(onBack: onBack) })
@@ -11480,7 +11615,7 @@ class GameEngine: ObservableObject {
                     self.print("")
                     self.printWrapped("Who made the game, what it's built on, where to find the card browser, and everyone thanked for helping. The green links open the page they name.", indent: 2, color: .dimGreen)
                     self.print("")
-                    self.printWrapped("Wave Again replays the authors' hello; Dance! sets them off properly. A tap on the story does whichever is the first button.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Wave Again replays the authors' hello; Dance! sets them off properly. While they're going, the same button stops them. A tap on the story does whichever is the first button.", indent: 2, color: .dimGreen)
                     self.print("")
                     self.printWrapped("This page is hidden behind a long press on the picture, so it's never opened by accident.", indent: 2, color: .dimGreen)
                     self.print("")
@@ -11563,6 +11698,10 @@ class GameEngine: ObservableObject {
     }
 
     private var aboutDanceTimer: Timer?
+
+    /// True while the authors are still moving, so their button can offer to
+    /// stop them instead of starting them again.
+    private var aboutDanceRunning: Bool { aboutDanceTimer?.isValid == true }
 
     /// Which animation the About page is showing: 0 a hello, 1 a dance.
     private var aboutDanceStyle = 0
@@ -23541,10 +23680,16 @@ class GameEngine: ObservableObject {
         // the Actions submenu (not removed — some players prefer the list).
         if torchLit {
             self.dpadTorchLabel = "Douse"
-            self.dpadTorchHandler = { [weak self] in self?.douseTorch() }
+            self.dpadTorchHandler = { [weak self] in
+                guard let self = self else { return }
+                self.runPreservingDirectionExits { self.douseTorch() }
+            }
         } else if partyHasTorch() {
             self.dpadTorchLabel = "Illuminate"
-            self.dpadTorchHandler = { [weak self] in self?.lightTorch() }
+            self.dpadTorchHandler = { [weak self] in
+                guard let self = self else { return }
+                self.runPreservingDirectionExits { self.lightTorch() }
+            }
         } else {
             self.dpadTorchLabel = nil
             self.dpadTorchHandler = nil
@@ -28464,6 +28609,8 @@ class GameEngine: ObservableObject {
                 self.print("")
                 self.printWrapped("What this item is and what can be done with it. Equip puts it in hand (the old one goes back in the bag); Use eats or drinks it; Give and Drop open the usual screens to pick who gets it. Tap an item's line in the bag to come here.", indent: 2, color: .dimGreen)
                 self.print("")
+                self.printWrapped("Weight: nothing in a pack counts as less than 1lb, however small it is — a pocketful of little things still slows you down. What each adventurer can carry is on Party Status.", indent: 2, color: .dimGreen)
+                self.print("")
             }
         }
         opts.append(MenuOption("< Back", tint: .navigation, compact: true))
@@ -29330,6 +29477,14 @@ class GameEngine: ObservableObject {
         let each = party.map { "\(shortName(for: $0)) \($0.gold)" }.joined(separator: " · ")
         let total = party.reduce(0) { $0 + $1.gold }
         printWrapped("Gold — \(each)\(party.count > 1 ? " (party \(total)gp)" : "gp")", indent: 2, color: .yellow)
+        // Experience alongside the money: both are what a gym, a trainer or
+        // a merchant's offer is weighed against.
+        let xp = party.map { char -> String in
+            let next = Character.xpForLevel(char.level + 1)
+            let toGo = max(0, next - char.experiencePoints)
+            return "\(shortName(for: char)) L\(char.level) \(char.experiencePoints)xp (\(toGo) to L\(char.level + 1))"
+        }.joined(separator: " · ")
+        printWrapped("Experience — \(xp)", indent: 2, color: .cyan)
         print("")
     }
 

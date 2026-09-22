@@ -1281,12 +1281,26 @@ class ShopEngine {
 
         let situation: String
         if bought || sold {
-            situation = "The player is leaving your shop after this visit: \(summary) React in character with a brief farewell that acknowledges what they bought or sold, and says you hope to see them again."
+            // Spelled out as fact, because the farewell was contradicting the
+            // visit — "nothing today, then?" to someone walking out with a
+            // sword they had just paid for.
+            situation = "The player is leaving your shop. THIS IS WHAT HAPPENED, and it is not in doubt: they \(summary.isEmpty ? "traded with you" : summary). Say goodbye in character in one or two sentences, mentioning what they took or sold. Never suggest they bought nothing or leave empty-handed — they did not."
         } else {
             situation = "The player is leaving your shop without buying or selling anything this visit. React in character with a brief, good-natured farewell."
         }
 
-        self.narrate(situation: situation, offline: merchant.offlineFarewellLine(bought: bought, sold: sold), color: .cyan) { [weak self] in
+        // And if the answer still says otherwise, it isn't used.
+        let contradiction: ((String) -> Bool)? = (bought || sold)
+            ? { line in
+                let l = line.lowercased()
+                return l.contains("nothing today") || l.contains("empty-handed") || l.contains("empty handed")
+                    || l.contains("bought nothing") || l.contains("no coin") || l.contains("didn't buy")
+                    || l.contains("did not buy") || l.contains("another time, then")
+              }
+            : nil
+
+        self.narrate(situation: situation, offline: merchant.offlineFarewellLine(bought: bought, sold: sold),
+                     color: .cyan, reject: contradiction) { [weak self] in
             self?.maybeOfferAdvice(completion: completion)
         }
     }
@@ -1448,7 +1462,10 @@ class ShopEngine {
     /// out, or never resolves, it's silently dropped. This is deliberate:
     /// merchant AI narration used to gate the whole interaction, so a slow or
     /// hung DM call meant the player never even saw what was for sale.
-    private func narrate(situation: String, offline: String, color: TerminalColor, then: @escaping () -> Void) {
+    /// `reject` is given the DM's line and returns true if it contradicts
+    /// what actually happened; such a line is dropped rather than printed.
+    private func narrate(situation: String, offline: String, color: TerminalColor,
+                         reject: ((String) -> Bool)? = nil, then: @escaping () -> Void) {
         guard let game = game, let merchant = merchant else { then(); return }
 
         game.print("  \(offline)", color: color)
@@ -1457,25 +1474,42 @@ class ShopEngine {
         // the rest of the game read itself aloud. speak() checks isEnabled
         // itself, so this stays quiet when the speaker is off.
         SpeechEngine.shared.speak(offline)
-        then()
 
-        guard DMEngine.shared.hasAnyAI else { return }
+        guard DMEngine.shared.hasAnyAI else { then(); return }
 
-        final class ResolutionFlag { var done = false }
-        let flag = ResolutionFlag()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { flag.done = true }
+        // The merchant's short answer and their fuller one are one speech, so
+        // "tap to continue" must not land between them. It used to: the wait
+        // was armed the instant the short line printed, and the DM's sentence
+        // arrived after it, which read as the merchant interrupting himself.
+        //
+        // Now the offer to move on is held back until the merchant has
+        // finished — or until the wait runs out, so a slow or hung DM can
+        // never leave the shop stuck (the reason it was written this way
+        // in the first place).
+        final class Once { var done = false }
+        let settled = Once()
+        let finish = {
+            guard !settled.done else { return }
+            settled.done = true
+            then()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { finish() }
 
         game.merchantNarration(situation, merchant: merchant) { line in
             DispatchQueue.main.async {
-                guard !flag.done else { return }
-                flag.done = true
+                // A line that argues with the facts of the visit is dropped;
+                // the plain one already said the true thing.
+                if reject?(line) == true { finish(); return }
+                let lateArrival = settled.done
                 game.print("  \(line)", color: color)
                 SpeechEngine.shared.speak(line)
-                // The countdown started when the plain answer was printed,
-                // seconds ago — so this line could arrive just as the screen
-                // moved on, and be gone before it could be read. Re-arming
-                // restarts the wait with these words counted in.
-                if game.awaitingContinue { game.waitForContinue() }
+                if lateArrival {
+                    // It came after the screen had already offered to move on:
+                    // restart the wait so these words can be read.
+                    if game.awaitingContinue { game.waitForContinue() }
+                } else {
+                    finish()
+                }
             }
         }
     }
