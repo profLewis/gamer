@@ -39,10 +39,9 @@ final class ContributorsManager {
     static let maxNames = 60
 
     static let builtIn: [Contributor] = [
-        Contributor(name: "Philip Lewis", reason: "created the game: design, creative direction and relentless testing"),
+        Contributor(name: "Professor Lewis", reason: "created the game: design, coding, creative direction and relentless testing"),
         Contributor(name: "Beau Lewis", reason: "world creation, storytelling, gameplay structure and style, and game testing"),
         Contributor(name: "Claude (Anthropic)", reason: "code, words, and a great deal of ASCII"),
-        Contributor(name: "Codex (OpenAI)", reason: "code assistance"),
     ]
 
     private(set) var contributors: [Contributor] = ContributorsManager.builtIn

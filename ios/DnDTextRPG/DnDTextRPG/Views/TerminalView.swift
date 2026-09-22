@@ -2024,7 +2024,8 @@ struct TerminalView: View {
     /// (or the page changing) stops it.
     private func scheduleAutoGlide(_ proxy: ScrollViewProxy, token: UUID) {
         let linesPerSecond = gameEngine.autoScrollLinesPerSecond
-        guard linesPerSecond > 0 else { return }
+        // VoiceOver reads and moves through the text itself — a glide would fight it.
+        guard linesPerSecond > 0, !GameEngine.systemVoiceOverRunning else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             guard glideToken == token, !isNearBottom,
                   Date().timeIntervalSince(lastManualScrollAt) > 1.5 else { return }
@@ -2040,8 +2041,21 @@ struct TerminalView: View {
     private func glideStep(_ proxy: ScrollViewProxy, token: UUID, index: Int,
                            interval: Double, startedAt: Date) {
         let lines = gameEngine.terminalLines
-        guard glideToken == token, lastManualScrollAt < startedAt,
-              !isNearBottom, index < lines.count else { return }
+        guard glideToken == token, !GameEngine.systemVoiceOverRunning else { return }
+        // The reader scrolled: pause, and once they've left it alone for a
+        // few seconds carry on gliding from wherever they've got to.
+        if lastManualScrollAt >= startedAt {
+            if Date().timeIntervalSince(lastManualScrollAt) < 3.0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    glideStep(proxy, token: token, index: index, interval: interval, startedAt: startedAt)
+                }
+            } else {
+                let from = (lineVisibility.indices.min() ?? index) + 1
+                glideStep(proxy, token: token, index: from, interval: interval, startedAt: Date())
+            }
+            return
+        }
+        guard !isNearBottom, index < lines.count else { return }
         withAnimation(.linear(duration: interval)) {
             proxy.scrollTo(lines[index].id, anchor: .top)
         }

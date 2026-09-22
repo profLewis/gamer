@@ -2792,6 +2792,15 @@ class GameEngine: ObservableObject {
         case "ai": return { [weak self] in self?.showAIProviderMenu(onBack: { [weak self] in self?.returnFromLink() }) }
         case "howToPlay": return { [weak self] in self?.showHowToPlay() }
         case "dndex": return { [weak self] in self?.openWeb("https://proflewis.github.io/gamer/ios_card_images/card-dex/") }
+        case "hallOfFame": return { [weak self] in self?.showHallOfFame() }
+        case "characterHallOfFame": return { [weak self] in self?.showCharacterHallOfFame(onBack: { [weak self] in self?.returnFromLink() }) }
+        case "aiBilling": return { [weak self] in
+            guard let self = self, let url = self.billingURL(for: DMEngine.shared.provider) else { return }
+            self.openWeb(url) }
+        case "aiKeys": return { [weak self] in
+            guard let self = self else { return }
+            self.openWeb(self.keysURL(for: DMEngine.shared.provider)) }
+        case "github": return { [weak self] in self?.openWeb("https://github.com/profLewis/gamer") }
         case "dndexGallery": return { [weak self] in self?.openWeb("https://proflewis.github.io/gamer/gallery/") }
         case "puzzlePack": return { [weak self] in self?.openWeb("https://github.com/profLewis/gamer/blob/main/puzzles/pack.json") }
         case "puzzleFolder": return { [weak self] in self?.openWeb("https://github.com/profLewis/gamer/tree/main/puzzles") }
@@ -5994,6 +6003,119 @@ class GameEngine: ObservableObject {
         DMEngine.shared.justDMMode = justDMMode
         clearTerminal()
         showMainMenu()
+        checkAIKeyAtStartup()
+    }
+
+    /// A key problem found at launch, waiting for the next visit to the
+    /// Play menu (the player had already moved on when the test answered).
+    private var startupKeyProblem: String?
+
+    /// Launch: quietly test the AI brain's key, if one is set, so a dead
+    /// key is found now rather than halfway through an adventure.
+    private func checkAIKeyAtStartup() {
+        let dm = DMEngine.shared
+        guard dm.isConfigured else { return }
+        let generation = screenGeneration
+        dm.testAPIKey { [weak self] ok, message in
+            DispatchQueue.main.async {
+                guard let self = self, !ok else { return }
+                let problem = message ?? "Unknown error"
+                if self.screenGeneration == generation {
+                    self.showAIKeyProblem(problem)
+                } else {
+                    self.startupKeyProblem = problem
+                }
+            }
+        }
+    }
+
+    /// Where a provider's keys are made and listed.
+    private func keysURL(for provider: AIProvider) -> String {
+        switch provider {
+        case .anthropic: return "https://platform.claude.com/settings/keys"
+        case .openAI: return "https://platform.openai.com/api-keys"
+        case .google: return "https://aistudio.google.com/apikey"
+        }
+    }
+
+    /// The launch-time warning: what failed, the likely reason, where to
+    /// look, and a way straight to changing the AI brain.
+    private func showAIKeyProblem(_ message: String) {
+        let provider = DMEngine.shared.provider
+        clearTerminal()
+        printTitle("AI Brain Problem")
+        print("")
+        printWrapped("The \(provider.displayName) key didn't work when the game started. Until it's fixed the game uses its own built-in Dungeon Master — everything still works.", indent: 2)
+        print("")
+        print("  WHAT IT SAID", color: .cyan, bold: true)
+        printWrapped(message, indent: 4, color: .yellow)
+        print("")
+        print("  LIKELY CAUSE", color: .cyan, bold: true)
+        let lower = message.lowercased()
+        let billing = billingURL(for: provider)
+        if lower.contains("credit") || lower.contains("billing") || lower.contains("402") || lower.contains("insufficient") || lower.contains("payment") {
+            printWrapped("The account has run out of credit. API use is paid for separately from any Claude or ChatGPT subscription — add credit on the billing page, and the same key will work again. A new key won't help: credit belongs to the account, not the key.", indent: 4, color: .dimGreen)
+        } else if lower.contains("401") || lower.contains("authentication") || lower.contains("invalid") || lower.contains("incorrect") {
+            printWrapped("The key is wrong, or has been deleted. Make a new one on the keys page — copy it straight away, as it's only shown once — and paste it in.", indent: 4, color: .dimGreen)
+        } else if lower.contains("429") || lower.contains("rate") || lower.contains("quota") {
+            printWrapped("Too many requests, or a usage limit reached. Wait a minute and test again, or check the account's limits.", indent: 4, color: .dimGreen)
+        } else if lower.contains("403") || lower.contains("permission") || lower.contains("forbidden") {
+            printWrapped("The key isn't allowed to use this service. Check the account's settings.", indent: 4, color: .dimGreen)
+        } else if lower.contains("connection") || lower.contains("network") || lower.contains("timed out") || lower.contains("offline") || lower.contains("no response") {
+            printWrapped("No internet just now. Check Wi-Fi or mobile data, then test again.", indent: 4, color: .dimGreen)
+        } else if lower.contains("overloaded") || lower.contains("529") || lower.contains("500") || lower.contains("503") {
+            printWrapped("The service is busy or having trouble. It usually passes — test again in a few minutes.", indent: 4, color: .dimGreen)
+        } else {
+            printWrapped("Not clear from the message. Check the key and the account on the pages below.", indent: 4, color: .dimGreen)
+        }
+        print("")
+        print("  WHERE TO LOOK", color: .cyan, bold: true)
+        if billing != nil { printLink("\(provider.displayName) billing and credit", to: "aiBilling", indent: 4) }
+        printLink("\(provider.displayName) API keys", to: "aiKeys", indent: 4)
+        print("")
+        printWrapped("Or switch to another AI brain — or none — with Change AI Brain.", indent: 2, color: .dimGreen)
+        print("")
+        let opts = [MenuOption("Continue", isDefault: true), MenuOption("Change AI Brain"), MenuOption("Test Again"),
+                    MenuOption("?", tint: .navigation, compact: true)]
+        showMenuOptions(opts)
+        let back: () -> Void = { [weak self] in self?.clearTerminal(); self?.showMainMenu() }
+        closeHandler = back
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= opts.count else { return }
+            switch opts[choice - 1].text {
+            case "Change AI Brain":
+                self.showAIProviderMenu(onBack: back)
+            case "Test Again":
+                self.clearTerminal()
+                self.printTitle("AI Brain")
+                self.print("")
+                self.print("  Testing \(provider.displayName)...", color: .dimGreen)
+                DMEngine.shared.testAPIKey { [weak self] ok, message in
+                    DispatchQueue.main.async {
+                        guard let self = self else { return }
+                        if ok {
+                            self.print("")
+                            self.print("  Working now — the AI Dungeon Master is back.", color: .brightGreen)
+                            self.print("")
+                            self.waitForContinueWithTimeout(multiplier: 1.0) { back() }
+                        } else {
+                            self.showAIKeyProblem(message ?? "Unknown error")
+                        }
+                    }
+                }
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("AI Brain Problem — Help")
+                    self.print("")
+                    self.printWrapped("Each time the game starts it checks the AI brain's key, if one is set. This page appears when that check fails.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("CONTINUE plays on with the built-in Dungeon Master. CHANGE AI BRAIN picks another provider, a different key, or none. TEST AGAIN re-checks — after adding credit, say. The links open the provider's own pages.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default:
+                back()
+            }
+        }
     }
 
     /// First-run only: gives the Character Roster (and Character Hall of
@@ -6072,6 +6194,11 @@ class GameEngine: ObservableObject {
     // MARK: - Main Menu
 
     func showMainMenu() {
+        if let problem = startupKeyProblem {
+            startupKeyProblem = nil
+            showAIKeyProblem(problem)
+            return
+        }
         linkReturnSnapshot = nil
         // Text mode (buttons off) only drives the adventure itself — menus
         // like this one keep their buttons, so the game is usable straight
@@ -9930,14 +10057,14 @@ class GameEngine: ObservableObject {
         aboutDanceRequested = false
         if dance { printAuthorsDance(style: aboutDanceStyle, animate: animate) } else { printLines(philipArt, color: .cyan); print("") }
         print("  CREATED BY", color: .cyan, bold: true)
-        print("    Philip Lewis", color: .brightGreen)
-        printWrapped("Game design, creative direction, and relentless testing.", indent: 4, color: .dimGreen)
-        printWrapped("Concept and code control by Philip Lewis.", indent: 4, color: .dimGreen)
+        print("    Professor Lewis", color: .brightGreen)
+        printWrapped("Game design, coding, creative direction, and relentless testing.", indent: 4, color: .dimGreen)
+        printWrapped("Concept and code control by Professor Lewis.", indent: 4, color: .dimGreen)
         print("")
         // The repository is public, so the address belongs here where anybody
         // reading the credits can go and look at what the game is made of.
         print("  ALL CODE ON GITHUB", color: .cyan, bold: true)
-        printWrapped("https://github.com/profLewis/gamer", indent: 4, color: .brightGreen)
+        printLink("https://github.com/profLewis/gamer", to: "github", indent: 4)
         print("")
         print("  CO-AUTHOR", color: .cyan, bold: true)
         print("    Beau Lewis", color: .brightGreen)
@@ -9967,7 +10094,7 @@ class GameEngine: ObservableObject {
         printWrapped("Made with SwiftUI, imagination, and far too many late nights.", indent: 4, color: .dimGreen)
         print("")
         print("  COPYRIGHT", color: .cyan, bold: true)
-        printWrapped("\u{00A9} 2024-2026 Philip Lewis. All rights reserved.", indent: 4, color: .dimGreen)
+        printWrapped("\u{00A9} 2024-2026 Professor Lewis. All rights reserved.", indent: 4, color: .dimGreen)
         print("")
         print("  DnDEX — CARD BROWSER", color: .cyan, bold: true)
         printWrapped("Browse character, monster, and location cards at the DnDex. See the stories behind the default character names and dungeon locations.", indent: 4, color: .dimGreen)
@@ -10100,7 +10227,7 @@ class GameEngine: ObservableObject {
         printTitle("Licence")
         print("")
         print("  THE GAME", color: .cyan, bold: true)
-        printWrapped("\u{00A9} 2024-2026 Philip Lewis. All rights reserved. A Timbaloo app.", indent: 2, color: .dimGreen)
+        printWrapped("\u{00A9} 2024-2026 Professor Lewis. All rights reserved. A Timbaloo app.", indent: 2, color: .dimGreen)
         print("")
         print("  THE RULES", color: .cyan, bold: true)
         printWrapped("Game mechanics come from the D&D 5e System Reference Document, used under the Open Gaming License (OGL) v1.0a.", indent: 2, color: .dimGreen)
@@ -14407,7 +14534,7 @@ class GameEngine: ObservableObject {
     /// nil for Google, which has a free tier and no billing page to visit.
     private func billingURL(for provider: AIProvider) -> String? {
         switch provider {
-        case .anthropic: return "https://console.anthropic.com/settings/billing"
+        case .anthropic: return "https://platform.claude.com/settings/billing"
         case .openAI: return "https://platform.openai.com/settings/billing"
         case .google: return nil
         }
@@ -14874,8 +15001,8 @@ class GameEngine: ObservableObject {
                     self?.print("  The AI Dungeon Master is now", color: .cyan)
                     self?.print("  available.", color: .cyan)
                     self?.print("")
-                    self?.waitForContinue()
-                    self?.inputHandler = { [weak self] _ in
+                    // Short countdown — the result is one line to read.
+                    self?.waitForContinueWithTimeout(multiplier: 1.0) { [weak self] in
                         self?.promptAPIKey()
                     }
                 } else {
@@ -14939,8 +15066,7 @@ class GameEngine: ObservableObject {
                     // Remove the bad key
                     DMEngine.shared.apiKey = nil
                     self?.print("")
-                    self?.waitForContinue()
-                    self?.inputHandler = { [weak self] _ in
+                    self?.waitForContinueWithTimeout(multiplier: 1.5) { [weak self] in
                         self?.promptAPIKey()
                     }
                 }
@@ -38882,9 +39008,20 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Points an unfinished adventure has earned so far — the Hall of Fame
+    /// formula without the victory bonus, so the two can be sorted together.
+    static func scoreSoFar(_ save: SaveGame) -> Int {
+        let gold = save.party.reduce(0) { $0 + $1.gold }
+        let total = save.dungeon.rooms.count
+        let explored = save.dungeon.rooms.values.filter { $0.visited }.count
+        let exploration = total > 0 ? explored * 100 / total : 0
+        return (gold + save.monstersSlain * 20 + save.combatsWon * 50 + exploration) * max(1, save.dungeonLevel)
+    }
+
     private func showLoadGameMenu(returnTo origin: LoadGameOrigin, page: Int = 0) {
         clearTerminal()
-        printTitle("Continue Adventure")
+        // Sorted by points, this list IS the Hall of Fame.
+        printTitle(listSortMode == .points ? "Hall of Fame" : "Continue Adventure")
 
         let backAction: () -> Void = { [weak self] in
             switch origin {
@@ -38966,7 +39103,7 @@ class GameEngine: ObservableObject {
         }
         func rowScore(_ row: AdventureRow) -> Int? {
             switch row {
-            case .slot(let s): return hofBySaveId[s.latest.id]?.score
+            case .slot(let s): return hofBySaveId[s.latest.id]?.score ?? Self.scoreSoFar(s.latest)
             case .orphanHof(let e): return e.score
             }
         }
@@ -39043,7 +39180,7 @@ class GameEngine: ObservableObject {
                     let gold = save.party.reduce(0) { $0 + $1.gold }
                     let roomsExplored = save.dungeon.rooms.values.filter { $0.visited }.count
                     let totalRooms = save.dungeon.rooms.count
-                    printWrapped("\(i + 1). \(save.dungeonName) Lv.\(save.dungeonLevel) PLAYING\(bpInfo)", color: .cyan, bold: true)
+                    printWrapped("\(i + 1). \(save.dungeonName) Lv.\(save.dungeonLevel) PLAYING \(Self.scoreSoFar(save))pts so far\(bpInfo)", color: .cyan, bold: true)
                     printWrapped(save.partyDescription, indent: 3, color: .dimGreen)
                     if let q = save.questSummary { printWrapped(q, indent: 3, color: .cyan) }
                     printWrapped("Gold:\(gold) Slain:\(save.monstersSlain) Lv\(save.dungeonLevel) rooms:\(roomsExplored)/\(totalRooms) Day \(day)", indent: 3, color: .dimGreen)
@@ -39090,6 +39227,9 @@ class GameEngine: ObservableObject {
 
             entryLineRanges.append(lineStart..<terminalLines.count)
         }
+        printLink("Hall of Fame — every finished adventure", to: "hallOfFame", indent: 2)
+        printLink("Character Hall of Fame", to: "characterHallOfFame", indent: 2)
+        print("")
 
         // Was a plain showMenu() with every slot as its own button plus
         // "Manage Saves"/"Hall of Fame" tacked on — ignored maxButtonsPerScreen
@@ -39200,7 +39340,8 @@ class GameEngine: ObservableObject {
         // second, near-duplicate list elsewhere, "Manage" is pinned right
         // here for renaming/deleting saves, which is the one thing this
         // screen's own list doesn't do inline.
-        let pinnedButtons = ["Manage", "?", "< Back"]
+        let sortButton = nextSort == .points ? "Sort: Points" : "Sort: Date"
+        let pinnedButtons = ["Manage", sortButton, "?", "< Back"]
         showPaginatedMenuOptions(options, page: page, pinned: pinnedButtons, handler: { idx in
             guard idx >= 0 && idx < rows.count else { return }
             openRow(rows[idx])
@@ -39209,6 +39350,10 @@ class GameEngine: ObservableObject {
             switch choice {
             case pinnedButtons.firstIndex(of: "Manage") ?? -1:
                 self.showManageSavesMenu(returnTo: origin)
+            case pinnedButtons.firstIndex(of: sortButton) ?? -1:
+                // Re-sorts the list AND its buttons (they're built from the same order).
+                self.listSortMode = nextSort
+                self.showLoadGameMenu(returnTo: origin)
             case pinnedButtons.firstIndex(of: "?") ?? -1:
                 self.showInlineHelp {
                     self.printTitle("Continue Adventure — Help")
@@ -39222,6 +39367,9 @@ class GameEngine: ObservableObject {
                     self.print("")
                     self.print("  MANAGE", color: .cyan, bold: true)
                     self.printWrapped("Rename, copy, or delete saves — including bulk multi-select delete.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.print("  SORT", color: .cyan, bold: true)
+                    self.printWrapped("Switches between newest first and most points first. Sorted by points the list becomes the Hall of Fame; adventures still going show their points so far.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             default:
