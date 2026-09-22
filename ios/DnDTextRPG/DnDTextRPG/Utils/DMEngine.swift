@@ -111,6 +111,18 @@ struct AIModelChoice {
     let note: String
 }
 
+/// One exchange with an AI, kept so the player can see exactly what the
+/// game sent and what came back.
+struct AIExchange {
+    let brain: String
+    let model: String
+    let endpoint: String
+    let sent: String
+    let received: String
+    let seconds: Double
+    let ok: Bool
+}
+
 /// Hugging Face's Inference Providers: one free account and one token reach
 /// many open models (Llama, Gemma, Qwen…). Free accounts get a small monthly
 /// allowance; PRO accounts get more.
@@ -593,6 +605,112 @@ class DMEngine {
                 }
             }
         }
+    }
+
+    // MARK: - What was sent and received
+
+    /// The last test or sample exchange, for the Details screen.
+    private(set) var lastExchange: AIExchange?
+
+    /// Sample DM answers tried this session, for comparing models.
+    private(set) var sampleResults: [AIExchange] = []
+
+    func clearSampleResults() { sampleResults = [] }
+
+    private func record(brain: String, model: String, endpoint: String, sent: String,
+                        received: String, started: Date, ok: Bool) {
+        let ex = AIExchange(brain: brain, model: model, endpoint: endpoint, sent: sent,
+                            received: received, seconds: Date().timeIntervalSince(started), ok: ok)
+        DispatchQueue.main.async { self.lastExchange = ex }
+    }
+
+    /// Readable JSON for the Details screen.
+    private static func pretty(_ body: [String: Any]) -> String {
+        guard let d = try? JSONSerialization.data(withJSONObject: body, options: [.prettyPrinted, .sortedKeys]),
+              let t = String(data: d, encoding: .utf8) else { return "\(body)" }
+        return t
+    }
+
+    private static func readable(_ data: Data?, status: Int) -> String {
+        guard let data = data, let text = String(data: data, encoding: .utf8) else {
+            return "HTTP \(status): no body."
+        }
+        let trimmed = text.count > 1200 ? String(text.prefix(1200)) + "\n… (cut short)" : text
+        return "HTTP \(status)\n" + trimmed
+    }
+
+    // MARK: - Sample DM prompt
+
+    /// A typical room, party and quest, so every model can be asked the
+    /// same thing and the answers compared.
+    static let samplePrompt = """
+    You are the Dungeon Master of a D&D 5e text adventure. Be vivid but brief (2-3 sentences), \
+    second person, UK spelling, family-friendly. Base everything on the facts below — never invent \
+    exits, monsters or items that aren't listed, and never decide what the players do next.
+
+    LOCATION: The Drowned Chapel — a flooded chapel, cold water to the knees, a cracked altar below a broken window.
+    EXITS: north (door, unlocked), east (archway)
+    STATUS: not cleared — something moves under the water.
+    HIDDEN HERE: a silver key under the altar stone, found by searching the altar.
+    PARTY: Mira (Elf Wizard, 14/18 HP), Brann (Dwarf Fighter, 22/26 HP).
+    QUEST: take the silver key to Warden Hale by day 6. Today is day 3.
+    """
+    static let sampleQuestion = "I search the altar carefully while Brann watches the water."
+
+    /// Ask a brain the sample question. `provider` nil means whichever
+    /// brain is in use now.
+    func runSampleDM(provider: AIProvider? = nil, completion: @escaping (AIExchange) -> Void) {
+        let started = Date()
+        let sent = "SYSTEM\n\(Self.samplePrompt)\n\nPLAYER\n\(Self.sampleQuestion)"
+        let messages = [(role: "user", content: Self.sampleQuestion)]
+        let finish: (String, String, String, Bool) -> Void = { [weak self] brain, model, reply, ok in
+            let ex = AIExchange(brain: brain, model: model, endpoint: "", sent: sent, received: reply,
+                                seconds: Date().timeIntervalSince(started), ok: ok)
+            DispatchQueue.main.async {
+                self?.lastExchange = ex
+                if ok { self?.sampleResults.append(ex) }
+                completion(ex)
+            }
+        }
+        // A named provider (comparing models), or the brain in use.
+        if let wanted = provider ?? (isConfigured ? self.provider : nil) {
+            guard let key = apiKey(for: wanted), !key.isEmpty else {
+                finish(wanted.displayName, modelLabel(for: wanted), "No key saved for \(wanted.displayName).", false)
+                return
+            }
+            let label = modelLabel(for: wanted)
+            callAI(provider: wanted, apiKey: key, system: Self.samplePrompt, messages: messages) { reply in
+                let text = reply?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                finish(wanted.displayName, label, text.isEmpty ? "No answer." : text, !text.isEmpty)
+            }
+            return
+        }
+        if isAppleModelAvailable {
+            #if canImport(FoundationModels) && !os(tvOS)
+            if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
+                Task {
+                    do {
+                        let session = LanguageModelSession(instructions: Self.samplePrompt)
+                        let response = try await session.respond(to: Self.sampleQuestion)
+                        finish("Apple On-Device AI", "Apple Foundation Model", response.content, !response.content.isEmpty)
+                    } catch {
+                        finish("Apple On-Device AI", "Apple Foundation Model", "\(error.localizedDescription)", false)
+                    }
+                }
+                return
+            }
+            #endif
+        }
+        if let hfKey = huggingFaceBackupKey {
+            let label = modelLabel(for: .huggingFace)
+            callOpenAI(apiKey: hfKey, system: Self.samplePrompt, messages: messages,
+                       model: modelToUse(for: .huggingFace), endpoint: HuggingFace.endpoint) { reply in
+                let text = reply?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                finish("Hugging Face", label, text.isEmpty ? "No answer." : text, !text.isEmpty)
+            }
+            return
+        }
+        finish("Built-in DM", "—", "No AI brain is set up, so there's nothing to try. The game's own DM answers from its own words, not from a model.", false)
     }
 
     // MARK: - Model choice
@@ -1854,15 +1972,22 @@ class DMEngine {
             completion(false, "Not available on this device. Requires iPhone 16 or newer with Apple Intelligence enabled.")
             return
         }
+        let started = Date()
         Task {
             do {
                 let session = LanguageModelSession(instructions: "Reply with exactly one word.")
                 let response = try await session.respond(to: "Say hello.")
                 let isEmpty = response.content.isEmpty
+                self.record(brain: "Apple On-Device AI", model: "Apple Foundation Model", endpoint: "on this device",
+                            sent: "INSTRUCTIONS\nReply with exactly one word.\n\nPROMPT\nSay hello.",
+                            received: response.content, started: started, ok: !isEmpty)
                 DispatchQueue.main.async {
                     completion(!isEmpty, nil)
                 }
             } catch {
+                self.record(brain: "Apple On-Device AI", model: "Apple Foundation Model", endpoint: "on this device",
+                            sent: "INSTRUCTIONS\nReply with exactly one word.\n\nPROMPT\nSay hello.",
+                            received: "\(error)", started: started, ok: false)
                 DispatchQueue.main.async {
                     completion(false, "\(error.localizedDescription)")
                 }
@@ -1878,13 +2003,18 @@ class DMEngine {
             "contents": [["role": "user", "parts": [["text": "Say hello in one word."]]]],
             "generationConfig": ["maxOutputTokens": 10]
         ]
+        let started = Date()
 
-        googlePost(apiKey: apiKey, body: body) { data, response, error in
+        googlePost(apiKey: apiKey, body: body) { [weak self] data, response, error in
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+            self?.record(brain: AIProvider.google.displayName, model: self?.modelToUse(for: .google) ?? "",
+                         endpoint: "generativelanguage.googleapis.com …:generateContent",
+                         sent: Self.pretty(body), received: error.map { "Connection error: \($0.localizedDescription)" } ?? Self.readable(data, status: statusCode),
+                         started: started, ok: statusCode == 200 && error == nil)
             if let error = error {
                 completion(false, "Connection error: \(error.localizedDescription)")
                 return
             }
-            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard let data = data else {
                 completion(false, "No response from server (HTTP \(statusCode)).")
                 return
@@ -1932,8 +2062,14 @@ class DMEngine {
             "messages": [["role": "user", "content": "Say hello."]]
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        let started = Date()
 
-        URLSession.shared.dataTask(with: request) { data, response, error in
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            self?.record(brain: AIProvider.anthropic.displayName, model: self?.modelToUse(for: .anthropic) ?? "",
+                         endpoint: "api.anthropic.com/v1/messages", sent: Self.pretty(body),
+                         received: error.map { "Connection error: \($0.localizedDescription)" } ?? Self.readable(data, status: status),
+                         started: started, ok: status == 200 && error == nil)
             if let error = error {
                 completion(false, "Connection error: \(error.localizedDescription)")
                 return
@@ -1985,13 +2121,20 @@ class DMEngine {
             body["max_tokens"] = 10
         }
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        let started = Date()
 
-        URLSession.shared.dataTask(with: request) { data, response, error in
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let isHF = endpoint == HuggingFace.endpoint
+            self?.record(brain: (isHF ? AIProvider.huggingFace : AIProvider.openAI).displayName, model: testModel,
+                         endpoint: endpoint, sent: Self.pretty(body),
+                         received: error.map { "Connection error: \($0.localizedDescription)" } ?? Self.readable(data, status: status),
+                         started: started, ok: status == 200 && error == nil)
             if let error = error {
                 completion(false, "Connection error: \(error.localizedDescription)")
                 return
             }
-            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let statusCode = status
             guard let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 completion(false, "Invalid response (HTTP \(statusCode)).")

@@ -2650,7 +2650,31 @@ class GameEngine: ObservableObject {
     /// screen empty.
     var wrapColumns: Int = 38
 
-    func printWrapped(_ text: String, indent: Int = 0, color: TerminalColor = .green, bold: Bool = false, maxWidth: Int? = nil) {
+    /// Straight right-hand edge on the pages that ask for it (the brain and
+    /// key screens). Reset by clearTerminal, so it never leaks to the next
+    /// screen.
+    var justifyText = false
+
+    /// Pad the gaps between words so the line fills the column exactly.
+    /// Left alone if it would leave gaps wider than three spaces, which
+    /// looks worse than a ragged edge.
+    private func justified(_ line: String, width: Int) -> String {
+        let words = line.split(separator: " ").map(String.init)
+        guard words.count > 1 else { return line }
+        let letters = words.reduce(0) { $0 + $1.count }
+        let gaps = words.count - 1
+        let spaces = width - letters
+        guard spaces > gaps, spaces <= gaps * 3 else { return line }
+        let base = spaces / gaps
+        let extra = spaces % gaps
+        var out = words[0]
+        for (i, word) in words.dropFirst().enumerated() {
+            out += String(repeating: " ", count: base + (i < extra ? 1 : 0)) + word
+        }
+        return out
+    }
+
+    func printWrapped(_ text: String, indent: Int = 0, color: TerminalColor = .green, bold: Bool = false, maxWidth: Int? = nil, justify: Bool? = nil) {
         let maxWidth = maxWidth ?? wrapColumns
         let text = Self.platformWording(text)
         // Detect any extra leading whitespace in the text and fold it into indent
@@ -2664,6 +2688,7 @@ class GameEngine: ObservableObject {
         }
 
         // Later lines of the paragraph are marked, so Read Aloud reads it as one.
+        let straightEdge = justify ?? justifyText
         var printedAny = false
         let emit: (String) -> Void = { line in
             self.print("\(prefix)\(line)", color: color, bold: bold)
@@ -2681,7 +2706,8 @@ class GameEngine: ObservableObject {
             } else if currentLine.count + 1 + word.count <= lineWidth {
                 currentLine += " " + word
             } else {
-                emit(currentLine)
+                // Every line but the paragraph's last one gets the straight edge.
+                emit(straightEdge ? justified(currentLine, width: lineWidth) : currentLine)
                 currentLine = word
             }
         }
@@ -3054,6 +3080,7 @@ class GameEngine: ObservableObject {
     }
 
     func clearTerminal() {
+        justifyText = false
         taleCountdownOn = false
         speechFromLine = 0
         // Leaving the fight's running account for another screen: keep it, to put back.
@@ -6915,6 +6942,7 @@ class GameEngine: ObservableObject {
         let dm = DMEngine.shared
         clearTerminal()
         printTitle("Test Brain")
+        justifyText = true
         print("")
         let report: (Bool, String?, String) -> Void = { [weak self] ok, message, name in
             DispatchQueue.main.async {
@@ -6932,13 +6960,27 @@ class GameEngine: ObservableObject {
                     if let m = message { self.printWrapped(m, indent: 2, color: .yellow); self.printURLLinks(in: m, indent: 2) }
                 }
                 self.print("")
+                if let ex = dm.lastExchange {
+                    self.print("  Took \(String(format: "%.1f", ex.seconds))s · model: \(ex.model)", color: .dimGreen)
+                }
+                self.print("")
                 var opts: [MenuOption] = []
                 if offerKeychain && !alreadyKept { opts.append(MenuOption("Save to Keychain", isDefault: true)) }
+                opts.append(MenuOption("Details"))
+                opts.append(MenuOption("Try DM Prompt", tint: .cyan))
                 opts.append(MenuOption("< Back", tint: .navigation, compact: true))
                 self.showMenuOptions(opts)
                 self.closeHandler = back
                 self.menuHandler = { [weak self] choice in
-                    guard let self = self else { return }
+                    guard let self = self, choice >= 1, choice <= opts.count else { return }
+                    if opts[choice - 1].text == "Details" {
+                        self.showExchangeDetails(onBack: { [weak self] in self?.testCurrentBrain(then: back) })
+                        return
+                    }
+                    if opts[choice - 1].text == "Try DM Prompt" {
+                        self.runSampleDMTest(provider: nil, onBack: { [weak self] in self?.testCurrentBrain(then: back) })
+                        return
+                    }
                     if opts[choice - 1].text == "Save to Keychain" {
                         self.backupSingleAPIKeyToKeychain(for: provider)
                         self.print("  ✓ Saved to the Keychain.", color: .brightGreen)
@@ -7022,6 +7064,7 @@ class GameEngine: ObservableObject {
         let provider = DMEngine.shared.provider
         clearTerminal()
         printTitle("AI Brain Problem")
+        justifyText = true
         print("")
         printWrapped("The \(provider.displayName) key didn't work when the game started. Until it's fixed the game uses its own built-in Dungeon Master — everything still works.", indent: 2)
         print("")
@@ -7233,6 +7276,7 @@ class GameEngine: ObservableObject {
         UserDefaults.standard.set(true, forKey: key)
         clearTerminal()
         printTitle("Dungeon Master Brain")
+        justifyText = true
         print("")
         if dm.isAppleModelAvailable {
             printWrapped("Your Dungeon Master runs on Apple's on-device AI — free, private, and it works offline.", indent: 2, color: .brightGreen)
@@ -14164,6 +14208,7 @@ class GameEngine: ObservableObject {
         let back = onBack ?? { [weak self] in self?.showDMSettingsSubMenu() }
         clearTerminal()
         printTitle(BrainLabels.button)
+        justifyText = true
 
         let dm = DMEngine.shared
 
@@ -14258,6 +14303,7 @@ class GameEngine: ObservableObject {
             if choice == helpIndex {
                 self?.showInlineHelp {
                     self?.printTitle("Brain Help")
+                    self?.justifyText = true
                     self?.print("")
                     self?.print("  APPLE ON-DEVICE AI", color: .cyan, bold: true)
                     self?.printWrapped("Runs locally on your device. Free, works offline, no account needed. Needs Apple Intelligence: iPhone 15 Pro or newer (or an M-series iPad/Mac) on iOS 26+, with Apple Intelligence switched on. May refuse some queries.", indent: 2, color: .dimGreen)
@@ -14300,6 +14346,131 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Exactly what the game sent and what came back, for the last test or
+    /// sample — the detail behind a tick or a cross.
+    func showExchangeDetails(onBack: @escaping () -> Void) {
+        clearTerminal()
+        printTitle("What Was Sent")
+        print("")
+        guard let ex = DMEngine.shared.lastExchange else {
+            printWrapped("Nothing has been tested yet this session. Run Test Brain or Try DM Prompt first.", indent: 2, color: .yellow)
+            print("")
+            showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+            closeHandler = onBack
+            menuHandler = { _ in onBack() }
+            return
+        }
+        print("  \(ex.brain)", color: .brightGreen, bold: true)
+        print("  Model: \(ex.model)", color: .dimGreen)
+        if !ex.endpoint.isEmpty { print("  Sent to: \(ex.endpoint)", color: .dimGreen) }
+        print("  Took: \(String(format: "%.1f", ex.seconds)) seconds", color: .dimGreen)
+        print("  Result: \(ex.ok ? "answered" : "failed")", color: ex.ok ? .brightGreen : .red)
+        print("")
+        print("  WE SENT", color: .cyan, bold: true)
+        for line in ex.sent.split(separator: "\n", omittingEmptySubsequences: false) {
+            printWrapped(String(line), indent: 2, color: .dimGreen, justify: false)
+        }
+        print("")
+        print("  WE GOT BACK", color: .cyan, bold: true)
+        for line in ex.received.split(separator: "\n", omittingEmptySubsequences: false) {
+            printWrapped(String(line), indent: 2, color: ex.ok ? .green : .yellow, justify: false)
+        }
+        print("")
+        printWrapped("Keys are never shown here. A reply cut short is marked; the full one is used in play.", indent: 2, color: .dimGreen)
+        print("")
+        showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+        closeHandler = onBack
+        menuHandler = { _ in onBack() }
+    }
+
+    /// Ask a brain the same sample DM question every time, show the answer,
+    /// and keep the tries side by side so models can be compared.
+    func runSampleDMTest(provider: AIProvider?, onBack: @escaping () -> Void) {
+        let dm = DMEngine.shared
+        clearTerminal()
+        printTitle("DM Prompt Test")
+        justifyText = true
+        print("")
+        printWrapped("The same short scene is given to the brain, with one player action, so different models can be compared fairly. It takes a few seconds.", indent: 2, color: .dimGreen)
+        print("")
+        print("  THE SCENE", color: .cyan, bold: true)
+        printWrapped("A flooded chapel with something moving in the water, a cracked altar with a silver key hidden under it, and a quest to take that key to Warden Hale by day 6.", indent: 2, color: .dimGreen)
+        print("")
+        print("  THE PLAYER SAYS", color: .cyan, bold: true)
+        printWrapped("\"\(DMEngine.sampleQuestion)\"", indent: 2, color: .green)
+        print("")
+        print("  Asking…", color: .dimGreen)
+        dm.runSampleDM(provider: provider) { [weak self] ex in
+            guard let self = self else { return }
+            self.print("")
+            self.print("  \(ex.brain) — \(ex.model)", color: .brightGreen, bold: true)
+            self.print("  Answered in \(String(format: "%.1f", ex.seconds)) seconds", color: .dimGreen)
+            self.print("")
+            self.print("  THE DM SAYS", color: .cyan, bold: true)
+            for line in ex.received.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
+                self.printWrapped(String(line), indent: 2, color: ex.ok ? .green : .yellow)
+            }
+            self.print("")
+            if ex.ok {
+                let lower = ex.received.lowercased()
+                self.print("  A GOOD ANSWER…", color: .cyan, bold: true)
+                let checks: [(String, Bool)] = [
+                    ("finds the silver key", lower.contains("key")),
+                    ("remembers the water", lower.contains("water") || lower.contains("ripple") || lower.contains("flood")),
+                    ("keeps Brann watching, and decides nothing for you", !lower.contains("you decide") && !lower.contains("brann attacks")),
+                    ("stays short (under 80 words)", ex.received.split(separator: " ").count < 80)
+                ]
+                for (what, passed) in checks {
+                    self.print("   \(passed ? "✓" : "·") \(what)", color: passed ? .brightGreen : .dimGreen)
+                }
+                self.print("")
+                self.printWrapped("These are rough hints, not marks — read the answer and judge for yourself.", indent: 2, color: .dimGreen)
+                self.print("")
+            }
+            var opts: [MenuOption] = [MenuOption("Again", isDefault: true), MenuOption("Details")]
+            if dm.sampleResults.count > 1 { opts.append(MenuOption("Compare (\(dm.sampleResults.count))", tint: .cyan)) }
+            if let p = provider ?? (dm.isConfigured ? dm.provider : nil) { opts.append(MenuOption("Change \(p.shortName) Model")) }
+            opts.append(MenuOption("< Back", tint: .navigation, compact: true))
+            self.showMenuOptions(opts)
+            self.closeHandler = onBack
+            self.menuHandler = { [weak self] choice in
+                guard let self = self, choice >= 1, choice <= opts.count else { return }
+                let pick = opts[choice - 1].text
+                if pick == "Again" { self.runSampleDMTest(provider: provider, onBack: onBack) }
+                else if pick == "Details" { self.showExchangeDetails(onBack: { [weak self] in self?.runSampleDMTest(provider: provider, onBack: onBack) }) }
+                else if pick.hasPrefix("Compare") { self.showSampleComparison(onBack: { [weak self] in self?.runSampleDMTest(provider: provider, onBack: onBack) }) }
+                else if pick.hasPrefix("Change"), let p = provider ?? (dm.isConfigured ? dm.provider : nil) {
+                    self.showModelMenu(provider: p, onBack: { [weak self] in self?.runSampleDMTest(provider: p, onBack: onBack) })
+                } else { onBack() }
+            }
+        }
+    }
+
+    /// Every sample answer tried this session, one after another.
+    private func showSampleComparison(onBack: @escaping () -> Void) {
+        let results = DMEngine.shared.sampleResults
+        clearTerminal()
+        printTitle("Compare Models")
+        justifyText = true
+        print("")
+        printWrapped("The same scene and the same player action, answered by each brain you've tried this session.", indent: 2, color: .dimGreen)
+        print("")
+        for (i, ex) in results.enumerated() {
+            print("  \(i + 1). \(ex.model) — \(ex.brain)", color: .brightGreen, bold: true)
+            print("     \(String(format: "%.1f", ex.seconds))s · \(ex.received.split(separator: " ").count) words", color: .dimGreen)
+            printWrapped(ex.received.replacingOccurrences(of: "\n", with: " "), indent: 5, color: .green)
+            print("")
+        }
+        let opts = [MenuOption("Clear List"), MenuOption("< Back", tint: .navigation, compact: true)]
+        showMenuOptions(opts)
+        closeHandler = onBack
+        menuHandler = { [weak self] choice in
+            if choice == 1 { DMEngine.shared.clearSampleResults() }
+            _ = self
+            onBack()
+        }
+    }
+
     /// Open a web page in the browser.
     func openExternalURL(_ address: String) {
         guard let url = URL(string: address) else { return }
@@ -14318,6 +14489,7 @@ class GameEngine: ObservableObject {
         let dm = DMEngine.shared
         clearTerminal()
         printTitle("\(provider.shortName) Model")
+        justifyText = true
         print("")
         let current = dm.chosenModel(for: provider) ?? provider.defaultModel
         print("  In use: \(dm.modelLabel(for: provider))", color: .brightGreen, bold: true)
@@ -14335,6 +14507,7 @@ class GameEngine: ObservableObject {
         var opts = choices.map { MenuOption($0.id == current ? "\($0.label) <--" : $0.label, isDefault: $0.id == current) }
         opts.append(MenuOption("More Models"))
         opts.append(MenuOption("Custom…"))
+        opts.append(MenuOption("Try DM Prompt", tint: .cyan))
         opts.append(MenuOption("?", tint: .navigation, compact: true))
         opts.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(opts)
@@ -14349,6 +14522,8 @@ class GameEngine: ObservableObject {
             switch opts[choice - 1].text {
             case "More Models":
                 self.showLiveModelList(provider: provider, onBack: again)
+            case "Try DM Prompt":
+                self.runSampleDMTest(provider: provider, onBack: again)
             case "Custom…":
                 self.print("")
                 self.promptText("Model name (as the service spells it):")
@@ -14361,6 +14536,7 @@ class GameEngine: ObservableObject {
             case "?":
                 self.showInlineHelp {
                     self.printTitle("Model Help")
+                    self.justifyText = true
                     self.print("")
                     self.printWrapped("Each AI company offers several models. Bigger ones write better stories and follow the game's rules more closely; smaller ones answer faster and cost less (or make a free allowance last longer).", indent: 2, color: .dimGreen)
                     self.print("")
@@ -14451,6 +14627,7 @@ class GameEngine: ObservableObject {
     private func showAppleAIInfo() {
         clearTerminal()
         printTitle("Apple On-Device AI")
+        justifyText = true
         print("")
         let dm = DMEngine.shared
         if dm.isAppleModelAvailable {
@@ -15894,6 +16071,7 @@ class GameEngine: ObservableObject {
         let provider = DMEngine.shared.provider
         clearTerminal()
         printTitle("Set API Key")
+        justifyText = true
         print("")
         print("  Provider: \(provider.displayName)", color: .cyan)
         print("  Model: \(DMEngine.shared.modelLabel(for: provider))", color: .cyan)
@@ -16210,6 +16388,7 @@ class GameEngine: ObservableObject {
     private func showAPIKeyHelp(provider: AIProvider, hasKey: Bool) {
         showInlineHelp {
             self.printTitle("API Key Help")
+            self.justifyText = true
             self.print("")
             self.print("  PROVIDER", color: .cyan, bold: true)
             self.printWrapped("Switch which AI service powers the Dungeon Master (Anthropic, OpenAI, Google, or Apple on-device).", indent: 2, color: .dimGreen)
