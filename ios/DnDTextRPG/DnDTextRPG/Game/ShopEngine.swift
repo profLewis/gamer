@@ -476,7 +476,8 @@ class ShopEngine {
 
         game.print("")
         game.print("  What would you like to do with it?", color: .cyan)
-        var menuOpts = options.map { MenuOption($0) }
+        // Keeping it is the default — the glowing button, and what Return does.
+        var menuOpts = options.map { MenuOption($0, isDefault: $0 == "Keep It For Later") }
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
         game.showMenuOptions(menuOpts)

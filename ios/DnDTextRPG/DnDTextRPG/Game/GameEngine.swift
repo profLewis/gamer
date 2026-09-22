@@ -2831,6 +2831,13 @@ class GameEngine: ObservableObject {
         menuImageName = snapshot.menuImageName
         suppressAutoScroll = snapshot.suppressAutoScroll
         scrollLocked = snapshot.scrollLocked
+        // The pad's corner icons and centre (Search, Listen, torch, Rest,
+        // NPC, teleport) aren't in the snapshot — restoring only the four
+        // arrows left a broken grid (blank corners, W and E side by side).
+        // An exploring screen is redrawn whole instead.
+        if !snapshot.directionExits.isEmpty, dungeon != nil, currentCombat == nil, gameState == .exploring {
+            showExplorationView()
+        }
     }
 
     // MARK: - In-text links
@@ -4337,7 +4344,9 @@ class GameEngine: ObservableObject {
         // companions keep 1.2-3s, as they often do more worth reading.
         else if aiTurnInProgress {
             let monsterTurn = currentCombat?.currentCombatant?.isPlayer == false
-            delay = (monsterTurn ? max(0.6, min(1.5, newTextReadingTime() * 0.25))
+            // Monsters 1-2.5s: long enough to read the blow (it was 0.6-1.5s,
+            // which cut the reading of it short).
+            delay = (monsterTurn ? max(1.0, min(2.5, newTextReadingTime() * 0.35))
                                  : max(1.2, min(3.0, newTextReadingTime() * 0.5))) * timeoutScale(.fights)
         }
         else { delay = base * Double.random(in: 0.55...0.85) * timeoutScale(.fights) }
@@ -4350,7 +4359,28 @@ class GameEngine: ObservableObject {
         scheduleAutoAdvance(after: finalDelay, isStillValid: { [weak self] in
             guard let self = self else { return false }
             return Self.continueGeneration == myGeneration && self.awaitingContinue && !self.speakerModeOn
-        }, fire: { [weak self] in self?.handleContinue() })
+        }, fire: { [weak self] in
+            // In a fight, let the DM finish saying what happened first.
+            guard let self = self else { return }
+            if self.currentCombat != nil { self.afterSpeechFinishes(generation: myGeneration) { self.handleContinue() } }
+            else { self.handleContinue() }
+        })
+    }
+
+    /// Waits for the voice to stop (then a breath), unless the screen moved on.
+    private func afterSpeechFinishes(generation: Int, then go: @escaping () -> Void) {
+        guard SpeechEngine.shared.isSpeaking else { go(); return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            guard let self = self, Self.continueGeneration == generation, self.awaitingContinue else { return }
+            if SpeechEngine.shared.isSpeaking {
+                self.afterSpeechFinishes(generation: generation, then: go)
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    guard let self = self, Self.continueGeneration == generation, self.awaitingContinue else { return }
+                    go()
+                }
+            }
+        }
     }
 
     /// Every auto-continue countdown goes through here: after `delay`,
@@ -6338,9 +6368,9 @@ class GameEngine: ObservableObject {
              "Before walking into a room, listen: you may hear monsters, voices or water. It's the safe way to decide which way to go. The ear is at the top-right of the direction pad.", false),
             ("help", "Tap ? (the middle of the small 3-part button, bottom-right) for help on this screen.",
              "Every screen has help. The small three-part button at the bottom-right of the buttons has < Back on the left, ? in the middle, and >> (more buttons) on the right. Tap ? now to read about exploring; tap it again, or ✕, to come back.", true),
-            ("packs", "Look in your packs: type \"inventory\", or open Party from the buttons.",
-             "Each adventurer carries a pack: weapons, armour, potions, food, torches, keys. Open it by typing \"inventory\" (or \"i\"), or from the Party button. Tap an item to use, equip, give or drop it.", false),
-            ("status", "Open Party Status (the Party button) to see everyone's health, spells and your quest.",
+            ("packs", "Look in your packs: tap Inventory (or type \"inventory\").",
+             "Each adventurer carries a pack: weapons, armour, potions, food, torches, keys. Tap Inventory (or type \"inventory\" or \"i\"). Tap an item's line to see it and use, equip, give or drop it.", false),
+            ("status", "Tap Party Status to see everyone's health, spells and your quest.",
              "Party Status shows each adventurer's hit points, armour, level and spells, your gold, and what you're here to do. It's the place to check before a fight or after one.", true),
             ("quest", "Take on a quest: find someone to talk to (N on the map), Talk, and ask if they need help. (\"skip\" if nobody's here.)",
              "Quests give an adventure its point, and pay. People you meet — N on the map — often need something done: talk to them, ask about their troubles, and say yes. Your quests (and any deadline, counted in days) are on Party Status; the status line reminds you which way to go. In a real adventure the main quest is offered at the start. If there's nobody on this floor, type \"skip\".", false),
@@ -6350,12 +6380,12 @@ class GameEngine: ObservableObject {
              "When monsters appear, the fight takes turns: each of you, and each monster, in the order rolled at the start. On your turn choose Attack, a spell, a potion, Dodge or run. The ? in a fight lists the enemy's strength and your real chance to hit it. Your robot companion takes their own turns.", false),
             ("rest", "Rest to heal: the button in the middle of the pad (hold it for a long rest).",
              "A short rest (tap the middle of the pad) heals a little and takes an hour. A long rest (hold it) heals fully and restores spells — but it takes eight hours, and time matters: quests have deadlines, torches burn and monsters move. Rest when you need to, not every room.", false),
-            ("save", "Save your game: tap Save (or ✕, then Save & Leave). Loading is Play > Continue Adventure.",
-             "Saving keeps your adventure so you can stop and come back. Use Save on the buttons, or ✕ at the right of the input line and then Save & Leave. To load a game later: Play > Continue Adventure, then pick it from the list. Saves are kept by date; the game also saves as you go.", true),
-            ("certificates", "Certificates: open Settings (the cog) > Certificates to see what you've earned.",
-             "Beating an adventure, and training at a gym, earns a certificate with your party, your stats and the maps you made — kept in Settings > Certificates and printable as a PDF. The Hall of Fame (Play > Continue Adventure, sorted by points) keeps your best games.", true),
-            ("ai", "Optional: give the DM an AI brain — Settings (cog) > AI Brain. Type \"skip\" to pass.",
-             "The game has its own Dungeon Master and needs nothing else. If you'd like a DM that chats freely, open Settings (the cog) > AI Brain: Apple's on-device one needs no key on newer devices; Claude, ChatGPT or Gemini need a key from their websites (the key screen links to them and tests the key for you). Type \"skip\" to move on.", true),
+            ("save", "Save your game: Actions > Save (or ✕ on the input line, then Save & Leave). To load: Play > Continue Adventure.",
+             "Saving keeps your adventure so you can stop and come back. Tap Actions, then Save — or ✕ at the right of the input line and then Save & Leave. To load a game later: Play > Continue Adventure, then pick it from the list. Saves are kept by date; the game also saves as you go.", true),
+            ("certificates", "Certificates: tap the cog > All Settings… > Certificates to see what you've earned.",
+             "Completing an adventure, and training at a gym, earns a certificate with your party, your stats and the maps you made — kept in Settings (the cog) > All Settings… > Certificates and printable as a PDF. The Hall of Fame (Play > Continue Adventure, sorted by points) keeps your best games.", true),
+            ("ai", "Optional: give the DM an AI brain — tap the cog > Change Brain…. Type \"skip\" to pass.",
+             "The game has its own Dungeon Master and needs nothing else. If you'd like a DM that chats freely, tap the cog (on the input line) > Change Brain… (or All Settings… > Dungeon Master Brain): Apple's on-device one needs no key on newer devices; Claude, ChatGPT or Gemini need a key from their websites (the key screen links to them and tests the key for you). Type \"skip\" to move on.", true),
             ("guardian", "Find the Boss and beat it to finish your training.",
              "In a real adventure each floor has a guardian, and the last floor holds the Boss — the villain of your tale. Training is a single floor, so its guardian is the Boss, in its lair: B on the map. Beat it and the adventure is won. Rest and heal first, keep your torch lit, and read the ? in the fight. The Training line tells you which way the lair lies.", false),
         ]
@@ -6719,9 +6749,9 @@ class GameEngine: ObservableObject {
 
     private static let trainingHowTos: [(title: String, lines: [String], screen: [String])] = [
         ("Save a Game", [
-            "Tap Save while exploring — the game saves on the spot. Or tap ✕ (right of the input line), then Save & Leave to save and go to the menu.",
-            "The game also saves by itself as you go (Settings > Game Saves sets how often)."],
-         ["  [ Search ] [ Listen ] [ Save ]", "            ↑ one tap", "  ✓ Saved: Wren — Goblin Hollow"]),
+            "Tap Actions, then Save — the game saves on the spot. Or tap ✕ (right of the input line), then Save & Leave to save and go to the menu.",
+            "The game also saves by itself as you go (the cog > All Settings… > Game Saves sets how often)."],
+         ["  [ Actions ]  →  [ Save ]", "                    ↑ one tap", "  ✓ Saved: Wren — Goblin Hollow"]),
         ("Load a Game", [
             "From the title screen: Play > Continue Adventure. Your adventures are listed newest first; tap one to see its save points, or long-press it to jump straight back in.",
             "Tap the \"Sorted by\" line to sort by points instead — that's the Hall of Fame."],
@@ -6743,11 +6773,11 @@ class GameEngine: ObservableObject {
             "Time matters: quests have deadlines in days, torches burn down and monsters move. Rest when you need to, not in every room."],
          ["           [ N ]", "     [ W ] [Rest] [ E ]", "           [ S ]", "  tap = 1 hour · hold = 8 hours"]),
         ("Add an AI Brain", [
-            "The game's own Dungeon Master needs nothing. For a DM that chats freely: Settings (the cog) > AI Brain. Apple's on-device brain needs no key on newer devices; Claude, ChatGPT or Gemini need a key from their website — the key screen has a Get Key link, and tests the key for you.",
+            "The game's own Dungeon Master needs nothing. For a DM that chats freely: tap the cog (on the input line) > Change Brain… — or All Settings… > Dungeon Master Brain. Apple's on-device brain needs no key on newer devices; Claude, ChatGPT or Gemini need a key from their website — the key screen has a Get Key link, and tests the key for you.",
             "If a key stops working the game says why when it starts."],
          ["  AI BRAIN", "  Apple (on device) — ready", "  Anthropic (Claude) — not set up", "  [ Get Key ] [ Paste Key ] [ Test Key ]"]),
         ("Certificates & Hall of Fame", [
-            "Winning an adventure, and training at a gym, earns a certificate: your party, your stats and the maps you drew. They're kept in Settings > Certificates, and can be printed or saved as a PDF.",
+            "Winning an adventure, and training at a gym, earns a certificate: your party, your stats and the maps you drew. They're kept in Settings (the cog) > All Settings… > Certificates, and can be printed or saved as a PDF.",
             "Your best adventures are in the Hall of Fame: Play > Continue Adventure, sorted by points."],
          ["  ╔═════════════════════════╗", "  ║  CERTIFICATE OF VALOUR  ║", "  ║  Wren & R. Pip          ║", "  ╚═════════════════════════╝"]),
         ("Talk or Type Instead", [
@@ -10746,7 +10776,9 @@ class GameEngine: ObservableObject {
         performAutosave()
         SpeechEngine.shared.stop()
         SoundManager.shared.stopMusic()
-        if !autoContinuePaused { toggleAutoContinuePause() }
+        // Not the hourglass freeze: that blocks every button, Resume included.
+        // Nothing moves while this screen is up anyway — game time only
+        // passes when you act, and nothing here counts down.
         logEvent("Game paused", category: "EXPLORE")
         clearTerminal()
         printTitle("Paused")
@@ -10759,7 +10791,6 @@ class GameEngine: ObservableObject {
         print("")
         let resume: () -> Void = { [weak self] in
             guard let self = self else { return }
-            if self.autoContinuePaused { self.toggleAutoContinuePause() }
             self.playCurrentMusic()
             self.logEvent("Game resumed", category: "EXPLORE")
             self.explorationStatusMessage = ("Welcome back — the dungeon is as you left it.", .cyan)
@@ -10773,7 +10804,6 @@ class GameEngine: ObservableObject {
             switch choice {
             case 1: resume()
             case 2:
-                if self.autoContinuePaused { self.toggleAutoContinuePause() }
                 self.leaveExplorationTapped()
             default:
                 self.showInlineHelp {
@@ -22072,6 +22102,10 @@ class GameEngine: ObservableObject {
             self.printWrapped("A purple target icon (bottom-right corner, where the NPC scroll icon normally sits) appears when the room has an active teleport pad — tap it to instantly travel to its linked room. Now and then a pad glows a deeper blue: that one can also carry you down to the next level, past its guardian (it asks first — and there's no pad back up). Toggle in Settings > Gameplay.", indent: 2, color: .dimGreen)
             self.printLink("Settings > Gameplay", to: "gameplay", indent: 4)
             self.print("")
+            self.print("  WAITING SCREENS", color: .cyan, bold: true)
+            self.printWrapped("Screens that move on by themselves (search and listen results, fights, stories, tales) each have their own wait, and you can set every kind separately — quicker for fights, longer for stories, say: the cog > Gameplay… > Timeouts. The hourglass on the input line shows the time left; tap it to pause.", indent: 2, color: .dimGreen)
+            self.printLink("Timeouts — each kind of wait", to: "timeouts", indent: 4)
+            self.print("")
             self.print("  CHAT", color: .cyan, bold: true)
             self.printWrapped("Type at the > prompt to chat with the DM. Tap ✕ to leave chat.", indent: 2, color: .dimGreen)
             self.print("")
@@ -28375,7 +28409,7 @@ class GameEngine: ObservableObject {
                                                   deed: "Out-sparred \(trainer.name) of \(trainer.gymName) to earn free entry (\(total) against \(trainer.sparDC)).")
                         room.trainer = trainer
                         self.print("  \"Not bad! You've earned your way in — for good.\"", color: .brightGreen)
-                        self.print("  ✦ A Certificate of Grit for \(character.name) — kept in Settings > Certificates.", color: .yellow)
+                        self.print("  ✦ A Certificate of Grit for \(character.name) — kept in Settings (the cog) > All Settings… > Certificates.", color: .yellow)
                         self.waitForContinue()
                         self.inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
                     } else {
@@ -28624,7 +28658,7 @@ class GameEngine: ObservableObject {
         // others (Settings > Certificates).
         self.saveMeritCertificate("Certificate of Training", recipient: character,
                                   deed: "Trained in \(skill.rawValue) under \(trainer.name) at \(trainer.gymName).")
-        self.print("  ✦ A Certificate of Training in \(skill.rawValue) — kept in Settings > Certificates.", color: .yellow)
+        self.print("  ✦ A Certificate of Training in \(skill.rawValue) — kept in Settings (the cog) > All Settings… > Certificates.", color: .yellow)
         self.advanceTime(30)
         self.waitForContinue()
         self.inputHandler = { [weak self] _ in self?.showGymTraining(trainer: trainer, room: room) }
@@ -29910,7 +29944,7 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped(preview
             ? "(This was a preview — nothing was saved.)"
-            : "Your last save — from just before the final battle — is kept, so you can play the ending again from Continue Adventure. The certificate is kept too, in Settings > Certificates.", indent: 2, color: .dimGreen)
+            : "Your last save — from just before the final battle — is kept, so you can play the ending again from Continue Adventure. The certificate is kept too: the cog > All Settings… > Certificates.", indent: 2, color: .dimGreen)
         print("")
         // The end of Training: a How To… menu, to see how everything else is done.
         let training = dungeon?.training == true
@@ -31220,6 +31254,9 @@ class GameEngine: ObservableObject {
         print("")
     }
 
+    /// Set when help opened over the exploring screen (with its pad).
+    private var helpHidPad = false
+
     func showInlineHelp(_ helpBuilder: () -> Void) {
         // Only "close help" if the help page is still the screen showing.
         // A help page left some other way (navigating elsewhere) used to
@@ -31250,6 +31287,9 @@ class GameEngine: ObservableObject {
             self.undoLabel = saved.undoLabel
             self.redoLabel = saved.redoLabel
             self.savedHelpState = nil
+            // The help page cleared the pad; its icons aren't in the saved
+            // state, so an exploring screen is redrawn whole (full grid).
+            if helpHidPad { helpHidPad = false; showExplorationView() }
         } else {
             // Save current state
             let savedLines = terminalLines
@@ -31264,6 +31304,7 @@ class GameEngine: ObservableObject {
             let savedRedoLabel = redoLabel
 
             helpShownGeneration = screenGeneration
+            helpHidPad = !directionExits.isEmpty && dungeon != nil && currentCombat == nil && gameState == .exploring
             savedHelpState = (
                 savedLines, savedMenu,
                 savedMenuHandler, savedCloseHandler,
@@ -31682,8 +31723,12 @@ class GameEngine: ObservableObject {
             return
         }
         printWrapped(Self.pickVaried(Self.teamOpeners, avoiding: &lastTeamOpener), indent: 2, color: .dimGreen)
+        printWrapped("Tap anyone's name to look in their pack.", indent: 2, color: .dimGreen)
         print("")
+        var entryLines: [(range: Range<Int>, char: Character)] = []
         for char in party {
+            let entryStart = terminalLines.count
+            defer { entryLines.append((entryStart..<terminalLines.count, char)) }
             let n = shortName(for: char)
             print("  \(n) — \(char.race.rawValue) \(char.characterClass.rawValue)", color: .brightGreen, bold: true)
             // Picked fresh each visit, and never the same line twice running —
@@ -31696,18 +31741,30 @@ class GameEngine: ObservableObject {
             print("")
         }
         pendingTimeoutKind = .reading
-        showMenuOptions([MenuOption("?", tint: .navigation, compact: true),
+        // The spare slots: a pack to look in — yours by default; tap a name
+        // for anyone else's.
+        let me = party.first(where: { !$0.isComputerControlled }) ?? party[0]
+        let backHere: () -> Void = { [weak self] in self?.showMeetTheTeam(onBack: onBack) }
+        showMenuOptions([MenuOption("\(shortName(for: me))'s Pack"),
+                         MenuOption("?", tint: .navigation, compact: true),
                          MenuOption("< Back", tint: .navigation, compact: true)])
+        textLongPressHandler = { [weak self] lineIndex in
+            guard let self = self, let hit = entryLines.first(where: { $0.range.contains(lineIndex) }) else { return }
+            self.showInventoryFor(hit.char, onBack: backHere)
+        }
         closeHandler = onBack
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
-            guard choice == 1 else { onBack(); return }
+            if choice == 1 { self.showInventoryFor(me, onBack: backHere); return }
+            guard choice == 2 else { onBack(); return }
             self.showInlineHelp {
                 self.printTitle("Meet the Team — Help")
                 self.print("")
                 self.printWrapped("Each companion gives an account of themselves before you go down. Some of it is true; the rest tells you something anyway.", indent: 2, color: .dimGreen)
                 self.print("")
                 self.printWrapped("They pick something different to say each time you look in, so it is worth coming back.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.printWrapped("The Pack button opens your own hero's pack; tap anyone's name to look in theirs. < Back returns from the pack to here.", indent: 2, color: .dimGreen)
                 self.print("")
             }
         }
