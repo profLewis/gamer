@@ -1,6 +1,6 @@
-# D&D 5e Text Adventure
+# Wyverns & Catacombs
 
-A retro terminal-style 5th Edition fantasy RPG for iPhone, iPad, Mac, Apple TV and Apple Vision Pro, with AI Dungeon Master support.
+A retro terminal-style fifth-edition-compatible fantasy RPG for iPhone, iPad, Mac, Apple TV and Apple Vision Pro, with AI Dungeon Master support.
 
 ![Dragon](images/dragon_animation.gif)
 

@@ -7557,8 +7557,9 @@ class GameEngine: ObservableObject {
         stopMenuAnimation()
         print("")
         print("")
-        print("D&D 5e ASCII Adventure", color: .brightGreen, bold: true, centered: true)
-        print("A text-based role-playing game", color: .dimGreen, centered: true)
+        print("WYVERNS & CATACOMBS", color: .brightGreen, bold: true, centered: true)
+        print("a dungeon crawl in green text", color: .dimGreen, centered: true)
+        print("fifth-edition-compatible rules (SRD 5.1)", color: .dimGreen, centered: true)
         // Quiet reminder of which brain runs the DM, and — on Hugging Face —
         // how much of this month's free credit is left.
         print("DM: \(DMEngine.shared.activeBrainName)", color: .dimGreen, centered: true)
@@ -8347,7 +8348,7 @@ class GameEngine: ObservableObject {
             self.print("")
 
             self.print("  THE GAME", color: .cyan, bold: true)
-            self.printWrapped("This is a dungeon-crawling adventure inspired by classic D&D 5th Edition rules. Create a party of up to four heroes — choosing their race, class, and abilities — then plunge into a randomly generated dungeon filled with treasure, traps, and terrible creatures.", indent: 2, color: .dimGreen)
+            self.printWrapped("This is a dungeon-crawling adventure built on the fifth-edition fantasy rules in the System Reference Document. Create a party of up to four heroes — choosing their race, class, and abilities — then plunge into a randomly generated dungeon filled with treasure, traps, and terrible creatures.", indent: 2, color: .dimGreen)
             self.print("")
             self.printWrapped("Explore rooms, light your torch, search for hidden loot, and fight monsters using turn-based combat with dice rolls, spells, and special abilities. Meet interesting characters along the way — some friendly, some decidedly not — and enjoy yourself running scared from scary monsters and super creeps.", indent: 2, color: .dimGreen)
             self.print("")
@@ -9250,8 +9251,8 @@ class GameEngine: ObservableObject {
             ("LOW", [.goblin, .skeleton, .zombie, .wolf]),
             ("MID-LOW", [.orc, .hobgoblin, .gnoll, .rustMonster, .cinderHound]),
             ("MID", [.bugbear, .giantSpider, .ogre, .gargoyle, .mimic, .gelatinousCube, .ironWeaver]),
-            ("HIGH", [.owlbear, .troll, .minotaur, .basilisk, .displacerBeast, .wraith, .demogorgon, .mindFlayer, .drownedChoir, .hollowMonk]),
-            ("BOSS", [.beholder, .youngDragon, .gloamTitan, .vecna]),
+            ("HIGH", [.owlbear, .troll, .minotaur, .basilisk, .phaseStalker, .wraith, .demogorgon, .brainEater, .drownedChoir, .hollowMonk]),
+            ("BOSS", [.eyeTyrant, .youngDragon, .gloamTitan, .undyingKing]),
         ]
 
         // Map line index → monster for tap detection
@@ -9502,13 +9503,13 @@ class GameEngine: ObservableObject {
         case .troll: tips = ["Regenerates health each turn.", "Fire and acid stop regeneration."]
         case .minotaur: tips = ["Charging attack is devastating.", "Knows every twist of the labyrinth."]
         case .basilisk: tips = ["Petrifying gaze — avoid eye contact!", "Venomous bite. Slow but deadly."]
-        case .displacerBeast: tips = ["Illusions make it hard to hit.", "Attacks have disadvantage against it."]
+        case .phaseStalker: tips = ["Illusions make it hard to hit.", "Attacks have disadvantage against it."]
         case .wraith: tips = ["Incorporeal — resists physical damage.", "Life drain reduces max HP."]
         case .demogorgon: tips = ["Two heads, each with its own will.", "Maddening gaze can stun."]
-        case .mindFlayer: tips = ["Mind Blast stuns in a cone.", "Extract brain for instant kill — stay at range!"]
-        case .beholder: tips = ["Anti-magic eye disables spells.", "Each eye ray has a different deadly effect."]
+        case .brainEater: tips = ["Mind Blast stuns in a cone.", "Extract brain for instant kill — stay at range!"]
+        case .eyeTyrant: tips = ["Anti-magic eye disables spells.", "Each eye ray has a different deadly effect."]
         case .youngDragon: tips = ["Breath weapon is devastating. Venomous claws.", "Flies out of melee range."]
-        case .vecna: tips = ["Legendary lich of immense power.", "Lair actions reshape the battlefield."]
+        case .undyingKing: tips = ["Legendary lich of immense power.", "Lair actions reshape the battlefield."]
         }
         print("  COMBAT TIPS", color: .cyan, bold: true)
         for tip in tips {
@@ -9960,7 +9961,7 @@ class GameEngine: ObservableObject {
             "The Phantom (1936)", "Judge Dredd (1977)"]
         if comicSources.contains(source) { return "Comics & Strips" }
         // D&D Modules
-        if source.hasPrefix("D&D Module") { return "D&D Modules" }
+        if source.hasPrefix("Classic Module") { return "Classic Modules" }
         // Everything else (including Tolkien) → Books
         return "Books"
     }
@@ -9979,14 +9980,14 @@ class GameEngine: ObservableObject {
             // ══════════════════════════════════════════
             // HERO NAMES — Film & TV
             // ══════════════════════════════════════════
-            NameEntry(name: "Will the Wise", source: "Stranger Things", description: "A boy who survived the Upside Down and emerged wiser for it. His D&D character became his truest self — a divination wizard who sees what others cannot. Will proved that the bravest heroes are not the strongest, but the ones who endure.", category: "hero", art: ["  o  ", " /|\\ ", " / \\ ", " ~DM~"], power: 3, cunning: 7, magic: 8, fame: 9, charm: 6),
+            NameEntry(name: "Will the Wise", source: "Stranger Things", description: "A boy who survived the Upside Down and emerged wiser for it. His tabletop character became his truest self — a divination wizard who sees what others cannot. Will proved that the bravest heroes are not the strongest, but the ones who endure.", category: "hero", art: ["  o  ", " /|\\ ", " / \\ ", " ~DM~"], power: 3, cunning: 7, magic: 8, fame: 9, charm: 6),
             NameEntry(name: "Eleven", source: "Stranger Things", description: "She has powers no wizard could match — telekinesis, remote viewing, and the ability to close rifts between dimensions. Raised in a laboratory, she escaped and found a family. Her favourite spell component? Eggo waffles.", category: "hero", art: ["  o  ", " /|\\ ", "  |  ", " ~~~"], power: 9, cunning: 5, magic: 10, fame: 10, charm: 7),
             NameEntry(name: "Eddie Munson", source: "Stranger Things", description: "Dungeon Master of the Hellfire Club and metalhead bard extraordinaire. Eddie played guitar on a trailer roof to draw demobats away from his friends. He never ran from a fight — not even his last one. The campaign continues without him, but the seat at the head of the table stays empty.", category: "hero", art: ["  o  ", " /|\\ ", " / \\ ", " \\m/"], power: 5, cunning: 6, magic: 3, fame: 8, charm: 9),
             NameEntry(name: "Hopper", source: "Stranger Things", description: "Chief of Hawkins police and reluctant father figure. Tough as chain mail on the outside, soft as a healing potion when it counts. Survived a Russian gulag and punched a demogorgon. His character class would be Paladin — sworn to protect, no matter the cost.", category: "hero", art: ["  O  ", " [|] ", " / \\ ", " HAT"], power: 8, cunning: 6, magic: 1, fame: 8, charm: 6),
             NameEntry(name: "Steve", source: "Stranger Things", description: "Once the popular kid with perfect hair, now the party's unlikely protector. Steve wields a nail bat like a mace and babysits a group of adventurous children through literal hellscapes. His hair remains perfect throughout. A fighter with surprising depth.", category: "hero", art: ["  o  ", " /|\\ ", " BAT ", " / \\"], power: 6, cunning: 4, magic: 1, fame: 7, charm: 8),
 
-            NameEntry(name: "Hector the Well-Endowed", source: "Community", description: "Troy Barnes's legendary D&D character, blessed with exceptional... abilities. All of them. A human fighter of prodigious talent and even more prodigious name. The Community study group's most memorable campaign moment, proving that sometimes the best character concepts come from sheer enthusiasm.", category: "hero", art: ["  O  ", " \\|/", " /|\\ ", " BIG"], power: 9, cunning: 3, magic: 1, fame: 7, charm: 10),
-            NameEntry(name: "Brutalitops", source: "Community", description: "The magician! Created by Abed Nadir during the Community D&D episode. Abed proved that the quiet, observant player can absolutely dominate a campaign. Named with the subtlety of a fireball spell, Brutalitops the Magician brought arcane devastation and dry wit in equal measure.", category: "hero", art: ["  o  ", " *|* ", " /|\\ ", " MAG"], power: 4, cunning: 8, magic: 9, fame: 6, charm: 5),
+            NameEntry(name: "Hector the Well-Endowed", source: "Community", description: "Troy Barnes's legendary tabletop character, blessed with exceptional... abilities. All of them. A human fighter of prodigious talent and even more prodigious name. The Community study group's most memorable campaign moment, proving that sometimes the best character concepts come from sheer enthusiasm.", category: "hero", art: ["  O  ", " \\|/", " /|\\ ", " BIG"], power: 9, cunning: 3, magic: 1, fame: 7, charm: 10),
+            NameEntry(name: "Brutalitops", source: "Community", description: "The magician! Created by Abed Nadir during the Community roleplaying episode. Abed proved that the quiet, observant player can absolutely dominate a campaign. Named with the subtlety of a fireball spell, Brutalitops the Magician brought arcane devastation and dry wit in equal measure.", category: "hero", art: ["  o  ", " *|* ", " /|\\ ", " MAG"], power: 4, cunning: 8, magic: 9, fame: 6, charm: 5),
 
             NameEntry(name: "Titanius", source: "Futurama", description: "Titanius Anglesmith, Fancy Man of Cornwood! Bender's fantasy alter-ego from Bender's Game, wielding a sword and an ego of legendary proportions. A warrior who fights with more style than skill and more mouth than either. His armour is polished to a mirror shine — naturally.", category: "hero", art: [" [O] ", " /|\\ ", " | | ", " BOT"], power: 7, cunning: 4, magic: 2, fame: 7, charm: 6),
             NameEntry(name: "Leegola", source: "Futurama", description: "Leela's fantasy form — a fearsome elf centaur with a bow and a legendary temper. Half horse, all warrior, and absolutely not taking any nonsense from Titanius. The deadliest archer in Cornwood, with depth perception issues that somehow never affect her aim.", category: "hero", art: ["  o  ", " /|\\ ", " /~~\\", " LEGS"], power: 8, cunning: 6, magic: 4, fame: 6, charm: 5),
@@ -10023,7 +10024,7 @@ class GameEngine: ObservableObject {
             NameEntry(name: "Granny Weatherwax", source: "Terry Pratchett", description: "Esmerelda Weatherwax, the most powerful witch on the Discworld. She doesn't do magic — she does headology, which is much more effective. She can Borrow the minds of animals, stare down vampires, and make you do what she wants by simply raising an eyebrow. She is not nice. She is good. There's a difference.", category: "hero", art: ["  O  ", " /|\\ ", " HAT ", " / \\"], power: 5, cunning: 10, magic: 9, fame: 8, charm: 3),
             NameEntry(name: "Belgarion", source: "David Eddings", description: "Garion, a farmboy raised by his aunt (who happens to be a three-thousand-year-old sorceress) who discovers he's the heir to an ancient throne and the chosen vessel of a cosmic prophecy. He must recover a stolen magical orb and face the mad god Torak. It's always a farmboy. Always.", category: "hero", art: ["  o  ", " /|\\ ", " ORB ", " / \\"], power: 7, cunning: 5, magic: 8, fame: 7, charm: 7),
             NameEntry(name: "Fafhrd", source: "Fritz Leiber", description: "A seven-foot northern barbarian with a poet's soul and a thief's instincts, from the frozen Waste of Nehwon. With his partner the Grey Mouser, he defined the sword-and-sorcery buddy adventure. Leiber created the original mismatched duo — the big dreamy fighter and the small cunning rogue.", category: "hero", art: ["  O  ", " /|\\ ", " BIG ", " / \\"], power: 8, cunning: 6, magic: 2, fame: 8, charm: 7),
-            NameEntry(name: "Grey Mouser", source: "Fritz Leiber", description: "A small, quick swordsman and former wizard's apprentice from the city of Lankhmar. The original rogue archetype — before D&D codified the class, the Grey Mouser was picking locks, backstabbing villains, and spending his loot on wine and questionable romantic choices. He and Fafhrd are the eternal adventuring party.", category: "hero", art: ["  o  ", " /|\\ ", " DAG ", " / \\"], power: 6, cunning: 10, magic: 4, fame: 8, charm: 8),
+            NameEntry(name: "Grey Mouser", source: "Fritz Leiber", description: "A small, quick swordsman and former wizard's apprentice from the city of Lankhmar. The original rogue archetype — before the rulebooks codified the class, the Grey Mouser was picking locks, backstabbing villains, and spending his loot on wine and questionable romantic choices. He and Fafhrd are the eternal adventuring party.", category: "hero", art: ["  o  ", " /|\\ ", " DAG ", " / \\"], power: 6, cunning: 10, magic: 4, fame: 8, charm: 8),
             NameEntry(name: "Thomas Covenant", source: "Stephen Donaldson", description: "A leper transported to a land of magic he refuses to believe in. Donaldson's anti-hero is deliberately unlikeable — he commits a terrible act upon arrival and spends three trilogies wrestling with guilt, disbelief, and wild magic he can't control. The most morally complex protagonist in fantasy. Not for the faint-hearted.", category: "hero", art: ["  o  ", " /|\\ ", " WLD ", " / \\"], power: 7, cunning: 4, magic: 9, fame: 7, charm: 1),
 
             // Additional Book Heroes
@@ -10283,14 +10284,14 @@ class GameEngine: ObservableObject {
             self.print("")
 
             self.print("USING NAMES IN THE GAME", color: .cyan, bold: true)
-            self.printWrapped("When creating characters, you can pick a suggested name or type your own. Name Lore is here for inspiration — these are the heroes, villains, and dungeons that inspired D&D and fantasy gaming.", indent: 2)
+            self.printWrapped("When creating characters, you can pick a suggested name or type your own. Name Lore is here for inspiration — these are the heroes, villains, and dungeons that inspired fantasy roleplaying.", indent: 2)
             self.print("")
             self.printWrapped("Long-press 'New Adventure' from the main menu for a quick start with random characters. Their names are drawn from Name Lore!", indent: 2, color: .yellow)
             self.print("")
 
             if category == "hero" {
                 self.print("HERO STATS", color: .cyan, bold: true)
-                self.printWrapped("Each hero card rates five qualities on a 1–10 scale, mapping roughly to D&D ability scores:", indent: 2)
+                self.printWrapped("Each hero card rates five qualities on a 1–10 scale, mapping roughly to the usual ability scores:", indent: 2)
                 self.print("")
                 self.print("  Power", color: .yellow, bold: true)
                 self.printWrapped("Raw fighting strength (→ STR). Power 10 = Fafhrd. Power 1 = Rincewind — relying on legs, not arms.", indent: 4, color: .dimGreen)
@@ -11469,7 +11470,7 @@ class GameEngine: ObservableObject {
         ContributorsManager.shared.checkIfDue()   // the thank-you list, at most once a day
         printTitle("About")
         print("")
-        print("  D&D 5e ASCII Adventure", color: .brightGreen, bold: true)
+        print("  WYVERNS & CATACOMBS — a dungeon crawl in green text", color: .brightGreen, bold: true)
         print("")
         printWrapped("A text-based dungeon crawler inspired by classic RPGs and the golden age of adventure gaming.", indent: 2, color: .dimGreen)
         print("")
@@ -11568,7 +11569,7 @@ class GameEngine: ObservableObject {
         print("")
 
         print("  LICENSE", color: .cyan, bold: true)
-        printWrapped("D&D 5e SRD under the Open Gaming License (OGL) v1.0a by Wizards of the Coast LLC.", indent: 4, color: .dimGreen)
+        printWrapped("System Reference Document 5.1 under the Open Gaming Licence (OGL) v1.0a, © Wizards of the Coast LLC.", indent: 4, color: .dimGreen)
         print("")
         print("  about:dndRPG", color: .dimGreen)
 
@@ -11673,7 +11674,7 @@ class GameEngine: ObservableObject {
         printWrapped("\u{00A9} 2024-2026 Professor Lewis. All rights reserved. A Timbaloo app.", indent: 2, color: .dimGreen)
         print("")
         print("  THE RULES", color: .cyan, bold: true)
-        printWrapped("Game mechanics come from the D&D 5e System Reference Document, used under the Open Gaming License (OGL) v1.0a.", indent: 2, color: .dimGreen)
+        printWrapped("Game mechanics come from the System Reference Document 5.1, used under the Open Gaming Licence (OGL) v1.0a. Not affiliated with or endorsed by Wizards of the Coast.", indent: 2, color: .dimGreen)
         printWrapped("Dungeons & Dragons is a trademark of Wizards of the Coast LLC, who have nothing to do with this game.", indent: 2, color: .dimGreen)
         print("")
         print("  THE WORDS AND PICTURES", color: .cyan, bold: true)
@@ -13607,7 +13608,7 @@ class GameEngine: ObservableObject {
                 self.showInlineHelp {
                     self.printTitle("Content Safety — Help")
                     self.print("")
-                    self.printWrapped("Real tabletop D&D groups often use a physical 'X-Card' — any player can tap it, no explanation needed, and the table steers away from whatever just happened. The Reyes Failsafe is that same idea, built into this app's AI DM.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Real tabletop roleplaying groups often use a physical 'X-Card' — any player can tap it, no explanation needed, and the table steers away from whatever just happened. The Reyes Failsafe is that same idea, built into this app's AI DM.", indent: 2, color: .dimGreen)
                     self.print("")
                     self.print("  WHEN TO USE IT", color: .cyan, bold: true)
                     self.printWrapped("Any time the story goes somewhere too dark, gory, or uncomfortable for you — there's no wrong reason to use it.", indent: 2, color: .dimGreen)
@@ -21573,7 +21574,7 @@ class GameEngine: ObservableObject {
             self.print("  1  Easy — Suitable for new players or small", color: .dimGreen)
             self.print("     parties. Forgiving combat.", color: .dimGreen)
             self.print("  2  Medium — Balanced challenge. The standard", color: .dimGreen)
-            self.print("     D&D experience.", color: .dimGreen)
+            self.print("     tabletop experience.", color: .dimGreen)
             self.print("  3  Hard — Tough encounters. Rest often and", color: .dimGreen)
             self.print("     manage resources carefully.", color: .dimGreen)
             self.print(" 4+  Brutal — Scaled-up monster HP and damage.", color: .dimGreen)
@@ -31098,7 +31099,7 @@ class GameEngine: ObservableObject {
         }
         var endOpts = ["See the Certificate", "Fireworks!"]
         if training { endOpts.append("How To…") }
-        endOpts.append(preview ? "Back to the Menu" : "End Adventure")
+        endOpts.append(preview ? "Back to the Menu" : "What Now?")
         showMenu(endOpts)
         closeHandler = { [weak self] in self?.finishEndgame() }
         menuHandler = { [weak self] choice in
@@ -31107,6 +31108,7 @@ class GameEngine: ObservableObject {
             case "See the Certificate": self.certificate = self.makeCertificate(preview: preview)
             case "Fireworks!": self.launchFireworks()
             case "How To…": self.showHowToMenu(onBack: { [weak self] in self?.finishEndgame() })
+            case "What Now?": self.showWhatNext()
             default: self.finishEndgame()
             }
         }
@@ -31329,6 +31331,128 @@ class GameEngine: ObservableObject {
             default: back()
             }
         }
+    }
+
+    /// The quest is done. Rather than tipping the party straight out of the
+    /// game, the DM asks them what they want to do — keep the tale, sleep it
+    /// off, celebrate, go again, or stop there.
+    func showWhatNext(saved: Bool = false) {
+        storyScreenActive = true
+        clearTerminal()
+        printTitle("What Now?")
+        print("")
+        let names = party.map { shortName(for: $0) }
+        let who = names.count > 1
+            ? names.dropLast().joined(separator: ", ") + " and " + (names.last ?? "")
+            : (names.first ?? "adventurers")
+        printWrapped("\"Well done, \(who).\" The DM leans back. \"That's the quest finished, and finished properly. The question every party has to answer now is the same one: what next?\"", indent: 2, color: .yellow)
+        print("")
+        if saved {
+            printWrapped("✓ The tale is saved, and this adventure now stands in the Hall of Fame with its points.", indent: 2, color: .brightGreen)
+        } else {
+            printWrapped("Save the tale and it goes into the Hall of Fame, with your points and the party who earned them — and you can open it again from Continue Adventure.", indent: 2, color: .dimGreen)
+        }
+        print("")
+        var opts: [MenuOption] = []
+        var actions: [() -> Void] = []
+        if !saved {
+            opts.append(MenuOption("Save the Tale", isDefault: true, tint: .cyan))
+            actions.append { [weak self] in self?.saveFinishedAdventure() }
+        }
+        opts.append(MenuOption("Sleep a Week (Zzzz)"))
+        actions.append { [weak self] in self?.endgameSleep(saved: saved) }
+        opts.append(MenuOption("Throw a Party!"))
+        actions.append { [weak self] in self?.endgameCelebrate(saved: saved) }
+        opts.append(MenuOption("Another Quest"))
+        actions.append { [weak self] in
+            guard let self = self else { return }
+            self.finishEndgame()
+            self.showPlayMenu()
+        }
+        opts.append(MenuOption("Leave the Game", tint: .danger))
+        actions.append { [weak self] in self?.finishEndgame() }
+        opts.append(MenuOption("?", tint: .navigation, compact: true))
+        actions.append { [weak self] in
+            guard let self = self else { return }
+            self.showInlineHelp {
+                self.printTitle("What Now? — Help")
+                self.print("")
+                self.printWrapped("The adventure is over and nothing here can lose it. Save the Tale keeps it and puts it in the Hall of Fame. Sleep and the party are just for the pleasure of it — a week's rest, or a proper celebration. Another Quest takes you to the Play menu to begin again, with a new party or the same heroes from the Roster. Leave the Game goes back to the main menu; the app stays open.", indent: 2, color: .dimGreen)
+                self.print("")
+            }
+        }
+        showMenuOptions(opts)
+        closeHandler = { [weak self] in self?.finishEndgame() }
+        menuHandler = { choice in
+            guard choice >= 1, choice <= actions.count else { return }
+            actions[choice - 1]()
+        }
+    }
+
+    /// Keep the finished adventure: saved under its own name, which is what
+    /// puts it in the Hall of Fame.
+    private func saveFinishedAdventure() {
+        guard let dungeon = dungeon else { showWhatNext(saved: true); return }
+        let slot = activeSlotId ?? UUID()
+        activeSlotId = slot
+        performSave(slotId: slot, slotName: "\(dungeon.name) — finished")
+        print("")
+        printWrapped("Written down, and into the Hall of Fame with it.", indent: 2, color: .brightGreen)
+        print("")
+        waitForContinueWithTimeout(multiplier: 0.8) { [weak self] in self?.showWhatNext(saved: true) }
+    }
+
+    /// A week's sleep: the reward nobody puts on a certificate.
+    private func endgameSleep(saved: Bool) {
+        clearTerminal()
+        printTitle("A Week's Sleep")
+        print("")
+        advanceTime(60 * 24 * 7)
+        for line in ["      z", "    z", "  Z", " Z z", "   z Z"] {
+            print("        \(line)", color: .cyan)
+        }
+        print("")
+        printWrapped("Beds. Real ones, with blankets, in a room that isn't underground. Nobody stands watch. Nobody wakes for a noise in the passage, because there is no passage.", indent: 2, color: .green)
+        print("")
+        printWrapped("A week later the party surfaces, blinking, and eats an enormous breakfast. Every wound is mended and every ache has gone.", indent: 2, color: .green)
+        print("")
+        for char in party {
+            char.currentHP = char.maxHP
+            char.isConscious = true
+        }
+        printWrapped("Everyone is back to full health.", indent: 2, color: .brightGreen)
+        print("")
+        waitForContinueWithTimeout(multiplier: 1.2) { [weak self] in self?.showWhatNext(saved: saved) }
+    }
+
+    /// A proper celebration: music, dancing, and far too much food.
+    private func endgameCelebrate(saved: Bool) {
+        clearTerminal()
+        printTitle("A Party!")
+        print("")
+        launchFireworks()
+        SoundManager.shared.playCrowdCheer()
+        print("      ♪    ♫    ♪    ♫    ♪", color: .yellow)
+        print("     \\o/   \\o/   \\o/   \\o/", color: .brightGreen)
+        print("      |     |     |     |", color: .brightGreen)
+        print("     / \\   / \\   / \\   / \\", color: .brightGreen)
+        print("      ♫    ♪    ♫    ♪    ♫", color: .yellow)
+        print("")
+        let feast = ["a whole roast", "three kinds of pie", "a wheel of cheese the size of a shield",
+                     "bread still warm from the oven", "apples, honey and a great deal of cake"]
+        printWrapped("Word gets about. By evening there is a fiddler, a drummer, somebody's uncle with a squeezebox, and \(feast.randomElement()!).", indent: 2, color: .green)
+        print("")
+        for char in party.prefix(4) {
+            let doing = ["dances until the floorboards complain", "tells the story again, bigger each time",
+                         "is carried shoulder-high round the room", "falls asleep in a chair, smiling",
+                         "eats a truly heroic amount of pie"].randomElement()!
+            printWrapped("\(shortName(for: char)) \(doing).", indent: 2, color: .cyan)
+        }
+        print("")
+        printWrapped("Somebody proposes a toast to the ones who didn't come back up. Everyone drinks to that.", indent: 2, color: .dimGreen)
+        print("")
+        advanceTime(60 * 12)
+        waitForContinueWithTimeout(multiplier: 1.4) { [weak self] in self?.showWhatNext(saved: saved) }
     }
 
     private func finishEndgame() {
@@ -33878,7 +34002,7 @@ class GameEngine: ObservableObject {
     /// Builds the exportable text and flips the flag TerminalView watches to
     /// present the system export/save dialog.
     func prepareLogExport() {
-        let header = "D&D Text RPG — Adventure Log\nExported: \(Date())\n\(adventureLog.count) events\n\n"
+        let header = "Wyverns & Catacombs — Adventure Log\nExported: \(Date())\n\(adventureLog.count) events\n\n"
         pendingLogExportText = header + adventureLog.joined(separator: "\n")
         showLogExporter = true
     }
@@ -33895,7 +34019,7 @@ class GameEngine: ObservableObject {
     /// from Continue Adventure afterwards, without touching the player's
     /// own ongoing save slot.
     func prepareBugReportExport() {
-        var report = "D&D Text RPG — Glitch in the Weave Bug Report\n"
+        var report = "Wyverns & Catacombs — Glitch in the Weave Bug Report\n"
         report += "Generated: \(Date())\n"
         #if os(iOS)
         report += "Device: \(UIDevice.current.model), \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)\n"
@@ -44665,7 +44789,7 @@ class GameEngine: ObservableObject {
                 // Send push notification
                 try? await match.sendReminder(
                     to: [next],
-                    localizableMessageKey: "You've been invited to a D&D adventure!",
+                    localizableMessageKey: "You've been invited to an adventure in the Catacombs!",
                     arguments: []
                 )
 

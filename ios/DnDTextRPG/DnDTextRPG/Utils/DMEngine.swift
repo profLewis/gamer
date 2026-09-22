@@ -192,7 +192,7 @@ enum AgeRating: Int, CaseIterable {
         case .age9: return "Family-friendly, no gore or scary content"
         case .age12: return "Mild peril, light fantasy violence"
         case .age16: return "Fantasy violence, moderate peril"
-        case .adult: return "Unrestricted D&D themes"
+        case .adult: return "Unrestricted fantasy themes"
         }
     }
 

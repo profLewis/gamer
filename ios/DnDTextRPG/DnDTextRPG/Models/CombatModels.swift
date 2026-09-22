@@ -124,14 +124,14 @@ enum MonsterType: String, CaseIterable, Codable {
     case troll = "Troll"
     case minotaur = "Minotaur"
     case basilisk = "Basilisk"
-    case displacerBeast = "Phase Stalker"
+    case phaseStalker = "Phase Stalker"
     case wraith = "Wraith"
     case demogorgon = "The Maw"
-    case mindFlayer = "Brain Eater"
+    case brainEater = "Brain Eater"
     // Boss (CR 10+)
-    case beholder = "Eye Tyrant"
+    case eyeTyrant = "Eye Tyrant"
     case youngDragon = "Young Dragon"
-    case vecna = "The Undying King"
+    case undyingKing = "The Undying King"
 
     // Deeper floors of their own, now that a dungeon can run to twelve
     case boneMoth = "Bone Moth"
@@ -215,19 +215,19 @@ enum MonsterType: String, CaseIterable, Codable {
             return Stats(hp: 76, ac: 14, attackBonus: 6, damage: "2d8+4", cr: 3, xp: 700)
         case .basilisk:
             return Stats(hp: 52, ac: 15, attackBonus: 5, damage: "2d6+3", cr: 3, xp: 700)
-        case .displacerBeast:
+        case .phaseStalker:
             return Stats(hp: 85, ac: 13, attackBonus: 6, damage: "1d10+4", cr: 3, xp: 700)
         case .wraith:
             return Stats(hp: 67, ac: 13, attackBonus: 6, damage: "3d6+3", cr: 5, xp: 1800)
         case .demogorgon:
             return Stats(hp: 68, ac: 14, attackBonus: 7, damage: "2d8+4", cr: 4, xp: 1100)
-        case .mindFlayer:
+        case .brainEater:
             return Stats(hp: 71, ac: 15, attackBonus: 7, damage: "2d10+3", cr: 7, xp: 2900)
-        case .beholder:
+        case .eyeTyrant:
             return Stats(hp: 180, ac: 18, attackBonus: 9, damage: "3d8+4", cr: 13, xp: 10000)
         case .youngDragon:
             return Stats(hp: 142, ac: 18, attackBonus: 10, damage: "2d10+5", cr: 10, xp: 5900)
-        case .vecna:
+        case .undyingKing:
             return Stats(hp: 120, ac: 18, attackBonus: 9, damage: "3d8+5", cr: 10, xp: 5900)
         }
     }
@@ -263,13 +263,13 @@ enum MonsterType: String, CaseIterable, Codable {
         case .troll: return "A long-limbed horror with tearing claws, rancid breath, and flesh that knits itself back together. Trolls keep fighting through wounds that would kill almost anything else. Without fire or acid, victory can collapse into a brutal stalemate."
         case .minotaur: return "A bull-headed juggernaut bred for slaughter in corridors, arenas, and labyrinth halls. It reads terrain instinctively, using corners and lanes to set devastating charges. Minotaurs are not subtle, but they are brutally efficient predators."
         case .basilisk: return "A thick-scaled reptile with cold eyes and a gaze that petrifies flesh into stone. It advances with predatory patience, forcing heroes to choose between looking and dying. Basilisk encounters are won through discipline, mirrors, and nerves."
-        case .displacerBeast: return "A sleek six-legged hunter with barbed tentacles and a magically distorted outline. Its true body never seems to be where it appears, causing attacks to miss by inches. The phase stalker thrives on confusion and overconfidence."
+        case .phaseStalker: return "A sleek six-legged hunter with barbed tentacles and a magically distorted outline. Its true body never seems to be where it appears, causing attacks to miss by inches. The phase stalker thrives on confusion and overconfidence."
         case .wraith: return "A shadow-wrapped undead spirit that glides soundlessly and drains life at a touch. It carries an aura of dread that weakens resolve before blades even meet. Wraiths turn victory sour by leaving survivors exhausted, chilled, and hollow."
         case .demogorgon: return "A nightmare predator from the deep dark between worlds, with a flower-like maw and relentless hunting drive. It closes distance fast, tears through isolated targets, and pressures the backline without hesitation. Facing the Maw feels like survival horror, not a standard skirmish."
-        case .mindFlayer: return "A psionic aberration with facial tentacles, alien calm, and frightening mental precision. Brain eaters attack cognition first, disrupting choices before physical damage arrives. In close range, they become executioners with terrifying brain-harvest methods."
-        case .beholder: return "A floating tyrant of paranoid intellect, ringed with eyestalks that project distinct killing rays. It controls vertical space, line-of-sight, and battlefield tempo all at once. An eye tyrant encounter punishes predictable movement and poor positioning."
+        case .brainEater: return "A psionic aberration with facial tentacles, alien calm, and frightening mental precision. Brain eaters attack cognition first, disrupting choices before physical damage arrives. In close range, they become executioners with terrifying brain-harvest methods."
+        case .eyeTyrant: return "A floating tyrant of paranoid intellect, ringed with eyestalks that project distinct killing rays. It controls vertical space, line-of-sight, and battlefield tempo all at once. An eye tyrant encounter punishes predictable movement and poor positioning."
         case .youngDragon: return "A juvenile dragon already large enough to shatter shields with claw, fang, and breath weapon. Proud and territorial, it probes enemies before committing to lethal aggression. Underestimating a young dragon is usually a one-fight lesson."
-        case .vecna: return "The Undying King, a lich of vast cunning, forbidden scholarship, and godlike ambition. He bends death, memory, and fate into tools for domination across worlds. Facing him is not just a battle - it is a contest against ancient strategy itself."
+        case .undyingKing: return "The Undying King, a lich of vast cunning, forbidden scholarship, and godlike ambition. He bends death, memory, and fate into tools for domination across worlds. Facing him is not just a battle - it is a contest against ancient strategy itself."
         }
     }
 
@@ -334,19 +334,19 @@ enum MonsterType: String, CaseIterable, Codable {
             return ["its massive horns", "a charging gore", "a greataxe cleave", "a trampling hoof"]
         case .basilisk:
             return ["its petrifying gaze", "venomous fangs", "a lunging bite", "its crushing jaws"]
-        case .displacerBeast:
+        case .phaseStalker:
             return ["a barbed tentacle", "its shifting claws", "a lashing tendril", "a pouncing bite"]
         case .wraith:
             return ["its life-draining touch", "a spectral claw", "a chilling grasp", "a soul-sapping swipe"]
         case .demogorgon:
             return ["its gaping flower-maw", "a tentacle lash", "a psychic screech", "its crushing tendrils"]
-        case .mindFlayer:
+        case .brainEater:
             return ["a mind-shattering blast", "its writhing tentacles", "a psionic assault", "its brain-extracting grasp"]
-        case .beholder:
+        case .eyeTyrant:
             return ["a disintegration ray", "its antimagic eye", "a paralyzing beam", "a death ray"]
         case .youngDragon:
             return ["a searing fire breath", "its rending claws", "a crushing tail swipe", "its snapping jaws"]
-        case .vecna:
+        case .undyingKing:
             return ["a necrotic ray", "the Grasp of the Undying King", "a soul-rending spell", "a withering touch of undeath"]
         }
     }
@@ -390,7 +390,7 @@ enum MonsterType: String, CaseIterable, Codable {
     /// Scoped to the dungeon's classic psychic/dominating high-tier threats.
     var canMindControl: Bool {
         switch self {
-        case .mindFlayer, .beholder, .vecna: return true
+        case .brainEater, .eyeTyrant, .undyingKing: return true
         default: return false
         }
     }
@@ -399,9 +399,9 @@ enum MonsterType: String, CaseIterable, Codable {
     /// monster attempts mind control this turn.
     var mindControlChance: Double {
         switch self {
-        case .mindFlayer: return 0.35
-        case .beholder: return 0.25
-        case .vecna: return 0.30
+        case .brainEater: return 0.35
+        case .eyeTyrant: return 0.25
+        case .undyingKing: return 0.30
         default: return 0.0
         }
     }
@@ -410,9 +410,9 @@ enum MonsterType: String, CaseIterable, Codable {
     /// attempt — scales with how fearsome the caster is.
     var mindControlDC: Int {
         switch self {
-        case .mindFlayer: return 14
-        case .beholder: return 16
-        case .vecna: return 18
+        case .brainEater: return 14
+        case .eyeTyrant: return 16
+        case .undyingKing: return 18
         default: return 10
         }
     }
@@ -613,7 +613,7 @@ enum MonsterType: String, CaseIterable, Codable {
                 " / /||||  \\",
                 " d d    d d",
             ]
-        case .displacerBeast:
+        case .phaseStalker:
             return [
                 "    /\\_/\\",
                 "   ( o.o )",
@@ -637,7 +637,7 @@ enum MonsterType: String, CaseIterable, Codable {
                 "   /|   |\\",
                 "  / |   | \\",
             ]
-        case .mindFlayer:
+        case .brainEater:
             return [
                 "    .-\"\"\"-.  ",
                 "   ( o   o )",
@@ -645,7 +645,7 @@ enum MonsterType: String, CaseIterable, Codable {
                 "   /||   ||\\",
                 "    /|   |\\",
             ]
-        case .beholder:
+        case .eyeTyrant:
             return [
                 "  \\~ ~|~ ~/",
                 "   .-----.",
@@ -661,7 +661,7 @@ enum MonsterType: String, CaseIterable, Codable {
                 " /|/    \\|\\",
                 " d d    d d~~",
             ]
-        case .vecna:
+        case .undyingKing:
             return [
                 "   .--VVV--.",
                 "  / (X) (o) \\",
@@ -849,7 +849,7 @@ enum MonsterType: String, CaseIterable, Codable {
                 ["   ___/\\", "  (O  o >", "  /\\~~~~\\", " / /||||  \\", "  d d  d d"],
                 ["   ___/\\", "  (o  O >", "  /\\~~~~\\", " / /||||  \\", " d d    d d"],
             ]
-        case .displacerBeast:
+        case .phaseStalker:
             return [
                 ["    /\\_/\\", "   ( o.o )", "  ~/|   |\\~", " / /|   |\\ \\", "  d d   d d"],
                 ["    /\\_/\\", "   ( O.o )", " ~/|    |\\~", " / /|   |\\ \\", "  d d   d d"],
@@ -867,13 +867,13 @@ enum MonsterType: String, CaseIterable, Codable {
                 ["   \\|/|\\|/", "    \\|||/", "   (     )", "   /|   |\\", "  / |   | \\"],
                 ["    |/|\\|/", "    \\|||/", "   (     )", "  /|    |\\", "  / |   | \\"],
             ]
-        case .mindFlayer:
+        case .brainEater:
             return [
                 ["    .-\"\"\"-.  ", "   ( o   o )", "    \\|||||/", "   /||   ||\\", "    /|   |\\"],
                 ["    .-\"\"\"-.  ", "   (  o  o )", "    \\|||||/", "   /||   ||\\", "    /|   |\\"],
                 ["    .-\"\"\"-.  ", "   ( o  o  )", "    \\|||||/", "   /||   ||\\", "    /|   |\\"],
             ]
-        case .beholder:
+        case .eyeTyrant:
             return [
                 ["  \\~ ~|~ ~/", "   .-----.", "  ( ( O ) )", "   '-----'", "  /~ ~|~ ~\\"],
                 ["  \\~ ~|~ ~/", "   .-----.", "  (( O )  )", "   '-----'", "  /~ ~|~ ~\\"],
@@ -885,7 +885,7 @@ enum MonsterType: String, CaseIterable, Codable {
                 ["   /\\_/\\  __", "  / O o \\/  \\", "  \\ >><  \\--/", " /|/    \\|\\", " d d    d d ~"],
                 ["   /\\_/\\  __", "  / o O \\/  \\", "  \\ >><  \\--/", " /|/    \\|\\", " d d    d d~~"],
             ]
-        case .vecna:
+        case .undyingKing:
             return [
                 ["   .--VVV--.", "  / (X) (o) \\", "  | /===\\ |", "  /| /#\\ |\\", " / |/   \\| \\"],
                 ["   .--VVV--.", "  / (X) (O) \\", "  | /===\\ |", "  /| /#\\ |\\", " / |/   \\| \\"],
@@ -907,17 +907,17 @@ enum MonsterType: String, CaseIterable, Codable {
         case 5:
             return [.bugbear, .giantSpider, .ogre, .gelatinousCube, .minotaur, .basilisk]
         case 6:
-            return [.ogre, .owlbear, .troll, .displacerBeast, .wraith, .demogorgon, .mindFlayer, .ironWeaver]
+            return [.ogre, .owlbear, .troll, .phaseStalker, .wraith, .demogorgon, .brainEater, .ironWeaver]
         case 7:
-            return [.troll, .demogorgon, .mindFlayer, .wraith, .hollowMonk, .drownedChoir]
+            return [.troll, .demogorgon, .brainEater, .wraith, .hollowMonk, .drownedChoir]
         case 8:
-            return [.demogorgon, .mindFlayer, .beholder, .hollowMonk, .drownedChoir, .youngDragon]
+            return [.demogorgon, .brainEater, .eyeTyrant, .hollowMonk, .drownedChoir, .youngDragon]
         case 9:
-            return [.beholder, .youngDragon, .drownedChoir, .gloamTitan, .hollowMonk]
+            return [.eyeTyrant, .youngDragon, .drownedChoir, .gloamTitan, .hollowMonk]
         case 10:
-            return [.beholder, .youngDragon, .gloamTitan, .drownedChoir, .vecna]
+            return [.eyeTyrant, .youngDragon, .gloamTitan, .drownedChoir, .undyingKing]
         default:
-            return [.youngDragon, .gloamTitan, .vecna, .beholder, .hollowMonk]
+            return [.youngDragon, .gloamTitan, .undyingKing, .eyeTyrant, .hollowMonk]
         }
     }
 
@@ -928,13 +928,13 @@ enum MonsterType: String, CaseIterable, Codable {
         case 3: return .ogre
         case 4: return .owlbear
         case 5: return .demogorgon
-        case 6: return .mindFlayer
-        case 7: return .beholder
+        case 6: return .brainEater
+        case 7: return .eyeTyrant
         case 8: return .hollowMonk
         case 9: return .drownedChoir
         case 10: return .gloamTitan
         case 11: return .youngDragon
-        default: return .vecna
+        default: return .undyingKing
         }
     }
 
@@ -974,7 +974,7 @@ enum MonsterType: String, CaseIterable, Codable {
             if roll >= 7 { return TreasureItem(name: "\(Dice.rollSum(4, d: 6) * 10) Gold Pieces", value: Dice.rollSum(4, d: 6) * 10, type: .gold) }
             return nil
         // Boss — guaranteed drops
-        case .owlbear, .troll, .minotaur, .basilisk, .displacerBeast, .wraith, .demogorgon, .mindFlayer, .beholder, .youngDragon, .vecna, .drownedChoir, .hollowMonk, .gloamTitan:
+        case .owlbear, .troll, .minotaur, .basilisk, .phaseStalker, .wraith, .demogorgon, .brainEater, .eyeTyrant, .youngDragon, .undyingKing, .drownedChoir, .hollowMonk, .gloamTitan:
             if roll >= 10 { return TreasureItem(name: "Potion of Greater Healing", value: 150, type: .potion) }
             return TreasureItem(name: "\(Dice.rollSum(5, d: 6) * 10) Gold Pieces", value: Dice.rollSum(5, d: 6) * 10, type: .gold)
         }

@@ -2,22 +2,22 @@
 
 Each field is within Apple's character limit (shown in brackets).
 
-> **Trademark — decide before submitting.** The splash screen says
-> "DUNGEONS & DRAGONS" and the home-screen name is "DnD RPG". "Dungeons &
-> Dragons" and "D&D" are Wizards of the Coast trademarks; the SRD 5e rules
-> are free to use under the OGL / CC-BY, but the name is not, and App Review
-> rejects apps that use a trademark without a licence. The store text below
-> avoids it. Suggested names (all under 30 characters):
-> **Deepdelve: Text RPG** · **Torchlight: A 5e Text Quest** ·
-> **Dragon's Deep — Text Adventure** · **Party of Four: 5e Text RPG**
+> **Trademark — settled.** The game is **Wyverns & Catacombs**. The splash
+> screen, the home-screen name ("Wyverns") and this listing carry no Wizards
+> of the Coast trademark: "Dungeons & Dragons" and "D&D" are theirs, and the
+> licence covers the SRD rules, not the brand. The rules attribution
+> (System Reference Document 5.1, OGL v1.0a / CC-BY-4.0) stays, because the
+> licence requires it. Renaming an app on the App Store keeps its record,
+> its ratings and its existing users — identity is the bundle id
+> (com.timbaloo.dnd.textrpg), not the name.
 
 ---
 
 ## Name  (30)
-Deepdelve: Text RPG
+Wyverns & Catacombs: Text RPG
 
 ## Subtitle  (30)
-A dungeon crawl you can read
+A Retro Text-Based Adventure
 
 ## Promotional text  (170)
 Lead a party of up to four into a dungeon that listens. Type what you want to do, talk to anyone you meet, and let the Dungeon Master tell the tale — aloud if you like.

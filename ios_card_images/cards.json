@@ -3407,7 +3407,7 @@
       "image": "monsters/brain-eater.png"
     },
     {
-      "id": "monster-beholder",
+      "id": "monster-eye-tyrant",
       "type": "monster",
       "name": "Eye Tyrant",
       "source": "Bestiary",
@@ -3439,7 +3439,7 @@
       "image": "monsters/young-dragon.png"
     },
     {
-      "id": "monster-vecna",
+      "id": "monster-undying-king",
       "type": "monster",
       "name": "The Undying King",
       "source": "Bestiary",

@@ -1311,6 +1311,29 @@ class Dungeon: ObservableObject, Codable {
                 npcCount += 1
             }
         }
+        // Someone has to be there to ask. NPCType.randomFor can decline a
+        // room, so a small floor — a training one especially — could end up
+        // with nobody at all, and then the step that says "take on a quest"
+        // has no one to take it from. Put people in the nearest rooms until
+        // there are enough, and make sure they have an errand going spare.
+        let wanted = training ? 3 : 2
+        if npcCount < wanted {
+            let nearestFirst = npcCandidates.sorted { (abs($0.x) + abs($0.y)) < (abs($1.x) + abs($1.y)) }
+            for room in nearestFirst where npcCount < wanted && room.npc == nil {
+                let type = NPCType.randomFor(roomType: room.roomType)
+                    ?? [NPCType.hermit, .wanderingTrader, .ratCatcher, .elfScout].randomElement()!
+                var npc = DungeonNPC(type: type)
+                npc.willOfferSideQuest = true
+                room.npc = npc
+                npcCount += 1
+            }
+        }
+        // In training, whoever is down there is willing to talk about work.
+        if training {
+            for room in rooms.values where room.npc != nil && room.npc?.type != .gatekeeper {
+                room.npc?.willOfferSideQuest = true
+            }
+        }
 
         // Place Gatekeeper at entrance
         if let entrance = rooms[0] {
