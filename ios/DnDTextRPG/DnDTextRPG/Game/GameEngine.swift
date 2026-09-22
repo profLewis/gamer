@@ -365,8 +365,20 @@ class GameEngine: ObservableObject {
 
     /// Whether the DM is currently reading the screen aloud
     @Published var isSpeakingAloud: Bool = false
-    /// Persistent speaker mode — stays on until toggled off
-    @Published var speakerModeOn: Bool = false
+    /// Persistent speaker mode — stays on until toggled off. Turning it off,
+    /// by whatever route (the icon, a typed "speaker off", "mute"), silences
+    /// the voice at once — some routes used to only flip the flag, leaving
+    /// the current reading, or one about to start, carrying on.
+    @Published var speakerModeOn: Bool = false {
+        didSet {
+            guard oldValue, !speakerModeOn else { return }
+            speakerPaused = false
+            SpeechEngine.shared.stop()
+            isSpeakingAloud = false
+            speakingCheckTimer?.invalidate()
+            speakingCheckTimer = nil
+        }
+    }
     /// Temporarily paused — stops reading this page but re-engages on next screen change
     @Published var speakerPaused: Bool = false
     /// Tracks whether the current page has already been read aloud (reset on clearTerminal)
@@ -447,6 +459,10 @@ class GameEngine: ObservableObject {
     @Published var autoCountdownEnd: Date? = nil
     @Published var autoCountdownTotal: Double = 0
     @Published var autoCountdownPausedRemaining: Double? = nil
+    /// A countdown is running, or held by the pause — what the hourglass shows.
+    var hasLiveCountdown: Bool {
+        autoContinuePaused || autoCountdownPausedRemaining != nil || autoCountdownEnd != nil
+    }
     private var autoCountdownToken = UUID()
 
     /// True when screens are actually counting down — i.e. when a pause
@@ -2942,7 +2958,9 @@ class GameEngine: ObservableObject {
         if !replayingHistory, let title = currentScreenTitle,
            terminalLines.contains(where: { $0.text.contains(where: { $0.isLetter }) }) {
             screenHistory.append((title: title, lines: terminalLines, when: formattedGameTime()))
-            if screenHistory.count > 15 { screenHistory.removeFirst() }
+            if gameState == .combat { fightScreensRecorded += 1 }
+            // Enough to hold a whole fight, for Replay Fight on the victory screen.
+            if screenHistory.count > 40 { screenHistory.removeFirst() }
         }
         breadcrumbFrom = currentScreenTitle
         breadcrumbDid = lastEventThisScreen
@@ -4162,6 +4180,8 @@ class GameEngine: ObservableObject {
     /// short would lose text.
     /// Set by a "defeated!" attack report: its countdown is kept short.
     private var quickNextContinue = false
+    /// Set by the report of the fight's winning blow: its countdown is kept long.
+    private var finalBlowNext = false
 
     /// True while it's a computer-controlled companion's or a monster's turn in a fight.
     private var aiTurnInProgress: Bool {
@@ -4212,8 +4232,10 @@ class GameEngine: ObservableObject {
         else { delay = base * Double.random(in: 0.55...0.85) * timeoutScale(.fights) }
         readingPaceNext = false
         // A "defeated!" report moves on sooner still.
-        let finalDelay = quickNextContinue ? min(delay, 3.0 * timeoutScale(.fights)) : delay
+        let finalDelay = finalBlowNext ? max(delay * 1.5, 6.0 * timeoutScale(.fights))
+            : (quickNextContinue ? min(delay, 3.0 * timeoutScale(.fights)) : delay)
         quickNextContinue = false
+        finalBlowNext = false
         scheduleAutoAdvance(after: finalDelay, isStillValid: { [weak self] in
             guard let self = self else { return false }
             return Self.continueGeneration == myGeneration && self.awaitingContinue && !self.speakerModeOn
@@ -5142,9 +5164,10 @@ class GameEngine: ObservableObject {
             return
         }
 
-        // Turn on — read current screen and stay in mode
+        // Turn on — read current screen (title first) and stay in mode
         speakerModeOn = true
         speakerPaused = false
+        speakerHasReadCurrentPage = false
         startReadingScreen()
     }
 
@@ -5171,7 +5194,8 @@ class GameEngine: ObservableObject {
         speech.stop()
         // Small delay so terminal lines are populated
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            guard let self = self, !self.speakerPaused,
+            // Re-check: the speaker may have been switched off in the meantime.
+            guard let self = self, self.speakerModeOn, !self.speakerPaused,
                   !self.speakerHasReadCurrentPage || (self.currentCombat != nil && self.terminalLines.count > self.speechFromLine) else { return }
             self.startReadingScreen()
         }
@@ -5180,10 +5204,17 @@ class GameEngine: ObservableObject {
     private func startReadingScreen() {
         let speech = SpeechEngine.shared
         let allLines = gatherScreenLines()
+        // The page's title is drawn in a box, which the filter drops as
+        // decoration — so say it first, once per page, before the text.
+        let firstReadOfPage = !speakerHasReadCurrentPage
+        let title = firstReadOfPage && !titleLineIndices.isEmpty ? currentScreenTitle : nil
         speechFromLine = terminalLines.count
         // Filter out lines recently spoken (NPC greetings, repeated descriptions)
-        let newLines = allLines.filter { line in
+        var newLines = allLines.filter { line in
             !recentlySpokenTexts.contains(line)
+        }
+        if let title = title?.trimmingCharacters(in: .whitespaces), !title.isEmpty {
+            newLines.insert(title, at: 0)
         }
         guard !newLines.isEmpty else {
             speakerHasReadCurrentPage = true
@@ -13672,7 +13703,7 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             let selected = options[choice - 1]
             if selected.hasPrefix("Turn O") {
-                speech.isEnabled = !speech.isEnabled
+                speech.isEnabled = !speech.isEnabled   // turning off also stops speech (SpeechEngine)
                 self.showCharacterVoiceEdit(index: index)
             } else if selected == "Change Voice" {
                 self.showVoicePicker(forCharacter: char, editIndex: index)
@@ -21150,7 +21181,9 @@ class GameEngine: ObservableObject {
     /// The input line's combat ? — only on a player's own turn, with the
     /// action buttons up (not mid-report, not a companion's turn).
     var combatHelpAvailable: Bool {
-        guard currentCombat != nil, gameState == .combat, !awaitingContinue,
+        // Not while a help page is up — the input line's ? used to reappear
+        // there, a stray second help button beside the help already showing.
+        guard currentCombat != nil, gameState == .combat, !awaitingContinue, savedHelpState == nil,
               let turn = currentCombat?.currentCombatant, turn.isPlayer else { return false }
         return party.first(where: { $0.id == turn.id })?.isComputerControlled == false
     }
@@ -21182,7 +21215,102 @@ class GameEngine: ObservableObject {
             self.print("  SPECIAL", color: .cyan, bold: true)
             self.printWrapped("Second Wind (Fighter), Rage (Barbarian) — extra buttons when available.", indent: 2, color: .dimGreen)
             self.print("")
+            if let combat = self.currentCombat { self.printCombatAdvice(combat) }
         }
+    }
+
+    /// Average of dice like "2d6+3" — rough, for advice only.
+    private func averageRoll(_ dice: String?) -> Double {
+        guard let dice = dice?.lowercased().replacingOccurrences(of: " ", with: ""), !dice.isEmpty else { return 0 }
+        var total = 0.0
+        for part in dice.replacingOccurrences(of: "-", with: "+-").split(separator: "+") {
+            let p = String(part)
+            if let d = p.firstIndex(of: "d") {
+                let n = Double(p[..<d]) ?? 1
+                let sides = Double(p[p.index(after: d)...]) ?? 0
+                total += n * (sides + 1) / 2
+            } else {
+                total += Double(p) ?? 0
+            }
+        }
+        return total
+    }
+
+    /// Chance for a d20 + bonus to reach a target number (nat 20 always hits).
+    private func hitChance(bonus: Int, against target: Int) -> Int {
+        let need = target - bonus
+        let p = min(95, max(5, (21 - need) * 5))
+        return p
+    }
+
+    /// The dynamic half of combat help: the enemy as far as it's known, what
+    /// each adventurer actually carries and how well it would work against
+    /// it, and why the turn order is what it is.
+    private func printCombatAdvice(_ combat: Combat) {
+        let foes = combat.encounter.aliveMonsters
+        guard !foes.isEmpty else { return }
+        print("  THE ENEMY", color: .cyan, bold: true)
+        for m in foes {
+            printWrapped("\(m.name): \(m.currentHP)/\(m.maxHP) HP, armour \(m.armorClass), hits for about \(Int(averageRoll(m.damage).rounded())).", indent: 2, color: .dimGreen)
+        }
+        print("")
+        // Advice is against the toughest-armoured foe still standing.
+        let target = foes.max(by: { $0.armorClass < $1.armorClass })!
+        let biggestHP = foes.map { $0.currentHP }.max() ?? 1
+        print("  WHAT EACH OF YOU HAS", color: .cyan, bold: true)
+        printWrapped("Against \(target.name) (armour \(target.armorClass)):", indent: 2, color: .dimGreen)
+        for c in party where c.isConscious {
+            var lines: [String] = []
+            // Weapon
+            let ws = c.equippedWeapon?.weaponStats
+            let str = c.abilityScores.modifier(for: .strength), dex = c.abilityScores.modifier(for: .dexterity)
+            let mod = ws?.isFinesse == true ? max(str, dex) : (ws?.isRanged == true ? dex : str)
+            let hit = hitChance(bonus: mod + c.proficiencyBonus, against: target.armorClass)
+            let dmg = averageRoll(ws?.damage ?? "1d4") + Double(mod)
+            let perSwing = Double(hit) / 100 * max(1, dmg)
+            lines.append("\(c.equippedWeapon?.name ?? "Fists"): \(hit)% to hit, ~\(Int(max(1, dmg).rounded())) damage (about \(String(format: "%.1f", perSwing)) a swing).")
+            // Spells: the best damaging one they can still cast, and any healing
+            let castable = c.knownSpells.filter { c.canCastSpell($0) }
+            if let best = castable.filter({ $0.damage != nil }).max(by: { averageRoll($0.damage) < averageRoll($1.damage) }) {
+                let avg = averageRoll(best.damage) + (best.usesCasterMod ? Double(c.spellcastingAbility.map { c.abilityScores.modifier(for: $0) } ?? 0) : 0)
+                let chance = best.savingThrowAbility != nil ? max(5, min(95, (c.spellSaveDC - 10) * 5 + 45)) : hitChance(bonus: c.spellAttackBonus, against: target.armorClass)
+                let verdict = Double(chance) / 100 * avg > perSwing * 1.2 ? " — better than the weapon" : ""
+                lines.append("\(best.name): ~\(Int(avg.rounded())) \(best.damageType ?? "") damage, \(chance)% to land\(verdict).")
+            }
+            if let heal = castable.first(where: { $0.healAmount != nil }) {
+                lines.append("\(heal.name) heals ~\(Int(averageRoll(heal.healAmount).rounded())).")
+            }
+            let slotsLeft = castable.isEmpty && !c.knownSpells.isEmpty
+            if slotsLeft { lines.append("Out of spell slots until a long rest.") }
+            // Potions
+            let potions = c.inventory.filter { $0.type == .potion }
+            if !potions.isEmpty {
+                let names = Dictionary(grouping: potions, by: { $0.name }).map { "\($0.value.count)× \($0.key)" }.sorted()
+                lines.append("Potions: " + names.joined(separator: ", ") + ".")
+            }
+            // Class tricks
+            if c.characterClass == .fighter && !c.secondWindUsed { lines.append("Second Wind ready (heals when hurt).") }
+            if c.characterClass == .barbarian && c.rageUsesRemaining > 0 && !c.isRaging { lines.append("Rage ready (\(c.rageUsesRemaining) left): hit harder, take less.") }
+            let hurt = c.currentHP * 3 < c.maxHP
+            print("  \(c.name) (\(c.characterClass.rawValue)) \(c.currentHP)/\(c.maxHP) HP\(hurt ? " — badly hurt" : "")", color: hurt ? .yellow : .brightGreen)
+            for l in lines { printWrapped(l, indent: 4, color: .dimGreen) }
+        }
+        let partyDamage = party.filter { $0.isConscious }.reduce(0.0) { acc, c in
+            let ws = c.equippedWeapon?.weaponStats
+            let str = c.abilityScores.modifier(for: .strength), dex = c.abilityScores.modifier(for: .dexterity)
+            let mod = ws?.isFinesse == true ? max(str, dex) : (ws?.isRanged == true ? dex : str)
+            return acc + Double(hitChance(bonus: mod + c.proficiencyBonus, against: target.armorClass)) / 100 * max(1, averageRoll(ws?.damage ?? "1d4") + Double(mod))
+        }
+        if partyDamage > 0 {
+            let rounds = Int((Double(biggestHP) / partyDamage).rounded(.up))
+            printWrapped("All swinging together, the toughest foe falls in about \(rounds) round\(rounds == 1 ? "" : "s").", indent: 2, color: .cyan)
+        }
+        print("")
+        print("  TURN ORDER", color: .cyan, bold: true)
+        let order = combat.turnOrder.map { $0.name + ($0.isPlayer ? "" : " (foe)") }
+        printWrapped(order.joined(separator: " → "), indent: 2, color: .dimGreen)
+        printWrapped("Rolled at the start of the fight: a d20 plus Dexterity, highest first — quick adventurers act first. It's set for the fight. Use it: let the fast ones strike, keep a healer's turn for whoever is hurt, and Dodge with anyone badly wounded who acts before the foes.", indent: 2, color: .dimGreen)
+        print("")
     }
 
     private func showNPCHelp() {
@@ -28486,17 +28614,50 @@ class GameEngine: ObservableObject {
     /// "Tell the user they should find at least one boss per level, unless
     /// the bosses have wandered." Going down needs this floor's guardian
     /// beaten, and nothing said so.
+    /// Easy only: which way the guardian's lair lies from here, and roughly
+    /// how far — "north-east, about 4 rooms away".
+    private func guardianBearing(in d: Dungeon) -> String? {
+        guard let here = d.currentRoom,
+              let lair = d.rooms.values.first(where: { $0.roomType == .boss && $0.floor == here.floor && !$0.cleared }) else { return nil }
+        let dx = lair.x - here.x, dy = lair.y - here.y
+        guard dx != 0 || dy != 0 else { return nil }
+        let ns = dy < 0 ? "north" : (dy > 0 ? "south" : "")
+        let ew = dx > 0 ? "east" : (dx < 0 ? "west" : "")
+        // Only name the minor direction when it's a real part of the way.
+        let way: String
+        if ns.isEmpty || ew.isEmpty { way = ns + ew }
+        else if abs(dy) >= 2 * abs(dx) { way = ns }
+        else if abs(dx) >= 2 * abs(dy) { way = ew }
+        else { way = ns + "-" + ew }
+        let steps = abs(dx) + abs(dy)
+        return steps == 1 ? "\(way), next door" : "\(way), about \(steps) rooms away"
+    }
+    private var guardianBearingAtVisits = -1
+
     private func nudgeAboutGuardian() {
         guard let d = dungeon, explorationStatusMessage == nil else { return }
         let floor = d.level
         let bosses = d.rooms.values.filter { $0.roomType == .boss }
         guard !bosses.isEmpty, !bosses.contains(where: { $0.cleared }) else { return }
         let wandered = bosses.allSatisfy { $0.encounter == nil }
+        let easy = d.startDifficulty <= 1
         if !guardianToldArrival.contains(floor) {
             guardianToldArrival.insert(floor)
-            explorationStatusMessage = (wandered
-                ? "☠ This floor's guardian has left its lair and is wandering — find it and beat it to go deeper."
-                : "☠ Find and beat this floor's guardian to go deeper — it lairs far from where you came in.", .yellow)
+            if easy, !wandered, let bearing = guardianBearing(in: d) {
+                explorationStatusMessage = ("☠ Beat this floor's guardian to win — its lair is \(bearing).", .yellow)
+            } else {
+                explorationStatusMessage = (wandered
+                    ? "☠ This floor's guardian has left its lair and is wandering — find it and beat it to go deeper."
+                    : "☠ Find and beat this floor's guardian to go deeper — it lairs far from where you came in.", .yellow)
+            }
+            return
+        }
+        // Easy: a reminder of the way every few new rooms.
+        let visitedNow = d.rooms.values.filter { $0.visited }.count
+        if easy, !wandered, visitedNow % 4 == 0, visitedNow != guardianBearingAtVisits,
+           let bearing = guardianBearing(in: d) {
+            guardianBearingAtVisits = visitedNow
+            explorationStatusMessage = ("☠ The guardian's lair: \(bearing).", .yellow)
             return
         }
         let visited = d.rooms.values.filter { $0.visited }.count
@@ -34767,7 +34928,13 @@ class GameEngine: ObservableObject {
                         SoundManager.shared.playDeath()
                         self.renderDefeatFrame(report)
                         self.print("  \(report.targetName) is defeated!", color: .yellow, bold: true)
-                        self.quickNextContinue = true
+                        if self.currentCombat?.encounter.aliveMonsters.isEmpty == true {
+                            // The blow that won the fight: time to take it in
+                            // before the victory screen, not hurried along.
+                            self.finalBlowNext = true
+                        } else {
+                            self.quickNextContinue = true
+                        }
                     } else if report.targetUnconscious {
                         SoundManager.shared.playDeath()
                         self.renderDefeatFrame(report)
@@ -35056,6 +35223,7 @@ class GameEngine: ObservableObject {
         printWrapped("DM: " + entry, indent: 0, color: .cyan)
         SpeechEngine.shared.speak(entry)
         print("")
+        fightScreensRecorded = 0   // Replay Fight steps back no further than this
         print("Rolling initiative...")
         print("")
 
@@ -37306,10 +37474,11 @@ class GameEngine: ObservableObject {
                 // The label says what the button will DO next, so it is a real
                 // toggle rather than something that only ever starts again.
                 let readLabel = SpeechEngine.shared.isSpeaking ? "Stop Reading" : "Read Aloud"
-                let opts = [MenuOption("Take the Spoils", isDefault: true),
+                var opts = [MenuOption("Take the Spoils", isDefault: true),
                             MenuOption("How We Fared"),
-                            MenuOption(readLabel),
-                            MenuOption("?", tint: .navigation, compact: true)]
+                            MenuOption(readLabel)]
+                if self.fightScreensRecorded > 0 { opts.append(MenuOption("Replay Fight")) }
+                opts.append(MenuOption("?", tint: .navigation, compact: true))
                 self.showMenuOptions(opts)
                 self.closeHandler = continueAction
                 self.menuHandler = { [weak self] choice in
@@ -37317,6 +37486,21 @@ class GameEngine: ObservableObject {
                     switch opts[choice - 1].text {
                     case "Take the Spoils":
                         continueAction()
+                    case "Replay Fight":
+                        // Step back through the fight's own screens, then come
+                        // back to this victory screen exactly as it was.
+                        let victoryLines = self.terminalLines
+                        let fightScreens = min(self.fightScreensRecorded, self.screenHistory.count)
+                        self.historyFloor = max(0, self.screenHistory.count - fightScreens)
+                        self.historyReturn = { [weak self] in
+                            guard let self = self else { return }
+                            self.replayingHistory = true
+                            self.clearTerminal()
+                            self.replayingHistory = false
+                            self.terminalLines = victoryLines
+                            showVictoryButtons()
+                        }
+                        self.showScreenHistory(index: self.screenHistory.count - 1)
                     case "How We Fared":
                         // "A bit lame" as a list of hit points: now the fight
                         // is told back as a story from what actually happened,
@@ -38408,7 +38592,7 @@ class GameEngine: ObservableObject {
             print("  Save: save and keep playing", color: .dimGreen)
             print("  Save & Quit App: save, then close the app", color: .dimGreen)
             if slots.count < SaveGameManager.maxSlots {
-                print("  Save+NewName: save as a new adventure", color: .dimGreen)
+                print("  Save & New Name: save as a new adventure", color: .dimGreen)
             }
             print("  Quit App: close the app without saving", color: .dimGreen)
             print("  Main Menu: leave this adventure, stay in the app", color: .dimGreen)
@@ -38419,7 +38603,7 @@ class GameEngine: ObservableObject {
             options.append("Save")              // 1
             options.append("Save & Quit App")         // 2
             if slots.count < SaveGameManager.maxSlots {
-                options.append("Save+NewName")   // 3
+                options.append("Save & New Name")   // 3
                 options.append("Quit App")     // 4
                 options.append("Main Menu")     // 5
             } else {
@@ -38459,7 +38643,7 @@ class GameEngine: ObservableObject {
                     self.performSave(slotId: self.activeSlotId!, slotName: slotName)
                 case "Save & Quit App":
                     self.confirmQuitAndSave(slotId: self.activeSlotId!, slotName: slotName)
-                case "Save+NewName":
+                case "Save & New Name":
                     self.askForNewSlotName(backTo: { [weak self] in self?.showSaveMenu() })
                 case "Quit App":
                     self.confirmQuitWithoutSaving()
@@ -39344,8 +39528,7 @@ class GameEngine: ObservableObject {
         // second, near-duplicate list elsewhere, "Manage" is pinned right
         // here for renaming/deleting saves, which is the one thing this
         // screen's own list doesn't do inline.
-        let sortButton = nextSort == .points ? "Sort: Points" : "Sort: Date"
-        let pinnedButtons = ["Manage", sortButton, "?", "< Back"]
+        let pinnedButtons = ["Manage", "?", "< Back"]
         showPaginatedMenuOptions(options, page: page, pinned: pinnedButtons, handler: { idx in
             guard idx >= 0 && idx < rows.count else { return }
             openRow(rows[idx])
@@ -39354,10 +39537,6 @@ class GameEngine: ObservableObject {
             switch choice {
             case pinnedButtons.firstIndex(of: "Manage") ?? -1:
                 self.showManageSavesMenu(returnTo: origin)
-            case pinnedButtons.firstIndex(of: sortButton) ?? -1:
-                // Re-sorts the list AND its buttons (they're built from the same order).
-                self.listSortMode = nextSort
-                self.showLoadGameMenu(returnTo: origin)
             case pinnedButtons.firstIndex(of: "?") ?? -1:
                 self.showInlineHelp {
                     self.printTitle("Continue Adventure — Help")
@@ -39373,7 +39552,7 @@ class GameEngine: ObservableObject {
                     self.printWrapped("Rename, copy, or delete saves — including bulk multi-select delete.", indent: 2, color: .dimGreen)
                     self.print("")
                     self.print("  SORT", color: .cyan, bold: true)
-                    self.printWrapped("Switches between newest first and most points first. Sorted by points the list becomes the Hall of Fame; adventures still going show their points so far.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Tap the \"Sorted by\" line at the top to switch between newest first and most points first — the list and its buttons both re-order. Sorted by points the list becomes the Hall of Fame; adventures still going show their points so far.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             default:
@@ -40417,8 +40596,18 @@ class GameEngine: ObservableObject {
 
     /// One earlier screen, read-only, with Earlier / Later / Return to Play,
     /// and Undo Last Step when there's a move to take back.
+    /// Screens recorded since the current (or last) fight began.
+    private var fightScreensRecorded = 0
+    /// Set while replaying a fight from the victory screen: the earliest
+    /// screen that belongs to it, and how to get back to the victory screen.
+    private var historyFloor = 0
+    private var historyReturn: (() -> Void)?
+
     private func showScreenHistory(index: Int) {
-        guard screenHistory.indices.contains(index) else { showExplorationView(); return }
+        guard screenHistory.indices.contains(index) else {
+            if let back = historyReturn { historyReturn = nil; back() } else { showExplorationView() }
+            return
+        }
         let entry = screenHistory[index]
         replayingHistory = true
         clearTerminal()
@@ -40439,19 +40628,24 @@ class GameEngine: ObservableObject {
             })
         }
         var opts: [String] = []
-        if index > 0 { opts.append("< Earlier") }
+        let replaying = historyReturn != nil
+        if index > (replaying ? historyFloor : 0) { opts.append("< Earlier") }
         if index < screenHistory.count - 1 { opts.append("Later >") }
-        if !stepUndo.isEmpty { opts.append("Undo Last Step") }
-        opts.append("Return to Play")
+        if !replaying && !stepUndo.isEmpty { opts.append("Undo Last Step") }
+        opts.append(replaying ? "Back to Victory" : "Return to Play")
         showMenu(opts, defaultIndex: opts.count - 1)
-        closeHandler = { [weak self] in self?.showExplorationView() }
+        let leave: () -> Void = { [weak self] in
+            guard let self = self else { return }
+            if let back = self.historyReturn { self.historyReturn = nil; back() } else { self.showExplorationView() }
+        }
+        closeHandler = leave
         menuHandler = { [weak self] choice in
             guard let self = self, choice >= 1, choice <= opts.count else { return }
             switch opts[choice - 1] {
             case "< Earlier": self.showScreenHistory(index: index - 1)
             case "Later >": self.showScreenHistory(index: index + 1)
             case "Undo Last Step": self.undoStep()
-            default: self.showExplorationView()
+            default: leave()
             }
         }
     }

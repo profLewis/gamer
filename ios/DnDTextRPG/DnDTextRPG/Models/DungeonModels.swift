@@ -803,7 +803,8 @@ class Dungeon: ObservableObject, Codable {
 
     private func generateDungeon() {
         NameRegistry.reset()   // a fresh dungeon: every name is free again
-        let numRooms = 20 + level * 5
+        // Easy floors are small, so the guardian's lair is never far to look.
+        let numRooms = startDifficulty <= 1 ? 14 + level * 2 : 20 + level * 5
 
         // Create entrance
         let entrance = Room(id: 0, x: 0, y: 0, type: .entrance)
@@ -1402,7 +1403,7 @@ class Dungeon: ObservableObject, Codable {
     static func autoLevelCount(for difficulty: Int) -> Int {
         let range: ClosedRange<Int>
         switch difficulty {
-        case ...1: range = 1...2      // easy: a single floor, sometimes two
+        case ...1: range = 1...1      // easy: one floor — the guardian, then out
         case 2:    range = 4...6      // medium: about five
         default:   range = 6...8      // hard and beyond: about seven
         }

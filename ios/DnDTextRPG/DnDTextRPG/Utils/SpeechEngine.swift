@@ -16,7 +16,10 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
 
     var isEnabled: Bool {
         get { UserDefaults.standard.bool(forKey: "speech_enabled") }
-        set { UserDefaults.standard.set(newValue, forKey: "speech_enabled") }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "speech_enabled")
+            if !newValue { stop() }   // switching the voice off silences it now
+        }
     }
 
     /// Speech rate: 0.0 (slowest) to 1.0 (fastest). Default 0.45
@@ -196,10 +199,13 @@ class SpeechEngine: NSObject, AVSpeechSynthesizerDelegate {
         return utterance
     }
 
+    /// Always stops — not only when `isSpeaking` says so: a paused voice,
+    /// or an utterance still in its pre-speech delay, used to slip through
+    /// and carry on after the speaker was switched off.
     func stop() {
-        if synthesizer.isSpeaking {
-            synthesizer.stopSpeaking(at: .immediate)
-        }
+        synthesizer.stopSpeaking(at: .immediate)
+        trackedUtterance = nil
+        trackedCompletion = nil
         SoundManager.shared.unduckMusic()
     }
 

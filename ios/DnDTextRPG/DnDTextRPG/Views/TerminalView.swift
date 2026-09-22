@@ -1125,7 +1125,7 @@ struct TerminalView: View {
             let fraction = min(1, max(0, remaining / total))
             // A quick flip every two seconds while running; still when paused.
             let phase = t.truncatingRemainder(dividingBy: 2.0)
-            let angle = (paused || gameEngine.calmScreen) ? 0 : (phase < 0.45 ? phase / 0.45 * 180 : 180)
+            let angle = (paused || gameEngine.calmScreen || remaining <= 0) ? 0 : (phase < 0.45 ? phase / 0.45 * 180 : 180)
             // A soft pulse for "paused", not a blink.
             let pulse = 0.45 + 0.4 * (0.5 + 0.5 * sin(t * 2.6))
             HStack(spacing: 4) {
@@ -1244,7 +1244,12 @@ struct TerminalView: View {
                             // where you type. Tap or long-press to pause/resume.
                             // While time is frozen it always shows — it's how you unfreeze.
                             // Every waiting screen shows it (speaker mode and iOS included).
-                            if gameEngine.timeFrozen || ((gameEngine.awaitingContinue || gameEngine.taleCountdownOn) && gameEngine.showCountdownControl) {
+                            // Only while a countdown is actually running (or held paused) —
+                            // shown on every waiting screen, it used to spin on with
+                            // nothing behind it when none was armed (Auto-Continue off,
+                            // speaker pacing, or a countdown that had already ended).
+                            if gameEngine.timeFrozen || ((gameEngine.awaitingContinue || gameEngine.taleCountdownOn)
+                                && gameEngine.showCountdownControl && gameEngine.hasLiveCountdown) {
                                 autoCountdownBar
                             }
                             // Combat help, among the other symbols on this line.
