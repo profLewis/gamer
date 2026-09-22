@@ -25334,6 +25334,7 @@ class GameEngine: ObservableObject {
         print("  \(npc.type.rawValue)", color: .brightGreen, bold: true)
         printWrapped(npc.type.description, indent: 2, color: .dimGreen)
         print("")
+        printPartyPurses()
 
         // Assign a voice to this NPC if they don't have one yet
         if npc.voiceIdentifier == nil {
@@ -28354,6 +28355,16 @@ class GameEngine: ObservableObject {
 
     /// Training gym entry: pay a membership fee, or spar (a skill check
     /// against the trainer's specialty) for free entry.
+    /// Who has how much, before anything costs money: "Gold — Ada 34 ·
+    /// Wren 12 · R. Pip 0 (party 46)". Each pays from their own purse.
+    func printPartyPurses() {
+        guard !party.isEmpty else { return }
+        let each = party.map { "\(shortName(for: $0)) \($0.gold)" }.joined(separator: " · ")
+        let total = party.reduce(0) { $0 + $1.gold }
+        printWrapped("Gold — \(each)\(party.count > 1 ? " (party \(total)gp)" : "gp")", indent: 2, color: .yellow)
+        print("")
+    }
+
     func visitGym() {
         guard let dungeon = dungeon, let room = dungeon.currentRoom, var trainer = room.trainer else { return }
         gymTrainee = nil
@@ -28364,6 +28375,7 @@ class GameEngine: ObservableObject {
         print("  \(trainer.name) — trains \(trainer.specialty.rawValue)", color: .dimGreen)
         printWrapped("\"\(trainer.greeting)\"", indent: 2, color: .yellow)
         print("")
+        printPartyPurses()
 
         // Already a member here — either paid at THIS gym before, or holds
         // a Multi-Gym Pass covering every gym in the dungeon — so entry is
