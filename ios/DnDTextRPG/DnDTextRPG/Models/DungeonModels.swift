@@ -718,7 +718,7 @@ class Dungeon: ObservableObject, Codable {
     enum CodingKeys: String, CodingKey {
         case name, level, rooms, currentRoomId, previousRoomId, nextRoomId, currentFloor, emergencyDropUsed, hasMultiGymPass
         case archivedLevels, hasCartography, levelCount, startDifficulty
-        case training, trainingDone
+        case training, trainingDone, trainingFull
     }
 
     init(name: String, level: Int, levelCount: Int? = nil, startDifficulty: Int? = nil) {
@@ -767,6 +767,7 @@ class Dungeon: ObservableObject, Codable {
         startDifficulty = (try? container.decodeIfPresent(Int.self, forKey: .startDifficulty)) ?? 2
         training = (try? container.decodeIfPresent(Bool.self, forKey: .training)) ?? false
         trainingDone = (try? container.decodeIfPresent([String].self, forKey: .trainingDone)) ?? []
+        trainingFull = (try? container.decodeIfPresent(Bool.self, forKey: .trainingFull)) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -787,6 +788,7 @@ class Dungeon: ObservableObject, Codable {
         try container.encode(startDifficulty, forKey: .startDifficulty)
         try container.encode(training, forKey: .training)
         try container.encode(trainingDone, forKey: .trainingDone)
+        try container.encode(trainingFull, forKey: .trainingFull)
     }
 
     /// Next room ID for dynamic expansion
@@ -1438,6 +1440,8 @@ class Dungeon: ObservableObject, Codable {
     /// on the status line until each thing has been tried (trainingDone).
     var training = false
     var trainingDone: [String] = []
+    /// Full training (saving, loading, help, AI, certificates too) or Quick.
+    var trainingFull = false
 
     /// Cheats ("magick: show the boss" and friends) — mark these rooms on the
     /// map even unexplored, as (B), (m) or (!), with no corridors to them:
@@ -1474,9 +1478,9 @@ class Dungeon: ObservableObject, Codable {
     /// only the one you're on.
     func atlasRevealGlyph(_ r: AtlasRoom) -> String? {
         guard !r.visited else { return nil }
-        if revealBoss && r.typeName == "Boss" { return "B" }
+        if revealBoss && r.typeName.hasPrefix("Boss") { return "B" }
         if revealMonsters && r.danger { return "m" }
-        if revealTraps && r.typeName == "Trap" { return "!" }
+        if revealTraps && r.typeName.hasPrefix("Trap") { return "!" }
         if revealStairs && r.verticalTo != nil { return r.verticalDirection == "down" ? "\u{2193}" : "\u{2191}" }
         if revealStairs && r.teleportTo != nil { return "*" }
         if revealMerchants && r.merchantName != nil { return "M" }
@@ -1731,7 +1735,7 @@ class Dungeon: ObservableObject, Codable {
             else if ["!", RoomType.boss.symbol, "\u{2191}", "\u{2193}"].contains(room.symbol) { glyph = room.symbol }
             else { glyph = padNumber[room.id] ?? room.symbol }
             // {X} instead of [X]: more than one thing of note in this room.
-            let thingsHere = [room.danger, room.typeName == "Boss", room.verticalTo != nil, room.teleportTo != nil,
+            let thingsHere = [room.danger, room.typeName.hasPrefix("Boss"), room.verticalTo != nil, room.teleportTo != nil,
                               room.merchantName != nil, room.gymName != nil, room.npcName != nil].filter { $0 }.count
             let several = room.visited && thingsHere > 1
             put(mark.map { "(\($0))" } ?? (several ? "{\(glyph)}" : "[\(glyph)]"), cy, cx)

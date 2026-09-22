@@ -2011,6 +2011,7 @@ class GameEngine: ObservableObject {
 
     /// Easter egg triggered by long-pressing the map pane.
     func showExpandedMapOverlay() {
+        trainingDid("map")
         guard dungeon != nil else { return }
         atlasLevelIndex = max(0, atlasLevelCount - 1)
         presentAtlasMapOverlay()
@@ -2035,6 +2036,18 @@ class GameEngine: ObservableObject {
             return line
         }
         out.insert(TerminalLine(atlasShowAllRooms ? "THE WHOLE DEEP — every room on this level" : "THE CHARTED REACHES — where you've been", color: .cyan, size: mapFontSize), at: 0)
+        if d?.revealBoss == true {
+            // Said, so the crown visibly does something even when the lair is
+            // already on the map, or this floor's guardian is long beaten.
+            let lair = levels[atlasLevelIndex].rooms.first { $0.typeName.hasPrefix("Boss") }
+            // The last floor's guardian is the Boss.
+            let isLast = atlasLevelIndex == levels.count - 1 && (d?.isFinalLevel ?? false)
+            let who = isLast ? "Boss" : "guardian"
+            let note = lair == nil ? "♛ No guardian's lair on this floor."
+                : (lair!.cleared ? "♛ This floor's \(who) is beaten — its lair is B."
+                   : "♛ The \(who)'s lair is marked B, in purple.")
+            out.insert(TerminalLine(note, color: .magenta, size: mapFontSize), at: 1)
+        }
         out.append(TerminalLine(" ", size: mapFontSize))
         out += Dungeon.atlasKeyLines().map { TerminalLine($0, color: .dimGreen, size: mapFontSize) }
         mapOverlayLines = out
@@ -5555,6 +5568,11 @@ class GameEngine: ObservableObject {
             castIncantation(words)
             return
         }
+        // Training: "skip" passes an optional step.
+        if trimmed.lowercased() == "skip", gameState == .exploring, currentCombat == nil, trainingSkip() {
+            showExplorationView()
+            return
+        }
 
         // Time frozen: nobody can hear you — ask to unfreeze first, and send
         // what was typed once they say yes.
@@ -5854,7 +5872,10 @@ class GameEngine: ObservableObject {
         idleAnimTimer?.invalidate()
         idleAnimTimer = nil
 
-        guard idlePromptsEnabled else { return }
+        guard idlePromptsEnabled else {
+            if dungeon?.training == true { scheduleExplorationTip() }   // training explains, idle prompts or not
+            return
+        }
         idleTimer = Timer.scheduledTimer(withTimeInterval: 4.0, repeats: false) { [weak self] _ in
             self?.startIdleAnimations()
         }
@@ -5872,7 +5893,19 @@ class GameEngine: ObservableObject {
 
     private func scheduleExplorationTip() {
         explorationTipTimer?.invalidate()
-        explorationTipTimer = Timer.scheduledTimer(withTimeInterval: 25, repeats: false) { [weak self] _ in
+        let training = dungeon?.training == true
+        explorationTipTimer = Timer.scheduledTimer(withTimeInterval: training ? 15 : 25, repeats: false) { [weak self] _ in
+            // Training: sat still on a step — explain it properly.
+            if let self = self, training, !self.timeFrozen, !self.directionExits.isEmpty, !self.awaitingContinue,
+               self.currentCombat == nil, self.explorationTipGeneration != self.screenGeneration,
+               let cur = self.currentTrainingStep() {
+                self.explorationTipGeneration = self.screenGeneration
+                self.print("")
+                self.print("  🎓 STEP \(cur.index + 1) OF \(cur.count)", color: .cyan, bold: true)
+                self.printWrapped(cur.step.detail, indent: 2, color: .cyan)
+                self.forceScrollToNewest = true
+                return
+            }
             guard let self = self, self.idlePromptsEnabled, !self.timeFrozen, !self.directionExits.isEmpty, !self.awaitingContinue,
                   self.currentCombat == nil, !(self.isJustDMActive && self.inDMMode),
                   self.explorationTipGeneration != self.screenGeneration else { return }
@@ -6154,7 +6187,7 @@ class GameEngine: ObservableObject {
         if merchants { d.revealMerchants = !hiding }
         if people { d.revealPeople = !hiding }
         var shown: [String] = []
-        if boss { shown.append("the guardian's lair (B, purple)") }
+        if boss { shown.append("\(foePossessive) lair (B, purple)") }
         if monsters { shown.append("monsters (m, red)") }
         if traps { shown.append("traps (!, orange)") }
         if stairs { shown.append("stairs, ropes and pads (↓ ↑ *, yellow)") }
@@ -6168,12 +6201,12 @@ class GameEngine: ObservableObject {
             if let bearing = guardianBearing(in: d) {
                 msg += " The lair lies \(bearing)."
             } else if lairs.isEmpty {
-                msg += " There is no guardian on this level."
+                msg += " There is no guardian or Boss on this level."
             } else if lairs.allSatisfy({ $0.cleared }) {
-                msg += " This level's guardian is already beaten."
+                msg += " \(cap(floorFoe)) is already beaten."
             } else if let other = lairs.first(where: { !$0.cleared && $0.floor != here }) {
                 // Not in this gallery: the level's guardian is in the other one.
-                msg += " The guardian isn't in this gallery — it's in the other one (gallery \(other.floor)), marked there on the map."
+                msg += " \(cap(foeWord)) isn't in this gallery — it's in the other one (gallery \(other.floor)), marked there on the map."
             }
         }
         if gameState == .exploring {
@@ -6207,16 +6240,50 @@ class GameEngine: ObservableObject {
                                         "Goblin Hollow", "The Training Crypt", "Lantern Lane Tunnels",
                                         "The Proving Pits", "Mossy Steps"]
 
-    /// Each step: its key, what to do, and whether it's been done.
-    private var trainingSteps: [(key: String, hint: String)] {
-        [("walk", "Tap a direction — N, S, E or W on the pad — to walk into the next room."),
-         ("torch", "Light your torch (the flame, bottom-left of the pad): in the dark you see nothing."),
-         ("search", "Search this room (the magnifying glass, top-left of the pad) — hidden things turn up."),
-         ("listen", "Listen at the doors (the ear, top-right of the pad) to hear what's in the rooms next door."),
-         ("packs", "Look in your packs: type \"inventory\", or open Party from the buttons."),
-         ("fight", "Win a fight. Attack, or cast a spell — the ? in a fight shows each hero's chances."),
-         ("rest", "Rest to heal: the button in the middle of the pad (hold it for a long rest)."),
-         ("guardian", "Find the guardian and beat it to finish your training.")]
+    /// Each step: its key, the short hint for the status line, and a fuller
+    /// explanation given when the player sits idle on it. Quick training is
+    /// the eight basics; Full adds the map viewer, help, Party Status,
+    /// saving and loading, certificates and the AI brain.
+    private func trainingSteps(full: Bool) -> [(key: String, hint: String, detail: String)] {
+        let all: [(key: String, hint: String, detail: String, full: Bool)] = [
+            ("walk", "Tap a direction — N, S, E or W on the pad — to walk into the next room.",
+             "The box at the top is the map. [@] is you. Each [ ] is a room you've seen; the lines between them (-- and |) are doorways. Letters mark what's in a room: ! danger, B the Boss's lair, M a merchant, N someone to talk to, G a gym. Your aim here: explore, get stronger, and beat the guardian at the far end. To move, tap N, S, E or W on the direction pad — or type \"north\", or say it.", false),
+            ("map", "Long-press the map to open the map viewer: the whole floor and a key to every symbol.",
+             "Press and hold anywhere on the map. The viewer shows every room you've been to on this floor, with a full key underneath. Pinch to zoom, and use the buttons along the bottom to page between floors or print the map. Close it with ✕.", true),
+            ("torch", "Light your torch (the flame, bottom-left of the pad): in the dark you see nothing.",
+             "Without light you can't see the room, its exits or what's in it — and you walk into trouble. The flame at the bottom-left of the direction pad lights your torch (and douses it again). Torches burn down as you walk, so buy spares from merchants.", false),
+            ("search", "Search this room (the magnifying glass, top-left of the pad) — hidden things turn up.",
+             "Rooms hide things: coins, potions, keys, secret notes. Searching takes a little time and sometimes finds nothing — Rogues and Engineers are better at it. The magnifying glass is at the top-left of the direction pad.", false),
+            ("listen", "Listen at the doors (the ear, top-right of the pad) to hear what's in the rooms next door.",
+             "Before walking into a room, listen: you may hear monsters, voices or water. It's the safe way to decide which way to go. The ear is at the top-right of the direction pad.", false),
+            ("help", "Tap ? (the middle of the small 3-part button, bottom-right) for help on this screen.",
+             "Every screen has help. The small three-part button at the bottom-right of the buttons has < Back on the left, ? in the middle, and >> (more buttons) on the right. Tap ? now to read about exploring; tap it again, or ✕, to come back.", true),
+            ("packs", "Look in your packs: type \"inventory\", or open Party from the buttons.",
+             "Each adventurer carries a pack: weapons, armour, potions, food, torches, keys. Open it by typing \"inventory\" (or \"i\"), or from the Party button. Tap an item to use, equip, give or drop it.", false),
+            ("status", "Open Party Status (the Party button) to see everyone's health, spells and your quest.",
+             "Party Status shows each adventurer's hit points, armour, level and spells, your gold, and what you're here to do. It's the place to check before a fight or after one.", true),
+            ("fight", "Win a fight. Attack, or cast a spell — the ? in a fight shows each hero's chances.",
+             "When monsters appear, the fight takes turns: each of you, and each monster, in the order rolled at the start. On your turn choose Attack, a spell, a potion, Dodge or run. The ? in a fight lists the enemy's strength and your real chance to hit it. Your robot companion takes their own turns.", false),
+            ("rest", "Rest to heal: the button in the middle of the pad (hold it for a long rest).",
+             "A short rest (tap the middle of the pad) heals a little and takes an hour. A long rest (hold it) heals fully and restores spells — but it takes eight hours, and time matters: quests have deadlines, torches burn and monsters move. Rest when you need to, not every room.", false),
+            ("save", "Save your game: tap Save (or ✕, then Save & Leave). Loading is Play > Continue Adventure.",
+             "Saving keeps your adventure so you can stop and come back. Use Save on the buttons, or ✕ at the right of the input line and then Save & Leave. To load a game later: Play > Continue Adventure, then pick it from the list. Saves are kept by date; the game also saves as you go.", true),
+            ("certificates", "Certificates: open Settings (the cog) > Certificates to see what you've earned.",
+             "Beating an adventure, and training at a gym, earns a certificate with your party, your stats and the maps you made — kept in Settings > Certificates and printable as a PDF. The Hall of Fame (Play > Continue Adventure, sorted by points) keeps your best games.", true),
+            ("ai", "Optional: give the DM an AI brain — Settings (cog) > AI Brain. Type \"skip\" to pass.",
+             "The game has its own Dungeon Master and needs nothing else. If you'd like a DM that chats freely, open Settings (the cog) > AI Brain: Apple's on-device one needs no key on newer devices; Claude, ChatGPT or Gemini need a key from their websites (the key screen links to them and tests the key for you). Type \"skip\" to move on.", true),
+            ("guardian", "Find the Boss and beat it to finish your training.",
+             "In a real adventure each floor has a guardian, and the last floor holds the Boss — the villain of your tale. Training is a single floor, so its guardian is the Boss, in its lair: B on the map. Beat it and the adventure is won. Rest and heal first, keep your torch lit, and read the ? in the fight. The Training line tells you which way the lair lies.", false),
+        ]
+        return all.filter { full || !$0.full }.map { ($0.key, $0.hint, $0.detail) }
+    }
+
+    /// The step the player is on, or nil once every step is done.
+    private func currentTrainingStep() -> (index: Int, count: Int, step: (key: String, hint: String, detail: String))? {
+        guard let d = dungeon, d.training else { return nil }
+        let steps = trainingSteps(full: d.trainingFull)
+        guard let n = steps.firstIndex(where: { !trainingStepDone($0.key, in: d) }) else { return nil }
+        return (n, steps.count, steps[n])
     }
 
     private func trainingStepDone(_ key: String, in d: Dungeon) -> Bool {
@@ -6239,12 +6306,17 @@ class GameEngine: ObservableObject {
 
     /// The next thing to try, on the status line.
     private func trainingNudge() {
-        guard let d = dungeon, d.training, explorationStatusMessage == nil else { return }
-        let steps = trainingSteps
-        guard let n = steps.firstIndex(where: { !trainingStepDone($0.key, in: d) }) else { return }
-        var hint = steps[n].hint
-        if steps[n].key == "guardian", let bearing = guardianBearing(in: d) { hint += " Its lair is \(bearing)." }
-        explorationStatusMessage = ("🎓 Training \(n + 1) of \(steps.count): " + hint, .cyan)
+        guard let d = dungeon, explorationStatusMessage == nil, let cur = currentTrainingStep() else { return }
+        var hint = cur.step.hint
+        if cur.step.key == "guardian", let bearing = guardianBearing(in: d) { hint += " Its lair is \(bearing)." }
+        explorationStatusMessage = ("🎓 Training \(cur.index + 1) of \(cur.count): " + hint, .cyan)
+    }
+
+    /// "skip" in training passes the current step.
+    private func trainingSkip() -> Bool {
+        guard let cur = currentTrainingStep(), cur.step.key != "guardian" else { return false }
+        trainingDid(cur.step.key)
+        return true
     }
 
     func startTrainingGame() {
@@ -6285,19 +6357,26 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped("Each training game is a little different. When you're ready for the real thing, start a New Adventure from the Play menu.", indent: 2, color: .dimGreen)
         print("")
-        showMenuOptions([MenuOption("Begin", isDefault: true), MenuOption("?", tint: .navigation, compact: true),
+        printWrapped("Quick Training: the basics in eight steps — moving, light, searching, listening, packs, a fight, resting and the Boss.", indent: 2, color: .green)
+        printWrapped("Full Training: fourteen steps — those, plus the map viewer, help, Party Status, saving and loading, certificates and the AI Dungeon Master.", indent: 2, color: .green)
+        print("")
+        showMenuOptions([MenuOption("Quick Training", isDefault: true), MenuOption("Full Training"),
+                         MenuOption("?", tint: .navigation, compact: true),
                          MenuOption("< Back", tint: .navigation, compact: true)])
         let back: () -> Void = { [weak self] in self?.dungeon = nil; self?.party = []; self?.showPlayMenu() }
         closeHandler = back
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             switch choice {
-            case 1: self.enterDungeon()
-            case 2:
+            case 1, 2:
+                d.trainingFull = choice == 2
+                self.logEvent(choice == 2 ? "Full training" : "Quick training", category: "EXPLORE")
+                self.enterDungeon()
+            case 3:
                 self.showInlineHelp {
                     self.printTitle("Training — Help")
                     self.print("")
-                    self.printWrapped("Training is a complete, small game for learning the ropes: walking, light, searching, listening, packs, fighting and resting, then the guardian. Follow the Training line at the top of the screen; it moves on as you do each thing. It saves like any adventure.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Training is a complete, small game for learning the ropes. Follow the Training line at the top of the screen; it moves on as you do each thing. Sit still for a few seconds and it explains the step in full. Type \"skip\" to pass an optional step. It saves like any adventure.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             default: back()
@@ -13318,6 +13397,7 @@ class GameEngine: ObservableObject {
     }
 
     func showAIProviderMenu(onBack: (() -> Void)? = nil) {
+        trainingDid("ai")
         let back = onBack ?? { [weak self] in self?.showDMSettingsSubMenu() }
         clearTerminal()
         printTitle(BrainLabels.button)
@@ -21354,6 +21434,7 @@ class GameEngine: ObservableObject {
     }
 
     private func showExplorationHelp() {
+        trainingDid("help")
         showInlineHelp {
             self.printTitle("Exploration Help")
             self.print("")
@@ -21369,7 +21450,7 @@ class GameEngine: ObservableObject {
             } else {
                 self.printWrapped("There are \(floors) floors. You start on the ground floor (floor 0, Level 1) and work your way down to \(Dungeon.floorName(floors).lowercased()) (Level \(floors)), where the villain of your Origins tale is waiting.", indent: 2, color: .green)
             }
-            self.printWrapped("Each floor has a guardian in its boss chamber (B on the map). Beat it and the way down opens. A rare deep-blue teleport pad can drop you a floor early, past that guardian.", indent: 2, color: .dimGreen)
+            self.printWrapped("Each floor has a guardian in its lair (B on the map). Beat it and the way down opens. The guardian of the last floor is the Boss — the villain of your tale; in a one-floor game the guardian is the Boss. A rare deep-blue teleport pad can drop you a floor early, past that guardian.", indent: 2, color: .dimGreen)
             self.printWrapped("Stairs and ropes inside a floor lead to its other gallery — a shortcut across the same depth, not a way down. The header line shows the floor you're on, and which gallery.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  THE MAP", color: .cyan, bold: true)
@@ -28908,6 +28989,14 @@ class GameEngine: ObservableObject {
     /// "Tell the user they should find at least one boss per level, unless
     /// the bosses have wandered." Going down needs this floor's guardian
     /// beaten, and nothing said so.
+    /// Words: a guardian holds each floor; the Boss is the one at the very
+    /// bottom — the villain of the tale. On the last floor (and so in a
+    /// one-floor Easy game) the guardian IS the Boss, and is called that.
+    var foeWord: String { (dungeon?.isFinalLevel ?? false) ? "the Boss" : "the guardian" }
+    var foePossessive: String { (dungeon?.isFinalLevel ?? false) ? "the Boss's" : "the guardian's" }
+    var floorFoe: String { (dungeon?.isFinalLevel ?? false) ? "the Boss" : "this floor's guardian" }
+    private func cap(_ s: String) -> String { s.prefix(1).uppercased() + s.dropFirst() }
+
     /// Easy only: which way the guardian's lair lies from here, and roughly
     /// how far — "north-east, about 4 rooms away".
     private func guardianBearing(in d: Dungeon) -> String? {
@@ -28938,11 +29027,11 @@ class GameEngine: ObservableObject {
         if !guardianToldArrival.contains(floor) {
             guardianToldArrival.insert(floor)
             if easy, !wandered, let bearing = guardianBearing(in: d) {
-                explorationStatusMessage = ("☠ Beat this floor's guardian to win — its lair is \(bearing).", .yellow)
+                explorationStatusMessage = ("☠ Beat \(floorFoe) to win — its lair is \(bearing).", .yellow)
             } else {
                 explorationStatusMessage = (wandered
-                    ? "☠ This floor's guardian has left its lair and is wandering — find it and beat it to go deeper."
-                    : "☠ Find and beat this floor's guardian to go deeper — its lair is far from where you came in.", .yellow)
+                    ? "☠ \(cap(floorFoe)) has left its lair and is wandering — find it and beat it\(d.isFinalLevel ? " to win" : " to go deeper")."
+                    : "☠ Find and beat \(floorFoe)\(d.isFinalLevel ? " to win" : " to go deeper") — its lair is far from where you came in.", .yellow)
             }
             return
         }
@@ -28951,7 +29040,7 @@ class GameEngine: ObservableObject {
         if easy, !wandered, visitedNow % 4 == 0, visitedNow != guardianBearingAtVisits,
            let bearing = guardianBearing(in: d) {
             guardianBearingAtVisits = visitedNow
-            explorationStatusMessage = ("☠ The guardian's lair: \(bearing).", .yellow)
+            explorationStatusMessage = ("☠ \(cap(foePossessive)) lair: \(bearing).", .yellow)
             return
         }
         let visited = d.rooms.values.filter { $0.visited }.count
@@ -28959,8 +29048,8 @@ class GameEngine: ObservableObject {
             guardianToldLate.insert(floor)
             let seen = bosses.contains { $0.visited }
             explorationStatusMessage = (seen
-                ? "☠ You've found the guardian's lair but not beaten it — that's the way down."
-                : "☠ Most of this floor explored and no guardian yet. Try the rooms furthest from the stairs\(wandered ? " — or it may have wandered" : "").", .yellow)
+                ? "☠ You've found \(foePossessive) lair but not beaten it — \(d.isFinalLevel ? "that's the win" : "that's the way down")."
+                : "☠ Most of this floor explored and no \(d.isFinalLevel ? "Boss" : "guardian") yet. Try the rooms furthest from the stairs\(wandered ? " — or it may have wandered" : "").", .yellow)
         }
     }
 
@@ -29284,6 +29373,7 @@ class GameEngine: ObservableObject {
 
     /// Settings > Certificates: every finished adventure's certificate.
     func showCertificates(onBack: @escaping () -> Void) {
+        trainingDid("certificates")
         clearTerminal()
         printTitle("Certificates")
         print("")
@@ -29822,6 +29912,7 @@ class GameEngine: ObservableObject {
     }
 
     func showPartyStatus() {
+        trainingDid("status")
         clearTerminal()
 
         // Show map at top
@@ -39392,6 +39483,7 @@ class GameEngine: ObservableObject {
 
     private func performSave(slotId: UUID, slotName: String) {
         guard let dungeon = dungeon else { return }
+        trainingDid("save")
 
         // If saving during combat, clear the current room's encounter so
         // loading won't immediately throw the player back into battle.
