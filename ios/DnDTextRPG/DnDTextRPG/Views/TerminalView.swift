@@ -3067,9 +3067,11 @@ struct MenuButtonsView: View {
         let backButtonIdx = indices.first(where: { options[$0].text == "< Back" })
         let helpIdx = indices.first(where: { options[$0].text == "?" || options[$0].text == "?\u{0338}" })
         let nextIdx = indices.first(where: { options[$0].text == ">>" })
+        // About (ⓘ) always sits on the right, where >> would be.
+        let aboutIdx = indices.first(where: { options[$0].text == "ⓘ" })
 
         // Any other compact items (e.g. 🎲, ↺) fill remaining empty slots
-        let knownIdxs = Set([backIdx, backButtonIdx, helpIdx, nextIdx].compactMap { $0 })
+        let knownIdxs = Set([backIdx, backButtonIdx, helpIdx, nextIdx, aboutIdx].compactMap { $0 })
         let otherIndices = indices.filter { !knownIdxs.contains($0) }
         var otherIter = otherIndices.makeIterator()
 
@@ -3092,6 +3094,7 @@ struct MenuButtonsView: View {
         // Slot 2: >> > other > empty
         let slot2: CompactSlotContent = {
             if let i = nextIdx { return .menuItem(i) }
+            if let i = aboutIdx { return .menuItem(i) }
             if let i = otherIter.next() { return .menuItem(i) }
             return .empty
         }()

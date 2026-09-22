@@ -1962,13 +1962,7 @@ class GameEngine: ObservableObject {
         let mapped = lines.map { line -> TerminalLine in
             let padded = maxLen > 0 ? line.padding(toLength: maxLen, withPad: " ", startingAt: 0) : line
             var tl = TerminalLine(padded, color: color, size: size)
-            // Cheat-revealed rooms — (B), (m), (!) — stand out in magenta.
-            let chars = Array(padded)
-            if chars.count >= 3 {
-                for i in 0..<(chars.count - 2) where chars[i] == "(" && chars[i + 2] == ")" && "Bm!".contains(chars[i + 1]) {
-                    tl.extraHighlights.append((range: i..<(i + 3), color: .magenta))
-                }
-            }
+            tl.extraHighlights += Self.revealHighlights(padded)
             return tl
         }
         runOnMain {
@@ -2026,9 +2020,9 @@ class GameEngine: ObservableObject {
         let levels = atlasLevels()
         guard levels.indices.contains(atlasLevelIndex) else { return }
         let frame = Dungeon.atlasFrames(levels, showAll: atlasShowAllRooms)[atlasLevelIndex]
-        let onThisLevel = atlasLevelIndex == levels.count - 1
+        let d = dungeon
         let map = Dungeon.atlasMapLines(levels[atlasLevelIndex], showAll: atlasShowAllRooms, frame: frame,
-                                        revealBoss: onThisLevel && (dungeon?.revealBoss ?? false))
+                                        reveal: { d?.atlasRevealGlyph($0) })
         // The Whole Deep: rooms you've been to bright, the rest dim.
         let visited = atlasShowAllRooms ? Dungeon.atlasVisitedCells(levels[atlasLevelIndex], frame: frame) : []
         var out: [TerminalLine] = map.lines.enumerated().map { index, text in
@@ -2037,10 +2031,7 @@ class GameEngine: ObservableObject {
                 line.extraHighlights.append((cell.column..<(cell.column + 3), .brightGreen))
             }
             if let hl = map.highlight, hl.line == index { line.highlightRange = hl.column..<(hl.column + 3) }
-            if let r = text.range(of: "(B)") {
-                let col = text.distance(from: text.startIndex, to: r.lowerBound)
-                line.extraHighlights.append((col..<(col + 3), .magenta))
-            }
+            line.extraHighlights += Self.revealHighlights(text)
             return line
         }
         out.insert(TerminalLine(atlasShowAllRooms ? "THE WHOLE DEEP — every room on this level" : "THE CHARTED REACHES — where you've been", color: .cyan, size: mapFontSize), at: 0)
@@ -6147,8 +6138,11 @@ class GameEngine: ObservableObject {
         let boss = all || words.contains("boss") || words.contains("guardian")
         let monsters = all || words.contains("monster") || words.contains("enem") || words.contains("foe")
         let traps = all || words.contains("trap")
-        guard (words.hasPrefix("show") || words.hasPrefix("reveal") || hiding), boss || monsters || traps else {
-            let msg = "The magic fizzles. Try \"magick: show the boss\", \"show monsters\" or \"show traps\"."
+        let stairs = all || words.contains("stair") || words.contains("rope") || words.contains("ladder") || words.contains("teleport") || words.contains("pad")
+        let merchants = all || words.contains("merchant") || words.contains("shop") || words.contains("trader") || words.contains("gym")
+        let people = all || words.contains("npc") || words.contains("people") || words.contains("folk") || words.contains("someone")
+        guard (words.hasPrefix("show") || words.hasPrefix("reveal") || hiding), boss || monsters || traps || stairs || merchants || people else {
+            let msg = "The magic fizzles. Try \"magick: show the boss\", \"show monsters\", \"show traps\", \"show stairs\", \"show merchants\" or \"show people\"."
             if gameState == .exploring { explorationStatusMessage = ("✧ " + msg, .magenta); showExplorationView() }
             else { print("  ✧ " + msg, color: .magenta) }
             return
@@ -6156,12 +6150,18 @@ class GameEngine: ObservableObject {
         if boss { d.revealBoss = !hiding }
         if monsters { d.revealMonsters = !hiding }
         if traps { d.revealTraps = !hiding }
+        if stairs { d.revealStairs = !hiding }
+        if merchants { d.revealMerchants = !hiding }
+        if people { d.revealPeople = !hiding }
         var shown: [String] = []
-        if boss { shown.append("the guardian's lair (B)") }
-        if monsters { shown.append("monsters (m)") }
-        if traps { shown.append("traps (!)") }
+        if boss { shown.append("the guardian's lair (B, purple)") }
+        if monsters { shown.append("monsters (m, red)") }
+        if traps { shown.append("traps (!, orange)") }
+        if stairs { shown.append("stairs, ropes and pads (↓ ↑ *, yellow)") }
+        if merchants { shown.append("merchants and gyms (M G, cyan)") }
+        if people { shown.append("people to talk to (N, cyan)") }
         var msg = hiding ? "The map forgets " + shown.joined(separator: ", ") + "."
-                         : "The map shimmers: " + shown.joined(separator: ", ") + " marked in violet."
+                         : "The map shimmers: " + shown.joined(separator: ", ") + " — on this map and on every floor in the map viewer."
         if boss && !hiding {
             let here = d.currentRoom?.floor
             let lairs = d.rooms.values.filter { $0.roomType == .boss }
@@ -6181,6 +6181,127 @@ class GameEngine: ObservableObject {
             showExplorationView()
         } else {
             print("  ✧ " + msg, color: .magenta)
+        }
+    }
+
+    /// Cheat-revealed rooms — (B), (m), (↓)... — each in its own colour.
+    static func revealHighlights(_ text: String) -> [(range: Range<Int>, color: TerminalColor)] {
+        let chars = Array(text)
+        guard chars.count >= 3 else { return [] }
+        var out: [(range: Range<Int>, color: TerminalColor)] = []
+        for i in 0..<(chars.count - 2) where chars[i] == "(" && chars[i + 2] == ")" {
+            if let c = Dungeon.revealColors[chars[i + 1]] { out.append((i..<(i + 3), c)) }
+        }
+        return out
+    }
+
+    // MARK: - Training
+    //
+    // Play > Training: a guided, single-floor game. Never quite the same
+    // twice (a random hero of any class, a robot companion, a fresh small
+    // dungeon under one of several names) but the choices are narrowed: no
+    // quest to pick, Easy only, one floor — and the status line walks you
+    // through the game one thing at a time until you've tried each.
+
+    private static let trainingNames = ["The Practice Cellars", "Old Mill Undercroft", "The Sparring Vaults",
+                                        "Goblin Hollow", "The Training Crypt", "Lantern Lane Tunnels",
+                                        "The Proving Pits", "Mossy Steps"]
+
+    /// Each step: its key, what to do, and whether it's been done.
+    private var trainingSteps: [(key: String, hint: String)] {
+        [("walk", "Tap a direction — N, S, E or W on the pad — to walk into the next room."),
+         ("torch", "Light your torch (the flame, bottom-left of the pad): in the dark you see nothing."),
+         ("search", "Search this room (the magnifying glass, top-left of the pad) — hidden things turn up."),
+         ("listen", "Listen at the doors (the ear, top-right of the pad) to hear what's in the rooms next door."),
+         ("packs", "Look in your packs: type \"inventory\", or open Party from the buttons."),
+         ("fight", "Win a fight. Attack, or cast a spell — the ? in a fight shows each hero's chances."),
+         ("rest", "Rest to heal: the button in the middle of the pad (hold it for a long rest)."),
+         ("guardian", "Find the guardian and beat it to finish your training.")]
+    }
+
+    private func trainingStepDone(_ key: String, in d: Dungeon) -> Bool {
+        if d.trainingDone.contains(key) { return true }
+        switch key {
+        case "walk": return d.rooms.values.filter { $0.visited }.count >= 2
+        case "torch": return torchLit
+        case "fight": return combatsWon > 0
+        case "guardian": return d.rooms.values.contains { $0.roomType == .boss && $0.cleared }
+        default: return false
+        }
+    }
+
+    /// Marks a training step done (search, listen, packs, rest are noticed
+    /// where they happen).
+    func trainingDid(_ key: String) {
+        guard let d = dungeon, d.training, !d.trainingDone.contains(key) else { return }
+        d.trainingDone.append(key)
+    }
+
+    /// The next thing to try, on the status line.
+    private func trainingNudge() {
+        guard let d = dungeon, d.training, explorationStatusMessage == nil else { return }
+        let steps = trainingSteps
+        guard let n = steps.firstIndex(where: { !trainingStepDone($0.key, in: d) }) else { return }
+        var hint = steps[n].hint
+        if steps[n].key == "guardian", let bearing = guardianBearing(in: d) { hint += " Its lair is \(bearing)." }
+        explorationStatusMessage = ("🎓 Training \(n + 1) of \(steps.count): " + hint, .cyan)
+    }
+
+    func startTrainingGame() {
+        clearAllUndoRedo()
+        hasOfferedHallOfFameReturn = false
+        isMultiplayer = false
+        activeSlotId = nil
+        activeSlotName = nil
+        // A hero of any class, and a robot friend of a different one.
+        let hero = makeRandomCharacter(isAI: false)
+        let helperClass = CharacterClass.allCases.filter { $0 != hero.characterClass }.randomElement()
+        let helper = makeRandomCharacter(isAI: true, charClass: helperClass)
+        helper.markAsAI()
+        party = [hero, helper]
+        let name = Self.trainingNames.randomElement()!
+        let diff = parseDifficulty(1)
+        difficultyScale = diff.scale
+        let d = Dungeon.newAdventure(name: name, difficulty: diff.level)
+        d.levelCount = 1
+        d.training = true
+        dungeon = d
+        // No quest to choose — the guardian is the whole of it.
+        adventureLog = []
+        questHistory = []
+        mainQuest = nil
+        mainQuestCompleted = false
+        noMainQuest = true
+        npcQuestOffers = [:]
+        adventureIntroLines = []
+        logEvent("Training: \(hero.name) and \(helper.name) in \(name)", category: "EXPLORE")
+
+        clearTerminal()
+        printTitle("Training")
+        print("")
+        printWrapped("A short, guided game: one small floor of \(name), a guardian at the far end, and a hint on the status line at every step until you've tried everything once.", indent: 2)
+        print("")
+        printWrapped("Your hero: \(hero.name), a \(hero.race.rawValue) \(hero.characterClass.rawValue). With you: \(helper.name), a robot \(helper.characterClass.rawValue) who fights on their own.", indent: 2, color: .cyan)
+        print("")
+        printWrapped("Each training game is a little different. When you're ready for the real thing, start a New Adventure from the Play menu.", indent: 2, color: .dimGreen)
+        print("")
+        showMenuOptions([MenuOption("Begin", isDefault: true), MenuOption("?", tint: .navigation, compact: true),
+                         MenuOption("< Back", tint: .navigation, compact: true)])
+        let back: () -> Void = { [weak self] in self?.dungeon = nil; self?.party = []; self?.showPlayMenu() }
+        closeHandler = back
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1: self.enterDungeon()
+            case 2:
+                self.showInlineHelp {
+                    self.printTitle("Training — Help")
+                    self.print("")
+                    self.printWrapped("Training is a complete, small game for learning the ropes: walking, light, searching, listening, packs, fighting and resting, then the guardian. Follow the Training line at the top of the screen; it moves on as you do each thing. It saves like any adventure.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default: back()
+            }
         }
     }
 
@@ -6467,6 +6588,9 @@ class GameEngine: ObservableObject {
 
         menuOptions.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showMainMenuHelp() }
+        // About & credits: the ⓘ in the 3-bar's right-hand slot (same on the Play menu).
+        menuOptions.append(MenuOption("ⓘ", tint: .navigation, compact: true))
+        actions.append { [weak self] in self?.showAbout(onBack: { [weak self] in self?.clearTerminal(); self?.showMainMenu() }) }
 
         showMenuOptions(menuOptions)
 
@@ -6801,8 +6925,13 @@ class GameEngine: ObservableObject {
         // Hall of Fame is still reachable via the "hall of fame" chat
         // command. (Continue Adventure itself is added above, ahead of
         // New Adventure.)
-        // About & credits — fills the space beside the 3-bar row.
-        menuOpts.append(MenuOption("About"))
+        // A guided, single-floor game for learning the ropes.
+        menuOpts.append(MenuOption("Training"))
+        actions.append { [weak self] in self?.startTrainingGame() }
+
+        // About & credits: the ⓘ in the 3-bar's right-hand slot, as on the
+        // main menu.
+        menuOpts.append(MenuOption("ⓘ", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showAbout(onBack: { [weak self] in self?.showPlayMenu() }) }
 
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -16099,9 +16228,25 @@ class GameEngine: ObservableObject {
                 party.append(keep)
                 continue
             }
+            // First character is always human-controlled
+            party.append(makeRandomCharacter(isAI: allAI && i > 0))
+        }
+
+        // For multiplayer new game, pre-set the last AI slot as Remote
+        if presetRemote && count >= 2 {
+            pendingRemoteSlots.insert(count - 1)
+            isMultiplayer = true
+        }
+
+        showPartyReview()
+    }
+
+    /// One ready-to-play adventurer: random name, people and class, with
+    /// scores, skills, gold, gear and spells to match.
+    private func makeRandomCharacter(isAI: Bool, charClass fixedClass: CharacterClass? = nil) -> Character {
             let name = pickUniqueName()
             let race = Race.allCases.randomElement()!
-            let charClass = CharacterClass.allCases.randomElement()!
+            let charClass = fixedClass ?? CharacterClass.allCases.randomElement()!
 
             // Auto scores
             let sorted = AbilityScores.standardArray.sorted(by: >)
@@ -16114,8 +16259,6 @@ class GameEngine: ObservableObject {
                 scores.set(ability, to: scores.score(for: ability) + bonus)
             }
 
-            // First character is always human-controlled
-            let isAI = allAI && i > 0
             let character = Character(name: name, race: race, characterClass: charClass, abilityScores: scores, isComputerControlled: isAI)
             if isAI { character.markAsAI() }
 
@@ -16140,17 +16283,7 @@ class GameEngine: ObservableObject {
             if charClass == .barbarian {
                 character.rageUsesRemaining = character.rageMaxUses
             }
-
-            party.append(character)
-        }
-
-        // For multiplayer new game, pre-set the last AI slot as Remote
-        if presetRemote && count >= 2 {
-            pendingRemoteSlots.insert(count - 1)
-            isMultiplayer = true
-        }
-
-        showPartyReview()
+            return character
     }
 
     /// Show party roster with options to swap AI/Remote slots before starting
@@ -21230,7 +21363,12 @@ class GameEngine: ObservableObject {
             self.printLink("Leave this adventure (you'll be asked about saving)", to: "leaveGame", indent: 2)
             self.print("")
             self.print("  THE WAY IS DOWN", color: .cyan, bold: true)
-            self.printWrapped("There are seven floors. You start on the ground floor (floor 0, Level 1) and work your way down to floor -6 (Level 7), where the villain of your Origins tale is waiting.", indent: 2, color: .green)
+            let floors = self.dungeon?.levelCount ?? Dungeon.defaultFinalLevel
+            if floors <= 1 {
+                self.printWrapped("This dungeon is a single floor — the ground floor. Its guardian is the villain of your Origins tale: find it and beat it to win.", indent: 2, color: .green)
+            } else {
+                self.printWrapped("There are \(floors) floors. You start on the ground floor (floor 0, Level 1) and work your way down to \(Dungeon.floorName(floors).lowercased()) (Level \(floors)), where the villain of your Origins tale is waiting.", indent: 2, color: .green)
+            }
             self.printWrapped("Each floor has a guardian in its boss chamber (B on the map). Beat it and the way down opens. A rare deep-blue teleport pad can drop you a floor early, past that guardian.", indent: 2, color: .dimGreen)
             self.printWrapped("Stairs and ropes inside a floor lead to its other gallery — a shortcut across the same depth, not a way down. The header line shows the floor you're on, and which gallery.", indent: 2, color: .dimGreen)
             self.print("")
@@ -21239,7 +21377,7 @@ class GameEngine: ObservableObject {
             self.printFullMapLegend()
             self.print("")
             self.print("  A LITTLE MAGICK", color: .magenta, bold: true)
-            self.printWrapped("Things can be made to show on the map with an incantation typed at the > prompt: \"magick: show ...\" (or cheat:, magic:, magik:). Try \"magick: show the boss\", \"show monsters\", \"show traps\" or \"show all floors\" — or something of your own. \"hide ...\" undoes it.", indent: 2, color: .dimGreen)
+            self.printWrapped("Things can be made to show on the map with an incantation typed at the > prompt: \"magick: show ...\" (or cheat:, magic:, magik:). Try \"magick: show the boss\" (purple B), \"show monsters\" (red), \"show traps\" (orange), \"show stairs\" (stairs, ropes, teleport pads), \"show merchants\", \"show people\", \"show all\" (the same as \"show everything\") or \"show all floors\" — or something of your own. They show on every floor in the map viewer too. \"hide ...\" undoes it.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  DIRECTIONS", color: .cyan, bold: true)
             self.printWrapped("Tap N/S/E/W to move. Long-press a direction to secure/unsecure that door.", indent: 2, color: .dimGreen)
@@ -21521,6 +21659,7 @@ class GameEngine: ObservableObject {
         // Dynamically size the map to fill screen without scrolling
         _ = dungeon
         checkQuestDeadline()
+        trainingNudge()
         nudgeAboutGuardian()
         printExplorationMap()   // same map everywhere (fills the Mac pane's width)
         // The date and time, and — once someone's said when — the quest's deadline.
@@ -23455,6 +23594,7 @@ class GameEngine: ObservableObject {
     }
 
     func searchRoom() {
+        trainingDid("search")
         guard let room = dungeon?.currentRoom else { return }
 
         clearTerminal()
@@ -23933,6 +24073,7 @@ class GameEngine: ObservableObject {
     // MARK: - Listen at Doors
 
     private func listenAtDoors() {
+        trainingDid("listen")
         guard let room = dungeon?.currentRoom, let dungeon = dungeon else { return }
 
         clearTerminal()
@@ -26387,6 +26528,7 @@ class GameEngine: ObservableObject {
     }
 
     private func showInventoryFor(_ character: Character, onBack: (() -> Void)? = nil, fromDM: Bool = false) {
+        trainingDid("packs")
         // Pack opening animation — only on first open per room
         let currentRoomId = dungeon?.currentRoom?.id
         if let roomId = currentRoomId, roomId != lastInventoryRoomId && !fromDM {
@@ -32298,6 +32440,7 @@ class GameEngine: ObservableObject {
     }
 
     func performRest(isLongRest: Bool, fast: Bool = false) {
+        trainingDid("rest")
         let repeats = isLongRest ? 3 : 1
         let restDuration = isLongRest ? "8 hours" : "1 hour"
         let header = isLongRest ? "Taking a long rest (\(restDuration))..." : "Resting (\(restDuration))..."

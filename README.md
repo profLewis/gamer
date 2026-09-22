@@ -53,7 +53,7 @@ Version 3.0 is the biggest update yet: many rounds of play-testing by Beau and P
 ### Finding your way
 - **Back and Next** in the 3-bar undo and redo a step while exploring; **< Back** also looks back through the screens you've left.
 - **The Atlas**: long-press the map for the whole floor, every floor you've mapped, pinch-zoom, room labels, a full key, and a printable PDF.
-- **A little magick**: type `magick: show the boss` (or `cheat:`, `magic:`, `magik:`) to mark the guardian's lair on the map; also `show monsters`, `show traps`, `show all floors`. The map viewer has a **Show the boss's lair** button too.
+- **A little magick**: type `magick: show the boss` (or `cheat:`, `magic:`, `magik:`) to mark the guardian's lair on the map, in purple, on every floor; also `show monsters`, `show traps`, `show stairs`, `show merchants`, `show people`, `show all` and `show all floors`, each in its own colour. The map viewer has a **Show the boss's lair** button too.
 
 ### Saves, settings and the rest
 - **Continue Adventure** sorts by date or by points (then it's the **Hall of Fame**), with a Character Hall of Fame; unfinished adventures show their points so far.
@@ -315,11 +315,14 @@ can go wrong.
 
 Type a keyword and a colon at the > prompt — `cheat:`, `magic:`, `magick:` or `magik:` — then what you want. (Spoken, just say the word: "magic show the boss".)
 
-- `magick: show the boss` — marks this floor's guardian lair as a violet **(B)** on the map: where it is, not the way there.
-- `magick: show monsters` — marks unexplored rooms with monsters in them **(m)**.
-- `magick: show traps` — marks unsprung traps **(!)**.
-- `magick: show all floors` — the map viewer (long-press the map) shows every room of every floor reached.
-- `magick: show everything`, or `hide …` to take marks off again.
+- `magick: show the boss` — marks the guardian's lair as a purple **(B)**: where it is, not the way there. In the map viewer (long-press the map) it's marked on every floor.
+- `magick: show monsters` — rooms with monsters in them **(m)**, in red.
+- `magick: show traps` — unsprung traps **(!)**, in orange.
+- `magick: show stairs` — stairs and ropes **(↓ ↑)** and teleport pads **(\*)**, in yellow.
+- `magick: show merchants` — merchants **(M)** and gyms **(G)**; `magick: show people` — anyone to talk to **(N)**; both in cyan.
+- `magick: show all` (the same as `show everything`) — all of the above at once.
+- `magick: show all floors` — the map viewer shows every room of every floor reached.
+- `hide …` takes marks off again (`hide all`, `hide traps`…).
 
 Other things may show on the map with a `magick: show …` incantation of your own — try it.
 

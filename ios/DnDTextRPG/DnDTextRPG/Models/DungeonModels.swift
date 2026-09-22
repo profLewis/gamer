@@ -718,6 +718,7 @@ class Dungeon: ObservableObject, Codable {
     enum CodingKeys: String, CodingKey {
         case name, level, rooms, currentRoomId, previousRoomId, nextRoomId, currentFloor, emergencyDropUsed, hasMultiGymPass
         case archivedLevels, hasCartography, levelCount, startDifficulty
+        case training, trainingDone
     }
 
     init(name: String, level: Int, levelCount: Int? = nil, startDifficulty: Int? = nil) {
@@ -764,6 +765,8 @@ class Dungeon: ObservableObject, Codable {
         // own — so it silently went back to medium every time a game was saved
         // and continued, taking the easy-difficulty fight density with it.
         startDifficulty = (try? container.decodeIfPresent(Int.self, forKey: .startDifficulty)) ?? 2
+        training = (try? container.decodeIfPresent(Bool.self, forKey: .training)) ?? false
+        trainingDone = (try? container.decodeIfPresent([String].self, forKey: .trainingDone)) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -782,6 +785,8 @@ class Dungeon: ObservableObject, Codable {
         try container.encode(hasCartography, forKey: .hasCartography)
         try container.encode(levelCount, forKey: .levelCount)
         try container.encode(startDifficulty, forKey: .startDifficulty)
+        try container.encode(training, forKey: .training)
+        try container.encode(trainingDone, forKey: .trainingDone)
     }
 
     /// Next room ID for dynamic expansion
@@ -1429,12 +1434,27 @@ class Dungeon: ObservableObject, Codable {
     /// medium and play exactly as they did.
     var startDifficulty: Int = 2
 
+    /// A Training game (Play > Training): one easy floor, with a guided step
+    /// on the status line until each thing has been tried (trainingDone).
+    var training = false
+    var trainingDone: [String] = []
+
     /// Cheats ("magick: show the boss" and friends) — mark these rooms on the
     /// map even unexplored, as (B), (m) or (!), with no corridors to them:
     /// where they are, not how to get there. For this visit only, not saved.
     var revealBoss = false
     var revealMonsters = false
     var revealTraps = false
+    var revealStairs = false      // stairs, ropes and teleport pads
+    var revealMerchants = false   // merchants and gyms
+    var revealPeople = false      // anyone to talk to
+
+    /// Each revealed marker's colour, on the map and in the map viewer.
+    static let revealColors: [Swift.Character: TerminalColor] = [
+        "B": .magenta, "m": .red, "!": .orange,
+        "M": .cyan, "G": .cyan, "N": .cyan,
+        "\u{2191}": .yellow, "\u{2193}": .yellow, "*": .yellow,
+    ]
 
     /// The marker for an unexplored room a cheat has revealed, or nil.
     func revealedGlyph(_ room: Room) -> String? {
@@ -1442,6 +1462,26 @@ class Dungeon: ObservableObject, Codable {
         if revealBoss && room.roomType == .boss && !room.cleared { return "B" }
         if revealMonsters && !(room.encounter?.aliveMonsters.isEmpty ?? true) { return "m" }
         if revealTraps && room.roomType == .trap && !room.trapTriggered { return "!" }
+        if revealStairs && room.verticalDestinationRoomId != nil { return room.verticalDirection == "down" ? "\u{2193}" : "\u{2191}" }
+        if revealStairs && room.teleportDestinationRoomId != nil { return "*" }
+        if revealMerchants && room.merchant != nil { return "M" }
+        if revealMerchants && room.trainer != nil { return "G" }
+        if revealPeople && room.npc != nil { return "N" }
+        return nil
+    }
+
+    /// The same for the map viewer's snapshot of a floor — every floor, not
+    /// only the one you're on.
+    func atlasRevealGlyph(_ r: AtlasRoom) -> String? {
+        guard !r.visited else { return nil }
+        if revealBoss && r.typeName == "Boss" { return "B" }
+        if revealMonsters && r.danger { return "m" }
+        if revealTraps && r.typeName == "Trap" { return "!" }
+        if revealStairs && r.verticalTo != nil { return r.verticalDirection == "down" ? "\u{2193}" : "\u{2191}" }
+        if revealStairs && r.teleportTo != nil { return "*" }
+        if revealMerchants && r.merchantName != nil { return "M" }
+        if revealMerchants && r.gymName != nil { return "G" }
+        if revealPeople && r.npcName != nil { return "N" }
         return nil
     }
 
@@ -1647,11 +1687,11 @@ class Dungeon: ObservableObject, Codable {
     /// The whole level drawn in the same [X]--[Y] style as the main map,
     /// sized to fit every shown room. `highlight` is the line/column of
     /// the "[@]" cell, for colouring where you are.
-    static func atlasMapLines(_ level: AtlasLevel, showAll: Bool, frame: AtlasFrame? = nil, revealBoss: Bool = false) -> (lines: [String], highlight: (line: Int, column: Int)?) {
-        // "Show the boss": its lair is drawn too, even unexplored — (B), alone.
-        let isRevealedBoss: (AtlasRoom) -> Bool = { revealBoss && !$0.visited && !showAll && $0.typeName == "Boss" && !$0.cleared }
-        let shown = level.rooms.filter { $0.visited || showAll || isRevealedBoss($0) }
-        let frame = shown.contains(where: isRevealedBoss) ? nil : frame   // make room for it
+    static func atlasMapLines(_ level: AtlasLevel, showAll: Bool, frame: AtlasFrame? = nil, reveal: (AtlasRoom) -> String? = { _ in nil }) -> (lines: [String], highlight: (line: Int, column: Int)?) {
+        // Cheats ("show the boss", "show stairs"...): those rooms are drawn
+        // too, even unexplored, as (X) — alone, unless every room is shown.
+        let shown = level.rooms.filter { $0.visited || showAll || reveal($0) != nil }
+        let frame = shown.contains(where: { !$0.visited && !showAll }) ? nil : frame   // make room for them
         guard var minX = shown.map({ $0.x }).min(), var maxX = shown.map({ $0.x }).max(),
               var minY = shown.map({ $0.y }).min(), var maxY = shown.map({ $0.y }).max() else {
             return (["(nothing mapped yet)"], nil)
@@ -1683,7 +1723,8 @@ class Dungeon: ObservableObject, Codable {
         }
         for room in shown {
             let cx = (room.x - minX) * 5, cy = (room.y - minY) * 2
-            if isRevealedBoss(room) { put("(B)", cy, cx); continue }   // no passages to it
+            let mark = reveal(room)
+            if let mark = mark, !showAll { put("(\(mark))", cy, cx); continue }   // alone, no passages to it
             let glyph: String
             if room.id == level.currentRoomId { glyph = "@" }
             else if !room.visited { glyph = padNumber[room.id] ?? " " }
@@ -1693,7 +1734,7 @@ class Dungeon: ObservableObject, Codable {
             let thingsHere = [room.danger, room.typeName == "Boss", room.verticalTo != nil, room.teleportTo != nil,
                               room.merchantName != nil, room.gymName != nil, room.npcName != nil].filter { $0 }.count
             let several = room.visited && thingsHere > 1
-            put(several ? "{\(glyph)}" : "[\(glyph)]", cy, cx)
+            put(mark.map { "(\($0))" } ?? (several ? "{\(glyph)}" : "[\(glyph)]"), cy, cx)
             for dir in Direction.allCases {
                 guard let targetId = room.exits[dir.rawValue] else { continue }
                 // Each passage is drawn once — from its east/south end, or
