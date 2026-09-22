@@ -24154,7 +24154,9 @@ class GameEngine: ObservableObject {
         }
         logMultiplayerAction("Listened at doors in \(room.name)")
 
-        autoReturn()
+        // A line or two to take in: half the usual wait (still longer if
+        // there's more to read, and Timeouts still scales it).
+        autoReturn(after: max(3.0, infoTimeout * 0.5))
     }
 
     // MARK: - Examine Room
