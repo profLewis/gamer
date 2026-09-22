@@ -1,4 +1,4 @@
-# App Store Connect — text for build 92 (version 3.0)
+# App Store Connect — text for version 3.0 (build 97+), all platforms
 
 Each field is within Apple's character limit (shown in brackets).
 
@@ -39,13 +39,14 @@ A DUNGEON MASTER THAT TALKS BACK
 
 REAL RULES, READABLE DICE
 • 5e-style ability scores, classes, spells, spell slots, saving throws and critical hits, with every roll shown.
-• Turn-based fights where robot companions take their own turns, and the DM tells you how the fight went afterwards.
+• Turn-based fights where robot companions take their own turns, combat help that works out each hero's real chances against this enemy, and the DM telling the fight back as a story.
 • Poison that lasts until you cure it, merchants who charge what they think they can get away with, and riddles and puzzles as a way past a fight.
 
 MORE TO FIND
 • Quests with real deadlines, told in days, and clues you gather floor by floor.
 • Certificates for your deeds, a Hall of Fame, and a full adventure log you can read back.
-• Back and Next let you undo a step you regret.
+• Back and Next let you undo a step you regret, and Replay Fight lets you watch a battle again.
+• An Atlas of every floor you've mapped, and a little magick when you're stuck.
 
 MADE FOR EVERYONE
 • Built for VoiceOver: screens are read as a few clear sections, every button is named, the room you're in is said first, and animations stop while VoiceOver is on.
@@ -59,15 +60,69 @@ Rules content from the System Reference Document 5.1 under the Open Gaming Licen
 dungeon,text adventure,rpg,5e,roleplaying,fantasy,quest,interactive fiction,voiceover,retro,ai dm
 
 ## What's New in This Version  (4000)
-A big one.
-• A tidier game for VoiceOver users: screens read as a few sections, not line by line, with where you are said first.
-• Continuous voice commands, and the DM can no longer hear itself.
-• Back and Next undo and redo a step while exploring.
-• Fewer fights, more riddles and puzzles, and a guardian to find on every floor.
-• Poison lasts until cured; merchants set their own prices; quest deadlines count down in days.
-• Gym training and certificates; the DM tells each fight back as a story.
-• Now on Apple TV and Apple Vision Pro.
-• Many fixes, including saves from earlier versions loading again.
+Version 3.0 — the biggest update yet, shaped by months of play-testing.
+
+NOW ON EVERY APPLE SCREEN
+• iPhone and iPad, plus a native Mac app, Apple TV (text you can read from the sofa) and Apple Vision Pro.
+
+A QUEST WORTH GOING DOWN FOR
+• A main quest from the start, told in-character, and side quests from almost anyone you meet.
+• Quests that differ in what they ask — rescue, fetch, find, clear, escort — with deadlines in days on the DM's own calendar.
+• A guardian on every floor, and the villain of your opening tale at the bottom.
+• Easy is one small floor with the guardian's lair pointed out; Hard goes deeper with tougher fights. Raise the difficulty mid-game if it's too gentle.
+• An ending worth reaching: an outro tale, fireworks, a certificate with your maps, and the Hall of Fame.
+
+FEWER FIGHTS, MORE TO DO
+• Riddles, logic and word puzzles, with new signed puzzle packs arriving by themselves — and you can suggest your own.
+• Merchants who remember you and haggle; gyms, bards, locked doors, keys, and teleport pads that can drop you a floor.
+
+FIGHTS YOU CAN FOLLOW
+• The DM narrates the blows and tells each fight back as a story.
+• Replay Fight steps back through a battle once it's won.
+• Combat help that knows your party: each hero's weapon, spells and potions, their chance to hit this enemy, and how long the fight should take.
+
+A DUNGEON MASTER THAT LISTENS
+• Speak your commands; button names, numbers and directions are understood first.
+• Chat with the DM, with a recap when you leave.
+• If your AI key stops working, the game tells you why and how to fix it.
+
+BUILT FOR VOICEOVER
+• Screens read as a few clear sections, starting with where you are; every button named; long press and scrolling available as VoiceOver actions; only ever one voice speaking.
+
+AND MORE
+• Back and Next undo a step; an Atlas of every floor you've mapped; adjustable timers; font sizes down to Tiny; a little magick for the stuck ("magick: show the boss").
+• Game Center multiplayer is included as an early preview.
+• Many fixes — and saves from 2.4 still load.
+
+---
+
+## Per platform
+
+The shared fields above work for all four. Where a platform differs:
+
+### iPhone & iPad (iOS / iPadOS)
+- Use the fields above unchanged.
+- Screenshots: iPhone 6.9" (1320 × 2868) and iPad 13" (2064 × 2752) — see screendumps/appstore-build91/. Apple scales these down for smaller devices.
+
+### Mac (macOS 14 or later)
+- Promotional text (170): Lead a party into a dungeon that listens — the story on one side, the map on the other. Type what you want to do and let the Dungeon Master tell the tale.
+- Description: the shared one, with "Plays on iPhone, iPad, Mac…" kept; add under PLAY IT YOUR WAY: "• On the Mac: resizable panes, the whole floor's map beside the story, and Fight Club acting out each battle."
+- Screenshots: 2880 × 1800 (or 2560 × 1600 / 1440 × 900) — still to take; the Mac's screen was asleep last time.
+- Category and age rating: as above.
+
+### Apple TV (tvOS)
+- No microphone or keyboard play on the TV: drop the voice bullet ("Speak instead of typing…") from the Description and "Speak your commands…" from What's New.
+- Promotional text (170): A dungeon crawl for the big screen. Lead a party of four down through riddles, merchants and guardians with the Siri Remote, while the DM tells the tale aloud.
+- Screenshots: 3840 × 2160 (appletv-4k-explore.png) or 1920 × 1080. Top Shelf image is in the asset catalogue.
+
+### Apple Vision Pro (visionOS 2 or later)
+- Use the fields above; the voice bullets apply.
+- Promotional text (170): A classic dungeon crawl floating in your room. Build a party, talk to the Dungeon Master, and go down — one floor, one guardian, one riddle at a time.
+- Screenshots: 3840 × 2160 (visionpro-explore.png).
+
+### Version and build
+- Version string: 3.0 on every platform; build 97 or later (upload the newest).
+- Every platform's build must be uploaded separately (Organizer → Distribute App → TestFlight & App Store), then chosen under that platform's version page before submitting.
 
 ---
 
@@ -84,7 +139,7 @@ A big one.
 ## Notes for App Review
 The game needs no account and no AI key: the built-in Dungeon Master runs everything. To try the AI DM, use a device with Apple Intelligence (on-device, no key needed). Game Center is optional ("Not Now" works). A quick path: Play → New Adventure → Random Party → Start Adventure → any dungeon name → Normal.
 
-## Screenshots (screendumps/appstore-build91/)
+## Screenshots (screendumps/appstore-build91/ — retake on build 97 when convenient)
 - iPhone 6.9" — iphone-6.9in-explore.png (1320 × 2868)
 - iPad 13" — ipad-13in-explore.png (2064 × 2752)
 - Apple TV — appletv-4k-explore.png (3840 × 2160)

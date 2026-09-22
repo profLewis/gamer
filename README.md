@@ -1,8 +1,70 @@
 # D&D 5e Text Adventure
 
-A retro terminal-style Dungeons & Dragons 5th Edition RPG for iOS and macOS, with AI Dungeon Master support.
+A retro terminal-style 5th Edition fantasy RPG for iPhone, iPad, Mac, Apple TV and Apple Vision Pro, with AI Dungeon Master support.
 
 ![Dragon](images/dragon_animation.gif)
+
+## What's New Since 2.4 (version 3.0)
+
+Version 3.0 is the biggest update yet: many rounds of play-testing by Beau and Professor Lewis, turned into a very long list of changes. The highlights are grouped below; the in-game help (the **?** on every screen) covers each one in more detail.
+
+### Now on five platforms
+- **iPhone and iPad**, as before, plus a native **Mac** app (resizable panes, the whole map beside the story, keyboard play), **Apple TV** (text sized to read across a room, played with the Siri Remote) and **Apple Vision Pro** (a native visionOS app, not the iPad version in a window).
+- One set of saves and settings format across all of them.
+
+### Quests, deadlines and a reason to go down
+- **A main quest from the start**, told in-character by whoever needs you, with a proper opening tale, and **several side quests** at once from almost anyone you meet.
+- **Quests that differ in what they ask**, not just in the words: rescue, fetch, find, clear, escort and more, each with its own win condition.
+- **Deadlines in days** on a calendar the DM knows about ("by the full moon, day 12"), counted down on the status screen. Slow quests get a chaser: carry on, give up, or hold out for a bigger prize.
+- **A guardian on every floor.** Beat it and the way down opens; the last floor holds the villain from your opening tale. Nudges tell you when you've explored most of a floor without finding it.
+- **Depth follows difficulty**: Easy is a single, smaller floor with the guardian's lair pointed out as you go; Medium is about five floors; Hard about seven, with harder fights rather than longer ones. You can raise the difficulty mid-game (one way only).
+- **Endgame**: an outro tale, fireworks, a **certificate** with your stats and the maps of every floor (saved as a PDF), a Hall of Fame entry, and, if the party falls, encouragement and a Try Again.
+
+### Fewer fights, more to do
+- **Riddles, logic puzzles, word puzzles and cryptic clues** in libraries and shrines, harder the deeper you go. New puzzles arrive in small **signed puzzle packs** the game checks for once a day; anyone can **Suggest a Puzzle** from Settings.
+- **Tolls and talk as well as swords**: on Easy many encounters can be passed without a fight.
+- **Merchants worth talking to**: they remember you, keep their own stock between visits, haggle (with an Accept button for the counter-offer), quote the prices they'll actually charge, and react to your reputation.
+- **Gyms** train whoever paid (with a Multi-Gym Pass and certificates of training); **bards** perform for tips; **lock-picking** wears your Thieves' Tools, which smiths can mend.
+- **Locked doors, keys, forcing and barring**: bar a door behind you to keep monsters out.
+- **Teleport pads**, including rare deep-blue ones that drop you a floor.
+
+### Fights you can follow
+- **The DM narrates the blows** with Read Aloud on, and tells each fight back as a short story afterwards (**How We Fared**).
+- **Replay Fight**: step back through a finished fight screen by screen from the victory screen.
+- **Dynamic combat help**: the **?** in a fight lists the enemy's hit points and armour, what each of your adventurers carries (weapon, best spell, potions, class tricks), their real chance to hit and likely damage against this enemy, roughly how many rounds the fight will take, and why the turn order is what it is.
+- **Poison that lasts** until cured or worn off; **companions' and monsters' turns move quicker**; the winning blow gets a proper pause before the victory screen; **Fight Club** acts out the fight in ASCII (Mac right pane, optional on iOS).
+- **Willpower Surge** to resist mind-control, and a rare **Emergency Drop** that can save a party from a total wipe.
+
+### A Dungeon Master that listens
+- **Talk instead of tapping**: continuous voice commands with an "enter word", or one command at a time. Button numbers, button names and directions ("north", "go east") are matched first, before anything is read as free speech.
+- **The DM can't hear itself**: the mic is deaf while the game speaks, and starting to speak stops the game talking.
+- **DM chat**: the current exchange is bright and the rest dimmed; what you say appears in the conversation; leaving the chat gives a **recap** of what was said and anything gained or lost.
+- **@names** to talk to a companion ("@mol climb the wall"); robot companions ("R. Athos") are understood as names.
+- **A key check at startup**: if your AI key stops working (no credit, deleted key, no internet) the game says why, links to the provider's billing and key pages, and offers Change AI Brain. A key that passes its test is saved to the Keychain automatically.
+- **Mood switches**, a DM calendar, and the DM told firmly never to invent actions for you.
+
+### Built for VoiceOver
+- The story is read as **a few sections, each starting at its heading**, not line by line, and each screen starts by saying **where you are**.
+- Every button is named; empty slots say **"No button"**; symbols like triangles and middle dots are no longer read out.
+- **Long press** is a VoiceOver action on every button that has one; **three-finger swipe** scrolls the story; a **VoiceOver help** link on every screen explains both, and how to switch VoiceOver off with the Accessibility Shortcut.
+- With VoiceOver on, the game's own voice speaks **through VoiceOver**, so there is only ever one voice, and animations and auto-scroll pause until VoiceOver is off again.
+- **Read Aloud** reads each page's title as well as its text, and switching it off (or the DM voice off) always silences it at once.
+
+### Finding your way
+- **Back and Next** in the 3-bar undo and redo a step while exploring; **< Back** also looks back through the screens you've left.
+- **The Atlas**: long-press the map for the whole floor, every floor you've mapped, pinch-zoom, room labels, a full key, and a printable PDF.
+- **A little magick**: type `magick: show the boss` (or `cheat:`, `magic:`, `magik:`) to mark the guardian's lair on the map; also `show monsters`, `show traps`, `show all floors`. The map viewer has a **Show the boss's lair** button too.
+
+### Saves, settings and the rest
+- **Continue Adventure** sorts by date or by points (then it's the **Hall of Fame**), with a Character Hall of Fame; unfinished adventures show their points so far.
+- **Timeouts**: every automatic wait adjustable by kind; an hourglass that only turns while a countdown is really running, tap to pause.
+- **Auto-Scroll** for long pages, which picks up again a few seconds after you scroll by hand.
+- **Font sizes** down to Tiny, with the text re-wrapped to fit; a cog menu everywhere; tappable Settings lines.
+- **Bug reports** carry the save and the steps that led there, and load back in for replay.
+- Saves from 2.4 load; a content-safety tool; reputation ("Glyphkeeper"); the Settings overhaul described in RELEASE_NOTES_v3.0.md.
+
+### Multiplayer: still experimental
+Game Center multiplayer (turn-based, shared party, remote players becoming robots if they leave) is in the build but **largely untested**. Expect rough edges; it will need some iteration, and reports are very welcome (Adventure Log > Report a Bug, or an issue on GitHub).
 
 ## Features
 
