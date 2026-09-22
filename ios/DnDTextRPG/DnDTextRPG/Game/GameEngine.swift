@@ -14681,10 +14681,9 @@ class GameEngine: ObservableObject {
         options.append("Paste Key")
         options.append("Edit Key")
         let hasKey = DMEngine.shared.apiKey != nil && !(DMEngine.shared.apiKey ?? "").isEmpty
-        // Auto-backup current key to Keychain whenever we visit this screen
-        if hasKey {
-            backupSingleAPIKeyToKeychain(for: provider)
-        }
+        // No automatic backup just for visiting: an untested (or bad) key
+        // would overwrite a good one in the Keychain. A key is stored there
+        // automatically once it passes its test (validateAndConfirmKey).
         let hasKeychainBackup = loadAPIKeyFromKeychain(for: provider) != nil
         if hasKey {
             options.append("Show Key")
@@ -14918,7 +14917,7 @@ class GameEngine: ObservableObject {
                 self.printWrapped("Copies your current key to the clipboard — useful as a backup before removing it.", indent: 2, color: .dimGreen)
                 self.print("")
                 self.print("  SAVE TO KEYCHAIN", color: .cyan, bold: true)
-                self.printWrapped("Backs up this key to the device Keychain right now. This already happens automatically every time you open this screen — use this button for an explicit confirmation, or right after typing/pasting a new key.", indent: 2, color: .dimGreen)
+                self.printWrapped("Backs up this key to the device Keychain right now. A key that passes its test is saved there automatically, so this is only needed for a key you haven't tested.", indent: 2, color: .dimGreen)
                 self.print("")
                 self.print("  REMOVE KEY", color: .cyan, bold: true)
                 self.printWrapped("Removes your stored API key (backed up to Keychain first, so Load Key can restore it). Its confirmation screen also offers 'Delete Permanently', which wipes the Keychain backup too — irreversible.", indent: 2, color: .dimGreen)
@@ -14995,9 +14994,14 @@ class GameEngine: ObservableObject {
         DMEngine.shared.testAPIKey { [weak self] success, errorMessage in
             DispatchQueue.main.async {
                 if success {
+                    // Standard: a key that works is kept in the Keychain,
+                    // so it survives a reinstall and Load Key can bring it back.
+                    self?.backupSingleAPIKeyToKeychain(for: provider)
+                    let stored = self?.loadAPIKeyFromKeychain(for: provider) == DMEngine.shared.apiKey
                     self?.print("")
                     self?.print("  Key verified!", color: .brightGreen)
                     self?.print("  \(provider.displayName) is working.", color: .brightGreen)
+                    self?.print(stored ? "  Saved to the Keychain." : "  (Couldn't save it to the Keychain.)", color: stored ? .brightGreen : .yellow)
                     self?.print("  The AI Dungeon Master is now", color: .cyan)
                     self?.print("  available.", color: .cyan)
                     self?.print("")
