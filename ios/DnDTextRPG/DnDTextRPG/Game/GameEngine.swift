@@ -573,14 +573,14 @@ class GameEngine: ObservableObject {
     /// The "Continue?" nudges a waiting screen shows — not story, so Read
     /// Aloud skips them (in a fight it gives a quick cheer instead).
     static let combatContinueTitles = ["Next blow?", "The fight goes on…", "Ready for the next move?", "Steel yourselves…", "What happens next?"]
-    static let continueTitles = ["ok?", "Continue?", "Onward?", "…"]
+    static let continueTitles = ["Tap to continue", "Tap anywhere to go on", "Carry on? Tap the screen"]
     /// How a waiting screen counts: one dot, then two, then three.
     /// The quiet mark on a screen that is waiting for you. One glyph, shown
     /// once — it used to be ".", then "..", then "…", underlined and growing,
     /// which looked like a fault rather than a pause. The hourglass by the
     /// input line and the glow on the waiting button carry the rest of the
     /// message now. Still an array: the read-aloud filter skips anything in it.
-    static let continueDots = ["⋯"]
+    static let continueDots = ["(tap to continue)"]
     /// Only after a long silence — a nudge with a bit more in it.
     static let continueProds = [
         "Still there? The dungeon holds its breath…",
@@ -6342,7 +6342,14 @@ class GameEngine: ObservableObject {
 
     /// The next thing to try, on the status line.
     private func trainingNudge() {
-        guard let d = dungeon, explorationStatusMessage == nil, let cur = currentTrainingStep() else { return }
+        guard let d = dungeon, explorationStatusMessage == nil else { return }
+        // Hurt: say so before anything else.
+        if d.training, currentCombat == nil,
+           let hurt = party.first(where: { $0.isConscious && $0.currentHP * 10 <= $0.maxHP * 4 }) {
+            explorationStatusMessage = ("✦ \(shortName(for: hurt)) is badly hurt (\(hurt.currentHP)/\(hurt.maxHP) HP). Rest before going on — tap the middle of the pad, or hold it for a long rest — and put your torch out while you rest, so it doesn't burn down.", .yellow)
+            return
+        }
+        guard let cur = currentTrainingStep() else { return }
         var hint = cur.step.hint
         if cur.step.key == "walk" {
             hint += " This training floor has \(d.rooms.count) rooms — the line under the map counts how many you've explored."
@@ -6355,6 +6362,121 @@ class GameEngine: ObservableObject {
     private func trainingSkip() -> Bool {
         guard let cur = currentTrainingStep(), cur.step.key != "guardian" else { return false }
         trainingDid(cur.step.key)
+        return true
+    }
+
+    // MARK: Room vignettes (training)
+    //
+    // Walking round an empty floor is dull. In training, about a third of
+    // the new rooms with nothing else in them get a small scene that suits
+    // the room, with a few things to choose — small real effects (a bite to
+    // eat, a coin, the time, a sharper blade) and never the same one twice.
+
+    private var usedVignettes: Set<String> = []
+
+    private struct Vignette {
+        let key: String
+        let scene: String
+        let choices: [(label: String, outcome: () -> String)]
+    }
+
+    private func vignettes(for room: Room) -> [Vignette] {
+        guard let hero = party.first(where: { !$0.isComputerControlled && $0.isConscious }) ?? party.first(where: { $0.isConscious }) else { return [] }
+        let name = shortName(for: hero)
+        let mouse = Vignette(key: "mouse", scene: "A mouse pokes its head out of a tiny hole in the wall, sniffs, and holds up a crumb of cheese as if offering it to \(name).", choices: [
+            ("Ask What Cheese", { "\"Cheddar,\" squeaks the mouse, puffing out its chest. \"Aged in this very cave. Forty days. Sharp.\" It seems very proud." }),
+            ("Ask the Time", { [weak self] in "The mouse pulls out a pocket-watch no bigger than a pea, squints at it, and squeaks: \"\(self?.formattedGameTime() ?? "late").\" Then it vanishes back into the hole." }),
+            ("Eat It", { let h = Int.random(in: 1...3); hero.heal(h); return "\(name) eats the crumb. Surprisingly good. (+\(h) HP)" }),
+            ("Put It in the Pack", { if let c = ItemCatalog.cheeses().first(where: { $0.name.contains("Cheddar") }), hero.addItem(c) { return "The mouse, delighted, fetches a whole wedge. A Wedge of Cheddar goes into \(name)'s pack." }; return "\(name)'s pack is too full. The mouse shrugs and keeps its cheese." }),
+        ])
+        let puddle = Vignette(key: "puddle", scene: "Water drips from the ceiling into a still, clear puddle.", choices: [
+            ("Drink", { hero.heal(1); return "Cold and clean. \(name) feels a little better. (+1 HP)" }),
+            ("Look In", { "\(name)'s reflection looks back — and winks. \(name) did not wink." }),
+            ("Step Around It", { "Best not to get your boots wet down here." }),
+        ])
+        let draught = Vignette(key: "draught", scene: "A cold draught tugs at the torch flame, as if the dungeon were breathing.", choices: [
+            ("Follow the Draught", { [weak self] in
+                guard let self = self, let d = self.dungeon, let b = self.guardianBearing(in: d) else { return "The draught fades to nothing." }
+                return "It blows from the \(b.components(separatedBy: ",").first ?? b) — the way to \(self.foePossessive) lair, maybe." }),
+            ("Shield the Flame", { "\(name) cups a hand round the torch. It steadies." }),
+            ("Ignore It", { "Just a draught." }),
+        ])
+        switch room.roomType {
+        case .library:
+            return [Vignette(key: "book", scene: "A book slides off a high shelf and lands open at \(name)'s feet.", choices: [
+                ("Read It", { [weak self] in
+                    guard let self = self, let d = self.dungeon, let b = self.guardianBearing(in: d) else { return "It's a recipe for turnip soup. Not helpful." }
+                    return "In faded ink: \"\(self.cap(self.foeWord)) keeps to its lair, \(b).\" Useful." }),
+                ("Take It", { hero.gold += 3; return "A collector would pay for this. \(name) tucks it away — worth about 3 gold. (+3 gp)" }),
+                ("Put It Back", { "\(name) slides it back. Somewhere, a librarian sighs with relief." }),
+            ]), mouse]
+        case .shrine:
+            return [Vignette(key: "candle", scene: "A single candle burns on the little altar. Nobody lit it that you can see.", choices: [
+                ("Pray", { [weak self] in self?.party.filter { $0.isConscious }.forEach { $0.heal(2) }; return "A warmth passes through the party. (+2 HP each)" }),
+                ("Leave a Coin", { if hero.gold > 0 { hero.gold -= 1; hero.heal(4); return "The coin vanishes. \(name) feels much better. (-1 gp, +4 HP)" }; return "\(name) has no coin to leave." }),
+                ("Move On", { "The flame bows as you pass." }),
+            ])]
+        case .armory:
+            return [Vignette(key: "whetstone", scene: "A whetstone sits on a rusty weapon rack, well used and still good.", choices: [
+                ("Sharpen Your Weapon", { hero.weaponSharpenedUses += 3; return "\(name) puts a fine edge on it. (+1 to hit and damage, next 3 attacks)" }),
+                ("Try On a Helmet", { "Far too big. It falls over \(name)'s eyes. Back on the rack it goes." }),
+                ("Move On", { "Nothing here worth carrying." }),
+            ])]
+        case .prison:
+            return [Vignette(key: "scratches", scene: "Words are scratched into the cell wall, very small, over and over.", choices: [
+                ("Read Them", { "\"Rest before the big one. Rest before the big one.\" Someone learned that the hard way." }),
+                ("Knock", { "\(name) knocks. After a long moment, something knocks back. Twice." }),
+                ("Move On", { "Some things are better left." }),
+            ])]
+        case .treasure:
+            return [Vignette(key: "coins", scene: "A trail of coins leads into a crack in the floor.", choices: [
+                ("Pick Them Up", { let g = Int.random(in: 3...8); hero.gold += g; return "\(name) gathers \(g) gold before the trail runs out. (+\(g) gp)" }),
+                ("Look in the Crack", { "Far below, something glints — and something else blinks. Best leave it." }),
+                ("Leave Them", { "Coins on the floor of a dungeon are rarely a gift." }),
+            ])]
+        default:
+            return [mouse, puddle, draught]
+        }
+    }
+
+    /// In training, sometimes: a scene in a new room. True if one was shown.
+    private func maybeRoomVignette(_ room: Room, firstVisit: Bool) -> Bool {
+        guard let d = dungeon, d.training, firstVisit, currentCombat == nil,
+              ![RoomType.boss, .shop, .trap, .entrance].contains(room.roomType),
+              room.npc == nil, room.merchant == nil, room.trainer == nil,
+              room.encounter?.aliveMonsters.isEmpty ?? true,
+              Double.random(in: 0...1) < 0.35 else { return false }
+        guard let v = vignettes(for: room).filter({ !usedVignettes.contains($0.key) }).randomElement() else { return false }
+        usedVignettes.insert(v.key)
+        clearTerminal()
+        printTitle(room.name)
+        print("")
+        printWrapped(v.scene, indent: 2, color: .green)
+        print("")
+        printWrapped("What do you do?", indent: 2, color: .cyan)
+        print("")
+        var opts = v.choices.map { MenuOption($0.label) }
+        opts.append(MenuOption("?", tint: .navigation, compact: true))
+        showMenuOptions(opts)
+        closeHandler = { [weak self] in self?.showExplorationView() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            guard choice >= 1, choice <= v.choices.count else {
+                self.showInlineHelp {
+                    self.printTitle("Something Happens — Help")
+                    self.print("")
+                    self.printWrapped("Now and then something small happens in a room. Pick what to do — there's no wrong answer, though some choices help more than others. Then you carry on exploring.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+                return
+            }
+            let result = v.choices[choice - 1].outcome()
+            self.logEvent("\(v.key): \(v.choices[choice - 1].label) — \(result)", category: "EXPLORE")
+            self.print("")
+            self.printWrapped(result, indent: 2, color: .yellow)
+            self.print("")
+            self.waitForContinueWithTimeout(multiplier: 1.2) { [weak self] in self?.showExplorationView() }
+        }
         return true
     }
 
@@ -6410,11 +6532,21 @@ class GameEngine: ObservableObject {
         print("")
         let topics = Self.trainingHowTos
         var opts = topics.map { MenuOption($0.title) }
+        opts.append(MenuOption("?", tint: .navigation, compact: true))
         opts.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(opts)
         closeHandler = onBack
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
+            if choice == topics.count + 1 {
+                self.showInlineHelp {
+                    self.printTitle("How To… — Help")
+                    self.print("")
+                    self.printWrapped("Each button is a short worked example: what to do, and a sketch of the screen you'll see. < Back returns to where you came from.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+                return
+            }
             guard choice >= 1, choice <= topics.count else { onBack(); return }
             let t = topics[choice - 1]
             self.clearTerminal()
@@ -6424,9 +6556,19 @@ class GameEngine: ObservableObject {
             self.print("  WHAT YOU'LL SEE", color: .cyan, bold: true)
             for l in t.screen { self.print(l, color: .green) }
             self.print("")
-            self.showMenuOptions([MenuOption("< Back", tint: .navigation, compact: true)])
+            self.showMenuOptions([MenuOption("?", tint: .navigation, compact: true), MenuOption("< Back", tint: .navigation, compact: true)])
             self.closeHandler = { [weak self] in self?.showHowToMenu(onBack: onBack) }
-            self.menuHandler = { [weak self] _ in self?.showHowToMenu(onBack: onBack) }
+            self.menuHandler = { [weak self] choice in
+                guard let self = self else { return }
+                if choice == 1 {
+                    self.showInlineHelp {
+                        self.printTitle("How To — Help")
+                        self.print("")
+                        self.printWrapped("A worked example. WHAT YOU'LL SEE draws a little of the real screen so you can spot it in the game. < Back returns to the list.", indent: 2, color: .dimGreen)
+                        self.print("")
+                    }
+                } else { self.showHowToMenu(onBack: onBack) }
+            }
         }
     }
 
@@ -6782,7 +6924,7 @@ class GameEngine: ObservableObject {
         menuOptions.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showMainMenuHelp() }
         // About & credits: the ⓘ in the 3-bar's right-hand slot (same on the Play menu).
-        menuOptions.append(MenuOption("ⓘ", tint: .navigation, compact: true))
+        menuOptions.append(MenuOption("About", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showAbout(onBack: { [weak self] in self?.clearTerminal(); self?.showMainMenu() }) }
 
         showMenuOptions(menuOptions)
@@ -6809,6 +6951,8 @@ class GameEngine: ObservableObject {
         let hasActiveGame = dungeon != nil && !party.isEmpty
         showInlineHelp {
             self.printTitle("Main Menu — Help")
+            self.print("")
+            self.printWrapped("The small 3-part button: ? (or the help symbol you chose in Settings) is help for this screen; About, on the right, is the game's credits and links — a different thing.", indent: 2, color: .dimGreen)
             self.print("")
             if hasActiveGame {
                 self.print("  CONTINUE QUEST", color: .cyan, bold: true)
@@ -7124,7 +7268,7 @@ class GameEngine: ObservableObject {
 
         // About & credits: the ⓘ in the 3-bar's right-hand slot, as on the
         // main menu.
-        menuOpts.append(MenuOption("ⓘ", tint: .navigation, compact: true))
+        menuOpts.append(MenuOption("About", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showAbout(onBack: { [weak self] in self?.showPlayMenu() }) }
 
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -7178,6 +7322,8 @@ class GameEngine: ObservableObject {
     private func showPlayHelp() {
         showInlineHelp {
             self.printTitle("Play Menu Help")
+            self.print("")
+            self.printWrapped("The small 3-part button: ? (or the help symbol you chose in Settings) is help for this screen; About, on the right, is the game's credits and links — a different thing.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  NEW ADVENTURE", color: .cyan, bold: true)
             self.printWrapped("Start a fresh adventure. Pick your party size, then create each character — or load one from the Character Hall of Fame (defaults to your most recent hero, if you have one). Long-press for a quick start with a random party.", indent: 2, color: .dimGreen)
@@ -7379,10 +7525,20 @@ class GameEngine: ObservableObject {
             printWrapped(line, indent: 2, color: .green)
             print("")
         }
-        let opts = [MenuOption("< Back", tint: .navigation, compact: true)]
+        let opts = [MenuOption("?", tint: .navigation, compact: true), MenuOption("< Back", tint: .navigation, compact: true)]
         showMenuOptions(opts)
         closeHandler = { [weak self] in self?.showHowToIndex() }
-        menuHandler = { [weak self] _ in self?.showHowToIndex() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                self.showInlineHelp {
+                    self.printTitle("How to… — Help")
+                    self.print("")
+                    self.printWrapped("A short answer to one question. < Back returns to the list of questions.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else { self.showHowToIndex() }
+        }
     }
 
     func showHowToPlay(onBack: (() -> Void)? = nil) {
@@ -7425,7 +7581,7 @@ class GameEngine: ObservableObject {
         printWrapped("    a button for its shortcut — e.g. long-press Quit Without Saving, Delete or Give Up Quest to skip the \"are you sure?\" step, Long Rest to rest fast, or Continue Adventure to jump straight into your latest save.", color: .green)
         print("")
         print("  • Auto-Continue", color: .brightGreen, bold: true)
-        printWrapped("    A screen that's waiting for you counts quietly to itself: a single \".\", then \"..\", then \"…\". That is all the dots mean — the screen is holding for you and nothing is wrong. Tap them — or anywhere, or press Return — when you've read it. Leave it a good while longer and the dots give way to a line with a bit more character to it. Do nothing at all and it moves on by itself after a reading pause: the little hourglass at the right of the input line shows how long is left. Tap the hourglass to freeze time (it turns orange and nothing moves until you tap it again), long-press to hurry it along.", color: .green)
+        printWrapped("    A screen that's waiting for you says \"(tap to continue)\" — the screen is holding for you and nothing is wrong. Tap anywhere, or press Return, when you've read it. Leave it a good while longer and a line with a bit more character to it appears. Do nothing at all and it moves on by itself after a reading pause: the little hourglass at the right of the input line shows how long is left. Tap the hourglass to freeze time (it turns orange and nothing moves until you tap it again), long-press to hurry it along.", color: .green)
         printLink("Auto-Continue — turn the waiting on or off", to: "autoContinue", indent: 4)
         printLink("Timeouts — how long each kind of screen waits", to: "timeouts", indent: 4)
         printLink("Settings > Gameplay", to: "gameplay", indent: 4)
@@ -7806,6 +7962,18 @@ class GameEngine: ObservableObject {
             }
         }
 
+        showMenuOptions([MenuOption("?", tint: .navigation, compact: true), MenuOption("< Back", tint: .navigation, compact: true)])
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                self.showInlineHelp {
+                    self.printTitle("Combat — Help")
+                    self.print("")
+                    self.printWrapped("A page of How to Play. Scroll to read it; < Back returns to the list of topics.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else { self.showHowToPlay() }
+        }
         closeHandler = { [weak self] in self?.showHowToPlay() }
     }
 
@@ -7903,6 +8071,9 @@ class GameEngine: ObservableObject {
         undoHandler = nil; redoHandler = nil
         suppressAutoScroll = true
         printTitle("Character & Party")
+        printLink("DnDex — cards for every class, people and name in the game", to: "dndex", indent: 2)
+        printLink("DnDex gallery — the pictures behind them", to: "dndexGallery", indent: 2)
+        print("")
 
         print("RACES", color: .cyan, bold: true)
         printWrapped("Human, Elf, Dwarf, Halfling, Half-Orc, Tiefling, Dragonborn. Each has unique ability bonuses.", indent: 2)
@@ -8342,6 +8513,18 @@ class GameEngine: ObservableObject {
             }
         }
 
+        showMenuOptions([MenuOption("?", tint: .navigation, compact: true), MenuOption("< Back", tint: .navigation, compact: true)])
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            if choice == 1 {
+                self.showInlineHelp {
+                    self.printTitle("Tips & Tricks — Help")
+                    self.print("")
+                    self.printWrapped("A page of How to Play. Scroll to read it; < Back returns to the list of topics.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else { self.showHowToPlay() }
+        }
         closeHandler = { [weak self] in self?.showHowToPlay() }
     }
 
@@ -22663,6 +22846,7 @@ class GameEngine: ObservableObject {
             return
         }
 
+        let visitedBefore = dungeon.rooms.values.filter { $0.visited }.count
         let result = dungeon.move(direction: direction)
         if result.success {
             advanceTime(10)
@@ -22673,6 +22857,9 @@ class GameEngine: ObservableObject {
                 logMultiplayerAction("The party entered \(room.name)")
             }
             autosaveIfNeeded()
+            // Training: now and then, a little something happens in a new room.
+            let firstVisit = dungeon.rooms.values.filter { $0.visited }.count > visitedBefore
+            if let here = dungeon.currentRoom, maybeRoomVignette(here, firstVisit: firstVisit) { return }
         } else {
             if !torchLit {
                 let darkMessages = [
@@ -26378,7 +26565,8 @@ class GameEngine: ObservableObject {
                         break
                     }
                     self.logEvent("\(char.name) equipped \(item.name)", category: "LOOT")
-                    self.waitForContinueWithTimeout { onDone() }
+                    // A line or two to read: a short wait, not the long default.
+                    self.waitForContinueWithTimeout(multiplier: 0.8) { onDone() }
                 }
                 let equipEligible = self.combatLootEligible ?? self.party
                 if equipEligible.count > 1 {
@@ -26829,6 +27017,7 @@ class GameEngine: ObservableObject {
         }
         print("")
 
+        var itemLines: [Int: Item] = [:]   // bag line → item, for tapping
         print("  EQUIPPED:", color: .cyan, bold: true)
         print("    Weapon: \(character.equippedWeapon?.name ?? "(none)")", color: .brightGreen)
         print("    Armour:  \(character.equippedArmor?.name ?? "(none)")", color: .brightGreen)
@@ -26841,6 +27030,7 @@ class GameEngine: ObservableObject {
             print("    (empty)", color: .dimGreen)
         } else {
             for item in character.inventory {
+                itemLines[terminalLines.count] = item
                 let tag: String
                 switch item.type {
                 case .weapon: tag = "[W]"
@@ -26912,6 +27102,14 @@ class GameEngine: ObservableObject {
         let sortedActions = sorted.map { $0.1 }
 
         showMenuOptions(sortedOpts)
+        // Tap an item's line in the bag to see it and what can be done with it.
+        let bagLines = itemLines
+        if !bagLines.isEmpty {
+            textLongPressHandler = { [weak self] lineIndex in
+                guard let self = self, let item = bagLines[lineIndex] else { return }
+                self.showPackItem(item, of: character, onBack: onBack, fromDM: fromDM)
+            }
+        }
         let backAction = onBack ?? { [weak self] in self?.showExplorationView() }
         closeHandler = { [weak self] in
             self?.closeHandler = nil
@@ -26921,6 +27119,71 @@ class GameEngine: ObservableObject {
             if choice > 0 && choice <= sortedActions.count {
                 sortedActions[choice - 1]()
             }
+        }
+    }
+
+    /// One item from the bag: what it is, and the things that can be done
+    /// with it — each going on to the usual screen for that.
+    private func showPackItem(_ item: Item, of character: Character, onBack: (() -> Void)?, fromDM: Bool) {
+        let back: () -> Void = { [weak self] in self?.showInventoryFor(character, onBack: onBack, fromDM: fromDM) }
+        clearTerminal()
+        printTitle(item.name, color: .orange)
+        print("")
+        printWrapped(item.description, indent: 2)
+        if let w = item.weaponStats {
+            printWrapped("Weapon: \(w.damage) \(w.damageType)\(w.isFinesse ? ", finesse" : "")\(w.isRanged ? ", ranged" : "")\(w.isTwoHanded ? ", two-handed" : "").", indent: 2, color: .cyan)
+        }
+        if let a = item.armorStats {
+            printWrapped(a.isShield ? "Shield: +2 armour class." : "Armour class \(a.baseAC)\(a.stealthDisadvantage ? ", noisy" : "").", indent: 2, color: .cyan)
+        }
+        if let p = item.potionStats { printWrapped(p.effect, indent: 2, color: .cyan) }
+        printWrapped("Weight \(formatWeight(item.weight)) · worth \(item.value)gp · carried by \(shortName(for: character)).", indent: 2, color: .dimGreen)
+        print("")
+        var opts: [MenuOption] = []
+        var acts: [() -> Void] = []
+        if [.weapon, .armor, .shield].contains(item.type) {
+            opts.append(MenuOption(item.type == .weapon ? "Equip" : (item.type == .shield ? "Equip Shield" : "Equip Armour"), isDefault: true))
+            acts.append { [weak self] in
+                guard let self = self else { return }
+                switch item.type {
+                case .weapon: character.equipWeapon(item)
+                case .armor: character.equipArmor(item)
+                case .shield: character.equipShield(item)
+                default: break
+                }
+                self.logEvent("\(character.name) equipped \(item.name)", category: "LOOT")
+                self.print("  \(self.shortName(for: character)) now has the \(item.name) ready.", color: .brightGreen)
+                self.print("")
+                self.waitForContinueWithTimeout(multiplier: 0.8) { back() }
+            }
+        }
+        if item.type == .potion {
+            opts.append(MenuOption("Use", isDefault: true))
+            acts.append { [weak self] in self?.showUsePotionMenu(character: character, onBack: onBack, fromDM: fromDM) }
+        }
+        if party.count > 1 {
+            opts.append(MenuOption("Give"))
+            acts.append { [weak self] in self?.showGiveItemMenu(character: character, onBack: onBack, fromDM: fromDM) }
+        }
+        opts.append(MenuOption("Drop", tint: .danger))
+        acts.append { [weak self] in self?.showDropItemMenu(character: character, onBack: onBack, fromDM: fromDM) }
+        opts.append(MenuOption("?", tint: .navigation, compact: true))
+        acts.append { [weak self] in
+            self?.showInlineHelp {
+                guard let self = self else { return }
+                self.printTitle("An Item — Help")
+                self.print("")
+                self.printWrapped("What this item is and what can be done with it. Equip puts it in hand (the old one goes back in the bag); Use eats or drinks it; Give and Drop open the usual screens to pick who gets it. Tap an item's line in the bag to come here.", indent: 2, color: .dimGreen)
+                self.print("")
+            }
+        }
+        opts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        acts.append(back)
+        showMenuOptions(opts)
+        closeHandler = back
+        menuHandler = { choice in
+            guard choice >= 1, choice <= acts.count else { return }
+            acts[choice - 1]()
         }
     }
 
@@ -33620,7 +33883,7 @@ class GameEngine: ObservableObject {
             print("  → \(who.name)\(isLead ? "" : " (not \(lead.map { shortName(for: $0) } ?? "the leader"))")", color: .dimGreen)
             question = "[This is \(who.name) (\(who.race.rawValue) \(who.characterClass.rawValue))\(isLead ? "" : ", one of the party — NOT the lead adventurer") acting or speaking. Narrate it as \(who.name) doing it.] " + (rest.isEmpty ? "(\(who.name) steps forward.)" : rest)
         }
-        print("  ...", color: .dimGreen)
+        print("  The DM is thinking — the reply will appear here.", color: .dimGreen)
 
         let context = buildDMContext()
 
@@ -34092,7 +34355,7 @@ class GameEngine: ObservableObject {
         print("")
         print("  > \(input)", color: .cyan)
         print("")
-        print("  ...", color: .dimGreen)
+        print("  The DM is thinking — the reply will appear here.", color: .dimGreen)
 
         let context = buildDMContext(combatContext: combat, activeCharacter: character)
 

@@ -3075,8 +3075,8 @@ struct MenuButtonsView: View {
         let backButtonIdx = indices.first(where: { options[$0].text == "< Back" })
         let helpIdx = indices.first(where: { options[$0].text == "?" || options[$0].text == "?\u{0338}" })
         let nextIdx = indices.first(where: { options[$0].text == ">>" })
-        // About (ⓘ) always sits on the right, where >> would be.
-        let aboutIdx = indices.first(where: { options[$0].text == "ⓘ" })
+        // About always sits on the right, where >> would be.
+        let aboutIdx = indices.first(where: { options[$0].text == "About" })
 
         // Any other compact items (e.g. ⚄, ↺) fill remaining empty slots
         let knownIdxs = Set([backIdx, backButtonIdx, helpIdx, nextIdx, aboutIdx].compactMap { $0 })
