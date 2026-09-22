@@ -2650,10 +2650,10 @@ class GameEngine: ObservableObject {
     /// screen empty.
     var wrapColumns: Int = 38
 
-    /// Straight right-hand edge on the pages that ask for it (the brain and
-    /// key screens). Reset by clearTerminal, so it never leaks to the next
-    /// screen.
-    var justifyText = false
+    /// Straight right-hand edge on wrapped prose, everywhere. A screen that
+    /// wants the raw shape of what it prints (the test Details page) passes
+    /// `justify: false` on the call instead.
+    var justifyText = true
 
     /// Pad the gaps between words so the line fills the column exactly.
     /// Left alone if it would leave gaps wider than three spaces, which
@@ -3080,7 +3080,7 @@ class GameEngine: ObservableObject {
     }
 
     func clearTerminal() {
-        justifyText = false
+        justifyText = true
         taleCountdownOn = false
         speechFromLine = 0
         // Leaving the fight's running account for another screen: keep it, to put back.
@@ -6963,6 +6963,10 @@ class GameEngine: ObservableObject {
                 if let ex = dm.lastExchange {
                     self.print("  Took \(String(format: "%.1f", ex.seconds))s · model: \(ex.model)", color: .dimGreen)
                 }
+                if name.contains("Hugging Face"), let summary = dm.huggingFaceCreditSummary {
+                    self.print("")
+                    self.printWrapped(summary, indent: 2, color: .cyan)
+                }
                 self.print("")
                 var opts: [MenuOption] = []
                 if offerKeychain && !alreadyKept { opts.append(MenuOption("Save to Keychain", isDefault: true)) }
@@ -7321,8 +7325,15 @@ class GameEngine: ObservableObject {
         print("")
         print("D&D 5e ASCII Adventure", color: .brightGreen, bold: true, centered: true)
         print("A text-based role-playing game", color: .dimGreen, centered: true)
-        // Quiet reminder of which brain runs the DM.
+        // Quiet reminder of which brain runs the DM, and — on Hugging Face —
+        // how much of this month's free credit is left.
         print("DM: \(DMEngine.shared.activeBrainName)", color: .dimGreen, centered: true)
+        if DMEngine.shared.activeBrainName == AIProvider.huggingFace.displayName {
+            let dm = DMEngine.shared
+            if dm.hfPrices.isEmpty { dm.fetchHuggingFacePrices { _ in } }
+            let left = max(0, HuggingFace.freeCredit - dm.hfSpentThisMonth)
+            print(String(format: "about $%.2f of free credit left this month", left), color: .dimGreen, centered: true)
+        }
         print("")
 
         // Dragon & castle art on the opening screen
@@ -14205,6 +14216,10 @@ class GameEngine: ObservableObject {
 
     func showAIProviderMenu(onBack: (() -> Void)? = nil) {
         trainingDid("ai")
+        // Remembered so a provider's own screens come back here, and Back
+        // from here returns wherever Change Brain was opened from (the cog,
+        // a help link, Party Status…), not always the DM settings.
+        brainMenuReturn = onBack
         let back = onBack ?? { [weak self] in self?.showDMSettingsSubMenu() }
         clearTerminal()
         printTitle(BrainLabels.button)
@@ -14312,7 +14327,16 @@ class GameEngine: ObservableObject {
                     self?.printWrapped("Free tier available (ages 18+). Good creative narration. Requires a Google account and API key from AI Studio.", indent: 2, color: .dimGreen)
                     self?.print("")
                     self?.print("  HUGGING FACE", color: .cyan, bold: true)
-                    self?.printWrapped("One free account and token reach many open models (Llama, Gemma, Qwen…). Free accounts get a small monthly allowance — plenty for a few sessions a month. No age check beyond Hugging Face's own sign-up. A saved token is also the backup brain when Apple's AI isn't available. Tap Hugging Face, then ? for step-by-step setup and links.", indent: 2, color: .dimGreen)
+                    self?.printWrapped("One free account and token reach many open models (Llama, Gemma, Qwen…). A free account gets US$0.10 of credit a month — roughly 650 DM replies with Llama 3.3 70B, or thousands with a smaller model. A saved token is also the backup brain when Apple's AI isn't available.", indent: 2, color: .dimGreen)
+                    self?.print("")
+                    self?.printWrapped("Setting it up: make an account, create a token, tick 'Make calls to Inference Providers', copy it, and paste it into the game. Tap Hugging Face above, then Token Steps, for the whole thing step by step.", indent: 2, color: .dimGreen)
+                    self?.printLink("1. Sign up (free)", to: HuggingFace.join, indent: 2)
+                    self?.printLink("2. Create your token", to: HuggingFace.newToken, indent: 2)
+                    self?.printLink("Your tokens", to: HuggingFace.tokens, indent: 2)
+                    self?.printLink("What the free credit buys", to: HuggingFace.pricing, indent: 2)
+                    self?.printLink("Billing (add credit)", to: HuggingFace.billing, indent: 2)
+                    self?.printLink("PRO account (US$2 a month of credit)", to: HuggingFace.pro, indent: 2)
+                    self?.printLink("How Inference Providers work", to: HuggingFace.docs, indent: 2)
                     self?.print("")
                     self?.print("  CHOOSING A MODEL", color: .cyan, bold: true)
                     self?.printWrapped("Every cloud provider offers several models. Tap a provider, then Model, to pick one — each comes with a note on speed, cost and cleverness.", indent: 2, color: .dimGreen)
@@ -14341,7 +14365,83 @@ class GameEngine: ObservableObject {
                 dm.provider = selected
                 dm.clearHistory()
                 self?.dmChatLog = []
-                self?.promptAPIKey()
+                // Hugging Face with no token yet: the instructions first, as
+                // its token page asks for a name and permissions.
+                if selected == .huggingFace && (dm.apiKey(for: .huggingFace) ?? "").isEmpty {
+                    self?.showHuggingFaceTokenSteps(onBack: { [weak self] in self?.promptAPIKey() })
+                } else {
+                    self?.promptAPIKey()
+                }
+            }
+        }
+    }
+
+    /// The Hugging Face token page asks for a name and a permission preset.
+    /// Spell out what to choose, put the suggested name on the clipboard,
+    /// and open the page with that name already filled in.
+    private func showHuggingFaceTokenSteps(onBack: @escaping () -> Void) {
+        clearTerminal()
+        printTitle("Hugging Face Token")
+        justifyText = true
+        print("")
+        printWrapped("The page you're about to open asks two things: what to call the token, and what it's allowed to do. Here's what to pick.", indent: 2)
+        print("")
+        print("  1. WHICH KIND", color: .cyan, bold: true)
+        printWrapped("At the top are three tabs: Fine-grained, Read and Write. Choose Fine-grained — it's the only one that lets you tick the permission this game needs, and nothing more.", indent: 2, color: .dimGreen)
+        print("")
+        print("  2. TOKEN NAME", color: .cyan, bold: true)
+        printWrapped("Any name you like; it's only a label, so you can tell your tokens apart later. The game suggests:", indent: 2, color: .dimGreen)
+        print("     \(HuggingFace.tokenName)", color: .brightGreen, bold: true)
+        printWrapped("The link below fills that in for you, and it's on the clipboard too, so you can paste it if the box is empty.", indent: 2, color: .dimGreen)
+        print("")
+        print("  3. PERMISSIONS", color: .cyan, bold: true)
+        printWrapped("A long list of tick boxes, all empty to start with. Find the Inference section and tick just this one:", indent: 2, color: .dimGreen)
+        print("     Make calls to Inference Providers", color: .brightGreen, bold: true)
+        printWrapped("Leave every other box empty — the game needs nothing else, and a token that can do less is safer. Without this one box the game can't use the token at all.", indent: 2, color: .dimGreen)
+        print("")
+        print("  4. CREATE AND COPY", color: .cyan, bold: true)
+        printWrapped("Tap Create token. The token is shown once only, so copy it straight away — it starts with 'hf_'. Then come back here and tap Paste Key.", indent: 2, color: .dimGreen)
+        print("")
+        printWrapped("If you haven't got a Hugging Face account yet, use Sign Up first: an email address and a password, then confirm the email.", indent: 2, color: .yellow)
+        print("")
+        printLink("Open the token page (name filled in)", to: HuggingFace.newToken, indent: 2)
+        printLink("Sign up first (free account)", to: HuggingFace.join, indent: 2)
+        printLink("Tokens you already have", to: HuggingFace.tokens, indent: 2)
+        printLink("What the free credit buys", to: HuggingFace.pricing, indent: 2)
+        print("")
+        let opts = [MenuOption("Open Token Page", isDefault: true), MenuOption("Copy Name"), MenuOption("Paste Key"),
+                    MenuOption("Sign Up First"), MenuOption("< Back", tint: .navigation, compact: true)]
+        showMenuOptions(opts)
+        closeHandler = onBack
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1:
+                #if os(iOS)
+                UIPasteboard.general.string = HuggingFace.tokenName
+                #endif
+                self.openExternalURL(HuggingFace.newToken)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { onBack() }
+            case 2:
+                #if os(iOS)
+                UIPasteboard.general.string = HuggingFace.tokenName
+                self.print("")
+                self.print("  Name copied: \(HuggingFace.tokenName)", color: .brightGreen)
+                #else
+                self.print("")
+                self.print("  Name: \(HuggingFace.tokenName)", color: .brightGreen)
+                #endif
+                self.print("")
+                self.waitForContinueWithTimeout(multiplier: 0.8) { [weak self] in self?.showHuggingFaceTokenSteps(onBack: onBack) }
+            case 3:
+                self.handleAPIKeySelection("Paste Key", provider: .huggingFace)
+            case 4:
+                self.openExternalURL(HuggingFace.join)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                    self?.showHuggingFaceTokenSteps(onBack: onBack)
+                }
+            default:
+                onBack()
             }
         }
     }
@@ -14487,6 +14587,18 @@ class GameEngine: ObservableObject {
     /// the service offers now (More Models), or any name typed in (Custom).
     func showModelMenu(provider: AIProvider, onBack: @escaping () -> Void) {
         let dm = DMEngine.shared
+        // Hugging Face publishes its prices, so each model can say how far a
+        // free month's credit goes. Fetched once, then remembered.
+        if provider == .huggingFace && DMEngine.shared.hfPrices.isEmpty {
+            clearTerminal()
+            printTitle("\(provider.shortName) Model")
+            print("")
+            print("  Checking prices…", color: .dimGreen)
+            dm.fetchHuggingFacePrices { [weak self] _ in
+                self?.showModelMenu(provider: provider, onBack: onBack)
+            }
+            return
+        }
         clearTerminal()
         printTitle("\(provider.shortName) Model")
         justifyText = true
@@ -14499,7 +14611,21 @@ class GameEngine: ObservableObject {
             let mark = c.id == current ? "  <--" : ""
             print("  \(c.label)\(mark)", color: c.id == current ? .brightGreen : .cyan, bold: c.id == current)
             printWrapped(c.note, indent: 4, color: .dimGreen)
+            if provider == .huggingFace, let price = DMEngine.shared.hfPrices[c.id] {
+                print("    \(HuggingFace.repliesText(inputPerM: price.input, outputPerM: price.output)) · $\(price.input)/$\(price.output) per million in/out", color: .cyan)
+            }
             if !c.id.isEmpty { print("    \(c.id)", color: .dimGreen) }
+            print("")
+        }
+        if provider == .huggingFace, let summary = DMEngine.shared.huggingFaceCreditSummary {
+            print("  THIS MONTH SO FAR", color: .cyan, bold: true)
+            printWrapped(summary, indent: 2, color: .cyan)
+            printWrapped("Hugging Face's own billing page has the exact figure; the game only counts the replies it asked for on this device.", indent: 2, color: .dimGreen)
+            printLink("Hugging Face billing", to: HuggingFace.billing, indent: 2)
+            print("")
+        }
+        if provider == .huggingFace {
+            printWrapped("A free Hugging Face account gets US$0.10 of credit a month, and a PRO account US$2 (twenty times as many replies). The figures above are worked out from Hugging Face's own price list for a typical DM reply, so a smaller model goes much further. When the credit runs out, the game's own DM takes over until next month.", indent: 2, color: .dimGreen)
             print("")
         }
         printWrapped("More Models lists everything \(provider.displayName) offers right now; Custom takes any model name from its website.", indent: 2, color: .dimGreen)
@@ -14653,7 +14779,7 @@ class GameEngine: ObservableObject {
         }
         options.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(options)
-        closeHandler = { [weak self] in self?.showAIProviderMenu() }
+        closeHandler = { [weak self] in self?.showAIProviderMenu(onBack: self?.brainMenuReturn) }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             switch choice {
@@ -14686,10 +14812,10 @@ class GameEngine: ObservableObject {
                 self.print("")
                 self.waitForContinue()
                 self.inputHandler = { [weak self] _ in
-                    self?.showAIProviderMenu()
+                    self?.showAIProviderMenu(onBack: self?.brainMenuReturn)
                 }
             default: // Back
-                self.showAIProviderMenu()
+                self.showAIProviderMenu(onBack: self.brainMenuReturn)
             }
         }
     }
@@ -16067,6 +16193,10 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Where Change Brain was opened from, so every screen below it can
+    /// hand Back up the same chain.
+    private var brainMenuReturn: (() -> Void)?
+
     private func promptAPIKey(showClearConfirm: Bool = false) {
         let provider = DMEngine.shared.provider
         clearTerminal()
@@ -16079,7 +16209,16 @@ class GameEngine: ObservableObject {
             print("  Free tier — just needs a Google", color: .brightGreen)
             print("  account (you must be 18+).", color: .brightGreen)
         } else if provider == .huggingFace {
-            printWrapped("Free account; its token comes with a small monthly allowance of AI replies (US$0.10 of credit a month on a free account, US$2 on PRO). No card needed to start. See '?' below for step-by-step setup.", indent: 2, color: .brightGreen)
+            printWrapped("Free account, no card needed. It comes with US$0.10 of credit a month (US$2 on a PRO account), which the game spends a fraction of a penny at a time.", indent: 2, color: .brightGreen)
+            if let price = DMEngine.shared.hfPrices[DMEngine.shared.modelToUse(for: .huggingFace)] {
+                printWrapped("With \(DMEngine.shared.modelLabel(for: .huggingFace)) that's \(HuggingFace.repliesText(inputPerM: price.input, outputPerM: price.output)). Tap Model to see what other models give.", indent: 2, color: .cyan)
+            } else {
+                printWrapped("Tap Model to see how many replies a month each model gives.", indent: 2, color: .dimGreen)
+            }
+            if let summary = DMEngine.shared.huggingFaceCreditSummary {
+                printWrapped(summary, indent: 2, color: .cyan)
+            }
+            printWrapped("Token Steps below says exactly what to choose on Hugging Face's page.", indent: 2, color: .dimGreen)
         } else {
             print("  Requires a paid account with", color: .dimGreen)
             print("  credit — a typical session costs", color: .dimGreen)
@@ -16167,6 +16306,7 @@ class GameEngine: ObservableObject {
         } else if provider == .huggingFace {
             options.append("Sign Up")
             options.append("Get Free Key")
+            options.append("Token Steps")
             options.append("Billing Page")
         } else {
             options.append("Get Key")
@@ -16189,8 +16329,9 @@ class GameEngine: ObservableObject {
         options.append("Load Key")
 
         closeHandler = { [weak self] in
-            self?.closeHandler = nil
-            self?.showDMSettingsSubMenu()
+            guard let self = self else { return }
+            self.closeHandler = nil
+            self.showAIProviderMenu(onBack: self.brainMenuReturn)
         }
 
         // Paginated (<< / >>) rather than one long flat list — this screen
@@ -16202,7 +16343,7 @@ class GameEngine: ObservableObject {
                 self.showAPIKeyHelp(provider: provider, hasKey: hasKey)
             } else {
                 self.closeHandler = nil
-                self.showDMSettingsSubMenu()
+                self.showAIProviderMenu(onBack: self.brainMenuReturn)
             }
         }, handler: { [weak self] idx in
             guard let self = self else { return }
@@ -16216,13 +16357,19 @@ class GameEngine: ObservableObject {
     /// selected option's text, not its position) can call straight into it.
     private func handleAPIKeySelection(_ selected: String, provider: AIProvider) {
         if selected == "Provider" {
-            self.showAIProviderMenu()
+            self.showAIProviderMenu(onBack: self.brainMenuReturn)
         } else if selected == "Model" {
             self.showModelMenu(provider: provider, onBack: { [weak self] in self?.promptAPIKey() })
+        } else if selected == "Token Steps" {
+            self.showHuggingFaceTokenSteps(onBack: { [weak self] in self?.promptAPIKey() })
         } else if selected == "Sign Up" {
             self.openExternalURL(HuggingFace.join)
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.promptAPIKey() }
-        } else if selected == "Get Free Key" || selected == "Get Key" {
+        } else if (selected == "Get Free Key" || selected == "Get Key") && provider == .huggingFace {
+                // The token page asks for a name and a permission preset, so
+                // say what to pick before sending them there.
+                self.showHuggingFaceTokenSteps(onBack: { [weak self] in self?.promptAPIKey() })
+            } else if selected == "Get Free Key" || selected == "Get Key" {
                 // Open the provider's key URL in Safari
                 let urlString: String
                 switch provider {

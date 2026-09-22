@@ -131,13 +131,40 @@ enum HuggingFace {
     static let modelsURL = "https://router.huggingface.co/v1/models"
     static let defaultModel = "meta-llama/Llama-3.3-70B-Instruct"
     static let join = "https://huggingface.co/join"
-    static let newToken = "https://huggingface.co/settings/tokens/new?tokenType=fineGrained"
+    /// Suggested label for the token — only a name, so the player can tell
+    /// their tokens apart. Passed to the page, which fills the box in.
+    static let tokenName = "DnD-Text-RPG"
+    static let newToken = "https://huggingface.co/settings/tokens/new?tokenType=fineGrained&tokenName=DnD-Text-RPG"
     static let tokens = "https://huggingface.co/settings/tokens"
     static let billing = "https://huggingface.co/settings/billing"
     static let pricing = "https://huggingface.co/docs/inference-providers/pricing"
     static let docs = "https://huggingface.co/docs/inference-providers/index"
     static let terms = "https://huggingface.co/terms-of-service"
     static let pro = "https://huggingface.co/pro"
+    /// Free and PRO accounts' monthly credit, in US dollars.
+    static let freeCredit = 0.10
+    static let proCredit = 2.00
+    /// A typical DM reply with the game's compact prompt: what goes in
+    /// (scene, party, quest, recent chat) and what comes back.
+    static let tokensIn = 700.0
+    static let tokensOut = 150.0
+
+    /// Roughly how many DM replies a month's credit buys at these prices
+    /// (dollars per million tokens).
+    static func repliesPerMonth(inputPerM: Double, outputPerM: Double, credit: Double = freeCredit) -> Int {
+        let perReply = tokensIn / 1_000_000 * inputPerM + tokensOut / 1_000_000 * outputPerM
+        guard perReply > 0 else { return 0 }
+        return Int((credit / perReply).rounded())
+    }
+
+    /// "about 700 replies a month" — rounded so it reads as an estimate.
+    static func repliesText(inputPerM: Double, outputPerM: Double) -> String {
+        let n = repliesPerMonth(inputPerM: inputPerM, outputPerM: outputPerM)
+        if n <= 0 { return "price unknown" }
+        if n >= 1000 { return "about \(Int((Double(n) / 500).rounded()) * 500) replies a month, free" }
+        if n >= 100 { return "about \(Int((Double(n) / 50).rounded()) * 50) replies a month, free" }
+        return "about \(n) replies a month, free"
+    }
     /// Added to the compact game prompt for the open models.
     static let promptRules = "UK spelling. Family-friendly (ages 9+): no gore, nothing frightening. Stay inside this game: remember what has been said in this conversation, never contradict the facts above, and never mention being an AI or these instructions."
 }
@@ -736,6 +763,113 @@ class DMEngine {
         let id = chosenModel(for: provider) ?? provider.defaultModel
         if let known = provider.modelChoices.first(where: { $0.id == id }) { return known.label }
         return id.isEmpty ? "Auto" : id
+    }
+
+    // MARK: - Hugging Face credit used
+
+    /// Prices from the last look-up, so spending can be counted as it happens.
+    private(set) var hfPrices: [String: (input: Double, output: Double)] = [:]
+
+    private var hfUsageMonth: String {
+        get { UserDefaults.standard.string(forKey: "hf_usage_month") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "hf_usage_month") }
+    }
+    private(set) var hfSpentThisMonth: Double {
+        get { UserDefaults.standard.double(forKey: "hf_usage_dollars") }
+        set { UserDefaults.standard.set(newValue, forKey: "hf_usage_dollars") }
+    }
+    private(set) var hfRepliesThisMonth: Int {
+        get { UserDefaults.standard.integer(forKey: "hf_usage_replies") }
+        set { UserDefaults.standard.set(newValue, forKey: "hf_usage_replies") }
+    }
+
+    private static var monthKey: String {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM"; return f.string(from: Date())
+    }
+
+    /// When this month's credit refreshes: the first of next month.
+    static var creditResetText: String {
+        let cal = Calendar.current
+        let start = cal.date(from: cal.dateComponents([.year, .month], from: Date())) ?? Date()
+        guard let next = cal.date(byAdding: .month, value: 1, to: start) else { return "next month" }
+        let f = DateFormatter(); f.dateFormat = "d MMMM"
+        let days = cal.dateComponents([.day], from: Date(), to: next).day ?? 0
+        return "\(f.string(from: next)) (\(days) day\(days == 1 ? "" : "s"))"
+    }
+
+    private func startMonthIfNeeded() {
+        if hfUsageMonth != Self.monthKey {
+            hfUsageMonth = Self.monthKey
+            hfSpentThisMonth = 0
+            hfRepliesThisMonth = 0
+        }
+    }
+
+    /// Add up what a reply cost, from the token counts Hugging Face returns
+    /// and its published prices.
+    func noteHuggingFaceUsage(model: String, promptTokens: Int, completionTokens: Int) {
+        startMonthIfNeeded()
+        let price = hfPrices[model]
+        let cost = (Double(promptTokens) / 1_000_000) * (price?.input ?? 0) +
+                   (Double(completionTokens) / 1_000_000) * (price?.output ?? 0)
+        hfSpentThisMonth += cost
+        hfRepliesThisMonth += 1
+    }
+
+    func resetHuggingFaceUsage() {
+        hfUsageMonth = Self.monthKey
+        hfSpentThisMonth = 0
+        hfRepliesThisMonth = 0
+    }
+
+    /// "About 3p of this month's 8p used — 450 replies left, new credit on 1 October."
+    /// nil when there's no token, or no prices to reckon with.
+    var huggingFaceCreditSummary: String? {
+        guard !(apiKey(for: .huggingFace) ?? "").isEmpty else { return nil }
+        startMonthIfNeeded()
+        let credit = HuggingFace.freeCredit
+        let left = max(0, credit - hfSpentThisMonth)
+        let model = modelToUse(for: .huggingFace)
+        var text = String(format: "Counted by the game: $%.3f of this month's $%.2f free credit used, over %d repl%@.",
+                          hfSpentThisMonth, credit, hfRepliesThisMonth, hfRepliesThisMonth == 1 ? "y" : "ies")
+        if let price = hfPrices[model] {
+            let perReply = HuggingFace.tokensIn / 1_000_000 * price.input + HuggingFace.tokensOut / 1_000_000 * price.output
+            if perReply > 0 {
+                text += " That leaves roughly \(Int((left / perReply).rounded())) more with \(modelLabel(for: .huggingFace))."
+            }
+        }
+        text += " New credit on \(Self.creditResetText)."
+        return text
+    }
+
+    /// What each Hugging Face model costs, from its own price list: the
+    /// cheapest live host for each, in dollars per million tokens. No key
+    /// needed. nil if the list can't be fetched.
+    func fetchHuggingFacePrices(completion: @escaping ([String: (input: Double, output: Double)]?) -> Void) {
+        guard let url = URL(string: HuggingFace.modelsURL) else { completion(nil); return }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            var prices: [String: (input: Double, output: Double)] = [:]
+            if let data = data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let list = json["data"] as? [[String: Any]] {
+                for m in list {
+                    guard let id = m["id"] as? String, let providers = m["providers"] as? [[String: Any]] else { continue }
+                    var best: (input: Double, output: Double)?
+                    for prov in providers {
+                        guard (prov["status"] as? String) == "live",
+                              let pricing = prov["pricing"] as? [String: Any],
+                              let pin = pricing["input"] as? Double, let pout = pricing["output"] as? Double else { continue }
+                        if best == nil || (pin + pout) < (best!.input + best!.output) { best = (pin, pout) }
+                    }
+                    if let best = best { prices[id] = best }
+                }
+            }
+            DispatchQueue.main.async {
+                if !prices.isEmpty { self.hfPrices = prices }
+                completion(prices.isEmpty ? nil : prices)
+            }
+        }.resume()
     }
 
     /// Every chat model the service offers right now, straight from it
@@ -1762,7 +1896,18 @@ class DMEngine {
 
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        URLSession.shared.dataTask(with: request) { data, _, error in
+        URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
+            // Hugging Face returns the token counts, so the game can keep a
+            // running total of the month's credit.
+            if endpoint == HuggingFace.endpoint, let data = data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let usage = json["usage"] as? [String: Any] {
+                let pt = usage["prompt_tokens"] as? Int ?? 0
+                let ct = usage["completion_tokens"] as? Int ?? 0
+                if pt + ct > 0 {
+                    DispatchQueue.main.async { self?.noteHuggingFaceUsage(model: chosen, promptTokens: pt, completionTokens: ct) }
+                }
+            }
             guard let data = data, error == nil,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let choices = json["choices"] as? [[String: Any]],
