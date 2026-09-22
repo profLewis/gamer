@@ -339,6 +339,9 @@ class GameEngine: ObservableObject {
     /// stays out of the way once you've scrolled up to reread; this overrides
     /// that once, rather than removing the courtesy altogether.
     @Published var forceScrollToNewest: Bool = false
+    /// A line to bring into view (the view scrolls to it once, then clears it)
+    /// — e.g. the setting a button just changed.
+    @Published var scrollToLineID: UUID? = nil
     /// Lock scrolling entirely (for card views with swipe navigation)
     @Published var scrollLocked: Bool = false
     /// Bumped by every clearTerminal() call — i.e. every genuine navigation
@@ -1046,6 +1049,14 @@ class GameEngine: ObservableObject {
                                   pinnedMapLines: [TerminalLine])?
 
     /// Whether undo/redo buttons are enabled in settings screens
+    /// Settings > Gameplay > Recap: whether < Back while exploring opens the
+    /// Earlier/Later look back through the screens you've left (On), or only
+    /// undoes a step (Off).
+    var recapEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: "recapEnabled") == nil ? true : UserDefaults.standard.bool(forKey: "recapEnabled") }
+        set { UserDefaults.standard.set(newValue, forKey: "recapEnabled") }
+    }
+
     var undoRedoEnabled: Bool {
         get {
             if UserDefaults.standard.object(forKey: "undoRedoEnabled") == nil { return true }
@@ -2054,6 +2065,23 @@ class GameEngine: ObservableObject {
         mapOverlayVisible = true
     }
 
+    /// What VoiceOver says as the map viewer opens: which floor, where you
+    /// are, how much is explored — and, with the Boss revealed, which way
+    /// its lair lies from here.
+    var mapViewerSpokenSummary: String {
+        guard let d = dungeon, let here = d.currentRoom else { return "Map viewer." }
+        let seen = d.rooms.values.filter { $0.visited }.count
+        var parts = ["Map viewer, \(Dungeon.floorName(d.level).lowercased()) of \(d.name).",
+                     "You are in \(here.name).",
+                     "\(seen) of \(d.rooms.count) rooms explored."]
+        if d.revealBoss {
+            if let b = guardianBearing(in: d) { parts.append("\(cap(foePossessive)) lair is \(b).") }
+            else if d.rooms.values.contains(where: { $0.roomType == .boss && $0.cleared }) { parts.append("\(cap(floorFoe)) is beaten.") }
+        }
+        parts.append("Close the viewer to go back to the game.")
+        return parts.joined(separator: " ")
+    }
+
     /// The map viewer's Show the Boss button — the same as "magick: show the boss".
     func toggleRevealBossFromOverlay() {
         guard let d = dungeon else { return }
@@ -2066,6 +2094,9 @@ class GameEngine: ObservableObject {
         d.revealBoss.toggle()
         objectWillChange.send()
         if mapOverlayVisible { presentAtlasMapOverlay() }
+        #if os(iOS) || os(visionOS)
+        if Self.systemVoiceOverRunning { UIAccessibility.post(notification: .announcement, argument: mapViewerSpokenSummary) }
+        #endif
         if gameState == .exploring && currentCombat == nil { showExplorationView() }
     }
 
@@ -3539,6 +3570,17 @@ class GameEngine: ObservableObject {
 
     /// Record a setting's current value before changing it
     private func recordSettingChange(screen: String, key: String, name: String) {
+        // Once the screen has been redrawn with the new value, bring the line
+        // that shows this setting into view — a change further down the page
+        // used to happen out of sight.
+        let want = name.lowercased()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self = self else { return }
+            let skip = self.titleLineIndices.max() ?? -1
+            if let line = self.terminalLines.enumerated().first(where: { $0.offset > skip && $0.element.text.lowercased().contains(want) })?.element {
+                self.scrollToLineID = line.id
+            }
+        }
         let oldValue = readSettingRaw(key: key)
         settingUndoStacks[screen, default: []].append(
             SettingUndoEntry(key: key, name: name, oldValue: oldValue)
@@ -3640,6 +3682,7 @@ class GameEngine: ObservableObject {
         case "poison_enabled": return poisonEnabled ? "On" : "Off"
         case "multiplayer_enabled": return multiplayerEnabled ? "On" : "Off"
         case "undoRedoEnabled": return undoRedoEnabled ? "On" : "Off"
+        case "recapEnabled": return recapEnabled ? "On" : "Off"
         case "useCustomKeyboard": return useCustomKeyboard ? "Custom" : "System"
         case "idlePromptsEnabled": return idlePromptsEnabled ? "On" : "Off"
         case "autoContinueEnabled": return autoContinueEnabled ? "On" : "Off"
@@ -5227,10 +5270,14 @@ class GameEngine: ObservableObject {
         // switch itself on or off unnoticed.
         if speakerModeOn {
             // Turn off entirely
-            logEvent("Read Aloud off (speaker button)", category: "SETTINGS")
+            logEvent("Read Aloud and DM voice off (speaker button)", category: "SETTINGS")
             if gameState == .exploring && currentCombat == nil {
-                explorationStatusMessage = ("Read Aloud is off. Tap the speaker to turn it on again.", .dimGreen)
+                explorationStatusMessage = ("Voice off: nothing is read aloud and the DM stays silent. Tap the speaker to turn it on again.", .dimGreen)
             }
+            // The speaker is the master switch for voices: off means the DM
+            // too — it used to go on talking as fights began (DM Voice is a
+            // separate setting that the speaker didn't touch).
+            speech.isEnabled = false
             speakerModeOn = false
             speakerPaused = false
             speech.stop()
@@ -5242,7 +5289,8 @@ class GameEngine: ObservableObject {
         }
 
         // Turn on — read current screen (title first) and stay in mode
-        logEvent("Read Aloud on (speaker button)", category: "SETTINGS")
+        logEvent("Read Aloud and DM voice on (speaker button)", category: "SETTINGS")
+        speech.isEnabled = true
         if gameState == .exploring && currentCombat == nil {
             explorationStatusMessage = ("Read Aloud is on: each screen is read to you. Tap the speaker again to stop.", .cyan)
         }
@@ -7266,8 +7314,11 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("Training"))
         actions.append { [weak self] in self?.startTrainingGame() }
 
-        // About & credits: the ⓘ in the 3-bar's right-hand slot, as on the
-        // main menu.
+        // Quit the app, in red, as on the Save/Quit screen (it asks first).
+        menuOpts.append(MenuOption("Quit", tint: .danger))
+        actions.append { [weak self] in self?.quitApp() }
+
+        // About & credits: the right-hand slot of the 3-bar, as on the main menu.
         menuOpts.append(MenuOption("About", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showAbout(onBack: { [weak self] in self?.showPlayMenu() }) }
 
@@ -10502,6 +10553,52 @@ class GameEngine: ObservableObject {
         party.contains { $0.skillProficiencies.contains(.perception) }
     }
 
+    /// Actions > Pause Game: save, freeze time, silence the music and voice,
+    /// and sleep on a quiet screen until Resume. Nothing moves meanwhile.
+    func pauseGame() {
+        performAutosave()
+        SpeechEngine.shared.stop()
+        SoundManager.shared.stopMusic()
+        if !autoContinuePaused { toggleAutoContinuePause() }
+        logEvent("Game paused", category: "EXPLORE")
+        clearTerminal()
+        printTitle("Paused")
+        print("")
+        for line in ["        (  -  -  )   z", "         \\  ___ /   z Z", "      the party sleeps", "   by the embers of the torch"] {
+            print(line, color: .dimGreen)
+        }
+        print("")
+        printWrapped("The game is saved and time is frozen: nothing moves until you come back. Tap Resume when you're ready.", indent: 2, color: .cyan)
+        print("")
+        let resume: () -> Void = { [weak self] in
+            guard let self = self else { return }
+            if self.autoContinuePaused { self.toggleAutoContinuePause() }
+            self.playCurrentMusic()
+            self.logEvent("Game resumed", category: "EXPLORE")
+            self.explorationStatusMessage = ("Welcome back — the dungeon is as you left it.", .cyan)
+            self.showExplorationView()
+        }
+        showMenuOptions([MenuOption("Resume", isDefault: true), MenuOption("Quit Game", tint: .danger),
+                         MenuOption("?", tint: .navigation, compact: true)])
+        closeHandler = resume
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1: resume()
+            case 2:
+                if self.autoContinuePaused { self.toggleAutoContinuePause() }
+                self.leaveExplorationTapped()
+            default:
+                self.showInlineHelp {
+                    self.printTitle("Paused — Help")
+                    self.print("")
+                    self.printWrapped("Your game was saved when you paused, and the clock is stopped — deadlines, torches and wandering monsters all wait. Resume carries on; Quit Game leaves the adventure (you're asked about saving).", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            }
+        }
+    }
+
     private func autosaveIfNeeded() {
         let interval = autosaveInterval
         guard interval != .off, dungeon != nil else { return }
@@ -11402,6 +11499,11 @@ class GameEngine: ObservableObject {
         printWrapped("Show labelled Undo/Redo buttons when you change settings or edit adventurers. The label shows what will be reverted.", indent: 2, color: .dimGreen)
         print("")
 
+        print("RECAP:", color: .cyan, bold: true)
+        print("  \(recapEnabled ? "On" : "Off")", color: recapEnabled ? .brightGreen : .red)
+        printWrapped("On: < Back while exploring looks back through the screens you've left, with < Earlier and Later >. Off: < Back only undoes your last step.", indent: 2, color: .dimGreen)
+        print("")
+
         print("LIST ORDER:", color: .cyan, bold: true)
         print("  \(listSortMode.label)", color: .brightGreen)
         printWrapped("How Continue Adventure and Hall of Fame sort their lists — by date, points, name, or dungeon level.", indent: 2, color: .dimGreen)
@@ -11478,6 +11580,7 @@ class GameEngine: ObservableObject {
             useMetricUnits ? "Units: Imperial" : "Units: Metric",
         ])
         options.append(undoRedoEnabled ? "Undo/Redo Off" : "Undo/Redo On")
+        options.append(recapEnabled ? "Recap Off" : "Recap On")
 
         let select: (Int) -> Void = { [weak self] idx in
             guard let self = self else { return }
@@ -11592,6 +11695,10 @@ class GameEngine: ObservableObject {
                 self.recordSettingChange(screen: "s:gameplay", key: "blinkingCursorEnabled", name: "Cursor")
                 self.blinkingCursorEnabled.toggle()
                 UserDefaults.standard.set(self.blinkingCursorEnabled, forKey: "blinkingCursorEnabled")
+                self.showGameplaySettings(page: currentPage)
+            } else if selected.hasPrefix("Recap") {
+                self.recordSettingChange(screen: "s:gameplay", key: "recapEnabled", name: "Recap")
+                self.recapEnabled.toggle()
                 self.showGameplaySettings(page: currentPage)
             } else if selected.hasPrefix("Undo/Redo") {
                 self.recordSettingChange(screen: "s:gameplay", key: "undoRedoEnabled", name: "Undo/Redo")
@@ -22461,11 +22568,12 @@ class GameEngine: ObservableObject {
         // --- Bottom row: Back, Help, Next ---
         // Back undoes the last step (and Next redoes it), each written into
         // the adventure log. Only there when there's something to undo.
-        if !screenHistory.isEmpty || !stepUndo.isEmpty {
+        let recapHere = recapEnabled && !screenHistory.isEmpty
+        if recapHere || !stepUndo.isEmpty {
             menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
             actions.append { [weak self] in
                 guard let self = self else { return }
-                if self.screenHistory.isEmpty { self.undoStep() }
+                if !recapHere { self.undoStep() }
                 else { self.showScreenHistory(index: self.screenHistory.count - 1) }
             }
         }
@@ -23895,6 +24003,12 @@ class GameEngine: ObservableObject {
         // Save (quick save)
         menuOpts.append(MenuOption("Save", tint: .navigation))
         actions.append { [weak self] in self?.quickSave() }
+
+        // Step away: pause (saves and sleeps until you're back) or quit.
+        menuOpts.append(MenuOption("Pause Game", tint: .navigation))
+        actions.append { [weak self] in self?.pauseGame() }
+        menuOpts.append(MenuOption("Quit Game", tint: .danger))
+        actions.append { [weak self] in self?.leaveExplorationTapped() }
 
         // Help
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -33358,7 +33472,7 @@ class GameEngine: ObservableObject {
             || lower == "turn off sound" || lower == "no sound" {
             musicEnabled = false
             battleSoundsEnabled = false
-            SpeechEngine.shared.stop()
+            SpeechEngine.shared.isEnabled = false
             speakerModeOn = false
             return "All audio muted."
         }
@@ -33372,11 +33486,13 @@ class GameEngine: ObservableObject {
         // Speaker / narration
         if lower == "speaker on" || lower == "narration on" || lower == "read aloud"
             || lower == "narrator on" || lower == "voice on" {
+            SpeechEngine.shared.isEnabled = true
             speakerModeOn = true
             return "Speaker mode on."
         }
         if lower == "speaker off" || lower == "narration off" || lower == "stop reading"
             || lower == "narrator off" || lower == "voice off" {
+            SpeechEngine.shared.isEnabled = false
             speakerModeOn = false
             SpeechEngine.shared.stop()
             return "Speaker mode off."

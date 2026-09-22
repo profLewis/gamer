@@ -655,6 +655,11 @@ struct TerminalView: View {
                             }
                         }
                         // A vertical swipe over the controls scrolls the story.
+                        .onChange(of: gameEngine.scrollToLineID) { id in
+                            guard let id = id else { return }
+                            gameEngine.scrollToLineID = nil
+                            withAnimation(.easeOut(duration: 0.3)) { scrollProxy.scrollTo(id, anchor: .center) }
+                        }
                         .onChange(of: swipeScrollToken) { _ in
                             let lines = gameEngine.terminalLines
                             guard !lines.isEmpty else { return }
@@ -939,7 +944,16 @@ struct TerminalView: View {
         #endif
         .overlay {
             if gameEngine.mapOverlayVisible {
+                // VoiceOver: this is a screen of its own — nothing behind it is
+                // reachable while it's up, and it says where you are (and where
+                // the Boss is, if it's been revealed) as it opens.
                 fullMapOverlay
+                    .accessibilityAddTraits(.isModal)
+                    #if os(iOS) || os(visionOS)
+                    .onAppear {
+                        UIAccessibility.post(notification: .screenChanged, argument: gameEngine.mapViewerSpokenSummary)
+                    }
+                    #endif
             }
         }
         // The endgame certificate — over everything until it's closed.
