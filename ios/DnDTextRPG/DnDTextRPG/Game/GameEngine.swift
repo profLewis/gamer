@@ -140,6 +140,10 @@ class GameEngine: ObservableObject {
     /// (not just the normal radius-limited viewport) in a pannable overlay,
     /// with a Recentre button to snap back to the player's position — like
     /// Google Maps' recentre control.
+    /// A small block pinned above the story: the fight's state while a fight
+    /// is on. Empty the rest of the time.
+    @Published var combatPanelLines: [TerminalLine] = []
+
     @Published var mapOverlayVisible: Bool = false
     @Published var mapOverlayLines: [TerminalLine] = []
     /// The big map drawn as a picture — terrain for each room, names and
@@ -1052,9 +1056,10 @@ class GameEngine: ObservableObject {
     /// Whether undo/redo buttons are enabled in settings screens
     /// Settings > Gameplay > Recap: whether < Back while exploring opens the
     /// Earlier/Later look back through the screens you've left (On), or only
-    /// undoes a step (Off).
+    /// undoes a step (Off). Off by default — play-testing found Earlier and
+    /// Later confusing next to < Back, which undoes a step instead.
     var recapEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: "recapEnabled") == nil ? true : UserDefaults.standard.bool(forKey: "recapEnabled") }
+        get { UserDefaults.standard.object(forKey: "recapEnabled") == nil ? false : UserDefaults.standard.bool(forKey: "recapEnabled") }
         set { UserDefaults.standard.set(newValue, forKey: "recapEnabled") }
     }
 
@@ -2530,23 +2535,78 @@ class GameEngine: ObservableObject {
     }
 
     /// Print combat status with the local player's characters marked with ◀ and underlined
+    /// The fight's state used to be printed into the story, so it scrolled
+    /// away as soon as anything happened. It now lives in a small block
+    /// pinned above the story (see combatPanelLines), which stays put and is
+    /// rewritten after every blow. The story below keeps only what happened.
     func printCombatStatus() {
-        guard let combat = currentCombat else { return }
+        guard currentCombat != nil else { combatPanelLines = []; return }
         suppressAutoScroll = false
-
-        let localIds = localControlledCharIds
-        let lines = combat.displayStatus(localCharacterIds: localIds)
-        let maxLen = lines.map { $0.count }.max() ?? 0
-
-        // Party lines start after header (line 0 = "───── COMBAT ─────", line 1 = "")
-        let partyLineStart = 2
-        for (lineIdx, line) in lines.enumerated() {
-            let padded = maxLen > 0 ? line.padding(toLength: maxLen, withPad: " ", startingAt: 0) : line
-            let partyIdx = lineIdx - partyLineStart
-            let isLocalChar = partyIdx >= 0 && partyIdx < party.count && localIds.contains(party[partyIdx].id)
-            print(padded, color: .green, underlined: isLocalChar)
-        }
+        updateCombatPanel()
     }
+
+    /// Ten characters of bar, full to empty.
+    private func hpBar(_ current: Int, _ maximum: Int, width: Int = 10) -> String {
+        guard maximum > 0 else { return String(repeating: "·", count: width) }
+        let filled = max(0, min(width, Int((Double(current) / Double(maximum) * Double(width)).rounded())))
+        return String(repeating: "█", count: filled) + String(repeating: "·", count: width - filled)
+    }
+
+    private func hpColour(_ current: Int, _ maximum: Int) -> TerminalColor {
+        guard maximum > 0, current > 0 else { return .red }
+        let f = Double(current) / Double(maximum)
+        if f > 0.5 { return .brightGreen }
+        return f > 0.25 ? .yellow : .red
+    }
+
+    /// Build the pinned fight panel: who's acting, then a row per fighter
+    /// with a bar and hit points, then who's next.
+    func updateCombatPanel() {
+        guard let combat = currentCombat else { combatPanelLines = []; return }
+        let localIds = localControlledCharIds
+        let now = combat.currentCombatant?.name
+        var lines: [TerminalLine] = []
+        let header = "COMBAT" + (now.map { " · \($0)'s turn" } ?? "")
+        lines.append(TerminalLine(header, color: .cyan, bold: true, size: combatPanelFontSize))
+
+        // Names are padded to a common width so the bars line up.
+        let monsterNames = Combat.numberedMonsterNames(combat.encounter.monsters)
+        let width = max(party.map { $0.name.prefix(9).count }.max() ?? 6,
+                        monsterNames.map { $0.prefix(9).count }.max() ?? 6)
+        func row(_ mark: String, _ name: String, _ cur: Int, _ max: Int, tail: String, colour: TerminalColor, isYou: Bool) {
+            let n = String(name.prefix(9)).padding(toLength: width, withPad: " ", startingAt: 0)
+            let hp = "\(cur)/\(max)".padding(toLength: 7, withPad: " ", startingAt: 0)
+            let text = "\(mark)\(n) \(hpBar(cur, max)) \(hp)\(tail)"
+            lines.append(TerminalLine(text, color: colour, bold: mark == "▶", underlined: isYou, size: combatPanelFontSize))
+        }
+        for char in party {
+            let acting = now == char.name
+            let mark = acting ? "▶" : (char.isConscious ? " " : "✗")
+            var tail = ""
+            if char.hasFledCombat { tail = " fled" }
+            else if char.isPlayingDead { tail = " playing dead" }
+            else if char.isMindControlled { tail = " charmed" }
+            else if !char.isConscious { tail = " down" }
+            else if char.isComputerControlled { tail = " (robot)" }
+            row(mark, char.name, char.currentHP, char.maxHP, tail: tail,
+                colour: char.isConscious ? hpColour(char.currentHP, char.maxHP) : .dimGreen,
+                isYou: localIds.contains(char.id))
+        }
+        for (i, monster) in combat.encounter.monsters.enumerated() {
+            let acting = now == monster.name
+            let mark = acting ? "▶" : (monster.isAlive ? " " : "✗")
+            row(mark, monsterNames[i], max(0, monster.currentHP), monster.maxHP, tail: monster.isAlive ? "" : " beaten",
+                colour: monster.isAlive ? hpColour(monster.currentHP, monster.maxHP) : .dimGreen, isYou: false)
+        }
+        if let upNext = combat.upNextName {
+            lines.append(TerminalLine("next: \(upNext)", color: .dimGreen, size: combatPanelFontSize))
+        }
+        combatPanelLines = lines
+    }
+
+    /// The pinned panel reads at the same size as the map, so it takes about
+    /// the same room on the screen.
+    var combatPanelFontSize: CGFloat { mapFontSize }
 
     /// Font size for the map — larger on iPad, a little larger on macOS
     /// too (the window is much roomier than a phone screen — see
@@ -4801,7 +4861,7 @@ class GameEngine: ObservableObject {
         // before: back into the game if there's one in progress, else main menu.
         if dungeon != nil && !party.isEmpty {
             gameState = .exploring
-            currentCombat = nil
+            currentCombat = nil; combatPanelLines = []
             showExplorationView()
         } else {
             resetGame()
@@ -6517,7 +6577,7 @@ class GameEngine: ObservableObject {
                     guard let self = self else { return }
                     if c == 2 {
                         self.logEvent("Quit training", category: "EXPLORE")
-                        self.currentCombat = nil
+                        self.currentCombat = nil; self.combatPanelLines = []
                         self.gameState = .mainMenu
                         self.dungeon = nil
                         self.party = []
@@ -11915,7 +11975,7 @@ class GameEngine: ObservableObject {
 
         print("RECAP:", color: .cyan, bold: true)
         print("  \(recapEnabled ? "On" : "Off")", color: recapEnabled ? .brightGreen : .red)
-        printWrapped("On: < Back while exploring looks back through the screens you've left, with < Earlier and Later >. Off: < Back only undoes your last step.", indent: 2, color: .dimGreen)
+        printWrapped("Off (the usual): < Back only undoes your last step. On: < Back while exploring also looks back through the screens you've left, with < Earlier and Later >. Replay Fight works either way.", indent: 2, color: .dimGreen)
         print("")
 
         print("LIST ORDER:", color: .cyan, bold: true)
@@ -30110,7 +30170,7 @@ class GameEngine: ObservableObject {
             let startedAt = self.dungeon?.startDifficulty
             self.dungeon = Dungeon(name: world, level: level, levelCount: depth, startDifficulty: startedAt)
             self.dungeon?.hasCartography = cartography
-            self.currentCombat = nil
+            self.currentCombat = nil; self.combatPanelLines = []
             self.questHistory.append("Travelled with the petitioners from \(q.village) to another world: \(world).")
             self.logEvent("Travelled to another world: \(world)", category: "QUEST")
             self.storyScreenActive = true
@@ -30570,7 +30630,7 @@ class GameEngine: ObservableObject {
     func showEndgameOutro(preview: Bool) {
         storyScreenActive = true
         pinnedMapLines = []
-        currentCombat = nil
+        currentCombat = nil; combatPanelLines = []
         let finish: () -> Void = { [weak self] in self?.presentCertificate(preview: preview) }
         showTalePages(title: "The Tale's End", lines: endgameOutroLines(), page: 0, onBack: finish, onFinish: finish)
     }
@@ -38023,7 +38083,7 @@ class GameEngine: ObservableObject {
                     char.isPlayingDead = false
                     char.curePoison()
                 }
-                self.currentCombat = nil
+                self.currentCombat = nil; self.combatPanelLines = []
                 self.gameState = .exploring
 
                 if self.musicEnabled { SoundManager.shared.startMusic(.exploration, preference: self.explorationMelodyChoice) }
@@ -38190,7 +38250,7 @@ class GameEngine: ObservableObject {
                         char.isRaging = false
                         char.huntersMarkActive = false
                     }
-                    self.currentCombat = nil
+                    self.currentCombat = nil; self.combatPanelLines = []
                     self.gameState = .exploring
 
                     if let dungeon = self.dungeon, let prevRoom = dungeon.previousRoom {
@@ -39332,7 +39392,7 @@ class GameEngine: ObservableObject {
             return
         }
 
-        currentCombat = nil
+        currentCombat = nil; combatPanelLines = []
         gameState = .exploring
         if self.musicEnabled { SoundManager.shared.startMusic(.exploration, preference: self.explorationMelodyChoice) }
 
@@ -40010,7 +40070,7 @@ class GameEngine: ObservableObject {
                 next.archivedLevels = previous.archivedLevels + [previous.atlasLevel(hasTrapSense: self.partyHasTrapSense, archived: true)]
                 next.hasCartography = previous.hasCartography
             }
-            self.currentCombat = nil
+            self.currentCombat = nil; self.combatPanelLines = []
             self.roomsSinceLastSave = 0
             DMEngine.shared.clearHistory()
             self.dmChatLog = []
@@ -42614,7 +42674,7 @@ class GameEngine: ObservableObject {
         // "R. " prefix against isComputerControlled and the current setting.
         for char in party { char.syncRobotPrefix() }
         dungeon = save.dungeon
-        currentCombat = nil
+        currentCombat = nil; combatPanelLines = []
         gameState = .exploring
         gameTimeMinutes = save.gameTimeMinutes
         adventureLog = save.adventureLog
@@ -42917,7 +42977,7 @@ class GameEngine: ObservableObject {
             if dungeon != nil && !party.isEmpty && currentCombat != nil {
                 confirmLeaveFight()
             } else if dungeon != nil && !party.isEmpty {
-                currentCombat = nil
+                currentCombat = nil; combatPanelLines = []
                 gameState = .exploring
                 showExplorationView()
             } else {
@@ -42989,7 +43049,7 @@ class GameEngine: ObservableObject {
         if dungeon != nil { keepPartyInRoster() }
         party = []
         dungeon = nil
-        currentCombat = nil
+        currentCombat = nil; combatPanelLines = []
         gameTimeMinutes = 360
         adventureLog = []
         monstersSlain = 0

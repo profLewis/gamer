@@ -405,6 +405,24 @@ struct TerminalView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilitySortPriority(2)   // VoiceOver: the map, then the story
 
+                    // The fight's state, pinned above the story so it can't
+                    // scroll away when the blows come thick and fast. Only
+                    // there while a fight is on.
+                    if !gameEngine.combatPanelLines.isEmpty {
+                        VStack(alignment: .leading, spacing: storyLineSpacing) {
+                            ForEach(gameEngine.combatPanelLines) { line in
+                                TerminalLineView(line: line, scale: scale)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                        .overlay(Rectangle().frame(height: 1).foregroundColor(.green.opacity(0.35)), alignment: .bottom)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Fight status. " + gameEngine.combatPanelLines.map { $0.text }.joined(separator: ". "))
+                        .accessibilitySortPriority(3)   // VoiceOver: read before the story
+                    }
+
                     // Terminal output area
                     ScrollViewReader { scrollProxy in
                         ScrollView {
