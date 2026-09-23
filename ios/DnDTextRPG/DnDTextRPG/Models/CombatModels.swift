@@ -935,7 +935,7 @@ enum MonsterType: String, CaseIterable, Codable {
         case 5:
             return [.bugbear, .giantSpider, .ogre, .gelatinousCube, .minotaur, .basilisk, .dragonWyrmling, .wyvern]
         case 6:
-            return [.ogre, .owlbear, .troll, .phaseStalker, .wraith, .demogorgon, .brainEater, .ironWeaver, .wyvern]
+            return [.ogre, .owlbear, .troll, .phaseStalker, .wraith, .demogorgon, .brainEater, .ironWeaver, .wyvern, .youngDragon]
         case 7:
             return [.troll, .demogorgon, .brainEater, .wraith, .hollowMonk, .drownedChoir, .wyvern, .youngDragon]
         case 8:
@@ -955,9 +955,10 @@ enum MonsterType: String, CaseIterable, Codable {
         case 2: return .bugbear
         case 3: return .dragonWyrmling
         case 4: return .owlbear
-        case 5: return .demogorgon
-        case 6: return .wyvern
-        case 7: return .eyeTyrant
+        // Dragonkind where adventures actually go: most end by floor 7.
+        case 5: return .wyvern
+        case 6: return .brainEater
+        case 7: return .youngDragon
         case 8: return .hollowMonk
         case 9: return .drownedChoir
         case 10: return .gloamTitan

@@ -97,6 +97,12 @@ struct TerminalView: View {
     /// plays out in the meantime. Auto-scroll only resumes once they
     /// actually scroll back down to the bottom themselves.
     @State private var isNearBottom: Bool = true
+    /// Story paging (Accessibility > Story: Pages): the story area's height
+    /// and one line's height, measured, give the lines per page.
+    @State private var storyAreaHeight: CGFloat = 0
+    @State private var pageLineHeight: CGFloat = 0
+    /// Seconds left before the next page turns by itself (nil: not counting).
+    @State private var pageCountdown: Int? = nil
     /// Last gameEngine.screenGeneration value we actually scrolled-to-top
     /// for — lets the scroll-to-top handler tell "brand new screen" apart
     /// from "same screen, more content appended" (see its own comment).
@@ -436,7 +442,7 @@ struct TerminalView: View {
                                         .onChange(of: scale) { _ in updateWrapColumns(width: g.size.width) }
                                 }
                                 .frame(height: 0)
-                                ForEach(Array(gameEngine.terminalLines.enumerated()), id: \.element.id) { index, line in
+                                ForEach(Array(gameEngine.terminalLines.enumerated()).filter { storyPageRange?.contains($0.offset) ?? true }, id: \.element.id) { index, line in
                                     Group {
                                     if let link = line.link {
                                         // In-text link — always its own tap target, whatever
@@ -562,11 +568,44 @@ struct TerminalView: View {
                             .opacity(gameEngine.textFlashOpacity)
                             .animation(.easeInOut(duration: 0.12), value: gameEngine.textFlashOpacity)
                         }
-                        .scrollDisabled(gameEngine.scrollLocked)
+                        .scrollDisabled(gameEngine.scrollLocked || gameEngine.storyPagingActive)
+                        // Paging: measure the area and a line, so a page is
+                        // exactly what fits; and the Previous / Next bar.
+                        .background(GeometryReader { g in
+                            Color.clear
+                                .onAppear { storyAreaHeight = g.size.height; updateLinesPerPage() }
+                                .onChange(of: g.size.height) { h in storyAreaHeight = h; updateLinesPerPage() }
+                        })
+                        .background(
+                            TerminalLineView(line: TerminalLine("Mg", color: .green), scale: scale)
+                                .fixedSize()
+                                .hidden()
+                                .background(GeometryReader { g in
+                                    Color.clear
+                                        .onAppear { pageLineHeight = g.size.height; updateLinesPerPage() }
+                                        .onChange(of: g.size.height) { h in pageLineHeight = h; updateLinesPerPage() }
+                                })
+                                .accessibilityHidden(true),
+                            alignment: .topLeading
+                        )
+                        .overlay(alignment: .bottom) { storyPageBar }
+                        // Tapping the story turns the page while there's more.
+                        .overlay {
+                            if gameEngine.storyPagingActive, let pages = storyPageList, gameEngine.storyPage < pages.count - 1 {
+                                Color.clear
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { gameEngine.turnStoryPage(by: 1) }
+                                    .padding(.bottom, storyPageBarHeight)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .task(id: pageTimerKey) { await runPageCountdown() }
                         // VoiceOver hears the story as a few sections, handed over
                         // whole -- not whichever lines the lazy list has built.
                         .modifier(VoiceOverStory(sections: gameEngine.voiceOverSections,
                                                  asBox: gameEngine.voiceOverStoryAsBox,
+                                                 page: storyPageForVoiceOver,
+                                                 turn: { gameEngine.turnStoryPage(by: $0) },
                                                  follow: { gameEngine.followLink($0) }))
                         // VoiceOver's three-finger swipe scrolls the story, as a
                         // finger drag would.
@@ -1664,7 +1703,93 @@ struct TerminalView: View {
         DispatchQueue.main.async { inputText = "" }
     }
 
+    // MARK: Story paging
+
+    private var storyPageBarHeight: CGFloat { max(30, 26 * scale) }
+
+    /// Pages, when paging is on in main play and there's something measured.
+    private var storyPageList: [Range<Int>]? {
+        guard gameEngine.storyPagingActive, gameEngine.storyLinesPerPage > 0 else { return nil }
+        return gameEngine.storyPageRanges
+    }
+
+    /// The lines on show, or nil for all of them (scrolling).
+    private var storyPageRange: Range<Int>? {
+        guard let pages = storyPageList, !pages.isEmpty else { return nil }
+        return pages[min(gameEngine.storyPage, pages.count - 1)]
+    }
+
+    private var storyPageForVoiceOver: (text: String, index: Int, count: Int)? {
+        guard let pages = storyPageList, let range = storyPageRange else { return nil }
+        return (gameEngine.spokenStoryText(range), min(gameEngine.storyPage, pages.count - 1), pages.count)
+    }
+
+    private func updateLinesPerPage() {
+        guard storyAreaHeight > 0, pageLineHeight > 0 else { return }
+        let usable = storyAreaHeight - storyPageBarHeight - 12
+        let n = max(4, Int(usable / (pageLineHeight + storyLineSpacing)))
+        if n != gameEngine.storyLinesPerPage { gameEngine.storyLinesPerPage = n }
+    }
+
+    /// ◂ Previous · Page 2 of 5 · 8s · Next ▸ — only when there's more than a page.
+    @ViewBuilder
+    private var storyPageBar: some View {
+        if let pages = storyPageList, pages.count > 1 {
+            let page = min(gameEngine.storyPage, pages.count - 1)
+            HStack(spacing: 8) {
+                Button { gameEngine.turnStoryPage(by: -1) } label: {
+                    Text("◂ Prev").frame(maxWidth: .infinity)
+                }
+                .disabled(page == 0)
+                .accessibilityLabel("Previous page")
+                Text("Page \(page + 1) of \(pages.count)\(pageCountdown.map { " · \($0)s" } ?? "")")
+                    .foregroundColor(Color(red: 0.0, green: 0.6, blue: 0.2))
+                    .accessibilityHidden(true)
+                Button { gameEngine.turnStoryPage(by: 1) } label: {
+                    Text("Next ▸").frame(maxWidth: .infinity)
+                }
+                .disabled(page >= pages.count - 1)
+                .accessibilityLabel("Next page")
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 12 * scale, design: .monospaced))
+            .foregroundColor(Color(red: 0.0, green: 0.9, blue: 0.3))
+            .frame(height: storyPageBarHeight)
+            .background(Color.black.opacity(0.9))
+            .overlay(Rectangle().frame(height: 1).foregroundColor(.green.opacity(0.35)), alignment: .top)
+        }
+    }
+
+    /// Restarts whenever the page, the page count or the screen changes.
+    private var pageTimerKey: String {
+        "\(gameEngine.storyPagingActive)-\(gameEngine.storyPage)-\(storyPageList?.count ?? 0)-\(gameEngine.screenGeneration)"
+    }
+
+    /// The next page turns by itself after time to read this one — unless
+    /// VoiceOver is on (it reads at its own pace; swipe to turn), Auto-
+    /// Continue is off, or a screen countdown is already running (that one
+    /// turns the pages itself before it moves on). The hourglass pauses it.
+    private func runPageCountdown() async {
+        pageCountdown = nil
+        guard let pages = storyPageList, gameEngine.storyPage < pages.count - 1,
+              gameEngine.autoContinueEnabled, !GameEngine.systemVoiceOverRunning else { return }
+        let range = pages[gameEngine.storyPage]
+        let chars = gameEngine.spokenStoryText(range).count
+        var left = min(25, max(5, chars / 18))
+        while left > 0 {
+            if gameEngine.autoCountdownEnd != nil { pageCountdown = nil; return }
+            pageCountdown = left
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            if Task.isCancelled { return }
+            if gameEngine.autoContinuePaused || gameEngine.timeFrozen { continue }
+            left -= 1
+        }
+        pageCountdown = nil
+        gameEngine.turnStoryPage(by: 1)
+    }
+
     private func advanceFromStrip() {
+        if gameEngine.turnStoryPageIfMore() { return }
         if gameEngine.swipeLeftHandler != nil {
             gameEngine.swipeLeftHandler?()
         } else if gameEngine.awaitingContinue {
@@ -3762,10 +3887,34 @@ struct CertificateView: View {
 struct VoiceOverStory: ViewModifier {
     let sections: [(text: String, link: String?, heading: Bool)]
     var asBox = false
+    /// Paging: the page on show, read as the box's value; swipe up or down
+    /// (VoiceOver's adjust) or double-tap turns the page.
+    var page: (text: String, index: Int, count: Int)? = nil
+    var turn: (Int) -> Void = { _ in }
     let follow: (String) -> Void
     func body(content: Content) -> some View {
         if sections.isEmpty {
             content
+        } else if asBox, let page = page {
+            let links = sections.filter { $0.link != nil }
+            content
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(page.count > 1 ? "Story, page \(page.index + 1) of \(page.count)" : "Story")
+                .accessibilityValue(page.text)
+                .accessibilityHint(page.count > 1 ? "Swipe up for the next page, down for the one before." : "")
+                .accessibilityAdjustableAction { direction in
+                    switch direction {
+                    case .increment: turn(1)
+                    case .decrement: turn(-1)
+                    @unknown default: break
+                    }
+                }
+                .accessibilityAction { turn(1) }
+                .accessibilityActions {
+                    ForEach(Array(links.enumerated()), id: \.offset) { _, sec in
+                        Button(sec.text) { if let key = sec.link { follow(key) } }
+                    }
+                }
         } else if asBox {
             // Main play: the whole story is ONE element — "Story", then all
             // of it. Nothing inside to land on, so new lines arriving and the

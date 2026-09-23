@@ -54,7 +54,10 @@ MADE FOR EVERYONE
 
 Plays on iPhone, iPad, Mac, Apple TV and Apple Vision Pro.
 
-Rules content from the System Reference Document 5.1 under the Open Gaming Licence v1.0a / CC-BY-4.0. Not affiliated with or endorsed by Wizards of the Coast.
+NOT A WIZARDS OF THE COAST PRODUCT
+DnD RPG is an independent game made by Timbaloo Ltd. It is not made, published, licensed, approved or endorsed by Wizards of the Coast or Hasbro, and has no connection with them. Dungeons & Dragons and D&D are trademarks of Wizards of the Coast LLC, used here only to describe the style of game.
+
+Rules content from the System Reference Document 5.1 by Wizards of the Coast LLC, used under the Creative Commons Attribution 4.0 licence (CC-BY-4.0).
 
 ## Keywords  (100)
 dungeon,text adventure,rpg,5e,roleplaying,fantasy,quest,interactive fiction,voiceover,retro,ai dm
@@ -158,6 +161,8 @@ The shared fields above work for all four. Where a platform differs:
 - **App Privacy ("nutrition label"):** Data Not Collected. Optional cloud-AI prompts (Anthropic, OpenAI, Google or Hugging Face) go directly from the device to the provider the player chose, with the player's own key; the developer receives nothing.
 
 ## Notes for App Review
+DnD RPG is an independent game by Timbaloo Ltd, with no connection to Wizards of the Coast or Hasbro and not endorsed by them; it says so in the description and on the in-app About screen. Its rules come from the SRD 5.1, released by Wizards under CC-BY-4.0, and are attributed as that licence requires.
+
 The game needs no account and no AI key: the built-in Dungeon Master runs everything. To try the AI DM, use a device with Apple Intelligence (on-device, no key needed). Cloud AI (Claude, ChatGPT, Gemini, Hugging Face) is optional and uses the player's own key, entered under Settings > Change Brain. Game Center is optional ("Not Now" works). A quick path: Play → New Adventure → Random Party → Start Adventure → any dungeon name → Normal.
 
 ## Screenshots (screendumps/appstore-build91/ — retake on build 97 when convenient)
