@@ -1,5 +1,6 @@
 //
-//  RoomFeatures.swift — things to do in a room besides fight ("Look Around"):
+//  RoomFeatures.swift — things to do in a room besides fight (offered with a
+//  Search Room, which Look Around was folded into):
 //  light a cold forge, take a book off the shelf, drink the holy water, read
 //  what someone scratched on a cell wall, forage for something to eat. Mostly
 //  just for the doing; now and then a small reward — or one of the quest's
@@ -102,7 +103,7 @@ extension GameEngine {
         }
     }
 
-    private func doRoomFeature(_ feature: RoomFeature, room: Room, onBack: @escaping () -> Void) {
+    func doRoomFeature(_ feature: RoomFeature, room: Room, onBack: @escaping () -> Void) {
         room.interactionsDone.insert(feature.key)
         clearTerminal()
         printTitle(feature.button)

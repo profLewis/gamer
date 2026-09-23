@@ -5159,7 +5159,16 @@ class GameEngine: ObservableObject {
     /// unresponsive with no visible cause.
     private var autoReturnGeneration = 0
 
+    /// A result screen that has offered choices (Search Room's "you also
+    /// notice…") skips the next auto-return, so it isn't left from under you.
+    private var holdAutoReturnOnce = false
+
     func autoReturn(after seconds: Double? = nil, stretchForReading: Bool = true) {
+        if holdAutoReturnOnce {
+            holdAutoReturnOnce = false
+            pendingTimeoutKind = nil
+            return
+        }
         let seconds = (seconds ?? infoTimeout) * timeoutScale(pendingTimeoutKind ?? .reading)
         pendingTimeoutKind = nil
         let destination = autoReturnDestination ?? { [weak self] in self?.showExplorationView() }
@@ -24227,7 +24236,7 @@ class GameEngine: ObservableObject {
             print("Items on the floor: \(names)", color: .yellow)
         }
         if roomIsLit, let feature = roomFeatures(room).first {
-            printWrapped("\(feature.hint) (Actions > Look Around)", color: .cyan)
+            printWrapped("\(feature.hint) (Search Room)", color: .cyan)
         }
 
         if roomIsLit {
@@ -26007,11 +26016,7 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("Listen"))
         actions.append { [weak self] in returnToActions(); self?.listenAtDoors() }
 
-        // Look Around — the room's own things to do: a forge, books, holy water, plants...
-        if !roomFeatures(room).isEmpty {
-            menuOpts.append(MenuOption("Look Around", tint: .cyan))
-            actions.append { [weak self] in self?.showRoomFeatures(room, onBack: { [weak self] in self?.showActionsMenu() }) }
-        }
+        // (Look Around is part of Search Room now — see showSearchResultButtons.)
 
         // Pick Up Items (dropped loot)
         if !room.droppedItems.isEmpty {
@@ -26936,6 +26941,36 @@ class GameEngine: ObservableObject {
     /// not somewhere to act from, so the exploration icon grid comes off it —
     /// showMenuOptions nulls every d-pad corner as its first act.
     private func showSearchResultButtons() {
+        // Search Room and Look Around were one idea split in two: searching
+        // now also turns up the room's own things to do — a forge, books,
+        // holy water, plants — each a button here. The screen then waits for
+        // a choice instead of timing out from under it.
+        if roomIsLit, let room = dungeon?.currentRoom {
+            let features = roomFeatures(room)
+            if !features.isEmpty {
+                print("")
+                print("  YOU ALSO NOTICE", color: .cyan, bold: true)
+                for f in features { printWrapped(f.hint, indent: 2, color: .cyan) }
+                var opts = features.map { MenuOption($0.button, tint: .cyan) }
+                opts.append(MenuOption("?", tint: .navigation, compact: true))
+                opts.append(MenuOption("< Back", tint: .navigation, compact: true))
+                showMenuOptions(opts)
+                holdAutoReturnOnce = true
+                let back: () -> Void = { [weak self] in self?.showExplorationView() }
+                closeHandler = back
+                menuHandler = { [weak self] choice in
+                    guard let self = self else { return }
+                    if choice >= 1, choice <= features.count {
+                        self.doRoomFeature(features[choice - 1], room: room, onBack: back)
+                    } else if choice == features.count + 1 {
+                        self.showSearchHelp()
+                    } else {
+                        back()
+                    }
+                }
+                return
+            }
+        }
         showMenuOptions([MenuOption("?", tint: .navigation, compact: true),
                          MenuOption("< Back", tint: .navigation, compact: true)])
         menuHandler = { [weak self] choice in
@@ -35287,7 +35322,7 @@ class GameEngine: ObservableObject {
                     self.showInlineHelp {
                         self.printTitle("Food & Drink — Help")
                         self.print("")
-                        self.printWrapped("Nobody is carrying anything to eat or drink. Food and drink restore a little HP on the spot — buy some from a merchant, or forage for it (Actions > Look Around, where plants grow).", indent: 2, color: .dimGreen)
+                        self.printWrapped("Nobody is carrying anything to eat or drink. Food and drink restore a little HP on the spot — buy some from a merchant, or forage for it (Search Room, where plants grow).", indent: 2, color: .dimGreen)
                         self.print("")
                         self.printWrapped("Resting restores more, but takes time — and time is what the deadline eats.", indent: 2, color: .dimGreen)
                         self.print("")
