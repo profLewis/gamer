@@ -291,6 +291,16 @@ class Room: Identifiable, ObservableObject, Codable {
     /// turns up spare torches to take. Only ever set on .corridor rooms
     /// (see Dungeon.generateDungeon()'s room creation).
     @Published var isTorchlit: Bool = false
+
+    /// A flame already burning here — wall torches, or candles, a brazier,
+    /// lanterns in the room's own name or description ("Candlelit Altar",
+    /// "candles still flicker on the altar"). Never quite pitch dark: there's
+    /// a light to see by and to light a torch from.
+    var hasOpenFlame: Bool {
+        if isTorchlit { return true }
+        let text = (name + " " + roomDescription).lowercased()
+        return ["candle", "brazier", "lantern", "lamp", "hearth", "fire burns"].contains { text.contains($0) }
+    }
     /// Whether Dungeon.expandIfNeeded(from:) has already made its one-time
     /// decision for every direction this room didn't already have an exit
     /// in. Without this, expandIfNeeded re-rolled its 60% chance for any

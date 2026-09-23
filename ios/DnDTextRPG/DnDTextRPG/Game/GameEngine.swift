@@ -6320,6 +6320,12 @@ class GameEngine: ObservableObject {
             castIncantation(words, asCheat: trimmed.lowercased().hasPrefix("cheat"))
             return
         }
+        // Asked about cheats ("any cheats?", "tell me a cheat") — to the DM or
+        // anyone: the answer, rather than a shrug from whoever's listening.
+        if trimmed.lowercased().range(of: "\\bcheat", options: .regularExpression) != nil {
+            showCheatTips()
+            return
+        }
         // Training: "skip" passes an optional step.
         if trimmed.lowercased() == "skip", gameState == .exploring, currentCombat == nil, trainingSkip() {
             showExplorationView()
@@ -6925,6 +6931,41 @@ class GameEngine: ObservableObject {
             c.isConscious && (!c.knownSpells.isEmpty
                 || [Ability.intelligence, .wisdom, .charisma].contains { c.abilityScores.score(for: $0) >= 14 })
         }
+    }
+
+    /// "Any cheats?" — the DM owns up: how to find the boss honestly, and
+    /// the cheat words that simply show it.
+    func showCheatTips() {
+        let returnToChat = chatInputMode
+        clearTerminal()
+        printTitle("Cheats")
+        print("")
+        printWrapped("The Dungeon Master leans in. \"Cheats? Well — since you asked nicely.\"", indent: 2, color: .yellow)
+        print("")
+        print("  FINDING THE BOSS, FAIRLY", color: .cyan, bold: true)
+        printItem("•", "Each floor's guardian waits in its lair — B on the map once you've seen it.", color: .green)
+        printItem("•", "When the lair has been sensed, the line under the map says which way it lies.", color: .green)
+        printItem("•", "Ask the Gatekeeper about The Boss; other folk know bits too.", color: .green)
+        printItem("•", "Listen at doors: something big is rarely quiet.", color: .green)
+        printItem("•", "Map Training at a gym opens the Atlas — every floor you've mapped.", color: .green)
+        print("")
+        print("  THE CHEATS", color: .cyan, bold: true)
+        printWrapped("Type or say any of these, wherever you are in the dungeon:", indent: 2, color: .green)
+        printItem("•", "cheat: show boss — marks the lair on every floor, and says which way it lies.", color: .brightGreen)
+        printItem("•", "cheat: show monsters · show traps · show stairs · show merchants · show people", color: .brightGreen)
+        printItem("•", "cheat: show everything — all of those at once.", color: .brightGreen)
+        printItem("•", "cheat: show all floors — the whole map, in the map viewer.", color: .brightGreen)
+        printItem("•", "cheat: hide … — takes any of them away again.", color: .brightGreen)
+        print("")
+        printWrapped("\"magic: …\" does the same, but only if someone in the party can work magick — a spellcaster, or someone clever, wise or forceful enough. \"cheat: …\" always works, and is noted in the adventure log.", indent: 2, color: .green)
+        print("")
+        showMenu(["< Back"])
+        let back: () -> Void = { [weak self] in
+            guard let self = self else { return }
+            if returnToChat { self.showPartyChat() } else { self.showExplorationViewOrMenu() }
+        }
+        closeHandler = back
+        menuHandler = { _ in back() }
     }
 
     func castIncantation(_ words: String, asCheat: Bool = false) {
@@ -24747,6 +24788,44 @@ class GameEngine: ObservableObject {
         showExplorationView()
     }
 
+    /// In the dark in a room with a flame: light the party's own torch from
+    /// it, or — with no torch to light — find the one left beside it (once
+    /// per room). Returns false when there's nothing to do here, so the
+    /// ordinary search carries on.
+    private func lightTorchFromRoomFlame(_ room: Room) -> Bool {
+        let flame = room.isTorchlit ? "the torch in its wall bracket" : "the candle flame"
+        if let (holder, torch) = findBestTorch() {
+            activeTorchId = torch.id
+            torchHolderId = holder.id
+            torchTurnsRemaining = torch.torchLife ?? Item.torchFullLife
+            torchLit = true
+            advanceTime(5)
+            logEvent("Lit a torch from \(flame) in \(room.name)", category: "EXPLORE")
+            explorationStatusMessage = ("By the light already here, \(shortName(for: holder)) holds a torch to \(flame). It catches — the room opens up around you.", .yellow)
+            showExplorationView()
+            return true
+        }
+        guard !room.searchedFor.contains("flametorch") else { return false }
+        room.searchedFor.insert("flametorch")
+        advanceTime(10)
+        let item = ItemCatalog.torch()
+        let narrative = "By the light of \(flame) you look around...\n  ...and find a torch left beside it. It lights at the first touch."
+        logEvent("Found a torch by \(flame) in \(room.name)", category: "EXPLORE")
+        showItemPickupMenu(item: item, source: room.isTorchlit ? "Wall bracket" : "Beside the candles", narrative: narrative) { [weak self] in
+            guard let self = self else { return }
+            // Picked up: light it from the same flame straight away.
+            if !self.torchLit, let (holder, torch) = self.findBestTorch() {
+                self.activeTorchId = torch.id
+                self.torchHolderId = holder.id
+                self.torchTurnsRemaining = torch.torchLife ?? Item.torchFullLife
+                self.torchLit = true
+                self.explorationStatusMessage = ("\(self.shortName(for: holder)) lights the torch from \(flame).", .yellow)
+            }
+            self.showExplorationView()
+        }
+        return true
+    }
+
     private func douseTorch() {
         syncTorchLife()
         torchLit = false
@@ -26088,6 +26167,10 @@ class GameEngine: ObservableObject {
         // result's own wait is measured from here.
         let textStart = terminalLines.count
 
+        // In the dark, but a flame is burning here (candles on an altar, a
+        // brazier, wall torches): see by it, and light a torch from it.
+        if !torchLit, room.hasOpenFlame, lightTorchFromRoomFlame(room) { return }
+
         // Wall-mounted torches in a torchlit passage are visible, not hidden —
         // taking a spare one is guaranteed, no perception roll needed.
         if room.isTorchlit, let torchIdx = room.hiddenItems.firstIndex(where: { $0.name == "Torch" }) {
@@ -26437,6 +26520,7 @@ class GameEngine: ObservableObject {
     /// Long-press Supplies in the dark — risky blind foraging
     private func darkForage() {
         guard let room = dungeon?.currentRoom else { return }
+        if room.hasOpenFlame, lightTorchFromRoomFlame(room) { return }
 
         clearTerminal()
         if let dungeon = dungeon {
