@@ -4196,6 +4196,7 @@ class GameEngine: ObservableObject {
 
     /// Record a setting's current value before changing it
     private func recordSettingChange(screen: String, key: String, name: String) {
+        trainingDid("settings")   // Training's "try a setting" item: any setting counts
         // Once the screen has been redrawn with the new value, bring the line
         // that shows this setting into view — a change further down the page
         // used to happen out of sight.
@@ -7086,103 +7087,88 @@ class GameEngine: ObservableObject {
     /// the eight basics; Full adds the map viewer, help, Party Status,
     /// saving and loading, certificates and the AI brain.
     private func trainingSteps(full: Bool) -> [(key: String, hint: String, detail: String)] {
+        let h = MenuOption.helpGlyph   // whatever help symbol is chosen: ?, ⓘ or Help
         let all: [(key: String, hint: String, detail: String, full: Bool)] = [
+            ("quest", "First, get a quest: the Gatekeeper is right here — tap Talk (the scroll, bottom-right of the pad), then Ask for a Quest, and choose A Main Quest.",
+             "Quests give an adventure its point, and pay. A real adventure usually opens with one; in training you get your own, and the Gatekeeper standing in this first room is the one to ask. Tap Talk (the scroll at the bottom-right of the direction pad, or type \"talk\"), then Ask for a Quest: they ask what sort — A Main Quest (the big one: a villain, a reward and a deadline) or A Side Quest (a smaller errand). Take the main quest. Later you can ask almost anyone for more: once a main quest is running, people offer Side Quest instead, and Ask About Our Quest. Party Status lists every quest, its reward and the days left.", false),
             ("walk", "Tap a direction — N, S, E or W on the pad — to walk into the next room.",
              "The box at the top is the map. [@] is you. Each [ ] is a room you've seen; the lines between them (-- and |) are doorways. Letters mark what's in a room: ! danger, B the Boss's lair, M a merchant, N someone to talk to, G a gym. Your aim here: explore, get stronger, and beat the guardian at the far end. To move, tap N, S, E or W on the direction pad — or type \"north\", or say it.", false),
             ("map", "Long-press the map to open the map viewer: the whole floor and a key to every symbol.",
              "Press and hold anywhere on the map. The viewer shows every room you've been to on this floor, with a full key underneath. Pinch to zoom, and use the buttons along the bottom to page between floors or print the map. Close it with ✕.", true),
             ("torch", "Light your torch (the flame, bottom-left of the pad): in the dark you see nothing.",
              "Without light you can't see the room, its exits or what's in it — and you walk into trouble. The flame at the bottom-left of the direction pad lights your torch (and douses it again). Torches burn down as you walk, so buy spares from merchants.", false),
-            ("search", "Search this room (the magnifying glass, top-left of the pad) — hidden things turn up.",
-             "Rooms hide things: coins, potions, keys, secret notes. Searching takes a little time and sometimes finds nothing — Rogues and Engineers are better at it. The magnifying glass is at the top-left of the direction pad.", false),
+            ("search", "Search this room (the magnifying glass, top-left of the pad, or Actions > Search Room) — hidden things turn up.",
+             "Rooms hide things: coins, potions, keys, secret notes. Searching takes a little time and sometimes finds nothing — Rogues and Engineers are better at it. It also shows what else the room offers (a forge, books, plants…), with a button for each. The magnifying glass is at the top-left of the direction pad (a teleport pad takes that corner when there is one; Actions > Search Room always works).", false),
             ("listen", "Listen at the doors (the ear, top-right of the pad) to hear what's in the rooms next door.",
              "Before walking into a room, listen: you may hear monsters, voices or water. It's the safe way to decide which way to go. The ear is at the top-right of the direction pad.", false),
-            ("help", "Tap ? (the middle of the small 3-part button, bottom-right) for help on this screen.",
-             "Every screen has help. The small three-part button at the bottom-right of the buttons has < Back on the left, ? in the middle, and >> (more buttons) on the right. Tap ? now to read about exploring; tap it again, or ✕, to come back.", true),
+            ("help", "Tap \(h) (the middle of the small 3-part button, bottom-right) for help on this screen.",
+             "Every screen has help. The small three-part button at the bottom-right of the buttons has \(h) in the middle — help for that screen — with Back on the left where there's somewhere to go back to, and >> (more buttons) on the right when they don't all fit. Tap \(h) now to read about exploring; tap it again, or ✕, to come back.", true),
             ("packs", "Pack task: open Inventory and do something with an item — eat, drink, give or drop it.",
              "Each adventurer carries a pack: weapons, armour, potions, food, torches, keys. Tap Inventory (or type \"inventory\" or \"i\"), then Open Pack. Use Item eats or drinks something; Give Item hands it to a companion; Drop Item leaves it in the room (you can come back for it). Do one of them to pass this step.", false),
             ("status", "Tap Party Status to see everyone's health, spells and your quest.",
              "Party Status shows each adventurer's hit points, armour, level and spells, your gold, and what you're here to do. It's the place to check before a fight or after one.", true),
-            ("quest", "Take on a quest: walk up to someone (N on the map), tap Talk, then Ask for a Quest. (\"skip\" if nobody's here.)",
-             "Quests give an adventure its point, and pay. Normally the main quest is given at the start, in the opening tale — but you can take one up at any time, from almost anyone you meet, and that is worth knowing when a quest is finished or given up. HOW: walk into a room marked N on the map, tap Talk, and look at the buttons on the conversation screen. With no main quest running, tap Ask for a Quest and they ask what sort you want: A Main Quest (the big one, with its villain, reward and deadline) or A Side Quest (a smaller errand, if they have one). With a main quest already running, the same screen offers Side Quest instead — a smaller errand to carry alongside it — and Ask About Our Quest, which asks anyone what they know about the one you're on. Every quest you hold, its reward, and how many days are left, is listed on Party Status; the line under the map points the way to the nearest one. If there's nobody on this floor, type \"skip\".", false),
             ("merchant", "Merchant task: visit the merchant (M on the map), buy some rope and put it in your pack. (\"skip\" if there's none.)",
              "Merchants sell torches, food, potions, weapons and armour, buy what you don't need, and haggle — offer less and see what they say. Walk into their room (M on the map) and tap Visit Merchant. Check your packs after buying. If there's no merchant on this floor, type \"skip\".", false),
-            ("fight", "Win a fight. Attack, or cast a spell — the ? in a fight shows each hero's chances.",
-             "When monsters appear, the fight takes turns: each of you, and each monster, in the order rolled at the start. On your turn choose Attack, a spell, a potion, Dodge or run. The ? in a fight lists the enemy's strength and your real chance to hit it. Your robot companion takes their own turns.", false),
+            ("fight", "Win a fight. Attack, or cast a spell — \(h) in a fight shows each hero's chances.",
+             "When monsters appear, the fight takes turns: each of you, and each monster, in the order rolled at the start. On your turn choose Attack, a spell, a potion, Dodge or run. \(h) in a fight lists the enemy's strength and your real chance to hit it. Your robot companion takes their own turns.", false),
             ("rest", "Rest to heal: the button in the middle of the pad (hold it for a long rest).",
              "A short rest (tap the middle of the pad) heals a little and takes an hour. A long rest (hold it) heals fully and restores spells — but it takes eight hours, and time matters: quests have deadlines, torches burn and monsters move. Rest when you need to, not every room.", false),
-            ("save", "Save your game: Actions > Save (or ✕ on the input line, then Save & Leave). To load: Play > Continue Adventure.",
-             "Saving keeps your adventure so you can stop and come back. Tap Actions, then Save — or ✕ at the right of the input line and then Save & Leave. To load a game later: Play > Continue Adventure, then pick it from the list. Saves are kept by date; the game also saves as you go.", true),
+            ("save", "Save your game: Actions > Save. To stop, ✕ on the input line > Save & Leave. To load: Play > Continue Adventure.",
+             "Saving keeps your adventure so you can stop and come back. Actions > Save saves and carries on. To stop, tap ✕ at the right of the input line (or Actions > Leave Game…): Leave the Adventure offers Save & Leave (back to the main menu) or Save & Quit App. To load a game later: Play > Continue Adventure, then pick it — a training game is marked Training. The game also saves as you go.", true),
             ("certificates", "Certificates: tap the cog > All Settings… > Certificates to see what you've earned.",
-             "Completing an adventure, and training at a gym, earns a certificate with your party, your stats and the maps you made — kept in Settings (the cog) > All Settings… > Certificates and printable as a PDF. The Hall of Fame (Play > Continue Adventure, sorted by points) keeps your best games.", true),
+             "Completing an adventure, and training at a gym, earns a certificate with your party, your stats and the maps you made — kept in Settings (the cog) > All Settings… > Certificates and printable as a PDF. The Hall of Fame (on the main menu) keeps your best finished adventures — real ones only, not training.", true),
             ("ai", "Optional: give the DM an AI brain — tap the cog > Change Brain…. Type \"skip\" to pass.",
              "The game has its own Dungeon Master and needs nothing else. If you'd like a DM that chats freely, tap the cog (on the input line) > Change Brain… (or All Settings… > Dungeon Master Brain): Apple's on-device one needs no key on newer devices; Claude, ChatGPT or Gemini need a key from their websites (the key screen links to them and tests the key for you). Type \"skip\" to move on.", true),
+            ("settings", "Try a setting: the cog (on the input line) > All Settings… > Accessibility — switch Story between Scroll and Pages, or change the Display Size.",
+             "Settings shape the game to you. Tap the cog at the right of the input line, then All Settings…, then Accessibility. Story switches the text between scrolling and turning a page at a time (Pages suits VoiceOver and reading aloud); Display Size makes everything bigger or smaller; Reduced Text leaves out the extra explanations. Change any setting to pass this item — you can always change it back.", false),
             ("guardian", "Find the Boss and beat it to finish your training.",
-             "In a real adventure each floor has a guardian, and the last floor holds the Boss — the villain of your tale. Training is a single floor, so its guardian is the Boss, in its lair: B on the map (training always marks it, even before you have seen it). Beat it and the adventure is won. Rest and heal first, keep your torch lit, and read the ? in the fight. The Training line tells you which way the lair lies.", false),
+             "In a real adventure each floor has a guardian, and the last floor holds the Boss — the villain of your tale. Training is a single floor, so its guardian is the Boss, in its lair: B on the map (training always marks it, even before you have seen it). Beat it and the adventure is won. Rest and heal first, keep your torch lit, and read \(h) in the fight. The Training line tells you which way the lair lies.", false),
         ]
         return all.filter { full || !$0.full }.map { ($0.key, $0.hint, $0.detail) }
     }
 
-    /// Works the step list out once, when training starts, and keeps it
-    /// with the save. Anything already true at that moment (a quest handed
-    /// over in the opening, say) counts as done and is left out; the rest
-    /// are numbered 1…N in order, and that number belongs to the step from
-    /// then on — the status line, the recap and the test all use it.
-    ///
-    /// It used to be worked out afresh every time, as "the first step not yet
-    /// done", with several steps judged live from the game (a quest held, the
-    /// torch lit): steps already true at the start made it open on "4 of
-    /// 10", doing things out of order made the numbers jump about, and a
-    /// torch going out could undo a step already passed.
+    /// Training is a fixed list: every item of the Quick (or Full) course,
+    /// in the course's order. Nothing is re-planned, re-ordered or dropped;
+    /// progress is simply how many of those items are done, and an item once
+    /// done stays done. (It used to plan a subset at the start and number by
+    /// position, which is how "4 of 10" at the start, repeated numbers and
+    /// jumps all came about.) The stored plan is kept for older saves only.
     private func ensureTrainingPlan(_ d: Dungeon) {
-        guard d.training, d.trainingPlan.isEmpty else { return }
-        let steps = trainingSteps(full: d.trainingFull)
-        // The torch step is kept whatever — it douses the torch itself so
-        // the flame button has something to teach.
-        for step in steps where step.key != "torch" && trainingConditionMet(step.key, in: d) {
-            if !d.trainingDone.contains(step.key) { d.trainingDone.append(step.key) }
-        }
-        d.trainingPlan = steps.map { $0.key }.filter { !d.trainingDone.contains($0) }
-        if d.trainingPlan.isEmpty, let last = steps.last { d.trainingPlan = [last.key] }
+        guard d.training else { return }
+        let course = trainingSteps(full: d.trainingFull).map { $0.key }
+        if d.trainingPlan != course { d.trainingPlan = course }
     }
 
-    /// The steps in the order they're numbered: those already done, in the
-    /// order they were done, then the rest in the plan's order. Numbers are
-    /// progress, not positions — "Step 4 of 10" is always the fourth thing,
-    /// on the status line and in the Recap alike. (Numbering by place in the
-    /// plan repeated a number when steps were done out of order, then jumped
-    /// several at once.)
+    /// The course, in its fixed order.
     private func trainingPlanSteps(_ d: Dungeon) -> [(key: String, hint: String, detail: String)] {
         ensureTrainingPlan(d)
         refreshTrainingDone(d)
-        let all = trainingSteps(full: d.trainingFull)
-        let plan = d.trainingPlan
-        let done = d.trainingDone.filter { plan.contains($0) }
-        let rest = plan.filter { !d.trainingDone.contains($0) }
-        return (done + rest).compactMap { key in all.first { $0.key == key } }
+        return trainingSteps(full: d.trainingFull)
     }
 
-    /// Steps the game itself shows to be done (a quest taken, a fight won),
-    /// written down the moment they're true — once, in the order it happens.
+    /// Anything the game itself shows to be done (a quest taken, a fight won)
+    /// is checked on every look and written down once.
     private func refreshTrainingDone(_ d: Dungeon) {
-        for key in d.trainingPlan where key != "torch" { _ = trainingStepDone(key, in: d) }
+        for step in trainingSteps(full: d.trainingFull) where step.key != "torch" {
+            _ = trainingStepDone(step.key, in: d)
+        }
     }
 
-    /// How many planned steps are done — the progress count.
+    /// How many of the course's items are done.
     private func trainingDoneCount(_ d: Dungeon) -> Int {
-        d.trainingPlan.filter { d.trainingDone.contains($0) }.count
+        let course = Set(trainingSteps(full: d.trainingFull).map { $0.key })
+        return Set(d.trainingDone).intersection(course).count
     }
 
-    /// The step the player is on — number = steps done + 1 — or nil once
-    /// every step is done.
+    /// The next item to do — the first not yet done, in the course's order —
+    /// with how many are done (index) and how many there are (count). nil once
+    /// everything is done.
     private func currentTrainingStep() -> (index: Int, count: Int, step: (key: String, hint: String, detail: String))? {
         guard let d = dungeon, d.training else { return nil }
-        var steps = trainingPlanSteps(d)
-        var doneCount = trainingDoneCount(d)
-        while doneCount < steps.count {
-            let step = steps[doneCount]
-            guard step.key == "torch" else { return (doneCount, steps.count, step) }
-            // Burning already as the step arrives: put it out once, and say
+        let steps = trainingPlanSteps(d)
+        for step in steps where !d.trainingDone.contains(step.key) {
+            guard step.key == "torch" else { return (trainingDoneCount(d), steps.count, step) }
+            // Burning already as the item comes up: put it out once, and say
             // why, so lighting it is something the player does.
             if torchLit && !trainingTorchDoused {
                 trainingTorchDoused = true
@@ -7190,12 +7176,10 @@ class GameEngine: ObservableObject {
                 print("")
                 printWrapped("A draught comes down the passage and your torch gutters out. The room goes dark.", indent: 2, color: .yellow)
                 print("")
-                return (doneCount, steps.count, step)
+                return (trainingDoneCount(d), steps.count, step)
             }
-            guard torchLit else { return (doneCount, steps.count, step) }
+            guard torchLit else { return (trainingDoneCount(d), steps.count, step) }
             d.trainingDone.append(step.key)
-            steps = trainingPlanSteps(d)
-            doneCount = trainingDoneCount(d)
         }
         return nil
     }
@@ -7272,7 +7256,7 @@ class GameEngine: ObservableObject {
         guard let cur = currentTrainingStep() else {
             if d.training && lastTrainingIndex >= 0 {
                 lastTrainingIndex = -1
-                explorationStatusMessage = ("✦ Every training step done. The Gameplay Test button has a recap and a quick test.", .cyan)
+                explorationStatusMessage = ("✦ Training: all done! The Gameplay Test button has a recap and a quick test.", .cyan)
             }
             return
         }
@@ -7303,7 +7287,7 @@ class GameEngine: ObservableObject {
             hint += " This training floor has \(d.rooms.count) rooms — the line under the map counts how many you've explored."
         }
         if cur.step.key == "guardian", let bearing = guardianBearing(in: d) { hint += " Its lair is \(bearing)." }
-        explorationStatusMessage = ("✦ Training step \(cur.index + 1) of \(cur.count): " + hint, .cyan)
+        explorationStatusMessage = ("✦ Training: \(cur.index) of \(cur.count) done — next: " + hint, .cyan)
     }
 
     private var lastTrainingIndex = -1
@@ -7368,14 +7352,11 @@ class GameEngine: ObservableObject {
         // was already done when training began (a quest from the opening
         // tale, say), then — on a Quick course — what Full Training adds.
         let planned = trainingPlanSteps(d)
-        let plannedKeys = Set(planned.map { $0.key })
-        let course = trainingSteps(full: d.trainingFull)
-        let before = course.filter { !plannedKeys.contains($0.key) }
+        let course = planned
         let fullExtras = d.trainingFull ? [] : trainingSteps(full: true).filter { step in !course.contains { $0.key == step.key } }
         enum Kind { case numbered(Int), before, full }
         let items: [(step: (key: String, hint: String, detail: String), kind: Kind)] =
             planned.enumerated().map { ($0.element, .numbered($0.offset + 1)) }
-            + before.map { ($0, .before) }
             + fullExtras.map { ($0, .full) }
         guard !items.isEmpty else { showTrainingMenu(); return }
         let i = min(max(0, index), items.count - 1)
@@ -7383,10 +7364,11 @@ class GameEngine: ObservableObject {
         clearTerminal()
         switch item.kind {
         case .numbered(let n):
-            printTitle("Recap: Step \(n) of \(planned.count)")
+            printTitle("Recap: Item \(n) of \(planned.count)")
             print("")
             let done = trainingStepDone(item.step.key, in: d)
-            print(done ? "  ✓ Done" : "  ○ Not done yet", color: done ? .brightGreen : .yellow, bold: true)
+            print(done ? "  ✓ Done" : "  ○ Still to do", color: done ? .brightGreen : .yellow, bold: true)
+            print("  Training: \(trainingDoneCount(d)) of \(planned.count) done", color: .dimGreen)
         case .before:
             printTitle("Recap: Already Done")
             print("")
@@ -7420,7 +7402,7 @@ class GameEngine: ObservableObject {
                 self.showInlineHelp {
                     self.printTitle("Recap — Help")
                     self.print("")
-                    self.printWrapped("Everything training covers, one to a page: first this game's numbered steps (the same numbers as the Training line), then anything already done before training began, then — on Quick Training — what Full Training adds. < Previous and Next > move between them (greyed at the first and last); Back to Test returns to the Training menu.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Everything training covers, one to a page, in the course's fixed order, each marked done or still to do, with how many are done so far — the same count as the Training line. On Quick Training, what Full Training adds comes after. < Previous and Next > move between them (greyed at the first and last); Back to Test returns to the Training menu.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             default: self.showTrainingMenu()
@@ -27369,8 +27351,12 @@ class GameEngine: ObservableObject {
         var options: [MenuOption] = []
         var actions: [() -> Void] = []
 
+        // One quest button only, ever: "Ask for a Quest" with no main quest,
+        // "Side Quest" with one (for the Gatekeeper, its own offer). The old
+        // "Ask: Quest" topic is dropped whenever one of those is showing —
+        // the Gatekeeper had both side by side.
         // Topic buttons
-        for topic in npc.type.knownTopics {
+        for topic in npc.type.knownTopics where topic != "Quest" {
             // "Ask: Quest" leads to an actionable quest-acceptance flow
             // (the Gatekeeper's), not just lore — tinted the same as
             // "Ask to Trade"/"Ask for a Quest" rather than the generic
@@ -27456,7 +27442,10 @@ class GameEngine: ObservableObject {
         // shown while no other quest is active (one at a time).
         // With a main quest in hand it's its own button; without one it's
         // offered through Ask for a Quest above.
-        if mainQuest != nil, sideQuestOnOffer {
+        if mainQuest != nil, npc.type == .gatekeeper {
+            options.append(MenuOption("Side Quest", tint: .cyan))
+            actions.append { [weak self] in self?.showGatekeeperQuest(npc: npc, room: room) }
+        } else if mainQuest != nil, sideQuestOnOffer {
             options.append(MenuOption("Side Quest", tint: .cyan))
             actions.append { [weak self] in self?.offerSideQuest() }
         }
