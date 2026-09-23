@@ -3392,6 +3392,7 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             self.openWeb(self.keysURL(for: DMEngine.shared.provider)) }
         case "voiceOverHelp": return { [weak self] in self?.showVoiceOverHelp() }
+        case "accessibilityGuide": return { [weak self] in self?.showAccessibilityGuide() }
         case "github": return { [weak self] in self?.openWeb("https://github.com/profLewis/gamer") }
         case "dndexGallery": return { [weak self] in self?.openWeb("https://proflewis.github.io/gamer/gallery/") }
         case "puzzlePack": return { [weak self] in self?.openWeb("https://github.com/profLewis/gamer/blob/main/puzzles/pack.json") }
@@ -3492,6 +3493,59 @@ class GameEngine: ObservableObject {
     }
 
     /// Reached from the VoiceOver-only link at the end of every screen.
+    /// Accessibility & Layout: the options and where to set them, then
+    /// every kind of screen described in the order VoiceOver meets it, and
+    /// how to work each one — so the game can be learnt by ear. Linked from
+    /// the main menu's help, Accessibility help and VoiceOver help. Normal
+    /// green, not the dim asides colour, so Reduced Text keeps all of it.
+    func showAccessibilityGuide() {
+        clearTerminal()
+        printTitle("Accessibility & Layout")
+        print("")
+        func head(_ t: String) { print("  " + t, color: .cyan, bold: true) }
+        func para(_ t: String) { printWrapped(t, indent: 2, color: .green); print("") }
+
+        head("WHERE THE SETTINGS ARE")
+        para("Accessibility settings: tap the cog on the input line, then All Settings…, then Accessibility. There: Display Size (text and icons together), DM Voice (reads the story aloud), Voice Menus, Blinking Cursor, Auto-Scroll, Story (Scroll, Pages in Play, or Pages Everywhere), Reduced Text, When VoiceOver Starts, Animations, Handedness and the Help Button symbol. Each has its explanation on that screen and in its ? help.")
+        printLink("Open Accessibility settings", to: "accessibility", indent: 2)
+        print("")
+        head("VOICEOVER")
+        para("When VoiceOver comes on, the game makes the changes chosen under When VoiceOver Starts — by default the story comes a page at a time, dim asides are left out, animations calm down and the cursor stops blinking — and puts your own settings back when it goes off. VoiceOver Mode on that screen makes the same changes without VoiceOver. Only the phone can switch VoiceOver itself: triple-click the side button once the Accessibility Shortcut is set, or ask Siri.")
+        printLink("VoiceOver help: gestures, pages, long press", to: "voiceOverHelp", indent: 2)
+        print("")
+
+        head("EVERY SCREEN, TOP TO BOTTOM")
+        para("VoiceOver meets every screen in the same order. First the map, when there is one. Then, in a fight, the fight status. Then the Story: all the words on the screen, as one box. Then the direction pad, when exploring. Then the buttons. Last, the input line along the bottom.")
+        para("The Story box: VoiceOver says \"Story\", or \"Story, page 2 of 4\", then reads the page. Swipe up with one finger for the next page, down for the page before, or double-tap for the next. Links in the story are actions on the box: swipe up or down to hear them, then double-tap.")
+        para("The buttons are a grid, two to a row, numbered. A place in a grid with nothing in it says \"Blank\". Last in the grid is a small cell of three: on the left Back (or Previous page), in the middle Help, on the right More (or About on the main menu). Any of them may be Blank.")
+        para("The input line holds, from left to right as they're needed: the countdown (with its pause), in a fight Combat Help, the settings cog, Undo and Redo, Read Aloud, the microphone, Hide Keyboard, and Close. Double-tap the text field to type a command instead of pressing buttons.")
+
+        head("THE MAIN MENU")
+        para("The name of the game, the world, the rules and which brain runs the Dungeon Master. Then the buttons: Continue Quest (when a game is going), Play, Hall of Fame, How to Play, Settings; and in the small cell, Help and About.")
+
+        head("EXPLORING")
+        para("The map comes first: VoiceOver says the room you're in, the ways out, and who or what is here. The Story then starts with where you are, the time and your party's health, and goes on with what happens.")
+        para("Next, the direction pad: three rows of three. Top row: Search the room (or Teleport pad, when there is one), North, Listen. Middle row: West, Rest (hold, or the Long press action, for a long rest), East. Bottom row: Light or Douse torch, South, Talk to whoever is here. Empty places say Blank. A direction says whether the way is open, locked, or too dark to see.")
+        para("Then the buttons: Inventory, Party Status, Actions and whatever the room offers — a merchant, a gym, a quest. In training, Gameplay Test.")
+
+        head("A FIGHT")
+        para("There is no direction pad in a fight. The order is: the map; the fight status — who is standing, and the foes left; the Story, telling each turn as it happens; then the buttons for whoever's turn it is: attack each foe by name, spells, potions, Dodge, run. The small cell's Help shows each hero's real chance to hit. Robot companions and monsters take their own turns; the Story says who is acting and who is next.")
+
+        head("MENUS, SETTINGS AND HELP PAGES")
+        para("A title, then the text as the Story, then the buttons. On settings screens each setting's current value is in the Story, and its button changes it. Help pages always say everything, even with Reduced Text on. Back returns to where you were.")
+
+        head("TIMED SCREENS")
+        para("Some results move on by themselves after time to read them; the countdown on the input line shows it. Pause it with its button, or double-tap the Story to move on. In page mode, unread pages are turned first, so nothing is skipped.")
+
+        showMenu(["< Back"])
+        let back: () -> Void = { [weak self] in
+            guard let self = self else { return }
+            if !self.returnFromLink() { self.showExplorationViewOrMenu() }
+        }
+        closeHandler = back
+        menuHandler = { _ in back() }
+    }
+
     func showVoiceOverHelp() {
         clearTerminal()
         printTitle("VoiceOver Help")
@@ -3516,7 +3570,9 @@ class GameEngine: ObservableObject {
         printWrapped("The game can't switch VoiceOver for you — only the phone can. Set up the Accessibility Shortcut (Settings > Accessibility > Accessibility Shortcut > VoiceOver), then triple-click the side button to turn it off or on at any time, even mid-game. Or ask Siri: \"Turn VoiceOver off\".", indent: 2, color: .dimGreen)
         print("")
         print("  WHILE VOICEOVER IS ON", color: .cyan, bold: true)
-        printWrapped("Animations and auto-scroll pause, and come back as they were when VoiceOver goes off.", indent: 2, color: .dimGreen)
+        printWrapped("The game makes the changes chosen under Settings > Accessibility > When VoiceOver Starts — pages instead of scrolling, less text, calm animations, no blinking cursor — and puts your settings back when VoiceOver goes off.", indent: 2, color: .dimGreen)
+        print("")
+        printLink("Accessibility & Layout: every screen described", to: "accessibilityGuide", indent: 2)
         print("")
         showMenu(["< Back"])
         let back: () -> Void = { [weak self] in
@@ -8134,6 +8190,8 @@ class GameEngine: ObservableObject {
         showInlineHelp {
             self.printTitle("Main Menu — Help")
             self.print("")
+            self.printLink("Accessibility & Layout: options, VoiceOver, and every screen described", to: "accessibilityGuide", indent: 2)
+            self.print("")
             self.printWrapped("The small 3-part button: ? (or the help symbol you chose in Settings) is help for this screen; About, on the right, is the game's credits and links — a different thing.", indent: 2, color: .dimGreen)
             self.print("")
             if hasActiveGame {
@@ -12612,6 +12670,8 @@ class GameEngine: ObservableObject {
             self.printTitle("Accessibility Help")
             self.print("")
 
+            self.printLink("Accessibility & Layout: every screen described, for VoiceOver", to: "accessibilityGuide", indent: 2)
+            self.print("")
             self.print("  REDUCED TEXT", color: .cyan, bold: true)
             self.printWrapped("Leaves out the dim-green asides — explanations of settings, tips, extra colour — everywhere except help pages, which always say everything. What happens in the story, results, numbers and anything you need to act on stay. Useful with VoiceOver, where every line has to be listened to. When VoiceOver Starts chooses whether VoiceOver turns it on by itself.", indent: 2, color: .dimGreen)
             self.print("")
