@@ -8255,7 +8255,8 @@ class GameEngine: ObservableObject {
         // The load screen before this one carries the name, the kind of game
         // and the version; this one carries the name and what is running it.
         // Nothing but the name appears on both.
-        print(Self.appName, color: .brightGreen, bold: true, centered: true)
+        print(Self.appName, color: .brightGreen, centered: true)
+        if !terminalLines.isEmpty { terminalLines[terminalLines.count - 1].titleFace = true }
         print("Wyverns & Catacombs", color: .green, centered: true)
         print("5e-compatible rules (SRD 5.1)", color: .dimGreen, centered: true)
         // Quiet reminder of which brain runs the DM, and — on Hugging Face —
@@ -13001,7 +13002,7 @@ class GameEngine: ObservableObject {
 
         print("RECAP:", color: .cyan, bold: true)
         print("  \(recapEnabled ? "On" : "Off")", color: recapEnabled ? .brightGreen : .red)
-        printWrapped("Off (the usual): no < Back while exploring. On: < Back while exploring looks back through the screens you've left, with < Earlier and Later >; it only looks, never undoes. To undo a step, use the curved Undo arrow on the input line. Replay Fight works either way.", indent: 2, color: .dimGreen)
+        printWrapped("Off (the usual): no < Back while exploring. On: < Back while exploring looks back through the screens you've left, with < Earlier and Later >; it only looks, never undoes — what's done in the game stays done. Replay Fight works either way.", indent: 2, color: .dimGreen)
         print("")
 
         print("LIST ORDER:", color: .cyan, bold: true)
@@ -24610,11 +24611,10 @@ class GameEngine: ObservableObject {
         // not on the main buttons, where it turned up in almost every room.)
 
         // --- Bottom row: Back and Help ---
-        // Back moves between screens and never takes back anything you did.
-        // Here it's only there with Recap on, to look back through screens
-        // you've left. Undoing a step is the input line's curved Undo arrow
-        // (and Redo beside it), which say what they'll take back — Back used
-        // to do that too, so a tap meant as "back" quietly undid a move.
+        // Back moves between screens and never takes back anything you did —
+        // game moves can't be undone at all. Here it's only there with Recap
+        // on, to look back through screens you've left. (Back used to undo the
+        // last step, so a tap meant as "back" quietly took a move back.)
         let recapHere = recapEnabled && !screenHistory.isEmpty
         if recapHere {
             menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
@@ -24638,12 +24638,8 @@ class GameEngine: ObservableObject {
 
         showMenuWithDirections(menuOpts, exits: exits)
 
-        // Undo / Redo a step: the input line's arrows, labelled with what they
-        // take back or put back.
-        undoHandler = stepUndo.isEmpty ? nil : { [weak self] in self?.undoStep() }
-        undoLabel = stepUndo.last.map { "undo \($0.label)" }
-        redoHandler = stepRedo.isEmpty ? nil : { [weak self] in self?.redoStep() }
-        redoLabel = stepRedo.last.map { "redo \($0.label)" }
+        // Game moves are never undone — not by Back, not by Undo. (Undo and
+        // Redo on the input line are for settings and character edits only.)
 
         directionHandler = { [weak self] direction in
             self?.move(direction)
@@ -44188,7 +44184,7 @@ class GameEngine: ObservableObject {
         let canLater = index < screenHistory.count - 1
         var opts: [MenuOption] = [MenuOption("< Earlier", isDisabled: !canEarlier),
                                   MenuOption("Later >", isDisabled: !canLater)]
-        if !replaying && !stepUndo.isEmpty { opts.append(MenuOption("Undo Last Step")) }
+        // (No "Undo Last Step": game moves are never undone.)
         opts.append(MenuOption(replaying ? "Back to Victory" : "Return to Play", isDefault: true))
         opts.append(MenuOption("?", tint: .navigation, compact: true))
         showMenuOptions(opts)
@@ -44202,12 +44198,11 @@ class GameEngine: ObservableObject {
             switch opts[choice - 1].text {
             case "< Earlier": if canEarlier { self.showScreenHistory(index: index - 1) }
             case "Later >": if canLater { self.showScreenHistory(index: index + 1) }
-            case "Undo Last Step": self.undoStep()
             case "?":
                 self.showInlineHelp {
                     self.printTitle("Earlier Screens — Help")
                     self.print("")
-                    self.printWrapped("A look back at the screens you've left — read-only; nothing here changes the game. < Earlier goes further back, Later > comes forward again (each is greyed when there's no further to go). \(replaying ? "Back to Victory returns to the end of the fight." : "Return to Play takes you back to where you are now; Undo Last Step really goes back a step.")", indent: 2, color: .dimGreen)
+                    self.printWrapped("A look back at the screens you've left — read-only; nothing here changes the game. < Earlier goes further back, Later > comes forward again (each is greyed when there's no further to go). \(replaying ? "Back to Victory returns to the end of the fight." : "Return to Play takes you back to where you are now. Nothing you did is undone — what's done in the game stays done.")", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             default: leave()

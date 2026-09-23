@@ -2904,7 +2904,16 @@ struct TerminalLineView: View {
     private var scaledSize: CGFloat { line.fontSize * scale }
 
     var body: some View {
-        if line.isCentered {
+        if line.titleFace {
+            HStack {
+                Spacer()
+                Text(line.text)
+                    .font(.system(size: scaledSize * 2, weight: .bold, design: .serif))
+                    .foregroundColor(Color(red: 0.0, green: 0.9, blue: 0.3))
+                    .accessibilityAddTraits(.isHeader)
+                Spacer()
+            }
+        } else if line.isCentered {
             HStack {
                 Spacer()
                 Text(attributedString)

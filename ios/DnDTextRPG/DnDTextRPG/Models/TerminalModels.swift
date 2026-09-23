@@ -27,6 +27,9 @@ struct TerminalLine: Identifiable {
     /// paragraph's indent, the width it was wrapped to and whether it was
     /// justified — so a change of Display Size can wrap it again.
     var wrapIndent: Int? = nil
+    /// Drawn in the game's title typeface (bold serif, larger) instead of
+    /// the terminal's monospace — the name on the main menu.
+    var titleFace = false
     var wrappedAtColumns: Int = 0
     var wrapJustified = false
     let isCentered: Bool

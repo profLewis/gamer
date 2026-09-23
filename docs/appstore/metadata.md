@@ -45,7 +45,7 @@ REAL RULES, READABLE DICE
 MORE TO FIND
 • Quests with real deadlines, told in days, and clues you gather floor by floor.
 • Certificates for your deeds, a Hall of Fame, and a full adventure log you can read back.
-• Undo and Redo let you take back a step you regret, and Replay Fight lets you watch a battle again.
+• Replay Fight lets you watch a battle again.
 • An Atlas of every floor you've mapped, and a little magick when you're stuck.
 
 MADE FOR EVERYONE
@@ -114,7 +114,7 @@ BUILT FOR VOICEOVER
 • Screens read as a few clear sections, starting with where you are; every button named; long press and scrolling available as VoiceOver actions; only ever one voice speaking.
 
 AND MORE
-• Undo and Redo take back a step; an Atlas of every floor you've mapped; adjustable timers; font sizes down to Tiny; a little magick for the stuck.
+• an Atlas of every floor you've mapped; adjustable timers; font sizes down to Tiny; a little magick for the stuck.
 • Game Center multiplayer is included as an early preview.
 • Much faster saving and loading, many fixes — and saves from 2.4 still load.
 

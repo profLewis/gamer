@@ -86,8 +86,10 @@ struct SplashView: View {
                 // what's said about the game lives on one screen or the other,
                 // never both: this one says what kind of game it is and which
                 // version; the menu says which world and who's running the DM.
-                Text(GameEngine.appName.uppercased())
-                    .font(.system(size: 32, weight: .bold, design: .monospaced))
+                // The name in a proper typeface — the same bold serif as on
+                // the main menu — rather than the terminal's monospace.
+                Text(GameEngine.appName)
+                    .font(.system(size: 44, weight: .bold, design: .serif))
                     .foregroundColor(terminalGreen)
                     .opacity(animationPhase >= 2 ? 1 : 0)
 
