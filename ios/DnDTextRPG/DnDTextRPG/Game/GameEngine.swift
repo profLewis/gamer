@@ -8690,7 +8690,7 @@ class GameEngine: ObservableObject {
         menuOpts.append(MenuOption("Training"))
         actions.append { [weak self] in self?.startTrainingGame() }
 
-        // Quit the app, in red, as on the Save/Quit screen (it asks first).
+        // Quit the app, in red (with a game loaded it goes via Leave the Adventure).
         menuOpts.append(MenuOption("Quit", tint: .danger))
         actions.append { [weak self] in self?.quitApp() }
 
@@ -9297,7 +9297,7 @@ class GameEngine: ObservableObject {
         printWrapped("Long-press Rest for a long rest (full HP heal + spell slots restored, advances 8 hours). This is a hidden shortcut!", indent: 2, color: .yellow)
         print("")
         print("SAVING", color: .cyan, bold: true)
-        printWrapped("Use Save/Quit from the exploration menu. When there's room, separate Save and Quit buttons appear. Save often before boss fights!", indent: 2)
+        printWrapped("Actions > Save saves and carries on. To stop: the ✕ on the input line, or Actions > Leave Game…, opens Leave the Adventure — Save & Leave goes to the main menu, Save & Quit App closes the app. Save often before boss fights!", indent: 2)
         print("")
         print("PARTY STATUS", color: .cyan, bold: true)
         printWrapped("Tap 'Party Status' from the exploration menu to see HP bars, stats, equipment, gold, XP, the dungeon map, and the Adventure Log. Use Party Review to edit adventurers or return to the main menu.", indent: 2)
@@ -11966,7 +11966,7 @@ class GameEngine: ObservableObject {
             self.explorationStatusMessage = ("Welcome back — the dungeon is as you left it.", .cyan)
             self.showExplorationView()
         }
-        showMenuOptions([MenuOption("Resume", isDefault: true), MenuOption("Quit Game", tint: .danger),
+        showMenuOptions([MenuOption("Resume", isDefault: true), MenuOption("Leave Game…", tint: .danger),
                          MenuOption("?", tint: .navigation, compact: true)])
         closeHandler = resume
         menuHandler = { [weak self] choice in
@@ -11974,12 +11974,12 @@ class GameEngine: ObservableObject {
             switch choice {
             case 1: resume()
             case 2:
-                self.leaveExplorationTapped()
+                self.showLeaveAdventure(back: { [weak self] in self?.pauseGame() })
             default:
                 self.showInlineHelp {
                     self.printTitle("Paused — Help")
                     self.print("")
-                    self.printWrapped("Your game was saved when you paused, and the clock is stopped — deadlines, torches and wandering monsters all wait. Resume carries on; Quit Game leaves the adventure (you're asked about saving).", indent: 2, color: .dimGreen)
+                    self.printWrapped("Your game was saved when you paused, and the clock is stopped — deadlines, torches and wandering monsters all wait. Resume carries on; Leave Game… is the usual way out (save and leave, or quit the app).", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             }
@@ -23921,7 +23921,7 @@ class GameEngine: ObservableObject {
             self.printWrapped("Type at the > prompt to chat with the DM. Tap ✕ to leave chat.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  SAVE", color: .cyan, bold: true)
-            self.printWrapped("Save button quick-saves. ✕ close icon opens Save/Quit menu.", indent: 2, color: .dimGreen)
+            self.printWrapped("Save button quick-saves. The ✕ close icon opens Leave the Adventure: save and leave, save and quit, or go without saving.", indent: 2, color: .dimGreen)
             self.print("")
         }
     }
@@ -24706,7 +24706,7 @@ class GameEngine: ObservableObject {
             }
         }
 
-        // Close icon → if just saved, go straight to quit confirmation; otherwise Save/Quit menu
+        // Close icon → Leave the Adventure (the one way out; see showLeaveAdventure)
         closeHandler = { [weak self] in self?.leaveExplorationTapped() }
 
         // Text input → enter chat mode (set after async to override showMenuWithDirections)
@@ -26101,8 +26101,8 @@ class GameEngine: ObservableObject {
         // Step away: pause (saves and sleeps until you're back) or quit.
         menuOpts.append(MenuOption("Pause Game", tint: .navigation))
         actions.append { [weak self] in self?.pauseGame() }
-        menuOpts.append(MenuOption("Quit Game", tint: .danger))
-        actions.append { [weak self] in self?.leaveExplorationTapped() }
+        menuOpts.append(MenuOption("Leave Game…", tint: .danger))
+        actions.append { [weak self] in self?.showLeaveAdventure() }
 
         // Help
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -36515,7 +36515,7 @@ class GameEngine: ObservableObject {
         }
         if lower == "quit" || lower == "exit" || lower == "menu" || lower == "main menu" {
             inDMMode = false
-            showSaveMenu()
+            showLeaveAdventure()
             return
         }
         if lower == "settings" || lower == "options" || lower == "config" {
@@ -42100,12 +42100,75 @@ class GameEngine: ObservableObject {
     /// its "< Leave" nav button — if just saved, go straight to quit
     /// confirmation; otherwise the Save/Quit menu.
     private func leaveExplorationTapped() {
-        if let saved = lastSaveTime, Date().timeIntervalSince(saved) < 60,
-           let slotId = activeSlotId {
-            let slotName = activeSlotName ?? "Current Game"
-            confirmQuitAfterRecentSave(slotId: slotId, slotName: slotName)
+        showLeaveAdventure()
+    }
+
+    /// The one way out of an adventure. The ✕ in play, Actions and Pause, a
+    /// fight's Leave, the ✕ on a screen that lost its way back, the main
+    /// menu's ✕ and the Play menu's Quit (with a game loaded), and "quit" in
+    /// text mode all come here — they used to reach six different screens
+    /// ("Save/Quit", "Leave or Quit?", "Leave Adventure", "Leave the
+    /// Adventure?", "Save & Quit", "Quit Without Saving?") that named the
+    /// same choices differently. Two words, used the same way everywhere:
+    /// Leave goes back to the main menu with the app still open; Quit closes
+    /// the app. This screen is the confirmation — nothing asks twice.
+    func showLeaveAdventure(back: (() -> Void)? = nil) {
+        cancelSaveMenuIdleTimer()
+        let stay: () -> Void = back ?? { [weak self] in self?.showExplorationView() }
+        guard dungeon != nil, !party.isEmpty else { resetGame(); return }
+        clearTerminal()
+        printTitle("Leave the Adventure")
+        print("")
+        let justSaved = lastSaveTime.map { Date().timeIntervalSince($0) < 60 } ?? false
+        if let saved = lastSaveTime {
+            let mins = Int(Date().timeIntervalSince(saved) / 60)
+            print("  Last saved \(mins < 1 ? "moments" : "\(mins) min") ago\(activeSlotName.map { " — \($0)" } ?? "").", color: justSaved ? .brightGreen : .yellow)
         } else {
-            showSaveMenu()
+            print("  Not saved yet.", color: .yellow)
+        }
+        print("")
+        printWrapped("Leave goes back to the main menu; the app stays open. Quit closes the app. Your adventurers are kept in the Character Roster either way.", indent: 2, color: .dimGreen, keep: true)
+        print("")
+        var opts: [MenuOption] = [MenuOption("Keep Playing", isDefault: true)]
+        if !isMultiplayer {
+            opts.append(MenuOption("Save & Leave"))
+            opts.append(MenuOption("Save & Quit App"))
+        }
+        // Just saved: nothing would be lost, so no "without saving" warning.
+        let leaveLabel = justSaved || isMultiplayer ? "Leave" : "Leave Without Saving"
+        let quitLabel = justSaved || isMultiplayer ? "Quit App" : "Quit Without Saving"
+        opts.append(MenuOption(leaveLabel, tint: justSaved ? .normal : .danger))
+        opts.append(MenuOption(quitLabel, tint: justSaved ? .normal : .danger))
+        opts.append(MenuOption("?", tint: .navigation, compact: true))
+        showMenuOptions(opts)
+        closeHandler = stay
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= opts.count else { return }
+            switch opts[choice - 1].text {
+            case "Save & Leave":
+                self.performQuickSave()
+                self.resetGame()
+            case "Save & Quit App":
+                self.performQuickSave()
+                self.performQuit()
+            case leaveLabel:
+                self.resetGame()
+            case quitLabel:
+                self.performQuit()
+            case "?":
+                self.showInlineHelp {
+                    self.printTitle("Leave the Adventure — Help")
+                    self.print("")
+                    self.printWrapped("Two words, used the same everywhere. Leave: back to the main menu, and the app stays open — Continue Adventure picks up any saved game. Quit: close the app.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("Keep Playing goes back to the game. Save & Leave and Save & Quit App save first (a new adventure gets a name made for it, which you can change in Manage Saves). Leave Without Saving and Quit Without Saving lose anything since your last save — if you saved in the last minute they're simply Leave and Quit App, as there's nothing to lose.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("To save and carry on playing, use Actions > Save. Pause Game saves and stops the clock until you come back.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default:
+                stay()
+            }
         }
     }
 
@@ -44598,7 +44661,7 @@ class GameEngine: ObservableObject {
         let back: () -> Void = { [weak self] in self?.runCombatTurn() }
         closeHandler = back
         menuHandler = { [weak self] choice in
-            if choice == 2 { self?.confirmLeaveAdventure() } else { back() }
+            if choice == 2 { self?.showLeaveAdventure(back: back) } else { back() }
         }
     }
 
@@ -44606,6 +44669,12 @@ class GameEngine: ObservableObject {
     /// to the title and throw the whole adventure away (a play-tester lost
     /// one just leaving a shop). Now it asks first.
     private func confirmLeaveAdventure() {
+        showLeaveAdventure()
+    }
+
+    /// (Replaced by showLeaveAdventure; kept only so nothing still pointing at
+    /// the old screen breaks.)
+    private func oldConfirmLeaveAdventure() {
         clearTerminal()
         printTitle("Leave the Adventure?")
         print("")
@@ -44667,6 +44736,12 @@ class GameEngine: ObservableObject {
     }
 
     func quitApp() {
+        // A game in hand: the same Leave the Adventure screen as everywhere
+        // else (its Quit buttons close the app).
+        if dungeon != nil && !party.isEmpty && !isMultiplayer {
+            showLeaveAdventure(back: { [weak self] in self?.showMainMenu() })
+            return
+        }
         // If there's an active game that could be saved, offer to save first
         let hasUnsavedGame = dungeon != nil && !party.isEmpty && !isMultiplayer
         if hasUnsavedGame {
