@@ -28154,6 +28154,54 @@ class GameEngine: ObservableObject {
     /// never offers newSkill/specialSpell/instantLevelUp/familiar for
     /// slayBoss specifically (none of them mean anything once the adventure
     /// is over), but this stays exhaustive in case that ever changes.
+    /// The main quest's promised reward, paid when the Boss falls. The gold
+    /// in it ("three hundred gold", "five hundred gold pieces") is shared out;
+    /// anything else it promises ("the smith's finest blade", "a wolf-fur
+    /// cloak each") becomes a keepsake in a pack. "A chest of gold" with no
+    /// sum pays 250. Saved with the heroes like anything else they carry.
+    private func payMainQuestReward() -> String? {
+        guard let mq = mainQuest, !mainQuestRewardPaid else { return nil }
+        mainQuestRewardPaid = true
+        let text = mq.reward
+        let awake = party.filter { $0.isConscious }
+        let recipients = awake.isEmpty ? party : awake
+        var parts: [String] = []
+        if text.lowercased().contains("gold"), !recipients.isEmpty {
+            let amount = Self.goldAmount(in: text) ?? 250
+            let each = max(1, amount / recipients.count)
+            recipients.forEach { $0.gold += each }
+            parts.append("\(amount) gold, \(each) to each of you")
+        }
+        let rest = text.lowercased().replacingOccurrences(of: "gold pieces", with: "gold")
+        let hasMore = !text.lowercased().contains("gold") || rest.contains(" and ") || rest.contains(", ")
+        if hasMore, let hero = party.first(where: { !$0.isComputerControlled }) ?? party.first {
+            let keepsake = Item(id: UUID(), name: "Reward of \(mq.village)",
+                                description: "Promised for ending \(Dungeon.guardianName(mq.villain)): \(text).",
+                                type: .misc, weight: 0.5, value: 50, weaponStats: nil, armorStats: nil, potionStats: nil)
+            if let who = packForParty(keepsake, preferring: hero) {
+                parts.append("the rest of it — \"Reward of \(mq.village)\" — in \(shortName(for: who))'s pack")
+            }
+        }
+        logEvent("Main quest reward paid: \(text)", category: "QUEST")
+        return "\(mq.village) keeps its word: \(text). " + (parts.isEmpty ? "" : "Paid: " + parts.joined(separator: "; ") + ".")
+    }
+    private var mainQuestRewardPaid = false
+
+    /// The sum of gold a reward names, in digits or words: "300 gold",
+    /// "five hundred gold pieces", "a thousand gold". nil if none.
+    static func goldAmount(in text: String) -> Int? {
+        let lower = text.lowercased()
+        guard let r = lower.range(of: "gold") else { return nil }
+        let before = lower[..<r.lowerBound].split(separator: " ").map(String.init).suffix(6)
+        if let d = before.last(where: { !$0.filter(\.isNumber).isEmpty }), let n = Int(d.filter(\.isNumber)) { return n }
+        for k in stride(from: before.count, to: 0, by: -1) {
+            var words = Array(before.suffix(k))
+            if words.first == "a" { words[0] = "one" }
+            if let n = parseSpokenNumber(words.joined(separator: " ")), n > 0 { return n }
+        }
+        return nil
+    }
+
     private func applyQuestRewardInline(_ reward: SideQuestReward) -> String {
         switch reward {
         case .bonusGold(let amount):
@@ -28175,7 +28223,7 @@ class GameEngine: ObservableObject {
             if let recipient = party.filter({ $0.isConscious }).randomElement() ?? party.first {
                 let item = Item(id: UUID(), name: name, description: "A framed certificate — mostly for bragging rights.",
                                  type: .misc, weight: 0.1, value: 1, weaponStats: nil, armorStats: nil, potionStats: nil)
-                _ = recipient.addItem(item)
+                _ = packForParty(item, preferring: recipient)   // anyone with room, not lost if full
                 saveMeritCertificate(name, recipient: recipient,
                                      deed: "For a quest asked, accepted, and carried out in full.")
                 return "\(recipient.name) receives a \(name)"
@@ -28317,7 +28365,7 @@ class GameEngine: ObservableObject {
             if let recipient = party.filter({ $0.isConscious }).randomElement() ?? party.first {
                 let item = Item(id: UUID(), name: name, description: "A framed certificate — mostly for bragging rights.",
                                  type: .misc, weight: 0.1, value: 1, weaponStats: nil, armorStats: nil, potionStats: nil)
-                _ = recipient.addItem(item)
+                _ = packForParty(item, preferring: recipient)   // anyone with room, not lost if full
                 saveMeritCertificate(name, recipient: recipient,
                                      deed: "For \(quest.description) — an errand set by \(quest.giverName), and seen through to the end.")
                 print("  \(recipient.name) receives a \(name).", color: .yellow)
@@ -32521,7 +32569,7 @@ class GameEngine: ObservableObject {
         // Where the Boss fell, crossed swords and all, and the points earned —
         // the Hall of Fame's own reckoning, so the two always agree.
         if let lair = dungeon.rooms.values.first(where: { $0.roomType == .boss }) {
-            stats.append(("⚔ Scene of the final battle", "\(lair.name), \(Dungeon.floorName(dungeon.level))"))
+            stats.append(("⚔ Final battle", "\(lair.name), \(Dungeon.floorName(dungeon.level))"))
         }
         let explored = dungeon.rooms.isEmpty ? 0 : dungeon.rooms.values.filter { $0.visited }.count * 100 / dungeon.rooms.count
         let points = (500 + party.reduce(0) { $0 + $1.gold } + monstersSlain * 20 + combatsWon * 50 + explored) * max(1, dungeon.level)
@@ -32581,8 +32629,23 @@ class GameEngine: ObservableObject {
         row()
         out.append("╟" + String(repeating: "─", count: inner + 2) + "╢")
         for (label, value) in cert.stats {
-            let dots = max(1, inner - label.count - value.count - 2)
-            row(label + " " + String(repeating: ".", count: dots) + " " + value, centered: false)
+            if label.count + value.count + 3 <= inner {
+                let dots = max(1, inner - label.count - value.count - 2)
+                row(label + " " + String(repeating: ".", count: dots) + " " + value, centered: false)
+            } else {
+                // Too long for one line: the label, then the value wrapped
+                // beneath it and set to the right — nothing cut off.
+                row(label, centered: false)
+                var line = ""
+                let flush: () -> Void = {
+                    row(String(repeating: " ", count: max(0, inner - line.count)) + line, centered: false)
+                }
+                for word in value.split(separator: " ") {
+                    if !line.isEmpty, line.count + 1 + word.count > inner - 2 { flush(); line = "" }
+                    line += (line.isEmpty ? "" : " ") + word
+                }
+                if !line.isEmpty { flush() }
+            }
         }
         out.append("╟" + String(repeating: "─", count: inner + 2) + "╢")
         row()
@@ -32736,6 +32799,10 @@ class GameEngine: ObservableObject {
             opts.append(MenuOption("Save the Tale", isDefault: true, tint: .cyan))
             actions.append { [weak self] in self?.saveFinishedAdventure() }
         }
+        // The adventurers as they stand, and what's in their packs — the
+        // quest's prizes included.
+        opts.append(MenuOption("Meet the Team"))
+        actions.append { [weak self] in self?.showMeetTheTeam(onBack: { [weak self] in self?.showWhatNext(saved: saved) }) }
         opts.append(MenuOption("Sleep a Week (Zzzz)"))
         actions.append { [weak self] in self?.endgameSleep(saved: saved) }
         opts.append(MenuOption("Throw a Party!"))
@@ -32754,7 +32821,7 @@ class GameEngine: ObservableObject {
             self.showInlineHelp {
                 self.printTitle("What Now? — Help")
                 self.print("")
-                self.printWrapped("The adventure is over and nothing here can lose it. Save the Tale keeps it and puts it in the Hall of Fame. Sleep a Week (Zzzz) rests the party properly and mends every wound; Throw a Party! is music, food and dancing, for the pleasure of it. Another Quest takes you to the Play menu to begin again, with a new party or the same heroes from the Roster. Leave the Game goes back to the main menu; the app stays open.", indent: 2, color: .dimGreen)
+                self.printWrapped("The adventure is over and nothing here can lose it. Save the Tale keeps it and puts it in the Hall of Fame. Meet the Team shows each adventurer — level, hit points, weapons, armour, gold and everything in their packs, the quest's prizes included (all kept with them in the Character Roster for the next adventure). Sleep a Week (Zzzz) rests the party properly and mends every wound; Throw a Party! is music, food and dancing, for the pleasure of it. Another Quest takes you to the Play menu to begin again, with a new party or the same heroes from the Roster. Leave the Game goes back to the main menu; the app stays open.", indent: 2, color: .dimGreen)
                 self.print("")
             }
         }
@@ -34395,6 +34462,7 @@ class GameEngine: ObservableObject {
             printWrapped("\"\(Self.pickVaried(boasts, avoiding: &lastTeamBoast))\"", indent: 4, color: .yellow)
             // Whether anyone believes it is another matter.
             printWrapped(Self.pickVaried(Self.teamDoubts, avoiding: &lastTeamDoubt), indent: 4, color: .dimGreen)
+            printWrapped("Level \(char.level) · \(char.currentHP)/\(char.maxHP) HP · \(char.experiencePoints) XP\(char.familiarName.map { " · with \($0) the \(char.familiarType ?? "familiar")" } ?? "")", indent: 4, color: .cyan)
             // What they're carrying — everyone's, not only yours.
             let gear = [char.equippedWeapon?.name, char.equippedArmor?.name, char.equippedShield?.name].compactMap { $0 }
             if !gear.isEmpty { printWrapped("Wields/wears: " + gear.joined(separator: ", "), indent: 4, color: .green) }
@@ -41733,6 +41801,19 @@ class GameEngine: ObservableObject {
         let dungeonName = dungeon?.name ?? "The dungeon"
         logEvent("DUNGEON CONQUERED! \(dungeonName) has been cleared!", category: "EXPLORE")
 
+        // Rewards first — the Gatekeeper's and the main quest's — so they are
+        // in the heroes' purses and packs when the heroes are saved below and
+        // carried into the next adventure. (The Gatekeeper's used to be paid
+        // after the save, and the main quest's promised reward was never paid
+        // at all: it lived only in the story.)
+        var gatekeeperRewardLine: String? = nil
+        if let quest = activeQuest, quest.type == .slayBoss {
+            gatekeeperRewardLine = applyQuestRewardInline(quest.reward)
+            logEvent("Gatekeeper quest complete! Reward: \(quest.reward.description)", category: "QUEST")
+            activeQuest = nil
+        }
+        let mainRewardLine = payMainQuestReward()
+
         // Record in Hall of Fame + Game Center
         recordHallOfFame(outcome: .victory)
 
@@ -41740,20 +41821,11 @@ class GameEngine: ObservableObject {
         // the Character Hall of Fame — the character-level parallel to the
         // game Hall of Fame entry above, with its own linked save.
         inductPartyIntoCharacterHallOfFame(dungeonName: dungeonName, dungeonLevel: currentLevel)
+        keepPartyInRoster()   // training games too: their heroes keep what they won
 
         // Set closeHandler early so the X icon is always visible
         closeHandler = { [weak self] in
             self?.resetGame()
-        }
-
-        // Check for gatekeeper quest reward (before stats) — the quest's
-        // type/reward vary (see SideQuest.random(includeSlayBoss:)), not
-        // always "slay the boss for flat gold" as it once was.
-        var gatekeeperRewardLine: String? = nil
-        if let quest = activeQuest, quest.type == .slayBoss {
-            gatekeeperRewardLine = applyQuestRewardInline(quest.reward)
-            logEvent("Gatekeeper quest complete! Reward: \(quest.reward.description)", category: "QUEST")
-            activeQuest = nil
         }
 
         // Gather stats
@@ -41820,6 +41892,11 @@ class GameEngine: ObservableObject {
         // Gatekeeper quest reward display — variable-length now that the
         // reward varies, so a plain callout instead of the old fixed-width
         // box (which only ever fit a short gold amount).
+        if let rewardLine = mainRewardLine {
+            print("  ✦ THE QUEST'S REWARD", color: .cyan, bold: true)
+            printWrapped(rewardLine, indent: 2, color: .brightGreen)
+            print("")
+        }
         if let rewardLine = gatekeeperRewardLine {
             print("  ✦ QUEST COMPLETE — the Gatekeeper's task is done", color: .cyan, bold: true)
             printWrapped("  \(rewardLine)", indent: 2, color: .brightGreen)
@@ -44741,6 +44818,18 @@ class GameEngine: ObservableObject {
 
         // Reroll encounters so monsters are different each load
         dungeon?.rerollEncounters()
+        mainQuestRewardPaid = mainQuestCompleted   // a win already paid stays paid; otherwise it's owed
+
+        // A finished adventure opened again: step back out of the lair to
+        // the room before it, so carrying on starts a room short of the end
+        // rather than standing on the victory spot.
+        if let d = dungeon, let here = d.currentRoom, here.roomType == .boss, here.cleared || mainQuestCompleted,
+           let backId = here.exits.values.first(where: { d.rooms[$0]?.roomType != .boss && d.rooms[$0]?.visited == true })
+                ?? here.exits.values.first(where: { d.rooms[$0]?.roomType != .boss }) {
+            d.currentRoomId = backId
+            if gameState == .victory { gameState = .exploring }
+            explorationStatusMessage = ("You're back a room from the end — in \(d.currentRoom?.name ?? "the room before the lair"). Carry on as you like.", .cyan)
+        }
 
         // Safety: if loading into a room with combat, retreat to a safe room
         ensureSafeRoom()
@@ -45063,6 +45152,7 @@ class GameEngine: ObservableObject {
 
     func resetGame() {
         if dungeon != nil { keepPartyInRoster() }
+        mainQuestRewardPaid = false
         party = []
         dungeon = nil
         currentCombat = nil; combatPanelLines = []
