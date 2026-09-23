@@ -7769,6 +7769,21 @@ class GameEngine: ObservableObject {
     /// screen, this menu, About and exported files can't drift apart.
     static let appName = "DnD RPG"
 
+    /// A centred paragraph: wrapped into short lines, each one centred.
+    /// printWrapped only left-aligns, which left one line of the menu's
+    /// centred header sitting off to the side.
+    private func printCentredWrapped(_ text: String, color: TerminalColor, width: Int = 34) {
+        var row = ""
+        for word in text.split(separator: " ") {
+            if !row.isEmpty, row.count + 1 + word.count > width {
+                print(row, color: color, centered: true)
+                row = ""
+            }
+            row += (row.isEmpty ? "" : " ") + word
+        }
+        if !row.isEmpty { print(row, color: color, centered: true) }
+    }
+
     private func renderMainMenu() {
         clearTerminal()
         stopMenuAnimation()
@@ -7785,7 +7800,7 @@ class GameEngine: ObservableObject {
         // replies that still buys.
         print("DM: \(DMEngine.shared.activeBrainName)", color: .dimGreen, centered: true)
         if !DMEngine.shared.isOnline && DMEngine.shared.hasAnyAI {
-            print("no internet — \(DMEngine.shared.offlineBrainName) is telling the tale", color: .dimGreen, centered: true)
+            printCentredWrapped("no internet — \(DMEngine.shared.offlineBrainName) is telling the tale", color: .dimGreen)
         }
         if DMEngine.shared.isOnline, DMEngine.shared.activeBrainName == AIProvider.huggingFace.displayName {
             let dm = DMEngine.shared
@@ -7808,7 +7823,7 @@ class GameEngine: ObservableObject {
             if let replies = dm.huggingFaceRepliesLeft {
                 line += " — roughly \(DMEngine.roundedEstimate(replies)) DM repl\(replies == 1 ? "y" : "ies")"
             }
-            printWrapped(line, indent: 0, color: .dimGreen)
+            printCentredWrapped(line, color: .dimGreen)
         }
         print("")
 
