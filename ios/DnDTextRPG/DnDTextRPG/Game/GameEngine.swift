@@ -5027,8 +5027,15 @@ class GameEngine: ObservableObject {
     /// Publishes autoCountdownEnd/Total for the input bar's progress line.
     /// Ticks on the .common run-loop mode so it keeps counting while the
     /// player is scrolling.
-    private func scheduleAutoAdvance(after delay: Double, isStillValid: @escaping () -> Bool, fire: @escaping () -> Void) {
-        guard delay > 0, autoContinueEnabled else { return }
+    /// No automatic move-on comes sooner than this: a one-line answer ("Ask
+    /// about the cheese") used to be gone in a second and a half, before it
+    /// could be read. A tap still moves on at once; longer text still gets
+    /// its longer, word-counted time.
+    static let minimumReadSeconds = 5.0
+
+    private func scheduleAutoAdvance(after requested: Double, isStillValid: @escaping () -> Bool, fire: @escaping () -> Void) {
+        guard requested > 0, autoContinueEnabled else { return }
+        let delay = max(requested, Self.minimumReadSeconds)
         let token = UUID()
         autoCountdownToken = token
         var remaining = delay
