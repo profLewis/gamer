@@ -23,6 +23,12 @@ struct TerminalLine: Identifiable {
     let fontSize: CGFloat
     /// A wrapped paragraph's later lines — read aloud together with the first.
     var continuesPrevious = false
+    /// Set on every line printWrapped makes for the story's own width: the
+    /// paragraph's indent, the width it was wrapped to and whether it was
+    /// justified — so a change of Display Size can wrap it again.
+    var wrapIndent: Int? = nil
+    var wrappedAtColumns: Int = 0
+    var wrapJustified = false
     let isCentered: Bool
     /// Optional character range drawn in `highlightColor` (bold) — e.g.
     /// the Atlas's "[@]" so you can spot where you are at a glance.

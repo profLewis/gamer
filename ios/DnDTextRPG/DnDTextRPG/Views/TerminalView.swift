@@ -601,6 +601,20 @@ struct TerminalView: View {
                             }
                         }
                         .task(id: pageTimerKey) { await runPageCountdown() }
+                        #if !os(tvOS)
+                        .simultaneousGesture(
+                            DragGesture(minimumDistance: 24)
+                                .onEnded { drag in
+                                    guard gameEngine.storyPagingActive, (storyPageList?.count ?? 0) > 1 else { return }
+                                    let dx = drag.translation.width, dy = drag.translation.height
+                                    if abs(dy) > abs(dx), abs(dy) > 40 {
+                                        gameEngine.turnStoryPage(by: dy < 0 ? 1 : -1)
+                                    } else if abs(dx) > 60, gameEngine.swipeLeftHandler == nil, gameEngine.swipeRightHandler == nil {
+                                        gameEngine.turnStoryPage(by: dx < 0 ? 1 : -1)
+                                    }
+                                }
+                        )
+                        #endif
                         // VoiceOver hears the story as a few sections, handed over
                         // whole -- not whichever lines the lazy list has built.
                         .modifier(VoiceOverStory(sections: gameEngine.voiceOverSections,

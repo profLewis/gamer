@@ -499,28 +499,73 @@ class GameEngine: ObservableObject {
         }
     }
 
-    /// The story cut into pages of at most `n` lines. A page ends between
-    /// paragraphs when the paragraph it would split can start the next page
-    /// instead, and no page starts on a blank line.
+    /// The story cut into pages of at most `n` lines, by blocks rather
+    /// than lines. A block is a whole paragraph (its wrapped lines together)
+    /// with any blank lines after it. A heading — the title box, a short
+    /// capitalised heading, a line ending in a colon — is glued to the block
+    /// after it, so a title is never left at the foot of one page with its
+    /// text on the next. A block that won't fit the space left starts a new
+    /// page; only a block longer than a whole page is ever split.
     func storyPages(linesPerPage n: Int) -> [Range<Int>] {
         let lines = terminalLines
         guard n > 0, lines.count > n else { return [0..<lines.count] }
-        var pages: [Range<Int>] = []
-        var start = 0
-        while start < lines.count {
-            if !pages.isEmpty {
-                while start < lines.count, lines[start].text.trimmingCharacters(in: .whitespaces).isEmpty { start += 1 }
-                guard start < lines.count else { break }
-            }
-            var end = min(lines.count, start + n)
-            if end < lines.count, lines[end].continuesPrevious {
-                var k = end
-                while k > start + n / 2, lines[k].continuesPrevious { k -= 1 }
-                if k > start + n / 2 { end = k }
-            }
-            pages.append(start..<end)
-            start = end
+        func blank(_ k: Int) -> Bool { lines[k].text.trimmingCharacters(in: .whitespaces).isEmpty }
+        func heading(_ k: Int) -> Bool {
+            if titleLineIndices.contains(k) { return true }
+            let t = lines[k].text.trimmingCharacters(in: .whitespaces)
+            if t.hasSuffix(":") && t.count <= 40 { return true }
+            let letters = t.filter { $0.isLetter }
+            return lines[k].isBold && t.count <= 40 && letters.count >= 3 && letters == letters.uppercased()
         }
+        // Blocks: [start, end) — a paragraph, then its trailing blanks.
+        var blocks: [(range: Range<Int>, keepWithNext: Bool)] = []
+        var i = 0
+        while i < lines.count {
+            var j = i + 1
+            if titleLineIndices.contains(i) {
+                while j < lines.count, titleLineIndices.contains(j) { j += 1 }
+            } else if !blank(i) {
+                while j < lines.count, lines[j].continuesPrevious { j += 1 }
+            }
+            while j < lines.count, blank(j) { j += 1 }
+            blocks.append((i..<j, !blank(i) && heading(i)))
+            i = j
+        }
+        // Heading chains travel together with the block they introduce.
+        var groups: [Range<Int>] = []
+        var b = 0
+        while b < blocks.count {
+            var e = b
+            while e < blocks.count - 1, blocks[e].keepWithNext { e += 1 }
+            groups.append(blocks[b].range.lowerBound..<blocks[e].range.upperBound)
+            b = e + 1
+        }
+        var pages: [Range<Int>] = []
+        var pageStart = 0
+        var pageEnd = 0
+        for group in groups {
+            let size = group.count
+            if pageEnd > pageStart, (pageEnd - pageStart) + size > n {
+                pages.append(pageStart..<pageEnd)
+                pageStart = group.lowerBound
+                pageEnd = group.lowerBound
+            }
+            if size > n {
+                // Too long for any page: fill this one, then carry on in
+                // whole pages, and leave the rest for what follows.
+                var s = group.lowerBound
+                if pageEnd > pageStart { s = pageStart }
+                while group.upperBound - s > n {
+                    pages.append(s..<(s + n))
+                    s += n
+                }
+                pageStart = s
+                pageEnd = group.upperBound
+            } else {
+                pageEnd = group.upperBound
+            }
+        }
+        if pageEnd > pageStart { pages.append(pageStart..<pageEnd) }
         return pages.isEmpty ? [0..<lines.count] : pages
     }
 
@@ -2870,7 +2915,9 @@ class GameEngine: ObservableObject {
     /// Prose used to be wrapped at a fixed 38 whatever the font, so a bigger
     /// font overflowed and wrapped raggedly, and a smaller one left half the
     /// screen empty.
-    var wrapColumns: Int = 38
+    var wrapColumns: Int = 38 {
+        didSet { if wrapColumns != oldValue { reflowWrappedParagraphs() } }
+    }
 
     /// Straight right-hand edge on wrapped prose, everywhere. A screen that
     /// wants the raw shape of what it prints (the test Details page) passes
@@ -2903,6 +2950,7 @@ class GameEngine: ObservableObject {
     }
 
     func printWrapped(_ text: String, indent: Int = 0, color: TerminalColor = .green, bold: Bool = false, maxWidth: Int? = nil, justify: Bool? = nil) {
+        let maxWidthArg = maxWidth
         let maxWidth = maxWidth ?? wrapColumns
         let text = Self.platformWording(text)
         // Detect any extra leading whitespace in the text and fold it into indent
@@ -2917,31 +2965,95 @@ class GameEngine: ObservableObject {
 
         // Later lines of the paragraph are marked, so Read Aloud reads it as one.
         let straightEdge = justify ?? justifyText
+        // Wrapped to the story's own width (no maxWidth of its own): tagged so
+        // a change of Display Size can wrap it again.
+        let followsWidth = maxWidthArg == nil
         var printedAny = false
         let emit: (String) -> Void = { line in
             self.print("\(prefix)\(line)", color: color, bold: bold)
-            if printedAny {
-                self.runOnMain { if !self.terminalLines.isEmpty { self.terminalLines[self.terminalLines.count - 1].continuesPrevious = true } }
+            let continues = printedAny
+            self.runOnMain {
+                guard !self.terminalLines.isEmpty else { return }
+                let last = self.terminalLines.count - 1
+                if continues { self.terminalLines[last].continuesPrevious = true }
+                if followsWidth {
+                    self.terminalLines[last].wrapIndent = effectiveIndent
+                    self.terminalLines[last].wrappedAtColumns = maxWidth
+                    self.terminalLines[last].wrapJustified = straightEdge
+                }
             }
             printedAny = true
         }
         let words = trimmed.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
-        var currentLine = ""
+        for line in wrapLines(words, width: lineWidth, justify: straightEdge) { emit(line) }
+    }
 
+    /// Words into lines of at most `width`, every line but the last
+    /// justified when asked.
+    private func wrapLines(_ words: [String], width: Int, justify: Bool) -> [String] {
+        var lines: [String] = []
+        var currentLine = ""
         for word in words {
             if currentLine.isEmpty {
                 currentLine = word
-            } else if currentLine.count + 1 + word.count <= lineWidth {
+            } else if currentLine.count + 1 + word.count <= width {
                 currentLine += " " + word
             } else {
                 // Every line but the paragraph's last one gets the straight edge.
-                emit(straightEdge ? justified(currentLine, width: lineWidth) : currentLine)
+                lines.append(justify ? justified(currentLine, width: width) : currentLine)
                 currentLine = word
             }
         }
-        if !currentLine.isEmpty {
-            emit(currentLine)
+        if !currentLine.isEmpty { lines.append(currentLine) }
+        return lines
+    }
+
+    /// A new Display Size (or a turned device) changes how many characters
+    /// fit a line. Every paragraph on screen that printWrapped wrapped to the
+    /// story's width is wrapped again to the new one and re-justified —
+    /// before, each kept its old line breaks and the text went ragged, with
+    /// spill-over hard against the margin. Art, tables, the map, links and
+    /// highlighted lines are left exactly as they were. A screen whose lines
+    /// are tapped by number (shop lists and the like) is left alone too:
+    /// moving its lines would send those taps to the wrong line. It comes
+    /// right on the next screen.
+    func reflowWrappedParagraphs() {
+        guard textLongPressHandler == nil else { return }
+        let cols = wrapColumns
+        let lines = terminalLines
+        var out: [TerminalLine] = []
+        var newIndex: [Int] = []          // old line index -> new line index
+        var changed = false
+        var i = 0
+        while i < lines.count {
+            var j = i + 1
+            while j < lines.count, lines[j].continuesPrevious { j += 1 }
+            let para = lines[i..<j]
+            let first = lines[i]
+            if let indent = first.wrapIndent, first.wrappedAtColumns != cols, cols - indent > 10,
+               para.allSatisfy({ $0.wrapIndent != nil && $0.link == nil && $0.highlightRange == nil && $0.extraHighlights.isEmpty }) {
+                let words = para.flatMap { $0.text.split(separator: " ").map(String.init) }
+                let prefix = String(repeating: " ", count: indent)
+                for _ in i..<j { newIndex.append(out.count) }
+                for (k, text) in wrapLines(words, width: cols - indent, justify: first.wrapJustified).enumerated() {
+                    var line = TerminalLine(prefix + text, color: first.color, bold: first.isBold,
+                                            underlined: first.isUnderlined, size: first.fontSize, centered: first.isCentered)
+                    line.continuesPrevious = k > 0
+                    line.wrapIndent = indent
+                    line.wrappedAtColumns = cols
+                    line.wrapJustified = first.wrapJustified
+                    out.append(line)
+                }
+                changed = true
+            } else {
+                for k in i..<j { newIndex.append(out.count); out.append(lines[k]) }
+            }
+            i = j
         }
+        guard changed else { return }
+        titleLineIndices = Set(titleLineIndices.compactMap { $0 < newIndex.count ? newIndex[$0] : nil })
+        speechFromLine = speechFromLine < newIndex.count ? newIndex[speechFromLine] : out.count
+        terminalLines = out
     }
 
     /// Runs a UI-state update immediately if already on the main thread
@@ -3112,6 +3224,7 @@ class GameEngine: ObservableObject {
 
     private func restoreScreenSnapshot(_ snapshot: ScreenSnapshot) {
         terminalLines = snapshot.terminalLines
+        defer { reflowWrappedParagraphs() }
         pinnedMapLines = snapshot.pinnedMapLines
         currentMenuOptions = snapshot.menuOptions
         directionExits = snapshot.directionExits
@@ -6896,7 +7009,7 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped("\(d.trainingFull ? "Full" : "Quick") training: \(done) of \(steps.count) steps done.", indent: 2, color: .cyan)
         print("")
-        printWrapped("Recap goes back over every step, one page at a time. Test Yourself is a short quiz — answer them all, then see how you did and try again if you like. Quit Training ends it (nothing is saved).", indent: 2, color: .dimGreen)
+        printWrapped("Recap goes back over every step, one page at a time. Test Yourself is a short quiz — answer them all, then see how you did and try again if you like. Quit Training ends it — anything you saved stays in Continue Adventure, marked Training.", indent: 2, color: .dimGreen)
         print("")
         let opts = [MenuOption("Recap", isDefault: true), MenuOption("Test Yourself"), MenuOption("Quit Training", tint: .danger),
                     MenuOption("?", tint: .navigation, compact: true), MenuOption("< Back", tint: .navigation, compact: true)]
@@ -6911,7 +7024,7 @@ class GameEngine: ObservableObject {
                 self.clearTerminal()
                 self.printTitle("Quit Training?")
                 self.print("")
-                self.printWrapped("This ends the training game and goes back to the Play menu. It isn't kept.", indent: 2, color: .yellow)
+                self.printWrapped("This ends the training game and goes back to the Play menu. Anything you saved stays in Continue Adventure, marked Training; nothing since then is kept.", indent: 2, color: .yellow)
                 self.print("")
                 self.showMenuOptions([MenuOption("Keep Training", isDefault: true), MenuOption("Quit Training", tint: .danger)])
                 self.closeHandler = { [weak self] in self?.showTrainingMenu() }
@@ -7341,7 +7454,7 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped("Your hero: \(hero.name), a \(hero.race.rawValue) \(hero.characterClass.rawValue). With you: \(helper.name), a robot \(helper.characterClass.rawValue) who fights on their own.", indent: 2, color: .cyan)
         print("")
-        printWrapped("Each training game is a little different. When you're ready for the real thing, start a New Adventure from the Play menu.", indent: 2, color: .dimGreen)
+        printWrapped("Each training game is a little different. It saves like any game — marked Training in Continue Adventure — but, being practice, it never goes into the Hall of Fame. When you're ready for the real thing, start a New Adventure from the Play menu.", indent: 2, color: .dimGreen)
         print("")
         print("")
         printWrapped("Quick Training: the basics in \(trainingSteps(full: false).count) steps — moving, light, searching, listening, packs, a quest, a merchant, a fight, resting and the Boss.", indent: 2, color: .green)
@@ -7374,7 +7487,7 @@ class GameEngine: ObservableObject {
                     self.print("")
                     self.printWrapped("Quick Training is the short course — walking, light, searching, listening, packs, a quest, a merchant, a fight, resting and the Boss. Full Training adds the map viewer, help, Party Status, saving and loading, certificates and the AI Dungeon Master. Each step keeps the number it's given when training starts. Either way you can stop at any point; what you have done is remembered.", indent: 2, color: .dimGreen)
                     self.print("")
-                    self.printWrapped("Training is a complete, small game for learning the ropes. Follow the Training line at the top of the screen; it moves on as you do each thing. Sit still for a few seconds and it explains the step in full. Type \"skip\" to pass an optional step. It saves like any adventure.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Training is a complete, small game for learning the ropes. Follow the Training line at the top of the screen; it moves on as you do each thing. Sit still for a few seconds and it explains the step in full. Type \"skip\" to pass an optional step. It saves like any adventure, marked Training in Continue Adventure, and is never entered in the Hall of Fame.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             default: back()
@@ -31485,6 +31598,7 @@ class GameEngine: ObservableObject {
         let training = dungeon?.training == true
         if training {
             printWrapped("Training complete! See How To… for saving, loading, quests, merchants and more — then start a New Adventure from the Play menu.", indent: 2, color: .cyan)
+            printWrapped("Training games are practice: they save like any other (marked Training in Continue Adventure) but don't go into the Hall of Fame.", indent: 2, color: .dimGreen)
             print("")
         }
         var endOpts = ["See the Certificate", "Fireworks!"]
@@ -31737,7 +31851,10 @@ class GameEngine: ObservableObject {
             : (names.first ?? "adventurers")
         printWrapped("\"Well done, \(who).\" The DM leans back. \"That's the quest finished, and finished properly. The question every party has to answer now is the same one: what next?\"", indent: 2, color: .yellow)
         print("")
-        if saved {
+        if dungeon?.training == true {
+            printWrapped(saved ? "✓ Saved — marked Training in Continue Adventure. Training games don't go into the Hall of Fame."
+                               : "Save the tale to keep it — marked Training in Continue Adventure. Training games are practice, so they don't go into the Hall of Fame.", indent: 2, color: saved ? .brightGreen : .dimGreen)
+        } else if saved {
             printWrapped("✓ The tale is saved, and this adventure now stands in the Hall of Fame with its points.", indent: 2, color: .brightGreen)
         } else {
             printWrapped("Save the tale and it goes into the Hall of Fame, with your points and the party who earned them — and you can open it again from Continue Adventure.", indent: 2, color: .dimGreen)
@@ -31787,7 +31904,7 @@ class GameEngine: ObservableObject {
         activeSlotId = slot
         performSave(slotId: slot, slotName: "\(dungeon.name) — finished")
         print("")
-        printWrapped("Written down, and into the Hall of Fame with it.", indent: 2, color: .brightGreen)
+        printWrapped(dungeon.training ? "Written down — kept as a Training game (not in the Hall of Fame)." : "Written down, and into the Hall of Fame with it.", indent: 2, color: .brightGreen)
         print("")
         waitForContinueWithTimeout(multiplier: 0.8) { [weak self] in self?.showWhatNext(saved: true) }
     }
@@ -41030,6 +41147,7 @@ class GameEngine: ObservableObject {
     /// Saves each surviving party member to the Character Roster and adds a
     /// Character Hall of Fame entry linking to that save — called on victory.
     private func inductPartyIntoCharacterHallOfFame(dungeonName: String, dungeonLevel: Int) {
+        guard dungeon?.training != true else { return }   // practice heroes aren't inducted
         for char in party {
             saveCharacterToRoster(char, silent: true)
             let entry = CharacterHallOfFameEntry(
@@ -41218,6 +41336,12 @@ class GameEngine: ObservableObject {
     }
 
     private func recordHallOfFame(outcome: RunOutcome) {
+        // Training is practice: it saves like any game, but never goes into
+        // the Hall of Fame or onto Game Center's boards.
+        if dungeon?.training == true {
+            logEvent("Training game — not entered in the Hall of Fame", category: "EXPLORE")
+            return
+        }
         var totalGold = 0
         for char in party { totalGold += char.gold }
 
@@ -41852,7 +41976,15 @@ class GameEngine: ObservableObject {
     /// Every new save name gets a date-time code (see saveStamp) appended
     /// to the end of whatever name was chosen. The name itself is trimmed
     /// to fit — never the code.
+    /// A training game's saves are named for what they are, so they can't
+    /// be mistaken for a real adventure in Continue Adventure.
+    private func trainingNamed(_ name: String) -> String {
+        guard dungeon?.training == true, !name.hasPrefix("Training") else { return name }
+        return "Training · " + name
+    }
+
     private func uniqueSlotName(_ baseName: String) -> String {
+        let baseName = trainingNamed(baseName)
         let stamp = " " + Self.saveStamp()
         let maxLen = Self.maxSlotNameLength + stamp.count
         let truncated = String(baseName.prefix(Self.maxSlotNameLength)) + stamp
@@ -41992,6 +42124,7 @@ class GameEngine: ObservableObject {
 
     private func performSave(slotId: UUID, slotName: String) {
         guard let dungeon = dungeon else { return }
+        let slotName = trainingNamed(slotName)
         trainingDid("save")
 
         // If saving during combat, clear the current room's encounter so
