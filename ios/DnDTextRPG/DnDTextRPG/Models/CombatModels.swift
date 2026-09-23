@@ -141,6 +141,12 @@ enum MonsterType: String, CaseIterable, Codable {
     case hollowMonk = "Hollow Monk"
     case gloamTitan = "Gloam Titan"
 
+    // Dragonkind, from the SRD: a wyrmling from the third floor down, and
+    // wyverns from the fifth — the young dragon on its own only ever turned
+    // up deeper than most adventures go.
+    case dragonWyrmling = "Dragon Wyrmling"
+    case wyvern = "Wyvern"
+
     struct Stats {
         let hp: Int
         let ac: Int
@@ -227,6 +233,10 @@ enum MonsterType: String, CaseIterable, Codable {
             return Stats(hp: 180, ac: 18, attackBonus: 9, damage: "3d8+4", cr: 13, xp: 10000)
         case .youngDragon:
             return Stats(hp: 142, ac: 18, attackBonus: 10, damage: "2d10+5", cr: 10, xp: 5900)
+        case .dragonWyrmling:
+            return Stats(hp: 38, ac: 17, attackBonus: 4, damage: "1d10+2", cr: 2, xp: 450)
+        case .wyvern:
+            return Stats(hp: 110, ac: 13, attackBonus: 7, damage: "2d6+4", cr: 6, xp: 2300)
         case .undyingKing:
             return Stats(hp: 120, ac: 18, attackBonus: 9, damage: "3d8+5", cr: 10, xp: 5900)
         }
@@ -268,6 +278,8 @@ enum MonsterType: String, CaseIterable, Codable {
         case .demogorgon: return "A nightmare predator from the deep dark between worlds, with a flower-like maw and relentless hunting drive. It closes distance fast, tears through isolated targets, and pressures the backline without hesitation. Facing the Maw feels like survival horror, not a standard skirmish."
         case .brainEater: return "A psionic aberration with facial tentacles, alien calm, and frightening mental precision. Brain eaters attack cognition first, disrupting choices before physical damage arrives. In close range, they become executioners with terrifying brain-harvest methods."
         case .eyeTyrant: return "A floating tyrant of paranoid intellect, ringed with eyestalks that project distinct killing rays. It controls vertical space, line-of-sight, and battlefield tempo all at once. An eye tyrant encounter punishes predictable movement and poor positioning."
+        case .dragonWyrmling: return "A dragon barely out of the egg, no bigger than a pony, all scales, temper and appetite. Its breath is a sour green cloud that stings the eyes and the lungs, and it guards whatever it has found as if it were already a hoard."
+        case .wyvern: return "A dragon's poorer cousin: two legs, great leathery wings and a long tail ending in a barbed stinger dripping venom. Not clever, not magical, and not in the least bit afraid of you. Keep out from under the tail."
         case .youngDragon: return "A juvenile dragon already large enough to shatter shields with claw, fang, and breath weapon. Proud and territorial, it probes enemies before committing to lethal aggression. Underestimating a young dragon is usually a one-fight lesson."
         case .undyingKing: return "The Undying King, a lich of vast cunning, forbidden scholarship, and godlike ambition. He bends death, memory, and fate into tools for domination across worlds. Facing him is not just a battle - it is a contest against ancient strategy itself."
         }
@@ -346,6 +358,10 @@ enum MonsterType: String, CaseIterable, Codable {
             return ["a disintegration ray", "its antimagic eye", "a paralyzing beam", "a death ray"]
         case .youngDragon:
             return ["a searing fire breath", "its rending claws", "a crushing tail swipe", "its snapping jaws"]
+        case .dragonWyrmling:
+            return ["a gust of stinging green breath", "its needle teeth", "a raking claw", "a whip of its tail"]
+        case .wyvern:
+            return ["its venomous stinger", "a snapping bite", "a buffet of its wings", "its hooked talons"]
         case .undyingKing:
             return ["a necrotic ray", "the Grasp of the Undying King", "a soul-rending spell", "a withering touch of undeath"]
         }
@@ -354,7 +370,7 @@ enum MonsterType: String, CaseIterable, Codable {
     /// Whether this monster type can inflict poison
     var canPoison: Bool {
         switch self {
-        case .giantSpider, .stirge, .giantRat, .gelatinousCube, .basilisk, .youngDragon: return true
+        case .giantSpider, .stirge, .giantRat, .gelatinousCube, .basilisk, .youngDragon, .dragonWyrmling, .wyvern: return true
         default: return false
         }
     }
@@ -368,6 +384,8 @@ enum MonsterType: String, CaseIterable, Codable {
         case .gelatinousCube: return 0.40
         case .basilisk: return 0.30
         case .youngDragon: return 0.25
+        case .dragonWyrmling: return 0.30
+        case .wyvern: return 0.40
         default: return 0.0
         }
     }
@@ -381,6 +399,8 @@ enum MonsterType: String, CaseIterable, Codable {
         case .gelatinousCube: return 4
         case .basilisk: return 3
         case .youngDragon: return 5
+        case .dragonWyrmling: return 2
+        case .wyvern: return 5
         default: return 0
         }
     }
@@ -653,6 +673,10 @@ enum MonsterType: String, CaseIterable, Codable {
                 "   '-----'",
                 "  /~ ~|~ ~\\",
             ]
+        case .dragonWyrmling:
+            return ["    __/\\__", "   / o  o \\_", "  <   ^^   _>", "   \\_/\\_/\\/", "    d    d"]
+        case .wyvern:
+            return [" /\\         /\\ ", "/  \\__/\\__/  \\ ", "\\__  (o o)  __/", "     /)W(\\ ", "       \\/~~>"]
         case .youngDragon:
             return [
                 "   /\\_/\\  __",
@@ -879,6 +903,10 @@ enum MonsterType: String, CaseIterable, Codable {
                 ["  \\~ ~|~ ~/", "   .-----.", "  (( O )  )", "   '-----'", "  /~ ~|~ ~\\"],
                 ["  \\~~| ~~/ ", "   .-----.", "  (  ( O ))", "   '-----'", "  /~ ~|~ ~\\"],
             ]
+        case .dragonWyrmling:
+            return [["    __/\\__", "   / o  o \\_", "  <   ^^   _>", "   \\_/\\_/\\/", "    d    d"], ["    __/\\__", "   / O  o \\_", "  <   ^^   _>~", "   \\_/\\_/\\/", "    d    d"], ["    __/\\__", "   / o  O \\_", "  <   ^^   _>~~", "   \\_/\\_/\\/", "    d    d"]]
+        case .wyvern:
+            return [[" /\\         /\\ ", "/  \\__/\\__/  \\ ", "\\__  (o o)  __/", "     /)W(\\ ", "       \\/~~>"], ["\\__         __/", " \\ \\__/\\__/ / ", "  \\_ (O o) _/ ", "     /)W(\\ ", "       \\/~~~>"], [" /\\         /\\ ", "/  \\__/\\__/  \\ ", "\\__  (o O)  __/", "     /)W(\\ ", "      \\/~~>"]]
         case .youngDragon:
             return [
                 ["   /\\_/\\  __", "  / o o \\/  \\", "  \\ >><  \\--/", " /|/    \\|\\", " d d    d d~~"],
@@ -901,17 +929,17 @@ enum MonsterType: String, CaseIterable, Codable {
         case 2:
             return [.goblin, .skeleton, .zombie, .wolf, .kobold]
         case 3:
-            return [.goblin, .skeleton, .orc, .hobgoblin, .gnoll, .rustMonster, .cinderHound]
+            return [.goblin, .skeleton, .orc, .hobgoblin, .gnoll, .rustMonster, .cinderHound, .dragonWyrmling]
         case 4:
-            return [.orc, .hobgoblin, .bugbear, .giantSpider, .gnoll, .gargoyle, .mimic]
+            return [.orc, .hobgoblin, .bugbear, .giantSpider, .gnoll, .gargoyle, .mimic, .dragonWyrmling]
         case 5:
-            return [.bugbear, .giantSpider, .ogre, .gelatinousCube, .minotaur, .basilisk]
+            return [.bugbear, .giantSpider, .ogre, .gelatinousCube, .minotaur, .basilisk, .dragonWyrmling, .wyvern]
         case 6:
-            return [.ogre, .owlbear, .troll, .phaseStalker, .wraith, .demogorgon, .brainEater, .ironWeaver]
+            return [.ogre, .owlbear, .troll, .phaseStalker, .wraith, .demogorgon, .brainEater, .ironWeaver, .wyvern]
         case 7:
-            return [.troll, .demogorgon, .brainEater, .wraith, .hollowMonk, .drownedChoir]
+            return [.troll, .demogorgon, .brainEater, .wraith, .hollowMonk, .drownedChoir, .wyvern, .youngDragon]
         case 8:
-            return [.demogorgon, .brainEater, .eyeTyrant, .hollowMonk, .drownedChoir, .youngDragon]
+            return [.demogorgon, .brainEater, .eyeTyrant, .hollowMonk, .drownedChoir, .youngDragon, .wyvern]
         case 9:
             return [.eyeTyrant, .youngDragon, .drownedChoir, .gloamTitan, .hollowMonk]
         case 10:
@@ -925,10 +953,10 @@ enum MonsterType: String, CaseIterable, Codable {
         switch level {
         case 1: return .goblin
         case 2: return .bugbear
-        case 3: return .ogre
+        case 3: return .dragonWyrmling
         case 4: return .owlbear
         case 5: return .demogorgon
-        case 6: return .brainEater
+        case 6: return .wyvern
         case 7: return .eyeTyrant
         case 8: return .hollowMonk
         case 9: return .drownedChoir
@@ -967,14 +995,14 @@ enum MonsterType: String, CaseIterable, Codable {
             if roll >= 8 { return TreasureItem(name: "\(Dice.rollSum(3, d: 6) * 5) Gold Pieces", value: Dice.rollSum(3, d: 6) * 5, type: .gold) }
             return nil
         // High — good drops
-        case .bugbear, .giantSpider, .ogre, .gargoyle, .mimic, .gelatinousCube, .ironWeaver:
+        case .bugbear, .giantSpider, .ogre, .gargoyle, .mimic, .gelatinousCube, .ironWeaver, .dragonWyrmling:
             if roll >= 15 { return TreasureItem(name: "Potion of Greater Healing", value: 150, type: .potion) }
             if canPoison && roll >= 13 { return TreasureItem(name: "Antidote", value: 30, type: .potion) }
             if roll >= 12 { return TreasureItem(name: "Scale Mail", value: 50, type: .item) }
             if roll >= 7 { return TreasureItem(name: "\(Dice.rollSum(4, d: 6) * 10) Gold Pieces", value: Dice.rollSum(4, d: 6) * 10, type: .gold) }
             return nil
         // Boss — guaranteed drops
-        case .owlbear, .troll, .minotaur, .basilisk, .phaseStalker, .wraith, .demogorgon, .brainEater, .eyeTyrant, .youngDragon, .undyingKing, .drownedChoir, .hollowMonk, .gloamTitan:
+        case .owlbear, .troll, .minotaur, .basilisk, .phaseStalker, .wraith, .demogorgon, .brainEater, .eyeTyrant, .youngDragon, .undyingKing, .drownedChoir, .hollowMonk, .gloamTitan, .wyvern:
             if roll >= 10 { return TreasureItem(name: "Potion of Greater Healing", value: 150, type: .potion) }
             return TreasureItem(name: "\(Dice.rollSum(5, d: 6) * 10) Gold Pieces", value: Dice.rollSum(5, d: 6) * 10, type: .gold)
         }

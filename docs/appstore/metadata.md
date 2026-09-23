@@ -2,19 +2,19 @@
 
 Each field is within Apple's character limit (shown in brackets).
 
-> **Trademark — settled.** The game is **Wyverns & Catacombs**. The splash
-> screen, the home-screen name ("Wyverns") and this listing carry no Wizards
-> of the Coast trademark: "Dungeons & Dragons" and "D&D" are theirs, and the
-> licence covers the SRD rules, not the brand. The rules attribution
+> **Name — decided 23 Sep 2026.** The app is **DnD RPG** (home screen,
+> load screen and main menu); the world it plays in is Wyverns & Catacombs.
+> Not BNB RPG. Note for submission: "Dungeons & Dragons" and "D&D" are
+> Wizards of the Coast trademarks and the SRD licence covers the rules, not
+> the brand, so App Review may query the name. The rules attribution
 > (System Reference Document 5.1, OGL v1.0a / CC-BY-4.0) stays, because the
 > licence requires it. Renaming an app on the App Store keeps its record,
 > its ratings and its existing users — identity is the bundle id
 > (com.timbaloo.dnd.textrpg), not the name.
-
 ---
 
 ## Name  (30)
-Wyverns & Catacombs: Text RPG
+DnD RPG: Text Adventure
 
 ## Subtitle  (30)
 A Retro Text-Based Adventure

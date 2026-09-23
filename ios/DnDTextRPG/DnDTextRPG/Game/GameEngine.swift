@@ -240,6 +240,12 @@ class GameEngine: ObservableObject {
     /// as pressable items and titles as headings. Handed to VoiceOver
     /// directly (see TerminalView's accessibilityChildren), so it doesn't
     /// depend on which lines the scrolling list happens to have built.
+    /// Main play (exploring or fighting): VoiceOver treats the story as
+    /// one box rather than a list of sections.
+    var voiceOverStoryAsBox: Bool {
+        dungeon != nil && (gameState == .exploring || gameState == .combat)
+    }
+
     var voiceOverSections: [(text: String, link: String?, heading: Bool)] {
         guard Self.systemVoiceOverRunning else { return [] }
         let lines = terminalLines
@@ -1949,10 +1955,37 @@ class GameEngine: ObservableObject {
         NSAccessibility.post(element: element, notification: .announcementRequested,
                              userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
         #elseif os(iOS)
-        UIAccessibility.post(notification: .announcement,
-                             argument: NSAttributedString(string: text, attributes: [.accessibilitySpeechQueueAnnouncement: true]))
+        postAnnouncement(text, attempt: 0)
         #endif
     }
+
+    #if os(iOS)
+    private var announcementObserver: NSObjectProtocol?
+    private var lastAnnouncement: (text: String, attempt: Int)?
+
+    /// VoiceOver quietly drops an announcement that collides with a screen
+    /// change — which is what pressing a pad icon (search, listen, torch)
+    /// does — so the press seemed to do nothing. Listen for whether it was
+    /// heard, and if not say it again, twice at most.
+    private func postAnnouncement(_ text: String, attempt: Int) {
+        if announcementObserver == nil {
+            announcementObserver = NotificationCenter.default.addObserver(
+                forName: UIAccessibility.announcementDidFinishNotification, object: nil, queue: .main) { [weak self] note in
+                guard let self = self, let last = self.lastAnnouncement,
+                      let said = note.userInfo?[UIAccessibility.announcementStringValueUserInfoKey] as? String, said == last.text,
+                      let ok = note.userInfo?[UIAccessibility.announcementWasSuccessfulUserInfoKey] as? Bool, !ok,
+                      last.attempt < 2 else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                    guard let self = self, self.lastAnnouncement?.text == last.text else { return }
+                    self.postAnnouncement(last.text, attempt: last.attempt + 1)
+                }
+            }
+        }
+        lastAnnouncement = (text, attempt)
+        UIAccessibility.post(notification: .announcement,
+                             argument: NSAttributedString(string: text, attributes: [.accessibilitySpeechQueueAnnouncement: true]))
+    }
+    #endif
 
     func printLines(_ lines: [String], color: TerminalColor = .green, size: CGFloat = 14) {
         // Pad all lines to the same width to preserve ASCII art alignment
@@ -3151,6 +3184,12 @@ class GameEngine: ObservableObject {
         print("")
         print("  READING", color: .cyan, bold: true)
         printWrapped("Swipe right to go through the screen a section at a time — that is the way to read on; the story is handed over whole, so nothing is missed by not scrolling. Three-finger swipe up or down moves the text itself.", indent: 2, color: .dimGreen)
+        print("")
+        print("  THE STORY BOX", color: .cyan, bold: true)
+        printWrapped("While exploring or fighting, the story is one box: VoiceOver says \"Story\" and reads all of it. New lines and scrolling don't move you about. Links in it are actions — swipe up or down on the box to hear them, then double-tap.", indent: 2, color: .dimGreen)
+        print("")
+        print("  BLANK", color: .cyan, bold: true)
+        printWrapped("The buttons and the direction pad are grids. A place in a grid with nothing in it says \"Blank\", so you can tell the grid is there and where things sit in it — swipe past it.", indent: 2, color: .dimGreen)
         print("")
         print("  LONG PRESS", color: .cyan, bold: true)
         printWrapped("Anything that does something extra on a long press has a Long press action: on the button, swipe up or down until you hear Long press, then double-tap. Directions use it to bar a door, Rest for a long rest, the map to show the whole map.", indent: 2, color: .dimGreen)
@@ -5538,6 +5577,12 @@ class GameEngine: ObservableObject {
         if let title = title?.trimmingCharacters(in: .whitespaces), !title.isEmpty {
             newLines.insert(title, at: 0)
         }
+        // The map sits in its own pane, not in the story, so Read Aloud
+        // never reached it. Say where you are, the ways out and who's here,
+        // first thing on each new exploring page.
+        if firstReadOfPage, gameState == .exploring, currentCombat == nil, !pinnedMapLines.isEmpty, dungeon?.currentRoom != nil {
+            newLines.insert(mapAccessibilitySummary, at: 0)
+        }
         guard !newLines.isEmpty else {
             speakerHasReadCurrentPage = true
             fireSpeechReadComplete()
@@ -6548,8 +6593,8 @@ class GameEngine: ObservableObject {
              "Each adventurer carries a pack: weapons, armour, potions, food, torches, keys. Tap Inventory (or type \"inventory\" or \"i\"). Tap an item's line to see it and use, equip, give or drop it.", false),
             ("status", "Tap Party Status to see everyone's health, spells and your quest.",
              "Party Status shows each adventurer's hit points, armour, level and spells, your gold, and what you're here to do. It's the place to check before a fight or after one.", true),
-            ("quest", "Take on a quest: walk to someone (N on the map), tap Talk, then Ask for a Quest. (\"skip\" if nobody's here.)",
-             "Quests give an adventure its point, and pay. Normally the main quest is given at the start, in the opening tale — but you can take one up at any time, from almost anyone you meet, and that is worth knowing when a quest is finished or given up. HOW: walk into a room marked N on the map, tap Talk, and look at the buttons on the conversation screen. With no main quest running, the first one is Ask for a Quest: that gives you one, with its reward and its deadline. With a main quest already running, the same screen offers Side Quest instead — a smaller errand to carry alongside it — and Ask About Our Quest, which asks anyone what they know about the one you're on. Every quest you hold, its reward, and how many days are left, is listed on Party Status; the line under the map points the way to the nearest one. If there's nobody on this floor, type \"skip\".", false),
+            ("quest", "Take on a quest: walk up to someone (N on the map), tap Talk, then Ask for a Quest. (\"skip\" if nobody's here.)",
+             "Quests give an adventure its point, and pay. Normally the main quest is given at the start, in the opening tale — but you can take one up at any time, from almost anyone you meet, and that is worth knowing when a quest is finished or given up. HOW: walk into a room marked N on the map, tap Talk, and look at the buttons on the conversation screen. With no main quest running, tap Ask for a Quest and they ask what sort you want: A Main Quest (the big one, with its villain, reward and deadline) or A Side Quest (a smaller errand, if they have one). With a main quest already running, the same screen offers Side Quest instead — a smaller errand to carry alongside it — and Ask About Our Quest, which asks anyone what they know about the one you're on. Every quest you hold, its reward, and how many days are left, is listed on Party Status; the line under the map points the way to the nearest one. If there's nobody on this floor, type \"skip\".", false),
             ("merchant", "Visit a merchant (M on the map): buy, sell or haggle. (\"skip\" if there's none.)",
              "Merchants sell torches, food, potions, weapons and armour, buy what you don't need, and haggle — offer less and see what they say. Walk into their room (M on the map) and tap Visit Merchant. Check your packs after buying. If there's no merchant on this floor, type \"skip\".", false),
             ("fight", "Win a fight. Attack, or cast a spell — the ? in a fight shows each hero's chances.",
@@ -6568,35 +6613,81 @@ class GameEngine: ObservableObject {
         return all.filter { full || !$0.full }.map { ($0.key, $0.hint, $0.detail) }
     }
 
+    /// Works the step list out once, when training starts, and keeps it
+    /// with the save. Anything already true at that moment (a quest handed
+    /// over in the opening, say) counts as done and is left out; the rest
+    /// are numbered 1…N in order, and that number belongs to the step from
+    /// then on — the status line, the recap and the test all use it.
+    ///
+    /// It used to be worked out afresh every time, as "the first step not yet
+    /// done", with several steps judged live from the game (a quest held, the
+    /// torch lit): steps already true at the start made it open on "4 of
+    /// 10", doing things out of order made the numbers jump about, and a
+    /// torch going out could undo a step already passed.
+    private func ensureTrainingPlan(_ d: Dungeon) {
+        guard d.training, d.trainingPlan.isEmpty else { return }
+        let steps = trainingSteps(full: d.trainingFull)
+        // The torch step is kept whatever — it douses the torch itself so
+        // the flame button has something to teach.
+        for step in steps where step.key != "torch" && trainingConditionMet(step.key, in: d) {
+            if !d.trainingDone.contains(step.key) { d.trainingDone.append(step.key) }
+        }
+        d.trainingPlan = steps.map { $0.key }.filter { !d.trainingDone.contains($0) }
+        if d.trainingPlan.isEmpty, let last = steps.last { d.trainingPlan = [last.key] }
+    }
+
+    /// The planned steps, in their numbered order.
+    private func trainingPlanSteps(_ d: Dungeon) -> [(key: String, hint: String, detail: String)] {
+        ensureTrainingPlan(d)
+        let all = trainingSteps(full: d.trainingFull)
+        return d.trainingPlan.compactMap { key in all.first { $0.key == key } }
+    }
+
     /// The step the player is on, or nil once every step is done.
     private func currentTrainingStep() -> (index: Int, count: Int, step: (key: String, hint: String, detail: String))? {
         guard let d = dungeon, d.training else { return nil }
-        let steps = trainingSteps(full: d.trainingFull)
-        guard let n = steps.firstIndex(where: { !trainingStepDone($0.key, in: d) }) else { return nil }
-        // "Light your torch" was being marked done the moment it came up, if
-        // the torch happened to be burning already — so the one step that
-        // teaches the flame button taught nothing. Put the torch out as the
-        // step arrives, and say why.
-        if steps[n].key == "torch", torchLit, !trainingTorchDoused {
-            trainingTorchDoused = true
-            torchLit = false
-            print("")
-            printWrapped("A draught comes down the passage and your torch gutters out. The room goes dark.", indent: 2, color: .yellow)
-            print("")
+        let steps = trainingPlanSteps(d)
+        for (n, step) in steps.enumerated() {
+            if d.trainingDone.contains(step.key) { continue }
+            if step.key == "torch" {
+                // Burning already as the step arrives: put it out once, and
+                // say why, so lighting it is something the player does.
+                if torchLit && !trainingTorchDoused {
+                    trainingTorchDoused = true
+                    torchLit = false
+                    print("")
+                    printWrapped("A draught comes down the passage and your torch gutters out. The room goes dark.", indent: 2, color: .yellow)
+                    print("")
+                    return (n, steps.count, step)
+                }
+                if torchLit { d.trainingDone.append(step.key); continue }
+                return (n, steps.count, step)
+            }
+            if trainingStepDone(step.key, in: d) { continue }
+            return (n, steps.count, step)
         }
-        return (n, steps.count, steps[n])
+        return nil
     }
 
     /// The training torch is put out once, so the flame button has something
     /// to do; after that the player is in charge of it.
     private var trainingTorchDoused = false
 
+    /// Done, and stays done: a step judged from the game (a quest taken, a
+    /// fight won) is written into trainingDone the first time it's true.
     private func trainingStepDone(_ key: String, in d: Dungeon) -> Bool {
         if d.trainingDone.contains(key) { return true }
+        guard key != "torch", trainingConditionMet(key, in: d) else { return false }
+        d.trainingDone.append(key)
+        return true
+    }
+
+    /// What the game itself shows about a step, for the ones that aren't
+    /// ticked off where they happen.
+    private func trainingConditionMet(_ key: String, in d: Dungeon) -> Bool {
         switch key {
         case "quest": return !allQuests.isEmpty || mainQuest != nil
         case "walk": return d.rooms.values.filter { $0.visited }.count >= 2
-        case "torch": return torchLit
         case "fight": return combatsWon > 0
         case "guardian": return d.rooms.values.contains { $0.roomType == .boss && $0.cleared }
         default: return false
@@ -6628,7 +6719,7 @@ class GameEngine: ObservableObject {
         }
         // Say so when a step has just been done.
         let justDone = lastTrainingIndex >= 0 && cur.index > lastTrainingIndex
-        let doneStep = justDone ? trainingSteps(full: d.trainingFull)[lastTrainingIndex] : nil
+        let doneStep = justDone ? trainingPlanSteps(d)[lastTrainingIndex] : nil
         lastTrainingIndex = cur.index
         var hint = cur.step.hint
         if let doneStep = doneStep {
@@ -6646,7 +6737,7 @@ class GameEngine: ObservableObject {
     /// The Training button: recap the steps, test yourself, or quit.
     func showTrainingMenu() {
         guard let d = dungeon, d.training else { showExplorationView(); return }
-        let steps = trainingSteps(full: d.trainingFull)
+        let steps = trainingPlanSteps(d)
         let done = steps.filter { trainingStepDone($0.key, in: d) }.count
         clearTerminal()
         printTitle("Gameplay Test")
@@ -6698,7 +6789,7 @@ class GameEngine: ObservableObject {
     /// One step per page: what it's about, and whether it's done yet.
     private func showTrainingRecap(index: Int) {
         guard let d = dungeon else { return }
-        let steps = trainingSteps(full: d.trainingFull)
+        let steps = trainingPlanSteps(d)
         let i = min(max(0, index), steps.count - 1)
         let step = steps[i]
         let done = trainingStepDone(step.key, in: d)
@@ -6985,7 +7076,7 @@ class GameEngine: ObservableObject {
             "Tap the \"Sorted by\" line to sort by points instead — that's the Hall of Fame."],
          ["  CONTINUE ADVENTURE", "  1. Goblin Hollow Lv.1 PLAYING", "     Wren (Rogue), R. Pip (Cleric)", "  → tap 1 to open, hold 1 to load"]),
         ("Take on a Quest", [
-            "The main quest is offered as an adventure begins: hear the plea, then Take Up the Quest (or hear another). Side quests come from people you meet: walk into a room with someone (N), Talk, and ask what troubles them.",
+            "The main quest is offered as an adventure begins: hear the plea, then Take Up the Quest (or hear another). Side quests come from people you meet: walk up to someone (N on the map), Talk, and ask what troubles them.",
             "Party Status lists every quest, its reward and any deadline in days. The status line points the way."],
          ["  Old Maren: \"My lantern — lost below.", "   Bring it back and it's yours to keep.\"", "  [ Accept ] [ Not Now ] [ Ask About… ]"]),
         ("Use a Merchant", [
@@ -7117,13 +7208,19 @@ class GameEngine: ObservableObject {
             switch choice {
             case 1, 2:
                 d.trainingFull = choice == 2
+                d.trainingPlan = []
+                self.trainingTorchDoused = false
+                self.lastTrainingIndex = -1
                 self.logEvent(choice == 2 ? "Full training" : "Quick training", category: "EXPLORE")
                 self.enterDungeon()
+                self.ensureTrainingPlan(d)
             case 3:
                 self.showHowToMenu(onBack: { [weak self] in self?.startTrainingGame() })
             case 4:
                 self.showInlineHelp {
                     self.printTitle("Training — Help")
+                    self.print("")
+                    self.printWrapped("Quick Training is the short course — walking, light, searching, listening, packs, a quest, a merchant, a fight, resting and the Boss. Full Training adds the map viewer, help, Party Status, saving and loading, certificates and the AI Dungeon Master. Each step keeps the number it's given when training starts. Either way you can stop at any point; what you have done is remembered.", indent: 2, color: .dimGreen)
                     self.print("")
                     self.printWrapped("Training is a complete, small game for learning the ropes. Follow the Training line at the top of the screen; it moves on as you do each thing. Sit still for a few seconds and it explains the step in full. Type \"skip\" to pass an optional step. It saves like any adventure.", indent: 2, color: .dimGreen)
                     self.print("")
@@ -7552,25 +7649,50 @@ class GameEngine: ObservableObject {
         menuAnimTimer = nil
     }
 
+    /// The game's name, as on the home screen. One place, so the load
+    /// screen, this menu, About and exported files can't drift apart.
+    static let appName = "DnD RPG"
+
     private func renderMainMenu() {
         clearTerminal()
         stopMenuAnimation()
         print("")
         print("")
-        print("WYVERNS & CATACOMBS", color: .brightGreen, bold: true, centered: true)
-        print("a dungeon crawl in green text", color: .dimGreen, centered: true)
+        // The load screen before this one carries the name, the kind of game
+        // and the version; this one carries the name and what is running it.
+        // Nothing but the name appears on both.
+        print(Self.appName, color: .brightGreen, bold: true, centered: true)
+        print("Wyverns & Catacombs", color: .green, centered: true)
         print("fifth-edition-compatible rules (SRD 5.1)", color: .dimGreen, centered: true)
         // Quiet reminder of which brain runs the DM, and — on Hugging Face —
-        // how much of this month's free credit is left.
+        // how much of this month's credit is left and roughly how many
+        // replies that still buys.
         print("DM: \(DMEngine.shared.activeBrainName)", color: .dimGreen, centered: true)
         if !DMEngine.shared.isOnline && DMEngine.shared.hasAnyAI {
             print("no internet — \(DMEngine.shared.offlineBrainName) is telling the tale", color: .dimGreen, centered: true)
         }
         if DMEngine.shared.isOnline, DMEngine.shared.activeBrainName == AIProvider.huggingFace.displayName {
             let dm = DMEngine.shared
-            if dm.hfPrices.isEmpty { dm.fetchHuggingFacePrices { _ in } }
-            let left = max(0, HuggingFace.freeCredit - dm.hfSpentThisMonth)
-            print(String(format: "about $%.2f of free credit left this month", left), color: .dimGreen, centered: true)
+            if dm.hfPrices.isEmpty {
+                // Prices arrive after the first draw; redraw once they do so
+                // the reply estimate appears without leaving the screen.
+                dm.fetchHuggingFacePrices { [weak self] prices in
+                    DispatchQueue.main.async {
+                        // Only once there really are prices, or an empty
+                        // answer would fetch and redraw for ever.
+                        guard let self = self, !(prices ?? [:]).isEmpty,
+                              !DMEngine.shared.hfPrices.isEmpty,
+                              self.gameState == .mainMenu else { return }
+                        self.renderMainMenu()
+                    }
+                }
+            }
+            let left = dm.huggingFaceCreditLeft
+            var line = String(format: "about $%.2f of %@ credit left this month", left, dm.huggingFaceIsPro ? "PRO" : "free")
+            if let replies = dm.huggingFaceRepliesLeft {
+                line += " — roughly \(DMEngine.roundedEstimate(replies)) DM repl\(replies == 1 ? "y" : "ies")"
+            }
+            printWrapped(line, indent: 0, color: .dimGreen)
         }
         print("")
 
@@ -8642,6 +8764,7 @@ class GameEngine: ObservableObject {
             ("Giant Spider", .giantSpider), ("Stirge", .stirge),
             ("Giant Rat", .giantRat), ("Gelatinous Cube", .gelatinousCube),
             ("Basilisk", .basilisk), ("Young Dragon", .youngDragon),
+            ("Dragon Wyrmling", .dragonWyrmling), ("Wyvern", .wyvern),
         ]
         var monsterLineRanges: [(MonsterType, Int)] = []
         for (name, monster) in poisonMonsters {
@@ -8713,6 +8836,8 @@ class GameEngine: ObservableObject {
             ("Giant Spider", .giantSpider, 35, 3),
             ("Gelatinous Cube", .gelatinousCube, 40, 4),
             ("Basilisk", .basilisk, 30, 3),
+            ("Wyvern", .wyvern, 40, 5),
+            ("Dragon Wyrmling", .dragonWyrmling, 30, 2),
             ("Young Dragon", .youngDragon, 25, 5),
             ("Stirge", .stirge, 25, 2),
             ("Giant Rat", .giantRat, 15, 1),
@@ -9250,8 +9375,8 @@ class GameEngine: ObservableObject {
             ("STARTER", [.giantRat, .kobold, .stirge, .giantBat, .crawlingClaw, .boneMoth]),
             ("LOW", [.goblin, .skeleton, .zombie, .wolf]),
             ("MID-LOW", [.orc, .hobgoblin, .gnoll, .rustMonster, .cinderHound]),
-            ("MID", [.bugbear, .giantSpider, .ogre, .gargoyle, .mimic, .gelatinousCube, .ironWeaver]),
-            ("HIGH", [.owlbear, .troll, .minotaur, .basilisk, .phaseStalker, .wraith, .demogorgon, .brainEater, .drownedChoir, .hollowMonk]),
+            ("MID", [.bugbear, .giantSpider, .ogre, .gargoyle, .mimic, .gelatinousCube, .ironWeaver, .dragonWyrmling]),
+            ("HIGH", [.owlbear, .troll, .minotaur, .basilisk, .phaseStalker, .wraith, .demogorgon, .brainEater, .drownedChoir, .hollowMonk, .wyvern]),
             ("BOSS", [.eyeTyrant, .youngDragon, .gloamTitan, .undyingKing]),
         ]
 
@@ -9509,6 +9634,8 @@ class GameEngine: ObservableObject {
         case .brainEater: tips = ["Mind Blast stuns in a cone.", "Extract brain for instant kill — stay at range!"]
         case .eyeTyrant: tips = ["Anti-magic eye disables spells.", "Each eye ray has a different deadly effect."]
         case .youngDragon: tips = ["Breath weapon is devastating. Venomous claws.", "Flies out of melee range."]
+        case .dragonWyrmling: tips = ["Small, but a dragon: tough scales (AC 17) and a poison breath.", "Carry an antidote, and strike together."]
+        case .wyvern: tips = ["The tail sting carries strong venom — cure poison quickly.", "Not clever: its armour is thin (AC 13), so hit hard."]
         case .undyingKing: tips = ["Legendary lich of immense power.", "Lair actions reshape the battlefield."]
         }
         print("  COMBAT TIPS", color: .cyan, bold: true)
@@ -11470,7 +11597,7 @@ class GameEngine: ObservableObject {
         ContributorsManager.shared.checkIfDue()   // the thank-you list, at most once a day
         printTitle("About")
         print("")
-        print("  WYVERNS & CATACOMBS — a dungeon crawl in green text", color: .brightGreen, bold: true)
+        print("  \(Self.appName) — Wyverns & Catacombs, a dungeon crawl in green text", color: .brightGreen, bold: true)
         print("")
         printWrapped("A text-based dungeon crawler inspired by classic RPGs and the golden age of adventure gaming.", indent: 2, color: .dimGreen)
         print("")
@@ -13442,6 +13569,22 @@ class GameEngine: ObservableObject {
             self.printWrapped("Automatically saves your game at regular intervals. Choose how often autosave triggers — every room, every 3 rooms, or every 5 rooms. Saves appear in the Play menu under your adventure name.", indent: 2, color: .dimGreen)
             self.print("")
 
+            self.print("  MAX SAVES", color: .cyan, bold: true)
+            self.printWrapped("How many separate adventures are kept at once. At the limit, saving a brand new adventure asks which old one to replace; Unlimited never asks. Limits below the number already saved aren't offered — delete some in Manage Saves first.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  SAVE POINTS", color: .cyan, bold: true)
+            self.printWrapped("How many save points each adventure keeps — every save you make is a point you can go back to. Lowering it trims each adventure the next time it saves.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  KEEP", color: .cyan, bold: true)
+            self.printWrapped("Which save points survive when an adventure is over its limit. Newest keeps the most recent ones. Spread Out keeps the recent ones plus a few from further back, so you can return to earlier in the story, not just to five minutes ago.", indent: 2, color: .dimGreen)
+            self.print("")
+
+            self.print("  PROTECT WINS", color: .cyan, bold: true)
+            self.printWrapped("On: an adventure you won is never trimmed or replaced to make room, and it doesn't count towards Max Saves — so a finished tale, and its place in the Hall of Fame, stays whatever else you play. Off: won adventures are treated like any other and can be tidied away in their turn. The button shows what it will do: 'Protect Wins Off' turns the protection off.", indent: 2, color: .dimGreen)
+            self.print("")
+
             self.print("  MANAGE SAVES", color: .cyan, bold: true)
             self.printWrapped("Browse and delete individual save files. Each adventure can have multiple save points (breakpoints) that you can return to. Useful for clearing old saves you no longer need.", indent: 2, color: .dimGreen)
             self.print("")
@@ -13607,6 +13750,8 @@ class GameEngine: ObservableObject {
             case "?":
                 self.showInlineHelp {
                     self.printTitle("Content Safety — Help")
+                    self.print("")
+                    self.printWrapped("Use Reyes Failsafe Now wipes the DM's last answer and asks for a gentler one, no explanation needed. It is greyed out until the DM has actually said something to wipe.", indent: 2, color: .dimGreen)
                     self.print("")
                     self.printWrapped("Real tabletop roleplaying groups often use a physical 'X-Card' — any player can tap it, no explanation needed, and the table steers away from whatever just happened. The Reyes Failsafe is that same idea, built into this app's AI DM.", indent: 2, color: .dimGreen)
                     self.print("")
@@ -26346,10 +26491,19 @@ class GameEngine: ObservableObject {
             options.append(MenuOption("Ask: What We Need", tint: .amber))
             actions.append { [weak self] in self?.askNPCAbout(topic: "Ingredients") }
         }
+        // With no main quest, one button: they ask what sort you're after —
+        // the main quest (the villain at the bottom of it all) or an errand.
+        // It used to be two buttons side by side, "Ask for a Quest" (which
+        // was secretly the main quest) and "Side Quest", with nothing to
+        // say which was which.
+        let sideQuestOnOffer = npc.type != .gatekeeper && npcHasSideQuestOnOffer(in: room)
+        // The roll is kept on the room's copy; keep this one in step so a
+        // later write-back doesn't undo it.
+        if let rolled = room.npc?.willOfferSideQuest { npc.willOfferSideQuest = rolled }
         if mainQuest == nil, npc.type != .gatekeeper {
             let roomId = room.id
             options.append(MenuOption("Ask for a Quest", tint: .cyan))
-            actions.append { [weak self] in self?.hearNPCMainQuest(npc: npc, roomId: roomId) }
+            actions.append { [weak self] in self?.askWhatSortOfQuest(npc: npc, roomId: roomId, sideOnOffer: sideQuestOnOffer) }
         }
 
         // Capability buttons
@@ -26395,16 +26549,11 @@ class GameEngine: ObservableObject {
         // Side quest offer — any NPC but the Gatekeeper (who has their own
         // separate "slay the boss" quest), decided once per NPC and only
         // shown while no other quest is active (one at a time).
-        if npc.type != .gatekeeper, !npc.sideQuestOffered {
-            // Almost anyone will offer a quest (older saves re-roll a "no").
-            if npc.willOfferSideQuest != true {
-                npc.willOfferSideQuest = Int.random(in: 1...100) <= 90
-                room.npc = npc
-            }
-            if npc.willOfferSideQuest == true, canTakeAnotherQuest, !allQuests.contains(where: { $0.giverName == npc.type.rawValue }) {
-                options.append(MenuOption("Side Quest", tint: .cyan))
-                actions.append { [weak self] in self?.offerSideQuest() }
-            }
+        // With a main quest in hand it's its own button; without one it's
+        // offered through Ask for a Quest above.
+        if mainQuest != nil, sideQuestOnOffer {
+            options.append(MenuOption("Side Quest", tint: .cyan))
+            actions.append { [weak self] in self?.offerSideQuest() }
         }
 
         // A bard in the party can play for them — once each.
@@ -28112,6 +28261,8 @@ class GameEngine: ObservableObject {
                 self?.showInlineHelp {
                     self?.printTitle("Picking Up — Help")
                     self?.print("")
+                    self?.printWrapped("Try It Out uses the thing there and then — drinking a potion, eating food — instead of packing it away.", indent: 2, color: .dimGreen)
+                    self?.print("")
                     self?.printWrapped("Choose who carries the \(item.name). [full] means that adventurer's pack has no free slots; [heavy] means it would take them over their carry weight.", indent: 2, color: .dimGreen)
                     self?.print("")
                     self?.printWrapped("Check Pack lets you look inside a pack and drop or use things to make room, then brings you straight back here.", indent: 2, color: .dimGreen)
@@ -29022,7 +29173,7 @@ class GameEngine: ObservableObject {
                 self.print("")
                 self.printWrapped("Hand \(item.name) to someone else in the party, or leave it here in this room. Dropped things stay where you leave them, so you can come back for them.", indent: 2, color: .dimGreen)
                 self.print("")
-                self.printWrapped("Keep It changes nothing and goes back to the pack. A greyed-out name means their pack is full or the item is too heavy for them.", indent: 2, color: .dimGreen)
+                self.printWrapped("Drop on Floor leaves it here in this room, where you can come back for it. Keep It changes nothing and goes back to the pack. A greyed-out name means their pack is full or the item is too heavy for them.", indent: 2, color: .dimGreen)
                 self.print("")
             }
         }
@@ -30602,6 +30753,64 @@ class GameEngine: ObservableObject {
 
     /// Someone down here with a quest going spare — offered to a party that
     /// has none.
+    /// Whether this person has an errand to give right now: decided once
+    /// per person (almost everyone has one; older saves re-roll a "no"),
+    /// and only while the party has room for another and doesn't already
+    /// carry one of theirs.
+    private func npcHasSideQuestOnOffer(in room: Room) -> Bool {
+        guard var npc = room.npc, !npc.sideQuestOffered else { return false }
+        if npc.willOfferSideQuest != true {
+            npc.willOfferSideQuest = Int.random(in: 1...100) <= 90
+            room.npc = npc
+        }
+        return npc.willOfferSideQuest == true && canTakeAnotherQuest
+            && !allQuests.contains(where: { $0.giverName == npc.type.rawValue })
+    }
+
+    /// No main quest: "What sort of quest?" — the main one, or an errand.
+    private func askWhatSortOfQuest(npc: DungeonNPC, roomId: Int, sideOnOffer: Bool) {
+        let who = npc.type.rawValue.lowercased()
+        clearTerminal()
+        printTitle("What Sort of Quest?")
+        print("")
+        printWrapped("\"A quest, is it?\" says the \(who). \"What sort are you after?\"", indent: 2, color: .yellow)
+        print("")
+        printWrapped("A Main Quest: the big one — somebody's whole village in trouble and a villain waiting at the very bottom of the dungeon. Beating it wins the adventure. You can carry one at a time.", indent: 2, color: .green)
+        print("")
+        if sideOnOffer {
+            printWrapped("A Side Quest: a smaller errand for this \(who), with its own reward and deadline, carried alongside anything else.", indent: 2, color: .green)
+        } else if !canTakeAnotherQuest {
+            printWrapped("A Side Quest: your party is carrying all the errands it can — finish one first.", indent: 2, color: .dimGreen)
+        } else {
+            printWrapped("A Side Quest: this \(who) has no errand for you just now.", indent: 2, color: .dimGreen)
+        }
+        print("")
+        showMenuOptions([MenuOption("A Main Quest", isDefault: true, tint: .cyan),
+                         MenuOption("A Side Quest", isDisabled: !sideOnOffer, tint: .cyan),
+                         MenuOption("?", tint: .navigation, compact: true),
+                         MenuOption("< Back", tint: .navigation, compact: true)])
+        closeHandler = { [weak self] in self?.talkToNPC() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1: self.hearNPCMainQuest(npc: npc, roomId: roomId)
+            case 2: if sideOnOffer { self.offerSideQuest() } else { self.talkToNPC() }
+            case 3:
+                self.showInlineHelp {
+                    self.printTitle("What Sort of Quest? — Help")
+                    self.print("")
+                    self.printWrapped("A Main Quest gives the adventure its point: a villain at the bottom of the dungeon, a reward, and a deadline in days. Taking one here makes it your main quest — the final guardian becomes its villain. You hear it first and can say no.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("A Side Quest is an errand for this person, carried alongside the main quest (or without one). It's greyed out when they have none, or your party already carries as many as it can.", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("Once you have a main quest, people offer Side Quest on its own, and Ask About Our Quest to hear what they know.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default: self.talkToNPC()
+            }
+        }
+    }
+
     private func hearNPCMainQuest(npc: DungeonNPC, roomId: Int) {
         let who = npc.type.rawValue.lowercased()
         let q = npcQuestOffers[roomId] ?? MainQuest.random()
@@ -31377,7 +31586,7 @@ class GameEngine: ObservableObject {
             self.showInlineHelp {
                 self.printTitle("What Now? — Help")
                 self.print("")
-                self.printWrapped("The adventure is over and nothing here can lose it. Save the Tale keeps it and puts it in the Hall of Fame. Sleep and the party are just for the pleasure of it — a week's rest, or a proper celebration. Another Quest takes you to the Play menu to begin again, with a new party or the same heroes from the Roster. Leave the Game goes back to the main menu; the app stays open.", indent: 2, color: .dimGreen)
+                self.printWrapped("The adventure is over and nothing here can lose it. Save the Tale keeps it and puts it in the Hall of Fame. Sleep a Week (Zzzz) rests the party properly and mends every wound; Throw a Party! is music, food and dancing, for the pleasure of it. Another Quest takes you to the Play menu to begin again, with a new party or the same heroes from the Roster. Leave the Game goes back to the main menu; the app stays open.", indent: 2, color: .dimGreen)
                 self.print("")
             }
         }
@@ -34002,7 +34211,7 @@ class GameEngine: ObservableObject {
     /// Builds the exportable text and flips the flag TerminalView watches to
     /// present the system export/save dialog.
     func prepareLogExport() {
-        let header = "Wyverns & Catacombs — Adventure Log\nExported: \(Date())\n\(adventureLog.count) events\n\n"
+        let header = "\(Self.appName) — Adventure Log\nExported: \(Date())\n\(adventureLog.count) events\n\n"
         pendingLogExportText = header + adventureLog.joined(separator: "\n")
         showLogExporter = true
     }
@@ -34019,7 +34228,7 @@ class GameEngine: ObservableObject {
     /// from Continue Adventure afterwards, without touching the player's
     /// own ongoing save slot.
     func prepareBugReportExport() {
-        var report = "Wyverns & Catacombs — Glitch in the Weave Bug Report\n"
+        var report = "\(Self.appName) — Glitch in the Weave Bug Report\n"
         report += "Generated: \(Date())\n"
         #if os(iOS)
         report += "Device: \(UIDevice.current.model), \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)\n"
@@ -42321,6 +42530,8 @@ class GameEngine: ObservableObject {
                     self.showInlineHelp {
                         self.printTitle("Manage Saves — Help")
                         self.print("")
+                    self.printWrapped("Delete All Remote Games removes the multiplayer games held for you on Game Center, and nothing else: your own saved adventures on this device are untouched.", indent: 2, color: .dimGreen)
+                    self.print("")
                         self.printWrapped("Rename, copy, or delete saved games and remote multiplayer matches — once you've got one to manage.", indent: 2, color: .dimGreen)
                         self.print("")
                     }
@@ -43026,6 +43237,8 @@ class GameEngine: ObservableObject {
             } else if choice == 4 {
                 self?.showInlineHelp {
                     self?.printTitle("Delete Adventure — Help")
+                    self?.print("")
+                    self?.printWrapped("Tell Me About It shows what is in this adventure — the party, the floor, how far in — before you decide. Yes, Delete All removes every save point in it, not just the latest one.", indent: 2, color: .dimGreen)
                     self?.print("")
                     self?.printWrapped("Permanently deletes every save point for this adventure. This cannot be undone — 'No, Keep It' cancels safely. (In a hurry? Long-press Delete Adventure to skip this step.)", indent: 2, color: .dimGreen)
                     self?.print("")

@@ -82,21 +82,14 @@ struct SplashView: View {
                 }
                 .opacity(animationPhase >= 1 ? 1 : 0)
 
-                // Title
-                VStack(spacing: 4) {
-                    Text("DUNGEONS")
-                        .font(.system(size: 32, weight: .bold, design: .monospaced))
-                        .foregroundColor(terminalGreen)
-
-                    Text("& DRAGONS")
-                        .font(.system(size: 24, weight: .semibold, design: .monospaced))
-                        .foregroundColor(terminalGreen.opacity(0.8))
-
-                    Text("5th Edition")
-                        .font(.system(size: 14, design: .monospaced))
-                        .foregroundColor(terminalGreen.opacity(0.6))
-                }
-                .opacity(animationPhase >= 2 ? 1 : 0)
+                // Title — the same name the main menu opens with. The rest of
+                // what's said about the game lives on one screen or the other,
+                // never both: this one says what kind of game it is and which
+                // version; the menu says which world and who's running the DM.
+                Text(GameEngine.appName.uppercased())
+                    .font(.system(size: 32, weight: .bold, design: .monospaced))
+                    .foregroundColor(terminalGreen)
+                    .opacity(animationPhase >= 2 ? 1 : 0)
 
                 Spacer()
 

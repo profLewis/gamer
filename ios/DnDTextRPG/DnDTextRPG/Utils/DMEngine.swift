@@ -570,29 +570,50 @@ class DMEngine {
             conversationHistory = Array(conversationHistory.suffix(effectiveMaxHistory))
         }
 
-        callAI(provider: provider, apiKey: key, system: systemPrompt, messages: conversationHistory) { [weak self] response in
-            if let response = response {
-                self?.noteCloudSuccess()
-                self?.conversationHistory.append((role: "assistant", content: response))
-                completion(response)
-            } else {
-                self?.noteCloudFailure(offline: !(self?.isOnline ?? true))
-                // API failed — try Apple model, then simple DM
-                if self?.isAppleModelAvailable == true {
-                    self?.askAppleModel(userMessage: userMessage, context: context) { appleResponse in
-                        if let text = appleResponse, !text.isEmpty {
-                            completion(text)
-                        } else if let self = self {
-                            self.askBackupChain(userMessage, context: context, historyHasMessage: true, completion: completion)
-                        } else {
-                            completion("*The DM nods silently.*")
-                        }
-                    }
-                } else if let self = self {
-                    self.askBackupChain(userMessage, context: context, historyHasMessage: true, completion: completion)
-                } else {
-                    completion("*The DM nods silently.*")
+        let keep: (String) -> Void = { [weak self] text in
+            self?.noteCloudSuccess()
+            self?.conversationHistory.append((role: "assistant", content: text))
+            completion(text)
+        }
+        callAI(provider: provider, apiKey: key, system: systemPrompt, messages: conversationHistory) { [weak self] first in
+            if let first = first { keep(first); return }
+            guard let self = self else { completion("*The DM nods silently.*"); return }
+            // One more try, after a breath. A single dropped request — a
+            // blip, a moment's rate-limiting, a server having a bad second —
+            // used to cost the whole answer and drop the player to the
+            // simpler DM. A second attempt costs about a second, and usually
+            // works. If it fails too, the fallbacks take over as before.
+            guard self.isOnline else {
+                self.noteCloudFailure(offline: true)
+                self.askWithoutCloud(userMessage, context: context, completion: completion)
+                return
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                self.callAI(provider: self.provider, apiKey: key, system: systemPrompt,
+                            messages: self.conversationHistory) { second in
+                    if let second = second { keep(second); return }
+                    self.noteCloudFailure(offline: !self.isOnline)
+                    self.askWithoutCloud(userMessage, context: context, completion: completion)
                 }
+            }
+        }
+    }
+
+    /// The cloud brain couldn't answer: Apple's on-device model, then the
+    /// backups, then the game's own DM.
+    private func askWithoutCloud(_ userMessage: String, context: DMContext,
+                                 completion: @escaping (String) -> Void) {
+        guard isAppleModelAvailable else {
+            askBackupChain(userMessage, context: context, historyHasMessage: true, completion: completion)
+            return
+        }
+        askAppleModel(userMessage: userMessage, context: context) { [weak self] appleResponse in
+            if let text = appleResponse, !text.isEmpty {
+                completion(text)
+            } else if let self = self {
+                self.askBackupChain(userMessage, context: context, historyHasMessage: true, completion: completion)
+            } else {
+                completion("*The DM nods silently.*")
             }
         }
     }
@@ -658,6 +679,34 @@ class DMEngine {
     }
 
     // MARK: - Hugging Face backup
+
+    /// A PRO account's monthly credit is twenty times a free one's, so the
+    /// figures the game quotes have to know which it is. Found from the
+    /// account itself whenever the token is tested.
+    var huggingFaceIsPro: Bool {
+        get { UserDefaults.standard.bool(forKey: "hf_is_pro") }
+        set { UserDefaults.standard.set(newValue, forKey: "hf_is_pro") }
+    }
+
+    /// Ask Hugging Face what kind of account this token belongs to.
+    func checkHuggingFacePlan(completion: ((Bool) -> Void)? = nil) {
+        guard let key = apiKey(for: .huggingFace), !key.isEmpty,
+              let url = URL(string: "https://huggingface.co/api/whoami-v2") else { completion?(false); return }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 15
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            var isPro = false
+            if let data = data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                if let flag = json["isPro"] as? Bool { isPro = flag }
+                if let plan = json["plan"] as? String, plan.lowercased().contains("pro") { isPro = true }
+            }
+            DispatchQueue.main.async {
+                self.huggingFaceIsPro = isPro
+                completion?(isPro)
+            }
+        }.resume()
+    }
 
     /// A saved Hugging Face token that isn't already the main brain: used as
     /// the backup on devices without Apple Intelligence, and if the chosen
@@ -816,10 +865,63 @@ class DMEngine {
         UserDefaults.standard.set(model, forKey: "ai_model_\(provider.userDefaultsKey)")
     }
 
+    /// A live model found after the built-in one turned out to be retired.
+    /// Google has had this since the day it started retiring names; the
+    /// others now do too, so a model going away means one slow reply rather
+    /// than a DM that has quietly stopped answering.
+    private func discoveredModel(for provider: AIProvider) -> String? {
+        UserDefaults.standard.string(forKey: "resolved_model_\(provider.userDefaultsKey)")
+    }
+
+    private func setDiscoveredModel(_ model: String?, for provider: AIProvider) {
+        UserDefaults.standard.set(model, forKey: "resolved_model_\(provider.userDefaultsKey)")
+    }
+
     /// The model the everyday DM uses for a provider.
     func modelToUse(for provider: AIProvider) -> String {
         if provider == .google { return googleModelToUse }
-        return chosenModel(for: provider) ?? provider.defaultModel
+        // What the player picked wins; then anything found after a
+        // retirement; then the built-in default.
+        return chosenModel(for: provider) ?? discoveredModel(for: provider) ?? provider.defaultModel
+    }
+
+    /// True when a reply is the service saying "there is no such model",
+    /// rather than a key, credit or network problem.
+    private static func isUnknownModel(_ data: Data?, status: Int) -> Bool {
+        guard status == 404 || status == 400, let data = data,
+              let text = String(data: data, encoding: .utf8)?.lowercased() else { return false }
+        return text.contains("model") &&
+            (text.contains("not found") || text.contains("does not exist") || text.contains("not_found")
+             || text.contains("unknown") || text.contains("deprecated") || text.contains("no longer"))
+    }
+
+    /// Ask the service what it actually offers and pick the nearest thing to
+    /// what was asked for: the same family first, then a sensible default.
+    private func discoverReplacementModel(for provider: AIProvider, insteadOf old: String,
+                                          completion: @escaping (String?) -> Void) {
+        fetchModelList(for: provider) { ids in
+            guard let ids = ids, !ids.isEmpty else { completion(nil); return }
+            let family = old.lowercased().split(separator: "-").first.map(String.init) ?? ""
+            let wanted = old.lowercased()
+            func firstMatching(_ test: (String) -> Bool) -> String? {
+                ids.filter { test($0.lowercased()) }.sorted().last
+            }
+            let pick: String?
+            switch provider {
+            case .anthropic:
+                pick = firstMatching { $0.contains("sonnet") } ?? firstMatching { $0.contains("haiku") }
+                    ?? firstMatching { $0.contains("claude") }
+            case .openAI:
+                pick = firstMatching { $0.contains("mini") && $0.hasPrefix("gpt-4") }
+                    ?? firstMatching { $0.hasPrefix("gpt-4") } ?? firstMatching { $0.hasPrefix("gpt-") }
+            case .huggingFace:
+                pick = firstMatching { $0.contains(family) && $0 != wanted }
+                    ?? firstMatching { $0.lowercased().contains("llama") }
+            case .google:
+                pick = firstMatching { $0.contains("flash") } ?? ids.first
+            }
+            completion(pick)
+        }
     }
 
     /// A friendly name for the model in use.
@@ -886,16 +988,49 @@ class DMEngine {
         hfRepliesThisMonth = 0
     }
 
+    /// This month's Hugging Face credit still unspent, PRO-aware.
+    var huggingFaceCreditLeft: Double {
+        startMonthIfNeeded()
+        let credit = huggingFaceIsPro ? HuggingFace.proCredit : HuggingFace.freeCredit
+        return max(0, credit - hfSpentThisMonth)
+    }
+
+    /// Roughly how many more DM replies the credit left buys. Once a few
+    /// replies have been counted this month, their real average cost is
+    /// used (it knows how long this game's prompts actually run); before
+    /// that, the published price of the chosen model with a typical reply.
+    /// nil when neither is known yet.
+    var huggingFaceRepliesLeft: Int? {
+        let left = huggingFaceCreditLeft
+        var perReply = 0.0
+        if hfRepliesThisMonth >= 5, hfSpentThisMonth > 0 {
+            perReply = hfSpentThisMonth / Double(hfRepliesThisMonth)
+        } else if let price = hfPrices[modelToUse(for: .huggingFace)] {
+            perReply = HuggingFace.tokensIn / 1_000_000 * price.input + HuggingFace.tokensOut / 1_000_000 * price.output
+        }
+        guard perReply > 0 else { return nil }
+        return Int((left / perReply).rounded(.down))
+    }
+
+    /// 437 -> "430", 1_262 -> "1,250": an estimate shouldn't look exact.
+    static func roundedEstimate(_ n: Int) -> String {
+        let step = n >= 1000 ? 250 : n >= 100 ? 10 : 1
+        let r = (n / step) * step
+        let f = NumberFormatter(); f.numberStyle = .decimal
+        return f.string(from: NSNumber(value: r)) ?? "\(r)"
+    }
+
     /// "About 3p of this month's 8p used — 450 replies left, new credit on 1 October."
     /// nil when there's no token, or no prices to reckon with.
     var huggingFaceCreditSummary: String? {
         guard !(apiKey(for: .huggingFace) ?? "").isEmpty else { return nil }
         startMonthIfNeeded()
-        let credit = HuggingFace.freeCredit
+        let credit = huggingFaceIsPro ? HuggingFace.proCredit : HuggingFace.freeCredit
         let left = max(0, credit - hfSpentThisMonth)
         let model = modelToUse(for: .huggingFace)
-        var text = String(format: "Counted by the game: $%.3f of this month's $%.2f free credit used, over %d repl%@.",
-                          hfSpentThisMonth, credit, hfRepliesThisMonth, hfRepliesThisMonth == 1 ? "y" : "ies")
+        var text = String(format: "Counted by the game: $%.3f of this month's $%.2f %@ credit used, over %d repl%@.",
+                          hfSpentThisMonth, credit, huggingFaceIsPro ? "PRO" : "free",
+                          hfRepliesThisMonth, hfRepliesThisMonth == 1 ? "y" : "ies")
         if let price = hfPrices[model] {
             let perReply = HuggingFace.tokensIn / 1_000_000 * price.input + HuggingFace.tokensOut / 1_000_000 * price.output
             if perReply > 0 {
@@ -1894,6 +2029,7 @@ class DMEngine {
     private func callAnthropic(apiKey: String, system: String,
                                 messages: [(role: String, content: String)],
                                 model: String? = nil, maxTokens: Int? = nil,
+                                attemptedDiscovery: Bool = false,
                                 completion: @escaping (String?) -> Void) {
         guard let url = URL(string: "https://api.anthropic.com/v1/messages") else {
             completion(nil)
@@ -1916,15 +2052,30 @@ class DMEngine {
 
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        URLSession.shared.dataTask(with: request) { data, _, error in
-            guard let data = data, error == nil,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let content = json["content"] as? [[String: Any]],
-                  let text = content.first?["text"] as? String else {
+        let asked = model ?? modelToUse(for: .anthropic)
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if let data = data, error == nil,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let content = json["content"] as? [[String: Any]],
+               let text = content.first?["text"] as? String {
+                completion(text)
+                return
+            }
+            // The model has been retired: find what Anthropic has now, keep
+            // it, and ask again — once.
+            guard !attemptedDiscovery, let self = self, Self.isUnknownModel(data, status: status) else {
                 completion(nil)
                 return
             }
-            completion(text)
+            self.discoverReplacementModel(for: .anthropic, insteadOf: asked) { replacement in
+                guard let replacement = replacement, replacement != asked else { completion(nil); return }
+                self.setDiscoveredModel(replacement, for: .anthropic)
+                if self.chosenModel(for: .anthropic) != nil { self.setChosenModel(nil, for: .anthropic) }
+                self.callAnthropic(apiKey: apiKey, system: system, messages: messages,
+                                   model: replacement, maxTokens: maxTokens,
+                                   attemptedDiscovery: true, completion: completion)
+            }
         }.resume()
     }
 
@@ -1934,6 +2085,7 @@ class DMEngine {
                              messages: [(role: String, content: String)],
                              model: String? = nil, maxTokens: Int? = nil,
                              endpoint: String = "https://api.openai.com/v1/chat/completions",
+                             attemptedDiscovery: Bool = false,
                              completion: @escaping (String?) -> Void) {
         guard let url = URL(string: endpoint) else {
             completion(nil)
@@ -1964,7 +2116,7 @@ class DMEngine {
 
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             // Hugging Face returns the token counts, so the game can keep a
             // running total of the month's credit.
             if endpoint == HuggingFace.endpoint, let data = data,
@@ -1976,15 +2128,30 @@ class DMEngine {
                     DispatchQueue.main.async { self?.noteHuggingFaceUsage(model: chosen, promptTokens: pt, completionTokens: ct) }
                 }
             }
-            guard let data = data, error == nil,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let choices = json["choices"] as? [[String: Any]],
-                  let message = choices.first?["message"] as? [String: Any],
-                  let text = message["content"] as? String else {
+            if let data = data, error == nil,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let choices = json["choices"] as? [[String: Any]],
+               let message = choices.first?["message"] as? [String: Any],
+               let text = message["content"] as? String {
+                completion(text)
+                return
+            }
+            // Same as Anthropic: a retired model is replaced once, not left
+            // to fail every turn for ever.
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let provider: AIProvider = endpoint == HuggingFace.endpoint ? .huggingFace : .openAI
+            guard !attemptedDiscovery, let self = self, Self.isUnknownModel(data, status: status) else {
                 completion(nil)
                 return
             }
-            completion(text)
+            self.discoverReplacementModel(for: provider, insteadOf: chosen) { replacement in
+                guard let replacement = replacement, replacement != chosen else { completion(nil); return }
+                self.setDiscoveredModel(replacement, for: provider)
+                if self.chosenModel(for: provider) != nil { self.setChosenModel(nil, for: provider) }
+                self.callOpenAI(apiKey: apiKey, system: system, messages: messages,
+                                model: replacement, maxTokens: maxTokens, endpoint: endpoint,
+                                attemptedDiscovery: true, completion: completion)
+            }
         }.resume()
     }
 
@@ -2172,6 +2339,7 @@ class DMEngine {
     /// Test a saved Hugging Face token (used when it's the backup brain).
     func testHuggingFaceBackup(completion: @escaping (Bool, String?) -> Void) {
         guard let key = apiKey(for: .huggingFace), !key.isEmpty else { completion(false, "No Hugging Face token saved."); return }
+        checkHuggingFacePlan()
         testOpenAIKey(apiKey: key, model: modelToUse(for: .huggingFace), endpoint: HuggingFace.endpoint, completion: completion)
     }
 

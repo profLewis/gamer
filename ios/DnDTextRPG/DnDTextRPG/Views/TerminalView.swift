@@ -566,6 +566,7 @@ struct TerminalView: View {
                         // VoiceOver hears the story as a few sections, handed over
                         // whole -- not whichever lines the lazy list has built.
                         .modifier(VoiceOverStory(sections: gameEngine.voiceOverSections,
+                                                 asBox: gameEngine.voiceOverStoryAsBox,
                                                  follow: { gameEngine.followLink($0) }))
                         // VoiceOver's three-finger swipe scrolls the story, as a
                         // finger drag would.
@@ -2961,7 +2962,7 @@ struct MenuButtonsView: View {
                     Color.clear
                         .frame(height: buttonMinHeight)
                         .accessibilityElement()
-                        .accessibilityLabel("No button")
+                        .accessibilityLabel("Blank")
                 }
                 regularButton(option: option, index: index, fallbackDisplayNumber: displayPos + 1)
             }
@@ -3011,9 +3012,10 @@ struct MenuButtonsView: View {
             .stroke(Color.gray.opacity(0.18), lineWidth: 1)
             .frame(height: buttonMinHeight)
             .allowsHitTesting(false)
-            // VoiceOver: just "No button", so an empty slot isn't a mystery.
+            // VoiceOver: "Blank" — the grid has a place here with nothing in
+            // it, so the shape of the grid can be felt out by swiping.
             .accessibilityElement()
-            .accessibilityLabel("No button")
+            .accessibilityLabel("Blank")
     }
 
     /// A standard full-width button. `index` is the real position in the
@@ -3215,7 +3217,8 @@ struct MenuButtonsView: View {
                             .font(.system(size: 10 * scale, design: .monospaced))
                             .foregroundColor(terminalDimGreen.opacity(0.2))
                             .frame(maxWidth: .infinity, minHeight: buttonMinHeight, maxHeight: buttonMinHeight)
-                            .accessibilityLabel("No button")   // not "middle dot"
+                            .accessibilityElement()
+                            .accessibilityLabel("Blank")   // not "middle dot"
                     }
                 }
                 // Divider between slots — always visible
@@ -3372,9 +3375,13 @@ struct DirectionPadView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(iconLabel(systemName))
+            .accessibilityAddTraits(.isButton)
+            // VoiceOver's double-tap goes straight to the action.
+            .accessibilityAction { action() }
         } else {
             Color.clear.frame(width: effectiveCellWidth, height: max(44, 34 * scale) * macControlScale)
-                .accessibilityHidden(true)
+                .accessibilityElement()
+                .accessibilityLabel("Blank")
         }
     }
 
@@ -3437,6 +3444,13 @@ struct DirectionPadView: View {
                             }
                     )
                     .accessibilityAction(named: "Long press") { onCenterLongPress?() }
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction { action() }
+                } else {
+                    // The middle of the pad, with nothing in it this time.
+                    Color.clear.frame(width: effectiveCellWidth, height: max(44, 34 * scale) * macControlScale)
+                        .accessibilityElement()
+                        .accessibilityLabel("Blank")
                 }
                 dirButton(.east)
             }
@@ -3453,7 +3467,7 @@ struct DirectionPadView: View {
                     // rather than the grid seeming to end one short.
                     Color.clear.frame(width: effectiveCellWidth, height: max(44, 34 * scale) * macControlScale)
                         .accessibilityElement()
-                        .accessibilityLabel("No button")
+                        .accessibilityLabel("Blank")
                 }
             }
         }
@@ -3530,6 +3544,10 @@ struct DirectionPadView: View {
         .accessibilityAction(named: "Long press: secure or unsecure this door") {
             if isDark || hasExit { onLongPress?(dir) }
         }
+        .accessibilityAddTraits(.isButton)
+        // VoiceOver's double-tap goes straight to the move — the long-press
+        // gesture on this button must never get in its way.
+        .accessibilityAction { if isDark || enabled { onSelect(dir) } }
     }
 }
 
@@ -3743,10 +3761,27 @@ struct CertificateView: View {
 /// running (the list is empty otherwise), so nothing changes for anyone else.
 struct VoiceOverStory: ViewModifier {
     let sections: [(text: String, link: String?, heading: Bool)]
+    var asBox = false
     let follow: (String) -> Void
     func body(content: Content) -> some View {
         if sections.isEmpty {
             content
+        } else if asBox {
+            // Main play: the whole story is ONE element — "Story", then all
+            // of it. Nothing inside to land on, so new lines arriving and the
+            // text scrolling can't move VoiceOver about; links are actions on
+            // the box (swipe up or down to hear them).
+            let links = sections.filter { $0.link != nil }
+            content
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Story")
+                .accessibilityValue(sections.filter { $0.link == nil }.map { $0.text }.joined(separator: " "))
+                .accessibilityHint(links.isEmpty ? "" : "Swipe up or down for links.")
+                .accessibilityActions {
+                    ForEach(Array(links.enumerated()), id: \.offset) { _, sec in
+                        Button(sec.text) { if let key = sec.link { follow(key) } }
+                    }
+                }
         } else {
             content
                 .accessibilityElement(children: .contain)
