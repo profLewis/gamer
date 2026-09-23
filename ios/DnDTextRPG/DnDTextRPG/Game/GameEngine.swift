@@ -464,13 +464,40 @@ class GameEngine: ObservableObject {
     /// VoiceOver runs (see syncAnimationsWithVoiceOver): scrolling is what
     /// VoiceOver copes with worst.
     @Published var storyPaging: Bool = UserDefaults.standard.bool(forKey: "storyPaging")
+    /// How far paging reaches: 0 Scroll, 1 Pages in Play (exploring and
+    /// fighting), 2 Pages Everywhere (every screen with no picture on it).
+    /// storyPaging stays as "any paging at all", for older code and saves.
+    @Published var storyPagingMode: Int = {
+        let d = UserDefaults.standard
+        if d.object(forKey: "storyPagingMode") != nil { return d.integer(forKey: "storyPagingMode") }
+        return d.bool(forKey: "storyPaging") ? 1 : 0
+    }()
+
+    static let storyPagingNames = ["Scroll", "Pages in Play", "Pages Everywhere"]
+    var storyPagingName: String { Self.storyPagingNames[min(max(0, storyPagingMode), 2)] }
+
+    func setStoryPagingMode(_ mode: Int) {
+        storyPagingMode = min(max(0, mode), 2)
+        storyPaging = storyPagingMode > 0
+        storyPage = 0
+        UserDefaults.standard.set(storyPagingMode, forKey: "storyPagingMode")
+        UserDefaults.standard.set(storyPaging, forKey: "storyPaging")
+    }
     /// The page of the story on show; back to the first on every new screen.
     @Published var storyPage: Int = 0
     /// How many story lines fit a page — measured by TerminalView.
     var storyLinesPerPage: Int = 0
 
-    /// Paging applies to main play: exploring and fighting.
-    var storyPagingActive: Bool { storyPaging && voiceOverStoryAsBox }
+    /// Whether this screen pages: in main play for Pages in Play, on any
+    /// screen for Pages Everywhere — except one with a picture in the
+    /// story (the menu's dragon), which the page sums can't allow for.
+    var storyPagingActive: Bool {
+        switch storyPagingMode {
+        case 1: return voiceOverStoryAsBox
+        case 2: return menuImageName == nil && dragonGifName == nil
+        default: return false
+        }
+    }
 
     /// The story cut into pages of at most `n` lines. A page ends between
     /// paragraphs when the paragraph it would split can start the next page
@@ -1585,7 +1612,9 @@ class GameEngine: ObservableObject {
                    "hit_animations": hitAnimationsEnabled,
                    "combatArena": combatArenaEnabled,
                    "blinkingCursorEnabled": blinkingCursorEnabled,
-                   "storyPaging": storyPaging], forKey: savedKey)
+                   "storyPaging": storyPaging,
+                   "storyPagingMode": storyPagingMode], forKey: savedKey)
+            storyPagingMode = 2
             storyPaging = true
             reduceAnimations = true
             hitAnimationsEnabled = false
@@ -1602,6 +1631,8 @@ class GameEngine: ObservableObject {
             d.set(blinkingCursorEnabled, forKey: "blinkingCursorEnabled")
             storyPaging = saved["storyPaging"] as? Bool ?? false
             d.set(storyPaging, forKey: "storyPaging")
+            storyPagingMode = saved["storyPagingMode"] as? Int ?? (storyPaging ? 1 : 0)
+            d.set(storyPagingMode, forKey: "storyPagingMode")
             d.removeObject(forKey: savedKey)
             logEvent("VoiceOver off: animation settings restored", category: "SETTINGS")
         }
@@ -3284,7 +3315,7 @@ class GameEngine: ObservableObject {
         printWrapped("Swipe right to go through the screen a section at a time — that is the way to read on; the story is handed over whole, so nothing is missed by not scrolling. Three-finger swipe up or down moves the text itself.", indent: 2, color: .dimGreen)
         print("")
         print("  TURNING PAGES", color: .cyan, bold: true)
-        printWrapped("With VoiceOver on, the story in play comes a page at a time — no scrolling. VoiceOver reads each page as it arrives. On the Story: swipe up with one finger for the next page, down for the page before, or double-tap for the next. Next and Previous are also buttons just under the story. A screen waiting to move on turns its pages first, so nothing is skipped. Accessibility > Story switches back to scrolling if you ever want it.", indent: 2, color: .dimGreen)
+        printWrapped("With VoiceOver on, every screen comes a page at a time — no scrolling. VoiceOver reads each page as it arrives. On the Story: swipe up with one finger for the next page, down for the page before, or double-tap for the next. Next and Previous are also buttons just under the story. A screen waiting to move on turns its pages first, so nothing is skipped. Accessibility > Story switches back to scrolling if you ever want it.", indent: 2, color: .dimGreen)
         print("")
         print("  THE STORY BOX", color: .cyan, bold: true)
         printWrapped("While exploring or fighting, the story is one box: VoiceOver says \"Story\" and reads all of it. New lines and scrolling don't move you about. Links in it are actions — swipe up or down on the box to hear them, then double-tap.", indent: 2, color: .dimGreen)
@@ -3948,6 +3979,10 @@ class GameEngine: ObservableObject {
         case "storyPaging":
             storyPaging = UserDefaults.standard.bool(forKey: key)
             storyPage = 0
+        case "storyPagingMode":
+            storyPagingMode = UserDefaults.standard.integer(forKey: key)
+            storyPaging = storyPagingMode > 0
+            storyPage = 0
         case "reduceAnimations":
             reduceAnimations = GameEngine.animationsReduced
         case "showCountdownControl":
@@ -3997,6 +4032,7 @@ class GameEngine: ObservableObject {
         case "autoScrollSpeed": return autoScrollSpeedName
         case "leftHanded": return leftHanded ? "Left" : "Right"
         case "storyPaging": return storyPaging ? "Pages" : "Scroll"
+        case "storyPagingMode": return storyPagingName
         case "reduceAnimations": return reduceAnimations ? "Reduced" : "Full"
         case "helpGlyph": return MenuOption.helpGlyph
         case "blinkingCursorEnabled": return blinkingCursorEnabled ? "On" : "Off"
@@ -12151,8 +12187,8 @@ class GameEngine: ObservableObject {
         print("")
 
         print("STORY:", color: .cyan, bold: true)
-        print("  \(storyPaging ? "Pages" : "Scroll")", color: .brightGreen)
-        printWrapped("Pages: while exploring and fighting, the story shows a page at a time instead of scrolling. Tap the story or Next ▸ for the next page, or wait for the countdown. With VoiceOver: swipe up on the Story for the next page, down for the one before. On by itself while VoiceOver is running.", indent: 2, color: .dimGreen)
+        print("  \(storyPagingName)", color: .brightGreen)
+        printWrapped("Scroll: the text scrolls. Pages in Play: while exploring and fighting, the story shows a page at a time instead. Pages Everywhere: every screen does — menus, help, lists — except one with a picture on it. Turn a page by tapping the text or Next ▸, or wait for the countdown. With VoiceOver: swipe up on the Story for the next page, down for the one before. Pages Everywhere comes on by itself while VoiceOver is running.", indent: 2, color: .dimGreen)
         print("")
 
         print("ANIMATIONS:", color: .cyan, bold: true)
@@ -12184,7 +12220,7 @@ class GameEngine: ObservableObject {
         #endif
         let options = [displaySizeLabel, hitsLabel, dmVoiceLabel, "Companion Voices", voiceMenuLabel, cursorLabel] + micLabels + [
                        autoScrollLabel,
-                       storyPaging ? "Story: Scroll" : "Story: Pages",
+                       "Story: \(storyPagingName)",
                        reduceAnimations ? "Animations: Full" : "Animations: Reduced",
                        leftHanded ? "Right-Handed" : "Left-Handed",
                        "Help Button: \(MenuOption.helpGlyph)"]
@@ -12260,11 +12296,9 @@ class GameEngine: ObservableObject {
                 UserDefaults.standard.set(self.reduceAnimations, forKey: "reduceAnimations")
                 if self.reduceAnimations { self.stopIdleAnimations() }
                 self.showAccessibilityMenu()
-            case "Story: Scroll", "Story: Pages":
-                self.recordSettingChange(screen: "s:access", key: "storyPaging", name: "Story")
-                self.storyPaging.toggle()
-                self.storyPage = 0
-                UserDefaults.standard.set(self.storyPaging, forKey: "storyPaging")
+            case let label where label.hasPrefix("Story: "):
+                self.recordSettingChange(screen: "s:access", key: "storyPagingMode", name: "Story")
+                self.setStoryPagingMode((self.storyPagingMode + 1) % 3)
                 self.showAccessibilityMenu()
             case "Right-Handed", "Left-Handed":
                 self.recordSettingChange(screen: "s:access", key: "leftHanded", name: "Handedness")
@@ -12301,7 +12335,8 @@ class GameEngine: ObservableObject {
             self.print("")
 
             self.print("  STORY: PAGES OR SCROLL", color: .cyan, bold: true)
-            self.printWrapped("Pages shows the story a page at a time while you explore and fight: tap the story or Next ▸, or let the countdown turn it (pause it with the hourglass). Nothing moves under your finger. VoiceOver turns Pages on by itself, along with calmer animations, and puts your own choices back when it goes off. You can switch Pages off even with VoiceOver on — though scrolling is exactly what VoiceOver copes with worst, so there's little reason to.", indent: 2, color: .dimGreen)
+            self.printWrapped("Three settings. Scroll: the text scrolls, as it always has. Pages in Play: while you explore and fight, the story comes a page at a time. Pages Everywhere: every screen does — menus, help pages and lists too — except the few with a picture on them. Turn a page by tapping the text (where tapping doesn't already do something) or Next ▸, or let the countdown turn it (pause it with the hourglass). Nothing moves under your finger.", indent: 2, color: .dimGreen)
+            self.printWrapped("VoiceOver sets Pages Everywhere by itself, along with calmer animations, and puts your own choices back when it goes off. You can change it even with VoiceOver on — though scrolling is exactly what VoiceOver copes with worst, so there's little reason to.", indent: 2, color: .dimGreen)
             self.print("")
             self.print("  PLAYING YOUR WAY", color: .cyan, bold: true)
             self.printWrapped("Vision: Display Size, DM Voice (reads the story aloud), and VoiceOver — buttons, the D-pad and the map all have spoken labels, and decorative ASCII art is skipped. Hearing: every sound has a text equivalent. Motor: Long Press length, Left/Right-Handed, typing or voice instead of tapping, and long-press to skip confirmations. Reading at your own pace: pause the hourglass, turn Auto-Continue off, Auto-Scroll, Reduce Animations, and the ? help on every screen.", indent: 2, color: .dimGreen)
@@ -13060,7 +13095,7 @@ class GameEngine: ObservableObject {
 
     /// All UserDefaults keys used by the game
     private static let settingsKeys: [String] = [
-        "maxButtonsPerScreen", "longPressDuration", "infoTimeout", "customInfoTimeouts", "autoContinueEnabled", "showCountdownControl", "atlasShowAllRooms", "autoScrollSpeed", "leftHanded", "storyPaging", "helpGlyph", "reduceAnimations",
+        "maxButtonsPerScreen", "longPressDuration", "infoTimeout", "customInfoTimeouts", "autoContinueEnabled", "showCountdownControl", "atlasShowAllRooms", "autoScrollSpeed", "leftHanded", "storyPaging", "storyPagingMode", "helpGlyph", "reduceAnimations",
         "map_radius", "useArrowNavigation", "multiplayer_enabled", "npcs_enabled",
         "multiple_shops_enabled",
         "hit_animations", "voiceMenuEnabled", "iconScaleSetting", "adventureLogLimit",

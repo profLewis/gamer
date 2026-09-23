@@ -591,7 +591,8 @@ struct TerminalView: View {
                         .overlay(alignment: .bottom) { storyPageBar }
                         // Tapping the story turns the page while there's more.
                         .overlay {
-                            if gameEngine.storyPagingActive, let pages = storyPageList, gameEngine.storyPage < pages.count - 1 {
+                            if gameEngine.storyPagingActive, let pages = storyPageList, gameEngine.storyPage < pages.count - 1,
+                               !gameEngine.textTapEnabled, !pageHasLinks {
                                 Color.clear
                                     .contentShape(Rectangle())
                                     .onTapGesture { gameEngine.turnStoryPage(by: 1) }
@@ -603,7 +604,7 @@ struct TerminalView: View {
                         // VoiceOver hears the story as a few sections, handed over
                         // whole -- not whichever lines the lazy list has built.
                         .modifier(VoiceOverStory(sections: gameEngine.voiceOverSections,
-                                                 asBox: gameEngine.voiceOverStoryAsBox,
+                                                 asBox: gameEngine.voiceOverStoryAsBox || gameEngine.storyPagingActive,
                                                  page: storyPageForVoiceOver,
                                                  turn: { gameEngine.turnStoryPage(by: $0) },
                                                  follow: { gameEngine.followLink($0) }))
@@ -1717,6 +1718,12 @@ struct TerminalView: View {
     private var storyPageRange: Range<Int>? {
         guard let pages = storyPageList, !pages.isEmpty else { return nil }
         return pages[min(gameEngine.storyPage, pages.count - 1)]
+    }
+
+    /// Links on the page on show — tapping the text must reach them.
+    private var pageHasLinks: Bool {
+        guard let range = storyPageRange else { return false }
+        return range.contains { $0 < gameEngine.terminalLines.count && gameEngine.terminalLines[$0].link != nil }
     }
 
     private var storyPageForVoiceOver: (text: String, index: Int, count: Int)? {
