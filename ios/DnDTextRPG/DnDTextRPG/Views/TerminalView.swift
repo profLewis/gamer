@@ -515,16 +515,15 @@ struct TerminalView: View {
                                             .clipped()
                                             .offset(x: -6 * scale) // Centre the dragon's head, not the image
                                             // The picture is not labelled. A tap tells you what it is
-                                            // and the tale behind it; a long press still opens About.
+                                            // and the tale behind it. (About has its own button now.)
                                             .contentShape(Rectangle())
                                             .onTapGesture {
                                                 if let caption = gameEngine.currentPoseCaption {
                                                     gameEngine.showPoseLore(for: caption)
                                                 }
                                             }
-                                            .onLongPressGesture(minimumDuration: 0.6) { gameEngine.followLink("about") }
                                             .accessibilityLabel(gameEngine.currentPoseCaption ?? "Picture")
-                                            .accessibilityHint("Tap for what this is; long-press for About and credits")
+                                            .accessibilityHint("Tap for what this is")
                                         Spacer()
                                     }
                                 }
@@ -538,17 +537,15 @@ struct TerminalView: View {
                                             .frame(maxWidth: 340 * scale, maxHeight: 220 * scale)
                                             .cornerRadius(8)
                                             .opacity(0.85)
-                                            // Unlabelled, like the dragon above it: tap for what it is,
-                                            // long-press for About.
+                                            // Unlabelled, like the dragon above it: tap for what it is.
                                             .contentShape(Rectangle())
                                             .onTapGesture {
                                                 if let caption = gameEngine.currentPoseCaption {
                                                     gameEngine.showPoseLore(for: caption)
                                                 }
                                             }
-                                            .onLongPressGesture(minimumDuration: 0.6) { gameEngine.followLink("about") }
                                             .accessibilityLabel(gameEngine.currentPoseCaption ?? "Picture")
-                                            .accessibilityHint("Tap for what this is; long-press for About and credits")
+                                            .accessibilityHint("Tap for what this is")
                                         Spacer()
                                     }
                                 }

@@ -474,6 +474,36 @@ class GameEngine: ObservableObject {
     }()
 
     static let storyPagingNames = ["Scroll", "Pages in Play", "Pages Everywhere"]
+
+    /// Accessibility > Reduced Text: the dim asides — settings explanations,
+    /// tips, extra colour — are left out, so there's less to wade through
+    /// (most of all with VoiceOver). The story, results, numbers and anything
+    /// to act on stay, and help pages (?) always have the full text.
+    @Published var reducedText: Bool = UserDefaults.standard.bool(forKey: "reducedText")
+
+    /// Accessibility > When VoiceOver Starts: which changes VoiceOver makes
+    /// by itself. Each is on unless switched off; each is put back when
+    /// VoiceOver goes off.
+    enum VoiceOverAuto: String, CaseIterable {
+        case pages = "vo_auto_pages", reducedText = "vo_auto_reduced", calm = "vo_auto_calm", cursor = "vo_auto_cursor"
+        var name: String {
+            switch self {
+            case .pages: return "Pages Everywhere"
+            case .reducedText: return "Reduced Text"
+            case .calm: return "Calm Animations"
+            case .cursor: return "Cursor Off"
+            }
+        }
+        var detail: String {
+            switch self {
+            case .pages: return "The story comes a page at a time on every screen — no scrolling."
+            case .reducedText: return "Dim asides and explanations left out; help pages keep everything."
+            case .calm: return "No flashing, spinning or pulsing; no hit flashes or fight arena."
+            case .cursor: return "No blinking cursor by the prompt."
+            }
+        }
+        var isOn: Bool { UserDefaults.standard.object(forKey: rawValue) as? Bool ?? true }
+    }
     var storyPagingName: String { Self.storyPagingNames[min(max(0, storyPagingMode), 2)] }
 
     func setStoryPagingMode(_ mode: Int) {
@@ -1648,25 +1678,33 @@ class GameEngine: ObservableObject {
     /// aside first. VoiceOver off: those settings put back exactly as they
     /// were. The saved copy lives in UserDefaults, so it survives the app
     /// being closed while VoiceOver is still on.
+    /// Accessibility > When VoiceOver Starts > VoiceOver Mode: the same
+    /// changes VoiceOver makes, made by hand — to try them, or to play that
+    /// way without VoiceOver. (The real VoiceOver only the phone can switch.)
+    var voiceOverModeManual: Bool {
+        get { UserDefaults.standard.bool(forKey: "voiceOverModeManual") }
+        set { UserDefaults.standard.set(newValue, forKey: "voiceOverModeManual") }
+    }
+
+    func setVoiceOverModeManual(_ on: Bool) {
+        voiceOverModeManual = on
+        syncAnimationsWithVoiceOver()
+    }
+
     private func syncAnimationsWithVoiceOver() {
         let d = UserDefaults.standard
         let savedKey = "preVoiceOverAnimations"
-        if Self.systemVoiceOverRunning {
+        if Self.systemVoiceOverRunning || voiceOverModeManual {
             guard d.dictionary(forKey: savedKey) == nil else { return }   // already put aside
             d.set(["reduceAnimations": reduceAnimations,
                    "hit_animations": hitAnimationsEnabled,
                    "combatArena": combatArenaEnabled,
                    "blinkingCursorEnabled": blinkingCursorEnabled,
                    "storyPaging": storyPaging,
-                   "storyPagingMode": storyPagingMode], forKey: savedKey)
-            storyPagingMode = 2
-            storyPaging = true
-            reduceAnimations = true
-            hitAnimationsEnabled = false
-            combatArenaEnabled = false
-            blinkingCursorEnabled = false
-            stopIdleAnimations()
-            logEvent("VoiceOver on: animations switched off (your settings are kept)", category: "SETTINGS")
+                   "storyPagingMode": storyPagingMode,
+                   "reducedText": reducedText], forKey: savedKey)
+            applyVoiceOverAutos()
+            logEvent("VoiceOver on: its chosen settings switched on (yours are kept)", category: "SETTINGS")
         } else if let saved = d.dictionary(forKey: savedKey) {
             reduceAnimations = saved["reduceAnimations"] as? Bool ?? false
             d.set(reduceAnimations, forKey: "reduceAnimations")
@@ -1678,9 +1716,24 @@ class GameEngine: ObservableObject {
             d.set(storyPaging, forKey: "storyPaging")
             storyPagingMode = saved["storyPagingMode"] as? Int ?? (storyPaging ? 1 : 0)
             d.set(storyPagingMode, forKey: "storyPagingMode")
+            reducedText = saved["reducedText"] as? Bool ?? false
+            d.set(reducedText, forKey: "reducedText")
             d.removeObject(forKey: savedKey)
-            logEvent("VoiceOver off: animation settings restored", category: "SETTINGS")
+            logEvent("VoiceOver off: your settings restored", category: "SETTINGS")
         }
+    }
+
+    /// The changes chosen under When VoiceOver Starts, made now.
+    private func applyVoiceOverAutos() {
+        if VoiceOverAuto.pages.isOn { storyPagingMode = 2; storyPaging = true; storyPage = 0 }
+        if VoiceOverAuto.reducedText.isOn { reducedText = true }
+        if VoiceOverAuto.calm.isOn {
+            reduceAnimations = true
+            hitAnimationsEnabled = false
+            combatArenaEnabled = false
+            stopIdleAnimations()
+        }
+        if VoiceOverAuto.cursor.isOn { blinkingCursorEnabled = false }
     }
 
     // MARK: - Glitch in the Weave (crash reporting)
@@ -2949,7 +3002,12 @@ class GameEngine: ObservableObject {
         return out
     }
 
-    func printWrapped(_ text: String, indent: Int = 0, color: TerminalColor = .green, bold: Bool = false, maxWidth: Int? = nil, justify: Bool? = nil) {
+    func printWrapped(_ text: String, indent: Int = 0, color: TerminalColor = .green, bold: Bool = false, maxWidth: Int? = nil, justify: Bool? = nil, keep: Bool = false) {
+        // Reduced Text: dim asides are left out — except on help pages, which
+        // always say everything, and lines marked keep.
+        if reducedText, color == .dimGreen, !keep, !(currentScreenTitle ?? "").hasSuffix("Help") {
+            return
+        }
         let maxWidthArg = maxWidth
         let maxWidth = maxWidth ?? wrapColumns
         let text = Self.platformWording(text)
@@ -4106,6 +4164,8 @@ class GameEngine: ObservableObject {
         case "storyPaging":
             storyPaging = UserDefaults.standard.bool(forKey: key)
             storyPage = 0
+        case "reducedText":
+            reducedText = UserDefaults.standard.bool(forKey: key)
         case "storyPagingMode":
             storyPagingMode = UserDefaults.standard.integer(forKey: key)
             storyPaging = storyPagingMode > 0
@@ -4160,6 +4220,7 @@ class GameEngine: ObservableObject {
         case "leftHanded": return leftHanded ? "Left" : "Right"
         case "storyPaging": return storyPaging ? "Pages" : "Scroll"
         case "storyPagingMode": return storyPagingName
+        case "reducedText": return reducedText ? "On" : "Off"
         case "reduceAnimations": return reduceAnimations ? "Reduced" : "Full"
         case "helpGlyph": return MenuOption.helpGlyph
         case "blinkingCursorEnabled": return blinkingCursorEnabled ? "On" : "Off"
@@ -7206,7 +7267,7 @@ class GameEngine: ObservableObject {
             let ok = item.answer == a
             printItem(ok ? "✓" : "✗", "\(i + 1). \(item.q)", color: ok ? .brightGreen : .yellow)
             if !ok {
-                printWrapped("You said: \(item.options[a]). Answer: \(item.options[item.answer]).", indent: 4, color: .dimGreen)
+                printWrapped("You said: \(item.options[a]). Answer: \(item.options[item.answer]).", indent: 4, color: .dimGreen, keep: true)
             }
             printWrapped(item.why, indent: 4, color: .dimGreen)
             print("")
@@ -7957,7 +8018,7 @@ class GameEngine: ObservableObject {
         // Nothing but the name appears on both.
         print(Self.appName, color: .brightGreen, bold: true, centered: true)
         print("Wyverns & Catacombs", color: .green, centered: true)
-        print("fifth-edition-compatible rules (SRD 5.1)", color: .dimGreen, centered: true)
+        print("5e-compatible rules (SRD 5.1)", color: .dimGreen, centered: true)
         // Quiet reminder of which brain runs the DM, and — on Hugging Face —
         // how much of this month's credit is left and roughly how many
         // replies that still buys.
@@ -12039,7 +12100,7 @@ class GameEngine: ObservableObject {
                     self.print("")
                     self.printWrapped("Wave Again replays the authors' hello; Dance! sets them off properly. While they're going, the same button stops them. A tap on the story does whichever is the first button.", indent: 2, color: .dimGreen)
                     self.print("")
-                    self.printWrapped("This page is hidden behind a long press on the picture, so it's never opened by accident.", indent: 2, color: .dimGreen)
+                    self.printWrapped("To come back here: the About button on the main menu.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             default: back()
@@ -12318,6 +12379,17 @@ class GameEngine: ObservableObject {
         printWrapped("Scroll: the text scrolls. Pages in Play: while exploring and fighting, the story shows a page at a time instead. Pages Everywhere: every screen does — menus, help, lists — except one with a picture on it. Turn a page by tapping the text or Next ▸, or wait for the countdown. With VoiceOver: swipe up on the Story for the next page, down for the one before. Pages Everywhere comes on by itself while VoiceOver is running.", indent: 2, color: .dimGreen)
         print("")
 
+        print("REDUCED TEXT:", color: .cyan, bold: true)
+        print("  \(reducedText ? "On" : "Off")", color: reducedText ? .brightGreen : .red)
+        printWrapped("On: the dim asides — explanations like this one, tips, extra colour — are left out, so there's less to read or hear. The story, results and anything you need to act on stay, and every ? help page still says everything.", indent: 2, color: .dimGreen)
+        print("")
+
+        print("WHEN VOICEOVER STARTS:", color: .cyan, bold: true)
+        let autos = VoiceOverAuto.allCases.filter { $0.isOn }.map { $0.name }
+        print("  \(autos.isEmpty ? "Nothing changes" : autos.joined(separator: ", "))", color: .brightGreen)
+        printWrapped("What VoiceOver switches on by itself — each put back when it goes off. Choose on its own screen.", indent: 2, color: .dimGreen)
+        print("")
+
         print("ANIMATIONS:", color: .cyan, bold: true)
         print("  \(reduceAnimations ? "Reduced" : "Full")", color: .brightGreen)
         printWrapped("Reduced stops the flashing, blinking and spinning — title and text flashes, idle eye-blinks, the pack and hourglass animations, the countdown's spin and pulsing buttons. Starts out matching your device's Reduce Motion setting.", indent: 2, color: .dimGreen)
@@ -12348,6 +12420,8 @@ class GameEngine: ObservableObject {
         let options = [displaySizeLabel, hitsLabel, dmVoiceLabel, "Companion Voices", voiceMenuLabel, cursorLabel] + micLabels + [
                        autoScrollLabel,
                        "Story: \(storyPagingName)",
+                       reducedText ? "Reduced Text Off" : "Reduced Text On",
+                       "When VoiceOver Starts…",
                        reduceAnimations ? "Animations: Full" : "Animations: Reduced",
                        leftHanded ? "Right-Handed" : "Left-Handed",
                        "Help Button: \(MenuOption.helpGlyph)"]
@@ -12423,6 +12497,13 @@ class GameEngine: ObservableObject {
                 UserDefaults.standard.set(self.reduceAnimations, forKey: "reduceAnimations")
                 if self.reduceAnimations { self.stopIdleAnimations() }
                 self.showAccessibilityMenu()
+            case "Reduced Text On", "Reduced Text Off":
+                self.recordSettingChange(screen: "s:access", key: "reducedText", name: "Reduced Text")
+                self.reducedText.toggle()
+                UserDefaults.standard.set(self.reducedText, forKey: "reducedText")
+                self.showAccessibilityMenu()
+            case "When VoiceOver Starts…":
+                self.showVoiceOverAutoSettings()
             case let label where label.hasPrefix("Story: "):
                 self.recordSettingChange(screen: "s:access", key: "storyPagingMode", name: "Story")
                 self.setStoryPagingMode((self.storyPagingMode + 1) % 3)
@@ -12456,11 +12537,84 @@ class GameEngine: ObservableObject {
         }
     }
 
+    /// Which changes VoiceOver makes by itself when it starts.
+    private func showVoiceOverAutoSettings() {
+        clearTerminal()
+        printTitle("When VoiceOver Starts")
+        printWrapped("When VoiceOver comes on, the game can change these for you. Your own settings are kept aside and put back when VoiceOver goes off. Tap one to switch it.", indent: 2, color: .dimGreen)
+        print("")
+        for auto in VoiceOverAuto.allCases {
+            print("\(auto.name.uppercased()):", color: .cyan, bold: true)
+            print("  \(auto.isOn ? "On" : "Off")", color: auto.isOn ? .brightGreen : .red)
+            printWrapped(auto.detail, indent: 2, color: .dimGreen)
+            print("")
+        }
+        print("VOICEOVER MODE:", color: .cyan, bold: true)
+        let modeOn = Self.systemVoiceOverRunning || voiceOverModeManual
+        print("  \(Self.systemVoiceOverRunning ? "On (VoiceOver is running)" : (voiceOverModeManual ? "On" : "Off"))", color: modeOn ? .brightGreen : .red)
+        printWrapped("Makes the changes above now, as if VoiceOver had started — to try them, or to play that way without VoiceOver — and puts your settings back when switched off. The real VoiceOver only the phone can switch: see Real VoiceOver On/Off.", indent: 2, color: .dimGreen)
+        print("")
+        if Self.systemVoiceOverRunning {
+            printWrapped("VoiceOver is on now: switching one on here makes the change straight away.", indent: 2, color: .cyan)
+            print("")
+        }
+        let labels = VoiceOverAuto.allCases.map { "\($0.name): \($0.isOn ? "On" : "Off")" }
+        var opts = labels.map { MenuOption($0) }
+        let modeLabel = voiceOverModeManual ? "VoiceOver Mode Off" : "VoiceOver Mode On"
+        if !Self.systemVoiceOverRunning { opts.append(MenuOption(modeLabel, tint: .cyan)) }
+        opts.append(MenuOption("Real VoiceOver On/Off…"))
+        opts.append(MenuOption("?", tint: .navigation, compact: true))
+        opts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        showMenuOptions(opts)
+        closeHandler = { [weak self] in self?.showAccessibilityMenu() }
+        menuHandler = { [weak self] choice in
+            guard let self = self, choice >= 1, choice <= opts.count else { return }
+            if choice <= VoiceOverAuto.allCases.count {
+                let auto = VoiceOverAuto.allCases[choice - 1]
+                let now = !auto.isOn
+                self.recordSettingChange(screen: "s:vo_auto", key: auto.rawValue, name: auto.name)
+                UserDefaults.standard.set(now, forKey: auto.rawValue)
+                if now, Self.systemVoiceOverRunning || self.voiceOverModeManual { self.applyVoiceOverAutos() }
+                self.showVoiceOverAutoSettings()
+            } else if opts[choice - 1].text == modeLabel {
+                self.recordSettingChange(screen: "s:vo_auto", key: "voiceOverModeManual", name: "VoiceOver Mode")
+                self.setVoiceOverModeManual(!self.voiceOverModeManual)
+                self.showVoiceOverAutoSettings()
+            } else if opts[choice - 1].text == "Real VoiceOver On/Off…" {
+                self.showInlineHelp {
+                    self.printTitle("Real VoiceOver — Help")
+                    self.print("")
+                    self.printWrapped("Apple doesn't let any app switch VoiceOver itself — only the phone can. The quickest way: set up the Accessibility Shortcut once (Settings > Accessibility > Accessibility Shortcut > VoiceOver), then triple-click the side button (the Home button on older phones) to turn VoiceOver on or off at any time, even mid-game. Or ask Siri: \"Turn VoiceOver on\" or \"Turn VoiceOver off\".", indent: 2, color: .dimGreen)
+                    self.print("")
+                    self.printWrapped("When it comes on, the game makes the changes chosen on When VoiceOver Starts; when it goes off, your settings come back.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            } else if opts[choice - 1].text == "?" {
+                self.showInlineHelp {
+                    self.printTitle("When VoiceOver Starts — Help")
+                    self.print("")
+                    self.printWrapped("Each of these is something the game changes by itself the moment VoiceOver comes on, and puts back the moment it goes off. Switch one off here and VoiceOver leaves that setting alone — you can still set it by hand in Accessibility.", indent: 2, color: .dimGreen)
+                    self.printWrapped("VoiceOver Mode makes the same changes by hand, without VoiceOver — to try them, or to play that way. Real VoiceOver On/Off explains how to switch the phone's VoiceOver (no app can do it for you).", indent: 2, color: .dimGreen)
+                    self.print("")
+                    for auto in VoiceOverAuto.allCases {
+                        self.printWrapped("\(auto.name): \(auto.detail)", indent: 2, color: .dimGreen)
+                    }
+                    self.print("")
+                }
+            } else {
+                self.showAccessibilityMenu()
+            }
+        }
+    }
+
     private func showAccessibilityHelp() {
         showInlineHelp {
             self.printTitle("Accessibility Help")
             self.print("")
 
+            self.print("  REDUCED TEXT", color: .cyan, bold: true)
+            self.printWrapped("Leaves out the dim-green asides — explanations of settings, tips, extra colour — everywhere except help pages, which always say everything. What happens in the story, results, numbers and anything you need to act on stay. Useful with VoiceOver, where every line has to be listened to. When VoiceOver Starts chooses whether VoiceOver turns it on by itself.", indent: 2, color: .dimGreen)
+            self.print("")
             self.print("  STORY: PAGES OR SCROLL", color: .cyan, bold: true)
             self.printWrapped("Three settings. Scroll: the text scrolls, as it always has. Pages in Play: while you explore and fight, the story comes a page at a time. Pages Everywhere: every screen does — menus, help pages and lists too — except the few with a picture on them. Turn a page by tapping the text (where tapping doesn't already do something) or Next ▸, or let the countdown turn it (pause it with the hourglass). Nothing moves under your finger.", indent: 2, color: .dimGreen)
             self.printWrapped("VoiceOver sets Pages Everywhere by itself, along with calmer animations, and puts your own choices back when it goes off. You can change it even with VoiceOver on — though scrolling is exactly what VoiceOver copes with worst, so there's little reason to.", indent: 2, color: .dimGreen)
@@ -13222,7 +13376,7 @@ class GameEngine: ObservableObject {
 
     /// All UserDefaults keys used by the game
     private static let settingsKeys: [String] = [
-        "maxButtonsPerScreen", "longPressDuration", "infoTimeout", "customInfoTimeouts", "autoContinueEnabled", "showCountdownControl", "atlasShowAllRooms", "autoScrollSpeed", "leftHanded", "storyPaging", "storyPagingMode", "helpGlyph", "reduceAnimations",
+        "maxButtonsPerScreen", "longPressDuration", "infoTimeout", "customInfoTimeouts", "autoContinueEnabled", "showCountdownControl", "atlasShowAllRooms", "autoScrollSpeed", "leftHanded", "storyPaging", "storyPagingMode", "reducedText", "vo_auto_pages", "vo_auto_reduced", "vo_auto_calm", "vo_auto_cursor", "voiceOverModeManual", "helpGlyph", "reduceAnimations",
         "map_radius", "useArrowNavigation", "multiplayer_enabled", "npcs_enabled",
         "multiple_shops_enabled",
         "hit_animations", "voiceMenuEnabled", "iconScaleSetting", "adventureLogLimit",
@@ -23765,7 +23919,7 @@ class GameEngine: ObservableObject {
                 return "\(shortName(for: c)) \(state)"
             }.joined(separator: ", ")
             let exits = room.exits.keys.map { $0.rawValue.lowercased() }.sorted().joined(separator: ", ")
-            printWrapped("You are in \(room.name), \(Dungeon.floorName(d.level)) of \(d.name). \(formattedGameTime()). \(lead.map { "You are \(shortName(for: $0)), the \($0.characterClass.rawValue). " } ?? "")Party: \(health). Exits: \(exits.isEmpty ? "none" : exits).", indent: 2, color: .dimGreen)
+            printWrapped("You are in \(room.name), \(Dungeon.floorName(d.level)) of \(d.name). \(formattedGameTime()). \(lead.map { "You are \(shortName(for: $0)), the \($0.characterClass.rawValue). " } ?? "")Party: \(health). Exits: \(exits.isEmpty ? "none" : exits).", indent: 2, color: .dimGreen, keep: true)
             print("")
         }
         // The time, and how much of this level you've walked.
