@@ -1300,7 +1300,7 @@ class GameEngine: ObservableObject {
     /// Settings > Gameplay > Recap: whether < Back while exploring opens the
     /// Earlier/Later look back through the screens you've left (On), or only
     /// undoes a step (Off). Off by default — play-testing found Earlier and
-    /// Later confusing next to < Back, which undoes a step instead.
+    /// Later confusing next to < Back.
     var recapEnabled: Bool {
         get { UserDefaults.standard.object(forKey: "recapEnabled") == nil ? false : UserDefaults.standard.bool(forKey: "recapEnabled") }
         set { UserDefaults.standard.set(newValue, forKey: "recapEnabled") }
@@ -7118,7 +7118,7 @@ class GameEngine: ObservableObject {
             ("ai", "Optional: give the DM an AI brain — tap the cog > Change Brain…. Type \"skip\" to pass.",
              "The game has its own Dungeon Master and needs nothing else. If you'd like a DM that chats freely, tap the cog (on the input line) > Change Brain… (or All Settings… > Dungeon Master Brain): Apple's on-device one needs no key on newer devices; Claude, ChatGPT or Gemini need a key from their websites (the key screen links to them and tests the key for you). Type \"skip\" to move on.", true),
             ("guardian", "Find the Boss and beat it to finish your training.",
-             "In a real adventure each floor has a guardian, and the last floor holds the Boss — the villain of your tale. Training is a single floor, so its guardian is the Boss, in its lair: B on the map. Beat it and the adventure is won. Rest and heal first, keep your torch lit, and read the ? in the fight. The Training line tells you which way the lair lies.", false),
+             "In a real adventure each floor has a guardian, and the last floor holds the Boss — the villain of your tale. Training is a single floor, so its guardian is the Boss, in its lair: B on the map (training always marks it, even before you have seen it). Beat it and the adventure is won. Rest and heal first, keep your torch lit, and read the ? in the fight. The Training line tells you which way the lair lies.", false),
         ]
         return all.filter { full || !$0.full }.map { ($0.key, $0.hint, $0.detail) }
     }
@@ -7745,6 +7745,9 @@ class GameEngine: ObservableObject {
         let d = Dungeon.newAdventure(name: name, difficulty: diff.level)
         d.levelCount = 1
         d.training = true
+        // Training's last step says "follow B on the map" — so the lair is
+        // always marked, rather than only once it's been seen.
+        d.revealBoss = true
         dungeon = d
         // No quest to choose — the guardian is the whole of it.
         adventureLog = []
@@ -12998,7 +13001,7 @@ class GameEngine: ObservableObject {
 
         print("RECAP:", color: .cyan, bold: true)
         print("  \(recapEnabled ? "On" : "Off")", color: recapEnabled ? .brightGreen : .red)
-        printWrapped("Off (the usual): < Back only undoes your last step. On: < Back while exploring also looks back through the screens you've left, with < Earlier and Later >. Replay Fight works either way.", indent: 2, color: .dimGreen)
+        printWrapped("Off (the usual): no < Back while exploring. On: < Back while exploring looks back through the screens you've left, with < Earlier and Later >; it only looks, never undoes. To undo a step, use the curved Undo arrow on the input line. Replay Fight works either way.", indent: 2, color: .dimGreen)
         print("")
 
         print("LIST ORDER:", color: .cyan, bold: true)
@@ -24390,6 +24393,7 @@ class GameEngine: ObservableObject {
             }
         }
         if let villain = mainQuest?.villain { dungeon.crownFinalGuardian(villain: villain) }
+        if dungeon.training { dungeon.revealBoss = true }   // older training saves too
         if room.roomType == .armory {
             if room.merchant == nil {
                 seedNameRegistry()
@@ -24605,24 +24609,22 @@ class GameEngine: ObservableObject {
         // (A bard's "Play a Tune" lives in conversations now — see talkToNPC —
         // not on the main buttons, where it turned up in almost every room.)
 
-        // --- Bottom row: Back, Help, Next ---
-        // Back undoes the last step (and Next redoes it), each written into
-        // the adventure log. Only there when there's something to undo.
+        // --- Bottom row: Back and Help ---
+        // Back moves between screens and never takes back anything you did.
+        // Here it's only there with Recap on, to look back through screens
+        // you've left. Undoing a step is the input line's curved Undo arrow
+        // (and Redo beside it), which say what they'll take back — Back used
+        // to do that too, so a tap meant as "back" quietly undid a move.
         let recapHere = recapEnabled && !screenHistory.isEmpty
-        if recapHere || !stepUndo.isEmpty {
+        if recapHere {
             menuOpts.append(MenuOption("< Back", tint: .navigation, compact: true))
             actions.append { [weak self] in
                 guard let self = self else { return }
-                if !recapHere { self.undoStep() }
-                else { self.showScreenHistory(index: self.screenHistory.count - 1) }
+                self.showScreenHistory(index: self.screenHistory.count - 1)
             }
         }
         menuOpts.append(MenuOption("?", tint: .navigation, compact: true))
         actions.append { [weak self] in self?.showExplorationHelp() }
-        if !stepRedo.isEmpty {
-            menuOpts.append(MenuOption("Next >", tint: .navigation, compact: true))
-            actions.append { [weak self] in self?.redoStep() }
-        }
 
         // No always-on "< Leave Game" button (it put people off): leaving
         // takes a deliberate step — the ✕ by the input line (closeHandler
@@ -24635,6 +24637,13 @@ class GameEngine: ObservableObject {
         }
 
         showMenuWithDirections(menuOpts, exits: exits)
+
+        // Undo / Redo a step: the input line's arrows, labelled with what they
+        // take back or put back.
+        undoHandler = stepUndo.isEmpty ? nil : { [weak self] in self?.undoStep() }
+        undoLabel = stepUndo.last.map { "undo \($0.label)" }
+        redoHandler = stepRedo.isEmpty ? nil : { [weak self] in self?.redoStep() }
+        redoLabel = stepRedo.last.map { "redo \($0.label)" }
 
         directionHandler = { [weak self] direction in
             self?.move(direction)
@@ -33549,7 +33558,7 @@ class GameEngine: ObservableObject {
             lines.append("Fwd >: go forward again to the screen you just came back from.")
         }
         if texts.contains("Next >") {
-            lines.append("Next >: redo a step you've just undone with < Back.")
+            lines.append("Next >: on to the next page or step.")
         }
         if let undo = undo {
             lines.append("The curved back arrow on the input line: \(undo.isEmpty ? "undo your last change here" : "undo — " + undo). The forward arrow beside it (when shown) puts it back\(redo.map { $0.isEmpty ? "" : " — " + $0 } ?? "").")
@@ -34031,7 +34040,7 @@ class GameEngine: ObservableObject {
             return
         }
         printWrapped(Self.pickVaried(Self.teamOpeners, avoiding: &lastTeamOpener), indent: 2, color: .dimGreen)
-        printWrapped("Tap anyone's name to look in their pack.", indent: 2, color: .dimGreen)
+        printWrapped("Everyone's pack is listed with them; their Pack button opens it.", indent: 2, color: .dimGreen)
         print("")
         var entryLines: [(range: Range<Int>, char: Character)] = []
         for char in party {
@@ -34046,25 +34055,29 @@ class GameEngine: ObservableObject {
             printWrapped("\"\(Self.pickVaried(boasts, avoiding: &lastTeamBoast))\"", indent: 4, color: .yellow)
             // Whether anyone believes it is another matter.
             printWrapped(Self.pickVaried(Self.teamDoubts, avoiding: &lastTeamDoubt), indent: 4, color: .dimGreen)
+            // What they're carrying — everyone's, not only yours.
+            let gear = [char.equippedWeapon?.name, char.equippedArmor?.name, char.equippedShield?.name].compactMap { $0 }
+            if !gear.isEmpty { printWrapped("Wields/wears: " + gear.joined(separator: ", "), indent: 4, color: .green) }
+            let packed = char.inventory.map { $0.name }
+            printWrapped("Pack: " + (packed.isEmpty ? "empty" : packed.joined(separator: ", ")) + " · \(char.gold) gold", indent: 4, color: .green)
             print("")
         }
         pendingTimeoutKind = .reading
         // The spare slots: a pack to look in — yours by default; tap a name
         // for anyone else's.
-        let me = party.first(where: { !$0.isComputerControlled }) ?? party[0]
         let backHere: () -> Void = { [weak self] in self?.showMeetTheTeam(onBack: onBack) }
-        showMenuOptions([MenuOption("\(shortName(for: me))'s Pack"),
-                         MenuOption("?", tint: .navigation, compact: true),
-                         MenuOption("< Back", tint: .navigation, compact: true)])
+        let packButtons = party.map { "\(shortName(for: $0))'s Pack" }
         textLongPressHandler = { [weak self] lineIndex in
             guard let self = self, let hit = entryLines.first(where: { $0.range.contains(lineIndex) }) else { return }
             self.showInventoryFor(hit.char, onBack: backHere)
         }
         closeHandler = onBack
-        menuHandler = { [weak self] choice in
+        showPaginatedMenuOptions(packButtons, pinned: ["?", "< Back"], handler: { [weak self] idx in
+            guard let self = self, idx >= 0, idx < self.party.count else { return }
+            self.showInventoryFor(self.party[idx], onBack: backHere)
+        }, pinnedHandler: { [weak self] choice in
             guard let self = self else { return }
-            if choice == 1 { self.showInventoryFor(me, onBack: backHere); return }
-            guard choice == 2 else { onBack(); return }
+            guard choice == 0 else { onBack(); return }
             self.showInlineHelp {
                 self.printTitle("Meet the Team — Help")
                 self.print("")
@@ -34072,10 +34085,10 @@ class GameEngine: ObservableObject {
                 self.print("")
                 self.printWrapped("They pick something different to say each time you look in, so it is worth coming back.", indent: 2, color: .dimGreen)
                 self.print("")
-                self.printWrapped("The Pack button opens your own hero's pack; tap anyone's name to look in theirs. < Back returns from the pack to here.", indent: 2, color: .dimGreen)
+                self.printWrapped("Each adventurer's weapon, armour, pack and gold are listed with them. Their Pack button (or a tap on their name) opens it, to use, give or drop things. < Back returns from the pack to here.", indent: 2, color: .dimGreen)
                 self.print("")
             }
-        }
+        })
     }
 
     /// What they say about themselves, by trade.
@@ -44235,7 +44248,7 @@ class GameEngine: ObservableObject {
         guard restoreSnapshot(last.state) else { return }
         stepRedo.append((now, last.label))
         logEvent("↶ Went back: undid \(last.label)", category: "EXPLORE")
-        explorationStatusMessage = ("↶ Back: undid \(last.label).", .cyan)
+        explorationStatusMessage = ("↶ Undone: \(last.label). (Redo, beside Undo on the input line, puts it back.)", .cyan)
         showExplorationView()
     }
 
@@ -44244,7 +44257,7 @@ class GameEngine: ObservableObject {
         guard restoreSnapshot(next.state) else { return }
         stepUndo.append((now, next.label))
         logEvent("↷ Went forward again: redid \(next.label)", category: "EXPLORE")
-        explorationStatusMessage = ("↷ Next: redid \(next.label).", .cyan)
+        explorationStatusMessage = ("↷ Redone: \(next.label).", .cyan)
         showExplorationView()
     }
 

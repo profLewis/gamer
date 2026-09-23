@@ -67,7 +67,7 @@ Version 3.0 is the biggest update yet: many rounds of play-testing by Beau and P
 - **Read Aloud** reads each page's title as well as its text, and switching it off (or the DM voice off) always silences it at once.
 
 ### Finding your way
-- **Back and Next** in the 3-bar undo and redo a step while exploring; **< Back** also looks back through the screens you've left.
+- **Undo and Redo** (the curved arrows on the input line) take back a step while exploring, and put it back. **< Back** only ever moves between screens — with Recap on it looks back through the screens you've left — and never undoes anything.
 - **The Atlas**: long-press the map for the whole floor, every floor you've mapped, pinch-zoom, room labels, a full key, and a printable PDF.
 - **Lesser magick**: a party with the gift can speak incantations (`magick: show …`) that mark things on the map, in their own colours, on every floor.
 
