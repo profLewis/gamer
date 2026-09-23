@@ -7109,12 +7109,12 @@ class GameEngine: ObservableObject {
              "Party Status shows each adventurer's hit points, armour, level and spells, your gold, and what you're here to do. It's the place to check before a fight or after one.", true),
             ("merchant", "Merchant task: visit the merchant (M on the map), buy some rope and put it in your pack. (\"skip\" if there's none.)",
              "Merchants sell torches, food, potions, weapons and armour, buy what you don't need, and haggle — offer less and see what they say. Walk into their room (M on the map) and tap Visit Merchant. Check your packs after buying. If there's no merchant on this floor, type \"skip\".", false),
-            ("fight", "Win a fight. Attack, or cast a spell — \(h) in a fight shows each hero's chances.",
+            ("fight", "Find a monster (! on the map, or listen for one) and win the fight — attack, or cast a spell; \(h) in a fight shows each hero's chances.",
              "When monsters appear, the fight takes turns: each of you, and each monster, in the order rolled at the start. On your turn choose Attack, a spell, a potion, Dodge or run. \(h) in a fight lists the enemy's strength and your real chance to hit it. Your robot companion takes their own turns.", false),
             ("rest", "Take a short rest: tap the middle of the pad (hold it for a long rest).",
              "A short rest (tap the middle of the pad) heals a little and takes an hour. A long rest (hold it) heals fully and restores spells — but it takes eight hours, and time matters: quests have deadlines, torches burn and monsters move. Rest when you need to, not every room.", false),
-            ("save", "Save your game: Actions > Save. To stop, ✕ on the input line > Save & Leave. To load: Play > Continue Adventure.",
-             "Saving keeps your adventure so you can stop and come back. Actions > Save saves and carries on. To stop, tap ✕ at the right of the input line (or Actions > Leave Game…): Leave the Adventure offers Save & Leave (back to the main menu) or Save & Quit App. To load a game later: Play > Continue Adventure, then pick it — a training game is marked Training. The game also saves as you go.", true),
+            ("save", "Save, leave and come back: 1) Actions > Save. 2) ✕ (right of the input line) > Leave. 3) Play > Continue Adventure, and pick the one marked Training.",
+             "This task ticks off when you load your training game back — that's the part worth knowing. Saving keeps your adventure so you can stop and come back. Actions > Save saves and carries on. To stop, tap ✕ at the right of the input line (or Actions > Leave Game…): Leave the Adventure offers Save & Leave (back to the main menu) or Save & Quit App. To load a game later: Play > Continue Adventure, then pick it — a training game is marked Training. The game also saves as you go.", true),
             ("certificates", "Open your Certificates: the cog > All Settings… > Certificates.",
              "Completing an adventure, and training at a gym, earns a certificate with your party, your stats and the maps you made — kept in Settings (the cog) > All Settings… > Certificates and printable as a PDF. The Hall of Fame (on the main menu) keeps your best finished adventures — real ones only, not training.", true),
             ("ai", "Optional: give the DM an AI brain — tap the cog > Change Brain…. Type \"skip\" to pass.",
@@ -7166,7 +7166,10 @@ class GameEngine: ObservableObject {
     private func currentTrainingStep() -> (index: Int, count: Int, step: (key: String, hint: String, detail: String))? {
         guard let d = dungeon, d.training else { return nil }
         let steps = trainingPlanSteps(d)
-        for step in steps where !d.trainingDone.contains(step.key) {
+        let open = steps.filter { !d.trainingDone.contains($0.key) }
+        let ordered = open.filter { !d.trainingSkipped.contains($0.key) }
+            + d.trainingSkipped.compactMap { key in open.first { $0.key == key } }
+        for step in ordered {
             guard step.key == "torch" else { return (trainingDoneCount(d), steps.count, step) }
             // Burning already as the item comes up: put it out once, and say
             // why, so lighting it is something the player does.
@@ -7220,6 +7223,7 @@ class GameEngine: ObservableObject {
         if d.trainingDone.contains(key) { return true }
         guard key != "torch", trainingConditionMet(key, in: d) else { return false }
         d.trainingDone.append(key)
+        noteTrainingDone(key, in: d)
         return true
     }
 
@@ -7242,7 +7246,29 @@ class GameEngine: ObservableObject {
     func trainingDid(_ key: String) {
         guard let d = dungeon, d.training, !d.trainingDone.contains(key) else { return }
         d.trainingDone.append(key)
+        noteTrainingDone(key, in: d)
     }
+
+    /// Said the moment a training task is done, on whatever screen that
+    /// happens — not only when the play screen comes round again.
+    private func noteTrainingDone(_ key: String, in d: Dungeon) {
+        let course = trainingSteps(full: d.trainingFull)
+        guard let step = course.first(where: { $0.key == key }) else { return }
+        d.trainingSkipped.removeAll { $0 == key }
+        let short = step.hint.components(separatedBy: CharacterSet(charactersIn: ":—(")).first?
+            .trimmingCharacters(in: .whitespaces) ?? key
+        let line = "✓ Training task done: \(short) — \(trainingDoneCount(d)) of \(course.count)."
+        print("")
+        print("  " + line, color: .brightGreen, bold: true)
+        #if os(iOS)
+        if Self.systemVoiceOverRunning { postAnnouncement(line, attempt: 0) }
+        #endif
+    }
+
+    /// Rooms entered while stuck on the same task: after three, skipping is offered.
+    private var trainingStuck: (key: String, rooms: Set<Int>) = ("", [])
+    /// Loaded a training game: recap before play.
+    private var pendingTrainingWelcome = false
 
     /// The next thing to try, on the status line.
     private func trainingNudge() {
@@ -7272,6 +7298,16 @@ class GameEngine: ObservableObject {
         if let doneStep = doneStep {
             hint = "Done: " + (doneStep.hint.components(separatedBy: " — ").first?.components(separatedBy: ":").first ?? doneStep.key) + ". Next — " + hint
         }
+        if cur.step.key == "save", d.trainingDone.contains("saved") {
+            hint = "Saved — now 2) tap ✕ (right of the input line) > Leave. Then 3) Play > Continue Adventure, and pick the one marked Training."
+        }
+        if d.trainingSkipped.contains(cur.step.key) { hint = "(Skipped earlier — back now.) " + hint }
+        // Three rooms on the same task: offer to put it aside.
+        if trainingStuck.key != cur.step.key { trainingStuck = (cur.step.key, []) }
+        if let roomId = d.currentRoom?.id { trainingStuck.rooms.insert(roomId) }
+        if trainingStuck.rooms.count > 3, cur.step.key != "guardian" {
+            hint += " Stuck? Type \"skip\" to come back to it at the end."
+        }
         // Nothing to light yet: "tap the flame" would be no use — find one.
         if cur.step.key == "torch", findBestTorch() == nil {
             hint = "You have no torch yet — find one first: search rooms (a candlelit room always has one) or buy one from a merchant. Then light it with the flame at the bottom-left of the pad."
@@ -7296,6 +7332,46 @@ class GameEngine: ObservableObject {
     }
 
     private var lastTrainingIndex = -1
+
+    /// A training game loaded back: what's done, what's left, and what next.
+    private func showTrainingWelcomeBack() {
+        guard let d = dungeon else { showExplorationView(); return }
+        let course = trainingSteps(full: d.trainingFull)
+        clearTerminal()
+        printTitle("Welcome Back to Training")
+        print("")
+        print("  \(trainingDoneCount(d)) of \(course.count) tasks done", color: .brightGreen, bold: true)
+        print("")
+        let short: (String) -> String = { $0.components(separatedBy: CharacterSet(charactersIn: ":—(")).first?.trimmingCharacters(in: .whitespaces) ?? $0 }
+        for step in course {
+            let done = d.trainingDone.contains(step.key)
+            printItem(done ? "✓" : "○", short(step.hint) + (d.trainingSkipped.contains(step.key) ? " (skipped)" : ""),
+                      color: done ? .brightGreen : .dimGreen)
+        }
+        print("")
+        if let next = trainingNextHint(d) {
+            print("  YOUR NEXT TASK", color: .cyan, bold: true)
+            printWrapped(next, indent: 2, color: .cyan)
+            print("")
+        }
+        showMenuOptions([MenuOption("Carry On", isDefault: true), MenuOption("Recap"),
+                         MenuOption("?", tint: .navigation, compact: true)])
+        closeHandler = { [weak self] in self?.showExplorationView() }
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 2: self.showTrainingRecap(index: 0)
+            case 3:
+                self.showInlineHelp {
+                    self.printTitle("Welcome Back — Help")
+                    self.print("")
+                    self.printWrapped("Where your training has got to: ✓ done, ○ still to do (skipped ones come back at the end). Carry On goes back to the game with your next task on the Training line; Recap goes over every task, one to a page.", indent: 2, color: .dimGreen)
+                    self.print("")
+                }
+            default: self.showExplorationView()
+            }
+        }
+    }
 
     /// The Training button: recap the steps, test yourself, or quit.
     func showTrainingMenu() {
@@ -7565,8 +7641,24 @@ class GameEngine: ObservableObject {
         clearTerminal()
         printTitle("Your Marks")
         print("")
-        print("  \(right) out of \(quiz.count)\(right == quiz.count ? " — full marks!" : "")", color: right * 4 >= quiz.count * 3 ? .brightGreen : .yellow, bold: true)
+        let passed = right * 4 >= quiz.count * 3
+        print("  \(right) out of \(quiz.count)\(right == quiz.count ? " — full marks!" : "")", color: passed ? .brightGreen : .yellow, bold: true)
         print("")
+        // A pass earns a Training Certificate — once per training game.
+        if passed, let d = dungeon, let hero = party.first(where: { !$0.isComputerControlled }) ?? party.first {
+            if !d.trainingDone.contains("quizcertificate") {
+                d.trainingDone.append("quizcertificate")
+                saveMeritCertificate("Training Certificate", recipient: hero,
+                                     deed: "passed the training test with \(right) of \(quiz.count) right, in \(d.name)")
+                printWrapped("Passed! A Training Certificate has been awarded to \(shortName(for: hero)) — see Settings > Certificates.", indent: 2, color: .brightGreen, keep: true)
+            } else {
+                printWrapped("Passed again — your Training Certificate is already in Settings > Certificates.", indent: 2, color: .brightGreen, keep: true)
+            }
+            print("")
+        } else if !passed {
+            printWrapped("Pass mark: 3 in 4 right (\((quiz.count * 3 + 3) / 4) of \(quiz.count)). Take it again whenever you like — a pass earns a Training Certificate.", indent: 2, color: .yellow, keep: true)
+            print("")
+        }
         for (i, (item, a)) in zip(quiz, answers).enumerated() {
             let ok = item.answer == a
             printItem(ok ? "✓" : "✗", "\(i + 1). \(item.q)", color: ok ? .brightGreen : .yellow)
@@ -7584,10 +7676,23 @@ class GameEngine: ObservableObject {
     }
 
     /// "skip" in training passes the current step.
+    /// "skip": put the current task aside — not done, and offered again once
+    /// everything else is. (It used to count as done.) Skipping one that's
+    /// come back sends it to the back of the queue.
     private func trainingSkip() -> Bool {
-        guard let cur = currentTrainingStep(), cur.step.key != "guardian" else { return false }
-        trainingDid(cur.step.key)
+        guard let d = dungeon, let cur = currentTrainingStep(), cur.step.key != "guardian" else { return false }
+        d.trainingSkipped.removeAll { $0 == cur.step.key }
+        d.trainingSkipped.append(cur.step.key)
+        trainingStuck = ("", [])
+        explorationStatusMessage = ("✦ Skipped for now — it comes back at the end. " + (trainingNextHint(d).map { "Your task: " + $0 } ?? ""), .cyan)
         return true
+    }
+
+    /// The next task's words, with no side effects (for help pages).
+    private func trainingNextHint(_ d: Dungeon) -> String? {
+        let course = trainingSteps(full: d.trainingFull)
+        let open = course.filter { !d.trainingDone.contains($0.key) }
+        return (open.first { !d.trainingSkipped.contains($0.key) } ?? open.first)?.hint
     }
 
     // MARK: Room vignettes (training)
@@ -7603,6 +7708,9 @@ class GameEngine: ObservableObject {
         let key: String
         let scene: String
         let choices: [(label: String, outcome: () -> String)]
+        /// A choice that leads on: after its answer, this next scene and its
+        /// own choices — so "Knock" or "Look in the Crack" goes somewhere.
+        var followUps: [String: Vignette] = [:]
     }
 
     private func vignettes(for room: Room) -> [Vignette] {
@@ -7614,10 +7722,21 @@ class GameEngine: ObservableObject {
             ("Eat It", { let h = Int.random(in: 1...3); hero.heal(h); return "\(name) eats the crumb. Surprisingly good. (+\(h) HP)" }),
             ("Put It in the Pack", { if let c = ItemCatalog.cheeses().first(where: { $0.name.contains("Cheddar") }), hero.addItem(c) { return "The mouse, delighted, fetches a whole wedge. A Wedge of Cheddar goes into \(name)'s pack." }; return "\(name)'s pack is too full. The mouse shrugs and keeps its cheese." }),
         ])
-        let puddle = Vignette(key: "puddle", scene: "Water drips from the ceiling into a still, clear puddle.", choices: [
+        var puddle = Vignette(key: "puddle", scene: "Water drips from the ceiling into a still, clear puddle.", choices: [
             ("Drink", { hero.heal(1); return "Cold and clean. \(name) feels a little better. (+1 HP)" }),
             ("Look In", { "\(name)'s reflection looks back — and winks. \(name) did not wink." }),
             ("Step Around It", { "Best not to get your boots wet down here." }),
+        ])
+        puddle.followUps["Look In"] = Vignette(key: "puddle2", scene: "The reflection winks again, then points — at the dark edge of the puddle, where something lies under the water.", choices: [
+            ("Look Where It Points", {
+                let roll = Int.random(in: 1...3)
+                if roll == 1, hero.addItem(ItemCatalog.torch()) { return "A dry torch, wrapped in oilcloth, weighted with a stone. Into \(name)'s pack it goes." }
+                if roll == 2, hero.addItem(ItemCatalog.antidote()) { return "A stoppered vial: an antidote, still good. Into \(name)'s pack it goes." }
+                let g = Int.random(in: 4...9); hero.gold += g
+                return "A little purse, sodden but full: \(g) gold. (+\(g) gp)" }),
+            ("Wink Back", { [weak self] in self?.party.filter { $0.isConscious }.forEach { $0.heal(1) }
+                return "\(name) winks back. The reflection laughs without a sound — and so does everyone. It's good to laugh down here. (+1 HP each)" }),
+            ("Step Away", { "Some puddles are best left to themselves." }),
         ])
         let draught = Vignette(key: "draught", scene: "A cold draught tugs at the torch flame, as if the dungeon were breathing.", choices: [
             ("Follow the Draught", { [weak self] in
@@ -7648,17 +7767,50 @@ class GameEngine: ObservableObject {
                 ("Move On", { "Nothing here worth carrying." }),
             ])]
         case .prison:
-            return [Vignette(key: "scratches", scene: "Words are scratched into the cell wall, very small, over and over.", choices: [
+            var scratches = Vignette(key: "scratches", scene: "Words are scratched into the cell wall, very small, over and over.", choices: [
                 ("Read Them", { "\"Rest before the big one. Rest before the big one.\" Someone learned that the hard way." }),
                 ("Knock", { "\(name) knocks. After a long moment, something knocks back. Twice." }),
                 ("Move On", { "Some things are better left." }),
-            ])]
+            ])
+            scratches.followUps["Knock"] = Vignette(key: "knock", scene: "Silence — then a thin voice through the stone: \"Is someone there? I've been in here so long I'd stopped counting the days.\"", choices: [
+                ("Knock Back", {
+                    let g = Int.random(in: 6...14); hero.gold += g
+                    let got = hero.addItem(ItemCatalog.antidote())
+                    return "\(name) knocks twice. A loose stone slides out of the wall: behind it, someone's little stash — \(g) gold\(got ? " and an antidote" : ""). \"Take it,\" says the voice. \"Better you than the rats.\" (+\(g) gp)" }),
+                ("Ask Who's There", { [weak self] in
+                    guard let self = self, let d = self.dungeon else { return "Only a sigh." }
+                    if let b = self.guardianBearing(in: d) {
+                        return "\"A prisoner of the thing below. I hear it at night — \(self.foeWord), in its lair, \(b). Rest before you face it.\""
+                    }
+                    return "\"A prisoner, like you'll be if you're careless. Find the Gatekeeper at the entrance — they know what waits down here.\"" }),
+                ("Walk Away", { "The voice calls after you once, then falls quiet." }),
+            ])
+            return [scratches]
         case .treasure:
-            return [Vignette(key: "coins", scene: "A trail of coins leads into a crack in the floor.", choices: [
+            var coins = Vignette(key: "coins", scene: "A trail of coins leads into a crack in the floor.", choices: [
                 ("Pick Them Up", { let g = Int.random(in: 3...8); hero.gold += g; return "\(name) gathers \(g) gold before the trail runs out. (+\(g) gp)" }),
-                ("Look in the Crack", { "Far below, something glints — and something else blinks. Best leave it." }),
+                ("Look in the Crack", { "Far below, something glints — and something else blinks." }),
                 ("Leave Them", { "Coins on the floor of a dungeon are rarely a gift." }),
-            ])]
+            ])
+            coins.followUps["Look in the Crack"] = Vignette(key: "crack", scene: "A gem, the size of a thumbnail, lies on a ledge an arm's length down. Beside it, two small eyes, watching.", choices: [
+                ("Reach In", { [weak self] in
+                    let dex = self?.party.map { $0.abilityScores.modifier(for: .dexterity) }.max() ?? 0
+                    let roll = Dice.d20() + dex
+                    if roll >= 12 {
+                        let g = Int.random(in: 20...40); hero.gold += g
+                        return "Quick as a cat, \(name) snatches the gem before the eyes can move. It sells for \(g) gold. (Dexterity roll \(roll) — +\(g) gp)"
+                    }
+                    hero.currentHP = max(1, hero.currentHP - 3)
+                    return "Too slow — something bites, hard, and the gem rolls away into the dark. (Dexterity roll \(roll) — -3 HP)" }),
+                ("Lower a Rope", { [weak self] in
+                    guard self?.party.contains(where: { $0.inventory.contains { $0.name.hasPrefix("Rope") } }) == true else {
+                        return "Nobody has any rope. (A merchant sells it.) The eyes blink, patiently."
+                    }
+                    let g = Int.random(in: 20...40); hero.gold += g
+                    return "A loop of rope, a careful twitch, and the gem comes up clean — the eyes never get near it. Worth \(g) gold. (+\(g) gp)" }),
+                ("Leave It", { "Whatever owns those eyes can keep it." }),
+            ])
+            return [coins]
         default:
             return [mouse, puddle, draught]
         }
@@ -7715,6 +7867,11 @@ class GameEngine: ObservableObject {
             let picked = remaining[choice - 1]
             let result = picked.outcome()
             self.logEvent("\(v.key): \(picked.label) — \(result)", category: "EXPLORE")
+            // A choice that leads on: its answer, then the next scene.
+            if let next = v.followUps[picked.label] {
+                self.showVignetteChoices(next, room: room, remaining: next.choices, said: [result])
+                return
+            }
             let isTalk = picked.label.hasPrefix("Ask") || picked.label.hasPrefix("Look")
             let rest = remaining.enumerated().filter { $0.offset != choice - 1 }.map { $0.element }
             if isTalk, !rest.isEmpty {
@@ -7855,7 +8012,11 @@ class GameEngine: ObservableObject {
         clearTerminal()
         printTitle("Training")
         print("")
-        printWrapped("A short, guided game: one small floor of \(name), a guardian at the far end, and a hint on the status line at every step until you've tried everything once.", indent: 2)
+        printWrapped("WHAT THIS IS: a short, safe practice game — one small floor of \(name), with a Boss at the far end — to learn how everything works.", indent: 2)
+        print("")
+        printWrapped("HOW IT WORKS: the Training line at the top of the play screen gives you one task at a time — get a quest, walk, light a torch, search, fight — and counts them off (\"3 of 15 done\"). Do them in any order; each ticks off the moment it's done. Stuck? Type \"skip\" and it comes back at the end. ? on any screen explains it.", indent: 2)
+        print("")
+        printWrapped("TESTING YOURSELF: the Gameplay Test button (on the play screen) has Recap — every task, one to a page — and Test Yourself, a short quiz. Pass it (3 in 4 right) and you earn a Training Certificate, kept in Settings > Certificates.", indent: 2)
         print("")
         printWrapped("Your hero: \(hero.name), a \(hero.race.rawValue) \(hero.characterClass.rawValue). With you: \(helper.name), a robot \(helper.characterClass.rawValue) who fights on their own.", indent: 2, color: .cyan)
         print("")
@@ -23958,6 +24119,15 @@ class GameEngine: ObservableObject {
         showInlineHelp {
             self.printTitle("Exploration Help")
             self.print("")
+            if let d = self.dungeon, d.training {
+                let total = self.trainingSteps(full: d.trainingFull).count
+                self.print("  TRAINING — \(self.trainingDoneCount(d)) OF \(total) TASKS DONE", color: .cyan, bold: true)
+                if let next = self.trainingNextHint(d) {
+                    self.printWrapped("Your task: " + next, indent: 2, color: .green, keep: true)
+                }
+                self.printWrapped("The Training line at the top always shows your task and how many are done. The Gameplay Test button has Recap (every task) and Test Yourself (a quiz — pass it for a certificate). Stuck on a task? Type \"skip\": it comes back at the end.", indent: 2, color: .dimGreen, keep: true)
+                self.print("")
+            }
             self.print("  THE MAP", color: .cyan, bold: true)
             self.printWrapped("The box at the top is the map of the rooms around you. [@] is your party; each [ ] is a room you've seen, and the lines between them (-- and |) are the ways through. XX = a barred door, KK = a locked one. Long-press the map for the whole floor, every floor you've been to, and a printable copy. The line under the map shows the time and how many rooms you've explored. Full symbol key:", indent: 2, color: .green)
             self.printFullMapLegend()
@@ -24247,6 +24417,11 @@ class GameEngine: ObservableObject {
 
     func showExplorationView() {
         linkReturnSnapshot = nil
+        if pendingTrainingWelcome, dungeon?.training == true {
+            pendingTrainingWelcome = false
+            showTrainingWelcomeBack()
+            return
+        }
         guard let dungeon = dungeon, let room = dungeon.currentRoom else { return }
         // A fight that ended without saying so (no currentCombat any more)
         // mustn't leave the game — and its music — stuck in combat.
@@ -26792,62 +26967,80 @@ class GameEngine: ObservableObject {
         printWrapped("You press your ear to the cold stone...", indent: 2, color: .cyan)
         print("")
 
-        if total >= 12 {
-            // Success — reveal adjacent room hints with foley sounds
-            var heard: [(text: String, sound: () -> Void)] = []
-            for (direction, roomId) in room.exits {
-                guard let adjRoom = dungeon.rooms[roomId] else { continue }
-                let hint: String
-                let sfx: () -> Void
-                if adjRoom.roomType == .boss {
-                    hint = "Something massive stirs to the \(direction.rawValue.lowercased()). Best prepare."
-                    sfx = { SoundManager.shared.playListenBoss() }
-                } else if adjRoom.encounter != nil && !adjRoom.cleared {
-                    let sounds = [
-                        ("Growling to the \(direction.rawValue.lowercased()).", { SoundManager.shared.playListenGrowl() }),
-                        ("Scraping claws to the \(direction.rawValue.lowercased()).", { SoundManager.shared.playListenScraping() }),
-                        ("Heavy breathing from the \(direction.rawValue.lowercased()).", { SoundManager.shared.playListenBreathing() }),
-                        ("Movement to the \(direction.rawValue.lowercased()).", { SoundManager.shared.playListenScraping() }),
-                    ]
-                    let pick = sounds.randomElement()!
-                    hint = pick.0; sfx = pick.1
-                } else if adjRoom.roomType == .treasure || adjRoom.hiddenGold > 0 {
-                    hint = "The clink of coins to the \(direction.rawValue.lowercased())."
-                    sfx = { SoundManager.shared.playListenCoins() }
-                } else if adjRoom.roomType == .shop {
-                    hint = "Someone humming a tune to the \(direction.rawValue.lowercased())."
-                    sfx = { SoundManager.shared.playListenHumming() }
-                } else if adjRoom.npc != nil {
-                    hint = "A voice murmuring to the \(direction.rawValue.lowercased())."
-                    sfx = { SoundManager.shared.playListenHumming() }
-                } else if adjRoom.roomType == .trap && !adjRoom.trapTriggered {
-                    hint = "A faint clicking sound to the \(direction.rawValue.lowercased())."
-                    sfx = { SoundManager.shared.playListenClicking() }
+        // Listening always tells you something — it's slow, careful work, not
+        // a gamble. The roll decides how much: a good one names what's there
+        // and how many; a poor one only that something is. It used to be
+        // "nothing — just your own heartbeat" half the time, and "silence"
+        // most of the rest, so it seemed never to lead anywhere.
+        let sharp = total >= 12
+        let numberWords = ["", "one", "two", "three", "four", "five", "six"]
+        var heard: [(text: String, sound: () -> Void, danger: Bool)] = []
+        var quiet: [String] = []
+        var dangerWays: [String] = []
+        for (direction, roomId) in room.exits.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
+            guard let adj = dungeon.rooms[roomId] else { continue }
+            let way = ["N": "north", "S": "south", "E": "east", "W": "west"][direction.rawValue.uppercased()] ?? direction.rawValue.lowercased()
+            let alive = adj.encounter?.aliveMonsters ?? []
+            if adj.roomType == .boss && !adj.cleared {
+                heard.append((sharp ? "Something massive breathes to the \(way) — \(foePossessive) lair. Rest and heal before you go in."
+                                    : "A deep, slow breathing to the \(way). Something big.",
+                              { SoundManager.shared.playListenBoss() }, true))
+                dangerWays.append(way)
+            } else if !alive.isEmpty {
+                if sharp {
+                    let names = Dictionary(grouping: alive, by: { $0.type.rawValue })
+                        .map { (name, ms) in ms.count == 1 ? "a \(name.lowercased())" : "\(numberWords[min(ms.count, 6)]) \(name.lowercased())s" }
+                        .sorted().joined(separator: " and ")
+                    heard.append(("To the \(way): \(names) — growls, claws on stone.", { SoundManager.shared.playListenGrowl() }, true))
                 } else {
-                    hint = "Silence to the \(direction.rawValue.lowercased())."
-                    sfx = { SoundManager.shared.playListenSilence() }
+                    heard.append(("Something moving to the \(way). More than a rat.", { SoundManager.shared.playListenScraping() }, true))
                 }
-                heard.append((hint, sfx))
+                dangerWays.append(way)
+            } else if adj.roomType == .trap && !adj.trapTriggered {
+                heard.append((sharp ? "A faint mechanical click to the \(way) — a trap, likely. Tread carefully (or search there first)."
+                                    : "A faint clicking to the \(way).", { SoundManager.shared.playListenClicking() }, true))
+                dangerWays.append(way)
+            } else if adj.merchant != nil || adj.roomType == .shop {
+                heard.append(("Someone humming and coins being counted to the \(way) — a merchant.", { SoundManager.shared.playListenHumming() }, false))
+            } else if let npc = adj.npc {
+                heard.append((sharp ? "A voice to the \(way) — \(npc.displayName.lowercased().hasPrefix("the") ? npc.displayName : "someone") talking to themselves. Someone to ask."
+                                    : "A voice murmuring to the \(way).", { SoundManager.shared.playListenHumming() }, false))
+            } else if adj.trainer != nil {
+                heard.append(("Thuds and grunts to the \(way) — somebody training. A gym.", { SoundManager.shared.playListenScraping() }, false))
+            } else if adj.roomType == .treasure || adj.hiddenGold > 0 {
+                heard.append(("The clink of coins to the \(way).", { SoundManager.shared.playListenCoins() }, false))
+            } else if adj.verticalDestinationRoomId != nil {
+                heard.append(("A cold draught from the \(way) — a way \(adj.verticalDirection ?? "down").", { SoundManager.shared.playListenSilence() }, false))
+            } else {
+                quiet.append(way)
             }
-
-            // Play the most interesting sound heard
-            if let bestSound = heard.first(where: { !$0.text.hasPrefix("Silence") }) ?? heard.first {
-                bestSound.sound()
+            // Two rooms away: only the lair is loud enough to carry.
+            for (_, farId) in adj.exits where farId != room.id {
+                if let far = dungeon.rooms[farId], far.roomType == .boss, !far.cleared, !dangerWays.contains(way) {
+                    heard.append(("Further off to the \(way), a low rumble — \(foePossessive) lair lies beyond.", { SoundManager.shared.playListenBoss() }, false))
+                }
             }
-
-            for h in heard {
-                printWrapped("  \(h.text)", indent: 2, color: .yellow)
-            }
-            if !torchLit {
-                print("")
-                printWrapped("(Your hearing is keener in the dark.)", indent: 2, color: .dimGreen)
-            }
-            logEvent("Listened at doors in \(room.name) — heard \(heard.count) sounds", category: "EXPLORE")
-        } else {
-            SoundManager.shared.playListenHeartbeat()
-            printWrapped("You press your ear to the stone... nothing. Just your own heartbeat.", indent: 2, color: .dimGreen)
-            logEvent("Listened at doors in \(room.name) — heard nothing", category: "EXPLORE")
         }
+        if let best = heard.first(where: { $0.danger }) ?? heard.first { best.sound() } else { SoundManager.shared.playListenSilence() }
+        for h in heard { printWrapped(h.text, indent: 2, color: h.danger ? .yellow : .green) }
+        if !quiet.isEmpty {
+            printWrapped("Quiet to the \(quiet.joined(separator: " and ")) — no one there, by the sound of it.", indent: 2, color: .green)
+        }
+        print("")
+        // The upshot, in one line.
+        if !dangerWays.isEmpty && !quiet.isEmpty {
+            printWrapped("Safest way on: \(quiet.joined(separator: " or ")). Danger: \(dangerWays.joined(separator: ", ")).", indent: 2, color: .cyan)
+        } else if !dangerWays.isEmpty {
+            printWrapped("Every way has something in it. Heal up, light your torch, and pick your fight.", indent: 2, color: .cyan)
+        } else if !quiet.isEmpty {
+            printWrapped("Nothing dangerous next door.", indent: 2, color: .cyan)
+        }
+        if !sharp {
+            printWrapped("(Hard to make out more — someone with a better ear might tell you exactly what's there.)", indent: 2, color: .dimGreen)
+        } else if !torchLit {
+            printWrapped("(Your hearing is keener in the dark.)", indent: 2, color: .dimGreen)
+        }
+        logEvent("Listened at doors in \(room.name) — \(heard.count) sounds, \(quiet.count) quiet", category: "EXPLORE")
         logMultiplayerAction("Listened at doors in \(room.name)")
 
         // A line or two to take in: half the usual wait (still longer if
@@ -42788,6 +42981,9 @@ class GameEngine: ObservableObject {
             showExplorationView()
             return
         }
+        // Quick saves are what Actions > Save and Save & Leave use; training
+        // never heard about them, so its save task could never tick off.
+        trainingDid("saved")
         clearActiveSlotIfDeleted()
 
         let slotId: UUID
@@ -42832,7 +43028,7 @@ class GameEngine: ObservableObject {
     private func performSave(slotId: UUID, slotName: String) {
         guard let dungeon = dungeon else { return }
         let slotName = trainingNamed(slotName)
-        trainingDid("save")
+        trainingDid("saved")   // step 1 of the save task (loading back finishes it)
 
         // If saving during combat, clear the current room's encounter so
         // loading won't immediately throw the player back into battle.
@@ -44506,6 +44702,12 @@ class GameEngine: ObservableObject {
         // The Opening Tale again (skippable), then the story so far — and
         // only then the play screen.
         pendingDMRemarks = ensureUniqueNames()
+        // A training game loaded back: that finishes the save task — and the
+        // first thing shown in play is a recap of where training has got to.
+        if dungeon?.training == true {
+            trainingDid("save")
+            pendingTrainingWelcome = true
+        }
         showWhereWeAre()
     }
 

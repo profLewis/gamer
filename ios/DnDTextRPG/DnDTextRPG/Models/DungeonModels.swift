@@ -728,7 +728,7 @@ class Dungeon: ObservableObject, Codable {
     enum CodingKeys: String, CodingKey {
         case name, level, rooms, currentRoomId, previousRoomId, nextRoomId, currentFloor, emergencyDropUsed, hasMultiGymPass
         case archivedLevels, hasCartography, levelCount, startDifficulty
-        case training, trainingDone, trainingFull, trainingPlan
+        case training, trainingDone, trainingFull, trainingPlan, trainingSkipped
     }
 
     init(name: String, level: Int, levelCount: Int? = nil, startDifficulty: Int? = nil) {
@@ -779,6 +779,7 @@ class Dungeon: ObservableObject, Codable {
         trainingDone = (try? container.decodeIfPresent([String].self, forKey: .trainingDone)) ?? []
         trainingFull = (try? container.decodeIfPresent(Bool.self, forKey: .trainingFull)) ?? false
         trainingPlan = (try? container.decodeIfPresent([String].self, forKey: .trainingPlan)) ?? []
+        trainingSkipped = (try? container.decodeIfPresent([String].self, forKey: .trainingSkipped)) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -801,6 +802,7 @@ class Dungeon: ObservableObject, Codable {
         try container.encode(trainingDone, forKey: .trainingDone)
         try container.encode(trainingFull, forKey: .trainingFull)
         try container.encode(trainingPlan, forKey: .trainingPlan)
+        try container.encode(trainingSkipped, forKey: .trainingSkipped)
     }
 
     /// Next room ID for dynamic expansion
@@ -1654,6 +1656,9 @@ class Dungeon: ObservableObject, Codable {
     /// The steps this training game actually teaches, in order, worked out
     /// once when it starts; a step's number is its place in this list.
     var trainingPlan: [String] = []
+    /// Training tasks put aside with "skip": not done, and offered again
+    /// once everything else is.
+    var trainingSkipped: [String] = []
 
     /// Cheats ("magick: show the boss" and friends) — mark these rooms on the
     /// map even unexplored, as (B), (m) or (!), with no corridors to them:
