@@ -165,9 +165,9 @@ DnD RPG is an independent game by Timbaloo Ltd, with no connection to Wizards of
 
 The game needs no account and no AI key: the built-in Dungeon Master runs everything. To try the AI DM, use a device with Apple Intelligence (on-device, no key needed). Cloud AI (Claude, ChatGPT, Gemini, Hugging Face) is optional and uses the player's own key, entered under Settings > Change Brain. Game Center is optional ("Not Now" works). A quick path: Play → New Adventure → Random Party → Start Adventure → any dungeon name → Normal.
 
-## Screenshots (screendumps/appstore-build91/ — retake on build 97 when convenient)
-- iPhone 6.9" — iphone-6.9in-explore.png (1320 × 2868)
-- iPad 13" — ipad-13in-explore.png (2064 × 2752)
+## Screenshots (screendumps/appstore-build142/ — build 142, 23 Sep 2026)
+- iPhone 6.9" — iphone-6.9in-explore.png (1320 × 2868), iPhone 17 Pro Max simulator
+- iPad 13" — ipad-13in-explore.png (2064 × 2752), iPad Pro 13-inch (M5) simulator
 - Apple TV — appletv-4k-explore.png (3840 × 2160)
 - Apple Vision Pro — visionpro-explore.png (3840 × 2160)
-- Mac — still to take (the Mac's screen was asleep)
+- Mac — still to take (the Mac's display was asleep; needs a window on screen)
