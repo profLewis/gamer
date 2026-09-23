@@ -7048,7 +7048,7 @@ class GameEngine: ObservableObject {
              "Party Status shows each adventurer's hit points, armour, level and spells, your gold, and what you're here to do. It's the place to check before a fight or after one.", true),
             ("quest", "Take on a quest: walk up to someone (N on the map), tap Talk, then Ask for a Quest. (\"skip\" if nobody's here.)",
              "Quests give an adventure its point, and pay. Normally the main quest is given at the start, in the opening tale — but you can take one up at any time, from almost anyone you meet, and that is worth knowing when a quest is finished or given up. HOW: walk into a room marked N on the map, tap Talk, and look at the buttons on the conversation screen. With no main quest running, tap Ask for a Quest and they ask what sort you want: A Main Quest (the big one, with its villain, reward and deadline) or A Side Quest (a smaller errand, if they have one). With a main quest already running, the same screen offers Side Quest instead — a smaller errand to carry alongside it — and Ask About Our Quest, which asks anyone what they know about the one you're on. Every quest you hold, its reward, and how many days are left, is listed on Party Status; the line under the map points the way to the nearest one. If there's nobody on this floor, type \"skip\".", false),
-            ("merchant", "Visit a merchant (M on the map): buy, sell or haggle. (\"skip\" if there's none.)",
+            ("merchant", "Merchant task: visit the merchant (M on the map), buy some rope and put it in your pack. (\"skip\" if there's none.)",
              "Merchants sell torches, food, potions, weapons and armour, buy what you don't need, and haggle — offer less and see what they say. Walk into their room (M on the map) and tap Visit Merchant. Check your packs after buying. If there's no merchant on this floor, type \"skip\".", false),
             ("fight", "Win a fight. Attack, or cast a spell — the ? in a fight shows each hero's chances.",
              "When monsters appear, the fight takes turns: each of you, and each monster, in the order rolled at the start. On your turn choose Attack, a spell, a potion, Dodge or run. The ? in a fight lists the enemy's strength and your real chance to hit it. Your robot companion takes their own turns.", false),
@@ -7145,6 +7145,11 @@ class GameEngine: ObservableObject {
 
     /// Items handled before the pack task began don't count towards it.
     private var trainingItemsBaseline = Int.max
+    /// Rope the party had when the merchant task came up — it wants more.
+    private var trainingRopeBaseline = Int.max
+    private func trainingRopeCount() -> Int {
+        party.flatMap { $0.inventory }.filter { $0.name.hasPrefix("Rope") }.count
+    }
 
     /// The pack task, made concrete: something real from the party's packs
     /// to eat, drink, give or drop.
@@ -7185,6 +7190,7 @@ class GameEngine: ObservableObject {
         case "walk": return d.rooms.values.filter { $0.visited }.count >= 2
         case "fight": return combatsWon > 0
         case "packs": return Character.itemsHandledCount > trainingItemsBaseline
+        case "merchant": return trainingRopeCount() > trainingRopeBaseline
         case "guardian": return d.rooms.values.contains { $0.roomType == .boss && $0.cleared }
         default: return false
         }
@@ -7224,6 +7230,9 @@ class GameEngine: ObservableObject {
         var hint = cur.step.hint
         if let doneStep = doneStep {
             hint = "Done: " + (doneStep.hint.components(separatedBy: " — ").first?.components(separatedBy: ":").first ?? doneStep.key) + ". Next — " + hint
+        }
+        if cur.step.key == "merchant", trainingRopeBaseline == Int.max {
+            trainingRopeBaseline = trainingRopeCount()
         }
         if cur.step.key == "packs" {
             if trainingItemsBaseline == Int.max { trainingItemsBaseline = Character.itemsHandledCount }
@@ -7716,6 +7725,7 @@ class GameEngine: ObservableObject {
                 self.trainingTorchDoused = false
                 self.lastTrainingIndex = -1
                 self.trainingItemsBaseline = Int.max
+                self.trainingRopeBaseline = Int.max
                 self.logEvent(choice == 2 ? "Full training" : "Quick training", category: "EXPLORE")
                 self.enterDungeon()
                 self.ensureTrainingPlan(d)
@@ -27157,10 +27167,13 @@ class GameEngine: ObservableObject {
         // The roll is kept on the room's copy; keep this one in step so a
         // later write-back doesn't undo it.
         if let rolled = room.npc?.willOfferSideQuest { npc.willOfferSideQuest = rolled }
-        if mainQuest == nil, npc.type != .gatekeeper {
+        if mainQuest == nil {
+            // The Gatekeeper too — the one person you'd most expect to have a
+            // quest. Its side quest is its own offer (showGatekeeperQuest).
             let roomId = room.id
+            let sideOnOffer = npc.type == .gatekeeper ? true : sideQuestOnOffer
             options.append(MenuOption("Ask for a Quest", tint: .cyan))
-            actions.append { [weak self] in self?.askWhatSortOfQuest(npc: npc, roomId: roomId, sideOnOffer: sideQuestOnOffer) }
+            actions.append { [weak self] in self?.askWhatSortOfQuest(npc: npc, roomId: roomId, sideOnOffer: sideOnOffer) }
         }
 
         // Capability buttons
@@ -31450,7 +31463,14 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             switch choice {
             case 1: self.hearNPCMainQuest(npc: npc, roomId: roomId)
-            case 2: if sideOnOffer { self.offerSideQuest() } else { self.talkToNPC() }
+            case 2:
+                if npc.type == .gatekeeper, let room = self.dungeon?.currentRoom {
+                    self.showGatekeeperQuest(npc: npc, room: room)
+                } else if sideOnOffer {
+                    self.offerSideQuest()
+                } else {
+                    self.talkToNPC()
+                }
             case 3:
                 self.showInlineHelp {
                     self.printTitle("What Sort of Quest? — Help")

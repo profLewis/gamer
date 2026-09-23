@@ -84,7 +84,6 @@ class ShopEngine {
     }
 
     func openShop(character: Character, dungeonLevel: Int, merchant: Merchant, completion: @escaping () -> Void) {
-        game?.trainingDid("merchant")
         self.character = character
         self.merchant = merchant
         // Roll stock once per merchant and remember it from then on — a
@@ -97,6 +96,13 @@ class ShopEngine {
             syncMerchantToRoom()
         } else {
             self.stock = merchant.stock
+        }
+        // Training's merchant task is "buy some rope": every training
+        // merchant has some, first on the counter.
+        if game?.dungeon?.training == true, !stock.contains(where: { $0.name.hasPrefix("Rope") }) {
+            stock.insert(ItemCatalog.rope(), at: 0)
+            self.merchant?.stock = self.stock
+            syncMerchantToRoom()
         }
         self.hasShownOneAtATimeQuip = false
         self.chatTopicsAsked = []
