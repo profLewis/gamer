@@ -7,6 +7,7 @@
 
 import Foundation
 import Network
+import Security
 #if canImport(FoundationModels) && !os(tvOS)
 import FoundationModels
 #endif
@@ -335,25 +336,63 @@ class DMEngine {
         }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: "ai_provider")
+            // Choosing a cloud brain is choosing it over Apple's.
+            useAppleBrain = false
         }
     }
 
+    /// The player chose Apple's on-device brain. Cloud keys are kept — here
+    /// and in the Keychain — just not used; choosing a cloud brain again
+    /// picks its key straight back up. (Choosing Apple used to delete the
+    /// cloud brain's key, since Apple was only ever used when there was none.)
+    var useAppleBrain: Bool {
+        get { UserDefaults.standard.bool(forKey: "ai_use_apple") }
+        set { UserDefaults.standard.set(newValue, forKey: "ai_use_apple") }
+    }
+
     // MARK: - API Key (per-provider)
+    //
+    // Each brain's key is kept under its own name, so changing brain never
+    // loses another's. A key that's missing here (a fresh install, restored
+    // settings) is fetched from the Keychain, where every key that passes its
+    // test is kept. An empty string means "removed on purpose": the Keychain
+    // copy stays for Load Key but isn't used by itself.
 
     var apiKey: String? {
-        get { UserDefaults.standard.string(forKey: provider.userDefaultsKey) }
-        set { UserDefaults.standard.set(newValue, forKey: provider.userDefaultsKey) }
+        get { apiKey(for: provider) }
+        set { setApiKey(newValue, for: provider) }
     }
 
     func apiKey(for provider: AIProvider) -> String? {
-        UserDefaults.standard.string(forKey: provider.userDefaultsKey)
+        let d = UserDefaults.standard
+        if d.object(forKey: provider.userDefaultsKey) != nil { return d.string(forKey: provider.userDefaultsKey) }
+        guard let kept = Self.keychainKey(for: provider), !kept.isEmpty else { return nil }
+        d.set(kept, forKey: provider.userDefaultsKey)
+        return kept
     }
 
     func setApiKey(_ key: String?, for provider: AIProvider) {
         UserDefaults.standard.set(key, forKey: provider.userDefaultsKey)
     }
 
+    /// The copy kept in the Keychain (same place GameEngine backs keys up to).
+    static func keychainKey(for provider: AIProvider) -> String? {
+        let key = provider.userDefaultsKey
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "com.dndtextrpg.apikey." + key,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
     var isConfigured: Bool {
+        if useAppleBrain && isAppleModelAvailable { return false }
         guard let key = apiKey else { return false }
         return !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }

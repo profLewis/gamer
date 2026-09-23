@@ -14658,7 +14658,9 @@ class GameEngine: ObservableObject {
         if clearKeys {
             print("  Clearing API keys...", color: .dimGreen)
             for provider in AIProvider.allCases {
-                UserDefaults.standard.removeObject(forKey: provider.userDefaultsKey)
+                // Marked removed (empty), not deleted: a deleted entry would be
+                // fetched straight back from the Keychain.
+                UserDefaults.standard.set("", forKey: provider.userDefaultsKey)
                 deleteSingleAPIKeyFromKeychain(for: provider)
             }
             print("  ✓ API keys cleared (app + Keychain).", color: .brightGreen)
@@ -15782,7 +15784,12 @@ class GameEngine: ObservableObject {
                     }
                 }
             case 2: // Use Apple AI
-                DMEngine.shared.apiKey = nil
+                // The cloud brain's key is kept (and backed up to the
+                // Keychain), not deleted — choosing that brain again uses it.
+                if let key = DMEngine.shared.apiKey, !key.isEmpty {
+                    self.backupSingleAPIKeyToKeychain(for: DMEngine.shared.provider)
+                }
+                DMEngine.shared.useAppleBrain = true
                 DMEngine.shared.clearHistory()
                 self.dmChatLog = []
                 self.print("")
@@ -17245,7 +17252,7 @@ class GameEngine: ObservableObject {
                 switch choice {
                 case 1: // Remove
                     self.backupSingleAPIKeyToKeychain(for: provider)
-                    DMEngine.shared.apiKey = nil
+                    DMEngine.shared.apiKey = ""   // removed on purpose; Load Key brings it back
                     self.print("")
                     self.print("  API key removed.", color: .yellow)
                     self.print("  (Backed up to Keychain — use", color: .dimGreen)
@@ -17389,7 +17396,7 @@ class GameEngine: ObservableObject {
                     let clipText = self.sanitizedAPIKeyInput(raw)
                     self.print("")
                     if let warning = self.keyFormatWarning(for: provider, key: clipText), warning.blocking {
-                        DMEngine.shared.apiKey = nil
+                        // The key you had stays; only the bad one is refused.
                         self.print("  \(warning.message)", color: .yellow)
                         self.print("")
                         self.waitForContinue()
@@ -17434,7 +17441,7 @@ class GameEngine: ObservableObject {
                     }
                     self?.print("")
                     if let warning = self?.keyFormatWarning(for: provider, key: trimmed), warning.blocking {
-                        DMEngine.shared.apiKey = nil
+                        // The key you had stays; only the bad one is refused.
                         self?.print("  \(warning.message)", color: .yellow)
                         self?.print("")
                         self?.waitForContinue()
@@ -17718,8 +17725,14 @@ class GameEngine: ObservableObject {
                         self?.print("  Unknown error. Check the key", color: .dimGreen)
                         self?.print("  and try again.", color: .dimGreen)
                     }
-                    // Remove the bad key
-                    DMEngine.shared.apiKey = nil
+                    // Put back the last key that worked (the Keychain keeps it);
+                    // only with none to go back to is the brain left without.
+                    if let kept = self?.loadAPIKeyFromKeychain(for: provider), !kept.isEmpty, kept != DMEngine.shared.apiKey {
+                        DMEngine.shared.apiKey = kept
+                        self?.print("  Your last working key is back in use.", color: .cyan)
+                    } else {
+                        DMEngine.shared.apiKey = nil
+                    }
                     self?.print("")
                     self?.waitForContinueWithTimeout(multiplier: 1.5) { [weak self] in
                         self?.promptAPIKey()
