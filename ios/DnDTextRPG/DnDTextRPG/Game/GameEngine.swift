@@ -7713,6 +7713,24 @@ class GameEngine: ObservableObject {
         var followUps: [String: Vignette] = [:]
     }
 
+    /// Something found in a mini-adventure goes into a pack — the hero's if
+    /// there's room, otherwise anyone's who can carry it. Returns who has it
+    /// (nil: nobody could). It used to go to the hero or be lost.
+    private func packForParty(_ item: Item, preferring hero: Character) -> Character? {
+        if hero.addItem(item) { return hero }
+        for c in party where c.id != hero.id && c.isConscious {
+            if c.addItem(item) { return c }
+        }
+        return nil
+    }
+
+    /// A gem to carry and sell, rather than gold straight into a purse.
+    private static func vignetteGem(value: Int) -> Item {
+        let name = ["Small Emerald", "Rough Ruby", "Clouded Sapphire", "Piece of Amber", "Moonstone"].randomElement()!
+        return Item(id: UUID(), name: name, description: "A precious gem worth \(value)gp. Merchants will buy it.",
+                    type: .gem, weight: 0.1, value: value, weaponStats: nil, armorStats: nil, potionStats: nil)
+    }
+
     private func vignettes(for room: Room) -> [Vignette] {
         guard let hero = party.first(where: { !$0.isComputerControlled && $0.isConscious }) ?? party.first(where: { $0.isConscious }) else { return [] }
         let name = shortName(for: hero)
@@ -7720,7 +7738,12 @@ class GameEngine: ObservableObject {
             ("Ask What Cheese", { "\"Cheddar,\" squeaks the mouse, puffing out its chest. \"Aged in this very cave. Forty days. Sharp.\" It seems very proud." }),
             ("Ask the Time", { [weak self] in "The mouse pulls out a pocket-watch no bigger than a pea, squints at it, and squeaks: \"\(self?.formattedGameTime() ?? "late").\" Then it tucks the watch away and looks at you expectantly, cheese still held up." }),
             ("Eat It", { let h = Int.random(in: 1...3); hero.heal(h); return "\(name) eats the crumb. Surprisingly good. (+\(h) HP)" }),
-            ("Put It in the Pack", { if let c = ItemCatalog.cheeses().first(where: { $0.name.contains("Cheddar") }), hero.addItem(c) { return "The mouse, delighted, fetches a whole wedge. A Wedge of Cheddar goes into \(name)'s pack." }; return "\(name)'s pack is too full. The mouse shrugs and keeps its cheese." }),
+            ("Put It in the Pack", { [weak self] in
+                guard let self = self, let c = ItemCatalog.cheeses().first(where: { $0.name.contains("Cheddar") }) else { return "The mouse keeps its cheese." }
+                if let who = self.packForParty(c, preferring: hero) {
+                    return "The mouse, delighted, fetches a whole wedge. A Wedge of Cheddar goes into \(self.shortName(for: who))'s pack — eat it any time: Inventory > Open Pack > Use Item."
+                }
+                return "Every pack is too full. The mouse shrugs and keeps its cheese." }),
         ])
         var puddle = Vignette(key: "puddle", scene: "Water drips from the ceiling into a still, clear puddle.", choices: [
             ("Drink", { hero.heal(1); return "Cold and clean. \(name) feels a little better. (+1 HP)" }),
@@ -7728,10 +7751,15 @@ class GameEngine: ObservableObject {
             ("Step Around It", { "Best not to get your boots wet down here." }),
         ])
         puddle.followUps["Look In"] = Vignette(key: "puddle2", scene: "The reflection winks again, then points — at the dark edge of the puddle, where something lies under the water.", choices: [
-            ("Look Where It Points", {
+            ("Look Where It Points", { [weak self] in
+                guard let self = self else { return "Only water." }
                 let roll = Int.random(in: 1...3)
-                if roll == 1, hero.addItem(ItemCatalog.torch()) { return "A dry torch, wrapped in oilcloth, weighted with a stone. Into \(name)'s pack it goes." }
-                if roll == 2, hero.addItem(ItemCatalog.antidote()) { return "A stoppered vial: an antidote, still good. Into \(name)'s pack it goes." }
+                if roll == 1, let who = self.packForParty(ItemCatalog.torch(), preferring: hero) {
+                    return "A dry torch, wrapped in oilcloth, weighted with a stone. Into \(self.shortName(for: who))'s pack it goes — a spare for when yours burns down."
+                }
+                if roll == 2, let who = self.packForParty(ItemCatalog.antidote(), preferring: hero) {
+                    return "A stoppered vial: an antidote, still good. Into \(self.shortName(for: who))'s pack it goes — Inventory > Open Pack > Use Item cures poison."
+                }
                 let g = Int.random(in: 4...9); hero.gold += g
                 return "A little purse, sodden but full: \(g) gold. (+\(g) gp)" }),
             ("Wink Back", { [weak self] in self?.party.filter { $0.isConscious }.forEach { $0.heal(1) }
@@ -7773,10 +7801,11 @@ class GameEngine: ObservableObject {
                 ("Move On", { "Some things are better left." }),
             ])
             scratches.followUps["Knock"] = Vignette(key: "knock", scene: "Silence — then a thin voice through the stone: \"Is someone there? I've been in here so long I'd stopped counting the days.\"", choices: [
-                ("Knock Back", {
+                ("Knock Back", { [weak self] in
                     let g = Int.random(in: 6...14); hero.gold += g
-                    let got = hero.addItem(ItemCatalog.antidote())
-                    return "\(name) knocks twice. A loose stone slides out of the wall: behind it, someone's little stash — \(g) gold\(got ? " and an antidote" : ""). \"Take it,\" says the voice. \"Better you than the rats.\" (+\(g) gp)" }),
+                    let who = self?.packForParty(ItemCatalog.antidote(), preferring: hero)
+                    let where_ = who.map { " (the antidote is in \(self?.shortName(for: $0) ?? name)'s pack)" } ?? ""
+                    return "\(name) knocks twice. A loose stone slides out of the wall: behind it, someone's little stash — \(g) gold\(who != nil ? " and an antidote" : ""). \"Take it,\" says the voice. \"Better you than the rats.\" (+\(g) gp)\(where_)" }),
                 ("Ask Who's There", { [weak self] in
                     guard let self = self, let d = self.dungeon else { return "Only a sigh." }
                     if let b = self.guardianBearing(in: d) {
@@ -7797,8 +7826,12 @@ class GameEngine: ObservableObject {
                     let dex = self?.party.map { $0.abilityScores.modifier(for: .dexterity) }.max() ?? 0
                     let roll = Dice.d20() + dex
                     if roll >= 12 {
-                        let g = Int.random(in: 20...40); hero.gold += g
-                        return "Quick as a cat, \(name) snatches the gem before the eyes can move. It sells for \(g) gold. (Dexterity roll \(roll) — +\(g) gp)"
+                        let gem = GameEngine.vignetteGem(value: Int.random(in: 20...40))
+                        if let self = self, let who = self.packForParty(gem, preferring: hero) {
+                            return "Quick as a cat, \(name) snatches it before the eyes can move: a \(gem.name), worth \(gem.value) gold. It's in \(self.shortName(for: who))'s pack — sell it to a merchant. (Dexterity roll \(roll))"
+                        }
+                        hero.gold += gem.value
+                        return "Quick as a cat, \(name) snatches the gem — no pack has room, so it's traded on the spot for \(gem.value) gold. (Dexterity roll \(roll) — +\(gem.value) gp)"
                     }
                     hero.currentHP = max(1, hero.currentHP - 3)
                     return "Too slow — something bites, hard, and the gem rolls away into the dark. (Dexterity roll \(roll) — -3 HP)" }),
@@ -7806,8 +7839,12 @@ class GameEngine: ObservableObject {
                     guard self?.party.contains(where: { $0.inventory.contains { $0.name.hasPrefix("Rope") } }) == true else {
                         return "Nobody has any rope. (A merchant sells it.) The eyes blink, patiently."
                     }
-                    let g = Int.random(in: 20...40); hero.gold += g
-                    return "A loop of rope, a careful twitch, and the gem comes up clean — the eyes never get near it. Worth \(g) gold. (+\(g) gp)" }),
+                    let gem = GameEngine.vignetteGem(value: Int.random(in: 20...40))
+                    if let self = self, let who = self.packForParty(gem, preferring: hero) {
+                        return "A loop of rope, a careful twitch, and the gem comes up clean — the eyes never get near it. A \(gem.name), worth \(gem.value) gold, now in \(self.shortName(for: who))'s pack — sell it to a merchant."
+                    }
+                    hero.gold += gem.value
+                    return "A loop of rope, a careful twitch, and the gem comes up clean. No pack has room, so it's traded on the spot for \(gem.value) gold. (+\(gem.value) gp)" }),
                 ("Leave It", { "Whatever owns those eyes can keep it." }),
             ])
             return [coins]
