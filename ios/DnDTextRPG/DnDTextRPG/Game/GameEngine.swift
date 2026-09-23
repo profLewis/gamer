@@ -32960,7 +32960,19 @@ class GameEngine: ObservableObject {
         torchLit = true
         torchTurnsRemaining = 40
         gameState = .exploring
-        showExplorationView()
+        // Which screen to show (App Store screenshots): the play screen by
+        // default, or the main menu, a conversation with the Gatekeeper,
+        // Party Status, or Meet the Team.
+        switch scene {
+        case "menu":
+            // The one-time brain notice would stand in for the menu.
+            UserDefaults.standard.set(true, forKey: "brainNoticeShown_" + DMEngine.shared.activeBrainName)
+            showMainMenu()
+        case "talk": talkToNPC()
+        case "status": showPartyStatus()
+        case "team": showMeetTheTeam(onBack: { [weak self] in self?.showExplorationView() })
+        default: showExplorationView()
+        }
     }
 
     private func setUpSampleEnding() {
