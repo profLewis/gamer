@@ -17,7 +17,7 @@ Each field is within Apple's character limit (shown in brackets).
 DnD RPG: Text Adventure
 
 ## Subtitle  (30)
-A Retro Text-Based Adventure
+A gift to you from Timbaloo
 
 ## Promotional text  (170)
 Lead a party of up to four into a dungeon that listens. Type what you want to do, talk to anyone you meet, and let the Dungeon Master tell the tale — aloud if you like.
