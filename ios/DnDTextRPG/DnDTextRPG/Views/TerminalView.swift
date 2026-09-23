@@ -101,8 +101,6 @@ struct TerminalView: View {
     /// and one line's height, measured, give the lines per page.
     @State private var storyAreaHeight: CGFloat = 0
     @State private var pageLineHeight: CGFloat = 0
-    /// Seconds left before the next page turns by itself (nil: not counting).
-    @State private var pageCountdown: Int? = nil
     /// Last gameEngine.screenGeneration value we actually scrolled-to-top
     /// for — lets the scroll-to-top handler tell "brand new screen" apart
     /// from "same screen, more content appended" (see its own comment).
@@ -600,7 +598,8 @@ struct TerminalView: View {
                                     .accessibilityHidden(true)
                             }
                         }
-                        .task(id: pageTimerKey) { await runPageCountdown() }
+                        .onChange(of: pageTimerKey) { _ in gameEngine.schedulePageCountdown() }
+                        .onAppear { gameEngine.schedulePageCountdown() }
                         #if !os(tvOS)
                         .simultaneousGesture(
                             DragGesture(minimumDistance: 24)
@@ -1766,7 +1765,7 @@ struct TerminalView: View {
                 }
                 .disabled(page == 0)
                 .accessibilityLabel("Previous page")
-                Text("Page \(page + 1) of \(pages.count)\(pageCountdown.map { " · \($0)s" } ?? "")")
+                Text("Page \(page + 1) of \(pages.count)")
                     .foregroundColor(Color(red: 0.0, green: 0.6, blue: 0.2))
                     .accessibilityHidden(true)
                 Button { gameEngine.turnStoryPage(by: 1) } label: {
@@ -1787,29 +1786,6 @@ struct TerminalView: View {
     /// Restarts whenever the page, the page count or the screen changes.
     private var pageTimerKey: String {
         "\(gameEngine.storyPagingActive)-\(gameEngine.storyPage)-\(storyPageList?.count ?? 0)-\(gameEngine.screenGeneration)"
-    }
-
-    /// The next page turns by itself after time to read this one — unless
-    /// VoiceOver is on (it reads at its own pace; swipe to turn), Auto-
-    /// Continue is off, or a screen countdown is already running (that one
-    /// turns the pages itself before it moves on). The hourglass pauses it.
-    private func runPageCountdown() async {
-        pageCountdown = nil
-        guard let pages = storyPageList, gameEngine.storyPage < pages.count - 1,
-              gameEngine.autoContinueEnabled, !GameEngine.systemVoiceOverRunning else { return }
-        let range = pages[gameEngine.storyPage]
-        let chars = gameEngine.spokenStoryText(range).count
-        var left = min(25, max(5, chars / 18))
-        while left > 0 {
-            if gameEngine.autoCountdownEnd != nil { pageCountdown = nil; return }
-            pageCountdown = left
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            if Task.isCancelled { return }
-            if gameEngine.autoContinuePaused || gameEngine.timeFrozen { continue }
-            left -= 1
-        }
-        pageCountdown = nil
-        gameEngine.turnStoryPage(by: 1)
     }
 
     private func advanceFromStrip() {

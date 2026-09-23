@@ -529,8 +529,9 @@ class GameEngine: ObservableObject {
         }
     }
 
-    /// The story cut into pages of at most `n` lines, by blocks rather
-    /// than lines. A block is a whole paragraph (its wrapped lines together)
+    /// The story cut into pages of at most `n` lines, by sections rather
+    /// than lines: a heading with everything under it stays on one page
+    /// when it fits. A block is a whole paragraph (its wrapped lines together)
     /// with any blank lines after it. A heading — the title box, a short
     /// capitalised heading, a line ending in a colon — is glued to the block
     /// after it, so a title is never left at the foot of one page with its
@@ -561,14 +562,36 @@ class GameEngine: ObservableObject {
             blocks.append((i..<j, !blank(i) && heading(i)))
             i = j
         }
-        // Heading chains travel together with the block they introduce.
+        // Sections: a heading and everything under it, up to the next heading
+        // — on a settings screen that's the setting's name, its value and its
+        // explanation; on a help page, a topic and its text. A heading with
+        // nothing under it before the next one joins that next section.
+        var sections: [[Int]] = []
+        for (bi, block) in blocks.enumerated() {
+            if block.keepWithNext || sections.isEmpty {
+                if let last = sections.last, last.allSatisfy({ blocks[$0].keepWithNext }) {
+                    sections[sections.count - 1].append(bi)
+                } else {
+                    sections.append([bi])
+                }
+            } else {
+                sections[sections.count - 1].append(bi)
+            }
+        }
+        // What gets placed: a whole section when it fits a page; a longer one
+        // by its paragraphs, each heading still kept with what follows it.
         var groups: [Range<Int>] = []
-        var b = 0
-        while b < blocks.count {
-            var e = b
-            while e < blocks.count - 1, blocks[e].keepWithNext { e += 1 }
-            groups.append(blocks[b].range.lowerBound..<blocks[e].range.upperBound)
-            b = e + 1
+        for sec in sections {
+            guard let firstBlock = sec.first, let lastBlock = sec.last else { continue }
+            let whole = blocks[firstBlock].range.lowerBound..<blocks[lastBlock].range.upperBound
+            if whole.count <= n { groups.append(whole); continue }
+            var k = 0
+            while k < sec.count {
+                var e = k
+                while e < sec.count - 1, blocks[sec[e]].keepWithNext { e += 1 }
+                groups.append(blocks[sec[k]].range.lowerBound..<blocks[sec[e]].range.upperBound)
+                k = e + 1
+            }
         }
         var pages: [Range<Int>] = []
         var pageStart = 0
@@ -626,6 +649,33 @@ class GameEngine: ObservableObject {
         storyPage += 1
         announceStoryPage()
         return true
+    }
+
+    /// Each call starts afresh; an older page countdown stands down.
+    private var pageCountdownGeneration = 0
+
+    /// The next page turns itself after time to read this one aloud — about
+    /// twelve characters a second, at least six seconds — on the game's own
+    /// countdown, so the hourglass and progress line show on the input bar
+    /// and the hourglass pauses it. Not with VoiceOver (it reads at its own
+    /// pace; swipe to turn), not with Auto-Continue off, and not while a
+    /// screen's own countdown runs (that one turns the pages itself first).
+    func schedulePageCountdown() {
+        pageCountdownGeneration += 1
+        let myGeneration = pageCountdownGeneration
+        guard storyPagingActive, storyLinesPerPage > 0, autoContinueEnabled,
+              !Self.systemVoiceOverRunning, autoCountdownEnd == nil else { return }
+        let pages = storyPageRanges
+        guard storyPage < pages.count - 1 else { return }
+        let chars = spokenStoryText(pages[storyPage]).count
+        let delay = min(90, max(6, Double(chars) / 12 + 2))
+        let screen = screenGeneration
+        scheduleAutoAdvance(after: delay, isStillValid: { [weak self] in
+            guard let self = self else { return false }
+            return self.pageCountdownGeneration == myGeneration && self.screenGeneration == screen && self.storyPagingActive
+        }, fire: { [weak self] in
+            self?.turnStoryPage(by: 1)
+        })
     }
 
     func turnStoryPage(by delta: Int) {
@@ -4999,6 +5049,13 @@ class GameEngine: ObservableObject {
             }
             if self.autoContinuePaused {
                 deadline = Date().addingTimeInterval(remaining)
+                return
+            }
+            // Paging with Read Aloud: never turn (or move on) mid-sentence —
+            // hold at the end until the voice has finished the page.
+            if self.storyPagingActive, self.isSpeakingAloud, deadline.timeIntervalSinceNow < 1 {
+                deadline = Date().addingTimeInterval(1)
+                if self.autoCountdownToken == token { self.autoCountdownEnd = deadline }
                 return
             }
             // The live countdown follows the shared end time, so a pause,
