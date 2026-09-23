@@ -7042,8 +7042,8 @@ class GameEngine: ObservableObject {
              "Before walking into a room, listen: you may hear monsters, voices or water. It's the safe way to decide which way to go. The ear is at the top-right of the direction pad.", false),
             ("help", "Tap ? (the middle of the small 3-part button, bottom-right) for help on this screen.",
              "Every screen has help. The small three-part button at the bottom-right of the buttons has < Back on the left, ? in the middle, and >> (more buttons) on the right. Tap ? now to read about exploring; tap it again, or ✕, to come back.", true),
-            ("packs", "Look in your packs: tap Inventory (or type \"inventory\").",
-             "Each adventurer carries a pack: weapons, armour, potions, food, torches, keys. Tap Inventory (or type \"inventory\" or \"i\"). Tap an item's line to see it and use, equip, give or drop it.", false),
+            ("packs", "Pack task: open Inventory and do something with an item — eat, drink, give or drop it.",
+             "Each adventurer carries a pack: weapons, armour, potions, food, torches, keys. Tap Inventory (or type \"inventory\" or \"i\"), then Open Pack. Use Item eats or drinks something; Give Item hands it to a companion; Drop Item leaves it in the room (you can come back for it). Do one of them to pass this step.", false),
             ("status", "Tap Party Status to see everyone's health, spells and your quest.",
              "Party Status shows each adventurer's hit points, armour, level and spells, your gold, and what you're here to do. It's the place to check before a fight or after one.", true),
             ("quest", "Take on a quest: walk up to someone (N on the map), tap Talk, then Ask for a Quest. (\"skip\" if nobody's here.)",
@@ -7143,6 +7143,27 @@ class GameEngine: ObservableObject {
         return nil
     }
 
+    /// Items handled before the pack task began don't count towards it.
+    private var trainingItemsBaseline = Int.max
+
+    /// The pack task, made concrete: something real from the party's packs
+    /// to eat, drink, give or drop.
+    private func trainingPackTask() -> String {
+        let hero = party.first { !$0.isComputerControlled } ?? party.first
+        let helper = party.first { $0.id != hero?.id }
+        let items = hero?.inventory ?? []
+        if let food = items.first(where: { ItemCatalog.foodKind(for: $0) != nil }) {
+            return "Your task: \(ItemCatalog.consumeVerb(for: food).replacingOccurrences(of: "s$", with: "", options: .regularExpression)) the \(food.name) — Inventory > Open Pack > Use Item."
+        }
+        if let spare = items.first(where: { !$0.isTorch && $0.type == .misc }), let helper = helper {
+            return "Your task: give the \(spare.name) to \(shortName(for: helper)) — Inventory > Open Pack > Give Item."
+        }
+        if let any = items.first(where: { !$0.isTorch }) {
+            return "Your task: drop the \(any.name) — Inventory > Open Pack > Drop Item (you can pick it up again)."
+        }
+        return "Your task: open Inventory and use, give or drop anything in a pack."
+    }
+
     /// The training torch is put out once, so the flame button has something
     /// to do; after that the player is in charge of it.
     private var trainingTorchDoused = false
@@ -7163,6 +7184,7 @@ class GameEngine: ObservableObject {
         case "quest": return !allQuests.isEmpty || mainQuest != nil
         case "walk": return d.rooms.values.filter { $0.visited }.count >= 2
         case "fight": return combatsWon > 0
+        case "packs": return Character.itemsHandledCount > trainingItemsBaseline
         case "guardian": return d.rooms.values.contains { $0.roomType == .boss && $0.cleared }
         default: return false
         }
@@ -7202,6 +7224,10 @@ class GameEngine: ObservableObject {
         var hint = cur.step.hint
         if let doneStep = doneStep {
             hint = "Done: " + (doneStep.hint.components(separatedBy: " — ").first?.components(separatedBy: ":").first ?? doneStep.key) + ". Next — " + hint
+        }
+        if cur.step.key == "packs" {
+            if trainingItemsBaseline == Int.max { trainingItemsBaseline = Character.itemsHandledCount }
+            hint = hint.replacingOccurrences(of: "Pack task: open Inventory and do something with an item — eat, drink, give or drop it.", with: trainingPackTask())
         }
         if cur.step.key == "walk" {
             hint += " This training floor has \(d.rooms.count) rooms — the line under the map counts how many you've explored."
@@ -7689,6 +7715,7 @@ class GameEngine: ObservableObject {
                 d.trainingPlan = []
                 self.trainingTorchDoused = false
                 self.lastTrainingIndex = -1
+                self.trainingItemsBaseline = Int.max
                 self.logEvent(choice == 2 ? "Full training" : "Quick training", category: "EXPLORE")
                 self.enterDungeon()
                 self.ensureTrainingPlan(d)
@@ -29131,7 +29158,6 @@ class GameEngine: ObservableObject {
     }
 
     private func showInventoryFor(_ character: Character, onBack: (() -> Void)? = nil, fromDM: Bool = false) {
-        trainingDid("packs")
         // Pack opening animation — only on first open per room
         let currentRoomId = dungeon?.currentRoom?.id
         if let roomId = currentRoomId, roomId != lastInventoryRoomId && !fromDM {

@@ -974,8 +974,13 @@ class Character: ObservableObject, Identifiable, Codable {
     func removeItem(_ item: Item) {
         if let index = inventory.firstIndex(where: { $0.id == item.id }) {
             inventory.remove(at: index)
+            Character.itemsHandledCount += 1
         }
     }
+
+    /// Items used, eaten, drunk, given or dropped out of any pack since the
+    /// app started — Training's pack task counts from its own starting point.
+    static var itemsHandledCount = 0
 
     func equipWeapon(_ item: Item) {
         if let current = equippedWeapon {
