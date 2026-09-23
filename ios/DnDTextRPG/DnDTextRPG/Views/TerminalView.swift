@@ -586,7 +586,9 @@ struct TerminalView: View {
                         // Its own strip under the story, never over it: floating on
                         // top, it hid the page's last line whenever the sums ran a
                         // line long.
-                        .safeAreaInset(edge: .bottom, spacing: 0) { storyPageBar }
+                        .safeAreaInset(edge: .bottom, spacing: 0) {
+                            VStack(spacing: 0) { storyPageBar; voiceOverContinueButton }
+                        }
                         // Tapping the story turns the page while there's more.
                         .overlay {
                             if gameEngine.storyPagingActive, let pages = storyPageList, gameEngine.storyPage < pages.count - 1,
@@ -620,6 +622,7 @@ struct TerminalView: View {
                                                  asBox: gameEngine.voiceOverStoryAsBox || gameEngine.storyPagingActive,
                                                  page: storyPageForVoiceOver,
                                                  turn: { gameEngine.turnStoryPage(by: $0) },
+                                                 activate: { advanceFromStrip() },
                                                  follow: { gameEngine.followLink($0) }))
                         // VoiceOver's three-finger swipe scrolls the story, as a
                         // finger drag would.
@@ -1749,12 +1752,36 @@ struct TerminalView: View {
         // The area less the page bar, the list's padding (4 top and bottom),
         // its zero-height measuring row and end marker (each still costs a
         // line's spacing), and half a line in hand.
-        let usable = storyAreaHeight - storyPageBarHeight - 8 - 3 * storyLineSpacing - 2 - pageLineHeight / 2
+        let usable = storyAreaHeight - storyPageBarHeight - (GameEngine.systemVoiceOverRunning ? 44 : 0)
+            - 8 - 3 * storyLineSpacing - 2 - pageLineHeight / 2
         let n = max(4, Int(usable / (pageLineHeight + storyLineSpacing)))
         if n != gameEngine.storyLinesPerPage { gameEngine.storyLinesPerPage = n }
     }
 
     /// ◂ Previous · Page 2 of 5 · 8s · Next ▸ — only when there's more than a page.
+    /// VoiceOver can't "tap anywhere": the tap-to-continue strip is hidden
+    /// from it (it would sit over the story). So with VoiceOver on, a screen
+    /// that's waiting to move on gets a real Continue button under the story
+    /// — it turns any unread page first, then continues.
+    private var voiceOverWaiting: Bool {
+        GameEngine.systemVoiceOverRunning && (gameEngine.awaitingContinue || gameEngine.swipeLeftHandler != nil)
+    }
+
+    @ViewBuilder
+    private var voiceOverContinueButton: some View {
+        if voiceOverWaiting {
+            Button { advanceFromStrip() } label: {
+                Text("Continue ▸")
+                    .font(.system(size: 14 * scale, weight: .semibold, design: .monospaced))
+                    .foregroundColor(Color(red: 0.0, green: 0.9, blue: 0.3))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.plain)
+            .background(Color.black.opacity(0.9))
+            .accessibilityLabel(gameEngine.storyPagingActive && (storyPageList?.count ?? 0) > gameEngine.storyPage + 1 ? "Next page" : "Continue")
+        }
+    }
+
     @ViewBuilder
     private var storyPageBar: some View {
         if let pages = storyPageList, pages.count > 1 {
@@ -3901,6 +3928,8 @@ struct VoiceOverStory: ViewModifier {
     /// (VoiceOver's adjust) or double-tap turns the page.
     var page: (text: String, index: Int, count: Int)? = nil
     var turn: (Int) -> Void = { _ in }
+    /// Double-tap on the Story: the next page, or — on the last — continue.
+    var activate: () -> Void = {}
     let follow: (String) -> Void
     func body(content: Content) -> some View {
         if sections.isEmpty {
@@ -3919,7 +3948,7 @@ struct VoiceOverStory: ViewModifier {
                     @unknown default: break
                     }
                 }
-                .accessibilityAction { turn(1) }
+                .accessibilityAction { activate() }
                 .accessibilityActions {
                     ForEach(Array(links.enumerated()), id: \.offset) { _, sec in
                         Button(sec.text) { if let key = sec.link { follow(key) } }
@@ -3936,6 +3965,7 @@ struct VoiceOverStory: ViewModifier {
                 .accessibilityLabel("Story")
                 .accessibilityValue(sections.filter { $0.link == nil }.map { $0.text }.joined(separator: " "))
                 .accessibilityHint(links.isEmpty ? "" : "Swipe up or down for links.")
+                .accessibilityAction { activate() }
                 .accessibilityActions {
                     ForEach(Array(links.enumerated()), id: \.offset) { _, sec in
                         Button(sec.text) { if let key = sec.link { follow(key) } }

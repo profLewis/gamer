@@ -7093,35 +7093,35 @@ class GameEngine: ObservableObject {
              "Quests give an adventure its point, and pay. A real adventure usually opens with one; in training you get your own, and the Gatekeeper standing in this first room is the one to ask. Tap Talk (the scroll at the bottom-right of the direction pad, or type \"talk\"), then Ask for a Quest: they ask what sort — A Main Quest (the big one: a villain, a reward and a deadline) or A Side Quest (a smaller errand). Take the main quest. Later you can ask almost anyone for more: once a main quest is running, people offer Side Quest instead, and Ask About Our Quest. Party Status lists every quest, its reward and the days left.", false),
             ("walk", "Tap a direction — N, S, E or W on the pad — to walk into the next room.",
              "The box at the top is the map. [@] is you. Each [ ] is a room you've seen; the lines between them (-- and |) are doorways. Letters mark what's in a room: ! danger, B the Boss's lair, M a merchant, N someone to talk to, G a gym. Your aim here: explore, get stronger, and beat the guardian at the far end. To move, tap N, S, E or W on the direction pad — or type \"north\", or say it.", false),
-            ("map", "Long-press the map to open the map viewer: the whole floor and a key to every symbol.",
+            ("map", "Long-press the map to open the map viewer, and find B — the Boss's lair — on it.",
              "Press and hold anywhere on the map. The viewer shows every room you've been to on this floor, with a full key underneath. Pinch to zoom, and use the buttons along the bottom to page between floors or print the map. Close it with ✕.", true),
             ("torch", "Light your torch (the flame, bottom-left of the pad): in the dark you see nothing.",
              "Without light you can't see the room, its exits or what's in it — and you walk into trouble. The flame at the bottom-left of the direction pad lights your torch (and douses it again). Torches burn down as you walk, so buy spares from merchants.", false),
             ("search", "Search this room (the magnifying glass, top-left of the pad, or Actions > Search Room) — hidden things turn up.",
              "Rooms hide things: coins, potions, keys, secret notes. Searching takes a little time and sometimes finds nothing — Rogues and Engineers are better at it. It also shows what else the room offers (a forge, books, plants…), with a button for each. The magnifying glass is at the top-left of the direction pad (a teleport pad takes that corner when there is one; Actions > Search Room always works).", false),
-            ("listen", "Listen at the doors (the ear, top-right of the pad) to hear what's in the rooms next door.",
+            ("listen", "Listen at the doors (the ear, top-right of the pad) and hear what's in the rooms next door.",
              "Before walking into a room, listen: you may hear monsters, voices or water. It's the safe way to decide which way to go. The ear is at the top-right of the direction pad.", false),
             ("help", "Tap \(h) (the middle of the small 3-part button, bottom-right) for help on this screen.",
              "Every screen has help. The small three-part button at the bottom-right of the buttons has \(h) in the middle — help for that screen — with Back on the left where there's somewhere to go back to, and >> (more buttons) on the right when they don't all fit. Tap \(h) now to read about exploring; tap it again, or ✕, to come back.", true),
             ("packs", "Pack task: open Inventory and do something with an item — eat, drink, give or drop it.",
              "Each adventurer carries a pack: weapons, armour, potions, food, torches, keys. Tap Inventory (or type \"inventory\" or \"i\"), then Open Pack. Use Item eats or drinks something; Give Item hands it to a companion; Drop Item leaves it in the room (you can come back for it). Do one of them to pass this step.", false),
-            ("status", "Tap Party Status to see everyone's health, spells and your quest.",
+            ("status", "Open Party Status and find how many days your quest has left.",
              "Party Status shows each adventurer's hit points, armour, level and spells, your gold, and what you're here to do. It's the place to check before a fight or after one.", true),
             ("merchant", "Merchant task: visit the merchant (M on the map), buy some rope and put it in your pack. (\"skip\" if there's none.)",
              "Merchants sell torches, food, potions, weapons and armour, buy what you don't need, and haggle — offer less and see what they say. Walk into their room (M on the map) and tap Visit Merchant. Check your packs after buying. If there's no merchant on this floor, type \"skip\".", false),
             ("fight", "Win a fight. Attack, or cast a spell — \(h) in a fight shows each hero's chances.",
              "When monsters appear, the fight takes turns: each of you, and each monster, in the order rolled at the start. On your turn choose Attack, a spell, a potion, Dodge or run. \(h) in a fight lists the enemy's strength and your real chance to hit it. Your robot companion takes their own turns.", false),
-            ("rest", "Rest to heal: the button in the middle of the pad (hold it for a long rest).",
+            ("rest", "Take a short rest: tap the middle of the pad (hold it for a long rest).",
              "A short rest (tap the middle of the pad) heals a little and takes an hour. A long rest (hold it) heals fully and restores spells — but it takes eight hours, and time matters: quests have deadlines, torches burn and monsters move. Rest when you need to, not every room.", false),
             ("save", "Save your game: Actions > Save. To stop, ✕ on the input line > Save & Leave. To load: Play > Continue Adventure.",
              "Saving keeps your adventure so you can stop and come back. Actions > Save saves and carries on. To stop, tap ✕ at the right of the input line (or Actions > Leave Game…): Leave the Adventure offers Save & Leave (back to the main menu) or Save & Quit App. To load a game later: Play > Continue Adventure, then pick it — a training game is marked Training. The game also saves as you go.", true),
-            ("certificates", "Certificates: tap the cog > All Settings… > Certificates to see what you've earned.",
+            ("certificates", "Open your Certificates: the cog > All Settings… > Certificates.",
              "Completing an adventure, and training at a gym, earns a certificate with your party, your stats and the maps you made — kept in Settings (the cog) > All Settings… > Certificates and printable as a PDF. The Hall of Fame (on the main menu) keeps your best finished adventures — real ones only, not training.", true),
             ("ai", "Optional: give the DM an AI brain — tap the cog > Change Brain…. Type \"skip\" to pass.",
              "The game has its own Dungeon Master and needs nothing else. If you'd like a DM that chats freely, tap the cog (on the input line) > Change Brain… (or All Settings… > Dungeon Master Brain): Apple's on-device one needs no key on newer devices; Claude, ChatGPT or Gemini need a key from their websites (the key screen links to them and tests the key for you). Type \"skip\" to move on.", true),
             ("settings", "Try a setting: the cog (on the input line) > All Settings… > Accessibility — switch Story between Scroll and Pages, or change the Display Size.",
              "Settings shape the game to you. Tap the cog at the right of the input line, then All Settings…, then Accessibility. Story switches the text between scrolling and turning a page at a time (Pages suits VoiceOver and reading aloud); Display Size makes everything bigger or smaller; Reduced Text leaves out the extra explanations. Change any setting to pass this item — you can always change it back.", false),
-            ("guardian", "Find the Boss and beat it to finish your training.",
+            ("guardian", "Beat the Boss (B on the map) to finish your training.",
              "In a real adventure each floor has a guardian, and the last floor holds the Boss — the villain of your tale. Training is a single floor, so its guardian is the Boss, in its lair: B on the map (training always marks it, even before you have seen it). Beat it and the adventure is won. Rest and heal first, keep your torch lit, and read \(h) in the fight. The Training line tells you which way the lair lies.", false),
         ]
         return all.filter { full || !$0.full }.map { ($0.key, $0.hint, $0.detail) }
@@ -7283,11 +7283,16 @@ class GameEngine: ObservableObject {
             if trainingItemsBaseline == Int.max { trainingItemsBaseline = Character.itemsHandledCount }
             hint = hint.replacingOccurrences(of: "Pack task: open Inventory and do something with an item — eat, drink, give or drop it.", with: trainingPackTask())
         }
+        if cur.step.key == "walk", let room = d.currentRoom,
+           let way = room.exits.keys.filter({ !room.isLockedShut($0) }).map({ $0.rawValue }).sorted().first {
+            let names = ["N": "north", "S": "south", "E": "east", "W": "west"]
+            hint = "Walk \(names[way.uppercased()] ?? way) into the next room — tap \(way.uppercased()) on the pad (or type \"\(names[way.uppercased()] ?? way)\")."
+        }
         if cur.step.key == "walk" {
             hint += " This training floor has \(d.rooms.count) rooms — the line under the map counts how many you've explored."
         }
         if cur.step.key == "guardian", let bearing = guardianBearing(in: d) { hint += " Its lair is \(bearing)." }
-        explorationStatusMessage = ("✦ Training: \(cur.index) of \(cur.count) done — next: " + hint, .cyan)
+        explorationStatusMessage = ("✦ Training \(cur.index) of \(cur.count) done. Your task: " + hint, .cyan)
     }
 
     private var lastTrainingIndex = -1
