@@ -469,7 +469,11 @@ class ShopEngine {
         case .armor: options.append("Wear It")
         case .shield: options.append("Strap It On")
         case .potion: options.append(ItemCatalog.consumeVerb(for: item) == "eats" ? "Eat It" : "Drink It")
-        default: break
+        default:
+            // Things that make sense to use on the spot: food and drink, and a
+            // torch when none is burning. A sword or a rope is only carried.
+            if isFood { options.append(ItemCatalog.consumeVerb(for: item) == "eats" ? "Eat It" : "Drink It") }
+            else if item.isTorch && !game.torchLit { options.append("Light It") }
         }
         if canGift { options.append("Give as a Present") }
         options.append("Keep It For Later")
@@ -497,13 +501,27 @@ class ShopEngine {
                 self.eatNow(item: item, buyer: buyer, returnTo: returnTo)
             case "Drink It":
                 if isFood { self.eatNow(item: item, buyer: buyer, returnTo: returnTo) } else { self.drinkNow(item: item, buyer: buyer, returnTo: returnTo) }
+            case "Light It":
+                if let owned = buyer.inventory.first(where: { $0.id == item.id }) ?? buyer.inventory.last(where: { $0.isTorch }) {
+                    game.torchTurnsRemaining = owned.torchLife ?? Item.torchFullLife
+                    game.activeTorchId = owned.id
+                    game.torchHolderId = buyer.id
+                    game.torchLit = true
+                    game.logEvent("Lit a newly bought torch at the merchant's", category: "EXPLORE")
+                    game.print("")
+                    game.print("  \(buyer.name) lights the torch from the merchant's lamp. The shadows retreat.", color: .brightGreen)
+                } else {
+                    game.print("")
+                    game.print("  \(buyer.name) can't find the torch to light it.", color: .yellow)
+                }
+                game.waitForContinueWithTimeout { returnTo() }
             case "Give as a Present":
                 self.giveAsPresent(item: item, from: buyer, returnTo: returnTo)
             case "?":
                 game.showInlineHelp {
                     game.printTitle("Just Bought — Help")
                     game.print("")
-                    game.printWrapped("Use it now (equip a weapon, wear armour, strap on a shield, eat or drink it), give it to someone else in the party as a present, or keep it in \(buyer.name)'s pack for later. < Back keeps it too.", indent: 2, color: .dimGreen)
+                    game.printWrapped("Use it now (equip a weapon, wear armour, strap on a shield, eat or drink it, light a torch), give it to someone else in the party as a present, or keep it in \(buyer.name)'s pack for later. < Back keeps it too. Only things that make sense on the spot can be used here — a sword or a rope is simply carried.", indent: 2, color: .dimGreen)
                     game.print("")
                 }
             default:

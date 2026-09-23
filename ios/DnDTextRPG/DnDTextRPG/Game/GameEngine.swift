@@ -7272,6 +7272,10 @@ class GameEngine: ObservableObject {
         if let doneStep = doneStep {
             hint = "Done: " + (doneStep.hint.components(separatedBy: " — ").first?.components(separatedBy: ":").first ?? doneStep.key) + ". Next — " + hint
         }
+        // Nothing to light yet: "tap the flame" would be no use — find one.
+        if cur.step.key == "torch", findBestTorch() == nil {
+            hint = "You have no torch yet — find one first: search rooms (a candlelit room always has one) or buy one from a merchant. Then light it with the flame at the bottom-left of the pad."
+        }
         if cur.step.key == "merchant", trainingRopeBaseline == Int.max {
             trainingRopeBaseline = trainingRopeCount()
         }
@@ -25061,7 +25065,7 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped("This pad glows a deeper, colder blue than the others, and the runes round its rim point down, not across.", indent: 2, color: .cyan)
         print("")
-        printWrapped("It could carry you down to \(Dungeon.floorName(next)) of \(dungeon.name) — past this level's guardian, into harder fights and better treasure. Or it will hop you across to \(destination.name) like any other pad.", indent: 2, color: .brightGreen)
+        printWrapped("It could carry you down to \(Dungeon.floorName(next)) of \(dungeon.name) — past this level's guardian, into harder fights and better treasure. Or it will hop you across — usually to \(destination.name) — like any other pad.", indent: 2, color: .brightGreen)
         print("")
         printWrapped("Worth saving first: there's no pad back up.", indent: 2, color: .dimGreen)
         let opts = ["Ride It Down to Level \(next)", "Hop Across to \(destination.name)", "Leave It"]
@@ -25106,8 +25110,19 @@ class GameEngine: ObservableObject {
         }
     }
 
-    private func useTeleportPad(from room: Room, to destination: Room) {
-        guard dungeon != nil else { return }
+    private func useTeleportPad(from room: Room, to intended: Room) {
+        guard let d = dungeon else { return }
+        // Pads aren't perfectly reliable: about one hop in three the pad
+        // throws you to some other pad on this floor instead of its partner.
+        var destination = intended
+        var wild = false
+        let others = d.rooms.values.filter {
+            $0.teleportDestinationRoomId != nil && $0.id != room.id && $0.id != intended.id && $0.floor == room.floor
+        }
+        if Int.random(in: 1...3) == 1, let other = others.randomElement() {
+            destination = other
+            wild = true
+        }
         SoundManager.shared.playTeleport()
         clearTerminal()
         printTitle("Teleport Pad")
@@ -25137,9 +25152,11 @@ class GameEngine: ObservableObject {
             self.advanceTime(5)
             self.tickTorch()
             self.checkTorchEvent()
-            self.logEvent("Teleported from \(room.name) to \(destination.name)", category: "EXPLORE")
+            self.logEvent("Teleported from \(room.name) to \(destination.name)\(wild ? " (a wild jump — meant for \(intended.name))" : "")", category: "EXPLORE")
             self.logMultiplayerAction("The party stepped through a teleport pad into \(destination.name)")
-            self.explorationStatusMessage = ("The pad hums, and the room shifts around you...", .cyan)
+            self.explorationStatusMessage = wild
+                ? ("The pad stutters and flares — this isn't where it usually goes. You're in \(destination.name), on another pad.", .yellow)
+                : ("The pad hums, and the room shifts around you...", .cyan)
             self.autosaveIfNeeded()
             self.showExplorationView()
         }
@@ -26361,10 +26378,14 @@ class GameEngine: ObservableObject {
         } else {
             darkFailStreak[what] = tries + 1
             print("  You can't quite manage it in the dark.", color: .yellow)
-            switch tries {
-            case 0: print("  Light a torch and try again.", color: .yellow)
-            case 1: printWrapped("Hint: tap the flame on the D-pad (bottom left) to light a torch — then it's easy.", indent: 2, color: .cyan)
-            default: printWrapped("Hint: no torch? Merchants sell them, and they sometimes turn up when you search. Or keep trying — now and then luck is on your side.", indent: 2, color: .cyan)
+            // Try again is always an answer: each go in the dark is likelier
+            // to work. The torch advice depends on having one — "tap the
+            // flame" is no use to a party with nothing to light.
+            let chance = min(60, 35 + (tries + 1) * 8)
+            if findBestTorch() != nil {
+                printWrapped("Light your torch — the flame, bottom left of the pad — and it's easy. Or simply try again: next time there's about a \(chance)% chance you'll manage it in the dark.", indent: 2, color: .cyan)
+            } else {
+                printWrapped("You've no torch to light. You can simply try again — next time there's about a \(chance)% chance you'll manage it in the dark. Or find a torch first: search rooms (a candlelit room always has one), or buy one when you do reach a merchant.", indent: 2, color: .cyan)
             }
             waitForContinueWithTimeout { [weak self] in self?.showExplorationView() }
         }
@@ -31835,7 +31856,10 @@ class GameEngine: ObservableObject {
     /// how far — "north-east, about 4 rooms away".
     private func guardianBearing(in d: Dungeon) -> String? {
         guard let here = d.currentRoom,
-              let lair = d.rooms.values.first(where: { $0.roomType == .boss && $0.floor == here.floor && !$0.cleared }) else { return nil }
+              let lair = d.rooms.values.first(where: { $0.roomType == .boss && $0.floor == here.floor && !$0.cleared }),
+              // Only while the guardian is really there — a bearing to an
+              // empty lair would send the party the wrong way.
+              (lair.encounter?.aliveMonsters.isEmpty == false) else { return nil }
         let dx = lair.x - here.x, dy = lair.y - here.y
         guard dx != 0 || dy != 0 else { return nil }
         let ns = dy < 0 ? "north" : (dy > 0 ? "south" : "")
@@ -31847,7 +31871,8 @@ class GameEngine: ObservableObject {
         else if abs(dx) >= 2 * abs(dy) { way = ew }
         else { way = ns + "-" + ew }
         let steps = abs(dx) + abs(dy)
-        return steps == 1 ? "\(way), next door" : "\(way), about \(steps) rooms away"
+        // Straight-line rooms: the way round by the passages can be longer.
+        return steps == 1 ? "\(way), next door" : "\(way), about \(steps) rooms away as the crow flies"
     }
     private var guardianBearingAtVisits = -1
 
