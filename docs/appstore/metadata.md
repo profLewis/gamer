@@ -65,9 +65,6 @@ dungeon,text adventure,rpg,5e,roleplaying,fantasy,quest,interactive fiction,voic
 ## What's New in This Version  (4000)
 Version 3.0 — the biggest update yet, shaped by months of play-testing.
 
-A NEW NAME
-• The game is now Wyverns & Catacombs. The rules it plays by are the freely licensed System Reference Document 5.1, but the famous name for them belongs to its owners, so the game has taken a name of its own. Nothing else changes: the same app, the same saves, the same adventurers.
-
 WHILE YOU PLAY
 • A fight now keeps its own panel above the story: whose turn it is, every fighter with a bar and their hit points, and who goes next — so nothing scrolls away mid-battle.
 • Rescued prisoners, wounded knights, elf scouts and goblin defectors can actually be asked to join you now, and they walk with you for a while before going their own way.
@@ -86,7 +83,7 @@ CHOOSE YOUR DUNGEON MASTER'S BRAIN
 • No AI on your device? A Hugging Face token steps in automatically, and the built-in DM still runs the whole game.
 
 LEARN AS YOU PLAY
-• A guided Gameplay Test walks new players through exploring, fighting, merchants, quests and saving, with a short quiz at the end.
+• Training gives you one task at a time — get a quest, light a torch, listen, fight, save and come back — ticks each off as you do it, and ends with a quiz: pass it for a certificate.
 • A Hall of Fame of completed adventures, with example games to load and explore.
 
 A QUEST WORTH GOING DOWN FOR
@@ -111,7 +108,7 @@ A DUNGEON MASTER THAT LISTENS
 • If your AI key stops working, the game tells you why, links to the right page, and offers another brain.
 
 BUILT FOR VOICEOVER
-• Screens read as a few clear sections, starting with where you are; every button named; long press and scrolling available as VoiceOver actions; only ever one voice speaking.
+• The story can come a page at a time instead of scrolling, with less text if you like — both switched on by VoiceOver itself. Every button is named, empty places say "Blank", and a guide describes each screen's layout.
 
 AND MORE
 • an Atlas of every floor you've mapped; adjustable timers; font sizes down to Tiny; a little magick for the stuck.
