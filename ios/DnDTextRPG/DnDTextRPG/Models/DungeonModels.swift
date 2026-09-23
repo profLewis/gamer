@@ -729,6 +729,7 @@ class Dungeon: ObservableObject, Codable {
         case name, level, rooms, currentRoomId, previousRoomId, nextRoomId, currentFloor, emergencyDropUsed, hasMultiGymPass
         case archivedLevels, hasCartography, levelCount, startDifficulty
         case training, trainingDone, trainingFull, trainingPlan, trainingSkipped
+        case growing
     }
 
     init(name: String, level: Int, levelCount: Int? = nil, startDifficulty: Int? = nil) {
@@ -761,6 +762,8 @@ class Dungeon: ObservableObject, Codable {
         nextRoomId = try container.decodeIfPresent(Int.self, forKey: .nextRoomId)
             ?? (roomsDict.keys.max().map { $0 + 1 } ?? 0)
         currentFloor = try container.decodeIfPresent(Int.self, forKey: .currentFloor) ?? 1
+        // Saved before the Layout setting: those floors always grew, so keep them growing.
+        growing = try container.decodeIfPresent(Bool.self, forKey: .growing) ?? true
         // The floor is whichever floor the party's room is on. A save where
         // these disagreed drew an empty map ("No map available.") and hid
         // the Atlas; the room is the truth.
@@ -803,10 +806,20 @@ class Dungeon: ObservableObject, Codable {
         try container.encode(trainingFull, forKey: .trainingFull)
         try container.encode(trainingPlan, forKey: .trainingPlan)
         try container.encode(trainingSkipped, forKey: .trainingSkipped)
+        try container.encode(growing, forKey: .growing)
     }
 
     /// Next room ID for dynamic expansion
     private var nextRoomId: Int = 0
+
+    /// Settings > Gameplay > Layout. Fixed (the default): every floor is
+    /// planned in full before the party sets foot on it — the room count
+    /// never changes. Growing: rooms at the edge of the map may sprout new
+    /// ones the first time you enter them. Fixed when the dungeon is made,
+    /// and carried floor to floor, so changing the setting never reshapes a
+    /// game under way.
+    var growing: Bool = Dungeon.growingSetting
+    static var growingSetting: Bool { UserDefaults.standard.bool(forKey: "dungeonGrows") }
 
     /// Chance a given non-special room gets a monster encounter, scaled by
     /// dungeon level. Used to be a single step (0.35 at level 1, 0.5 at every
@@ -1373,7 +1386,7 @@ class Dungeon: ObservableObject, Codable {
     /// must be fixed the moment a room has been fully considered once, not
     /// still being decided fresh each time the player walks back in.
     func expandIfNeeded(from room: Room) {
-        guard !room.expansionConsidered else { return }
+        guard growing, !room.expansionConsidered else { return }
         defer { room.expansionConsidered = true }
 
         // Only expand from rooms that have open adjacent cells

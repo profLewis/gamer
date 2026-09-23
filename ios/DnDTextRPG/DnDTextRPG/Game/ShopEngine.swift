@@ -97,10 +97,19 @@ class ShopEngine {
         } else {
             self.stock = merchant.stock
         }
-        // Training's merchant task is "buy some rope": every training
-        // merchant has some, first on the counter.
-        if game?.dungeon?.training == true, !stock.contains(where: { $0.name.hasPrefix("Rope") }) {
-            stock.insert(ItemCatalog.rope(), at: 0)
+        // Training's merchant task asks for one thing (rope, a torch, a
+        // potion or an antidote — it varies): every training merchant has
+        // it, first on the counter.
+        if game?.dungeon?.training == true, let want = game?.trainingBuyItem().name,
+           !stock.contains(where: { $0.name.hasPrefix(want) }) {
+            let item: Item
+            switch want {
+            case "Torch": item = ItemCatalog.torch()
+            case "Potion of Healing": item = ItemCatalog.healingPotion()
+            case "Antidote": item = ItemCatalog.antidote()
+            default: item = ItemCatalog.rope()
+            }
+            stock.insert(item, at: 0)
             self.merchant?.stock = self.stock
             syncMerchantToRoom()
         }

@@ -7093,7 +7093,7 @@ class GameEngine: ObservableObject {
              "Quests give an adventure its point, and pay. A real adventure usually opens with one; in training you get your own, and the Gatekeeper standing in this first room is the one to ask. Tap Talk (the scroll at the bottom-right of the direction pad, or type \"talk\"), then Ask for a Quest: they ask what sort — A Main Quest (the big one: a villain, a reward and a deadline) or A Side Quest (a smaller errand). Take the main quest. Later you can ask almost anyone for more: once a main quest is running, people offer Side Quest instead, and Ask About Our Quest. Party Status lists every quest, its reward and the days left.", false),
             ("walk", "Tap a direction — N, S, E or W on the pad — to walk into the next room.",
              "The box at the top is the map. [@] is you. Each [ ] is a room you've seen; the lines between them (-- and |) are doorways. Letters mark what's in a room: ! danger, B the Boss's lair, M a merchant, N someone to talk to, G a gym. Your aim here: explore, get stronger, and beat the guardian at the far end. To move, tap N, S, E or W on the direction pad — or type \"north\", or say it.", false),
-            ("map", "Long-press the map to open the map viewer, and find B — the Boss's lair — on it.",
+            ("map", "Long-press the map to open the map viewer.",
              "Press and hold anywhere on the map. The viewer shows every room you've been to on this floor, with a full key underneath. Pinch to zoom, and use the buttons along the bottom to page between floors or print the map. Close it with ✕.", true),
             ("torch", "Light your torch (the flame, bottom-left of the pad): in the dark you see nothing.",
              "Without light you can't see the room, its exits or what's in it — and you walk into trouble. The flame at the bottom-left of the direction pad lights your torch (and douses it again). Torches burn down as you walk, so buy spares from merchants.", false),
@@ -7192,7 +7192,34 @@ class GameEngine: ObservableObject {
     /// Rope the party had when the merchant task came up — it wants more.
     private var trainingRopeBaseline = Int.max
     private func trainingRopeCount() -> Int {
-        party.flatMap { $0.inventory }.filter { $0.name.hasPrefix("Rope") }.count
+        let want = trainingBuyItem()
+        return party.flatMap { $0.inventory }.filter { $0.name.hasPrefix(want.name) }.count
+    }
+
+    /// What this training game's merchant task asks for — picked once per
+    /// game and kept with it (as a note in trainingDone), so it's the same
+    /// after a load but not the same every game.
+    static let trainingBuyChoices: [(name: String, phrase: String)] = [
+        ("Rope", "some rope"), ("Torch", "a spare torch"),
+        ("Potion of Healing", "a Potion of Healing"), ("Antidote", "an antidote"),
+    ]
+    func trainingBuyItem() -> (name: String, phrase: String) {
+        guard let d = dungeon, d.training else { return Self.trainingBuyChoices[0] }
+        if let note = d.trainingDone.first(where: { $0.hasPrefix("buy:") }),
+           let hit = Self.trainingBuyChoices.first(where: { "buy:" + $0.name == note }) { return hit }
+        let pick = Self.trainingBuyChoices.randomElement()!
+        d.trainingDone.append("buy:" + pick.name)
+        return pick
+    }
+
+    /// A number fixed for this training game (kept like the item above), so
+    /// its little choices vary from game to game but not from moment to moment.
+    private func trainingSeed() -> Int {
+        guard let d = dungeon else { return 0 }
+        if let note = d.trainingDone.first(where: { $0.hasPrefix("seed:") }), let n = Int(note.dropFirst(5)) { return n }
+        let n = Int.random(in: 0..<1000)
+        d.trainingDone.append("seed:\(n)")
+        return n
     }
 
     /// The pack task, made concrete: something real from the party's packs
@@ -7201,16 +7228,25 @@ class GameEngine: ObservableObject {
         let hero = party.first { !$0.isComputerControlled } ?? party.first
         let helper = party.first { $0.id != hero?.id }
         let items = hero?.inventory ?? []
-        if let food = items.first(where: { ItemCatalog.foodKind(for: $0) != nil }) {
-            return "Your task: \(ItemCatalog.consumeVerb(for: food).replacingOccurrences(of: "s$", with: "", options: .regularExpression)) the \(food.name) — Inventory > Open Pack > Use Item."
+        // Not always "eat the first food": which kind of task, and which
+        // item, differ from one training game to the next.
+        let seed = trainingSeed()
+        var tasks: [String] = []
+        let foods = items.filter { ItemCatalog.foodKind(for: $0) != nil }
+        if !foods.isEmpty {
+            let food = foods[seed % foods.count]
+            tasks.append("Your task: \(ItemCatalog.consumeVerb(for: food).replacingOccurrences(of: "s$", with: "", options: .regularExpression)) the \(food.name) — Inventory > Open Pack > Use Item.")
         }
-        if let spare = items.first(where: { !$0.isTorch && $0.type == .misc }), let helper = helper {
-            return "Your task: give the \(spare.name) to \(shortName(for: helper)) — Inventory > Open Pack > Give Item."
+        let spares = items.filter { !$0.isTorch && $0.type == .misc }
+        if !spares.isEmpty, let helper = helper {
+            tasks.append("Your task: give the \(spares[seed % spares.count].name) to \(shortName(for: helper)) — Inventory > Open Pack > Give Item.")
         }
-        if let any = items.first(where: { !$0.isTorch }) {
-            return "Your task: drop the \(any.name) — Inventory > Open Pack > Drop Item (you can pick it up again)."
+        let droppable = items.filter { !$0.isTorch }
+        if !droppable.isEmpty {
+            tasks.append("Your task: drop the \(droppable[(seed / 7) % droppable.count].name) — Inventory > Open Pack > Drop Item (you can pick it up again).")
         }
-        return "Your task: open Inventory and use, give or drop anything in a pack."
+        guard !tasks.isEmpty else { return "Your task: open Inventory and use, give or drop anything in a pack." }
+        return tasks[(seed / 3) % tasks.count]
     }
 
     /// The training torch is put out once, so the flame button has something
@@ -7312,8 +7348,9 @@ class GameEngine: ObservableObject {
         if cur.step.key == "torch", findBestTorch() == nil {
             hint = "You have no torch yet — find one first: search rooms (a candlelit room always has one) or buy one from a merchant. Then light it with the flame at the bottom-left of the pad."
         }
-        if cur.step.key == "merchant", trainingRopeBaseline == Int.max {
-            trainingRopeBaseline = trainingRopeCount()
+        if cur.step.key == "merchant" {
+            if trainingRopeBaseline == Int.max { trainingRopeBaseline = trainingRopeCount() }
+            hint = "Merchant task: visit the merchant (M on the map), buy \(trainingBuyItem().phrase) and put it in your pack. (\"skip\" if there's none.)"
         }
         if cur.step.key == "packs" {
             if trainingItemsBaseline == Int.max { trainingItemsBaseline = Character.itemsHandledCount }
@@ -7387,7 +7424,7 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped("\(d.trainingFull ? "Full" : "Quick") training: \(done) of \(steps.count) steps done.", indent: 2, color: .cyan)
         print("")
-        printWrapped("Recap goes over everything training covers, one page at a time. Test Yourself is a short quiz — answer them all, then see how you did and try again if you like. Quit Training ends it — anything you saved stays in Continue Adventure, marked Training.", indent: 2, color: .dimGreen)
+        printWrapped("Recap goes over everything training covers, one page at a time. Test Yourself is a quiz of ten questions drawn from a big pool — a different test every time, answers in a different order. Answer them all, then see how you did and try again if you like. Quit Training ends it — anything you saved stays in Continue Adventure, marked Training.", indent: 2, color: .dimGreen)
         print("")
         let opts = [MenuOption("Recap", isDefault: true), MenuOption("Test Yourself"), MenuOption("Quit Training", tint: .danger),
                     MenuOption("?", tint: .navigation, compact: true), MenuOption("< Back", tint: .navigation, compact: true)]
@@ -7531,13 +7568,131 @@ class GameEngine: ObservableObject {
         ("What happens when there's no internet?",
          ["The game stops working", "The game carries on with its own Dungeon Master", "Your saves are lost", "You can only look at the map", "The dungeon resets"], 1,
          "Everything is on the device. Only a cloud AI brain needs the internet, and the built-in DM takes over."),
+        ("What does ! on the map mean?",
+         ["Danger or a trap", "A merchant", "The way down", "A shrine", "Treasure"], 0,
+         "! marks danger — monsters, or a trap you know about. Listen before you go in."),
+        ("What does KK between two rooms mean?",
+         ["A locked door", "A barred door", "A secret passage", "A teleport pad", "A solid wall"], 0,
+         "KK is a locked door; XX is one barred shut."),
+        ("What does M on the map mark?",
+         ["A merchant", "A monster", "A mage", "A mine", "The map room"], 0,
+         "M is a merchant: buy, sell and haggle."),
+        ("What does G on the map mark?",
+         ["A gym", "A guardian", "Gold", "A ghost", "A gate"], 0,
+         "G is a gym, where trainers teach skills — for a fee."),
+        ("What does N on the map mark?",
+         ["Someone to talk to", "North", "A nest", "Nothing there", "A necromancer"], 0,
+         "N is someone you haven't talked to yet."),
+        ("A room on the map shows a number — 1, 2, 3… What is it?",
+         ["A teleport pad", "The room's level", "Monsters inside", "Days to the deadline", "Gold found there"], 0,
+         "Pads are numbered in pairs: the two 1s go to each other."),
+        ("What does ↓ on the map mark?",
+         ["A way down", "A trapdoor", "The way out", "Where you came in", "A drain"], 0,
+         "↓ is a way down to the next floor; ↑ a way up."),
+        ("What do curly brackets { } round a room on the map mean?",
+         ["Several things there", "A locked room", "A secret room", "A cleared room", "A shop"], 0,
+         "{ } means more than one thing of note in that room."),
+        ("What does a short rest do?",
+         ["Heals a little; 1 hour", "Heals fully", "Saves the game", "Restores all spells", "Ends the day"], 0,
+         "A short rest takes an hour and gives back some hit points."),
+        ("How do you take a long rest?",
+         ["Hold the pad's middle", "Tap the pad's middle", "Type \"sleep\"", "Leave the dungeon", "Drink a potion"], 0,
+         "Tap the middle of the pad for a short rest; hold it for a long one."),
+        ("What happens if you eat in the dark?",
+         ["Only half the good", "No difference", "You get poisoned", "It heals double", "You can't eat"], 0,
+         "You can't see what — or how much — you're eating. Light a torch first."),
+        ("A quest's deadline passes. What happens?",
+         ["Reward halved; harm done", "Instant defeat", "Nothing at all", "The party leaves", "The Boss runs off"], 0,
+         "The quest goes on, but the reward is halved and what the village feared happens anyway."),
+        ("How do you give up a main quest?",
+         ["Party Status > Campfire", "Tell a merchant", "Drop the scroll", "Leave the dungeon", "You can't"], 0,
+         "Party Status > By the Campfire > Give Up Quest. You keep a little gold in goodwill."),
+        ("How can you play with no main quest at all?",
+         ["Settings: Main Quests Off", "Refuse three times", "Delete your saves", "Skip training", "You can't"], 0,
+         "Settings > Gameplay > Main Quests Off — or choose No Quest when a plea is offered."),
+        ("What does < Back do?",
+         ["Previous screen only", "Undoes your last move", "Saves the game", "Ends the fight", "Quits the app"], 0,
+         "Back only moves between screens. What's done in the game stays done."),
+        ("What are Undo and Redo for?",
+         ["Settings & char edits", "Taking back moves", "Re-rolling fights", "Getting gold back", "Reviving heroes"], 0,
+         "Undo and Redo are for settings and character edits — never for game moves."),
+        ("Where are your certificates kept?",
+         ["Settings > Certificates", "The Hall of Fame", "Your pack", "The map viewer", "Nowhere"], 0,
+         "The cog > All Settings… > Certificates — each one printable as a PDF."),
+        ("Does a Training game go into the Hall of Fame?",
+         ["No — it's practice", "Yes, always", "With full marks", "If saved twice", "Only on Easy"], 0,
+         "Training games save like any other, marked Training, but stay out of the Hall of Fame."),
+        ("What does \"R.\" before a hero's name mean?",
+         ["Computer-controlled", "Retired", "Royal", "A Rogue", "Rested"], 0,
+         "R. is for robot: a party member the computer plays (Settings > Gameplay > Robot Prefix)."),
+        ("Where do you switch the story between scrolling and pages?",
+         ["Settings > Accessibility", "Party Status", "The map viewer", "Help", "A merchant"], 0,
+         "The cog > All Settings… > Accessibility > Story: Scroll or Pages."),
+        ("What does Reduced Text do?",
+         ["Drops the extra detail", "Makes text smaller", "Hides the map", "Mutes the DM", "Removes monsters"], 0,
+         "Reduced Text leaves out the extra explanations — handy with VoiceOver."),
+        ("How many adventurers can a party have?",
+         ["4, or 6 via Settings", "Exactly four", "Only one", "Any number", "Two or three"], 0,
+         "Four is the classic table; Settings > Gameplay > Party Size allows five or six."),
+        ("You finish a quest and choose Another Quest. What happens?",
+         ["Petitioners come", "Party is deleted", "Back to main menu", "Same quest again", "Nothing"], 0,
+         "Petitioners bring new quests — deeper in the same dungeon, or in another one."),
+        ("Going to a far-off dungeon by teleport costs…",
+         ["Gold, but no days", "Nothing at all", "A week of travel", "One hero", "Your torch"], 0,
+         "Teleport is instant but costs gold. Boat and foot are cheaper, and take days or weeks."),
+        ("Who is best at searching rooms?",
+         ["Rogues & Engineers", "Wizards", "Nobody", "The robot", "Bards"], 0,
+         "Rogues and Engineers find more when they search."),
+        ("What's wise before walking into a room you don't know?",
+         ["Listen at the door", "Drop your torch", "Take a long rest", "Save and quit", "Sell your armour"], 0,
+         "Listening tells you what's there before it knows you're coming."),
+        ("Besides buying, what can you do with a merchant?",
+         ["Sell and haggle", "Nothing else", "Hire them", "Rob them freely", "Ask them to fight"], 0,
+         "Merchants buy what you don't need, and haggle — offer less and see what they say."),
+        ("What happens to a lit torch as you walk?",
+         ["It burns down", "It lasts for ever", "It gets brighter", "It heals you", "It draws merchants"], 0,
+         "A torch burns for about twelve hours. Carry spares."),
+        ("Where is the flame (to light a torch) on the pad?",
+         ["Bottom-left", "Top-right", "The middle", "Bottom-right", "It isn't there"], 0,
+         "The flame is at the bottom-left of the direction pad."),
+        ("Where is Listen (the ear) on the pad?",
+         ["Top-right", "Bottom-left", "The middle", "Top-left", "Bottom-right"], 0,
+         "The ear is at the top-right of the direction pad."),
+        ("Where do you see each adventurer's hit points and gold?",
+         ["Party Status", "The map", "Help", "Settings", "The Adventure Log"], 0,
+         "Party Status: hit points, armour, level, spells, gold and quests."),
+        ("Every hero falls in a fight. What then?",
+         ["Try Again from a save", "You carry on", "You win anyway", "Nothing happens", "Saves are deleted"], 0,
+         "It's a defeat — Try Again goes back to your last save, usually a room or so before."),
+        ("What is the Adventure Log?",
+         ["A timeline of events", "Your saves", "The map", "Your gold", "The settings"], 0,
+         "Party Status > Tale > Adventure Log: everything that's happened, in order."),
+        ("Stuck on a training task? What can you type?",
+         ["skip", "help me", "quit", "reset", "cheat"], 0,
+         "\"skip\" puts the task aside; it comes back at the end."),
+        ("What does Save the Tale do after a finished quest?",
+         ["Keeps it; Hall of Fame", "Deletes the save", "Starts a new quest", "Prints the map", "Nothing"], 0,
+         "It saves the finished adventure and puts it in the Hall of Fame (not for training games)."),
     ]
+
+    /// This sitting's questions: ten drawn from the pool, answers shuffled.
+    private var currentQuiz: [(q: String, options: [String], answer: Int, why: String)] = []
+    private static let quizLength = 10
 
     /// Set while a quiz question is on screen, so tapping an answer in the
     /// text chooses it just as its button would.
     private var quizChoiceHandler: ((Int) -> Void)?
 
-    private func startTrainingQuiz() { quizChoiceHandler = nil; askTrainingQuestion(0, answers: []) }
+    /// A fresh test each time: ten questions from the pool, in any order,
+    /// with the answers shuffled — never the same test twice running.
+    private func startTrainingQuiz() {
+        quizChoiceHandler = nil
+        currentQuiz = Self.trainingQuiz.shuffled().prefix(Self.quizLength).map { item in
+            let order = Array(item.options.indices).shuffled()
+            return (item.q, order.map { item.options[$0] }, order.firstIndex(of: item.answer) ?? 0, item.why)
+        }
+        askTrainingQuestion(0, answers: [])
+    }
 
     /// Button words for the quiz answers: abbreviated, never cut off with
     /// "…" (the full answer is written out above the buttons).
@@ -7597,7 +7752,7 @@ class GameEngine: ObservableObject {
     }
 
     private func askTrainingQuestion(_ n: Int, answers: [Int]) {
-        let quiz = Self.trainingQuiz
+        let quiz = currentQuiz
         guard n < quiz.count else { markTrainingQuiz(answers); return }
         let item = quiz[n]
         clearTerminal()
@@ -7639,7 +7794,7 @@ class GameEngine: ObservableObject {
     }
 
     private func markTrainingQuiz(_ answers: [Int]) {
-        let quiz = Self.trainingQuiz
+        let quiz = currentQuiz
         let right = zip(quiz, answers).filter { $0.0.answer == $0.1 }.count
         logEvent("Training quiz: \(right) of \(quiz.count)", category: "EXPLORE")
         clearTerminal()
@@ -13336,6 +13491,11 @@ class GameEngine: ObservableObject {
         printWrapped("Whether a new adventure opens with somebody's plea and a villain to swear against. Off, you just go down for the adventure of it, and anything to do with a main quest is greyed out. Errands from the people you meet are unaffected either way.", indent: 2, color: .dimGreen)
         print("")
 
+        print("LAYOUT:", color: .cyan, bold: true)
+        print("  \(Dungeon.growingSetting ? "Growing" : "Fixed")", color: .brightGreen)
+        printWrapped("Fixed: every floor is planned in full before you set foot on it — the number of rooms never changes, and \"rooms explored\" counts towards a total that stays put. Growing: the edges of the map can sprout new rooms the first time you reach them, so a floor may turn out bigger than it first looked. A new adventure uses this; one under way keeps what it began with.", indent: 2, color: .dimGreen)
+        print("")
+
         print("PARTY SIZE:", color: .cyan, bold: true)
         print("  Up to \(Self.maxPartySize)", color: .brightGreen)
         printWrapped("The most adventurers in a party — when you start a New Adventure, and when someone you meet asks to join. Four is the usual table for fifth-edition play, and what the adventures are written for; five or six are allowed, and the monsters grow tougher to match (a quarter more hit points for each hero past four). Tap to go 4 → 5 → 6 → 4. It doesn't change a party already under way.", indent: 2, color: .dimGreen)
@@ -13372,6 +13532,7 @@ class GameEngine: ObservableObject {
             dungeonQuirksEnabled ? "Quirks Off" : "Quirks On",
             mainQuestsEnabled ? "Main Quests Off" : "Main Quests On",
             "Party Size: \(Self.maxPartySize)",
+            Dungeon.growingSetting ? "Layout: Growing" : "Layout: Fixed",
             // Page 3 — System
             "Log Limit", "List Order",
             atlasShowAllRooms ? "World Map: Visited" : "World Map: All Rooms",
@@ -13424,6 +13585,11 @@ class GameEngine: ObservableObject {
                 self.recordSettingChange(screen: "s:gameplay", key: "mainQuestsEnabled", name: "Main Quests")
                 self.mainQuestsEnabled.toggle()
                 UserDefaults.standard.set(self.mainQuestsEnabled, forKey: "mainQuestsEnabled")
+                self.showGameplaySettings(page: currentPage)
+            } else if selected.hasPrefix("Layout") {
+                self.recordSettingChange(screen: "s:gameplay", key: "dungeonGrows", name: "Layout")
+                UserDefaults.standard.set(!Dungeon.growingSetting, forKey: "dungeonGrows")
+                self.logEvent("Dungeon layout set to \(Dungeon.growingSetting ? "Growing" : "Fixed")", category: "SETTINGS")
                 self.showGameplaySettings(page: currentPage)
             } else if selected.hasPrefix("Party Size") {
                 self.recordSettingChange(screen: "s:gameplay", key: "maxPartySize", name: "Party Size")
@@ -33148,6 +33314,7 @@ class GameEngine: ObservableObject {
                             startDifficulty: old.startDifficulty)
             d.archivedLevels = old.archivedLevels + [old.atlasLevel(hasTrapSense: partyHasTrapSense, archived: true)]
             d.hasCartography = old.hasCartography
+            d.growing = old.growing
             dungeon = d
         } else {
             dungeon = Dungeon.newAdventure(name: p.dungeonName, difficulty: old?.startDifficulty ?? 2)
@@ -42350,6 +42517,9 @@ class GameEngine: ObservableObject {
             if let previous = previousDungeon, let next = self.dungeon {
                 next.archivedLevels = previous.archivedLevels + [previous.atlasLevel(hasTrapSense: self.partyHasTrapSense, archived: true)]
                 next.hasCartography = previous.hasCartography
+                if next.growing != previous.growing {   // planned in full unless the adventure grows
+                    next.growing = previous.growing
+                }
             }
             self.currentCombat = nil; self.combatPanelLines = []
             self.roomsSinceLastSave = 0
