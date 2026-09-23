@@ -67,8 +67,11 @@ struct TerminalLine: Identifiable {
                                          ("HP", "hit points"), ("AC", "armour class"), ("XP", "experience"),
                                          ("ATK", "attack"), ("DMG", "damage"), ("CR", "challenge rating"), ("DC", "difficulty")]
         for (short, long) in words {
-            s = s.replacingOccurrences(of: "\\b\(short)\\b:?", with: "\(long) ", options: .regularExpression)
+            s = s.replacingOccurrences(of: "(?<![A-Za-z])\(short)(?![A-Za-z]):?", with: " \(long) ", options: .regularExpression)
         }
+        // Arrows are said as "arrow", not "less than" / "greater than".
+        s = s.replacingOccurrences(of: "(<-+|-+>|=>|<+|>+|←|→)", with: " arrow ", options: .regularExpression)
+        s = s.replacingOccurrences(of: "(arrow\\s+)+arrow", with: "arrow", options: .regularExpression)
         s = s.replacingOccurrences(of: "(\\d+)/(\\d+)", with: "$1 of $2", options: .regularExpression)
         s = s.replacingOccurrences(of: "\\bR\\. (?=[A-Z])", with: "R ", options: .regularExpression)   // "R. Athos" is a name
         s = s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
@@ -196,7 +199,9 @@ struct MenuOption: Identifiable {
             let triangles = CharacterSet(charactersIn: "◀▶◂▸◄►◁▷▲▼△▽")
             let cleaned = text.unicodeScalars.filter { !triangles.contains($0) }
             let words = String(String.UnicodeScalarView(cleaned)).trimmingCharacters(in: .whitespaces)
-            return words.isEmpty ? text : words
+            // Arrows as "arrow", HP as "hit points" — as in the story.
+            let spoken = TerminalLine.spokenText(words)
+            return spoken.isEmpty ? (words.isEmpty ? text : words) : spoken
         }
     }
     static var helpGlyph: String {

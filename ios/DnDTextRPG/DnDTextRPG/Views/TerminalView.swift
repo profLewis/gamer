@@ -425,7 +425,7 @@ struct TerminalView: View {
                         .padding(.vertical, 4)
                         .overlay(Rectangle().frame(height: 1).foregroundColor(.green.opacity(0.35)), alignment: .bottom)
                         .accessibilityElement(children: .combine)
-                        .accessibilityLabel("Fight status. " + gameEngine.combatPanelLines.map { $0.text }.joined(separator: ". "))
+                        .accessibilityLabel("Fight status. " + gameEngine.combatPanelLines.map { TerminalLine.spokenText($0.text) }.joined(separator: ". "))
                         .accessibilitySortPriority(3)   // VoiceOver: read before the story
                     }
 
@@ -588,7 +588,10 @@ struct TerminalView: View {
                                 .accessibilityHidden(true),
                             alignment: .topLeading
                         )
-                        .overlay(alignment: .bottom) { storyPageBar }
+                        // Its own strip under the story, never over it: floating on
+                        // top, it hid the page's last line whenever the sums ran a
+                        // line long.
+                        .safeAreaInset(edge: .bottom, spacing: 0) { storyPageBar }
                         // Tapping the story turns the page while there's more.
                         .overlay {
                             if gameEngine.storyPagingActive, let pages = storyPageList, gameEngine.storyPage < pages.count - 1,
@@ -1747,7 +1750,10 @@ struct TerminalView: View {
 
     private func updateLinesPerPage() {
         guard storyAreaHeight > 0, pageLineHeight > 0 else { return }
-        let usable = storyAreaHeight - storyPageBarHeight - 12
+        // The area less the page bar, the list's padding (4 top and bottom),
+        // its zero-height measuring row and end marker (each still costs a
+        // line's spacing), and half a line in hand.
+        let usable = storyAreaHeight - storyPageBarHeight - 8 - 3 * storyLineSpacing - 2 - pageLineHeight / 2
         let n = max(4, Int(usable / (pageLineHeight + storyLineSpacing)))
         if n != gameEngine.storyLinesPerPage { gameEngine.storyLinesPerPage = n }
     }
@@ -3251,6 +3257,7 @@ struct MenuButtonsView: View {
         // VoiceOver can't long-press reliably: offer it as a named action
         // (swipe up or down on the button, then double-tap).
         .accessibilityAction(named: "Long press") { onLongPress?(index + 1) }
+        .accessibilityLabel(MenuOption.spokenLabel(option.text))
     }
 
     /// Fixed 3-slot compact nav cell: [slot0 | slot1 | slot2]

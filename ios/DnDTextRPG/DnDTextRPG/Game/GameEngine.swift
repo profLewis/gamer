@@ -2988,6 +2988,20 @@ class GameEngine: ObservableObject {
         for line in wrapLines(words, width: lineWidth, justify: straightEdge) { emit(line) }
     }
 
+    /// A list item — "✓ finds the silver key" — whose wrapped lines sit
+    /// under the item's text, not under its mark. Printed at `indent`, the
+    /// same column as the heading above it.
+    func printItem(_ mark: String, _ text: String, indent: Int = 2, color: TerminalColor = .green) {
+        let lead = String(repeating: " ", count: indent) + mark + " "
+        let hang = String(repeating: " ", count: lead.count)
+        let words = text.split(separator: " ").map(String.init)
+        let lines = wrapLines(words, width: max(12, wrapColumns - lead.count), justify: false)
+        for (k, line) in lines.enumerated() {
+            print((k == 0 ? lead : hang) + line, color: color)
+            if k > 0 { runOnMain { if !self.terminalLines.isEmpty { self.terminalLines[self.terminalLines.count - 1].continuesPrevious = true } } }
+        }
+    }
+
     /// Words into lines of at most `width`, every line but the last
     /// justified when asked.
     private func wrapLines(_ words: [String], width: Int, justify: Bool) -> [String] {
@@ -7190,11 +7204,11 @@ class GameEngine: ObservableObject {
         print("")
         for (i, (item, a)) in zip(quiz, answers).enumerated() {
             let ok = item.answer == a
-            print("  \(ok ? "✓" : "✗") \(i + 1). \(item.q)", color: ok ? .brightGreen : .yellow)
+            printItem(ok ? "✓" : "✗", "\(i + 1). \(item.q)", color: ok ? .brightGreen : .yellow)
             if !ok {
-                printWrapped("You said: \(item.options[a]). Answer: \(item.options[item.answer]).", indent: 6, color: .dimGreen)
+                printWrapped("You said: \(item.options[a]). Answer: \(item.options[item.answer]).", indent: 4, color: .dimGreen)
             }
-            printWrapped(item.why, indent: 6, color: .dimGreen)
+            printWrapped(item.why, indent: 4, color: .dimGreen)
             print("")
         }
         showMenuOptions([MenuOption("Take It Again"), MenuOption("Back to Test", isDefault: true)])
@@ -15214,7 +15228,7 @@ class GameEngine: ObservableObject {
                     ("stays short (under 80 words)", ex.received.split(separator: " ").count < 80)
                 ]
                 for (what, passed) in checks {
-                    self.print("   \(passed ? "✓" : "·") \(what)", color: passed ? .brightGreen : .dimGreen)
+                    self.printItem(passed ? "✓" : "·", what, color: passed ? .brightGreen : .dimGreen)
                 }
                 self.print("")
                 self.printWrapped("These are rough hints, not marks — read the answer and judge for yourself.", indent: 2, color: .dimGreen)
