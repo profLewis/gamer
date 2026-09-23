@@ -7089,35 +7089,56 @@ class GameEngine: ObservableObject {
         if d.trainingPlan.isEmpty, let last = steps.last { d.trainingPlan = [last.key] }
     }
 
-    /// The planned steps, in their numbered order.
+    /// The steps in the order they're numbered: those already done, in the
+    /// order they were done, then the rest in the plan's order. Numbers are
+    /// progress, not positions — "Step 4 of 10" is always the fourth thing,
+    /// on the status line and in the Recap alike. (Numbering by place in the
+    /// plan repeated a number when steps were done out of order, then jumped
+    /// several at once.)
     private func trainingPlanSteps(_ d: Dungeon) -> [(key: String, hint: String, detail: String)] {
         ensureTrainingPlan(d)
+        refreshTrainingDone(d)
         let all = trainingSteps(full: d.trainingFull)
-        return d.trainingPlan.compactMap { key in all.first { $0.key == key } }
+        let plan = d.trainingPlan
+        let done = d.trainingDone.filter { plan.contains($0) }
+        let rest = plan.filter { !d.trainingDone.contains($0) }
+        return (done + rest).compactMap { key in all.first { $0.key == key } }
     }
 
-    /// The step the player is on, or nil once every step is done.
+    /// Steps the game itself shows to be done (a quest taken, a fight won),
+    /// written down the moment they're true — once, in the order it happens.
+    private func refreshTrainingDone(_ d: Dungeon) {
+        for key in d.trainingPlan where key != "torch" { _ = trainingStepDone(key, in: d) }
+    }
+
+    /// How many planned steps are done — the progress count.
+    private func trainingDoneCount(_ d: Dungeon) -> Int {
+        d.trainingPlan.filter { d.trainingDone.contains($0) }.count
+    }
+
+    /// The step the player is on — number = steps done + 1 — or nil once
+    /// every step is done.
     private func currentTrainingStep() -> (index: Int, count: Int, step: (key: String, hint: String, detail: String))? {
         guard let d = dungeon, d.training else { return nil }
-        let steps = trainingPlanSteps(d)
-        for (n, step) in steps.enumerated() {
-            if d.trainingDone.contains(step.key) { continue }
-            if step.key == "torch" {
-                // Burning already as the step arrives: put it out once, and
-                // say why, so lighting it is something the player does.
-                if torchLit && !trainingTorchDoused {
-                    trainingTorchDoused = true
-                    torchLit = false
-                    print("")
-                    printWrapped("A draught comes down the passage and your torch gutters out. The room goes dark.", indent: 2, color: .yellow)
-                    print("")
-                    return (n, steps.count, step)
-                }
-                if torchLit { d.trainingDone.append(step.key); continue }
-                return (n, steps.count, step)
+        var steps = trainingPlanSteps(d)
+        var doneCount = trainingDoneCount(d)
+        while doneCount < steps.count {
+            let step = steps[doneCount]
+            guard step.key == "torch" else { return (doneCount, steps.count, step) }
+            // Burning already as the step arrives: put it out once, and say
+            // why, so lighting it is something the player does.
+            if torchLit && !trainingTorchDoused {
+                trainingTorchDoused = true
+                torchLit = false
+                print("")
+                printWrapped("A draught comes down the passage and your torch gutters out. The room goes dark.", indent: 2, color: .yellow)
+                print("")
+                return (doneCount, steps.count, step)
             }
-            if trainingStepDone(step.key, in: d) { continue }
-            return (n, steps.count, step)
+            guard torchLit else { return (doneCount, steps.count, step) }
+            d.trainingDone.append(step.key)
+            steps = trainingPlanSteps(d)
+            doneCount = trainingDoneCount(d)
         }
         return nil
     }
@@ -7170,10 +7191,14 @@ class GameEngine: ObservableObject {
             }
             return
         }
-        // Say so when a step has just been done.
-        let justDone = lastTrainingIndex >= 0 && cur.index > lastTrainingIndex
-        let doneStep = justDone ? trainingPlanSteps(d)[lastTrainingIndex] : nil
-        lastTrainingIndex = cur.index
+        // Say so when a step has just been done — the one really done last,
+        // whatever its place in the plan.
+        let doneCount = cur.index
+        let justDone = lastTrainingIndex >= 0 && doneCount > lastTrainingIndex
+        let doneStep: (key: String, hint: String, detail: String)? = justDone
+            ? d.trainingDone.last(where: { d.trainingPlan.contains($0) }).flatMap { key in trainingSteps(full: d.trainingFull).first { $0.key == key } }
+            : nil
+        lastTrainingIndex = doneCount
         var hint = cur.step.hint
         if let doneStep = doneStep {
             hint = "Done: " + (doneStep.hint.components(separatedBy: " — ").first?.components(separatedBy: ":").first ?? doneStep.key) + ". Next — " + hint
@@ -7182,7 +7207,7 @@ class GameEngine: ObservableObject {
             hint += " This training floor has \(d.rooms.count) rooms — the line under the map counts how many you've explored."
         }
         if cur.step.key == "guardian", let bearing = guardianBearing(in: d) { hint += " Its lair is \(bearing)." }
-        explorationStatusMessage = ("✦ Training \(cur.index + 1) of \(cur.count): " + hint, .cyan)
+        explorationStatusMessage = ("✦ Training step \(cur.index + 1) of \(cur.count): " + hint, .cyan)
     }
 
     private var lastTrainingIndex = -1
