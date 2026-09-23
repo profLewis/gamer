@@ -2401,7 +2401,7 @@ class GameEngine: ObservableObject {
     /// The map viewer's Show the Boss button — the same as "magick: show the boss".
     func toggleRevealBossFromOverlay() {
         guard let d = dungeon else { return }
-        if !d.revealBoss && !partyCanWorkMagick {
+        if !d.revealBoss && !d.revealBossShownOnce && !d.training && !partyCanWorkMagick {
             explorationStatusMessage = ("✧ Nobody in the party has the magick for that — it needs a spellcaster, or someone clever, wise or forceful enough.", .magenta)
             mapOverlayVisible = false
             if gameState == .exploring && currentCombat == nil { showExplorationView() }
@@ -7610,7 +7610,7 @@ class GameEngine: ObservableObject {
         let name = shortName(for: hero)
         let mouse = Vignette(key: "mouse", scene: "A mouse pokes its head out of a tiny hole in the wall, sniffs, and holds up a crumb of cheese as if offering it to \(name).", choices: [
             ("Ask What Cheese", { "\"Cheddar,\" squeaks the mouse, puffing out its chest. \"Aged in this very cave. Forty days. Sharp.\" It seems very proud." }),
-            ("Ask the Time", { [weak self] in "The mouse pulls out a pocket-watch no bigger than a pea, squints at it, and squeaks: \"\(self?.formattedGameTime() ?? "late").\" Then it vanishes back into the hole." }),
+            ("Ask the Time", { [weak self] in "The mouse pulls out a pocket-watch no bigger than a pea, squints at it, and squeaks: \"\(self?.formattedGameTime() ?? "late").\" Then it tucks the watch away and looks at you expectantly, cheese still held up." }),
             ("Eat It", { let h = Int.random(in: 1...3); hero.heal(h); return "\(name) eats the crumb. Surprisingly good. (+\(h) HP)" }),
             ("Put It in the Pack", { if let c = ItemCatalog.cheeses().first(where: { $0.name.contains("Cheddar") }), hero.addItem(c) { return "The mouse, delighted, fetches a whole wedge. A Wedge of Cheddar goes into \(name)'s pack." }; return "\(name)'s pack is too full. The mouse shrugs and keeps its cheese." }),
         ])
@@ -7673,36 +7673,59 @@ class GameEngine: ObservableObject {
               Double.random(in: 0...1) < 0.35 else { return false }
         guard let v = vignettes(for: room).filter({ !usedVignettes.contains($0.key) }).randomElement() else { return false }
         usedVignettes.insert(v.key)
+        showVignetteChoices(v, room: room, remaining: v.choices, said: [])
+        return true
+    }
+
+    /// A vignette's choices. Asking or looking ("Ask What Cheese", "Look
+    /// In") is part of the scene, not the end of it: the answer is shown and
+    /// the other choices come back, with Leave It — asking the mouse about its
+    /// cheese used to end the scene, cheese neither eaten nor packed. Doing
+    /// something (eat, pack, drink, follow) ends it as before.
+    private func showVignetteChoices(_ v: Vignette, room: Room, remaining: [(label: String, outcome: () -> String)], said: [String]) {
         clearTerminal()
         printTitle(room.name)
         print("")
         printWrapped(v.scene, indent: 2, color: .green)
         print("")
-        printWrapped("What do you do?", indent: 2, color: .cyan)
+        for line in said {
+            printWrapped(line, indent: 2, color: .yellow)
+            print("")
+        }
+        printWrapped(said.isEmpty ? "What do you do?" : "And now?", indent: 2, color: .cyan)
         print("")
-        var opts = v.choices.map { MenuOption($0.label) }
+        var opts = remaining.map { MenuOption($0.label) }
+        let offersLeave = !said.isEmpty
+        if offersLeave { opts.append(MenuOption("Leave It")) }
         opts.append(MenuOption("?", tint: .navigation, compact: true))
         showMenuOptions(opts)
         closeHandler = { [weak self] in self?.showExplorationView() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
-            guard choice >= 1, choice <= v.choices.count else {
+            if offersLeave && choice == remaining.count + 1 { self.showExplorationView(); return }
+            guard choice >= 1, choice <= remaining.count else {
                 self.showInlineHelp {
                     self.printTitle("Something Happens — Help")
                     self.print("")
-                    self.printWrapped("Now and then something small happens in a room. Pick what to do — there's no wrong answer, though some choices help more than others. Then you carry on exploring.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Now and then something small happens in a room. Pick what to do — there's no wrong answer, though some choices help more than others. Asking or looking doesn't end it: you can still do something afterwards, or Leave It.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
                 return
             }
-            let result = v.choices[choice - 1].outcome()
-            self.logEvent("\(v.key): \(v.choices[choice - 1].label) — \(result)", category: "EXPLORE")
+            let picked = remaining[choice - 1]
+            let result = picked.outcome()
+            self.logEvent("\(v.key): \(picked.label) — \(result)", category: "EXPLORE")
+            let isTalk = picked.label.hasPrefix("Ask") || picked.label.hasPrefix("Look")
+            let rest = remaining.enumerated().filter { $0.offset != choice - 1 }.map { $0.element }
+            if isTalk, !rest.isEmpty {
+                self.showVignetteChoices(v, room: room, remaining: rest, said: said + [result])
+                return
+            }
             self.print("")
             self.printWrapped(result, indent: 2, color: .yellow)
             self.print("")
             self.waitForContinueWithTimeout(multiplier: 1.2) { [weak self] in self?.showExplorationView() }
         }
-        return true
     }
 
     // MARK: How To…
@@ -24464,7 +24487,9 @@ class GameEngine: ObservableObject {
             }
         }
         if let villain = mainQuest?.villain { dungeon.crownFinalGuardian(villain: villain) }
-        if dungeon.training { dungeon.revealBoss = true }   // older training saves too
+        // Training marks the lair once (the mark isn't saved, so again after a
+        // load) — and after that leaves it to the player, who may hide it.
+        if dungeon.training && !dungeon.revealBossShownOnce { dungeon.revealBoss = true }
         if room.roomType == .armory {
             if room.merchant == nil {
                 seedNameRegistry()

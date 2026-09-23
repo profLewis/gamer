@@ -1658,7 +1658,14 @@ class Dungeon: ObservableObject, Codable {
     /// Cheats ("magick: show the boss" and friends) — mark these rooms on the
     /// map even unexplored, as (B), (m) or (!), with no corridors to them:
     /// where they are, not how to get there. For this visit only, not saved.
-    var revealBoss = false
+    var revealBoss = false {
+        didSet { if revealBoss { revealBossShownOnce = true } }
+    }
+    /// The lair has been shown in this dungeon at least once (training's
+    /// mark, a cheat or magick): after that, hiding it and showing it again
+    /// in the map viewer is free — it used to count as fresh magick, so a
+    /// party with no spellcaster could hide the lair and never get it back.
+    var revealBossShownOnce = false
     var revealMonsters = false
     var revealTraps = false
     var revealStairs = false      // stairs, ropes and teleport pads
