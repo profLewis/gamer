@@ -68,8 +68,10 @@ Version 3.0 is the biggest update yet: many rounds of play-testing by Beau and P
 
 ### Finding your way
 - **< Back** only ever moves between screens — with Recap on it looks back through the screens you've left — and never undoes anything: what's done in the game stays done. Undo and Redo are for settings and character edits.
-- **The Atlas**: long-press the map for the whole floor, every floor you've mapped, pinch-zoom, room labels, a full key, and a printable PDF.
-- **Lesser magick**: a party with the gift can speak incantations (`magick: show …`) that mark things on the map, in their own colours, on every floor.
+- **Maps keep secrets.** A patient hand on the map, a gym's dearest lesson, or the right words from someone with the gift may show a good deal more than the room you're standing in.
+
+### Easter eggs
+There are a few, and we won't spoil them. Try long-pressing things — the map especially — and see what happens; wonder what a map could do with a little magick behind it, and whether a spell or cantrip might call one up; ask the DM odd questions; listen to what the guardians say as they fall. Some things only show themselves once they've been earned.
 
 ### Saves, settings and the rest
 - **Continue Adventure** sorts by date or by points (then it's the **Hall of Fame**), with a Character Hall of Fame; unfinished adventures show their points so far.

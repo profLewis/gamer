@@ -1883,10 +1883,16 @@ class Dungeon: ObservableObject, Codable {
     func atlasLevel(hasTrapSense: Bool, archived: Bool = false) -> AtlasLevel {
         let atlasRooms = rooms.values.filter { $0.floor == currentFloor }.sorted { $0.id < $1.id }.map { room -> AtlasRoom in
             let danger = !room.cleared && room.encounter != nil
+            // Where the guardian or Boss was beaten — the lair, or the room
+            // it had wandered to — so the maps (the certificate's included)
+            // remember it. Only once beaten: no clue beforehand.
+            let bossBeatenHere = room.defeatedMonsterNames.contains { $0.contains("(Boss)") || $0.contains("(Guardian)") }
             let symbol: String
-            // Most important first: danger, the boss, a way up/down, a
-            // teleport pad — then merchant, gym, and an NPC you haven't met.
-            if danger { symbol = "!" }
+            // Most important first: the boss (once beaten), danger, a way
+            // up/down, a teleport pad — then merchant, gym, and an NPC you
+            // haven't met.
+            if bossBeatenHere || (room.roomType == .boss && room.cleared) { symbol = RoomType.boss.symbol }
+            else if danger { symbol = "!" }
             else if room.roomType == .boss { symbol = RoomType.boss.symbol }
             else if room.verticalDestinationRoomId != nil { symbol = room.verticalDirection == "down" ? "\u{2193}" : "\u{2191}" }
             else if room.teleportDestinationRoomId != nil { symbol = "*" }

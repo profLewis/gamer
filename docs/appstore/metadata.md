@@ -20,12 +20,12 @@ DnD RPG: Text Adventure
 A gift to you from Timbaloo
 
 ## Promotional text  (170)
-Lead a party of up to four into a dungeon that listens. Type what you want to do, talk to anyone you meet, and let the Dungeon Master tell the tale — aloud if you like.
+Lead a party of up to six into a dungeon that listens. Type what you want to do, talk to anyone you meet, and let the Dungeon Master tell the tale — aloud if you like.
 
 ## Description  (4000)
 A classic dungeon crawl told in green text on a black screen — and a Dungeon Master that actually answers you.
 
-Build a party of up to four heroes from ten classes and a dozen peoples, take up a quest from someone who badly needs you, and go down. Every dungeon is made fresh: rooms, traps, locked doors, shrines, libraries, merchants, gyms, teleport pads, and a guardian on every floor between you and the thing at the bottom that started it all.
+Build a party of up to six heroes (four is the classic table) from ten classes and a dozen peoples, take up a quest from someone who badly needs you, and go down. Every dungeon is made fresh: rooms, traps, locked doors, shrines, libraries, merchants, gyms, teleport pads, and a guardian on every floor between you and the thing at the bottom that started it all.
 
 PLAY IT YOUR WAY
 • Tap buttons and the D-pad, or switch to Text Mode and just type what you want to do — "search the altar", "ask the hermit about the key", "@mol climb the wall".
@@ -69,7 +69,8 @@ WHILE YOU PLAY
 • A fight now keeps its own panel above the story: whose turn it is, every fighter with a bar and their hit points, and who goes next — so nothing scrolls away mid-battle.
 • Rescued prisoners, wounded knights, elf scouts and goblin defectors can actually be asked to join you now, and they walk with you for a while before going their own way.
 • Deeper, harder floors can break in two: a wing with no passage to it at all, reached by a teleport pad or by the gallery above. An easy game never does this.
-• When the quest is done, the DM asks what next — keep the tale, sleep a week, throw a party, or go again.
+• When the quest is done, the DM asks what next — keep the tale, sleep a week, throw a party, or go again: petitioners bring the next quest, deeper down or in another dungeon, by teleport, boat or on foot.
+• Parties of up to six (Settings > Gameplay > Party Size); four is still the classic.
 • No internet? The game says so once and carries on with the Dungeon Master on your device. Nothing waits on a connection that isn't there.
 
 NOW ON EVERY APPLE SCREEN
@@ -133,7 +134,7 @@ The shared fields above work for all four. Where a platform differs:
 
 ### Apple TV (tvOS)
 - No microphone or keyboard play on the TV: drop the voice bullet ("Speak instead of typing…") from the Description and "Speak your commands…" from What's New.
-- Promotional text (170): A dungeon crawl for the big screen. Lead a party of four down through riddles, merchants and guardians with the Siri Remote, while the DM tells the tale aloud.
+- Promotional text (170): A dungeon crawl for the big screen. Lead a party of heroes down through riddles, merchants and guardians with the Siri Remote, while the DM tells the tale aloud.
 - Screenshots: 3840 × 2160 (appletv-4k-explore.png) or 1920 × 1080. Top Shelf image is in the asset catalogue.
 
 ### Apple Vision Pro (visionOS 2 or later)

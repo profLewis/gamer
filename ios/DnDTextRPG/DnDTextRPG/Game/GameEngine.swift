@@ -2401,7 +2401,7 @@ class GameEngine: ObservableObject {
     /// The map viewer's Show the Boss button — the same as "magick: show the boss".
     func toggleRevealBossFromOverlay() {
         guard let d = dungeon else { return }
-        if !d.revealBoss && !d.revealBossShownOnce && !d.training && !partyCanWorkMagick {
+        if !d.revealBoss && !d.revealBossShownOnce && !partyCanWorkMagick {
             explorationStatusMessage = ("✧ Nobody in the party has the magick for that — it needs a spellcaster, or someone clever, wise or forceful enough.", .magenta)
             mapOverlayVisible = false
             if gameState == .exploring && currentCombat == nil { showExplorationView() }
@@ -7121,8 +7121,8 @@ class GameEngine: ObservableObject {
              "The game has its own Dungeon Master and needs nothing else. If you'd like a DM that chats freely, tap the cog (on the input line) > Change Brain… (or All Settings… > Dungeon Master Brain): Apple's on-device one needs no key on newer devices; Claude, ChatGPT or Gemini need a key from their websites (the key screen links to them and tests the key for you). Type \"skip\" to move on.", true),
             ("settings", "Try a setting: the cog (on the input line) > All Settings… > Accessibility — switch Story between Scroll and Pages, or change the Display Size.",
              "Settings shape the game to you. Tap the cog at the right of the input line, then All Settings…, then Accessibility. Story switches the text between scrolling and turning a page at a time (Pages suits VoiceOver and reading aloud); Display Size makes everything bigger or smaller; Reduced Text leaves out the extra explanations. Change any setting to pass this item — you can always change it back.", false),
-            ("guardian", "Beat the Boss (B on the map) to finish your training.",
-             "In a real adventure each floor has a guardian, and the last floor holds the Boss — the villain of your tale. Training is a single floor, so its guardian is the Boss, in its lair: B on the map (training always marks it, even before you have seen it). Beat it and the adventure is won. Rest and heal first, keep your torch lit, and read \(h) in the fight. The Training line tells you which way the lair lies.", false),
+            ("guardian", "Find the Boss and beat it to finish your training.",
+             "In a real adventure each floor has a guardian, and the last floor holds the Boss — the villain of your tale. Training is a single floor, so its guardian is the Boss, somewhere in its lair — where, is for you to find out. Beat it and the adventure is won. Rest and heal first, keep your torch lit, and read \(h) in the fight. The Training line counts the rooms you've explored out of all of them.", false),
         ]
         return all.filter { full || !$0.full }.map { ($0.key, $0.hint, $0.detail) }
     }
@@ -7327,7 +7327,11 @@ class GameEngine: ObservableObject {
         if cur.step.key == "walk" {
             hint += " This training floor has \(d.rooms.count) rooms — the line under the map counts how many you've explored."
         }
-        if cur.step.key == "guardian", let bearing = guardianBearing(in: d) { hint += " Its lair is \(bearing)." }
+        // How far round the floor you've been — never where the Boss is.
+        if cur.step.key != "walk" {
+            let explored = d.rooms.values.filter { $0.visited }.count
+            hint += " (Rooms explored: \(explored) of \(d.rooms.count).)"
+        }
         explorationStatusMessage = ("✦ Training \(cur.index) of \(cur.count) done. Your task: " + hint, .cyan)
     }
 
@@ -8032,9 +8036,8 @@ class GameEngine: ObservableObject {
         let d = Dungeon.newAdventure(name: name, difficulty: diff.level)
         d.levelCount = 1
         d.training = true
-        // Training's last step says "follow B on the map" — so the lair is
-        // always marked, rather than only once it's been seen.
-        d.revealBoss = true
+        // The lair is NOT marked: finding the Boss is part of it. The
+        // Training line counts rooms explored instead.
         dungeon = d
         // No quest to choose — the guardian is the whole of it.
         adventureLog = []
@@ -9124,13 +9127,14 @@ class GameEngine: ObservableObject {
         print("  (Long-press for auto-setup)", color: .dimGreen)
         print("")
 
-        showMenu(["2 Adventurers", "3 Adventurers", "4 Adventurers"])
+        let most = Self.maxPartySize
+        showMenu((2...most).map { "\($0) Adventurers" })
 
         closeHandler = { [weak self] in self?.showMultiplayerHub() }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
             switch choice {
-            case 1...3:
+            case 1...(most - 1):
                 // Manual creation: 1 human + rest to be created manually, last slot preset as remote
                 let count = choice + 1
                 self.totalCharacters = count
@@ -9147,11 +9151,8 @@ class GameEngine: ObservableObject {
 
         menuLongPressHandler = { [weak self] choice in
             guard let self = self else { return }
-            switch choice {
-            case 1: self.createRandomParty(count: 2, allAI: true, presetRemote: true)
-            case 2: self.createRandomParty(count: 3, allAI: true, presetRemote: true)
-            case 3: self.createRandomParty(count: 4, allAI: true, presetRemote: true)
-            default: break
+            if (1...(most - 1)).contains(choice) {
+                self.createRandomParty(count: choice + 1, allAI: true, presetRemote: true)
             }
         }
     }
@@ -9358,7 +9359,7 @@ class GameEngine: ObservableObject {
             self.print("")
 
             self.print("  THE GAME", color: .cyan, bold: true)
-            self.printWrapped("This is a dungeon-crawling adventure built on the fifth-edition fantasy rules in the System Reference Document. Create a party of up to four heroes — choosing their race, class, and abilities — then plunge into a randomly generated dungeon filled with treasure, traps, and terrible creatures.", indent: 2, color: .dimGreen)
+            self.printWrapped("This is a dungeon-crawling adventure built on the fifth-edition fantasy rules in the System Reference Document. Create a party of up to four heroes (six, if you raise Party Size in Settings > Gameplay) — choosing their race, class, and abilities — then plunge into a randomly generated dungeon filled with treasure, traps, and terrible creatures.", indent: 2, color: .dimGreen)
             self.print("")
             self.printWrapped("Explore rooms, light your torch, search for hidden loot, and fight monsters using turn-based combat with dice rolls, spells, and special abilities. Meet interesting characters along the way — some friendly, some decidedly not — and enjoy yourself running scared from scary monsters and super creeps.", indent: 2, color: .dimGreen)
             self.print("")
@@ -13335,6 +13336,11 @@ class GameEngine: ObservableObject {
         printWrapped("Whether a new adventure opens with somebody's plea and a villain to swear against. Off, you just go down for the adventure of it, and anything to do with a main quest is greyed out. Errands from the people you meet are unaffected either way.", indent: 2, color: .dimGreen)
         print("")
 
+        print("PARTY SIZE:", color: .cyan, bold: true)
+        print("  Up to \(Self.maxPartySize)", color: .brightGreen)
+        printWrapped("The most adventurers in a party — when you start a New Adventure, and when someone you meet asks to join. Four is the usual table for fifth-edition play, and what the adventures are written for; five or six are allowed, and the monsters grow tougher to match (a quarter more hit points for each hero past four). Tap to go 4 → 5 → 6 → 4. It doesn't change a party already under way.", indent: 2, color: .dimGreen)
+        print("")
+
         print("DUNGEON QUIRKS:", color: .cyan, bold: true)
         print("  \(dungeonQuirksEnabled ? "On" : "Off")", color: dungeonQuirksEnabled ? .brightGreen : .red)
         printWrapped("Little oddities, off by default: the dragon's winks wander out of the pictures and into the words (\"g- -n\" — the DM still understands). Best left off with VoiceOver.", indent: 2, color: .dimGreen)
@@ -13365,6 +13371,7 @@ class GameEngine: ObservableObject {
             combatArenaEnabled ? "Fight Club Off" : "Fight Club On",
             dungeonQuirksEnabled ? "Quirks Off" : "Quirks On",
             mainQuestsEnabled ? "Main Quests Off" : "Main Quests On",
+            "Party Size: \(Self.maxPartySize)",
             // Page 3 — System
             "Log Limit", "List Order",
             atlasShowAllRooms ? "World Map: Visited" : "World Map: All Rooms",
@@ -13417,6 +13424,12 @@ class GameEngine: ObservableObject {
                 self.recordSettingChange(screen: "s:gameplay", key: "mainQuestsEnabled", name: "Main Quests")
                 self.mainQuestsEnabled.toggle()
                 UserDefaults.standard.set(self.mainQuestsEnabled, forKey: "mainQuestsEnabled")
+                self.showGameplaySettings(page: currentPage)
+            } else if selected.hasPrefix("Party Size") {
+                self.recordSettingChange(screen: "s:gameplay", key: "maxPartySize", name: "Party Size")
+                let next = Self.maxPartySize >= 6 ? 4 : Self.maxPartySize + 1
+                UserDefaults.standard.set(next, forKey: "maxPartySize")
+                self.logEvent("Party size set to at most \(next)", category: "SETTINGS")
                 self.showGameplaySettings(page: currentPage)
             } else if selected.hasPrefix("Quirks") {
                 self.recordSettingChange(screen: "s:gameplay", key: "dungeonQuirks", name: "Quirks")
@@ -18945,9 +18958,9 @@ class GameEngine: ObservableObject {
         }
         print("")
 
-        showMenuOptions([
-            MenuOption("1 Character"), MenuOption("2 Characters"),
-            MenuOption("3 Characters"), MenuOption("4 Characters"),
+        // 1 up to the Party Size setting (Settings > Gameplay), then the rest.
+        let most = Self.maxPartySize
+        showMenuOptions((1...most).map { MenuOption($0 == 1 ? "1 Character" : "\($0) Characters") } + [
             MenuOption("Random Party"),
             MenuOption("?", tint: .navigation, compact: true),
             MenuOption("< Back", tint: .navigation, compact: true),
@@ -18959,16 +18972,16 @@ class GameEngine: ObservableObject {
         }
         menuHandler = { [weak self] choice in
             guard let self = self else { return }
-            if choice == 7 {
+            if choice == most + 3 {
                 self.clearTerminal()
                 self.showPlayMenu()
                 return
             }
-            if choice == 6 {
+            if choice == most + 2 {
                 self.showNewGameHelp()
                 return
             }
-            if choice == 5 {
+            if choice == most + 1 {
                 // One of you, the rest robots -- as the first slot is always
                 // human, allAI only ever affects the others. Leaving it off
                 // made the whole random party players.
@@ -18986,7 +18999,7 @@ class GameEngine: ObservableObject {
 
         menuLongPressHandler = { [weak self] choice in
             guard let self = self else { return }
-            if choice >= 1 && choice <= 4 {
+            if choice >= 1 && choice <= most {
                 self.createRandomParty(count: choice, allAI: true)
             }
         }
@@ -19007,7 +19020,7 @@ class GameEngine: ObservableObject {
     ///   false (the default — Quick Start, Surprise Me, an initial
     ///   multiplayer party), every slot is freshly generated.
     private func createRandomParty(count: Int? = nil, allAI: Bool = false, presetRemote: Bool = false, preserveExplicit: Bool = false) {
-        let count = count ?? Int.random(in: 1...4)
+        let count = count ?? Int.random(in: 1...Self.maxPartySize)
         let preserved: [Int: Character] = preserveExplicit
             ? Dictionary(uniqueKeysWithValues: explicitlyChosenSlots.compactMap { i in i < party.count ? (i, party[i]) : nil })
             : [:]
@@ -24699,9 +24712,6 @@ class GameEngine: ObservableObject {
             }
         }
         if let villain = mainQuest?.villain { dungeon.crownFinalGuardian(villain: villain) }
-        // Training marks the lair once (the mark isn't saved, so again after a
-        // load) — and after that leaves it to the player, who may hide it.
-        if dungeon.training && !dungeon.revealBossShownOnce { dungeon.revealBoss = true }
         if room.roomType == .armory {
             if room.merchant == nil {
                 seedNameRegistry()
@@ -27739,8 +27749,17 @@ class GameEngine: ObservableObject {
         }
     }
 
-    /// The most adventurers who can walk together.
-    static let maxPartySize = 4
+    /// The most adventurers who can walk together: Settings > Gameplay >
+    /// Party Size, 4 (the usual table) to 6. Fifth-edition adventures are
+    /// written for about four; the rules' encounter guide treats six or more
+    /// as a large party, and fights here grow tougher past four to match.
+    static var maxPartySize: Int {
+        let v = UserDefaults.standard.integer(forKey: "maxPartySize")
+        return v == 0 ? 4 : min(6, max(4, v))
+    }
+    static func numberWord(_ n: Int) -> String {
+        ["none", "one", "two", "three", "four", "five", "six", "seven", "eight"][max(0, min(8, n))]
+    }
 
     /// How a rescued companion fights: what they were before they were here.
     private func companionBuild(for type: NPCType) -> (race: Race, charClass: CharacterClass) {
@@ -27764,7 +27783,7 @@ class GameEngine: ObservableObject {
         print("")
 
         guard party.count < Self.maxPartySize else {
-            printWrapped("\"Four of you already,\" they say, counting. \"Any more and we'd be tripping over each other in these corridors. Come back if you lose one — though I'd rather you didn't.\"", indent: 2, color: .yellow)
+            printWrapped("\"\(Self.numberWord(party.count).capitalized) of you already,\" they say, counting. \"Any more and we'd be tripping over each other in these corridors. Come back if you lose one — though I'd rather you didn't.\"", indent: 2, color: .yellow)
             print("")
             printWrapped("A party is at most \(Self.maxPartySize). Ask again if someone falls and doesn't get up.", indent: 2, color: .dimGreen)
             print("")
@@ -32304,7 +32323,8 @@ class GameEngine: ObservableObject {
     private var guardianBearingAtVisits = -1
 
     private func nudgeAboutGuardian() {
-        guard let d = dungeon, explorationStatusMessage == nil else { return }
+        // Not in Training: finding the Boss is left to the player there.
+        guard let d = dungeon, !d.training, explorationStatusMessage == nil else { return }
         let floor = d.level
         let bosses = d.rooms.values.filter { $0.roomType == .boss }
         guard !bosses.isEmpty, !bosses.contains(where: { $0.cleared }) else { return }
@@ -32501,6 +32521,7 @@ class GameEngine: ObservableObject {
     }
 
     private func presentCertificate(preview: Bool) {
+        whatNextPreview = preview
         storyScreenActive = true
         pinnedMapLines = []
         clearTerminal()
@@ -32521,7 +32542,8 @@ class GameEngine: ObservableObject {
         }
         var endOpts = ["See the Certificate", "Fireworks!"]
         if training { endOpts.append("How To…") }
-        endOpts.append(preview ? "Back to the Menu" : "What Now?")
+        endOpts.append("What Now?")
+        if preview { endOpts.append("Back to the Menu") }
         showMenu(endOpts)
         closeHandler = { [weak self] in self?.finishEndgame() }
         menuHandler = { [weak self] choice in
@@ -32784,7 +32806,9 @@ class GameEngine: ObservableObject {
             : (names.first ?? "adventurers")
         printWrapped("\"Well done, \(who).\" The DM leans back. \"That's the quest finished, and finished properly. The question every party has to answer now is the same one: what next?\"", indent: 2, color: .yellow)
         print("")
-        if dungeon?.training == true {
+        if whatNextPreview {
+            printWrapped("(The Endgame preview — nothing here is saved. Another Quest carries on with the sample party, to try the petitioners.)", indent: 2, color: .dimGreen)
+        } else if dungeon?.training == true {
             printWrapped(saved ? "✓ Saved — marked Training in Continue Adventure. Training games don't go into the Hall of Fame."
                                : "Save the tale to keep it — marked Training in Continue Adventure. Training games are practice, so they don't go into the Hall of Fame.", indent: 2, color: saved ? .brightGreen : .dimGreen)
         } else if saved {
@@ -32795,7 +32819,7 @@ class GameEngine: ObservableObject {
         print("")
         var opts: [MenuOption] = []
         var actions: [() -> Void] = []
-        if !saved {
+        if !saved && !whatNextPreview {
             opts.append(MenuOption("Save the Tale", isDefault: true, tint: .cyan))
             actions.append { [weak self] in self?.saveFinishedAdventure() }
         }
@@ -32808,11 +32832,7 @@ class GameEngine: ObservableObject {
         opts.append(MenuOption("Throw a Party!"))
         actions.append { [weak self] in self?.endgameCelebrate(saved: saved) }
         opts.append(MenuOption("Another Quest"))
-        actions.append { [weak self] in
-            guard let self = self else { return }
-            self.finishEndgame()
-            self.showPlayMenu()
-        }
+        actions.append { [weak self] in self?.showPetitioners(saved: saved) }
         opts.append(MenuOption("Leave the Game", tint: .danger))
         actions.append { [weak self] in self?.finishEndgame() }
         opts.append(MenuOption("?", tint: .navigation, compact: true))
@@ -32821,7 +32841,7 @@ class GameEngine: ObservableObject {
             self.showInlineHelp {
                 self.printTitle("What Now? — Help")
                 self.print("")
-                self.printWrapped("The adventure is over and nothing here can lose it. Save the Tale keeps it and puts it in the Hall of Fame. Meet the Team shows each adventurer — level, hit points, weapons, armour, gold and everything in their packs, the quest's prizes included (all kept with them in the Character Roster for the next adventure). Sleep a Week (Zzzz) rests the party properly and mends every wound; Throw a Party! is music, food and dancing, for the pleasure of it. Another Quest takes you to the Play menu to begin again, with a new party or the same heroes from the Roster. Leave the Game goes back to the main menu; the app stays open.", indent: 2, color: .dimGreen)
+                self.printWrapped("The adventure is over and nothing here can lose it. Save the Tale keeps it and puts it in the Hall of Fame. Meet the Team shows each adventurer — level, hit points, weapons, armour, gold and everything in their packs, the quest's prizes included (all kept with them in the Character Roster for the next adventure). Sleep a Week (Zzzz) rests the party properly and mends every wound; Throw a Party! is music, food and dancing, for the pleasure of it. Another Quest keeps you playing: petitioners come to the party, each with a new quest — deeper in this same dungeon, or in another one, reached by teleport (at once, for gold), by boat or on foot (days or weeks, resting on the way). The party keeps everything: levels, gold and packs. Start Afresh, on the petitioners' screen, goes to the Play menu for a new party instead. Leave the Game goes back to the main menu; the app stays open.", indent: 2, color: .dimGreen)
                 self.print("")
             }
         }
@@ -32903,7 +32923,269 @@ class GameEngine: ObservableObject {
         certificate = nil
         fireworksUntil = nil
         storyScreenActive = false
+        // The preview's sample heroes are nobody's: never into the Roster.
+        if whatNextPreview { party = []; whatNextPreview = false }
         resetGame()
+    }
+
+    /// The Endgame preview is on screen (What Now? from it saves nothing).
+    private var whatNextPreview = false
+
+    // MARK: Another Quest — the petitioners
+
+    /// A new quest brought to a party that has just finished one: deeper in
+    /// the same dungeon, or in another — and how far away that is.
+    private struct Petition {
+        let quest: MainQuest
+        let asker: String
+        let dungeonName: String
+        let deeper: Bool
+        let footDays: Int
+        let boatDays: Int
+    }
+    private var petitions: [Petition] = []
+
+    private func makePetitions() -> [Petition] {
+        let askers = ["a miller, flour still on her apron", "a shepherd, hat in his hands",
+                      "an old soldier leaning on a stick", "a ferryman who has come a long way",
+                      "a priestess of a small, tired temple", "a blacksmith's apprentice, out of breath",
+                      "twins who finish each other's sentences", "a tinker with a cart full of pots",
+                      "a girl with a goose under one arm", "a very polite dwarf"].shuffled()
+        let here = dungeon?.name ?? "the dungeon"
+        var out: [Petition] = []
+        if dungeon != nil {
+            out.append(Petition(quest: MainQuest.random(), asker: askers[0], dungeonName: here,
+                                deeper: true, footDays: 0, boatDays: 0))
+        }
+        for name in dungeonNames.filter({ $0 != here }).shuffled().prefix(3 - out.count) {
+            out.append(Petition(quest: MainQuest.random(), asker: askers[out.count], dungeonName: name,
+                                deeper: false, footDays: Int.random(in: 4...24), boatDays: Int.random(in: 8...21)))
+        }
+        return out
+    }
+
+    /// What Now? > Another Quest: people come to the party with their
+    /// troubles. Take one on and play carries straight on — same heroes,
+    /// same packs — rather than back to the main menu.
+    private func showPetitioners(saved: Bool, fresh: Bool = true) {
+        if fresh || petitions.isEmpty { petitions = makePetitions() }
+        storyScreenActive = true
+        certificate = nil
+        clearTerminal()
+        printTitle("Petitioners")
+        print("")
+        printWrapped("Word travels faster than any hero. Before the cheering has died down there are people waiting at the edge of the firelight, each with a trouble — and each hoping you are the ones to take it on.", indent: 2, color: .yellow)
+        print("")
+        for (i, p) in petitions.enumerated() {
+            let who = p.asker.prefix(1).uppercased() + p.asker.dropFirst()
+            printWrapped("\(i + 1). \(who), from \(p.quest.village): to \(p.quest.goal).", indent: 2, color: .cyan)
+            printWrapped(p.deeper
+                ? "Here — deeper in \(p.dungeonName). The stair goes on below where you stopped."
+                : "In \(p.dungeonName): \(p.footDays) days on foot, \(p.boatDays) by boat, or a moment by teleport.", indent: 5, color: .dimGreen)
+            print("")
+        }
+        var opts = petitions.map { MenuOption("Hear \($0.quest.village)") }
+        var actions: [() -> Void] = petitions.indices.map { i in { [weak self] in self?.hearPetition(i, saved: saved) } }
+        opts.append(MenuOption("Others?"))
+        actions.append { [weak self] in self?.showPetitioners(saved: saved) }
+        opts.append(MenuOption("Start Afresh"))
+        actions.append { [weak self] in
+            guard let self = self else { return }
+            self.finishEndgame()
+            self.showPlayMenu()
+        }
+        opts.append(MenuOption("?", tint: .navigation, compact: true))
+        actions.append { [weak self] in
+            guard let self = self else { return }
+            self.showInlineHelp {
+                self.printTitle("Petitioners — Help")
+                self.print("")
+                self.printWrapped("Each petitioner has a new main quest. Hear one to learn the whole of it, then Take It On — or come back and hear another. Others? sends them away and brings new ones.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.printWrapped("A quest deeper in the same dungeon starts on the next floor down, straight away. One in another dungeon means a journey: Teleport is instant but costs gold; by boat or on foot is free or cheap but takes days or weeks — the party rests on the way and arrives healed, and the days count towards any deadline.", indent: 2, color: .dimGreen)
+                self.print("")
+                self.printWrapped("The party keeps everything — levels, gold, packs. The finished adventure is kept as it was; the new quest saves as a new adventure. Start Afresh goes to the Play menu for a new party.", indent: 2, color: .dimGreen)
+                self.print("")
+            }
+        }
+        opts.append(MenuOption("< Back", tint: .navigation, compact: true))
+        actions.append { [weak self] in self?.showWhatNext(saved: saved) }
+        showMenuOptions(opts)
+        closeHandler = { [weak self] in self?.showWhatNext(saved: saved) }
+        menuHandler = { choice in
+            guard choice >= 1, choice <= actions.count else { return }
+            actions[choice - 1]()
+        }
+    }
+
+    private func hearPetition(_ index: Int, saved: Bool) {
+        guard petitions.indices.contains(index) else { showPetitioners(saved: saved, fresh: false); return }
+        let p = petitions[index]
+        let q = p.quest
+        let back: () -> Void = { [weak self] in self?.showPetitioners(saved: saved, fresh: false) }
+        clearTerminal()
+        printTitle("\(q.village)'s Trouble")
+        print("")
+        printWrapped("\(p.asker.prefix(1).uppercased() + p.asker.dropFirst()) steps forward. \"Back in \(q.village), \(q.harm ?? "things have gone badly wrong").\"", indent: 2, color: .yellow)
+        if q.kind != "mystery", q.kind != "twist", let motive = q.motive {
+            printWrapped("\"It's \(q.villain), who \(motive).\"", indent: 2, color: .yellow)
+        }
+        printWrapped("\"Someone needs to \(q.goal), \(q.stakes).\"", indent: 2, color: .yellow)
+        if let ask = q.objectiveAsk { printWrapped(ask, indent: 2, color: .cyan) }
+        printWrapped("The reward: \(q.reward).", indent: 2, color: .green)
+        print("")
+        printWrapped(p.deeper
+            ? "Where: here — below where you stopped in \(p.dungeonName). No journey; just the next stair down."
+            : "Where: \(p.dungeonName) — \(p.footDays) days on foot, \(p.boatDays) by boat, or a moment by teleport.", indent: 2, color: .dimGreen)
+        print("")
+        showMenuOptions([MenuOption("Take It On", isDefault: true, tint: .cyan), MenuOption("< Back", tint: .navigation, compact: true)])
+        closeHandler = back
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            guard choice == 1 else { back(); return }
+            if p.deeper { self.startPetition(p) } else { self.chooseJourney(p, saved: saved, index: index) }
+        }
+    }
+
+    /// Gold the whole party has between them.
+    private var partyGoldTotal: Int { party.reduce(0) { $0 + $1.gold } }
+
+    /// Take gold from the party, richest first. False (and nothing taken)
+    /// if they haven't got it.
+    private func takePartyGold(_ amount: Int) -> Bool {
+        guard amount > 0 else { return true }
+        guard partyGoldTotal >= amount else { return false }
+        var left = amount
+        for c in party.sorted(by: { $0.gold > $1.gold }) where left > 0 {
+            let take = min(c.gold, left)
+            c.gold -= take
+            left -= take
+        }
+        return true
+    }
+
+    private func chooseJourney(_ p: Petition, saved: Bool, index: Int) {
+        let teleportCost = 25 * max(1, party.count)
+        let boatCost = 5 * max(1, party.count)
+        let gold = partyGoldTotal
+        clearTerminal()
+        printTitle("The Journey")
+        print("")
+        printWrapped("\(p.dungeonName) is a long way off. How will you go? (The party has \(gold) gold between them.)", indent: 2, color: .yellow)
+        print("")
+        printWrapped("Teleport — \(teleportCost) gold to a hedge-wizard with a chalk circle. There at once, wounds and all.", indent: 2, color: .cyan)
+        printWrapped("By Boat — \(boatCost) gold for passage; \(p.boatDays) days on the water, resting.", indent: 2, color: .cyan)
+        printWrapped("On Foot — free; \(p.footDays) days on the road, resting as you go.", indent: 2, color: .cyan)
+        print("")
+        printWrapped("Days spent travelling count towards any deadline the new quest has.", indent: 2, color: .dimGreen)
+        print("")
+        showMenuOptions([
+            MenuOption("Teleport", isDisabled: gold < teleportCost),
+            MenuOption("By Boat", isDisabled: gold < boatCost),
+            MenuOption("On Foot"),
+            MenuOption("< Back", tint: .navigation, compact: true),
+        ])
+        let back: () -> Void = { [weak self] in self?.hearPetition(index, saved: saved) }
+        closeHandler = back
+        menuHandler = { [weak self] choice in
+            guard let self = self else { return }
+            switch choice {
+            case 1:
+                guard self.takePartyGold(teleportCost) else { return }
+                self.travelTo(p, days: 0, how: "teleport")
+            case 2:
+                guard self.takePartyGold(boatCost) else { return }
+                self.travelTo(p, days: p.boatDays, how: "boat")
+            case 3: self.travelTo(p, days: p.footDays, how: "foot")
+            default: back()
+            }
+        }
+    }
+
+    private func travelTo(_ p: Petition, days: Int, how: String) {
+        clearTerminal()
+        printTitle(how == "teleport" ? "Teleport" : (how == "boat" ? "By Boat" : "On Foot"))
+        print("")
+        switch how {
+        case "teleport":
+            printWrapped("The hedge-wizard counts the gold twice, chalks a circle, and tells you to hold hands and not to think about your ears. There is a noise like a cork leaving a bottle — and the air smells of \(p.dungeonName).", indent: 2, color: .cyan)
+        case "boat":
+            printWrapped("A fat, slow boat with a patched sail. \(days) days of grey water, gulls, and the cook's terrible stew. Nobody is chasing you. Everybody sleeps.", indent: 2, color: .cyan)
+        default:
+            let road = ["a bridge with a troll who only wants to talk about the weather", "a market town with excellent pies",
+                        "three days of rain", "a signpost somebody had turned the wrong way", "a shepherd who swore he had seen the thing you are after"].shuffled()
+            printWrapped("\(days) days on the road — \(road[0]), \(road[1]), and \(road[2]). Boots wear thin; legs grow strong.", indent: 2, color: .cyan)
+        }
+        print("")
+        if days > 0 {
+            advanceTime(days * 1440)
+            for c in party { c.currentHP = c.maxHP; c.isConscious = true }
+            printWrapped("You arrive rested — everyone back to full health.", indent: 2, color: .brightGreen)
+            if how == "foot", Bool.random() {
+                let found = Int.random(in: 5...25)
+                party.first?.gold += found
+                printWrapped("\(party.first.map { shortName(for: $0) } ?? "Someone") found \(found) gold in a ditch on the way. Finders keepers.", indent: 2, color: .yellow)
+            }
+            print("")
+        }
+        logEvent("Travelled to \(p.dungeonName) by \(how)\(days > 0 ? ", \(days) days" : "")", category: "EXPLORE")
+        waitForContinue()
+        inputHandler = { [weak self] _ in self?.startPetition(p) }
+    }
+
+    /// Into the new quest: a fresh dungeon (or the next floor of this one)
+    /// with the same party, straight into play. The finished adventure's
+    /// save is left as it was — this one saves as a new adventure.
+    private func startPetition(_ p: Petition) {
+        certificate = nil
+        fireworksUntil = nil
+        whatNextPreview = false
+        clearAllUndoRedo()
+        let old = dungeon
+        if p.deeper, let old = old {
+            let next = old.level + 1
+            let d = Dungeon(name: old.name, level: next, levelCount: next + Int.random(in: 1...2),
+                            startDifficulty: old.startDifficulty)
+            d.archivedLevels = old.archivedLevels + [old.atlasLevel(hasTrapSense: partyHasTrapSense, archived: true)]
+            d.hasCartography = old.hasCartography
+            dungeon = d
+        } else {
+            dungeon = Dungeon.newAdventure(name: p.dungeonName, difficulty: old?.startDifficulty ?? 2)
+        }
+        let q = p.quest
+        mainQuest = q
+        mainQuestCompleted = false
+        mainQuestRewardPaid = false
+        noMainQuest = false
+        questPleaPrevious = nil
+        questPleaAsker = nil
+        npcQuestOffers = [:]
+        activeQuest = nil
+        progressTaleCache = nil
+        monstersSlain = 0
+        combatsWon = 0
+        activeSlotId = nil
+        activeSlotName = nil
+        adventureLog = []
+        questHistory = ["Took up a quest from \(p.asker) of \(q.village): to \(q.goal) (\(Dungeon.guardianName(q.villain)))."]
+        adventureIntroLines = ["Fresh from one victory, they were found by \(p.asker) from \(q.village), and took on a new quest: to \(q.goal)."]
+        currentCombat = nil; combatPanelLines = []
+        storyScreenActive = false
+        pinnedMapLines = []
+        menuImageName = nil
+        gameState = .exploring
+        roomsSinceLastSave = 0
+        partyChatLog = []
+        DMEngine.shared.clearHistory()
+        dmChatLog = []
+        logEvent("A new quest, from \(q.village): \(q.summary) — in \(dungeon?.name ?? p.dungeonName)", category: "QUEST")
+        explorationStatusMessage = (p.deeper
+            ? "A new quest: to \(q.goal). Down you go — \(Dungeon.floorName(dungeon?.level ?? 1)) of \(p.dungeonName)."
+            : "A new quest: to \(q.goal). Welcome to \(p.dungeonName).", .cyan)
+        if musicEnabled { SoundManager.shared.startMusic(.exploration, preference: explorationMelodyChoice) }
+        if partyHasTorch() && !torchLit { torchLit = true }
+        clearTerminal()
+        showExplorationView()
     }
 
     /// The Endgame button (landing screen): a sample party, quest and seven
@@ -39104,7 +39386,10 @@ class GameEngine: ObservableObject {
         // it's pushing difficulty UP, so the initial Easy/Medium/Hard choice
         // still only affects HP as before.
         let skillMultiplier = partySkillMultiplier
-        let hpScale = difficultyScale * skillMultiplier
+        // Five or six heroes (Party Size setting): a quarter more monster HP
+        // for each one past four, so a big party still has to work for it.
+        let bigPartyScale = party.count > 4 ? 1.0 + 0.25 * Double(party.count - 4) : 1.0
+        let hpScale = difficultyScale * skillMultiplier * bigPartyScale
         if hpScale != 1.0 {
             for i in balanced.monsters.indices {
                 let scaledHP = max(1, Int(Double(balanced.monsters[i].maxHP) * hpScale))
