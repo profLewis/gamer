@@ -7318,7 +7318,7 @@ class GameEngine: ObservableObject {
         print("")
         printWrapped("\(d.trainingFull ? "Full" : "Quick") training: \(done) of \(steps.count) steps done.", indent: 2, color: .cyan)
         print("")
-        printWrapped("Recap goes back over every step, one page at a time. Test Yourself is a short quiz — answer them all, then see how you did and try again if you like. Quit Training ends it — anything you saved stays in Continue Adventure, marked Training.", indent: 2, color: .dimGreen)
+        printWrapped("Recap goes over everything training covers, one page at a time. Test Yourself is a short quiz — answer them all, then see how you did and try again if you like. Quit Training ends it — anything you saved stays in Continue Adventure, marked Training.", indent: 2, color: .dimGreen)
         print("")
         let opts = [MenuOption("Recap", isDefault: true), MenuOption("Test Yourself"), MenuOption("Quit Training", tint: .danger),
                     MenuOption("?", tint: .navigation, compact: true), MenuOption("< Back", tint: .navigation, compact: true)]
@@ -7363,21 +7363,50 @@ class GameEngine: ObservableObject {
     /// One step per page: what it's about, and whether it's done yet.
     private func showTrainingRecap(index: Int) {
         guard let d = dungeon else { return }
-        let steps = trainingPlanSteps(d)
-        let i = min(max(0, index), steps.count - 1)
-        let step = steps[i]
-        let done = trainingStepDone(step.key, in: d)
+        // Every element of training, not only this game's numbered steps:
+        // those first (numbered as on the status line), then anything that
+        // was already done when training began (a quest from the opening
+        // tale, say), then — on a Quick course — what Full Training adds.
+        let planned = trainingPlanSteps(d)
+        let plannedKeys = Set(planned.map { $0.key })
+        let course = trainingSteps(full: d.trainingFull)
+        let before = course.filter { !plannedKeys.contains($0.key) }
+        let fullExtras = d.trainingFull ? [] : trainingSteps(full: true).filter { step in !course.contains { $0.key == step.key } }
+        enum Kind { case numbered(Int), before, full }
+        let items: [(step: (key: String, hint: String, detail: String), kind: Kind)] =
+            planned.enumerated().map { ($0.element, .numbered($0.offset + 1)) }
+            + before.map { ($0, .before) }
+            + fullExtras.map { ($0, .full) }
+        guard !items.isEmpty else { showTrainingMenu(); return }
+        let i = min(max(0, index), items.count - 1)
+        let item = items[i]
         clearTerminal()
-        printTitle("Recap: Step \(i + 1) of \(steps.count)")
+        switch item.kind {
+        case .numbered(let n):
+            printTitle("Recap: Step \(n) of \(planned.count)")
+            print("")
+            let done = trainingStepDone(item.step.key, in: d)
+            print(done ? "  ✓ Done" : "  ○ Not done yet", color: done ? .brightGreen : .yellow, bold: true)
+        case .before:
+            printTitle("Recap: Already Done")
+            print("")
+            print("  ✓ Done before training began", color: .brightGreen, bold: true)
+            printWrapped("So it wasn't one of this game's numbered steps — but it's part of the ropes all the same.", indent: 2, color: .dimGreen)
+        case .full:
+            printTitle("Recap: In Full Training")
+            print("")
+            print("  ○ Part of Full Training", color: .cyan, bold: true)
+            printWrapped("Quick Training leaves this out; Full Training (Play > Training) walks you through it.", indent: 2, color: .dimGreen)
+        }
         print("")
-        print(done ? "  ✓ Done" : "  ○ Not done yet", color: done ? .brightGreen : .yellow, bold: true)
+        printWrapped(item.step.hint, indent: 2, color: .cyan)
         print("")
-        printWrapped(step.hint, indent: 2, color: .cyan)
+        printWrapped(item.step.detail, indent: 2)
         print("")
-        printWrapped(step.detail, indent: 2)
+        print("  Page \(i + 1) of \(items.count)", color: .dimGreen)
         print("")
         // Previous / Next always in the same two places, greyed at the ends.
-        let opts = [MenuOption("< Previous", isDisabled: i == 0), MenuOption("Next >", isDisabled: i == steps.count - 1),
+        let opts = [MenuOption("< Previous", isDisabled: i == 0), MenuOption("Next >", isDisabled: i == items.count - 1),
                     MenuOption("Back to Test", isDefault: true),
                     MenuOption("?", tint: .navigation, compact: true)]
         showMenuOptions(opts)
@@ -7386,12 +7415,12 @@ class GameEngine: ObservableObject {
             guard let self = self else { return }
             switch choice {
             case 1: if i > 0 { self.showTrainingRecap(index: i - 1) }
-            case 2: if i < steps.count - 1 { self.showTrainingRecap(index: i + 1) }
+            case 2: if i < items.count - 1 { self.showTrainingRecap(index: i + 1) }
             case 4:
                 self.showInlineHelp {
                     self.printTitle("Recap — Help")
                     self.print("")
-                    self.printWrapped("Every training step, one to a page. < Previous and Next > move between them (greyed at the first and last); Back to Test returns to the Training menu.", indent: 2, color: .dimGreen)
+                    self.printWrapped("Everything training covers, one to a page: first this game's numbered steps (the same numbers as the Training line), then anything already done before training began, then — on Quick Training — what Full Training adds. < Previous and Next > move between them (greyed at the first and last); Back to Test returns to the Training menu.", indent: 2, color: .dimGreen)
                     self.print("")
                 }
             default: self.showTrainingMenu()
@@ -7443,6 +7472,63 @@ class GameEngine: ObservableObject {
 
     private func startTrainingQuiz() { quizChoiceHandler = nil; askTrainingQuestion(0, answers: []) }
 
+    /// Button words for the quiz answers: abbreviated, never cut off with
+    /// "…" (the full answer is written out above the buttons).
+    private static let quizButtonLabels: [String: String] = [
+        "Your party — where you are standing": "YOU (your party)",
+        "A room you haven't been to yet": "Unvisited room",
+        "It scares every monster away": "Scares monsters off",
+        "Without light you can't see the room, its exits or what's in it": "Can't see w/o light",
+        "It heals the party as you walk": "Heals as you walk",
+        "It saves the game for you": "Saves the game",
+        "It makes monsters easier to hit": "Foes easier to hit",
+        "Ten minutes of game time": "10 mins game time",
+        "Eight hours of game time": "8 hrs game time",
+        "One party member's turn": "One hero's turn",
+        "Search the room you're in": "Search this room",
+        "Listen at the doors (the ear on the pad)": "Listen (ear icon)",
+        "Rest until something happens": "Rest & wait",
+        "Play > Continue Adventure": "Play > Continue",
+        "Type \"load\" at the prompt": "Type \"load\"",
+        "It loads by itself when you start": "Loads on start",
+        "Ask the nearest merchant": "Ask a merchant",
+        "The Adventure Log only": "Adventure Log only",
+        "It isn't shown anywhere": "Not shown",
+        "The ? button during the fight": "? in the fight",
+        "Party Status, before the fight": "Party Status first",
+        "Start the adventure again": "Start again",
+        "Look for a teleport pad or a stair you haven't taken": "Find a pad or stair",
+        "Rest until it appears": "Rest till it shows",
+        "Sell everything and buy a map": "Sell all, buy map",
+        "Wait for the DM to tell you": "Wait for the DM",
+        "The game stops working": "Game stops",
+        "The game carries on with its own Dungeon Master": "Own DM carries on",
+        "You can only look at the map": "Map only",
+    ]
+
+    /// The hand-picked short form, or — for an answer added later — one made
+    /// by dropping little words and shortening long ones. Never "…".
+    static func quizButtonLabel(_ answer: String, room: Int = 20) -> String {
+        if let short = quizButtonLabels[answer] { return short }
+        guard answer.count > room else { return answer }
+        let filler: Set<String> = ["the", "a", "an", "your", "you", "it", "its", "of", "at", "to", "on", "in", "is", "are", "for", "by", "as"]
+        let swaps = ["and": "&", "with": "w/", "without": "w/o", "minutes": "mins", "hours": "hrs"]
+        var words = answer.replacingOccurrences(of: "\\s*\\([^)]*\\)", with: "", options: .regularExpression)
+            .replacingOccurrences(of: " — ", with: " ").replacingOccurrences(of: ",", with: "")
+            .split(separator: " ").map { swaps[$0.lowercased()] ?? String($0) }
+        let kept = words.enumerated().filter { $0.offset == 0 || !filler.contains($0.element.lowercased()) }.map { $0.element }
+        if !kept.isEmpty { words = kept }
+        while words.joined(separator: " ").count > room,
+              let i = words.indices.filter({ words[$0].count > 6 && !words[$0].hasSuffix(".") }).max(by: { words[$0].count < words[$1].count }) {
+            words[i] = String(words[i].prefix(4)) + "."
+        }
+        var out = ""
+        for w in words where (out.isEmpty ? w.count : out.count + 1 + w.count) <= room {
+            out = out.isEmpty ? w : out + " " + w
+        }
+        return out.isEmpty ? String(answer.prefix(room)) : out
+    }
+
     private func askTrainingQuestion(_ n: Int, answers: [Int]) {
         let quiz = Self.trainingQuiz
         guard n < quiz.count else { markTrainingQuiz(answers); return }
@@ -7468,11 +7554,8 @@ class GameEngine: ObservableObject {
         }
         // Buttons carry the number and as much of the answer as fits, so
         // either way of choosing shows the same thing.
-        var opts = item.options.enumerated().map { i, option -> MenuOption in
-            let room = 14
-            let short = option.count > room ? String(option.prefix(room - 1)) + "…" : option
-            return MenuOption(short)
-        }
+        // Short words, never "…" — the full answers are written out above.
+        var opts = item.options.map { MenuOption(Self.quizButtonLabel($0)) }
         opts.append(MenuOption("< Back", tint: .navigation, compact: true))
         showMenuOptions(opts)
         closeHandler = { [weak self] in self?.quizChoiceHandler = nil; self?.showTrainingMenu() }
