@@ -2,9 +2,8 @@
   "version": 1,
   "note": "Everyone thanked on the game's About page. The game fetches this file once a day; see CONTRIBUTORS.md for how to be added.",
   "contributors": [
-    { "name": "Philip Lewis", "for": "created the game: design, creative direction and relentless testing" },
+    { "name": "Professor Lewis", "for": "created the game: design, coding, creative direction and relentless testing" },
     { "name": "Beau Lewis", "for": "world creation, storytelling, gameplay structure and style, and game testing" },
-    { "name": "Claude (Anthropic)", "for": "code, words, and a great deal of ASCII" },
-    { "name": "Codex (OpenAI)", "for": "code assistance" }
+    { "name": "Claude (Anthropic)", "for": "code, words, and a great deal of ASCII" }
   ]
 }
